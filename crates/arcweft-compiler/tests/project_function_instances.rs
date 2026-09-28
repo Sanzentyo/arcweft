@@ -254,6 +254,25 @@ flow main() -> i64 {
 }
 
 #[test]
+fn implicit_callable_site_is_distinct_for_each_closed_generic_body() {
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+fn make<T>(sample: T) -> (T -> T effects {}) { _ }
+
+flow main() -> i64 {
+    let numeric = make(0i64)
+    let text = make("")
+    text("word")
+    return numeric(3i64)
+}
+"#;
+    compile_source(source)
+        .expect("one implicit expression has separate i64 and String site owners");
+    execution::assert_native_return(source, "3");
+    execution::assert_awbc_return(source, RuntimeValue::i64(3));
+}
+
+#[test]
 fn named_project_call_lowers_source_ordered_operands_into_typed_anf() {
     let source = r#"
 entry cli @entry.main { goto @flow.main }
@@ -485,6 +504,6 @@ entry agent @entry.agent.main { controller = run }
     let RuntimeExprKind::Agent(RuntimeAgentExpr::ViewportPoint { x, y }) = structural.kind() else {
         panic!("specialized body must retain the Agent structural payload")
     };
-    assert!(matches!(x.kind(), RuntimeExprKind::Local(local) if local == source_x));
-    assert!(matches!(y.kind(), RuntimeExprKind::Local(local) if local == source_y));
+    assert!(matches!(x.kind(), RuntimeExprKind::Local(local) if local.local() == *source_x));
+    assert!(matches!(y.kind(), RuntimeExprKind::Local(local) if local.local() == *source_y));
 }

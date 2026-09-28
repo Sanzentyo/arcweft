@@ -10,11 +10,7 @@ use crate::view_runtime::BundleViewRuntimeSnapshot;
 use arcweft_bundle::container::BundleDigest;
 use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_character::presentation_name::CharacterPresentationSemanticDigest;
-use arcweft_core::awbc::fiber::{FiberState, FiberStateError};
-use arcweft_core::awbc::product_step::{
-    AwbcProductExecutorSaveSnapshot, AwbcProductExecutorSnapshot,
-};
-use arcweft_core::awbc::schema::AwbcProgram;
+use arcweft_core::awbc::product_step::AwbcProductExecutorSaveSnapshot;
 use arcweft_core::engine::FlowFiberStatus;
 pub use arcweft_core::entry::ActiveEntrySnapshotV1;
 use arcweft_core::executor::ArcweftRuntimeExecutorSnapshotError;
@@ -54,10 +50,8 @@ pub struct BundleSessionSnapshot {
 
 /// Wire payload for the bundle-session save envelope.
 ///
-/// This is intentionally separate from [`BundleSessionSnapshot`].  The
-/// latter is a live, testable in-memory state projection; this payload owns
-/// the AWBC-only recursive value DTO and never asks serde to materialize a
-/// live `RuntimeValue` function.
+/// The in-memory snapshot also retains the inert AWBC value DTO. Decoding a
+/// save never creates a second live affine owner beside the active executor.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct BundleSessionSavePayload {
@@ -92,8 +86,7 @@ impl BundleSessionSavePayload {
             runtime: snapshot.runtime.clone(),
             executor: BundleSessionExecutorSavePayload {
                 generation: snapshot.executor.generation,
-                state: AwbcProductExecutorSaveSnapshot::from_live(&snapshot.executor.state)
-                    .map_err(|error| error.to_string())?,
+                state: snapshot.executor.state.clone(),
             },
             presentation: snapshot.presentation.clone(),
             view_virtualization: snapshot.view_virtualization.clone(),
@@ -103,7 +96,7 @@ impl BundleSessionSavePayload {
 
     pub(crate) fn into_snapshot(
         self,
-        program_owner: &RuntimeProgramOwner,
+        _program_owner: &RuntimeProgramOwner,
     ) -> Result<BundleSessionSnapshot, String> {
         Ok(BundleSessionSnapshot {
             generation: self.generation,
@@ -114,7 +107,7 @@ impl BundleSessionSavePayload {
             runtime: self.runtime,
             executor: BundleSessionExecutorSnapshot {
                 generation: self.executor.generation,
-                state: self.executor.state.into_live_for_program(program_owner)?,
+                state: self.executor.state,
             },
             presentation: self.presentation,
             view_virtualization: self.view_virtualization,
@@ -175,8 +168,9 @@ where
 pub struct BundleSessionExecutorSnapshot {
     /// Generation that owns the Product AWBC fiber state.
     pub generation: GenerationId,
-    /// Current Product AWBC executor state. Other executor tiers cannot be saved.
-    pub state: AwbcProductExecutorSnapshot,
+    /// Inert Product AWBC state. It becomes live only after the old executor
+    /// has relinquished sole ownership during restore.
+    pub state: AwbcProductExecutorSaveSnapshot,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -408,42 +402,6 @@ pub(crate) fn validate_presentation_runtime_status(
         }
     }
     Ok(())
-}
-
-pub(crate) fn validate_product_awbc_snapshot(
-    snapshot: &AwbcProductExecutorSnapshot,
-    program: &AwbcProgram,
-) -> Result<(), BundleSessionSaveError> {
-    validate_fiber_snapshot("executor.product_awbc.fiber", &snapshot.fiber, program)?;
-    for (index, fiber) in snapshot.child_fibers.iter().enumerate() {
-        validate_fiber_snapshot(
-            &format!("executor.product_awbc.child_fibers[{index}]"),
-            &fiber.fiber,
-            program,
-        )?;
-    }
-    Ok(())
-}
-
-fn validate_fiber_snapshot(
-    path: &str,
-    fiber: &FiberState,
-    program: &AwbcProgram,
-) -> Result<(), BundleSessionSaveError> {
-    fiber
-        .validate_for_program(program)
-        .map_err(|error| match error {
-            FiberStateError::InvalidRuntimeValue {
-                path: value_path,
-                reason,
-            } => BundleSessionSaveError::InvalidRuntimeValue {
-                path: format!("{path}.{value_path}"),
-                message: reason,
-            },
-            error => BundleSessionSaveError::Fiber {
-                message: format!("{path}: {error}"),
-            },
-        })
 }
 
 pub(crate) fn digest_label(value: &BundleDigest) -> String {

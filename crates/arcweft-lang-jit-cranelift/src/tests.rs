@@ -4,9 +4,9 @@ use super::*;
 use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
     RuntimeCallArgumentSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeLocalDeclarationSeed,
-    RuntimeLocalSeedId, RuntimePlan, RuntimePlanBuilder, RuntimePlanTypeProjection,
-    RuntimePlanTypeSeed, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureHelperSeed,
-    RuntimePureInputType, RuntimePureOutputType,
+    RuntimeLocalReadSeed, RuntimeLocalSeedId, RuntimePlan, RuntimePlanBuilder,
+    RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimePureHelperId, RuntimePureHelperOrigin,
+    RuntimePureHelperSeed, RuntimePureInputType, RuntimePureOutputType,
 };
 use arcweft_core::pure::{
     PureFunctionBackendKind, PureFunctionRequest, VmPureFunctionBackend,
@@ -15,7 +15,8 @@ use arcweft_core::pure::{
 use arcweft_core::runtime_id::RuntimeLocalDeclarationId;
 use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeCallTarget, RuntimeExprKind, RuntimeIntrinsic,
-    RuntimeSignedIntWidth, RuntimeUnaryOp, RuntimeUnsignedIntWidth, RuntimeValue,
+    RuntimeLocalReadMode, RuntimeSignedIntWidth, RuntimeUnaryOp, RuntimeUnsignedIntWidth,
+    RuntimeValue,
 };
 
 const BOOL_MARKER: u8 = 1;
@@ -121,7 +122,10 @@ fn value(scalar: Scalar, value: RuntimeValue) -> RuntimeExprSeed {
     expr(scalar, RuntimeExprSeedKind::Value(value))
 }
 fn local(scalar: Scalar, local: RuntimeLocalSeedId) -> RuntimeExprSeed {
-    expr(scalar, RuntimeExprSeedKind::Local(local))
+    expr(
+        scalar,
+        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(local, RuntimeLocalReadMode::Copy)),
+    )
 }
 fn binary(
     scalar: Scalar,

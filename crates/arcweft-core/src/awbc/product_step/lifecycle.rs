@@ -120,6 +120,9 @@ impl AwbcProductStepExecutor {
         ) {
             return;
         }
+        if !self.release_installed_await_many_for_trap(output) {
+            return;
+        }
         for cleanup in self.fiber.take_unwind_cleanups() {
             self.emit_effect(cleanup.effect, &cleanup.args, output);
         }
@@ -322,6 +325,12 @@ impl AwbcProductStepExecutor {
                 Some(FiberTerminalValue::Returned(Some(value))) => {
                     FlowFiberStatus::Done(FlowExit::Return(runtime_value_label(value)))
                 }
+                Some(FiberTerminalValue::Returned(None)) => self
+                    .fiber
+                    .return_summary
+                    .as_ref()
+                    .map(|value| FlowFiberStatus::Done(FlowExit::Return(value.clone())))
+                    .unwrap_or(FlowFiberStatus::Done(FlowExit::Done)),
                 _ => FlowFiberStatus::Done(FlowExit::Done),
             },
             FiberStatus::Cancelled => FlowFiberStatus::Done(FlowExit::Done),

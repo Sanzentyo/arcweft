@@ -9,8 +9,8 @@ use crate::engine::{
 use crate::pattern::RuntimePattern;
 use crate::task::RuntimeProgramOwner;
 use crate::value::{
-    RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableValue,
-    RuntimeCallableValueError, RuntimeValue,
+    RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallablePendingGroup,
+    RuntimeCallableValue, RuntimeCallableValueError, RuntimeValue,
 };
 
 impl Engine {
@@ -30,11 +30,17 @@ impl Engine {
         };
         callable.validate_for_owner(&RuntimeProgramOwner::Plan(Arc::clone(&self.plan)))?;
         if args.len() < callable.remaining_arity()? {
-            let value = RuntimeValue::Callable(callable.try_bind_prefix(&args)?);
+            let value = RuntimeValue::Callable(
+                callable
+                    .try_bind_prefix(args)
+                    .map_err(|failure| RuntimeEvalError::Callable(failure.into_parts().0))?,
+            );
             self.complete_function_call_result(&result, resume, value, output);
             return Ok(());
         }
-        let arguments = callable.materialize_arrow_arguments(&args)?;
+        let arguments = callable
+            .materialize_arrow_arguments(args)
+            .map_err(|failure| RuntimeEvalError::Callable(failure.into_parts().0))?;
         self.start_callable_group(callable, arguments, None, result, resume, output, backend)
     }
 
@@ -49,44 +55,29 @@ impl Engine {
         backend: &mut impl RuntimeCallBackend,
     ) -> Result<(), RuntimeEvalError> {
         callable.validate_for_owner(&RuntimeProgramOwner::Plan(Arc::clone(&self.plan)))?;
-        let application = callable.prepare_group(&arguments, attached)?;
-        self.start_callable_application(
-            callable,
-            arguments,
-            application,
-            result,
-            resume,
-            output,
-            backend,
-        )
+        let application = callable
+            .prepare_group(arguments, attached)
+            .map_err(|failure| RuntimeEvalError::Callable(failure.into_parts().0))?;
+        self.start_callable_application(application, result, resume, output, backend)
     }
 
     pub(super) fn finish_callable_group_default(
         &mut self,
-        callable: RuntimeCallableValue,
-        arguments: Vec<RuntimeValue>,
+        pending: RuntimeCallablePendingGroup,
         attached: RuntimeValue,
         result: RuntimePattern,
         resume: Option<FlowCursor>,
         output: &mut RuntimeStepOutput,
         backend: &mut impl RuntimeCallBackend,
     ) -> Result<(), RuntimeEvalError> {
-        let application = callable.complete_group_default(&arguments, attached)?;
-        self.start_callable_application(
-            callable,
-            arguments,
-            application,
-            result,
-            resume,
-            output,
-            backend,
-        )
+        let application = pending
+            .complete_default(attached)
+            .map_err(|failure| RuntimeEvalError::Callable(failure.into_parts().0))?;
+        self.start_callable_application(application, result, resume, output, backend)
     }
 
     fn start_callable_application(
         &mut self,
-        callable: RuntimeCallableValue,
-        arguments: Vec<RuntimeValue>,
         application: RuntimeCallableApplication,
         result: RuntimePattern,
         resume: Option<FlowCursor>,
@@ -115,18 +106,17 @@ impl Engine {
                     backend,
                 )
             }
-            RuntimeCallableApplication::AttachedDefault(invocation) => {
+            RuntimeCallableApplication::AttachedDefault {
+                invocation,
+                pending,
+            } => {
                 let RuntimeCallableBodyReference::Plan(site) = invocation.body else {
                     return Err(RuntimeCallableValueError::ForeignProgram.into());
                 };
                 let frame = FunctionCallFrame::new(
                     site,
                     resume,
-                    FunctionReturnContinuation::CallableDefault {
-                        callable,
-                        arguments,
-                        result,
-                    },
+                    FunctionReturnContinuation::CallableDefault { pending, result },
                 );
                 self.start_function_site_call(
                     invocation.captures,

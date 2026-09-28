@@ -221,6 +221,32 @@ flow main() -> Unit {
     }
 
     #[test]
+    fn guarded_affine_tuple_copies_only_the_scalar_binding_through_runtime_lowering() {
+        let compiled = compile_source(
+            r#"
+fn check(count: i64) -> bool { count > 0i64 }
+fn consume(voice: VoiceHandle) {}
+fn guarded(candidate: (VoiceHandle, i64)) {
+    match candidate {
+        (voice, count) when check(count) => consume(voice)
+        _ => ()
+    }
+}
+flow main() -> Unit { return () }
+entry cli @entry.main { goto @flow.main }
+"#,
+        )
+        .expect("a scalar guard must preserve its affine tuple sibling");
+        arcweft_runtime_plan::awbc_lower::AwbcLowerer::new(
+            &compiled.plan,
+            &compiled.dialogue_content,
+            "guarded_affine_tuple.arcw",
+        )
+        .lower()
+        .expect("the guarded affine tuple lowers and verifies");
+    }
+
+    #[test]
     fn source_compiler_entrypoints_reject_removed_role_declarations_at_parse() {
         for source in [
             "state GameState {\n    value: i32\n}\n",

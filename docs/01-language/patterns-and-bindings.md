@@ -152,6 +152,13 @@ match event {
 }
 ```
 
+A guard may read a pattern-bound value only when that exact value is Copy.
+Reading an affine binding or mutating a pattern-bound place in the guard is
+rejected. The matched value remains owned by the scrutinee until the guard
+succeeds; a failed guard can therefore continue to a later arm without losing
+an affine sibling that the guard did not read. For a dynamically represented
+function value, the runtime checks the selected binding's Copy obligation.
+
 ## Pattern scope
 
 Bindings introduced by a pattern are scoped to the arm/body where the pattern succeeded.

@@ -755,8 +755,26 @@ impl SwapSession {
 
     pub fn begin_quiescence(&mut self) -> Result<(), SwapError> {
         self.expect_phase(SwapPhase::Prepared)?;
+        if self.in_step {
+            return Err(SwapError::RuntimeNotQuiescent);
+        }
         self.phase = SwapPhase::Quiescing;
         Ok(())
+    }
+
+    /// Cancels a staged swap before publication when its executable binding
+    /// fails. The active generation and retired set are untouched.
+    pub(crate) fn abort_prepared(&mut self) {
+        assert!(matches!(
+            self.phase,
+            SwapPhase::Prepared | SwapPhase::Quiescing
+        ));
+        self.prepared = None;
+        self.phase = if self.retired.is_empty() {
+            SwapPhase::Idle
+        } else {
+            SwapPhase::Retiring
+        };
     }
 
     pub fn commit(&mut self) -> Result<SwapCompatibility, SwapError> {

@@ -2,10 +2,10 @@
 
 use super::{
     ExprId, FinalFlowLowerer, HirContextualStmtBody, RuntimeExprSeed, RuntimeFlowMatchArmSeed,
-    RuntimeFlowOpSeed, RuntimeFlowTail, RuntimeFlowValueContinuation, RuntimePlanLowerError,
-    RuntimeScopeContinuation, RuntimeScopeFact, RuntimeScopeOwner, RuntimeTypeShape, RuntimeValue,
-    StmtId, bind_seed, local_seed, normalized_variant_binding_pattern_seed,
-    normalized_variant_expression_seed,
+    RuntimeFlowOpSeed, RuntimeFlowTail, RuntimeFlowValueContinuation, RuntimeLocalReadMode,
+    RuntimePlanLowerError, RuntimeScopeContinuation, RuntimeScopeFact, RuntimeScopeOwner,
+    RuntimeTypeShape, RuntimeValue, StmtId, bind_seed, local_seed,
+    normalized_variant_binding_pattern_seed, normalized_variant_expression_seed,
 };
 
 #[derive(Clone)]
@@ -152,11 +152,17 @@ impl FinalFlowLowerer<'_> {
             })?;
         let carrier = frame.fact.carrier_type();
         let success = self.apply_value_continuation(
-            local_seed(frame.fact.value_type(), locals.success.clone()),
+            local_seed(
+                frame.fact.value_type(),
+                locals.success.clone(),
+                RuntimeLocalReadMode::Move,
+            ),
             frame.outer.clone(),
         )?;
         let residual = match (frame.fact.residual_type(), &locals.residual) {
-            (Some(ty), Some(local)) => Some(local_seed(ty, local.clone())),
+            (Some(ty), Some(local)) => {
+                Some(local_seed(ty, local.clone(), RuntimeLocalReadMode::Move))
+            }
             (None, None) => None,
             _ => {
                 return Err(RuntimePlanLowerError::new(
@@ -175,7 +181,7 @@ impl FinalFlowLowerer<'_> {
                 expr: value,
             },
             RuntimeFlowOpSeed::Match {
-                scrutinee: local_seed(carrier, locals.carrier),
+                scrutinee: local_seed(carrier, locals.carrier, RuntimeLocalReadMode::Move),
                 arms: vec![
                     RuntimeFlowMatchArmSeed {
                         pattern: normalized_variant_binding_pattern_seed(

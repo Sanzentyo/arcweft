@@ -127,6 +127,7 @@ fn minimal_awbc_program() -> AwbcProgram {
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
+            input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 1),
             entry_block: AwbcBlockId(0),

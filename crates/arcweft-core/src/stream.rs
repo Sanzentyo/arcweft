@@ -2,7 +2,7 @@ use crate::pattern::RuntimePattern;
 use crate::runtime_id::RuntimePlanTypeId;
 use crate::runtime_id::{RuntimeIdError, RuntimeIdFamily, RuntimeIdPath, RuntimePublicLabel};
 use crate::task::TaskSequence;
-use crate::value::{RuntimeExpr, RuntimePayload};
+use crate::value::{RuntimeExpr, RuntimePayload, RuntimeValue};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
@@ -122,6 +122,36 @@ pub struct StreamEvent<T, E> {
 }
 
 pub type RuntimeStreamEvent = StreamEvent<RuntimePayload, RuntimePayload>;
+
+/// Local `yield` publishes one item to both the runtime queue and the typed
+/// host stream event. The borrowed proof binds the exact value being copied;
+/// a generic stream item has no blanket Copy entitlement.
+pub(crate) struct RuntimeStreamYieldCopyProof<'a> {
+    value: &'a RuntimeValue,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum RuntimeStreamYieldError {
+    #[error(
+        "local stream yield requires a recursively unrestricted item for queue and host publication"
+    )]
+    AffineItem,
+}
+
+impl<'a> RuntimeStreamYieldCopyProof<'a> {
+    pub(crate) fn inspect(value: &'a RuntimeValue) -> Result<Self, RuntimeStreamYieldError> {
+        value
+            .ownership()
+            .permits_copy()
+            .then_some(Self { value })
+            .ok_or(RuntimeStreamYieldError::AffineItem)
+    }
+
+    #[must_use]
+    pub(crate) fn copy(&self) -> RuntimeValue {
+        self.value.clone()
+    }
+}
 
 impl StreamRuntimeId {
     pub fn canonical(value: &str) -> Result<Self, RuntimeIdError> {

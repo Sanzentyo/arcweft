@@ -895,7 +895,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
     fn call_values(
         &mut self,
         helper: RuntimePureHelperRef<'_>,
-        args: &[RuntimeValue],
+        args: Vec<RuntimeValue>,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         if args.len() != helper.declaration().input_locals.len() {
             return Err(RuntimeEvalError::TooManyPureArgs {
@@ -907,7 +907,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
         self.stats.pure_calls += 1;
         self.stats.vm_calls += 1;
         self.stats.fallbacks += 1;
-        self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(args.as_slice());
         self.scratch.evaluate_values_with_external(
             helper.plan(),
             helper.id(),

@@ -347,9 +347,7 @@ impl<'a> PlanValueValidation<'a> {
         iterator: &RuntimeIterator,
     ) -> Option<Children<'a>> {
         match iterator {
-            RuntimeIterator::Values { items, index } if *index <= items.len() => {
-                Some(Children::Repeated(Expected::Type(item)))
-            }
+            RuntimeIterator::Values { .. } => Some(Children::Repeated(Expected::Type(item))),
             RuntimeIterator::Range(range) => {
                 let matches = match (self.authority.declaration(item).projection(), range) {
                     (Type::Signed(expected), RuntimeRangeIterator::Int { width, .. }) => {
@@ -362,7 +360,7 @@ impl<'a> PlanValueValidation<'a> {
                 };
                 matches.then_some(Children::None)
             }
-            RuntimeIterator::Values { .. } | RuntimeIterator::Witness { .. } => None,
+            RuntimeIterator::Witness { .. } => None,
         }
     }
 

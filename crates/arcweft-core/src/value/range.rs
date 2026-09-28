@@ -4,6 +4,7 @@ use super::{
 };
 use crate::plan::{RuntimeBuiltinIteratorFamily, RuntimeIteratorEvidence, RuntimeTraitMethodId};
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 
 /// Width-preserving integer range value.
 ///
@@ -138,8 +139,7 @@ impl RuntimeRange {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum RuntimeIterator {
     Values {
-        items: Vec<RuntimeValue>,
-        index: usize,
+        items: VecDeque<RuntimeValue>,
     },
     Range(RuntimeRangeIterator),
     Witness {
@@ -196,7 +196,9 @@ impl RuntimeIterator {
     }
 
     pub fn values(items: Vec<RuntimeValue>) -> Self {
-        Self::Values { items, index: 0 }
+        Self::Values {
+            items: items.into(),
+        }
     }
 
     pub fn witness(state: RuntimeValue, next: RuntimeTraitMethodId) -> Self {
@@ -212,11 +214,7 @@ impl Iterator for RuntimeIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            Self::Values { items, index } => {
-                let value = items.get(*index).cloned()?;
-                *index += 1;
-                Some(value)
-            }
+            Self::Values { items } => items.pop_front(),
             Self::Range(range) => range.next(),
             Self::Witness { .. } => None,
         }

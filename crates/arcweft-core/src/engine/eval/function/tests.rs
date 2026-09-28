@@ -16,10 +16,15 @@ fn surplus_arguments_do_not_apply_the_returned_function() {
         [],
     )
     .unwrap();
-    let before = engine.fiber().clone();
+    let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&engine.plan));
+    let before = engine.fiber().inert_rollback_image(&owner).unwrap();
     let mut backend = crate::pure::VmRuntimePureCallBackend::default();
     assert!(matches!(
-        engine.apply_runtime_function(&function, &[RuntimeValue::Unit], &mut backend),
+        engine.apply_runtime_function(
+            function.try_duplicate_unrestricted().unwrap(),
+            vec![RuntimeValue::Unit],
+            &mut backend,
+        ),
         Err(RuntimeEvalError::Callable(
             crate::value::RuntimeCallableValueError::ArgumentCount {
                 expected: 0,
@@ -28,16 +33,16 @@ fn surplus_arguments_do_not_apply_the_returned_function() {
             }
         ))
     ));
-    assert_eq!(engine.fiber(), &before);
+    assert_eq!(engine.fiber().inert_rollback_image(&owner).unwrap(), before);
     let RuntimeValue::Callable(inner) = engine
-        .apply_runtime_function(&function, &[], &mut backend)
+        .apply_runtime_function(function, vec![], &mut backend)
         .unwrap()
     else {
         panic!("one group returns the remaining function");
     };
     assert_eq!(
         engine
-            .apply_runtime_function(&inner, &[RuntimeValue::Unit], &mut backend)
+            .apply_runtime_function(inner, vec![RuntimeValue::Unit], &mut backend)
             .unwrap(),
         RuntimeValue::Unit
     );

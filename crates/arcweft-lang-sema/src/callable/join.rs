@@ -237,6 +237,7 @@ pub struct CheckedProjectFunctionRootRuntimeSelection {
 /// environment; body projection applies these callee keys simultaneously.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedProjectFunctionInstanceSolution {
+    declaration: CallableDeclarationKey,
     solution: Arc<ClosedTypeInstantiation>,
     instantiation: CallableInstantiationDigest,
     function_type: TypeKind,
@@ -244,6 +245,10 @@ pub struct CheckedProjectFunctionInstanceSolution {
 }
 
 impl CheckedProjectFunctionInstanceSolution {
+    pub const fn declaration(&self) -> &CallableDeclarationKey {
+        &self.declaration
+    }
+
     /// Complete closed group chain of the original declaration.
     pub const fn callable_type(&self) -> &TypeKind {
         &self.callable_type
@@ -476,6 +481,7 @@ impl CheckedProjectFunctionRuntimeSelection {
             }
         })?;
         Ok(CheckedProjectFunctionInstanceSolution {
+            declaration: self.declaration.clone(),
             solution: Arc::new(solution),
             instantiation,
             function_type,
@@ -660,6 +666,7 @@ pub fn select_project_function_root_runtime(
         declaration: declaration.clone(),
         group: group.index(),
         solution: CheckedProjectFunctionInstanceSolution {
+            declaration: declaration.clone(),
             solution: Arc::new(ClosedTypeInstantiation::default()),
             instantiation,
             function_type: ClosedTypeInstantiation::default().instantiate_type(&function_type)?,

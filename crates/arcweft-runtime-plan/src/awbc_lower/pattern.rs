@@ -1,8 +1,8 @@
 use crate::awbc_lower::frame::FrameBuilder;
 use crate::awbc_lower::inventory::{AwbcInventory, AwbcLowerDiagnostic};
 use arcweft_core::awbc::schema::{
-    AwbcAgentTypeShape, AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcRecordField,
-    AwbcRecordPatternField, AwbcRuntimeTypeShape, AwbcSignedIntKind, AwbcTypeId,
+    AwbcAgentTypeShape, AwbcFunctionInputOwnership, AwbcPattern, AwbcPatternId, AwbcPatternRest,
+    AwbcRecordField, AwbcRecordPatternField, AwbcRuntimeTypeShape, AwbcSignedIntKind, AwbcTypeId,
     AwbcUnsignedIntKind, AwbcVariantCase, AwbcVariantIdentity,
 };
 use arcweft_core::pattern::{
@@ -10,9 +10,42 @@ use arcweft_core::pattern::{
     RuntimePatternRest, RuntimeRecordPatternField, RuntimeVariantIdentity,
 };
 use arcweft_core::plan::{
-    RuntimeAgentTypeProjection, RuntimePlan, RuntimePlanSequenceKind, RuntimePlanTypeProjection,
+    RuntimeAgentTypeProjection, RuntimeFunctionInputBinding, RuntimePlan, RuntimePlanSequenceKind,
+    RuntimePlanTypeProjection,
 };
 use arcweft_core::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
+
+/// Projects the checked function-input transfer rule onto its exact lowered
+/// pattern bindings. The VM validates this row before the input enters a frame.
+pub(crate) fn function_input_ownership(
+    inventory: &mut AwbcInventory,
+    frame: &FrameBuilder,
+    input: &RuntimeFunctionInputBinding,
+    pattern: AwbcPatternId,
+    path: &str,
+) -> AwbcFunctionInputOwnership {
+    let unrestricted_bindings = input
+        .unrestricted_bindings()
+        .iter()
+        .filter_map(|local| match frame.register_for_local(*local) {
+            Some(register) => Some(register),
+            None => {
+                inventory.diagnostic(AwbcLowerDiagnostic::error(
+                    path,
+                    format!(
+                        "function input Copy binding `{local}` is absent from its lowered pattern"
+                    ),
+                ));
+                None
+            }
+        })
+        .collect();
+    AwbcFunctionInputOwnership {
+        requirement: input.ownership(),
+        pattern: Some(pattern),
+        unrestricted_bindings,
+    }
+}
 
 #[cfg(test)]
 mod tests;

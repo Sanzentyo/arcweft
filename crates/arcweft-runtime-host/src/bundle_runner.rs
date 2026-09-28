@@ -292,9 +292,7 @@ fn execute_bundle_with_native_adapters(
         executor_stats: trace.executor_stats,
         native_io: trace.native_io,
         steps: trace.steps,
-        final_status: trace
-            .final_status
-            .status_label(FlowStatusLabelStyle::Runtime),
+        final_status: trace.final_status,
     })
 }
 
@@ -585,7 +583,10 @@ fn run_runtime_steps_with_executor(
     }
     Ok(RuntimeRunTrace {
         steps: summaries,
-        final_status: executor.fiber().status.clone(),
+        final_status: executor
+            .fiber()
+            .status
+            .status_label(FlowStatusLabelStyle::Runtime),
         executor_stats: executor.executor_stats(),
         native_io: host
             .as_ref()
@@ -602,7 +603,7 @@ struct RuntimeStepRunConfig {
 
 struct RuntimeRunTrace {
     steps: Vec<BundleRunnerStepSummary>,
-    final_status: FlowFiberStatus,
+    final_status: String,
     executor_stats: RuntimeExecutorStats,
     native_io: NativeTaskStats,
 }

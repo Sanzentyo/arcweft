@@ -36,14 +36,15 @@ pub use callable_states::{
 };
 pub use construction::{
     RuntimeAgentExprSeed, RuntimeAudioCommandSeed, RuntimeAwaitManyTargetSeed,
-    RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed, RuntimeBuiltinIteratorEvidenceSeed,
-    RuntimeCallArgumentSeed, RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode,
-    RuntimeCallableSpecializationSeed, RuntimeCallableSpecializationSeedId,
-    RuntimeCallableStateSeed, RuntimeCallableStateSeedId, RuntimeChoiceOptionSeed,
-    RuntimeDialogueContentEffectBindingSeed, RuntimeDialogueContentEffectSlotSeed,
-    RuntimeDialogueContentPlanSeed, RuntimeDialogueContentPlanSeedId,
-    RuntimeDialogueContentSlotSeed, RuntimeDialogueContentTemplateManifestSeed,
-    RuntimeDialogueEffectSiteSeed, RuntimeDialogueMarkSeedId, RuntimeDialogueResultTargetSeed,
+    RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed, RuntimeBorrowedLocalSeed,
+    RuntimeBuiltinIteratorEvidenceSeed, RuntimeCallArgumentSeed, RuntimeCallableExecutableSeed,
+    RuntimeCallableExecutableSeedCode, RuntimeCallableSpecializationSeed,
+    RuntimeCallableSpecializationSeedId, RuntimeCallableStateSeed, RuntimeCallableStateSeedId,
+    RuntimeChoiceOptionSeed, RuntimeDialogueContentEffectBindingSeed,
+    RuntimeDialogueContentEffectSlotSeed, RuntimeDialogueContentPlanSeed,
+    RuntimeDialogueContentPlanSeedId, RuntimeDialogueContentSlotSeed,
+    RuntimeDialogueContentTemplateManifestSeed, RuntimeDialogueEffectSiteSeed,
+    RuntimeDialogueMarkSeedId, RuntimeDialogueResultTargetSeed,
     RuntimeDialogueResultTargetSeedError, RuntimeDialogueValueSiteSeed, RuntimeDropPolicySeed,
     RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed, RuntimeExecutableBodySeed,
     RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed,
@@ -56,15 +57,16 @@ pub use construction::{
     RuntimeIteratorWitnessExecutableSeed, RuntimeLineEffectSeed, RuntimeLineHandleSiteSeed,
     RuntimeLineOperationSeed, RuntimeLineTaskCancelRuleSeed, RuntimeLineTaskGroupSeed,
     RuntimeLineTaskGroupSeedId, RuntimeLineTaskNodeSeed, RuntimeLineTaskNodeSeedId,
-    RuntimeLineTaskTriggerSeed, RuntimeLocalDeclarationSeed, RuntimeLocalSeedId,
-    RuntimeMutablePlaceSeed, RuntimeNeedProducerStartTargetSeed, RuntimeNominalRecordFieldSeed,
-    RuntimePatternRestSeed, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlanBuildError,
-    RuntimePlanBuilder, RuntimePlanNominalSchemaError, RuntimePlanSchemaComponent,
-    RuntimePlanSemanticAdmission, RuntimePlanTable, RuntimePureHelperDeclarationSeed,
-    RuntimePureHelperSeed, RuntimePureHelperSeedId, RuntimePureProgramBindingSeed,
-    RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed, RuntimeScheduledCaptureSeed,
-    RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed, RuntimeStreamPlanSeed,
-    RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
+    RuntimeLineTaskTriggerSeed, RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed,
+    RuntimeLocalSeedId, RuntimeMutablePlaceSeed, RuntimeNeedProducerStartTargetSeed,
+    RuntimeNominalRecordFieldSeed, RuntimePatternRestSeed, RuntimePatternSeed,
+    RuntimePatternSeedKind, RuntimePlanBuildError, RuntimePlanBuilder,
+    RuntimePlanNominalSchemaError, RuntimePlanSchemaComponent, RuntimePlanSemanticAdmission,
+    RuntimePlanTable, RuntimePureHelperDeclarationSeed, RuntimePureHelperSeed,
+    RuntimePureHelperSeedId, RuntimePureProgramBindingSeed, RuntimeRecordFieldSeedId,
+    RuntimeRecordPatternFieldSeed, RuntimeScheduledCaptureSeed, RuntimeStreamMatchArmSeed,
+    RuntimeStreamOpSeed, RuntimeStreamPlanSeed, RuntimeTraitMethodDeclarationSeed,
+    RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
 };
 pub use dialogue_content::{
     RuntimeDialogueContentApplicationKey, RuntimeDialogueContentEffectSlot,
@@ -80,9 +82,9 @@ pub use format_attempt::{
     RuntimeFormatAttempt, RuntimeFormatAttemptOperand, RuntimeFormatAttemptTable,
 };
 pub use function_sites::{
-    RuntimeFunctionInputBinding, RuntimeFunctionInputSource, RuntimeFunctionSite,
-    RuntimeFunctionSiteBody, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteError,
-    RuntimeFunctionSiteTable,
+    RuntimeFunctionInputBinding, RuntimeFunctionInputOwnershipRequirement,
+    RuntimeFunctionInputSource, RuntimeFunctionSite, RuntimeFunctionSiteBody,
+    RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteError, RuntimeFunctionSiteTable,
 };
 pub use generation_contract::{
     CharacterDialogueRuntimeCustomFieldDigest, RuntimeCharacterCatalogDigest,
@@ -1400,13 +1402,31 @@ pub enum RuntimeLineOperation {
     ActorLook {
         site: crate::runtime_id::RuntimeLineHandleSiteId,
         character: arcweft_character::id::CharacterId,
-        actor: RuntimeExpr,
+        actor: RuntimeBorrowedLocal,
         look: RuntimeExpr,
         crossfade: RuntimeExpr,
     },
     VoiceHandle {
         site: crate::runtime_id::RuntimeLineHandleSiteId,
     },
+}
+
+/// A selected line-operation receiver borrowed from its live local slot.
+/// This role cannot be constructed as a general value expression or captured.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RuntimeBorrowedLocal {
+    local: RuntimeLocalDeclarationId,
+}
+
+impl RuntimeBorrowedLocal {
+    pub(crate) const fn new(local: RuntimeLocalDeclarationId) -> Self {
+        Self { local }
+    }
+
+    #[must_use]
+    pub const fn local(self) -> RuntimeLocalDeclarationId {
+        self.local
+    }
 }
 
 /// One exact callback-local/value pair captured at a scheduled source site.
@@ -1534,7 +1554,9 @@ pub enum FlowEvent {
     },
     AwaitReady {
         need: NeedId,
-        value: RuntimePayload,
+        /// An observation copy when the payload is unrestricted. An affine
+        /// Ready value remains with its sole runtime consumer.
+        value: Option<RuntimePayload>,
     },
     AwaitProgress {
         need: NeedId,

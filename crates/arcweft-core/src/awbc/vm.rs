@@ -13,10 +13,10 @@ use super::fiber::{
 };
 use super::schema::{
     AwbcBinaryOp, AwbcBlockId, AwbcCodeLocation, AwbcConstant, AwbcConstantId, AwbcContentUnitId,
-    AwbcDropPolicy, AwbcEffectPlanId, AwbcFieldProjection, AwbcFunctionId, AwbcInstruction,
-    AwbcInstructionId, AwbcIntrinsicId, AwbcLineOperationId, AwbcMutablePlace, AwbcOpcode,
-    AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcProgram, AwbcProjectCall,
-    AwbcProjectCallAttachedPresence, AwbcProjectCallOperandMode,
+    AwbcDropPolicy, AwbcEffectPlanId, AwbcFieldProjection, AwbcFunctionId, AwbcHostCallId,
+    AwbcInstruction, AwbcInstructionId, AwbcIntrinsicId, AwbcLineOperation, AwbcLineOperationId,
+    AwbcMutablePlace, AwbcOpcode, AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcProgram,
+    AwbcProjectCall, AwbcProjectCallAttachedPresence, AwbcProjectCallOperandMode,
     AwbcProjectCallOrdinaryMaterialization, AwbcPureHelperId, AwbcRegisterId, AwbcResumePointId,
     AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSignedIntKind, AwbcSourceMapId, AwbcStreamPlanId,
     AwbcStringId, AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcTypeId,
@@ -26,22 +26,24 @@ use crate::effect::RuntimeArtifactFingerprint;
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::{
     RuntimeCallableAttachedContract, RuntimeCallableRetainedRole, RuntimeCallableTransition,
-    RuntimeFlowTargetError,
+    RuntimeFlowTargetError, RuntimeFunctionInputOwnershipRequirement,
 };
+use crate::stream::RuntimeStreamYieldCopyProof;
 use crate::task::RuntimeProgramOwner;
 use crate::time::LogicalDuration;
 use crate::value::{
     RuntimeAgentValue, RuntimeArcError, RuntimeArcErrorContextKind, RuntimeArcErrorContextPending,
     RuntimeArcErrorContextStart, RuntimeArcErrorFrame, RuntimeCallableApplication,
-    RuntimeCallableBodyReference, RuntimeCallableInvocation, RuntimeCallableValue,
-    RuntimeDialogueContentValue, RuntimeFieldValue, RuntimeNominalRecordValue,
-    RuntimeRecordFieldId, RuntimeRecordValue, RuntimeReductionValue, RuntimeSeq, RuntimeValue,
-    evaluate_binary, evaluate_unary, runtime_sequence_from_literal_values,
-    runtime_sequence_repeat_value, runtime_value_label,
+    RuntimeCallableBodyReference, RuntimeCallableInvocation, RuntimeCallableMaterializedArgument,
+    RuntimeCallableValue, RuntimeDialogueContentValue, RuntimeFieldValue,
+    RuntimeNominalRecordValue, RuntimeRecordFieldId, RuntimeRecordValue, RuntimeReductionValue,
+    RuntimeScalarView, RuntimeSeq, RuntimeValue, RuntimeValueView, evaluate_binary, evaluate_unary,
+    runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_value_label,
 };
 use arcweft_interaction_model::dialogue::{
     CharacterDialogueOperation, CharacterDialoguePatchField, CharacterDialoguePatchOperation,
 };
+use std::collections::BTreeSet;
 use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -250,14 +252,14 @@ impl Default for VmStepOptions {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct VmStepOutput {
     pub executed: u64,
     pub observations: Vec<VmObservation>,
     pub exit: VmExit,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum VmObservation {
     Instruction {
         function: AwbcFunctionId,
@@ -300,7 +302,7 @@ pub enum VmObservation {
         cursor: FiberCursor,
         dst: AwbcRegisterId,
         operation: AwbcLineOperationId,
-        args: Vec<(AwbcRegisterId, RuntimeValue)>,
+        args: Vec<VmLineOperationArgument>,
     },
     /// A typed dialogue result awaiting the activation owner's commit.
     ///
@@ -348,7 +350,19 @@ pub enum VmObservation {
     Trap(FiberTrap),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+/// Custody of one source register at a yielded line operation. Most operands
+/// move into the observation packet; ActorLook's actor receiver remains in
+/// its source register and is represented by a borrowed register coordinate.
+#[derive(Debug, PartialEq)]
+pub enum VmLineOperationArgument {
+    BorrowedRegister(AwbcRegisterId),
+    OwnedValue {
+        register: AwbcRegisterId,
+        value: RuntimeValue,
+    },
+}
+
+#[derive(Debug, PartialEq)]
 pub enum VmExit {
     Running,
     Suspended(FiberSuspensionReason),
@@ -393,6 +407,8 @@ pub enum VmError {
     MissingPureHelper(AwbcPureHelperId),
     #[error("AWBC trait method {0:?} does not exist")]
     MissingTraitMethod(AwbcTraitMethodId),
+    #[error("AWBC line operation {0:?} does not exist")]
+    MissingLineOperation(AwbcLineOperationId),
     #[error("function application expected {expected} arguments, received {actual}")]
     FunctionArgumentCount { expected: usize, actual: usize },
     #[error("runtime error: {0}")]
@@ -747,24 +763,16 @@ fn execute_instruction(
             if dst == src {
                 register(fiber, *src)?;
             } else {
-                let frame = fiber.active_frame_mut()?;
-                let mut registers = frame.registers.clone();
-                let value = registers
-                    .get_mut(src.index())
-                    .and_then(Option::take)
+                let frame = fiber.active_frame()?;
+                frame
+                    .registers
+                    .get(dst.index())
                     .ok_or(FiberStateError::RegisterOutOfBounds {
-                        register: src.0,
+                        register: dst.0,
                         layout: frame.layout.0,
                     })?;
-                let destination =
-                    registers
-                        .get_mut(dst.index())
-                        .ok_or(FiberStateError::RegisterOutOfBounds {
-                            register: dst.0,
-                            layout: frame.layout.0,
-                        })?;
-                *destination = Some(value);
-                frame.registers = registers;
+                let value = fiber.active_frame_mut()?.take_register(*src)?;
+                fiber.active_frame_mut()?.set_register(*dst, value)?;
             }
         }
         AwbcInstruction::CopyValue { dst, src } => {
@@ -878,41 +886,40 @@ fn execute_instruction(
             }
         }
         AwbcInstruction::BindPattern { pattern, value, .. } => {
-            let value = register(fiber, *value)?.clone();
-            bind_pattern(program, fiber, *pattern, &value)?;
+            let value_ref = register(fiber, *value)?;
+            if !test_pattern(program, *pattern, value_ref)? {
+                return Err(VmError::PatternMismatch);
+            }
+            let value = fiber.active_frame_mut()?.take_register(*value)?;
+            bind_tested_pattern_owned(program, fiber, *pattern, value)?;
         }
         AwbcInstruction::TestPattern {
             dst,
             pattern,
             value,
         } => {
-            let value = register(fiber, *value)?.clone();
-            let matched = test_pattern(program, *pattern, &value)?;
+            let matched = test_pattern(program, *pattern, register(fiber, *value)?)?;
             fiber
                 .active_frame_mut()?
                 .set_register(*dst, RuntimeValue::Bool(matched))?;
         }
         AwbcInstruction::MakeTuple { dst, items } => {
-            let items = items
-                .iter()
-                .map(|item| register(fiber, *item).cloned())
-                .collect::<Result<Vec<_>, _>>()?;
+            let items = take_register_values(fiber, items)?;
             fiber
                 .active_frame_mut()?
                 .set_register(*dst, RuntimeValue::Tuple(items))?;
         }
         AwbcInstruction::MakeSequence { dst, items } => {
-            let items = items
-                .iter()
-                .map(|item| register(fiber, *item).cloned())
-                .collect::<Result<Vec<_>, _>>()?;
+            let items = take_register_values(fiber, items)?;
             fiber
                 .active_frame_mut()?
                 .set_register(*dst, runtime_sequence_from_literal_values(items))?;
         }
         AwbcInstruction::RepeatSequence { dst, value, len } => {
-            let value = register(fiber, *value)?.clone();
-            let len = register(fiber, *len)?
+            let value = fiber.active_frame_mut()?.take_register(*value)?;
+            let len = fiber
+                .active_frame_mut()?
+                .take_register(*len)?
                 .try_u64()
                 .and_then(|length| usize::try_from(length).ok())
                 .ok_or_else(|| {
@@ -943,6 +950,11 @@ fn execute_instruction(
                     )));
                 }
             }
+            if len > 1 && !value.ownership().permits_copy() {
+                return Err(VmError::Runtime(
+                    "repeat sequence cannot duplicate an affine element".to_owned(),
+                ));
+            }
             fiber
                 .active_frame_mut()?
                 .set_register(*dst, runtime_sequence_repeat_value(&value, len))?;
@@ -965,26 +977,26 @@ fn execute_instruction(
             sequence,
             index,
         } => {
-            let index = usize::try_from(register(fiber, *index)?.try_u64().unwrap_or(u64::MAX))
-                .unwrap_or(usize::MAX);
-            let value = {
-                let RuntimeValue::Seq(sequence) = register(fiber, *sequence)? else {
-                    return Err(VmError::Runtime(
-                        "sequence get expected a sequence".to_owned(),
-                    ));
-                };
-                if index >= sequence.len() {
-                    trap(
-                        fiber,
-                        AwbcTrapCode::InvalidIndex,
-                        Some("sequence index out of bounds"),
-                        source_map,
-                        observations,
-                    );
-                    return Ok(InstructionControl::Continue);
-                }
-                sequence.value_at(index)
+            let index_value = fiber.active_frame_mut()?.take_register(*index)?;
+            let index =
+                usize::try_from(index_value.try_u64().unwrap_or(u64::MAX)).unwrap_or(usize::MAX);
+            let RuntimeValue::Seq(sequence) = fiber.active_frame_mut()?.take_register(*sequence)?
+            else {
+                return Err(VmError::Runtime(
+                    "sequence get expected a sequence".to_owned(),
+                ));
             };
+            if index >= sequence.len() {
+                trap(
+                    fiber,
+                    AwbcTrapCode::InvalidIndex,
+                    Some("sequence index out of bounds"),
+                    source_map,
+                    observations,
+                );
+                return Ok(InstructionControl::Continue);
+            }
+            let value = take_sequence_value(sequence, index)?;
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
         AwbcInstruction::SequenceSlice {
@@ -992,22 +1004,21 @@ fn execute_instruction(
             sequence,
             start,
         } => {
-            let start = usize::try_from(register(fiber, *start)?.try_u64().unwrap_or_default())
-                .unwrap_or(usize::MAX);
-            let tail = {
-                let RuntimeValue::Seq(sequence) = register(fiber, *sequence)? else {
-                    return Err(VmError::Runtime(
-                        "sequence slice expected a sequence".to_owned(),
-                    ));
-                };
-                sequence.tail_from(start)
+            let start = fiber.active_frame_mut()?.take_register(*start)?;
+            let start = usize::try_from(start.try_u64().unwrap_or_default()).unwrap_or(usize::MAX);
+            let RuntimeValue::Seq(sequence) = fiber.active_frame_mut()?.take_register(*sequence)?
+            else {
+                return Err(VmError::Runtime(
+                    "sequence slice expected a sequence".to_owned(),
+                ));
             };
+            let tail = take_sequence_tail(sequence, start)?;
             fiber
                 .active_frame_mut()?
                 .set_register(*dst, RuntimeValue::Seq(tail))?;
         }
         AwbcInstruction::SequencePush { sequence, value } => {
-            let value = register(fiber, *value)?.clone();
+            let value = fiber.active_frame_mut()?.take_register(*value)?;
             let frame = fiber.active_frame_mut()?;
             match frame
                 .registers
@@ -1016,6 +1027,11 @@ fn execute_instruction(
             {
                 Some(RuntimeValue::Seq(RuntimeSeq::Values(values))) => values.push(value),
                 Some(value_ref) => {
+                    if !value_ref.ownership().permits_copy() {
+                        return Err(VmError::Runtime(
+                            "sequence push cannot duplicate an affine sequence value".to_owned(),
+                        ));
+                    }
                     let existing = value_ref.clone();
                     *value_ref = runtime_sequence_from_literal_values(vec![existing, value]);
                 }
@@ -1087,7 +1103,7 @@ fn execute_instruction(
             fiber.active_frame_mut()?.set_register(*dst, result)?;
         }
         AwbcInstruction::VecPush { place, value } => {
-            let value = register(fiber, *value)?.clone();
+            let value = fiber.active_frame_mut()?.take_register(*value)?;
             let frame = fiber.active_frame_mut()?;
             mutable_vec_sequence(frame, place, "Vec.push")?.push_vector_item(value);
         }
@@ -1106,10 +1122,7 @@ fn execute_instruction(
             fiber.active_frame_mut()?.set_register(*dst, result)?;
         }
         AwbcInstruction::MakeRecord { dst, ty, fields } => {
-            let fields = fields
-                .iter()
-                .map(|register_id| register(fiber, *register_id).cloned())
-                .collect::<Result<Vec<_>, _>>()?;
+            let fields = take_register_values(fiber, fields)?;
             let value = program.make_record_value(*ty, fields)?;
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
@@ -1121,7 +1134,7 @@ fn execute_instruction(
             payload,
         } => {
             let payload = payload
-                .map(|payload| register(fiber, payload).cloned())
+                .map(|payload| fiber.active_frame_mut()?.take_register(payload))
                 .transpose()?
                 .map(Box::new);
             fiber.active_frame_mut()?.set_register(
@@ -1139,10 +1152,7 @@ fn execute_instruction(
             constructor,
             operands,
         } => {
-            let operands = operands
-                .iter()
-                .map(|operand| register(fiber, *operand).cloned())
-                .collect::<Result<Vec<_>, _>>()?;
+            let operands = take_register_values(fiber, operands)?;
             let value = RuntimeAgentValue::try_construct(*constructor, operands)
                 .map(RuntimeValue::Agent)
                 .map_err(|error| VmError::Runtime(error.to_string()))?;
@@ -1155,7 +1165,7 @@ fn execute_instruction(
                 .ok_or_else(|| {
                     VmError::Runtime("Reduction requires an opaque runtime type".to_owned())
                 })?;
-            let state = register(fiber, *state)?.clone();
+            let state = fiber.active_frame_mut()?.take_register(*state)?;
             let value = RuntimeReductionValue::try_unchanged(owner, state)
                 .map(RuntimeValue::Reduction)
                 .map_err(|error| VmError::Runtime(error.to_string()))?;
@@ -1166,15 +1176,19 @@ fn execute_instruction(
             target,
             ordinal,
         } => {
-            let RuntimeValue::Tuple(items) = register(fiber, *target)? else {
+            let RuntimeValue::Tuple(mut items) =
+                fiber.active_frame_mut()?.take_register(*target)?
+            else {
                 return Err(VmError::Runtime(
                     "tuple projection expected tuple".to_owned(),
                 ));
             };
-            let value = items
-                .get(*ordinal as usize)
-                .cloned()
-                .ok_or_else(|| VmError::Runtime("tuple projection out of bounds".to_owned()))?;
+            if *ordinal as usize >= items.len() {
+                return Err(VmError::Runtime(
+                    "tuple projection out of bounds".to_owned(),
+                ));
+            }
+            let value = items.remove(*ordinal as usize);
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
         AwbcInstruction::ProjectRecord {
@@ -1185,21 +1199,31 @@ fn execute_instruction(
             let field =
                 crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(*ordinal as usize)
                     .map_err(|error| VmError::Runtime(error.to_string()))?;
-            let value = register(fiber, *target)?
-                .record_field(field)
-                .cloned()
-                .ok_or_else(|| VmError::Runtime("record projection out of bounds".to_owned()))?;
+            let target = fiber.active_frame_mut()?.take_register(*target)?;
+            let value = match target {
+                RuntimeValue::Record(fields) => fields
+                    .into_iter()
+                    .nth(field.zero_based() as usize)
+                    .map(RuntimeFieldValue::into_value),
+                RuntimeValue::NominalRecord(record) => record
+                    .into_fields()
+                    .into_iter()
+                    .nth(field.zero_based() as usize),
+                _ => None,
+            }
+            .ok_or_else(|| VmError::Runtime("record projection out of bounds".to_owned()))?;
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
         AwbcInstruction::ProjectField { dst, target, field } => {
+            let target = fiber.active_frame_mut()?.take_register(*target)?;
             let value = match field {
                 AwbcFieldProjection::Named(field) => {
                     let field = string(program, *field)?;
-                    match register(fiber, *target)? {
+                    match target {
                         RuntimeValue::Record(items) => items
-                            .iter()
+                            .into_iter()
                             .find(|item| item.name() == field)
-                            .map(|field| field.value().clone()),
+                            .map(RuntimeFieldValue::into_value),
                         RuntimeValue::Agent(value) => value.project_field_label(field),
                         RuntimeValue::Progress(progress) => match field {
                             "ratio" => Some(RuntimeValue::F32(progress.ratio())),
@@ -1230,24 +1254,28 @@ fn execute_instruction(
                                 "opaque-record projection requires an opaque owner type".to_owned(),
                             )
                         })?;
-                    let RuntimeValue::Opaque(value) = register(fiber, *target)? else {
+                    let RuntimeValue::Opaque(value) = target else {
                         return Err(VmError::Runtime(
                             "opaque-record projection expected an opaque value".to_owned(),
                         ));
                     };
-                    if !owner.accepts_opaque_value(value) {
+                    if !owner.accepts_opaque_value(&value) {
                         return Err(VmError::Runtime(
                             "opaque-record projection rejected the target owner".to_owned(),
                         ));
                     }
-                    let RuntimeValue::Tuple(fields) = value.payload() else {
+                    let payload = value.into_payload();
+                    let RuntimeValue::Tuple(mut fields) = payload else {
                         return Err(VmError::Runtime(
                             "opaque-record projection expected a tuple payload".to_owned(),
                         ));
                     };
-                    let value = fields.get(*field as usize).cloned().ok_or_else(|| {
-                        VmError::Runtime("opaque-record projection out of bounds".to_owned())
-                    })?;
+                    let value = fields
+                        .get_mut(*field as usize)
+                        .map(|value| std::mem::replace(value, RuntimeValue::Unit))
+                        .ok_or_else(|| {
+                            VmError::Runtime("opaque-record projection out of bounds".to_owned())
+                        })?;
                     if !runtime_value_matches_type(program, &value, *field_type, 0) {
                         return Err(VmError::Runtime(
                             "opaque-record projection rejected the field value type".to_owned(),
@@ -1259,18 +1287,24 @@ fn execute_instruction(
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
         AwbcInstruction::Unary { dst, op, src } => {
-            let value = register(fiber, *src)?.clone();
+            let value = fiber.active_frame_mut()?.take_register(*src)?;
             let value = evaluate_unary(unary_op(*op), value).map_err(VmError::Evaluation)?;
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
         AwbcInstruction::Binary { dst, op, lhs, rhs } => {
-            let lhs = register(fiber, *lhs)?.clone();
-            let rhs = register(fiber, *rhs)?.clone();
+            let values = take_register_values(fiber, &[*lhs, *rhs])?;
+            let [lhs, rhs] =
+                values
+                    .try_into()
+                    .map_err(|values: Vec<_>| VmError::FunctionArgumentCount {
+                        expected: 2,
+                        actual: values.len(),
+                    })?;
             let value = evaluate_binary(lhs, binary_op(*op), rhs).map_err(VmError::Evaluation)?;
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
         AwbcInstruction::CallPureHelper { dst, helper, args } => {
-            let args = register_values(fiber, args)?;
+            let args = take_register_values(fiber, args)?;
             if let Some(value) = host.try_call_pure_helper(program, *helper, &args)? {
                 fiber.active_frame_mut()?.set_register(*dst, value)?;
             } else {
@@ -1280,7 +1314,8 @@ fn execute_instruction(
                     .ok_or(VmError::MissingPureHelper(*helper))?
                     .function;
                 let return_to = instruction_call_return_point(fiber.cursor, *dst)?;
-                fiber.push_call_frame_with_continuation(program, function, return_to, &args)?;
+                fiber
+                    .push_call_frame_with_owned_continuation(program, function, return_to, args)?;
                 return Ok(InstructionControl::Transferred);
             }
         }
@@ -1289,7 +1324,7 @@ fn execute_instruction(
             field,
             value,
         } => {
-            let value = register(fiber, *value)?.clone();
+            let value = fiber.active_frame_mut()?.take_register(*value)?;
             let frame = fiber.active_frame_mut()?;
             let Some(target_value) = frame
                 .registers
@@ -1316,14 +1351,14 @@ fn execute_instruction(
                 .get(method.index())
                 .ok_or(VmError::MissingTraitMethod(*method))?;
             let mut values = Vec::with_capacity(args.len() + 1);
-            values.push(register(fiber, *receiver)?.clone());
-            values.extend(register_values(fiber, args)?);
+            values.push(fiber.active_frame_mut()?.take_register(*receiver)?);
+            values.extend(take_register_values(fiber, args)?);
             let return_to = instruction_call_return_point(fiber.cursor, *dst)?;
-            fiber.push_call_frame_with_continuation(
+            fiber.push_call_frame_with_owned_continuation(
                 program,
                 method.function,
                 return_to,
-                &values,
+                values,
             )?;
             return Ok(InstructionControl::Transferred);
         }
@@ -1332,7 +1367,7 @@ fn execute_instruction(
             intrinsic,
             args,
         } => {
-            let args = register_values(fiber, args)?;
+            let args = take_register_values(fiber, args)?;
             let identity = program
                 .intrinsics
                 .get(intrinsic.index())
@@ -1340,31 +1375,30 @@ fn execute_instruction(
                 .identity
                 .as_intrinsic();
             if let Some((kind, lazy)) = identity.and_then(context_intrinsic_kind) {
-                let [receiver, message] = args.as_slice() else {
-                    return Err(VmError::FunctionArgumentCount {
+                let [receiver, message] = args.try_into().map_err(|args: Vec<RuntimeValue>| {
+                    VmError::FunctionArgumentCount {
                         expected: 2,
                         actual: args.len(),
-                    });
-                };
+                    }
+                })?;
                 let dst = dst.ok_or_else(|| {
                     VmError::Runtime("context intrinsic has no result destination".to_owned())
                 })?;
-                match RuntimeArcError::begin_context_value(kind, receiver.clone())
+                match RuntimeArcError::begin_context_value(kind, receiver)
                     .map_err(context_value_error)?
                 {
                     RuntimeArcErrorContextStart::Complete(value) => {
                         fiber.active_frame_mut()?.set_register(dst, value)?;
                     }
                     RuntimeArcErrorContextStart::NeedsMessage(pending) if !lazy => {
-                        let value =
-                            finish_context_message(program, context, pending, message.clone())?;
+                        let value = finish_context_message(program, context, pending, message)?;
                         fiber.active_frame_mut()?.set_register(dst, value)?;
                     }
                     RuntimeArcErrorContextStart::NeedsMessage(pending) => {
                         let RuntimeValue::Callable(callable) = message else {
                             return Err(VmError::Evaluation(
                                 crate::value::RuntimeEvalError::ExpectedFunction(
-                                    runtime_value_label(message),
+                                    runtime_value_label(&message),
                                 ),
                             ));
                         };
@@ -1374,11 +1408,12 @@ fn execute_instruction(
                         callable
                             .validate_for_owner(&owner)
                             .map_err(|error| VmError::Runtime(error.to_string()))?;
+                        let callable_state = callable.state();
                         let arguments = callable
-                            .materialize_arrow_arguments(&[])
+                            .materialize_arrow_arguments(Vec::new())
                             .map_err(|error| VmError::Runtime(error.to_string()))?;
                         let application = callable
-                            .prepare_group(&arguments, None)
+                            .prepare_group(arguments, None)
                             .map_err(|error| VmError::Runtime(error.to_string()))?;
                         match application {
                             RuntimeCallableApplication::Complete(message) => {
@@ -1395,12 +1430,15 @@ fn execute_instruction(
                                     FiberReturnContinuation::ContextCallbackInvoke {
                                         site: fiber.cursor,
                                         pending,
-                                        attached_default: None,
+                                        callable_state,
                                     },
                                 )?;
                                 return Ok(InstructionControl::Transferred);
                             }
-                            RuntimeCallableApplication::AttachedDefault(invocation) => {
+                            RuntimeCallableApplication::AttachedDefault {
+                                invocation,
+                                pending: callable_pending,
+                            } => {
                                 enter_context_callback_frame(
                                     program,
                                     fiber,
@@ -1409,6 +1447,7 @@ fn execute_instruction(
                                     FiberReturnContinuation::ContextCallbackDefault {
                                         site: fiber.cursor,
                                         pending,
+                                        callable_pending,
                                     },
                                 )?;
                                 return Ok(InstructionControl::Transferred);
@@ -1447,27 +1486,63 @@ fn execute_instruction(
                     actual: values.len(),
                 });
             }
-            let evaluated = values
+            if template.effects.len() != effects.len() {
+                return Err(VmError::FunctionArgumentCount {
+                    expected: template.effects.len(),
+                    actual: effects.len(),
+                });
+            }
+            let mut operand_registers = values
                 .iter()
-                .enumerate()
-                .map(|(index, binding)| {
-                    let slot = template.slots.get(index).ok_or_else(|| {
-                        VmError::Runtime("dialogue content template slot is absent".to_owned())
-                    })?;
-                    let expected_slot = crate::runtime_id::RuntimeDialogueValueSlotId::from_zero_based(index)
+                .map(|binding| binding.value)
+                .collect::<Vec<_>>();
+            for (index, (binding, slot)) in effects.iter().zip(&template.effects).enumerate() {
+                let expected_site =
+                    crate::runtime_id::RuntimeDialogueEffectSiteId::from_zero_based(index)
+                        .ok_or_else(|| {
+                            VmError::Runtime(
+                                "dialogue content effect site exceeds the identity domain"
+                                    .to_owned(),
+                            )
+                        })?;
+                if binding.site != expected_site || binding.site != slot.site {
+                    return Err(VmError::Runtime(
+                        "dialogue content effect binding does not match its canonical template effect slot"
+                            .to_owned(),
+                    ));
+                }
+                if binding.captures.len() != slot.capture_types.len() {
+                    return Err(VmError::FunctionArgumentCount {
+                        expected: slot.capture_types.len(),
+                        actual: binding.captures.len(),
+                    });
+                }
+                operand_registers.extend(binding.captures.iter().copied());
+            }
+            for (index, (binding, slot)) in values.iter().zip(&template.slots).enumerate() {
+                let expected_slot =
+                    crate::runtime_id::RuntimeDialogueValueSlotId::from_zero_based(index)
                         .ok_or_else(|| {
                             VmError::Runtime(
                                 "dialogue content value slot exceeds the identity domain"
                                     .to_owned(),
                             )
                         })?;
-                    if binding.slot != expected_slot || binding.slot != slot.slot {
-                        return Err(VmError::Runtime(
-                            "dialogue content value binding does not match its canonical template slot"
-                                .to_owned(),
-                        ));
-                    }
-                    let value = register(fiber, binding.value)?.clone();
+                if binding.slot != expected_slot || binding.slot != slot.slot {
+                    return Err(VmError::Runtime(
+                        "dialogue content value binding does not match its canonical template slot"
+                            .to_owned(),
+                    ));
+                }
+            }
+            let mut transferred = take_register_values(fiber, &operand_registers)?.into_iter();
+            let evaluated = values
+                .iter()
+                .zip(&template.slots)
+                .map(|(_, slot)| {
+                    let value = transferred.next().ok_or_else(|| {
+                        VmError::Runtime("dialogue content value transfer is incomplete".to_owned())
+                    })?;
                     let role = match slot.role {
                         super::schema::AwbcDialogueValueRole::Interpolation => {
                             crate::plan::RuntimeDialogueValueRole::Interpolation
@@ -1486,58 +1561,35 @@ fn execute_instruction(
                     })
                 })
                 .collect::<Result<Vec<_>, VmError>>()?;
-            if template.effects.len() != effects.len() {
-                return Err(VmError::FunctionArgumentCount {
-                    expected: template.effects.len(),
-                    actual: effects.len(),
-                });
+            let owner = context.program_owner(program)?;
+            let mut effect_bindings = Vec::with_capacity(effects.len());
+            for (binding, slot) in effects.iter().zip(&template.effects) {
+                let captures = (0..binding.captures.len())
+                    .map(|_| {
+                        transferred.next().ok_or_else(|| {
+                            VmError::Runtime(
+                                "dialogue content effect transfer is incomplete".to_owned(),
+                            )
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let callback = dialogue_effect_callable(
+                    program,
+                    owner.clone(),
+                    binding.state,
+                    &slot.capture_types,
+                    captures,
+                )?;
+                effect_bindings.push(crate::value::RuntimeDialogueContentEffectBinding::new(
+                    binding.site,
+                    callback,
+                ));
             }
-            let effect_bindings = effects
-                .iter()
-                .enumerate()
-                .map(|(index, binding)| {
-                    let slot = template.effects.get(index).ok_or_else(|| {
-                        VmError::Runtime("dialogue content effect slot is absent".to_owned())
-                    })?;
-                    let expected_site =
-                        crate::runtime_id::RuntimeDialogueEffectSiteId::from_zero_based(index)
-                            .ok_or_else(|| {
-                                VmError::Runtime(
-                                    "dialogue content effect site exceeds the identity domain"
-                                        .to_owned(),
-                                )
-                            })?;
-                    if binding.site != expected_site || binding.site != slot.site {
-                        return Err(VmError::Runtime(
-                            "dialogue content effect binding does not match its canonical template effect slot"
-                                .to_owned(),
-                        ));
-                    }
-                    if binding.captures.len() != slot.capture_types.len() {
-                        return Err(VmError::FunctionArgumentCount {
-                            expected: slot.capture_types.len(),
-                            actual: binding.captures.len(),
-                        });
-                    }
-                    let captures = binding
-                        .captures
-                        .iter()
-                        .map(|register_id| register(fiber, *register_id).cloned())
-                        .collect::<Result<Vec<_>, VmError>>()?;
-                    let owner = context.program_owner(program)?;
-                    let callback = dialogue_effect_callable(
-                        program,
-                        owner,
-                        binding.state,
-                        &slot.capture_types,
-                        captures,
-                    )?;
-                    Ok(crate::value::RuntimeDialogueContentEffectBinding::new(
-                        binding.site,
-                        callback,
-                    ))
-                })
-                .collect::<Result<Vec<_>, VmError>>()?;
+            if transferred.next().is_some() {
+                return Err(VmError::Runtime(
+                    "dialogue content received unexpected transferred values".to_owned(),
+                ));
+            }
             let slots = template
                 .slots
                 .iter()
@@ -1565,13 +1617,13 @@ fn execute_instruction(
                     ))
                 })
                 .collect::<Result<Vec<_>, VmError>>()?;
-            let value = crate::value::RuntimeDialogueContentValue::try_from_evaluated_bindings_parts_with_effect_bindings(
+            let value = crate::value::RuntimeDialogueContentValue::try_from_evaluated_bindings_parts_with_effect_bindings_owned(
                     context.artifact(),
                     template.id,
                     template.digest,
                     &slots,
-                    &evaluated,
-                    &effect_bindings,
+                    evaluated,
+                    effect_bindings,
                 )
                 .map_err(|error| VmError::Runtime(error.to_string()))?
                 .into_runtime_value();
@@ -1597,9 +1649,9 @@ fn execute_instruction(
             }
             let next = fiber.format_content_state()?.next_operand();
             if let Some(operand) = operands.get(next) {
-                let captures = register_values(fiber, &operand.captures)?;
+                let captures = take_register_values(fiber, &operand.captures)?;
                 let site = fiber.cursor;
-                fiber.push_call_frame_with_continuation(
+                fiber.push_call_frame_with_owned_continuation(
                     program,
                     operand.function,
                     FiberReturnPoint {
@@ -1610,7 +1662,7 @@ fn execute_instruction(
                             ordinal: next,
                         },
                     },
-                    &captures,
+                    captures,
                 )?;
                 return Ok(InstructionControl::Transferred);
             }
@@ -1773,7 +1825,7 @@ fn execute_instruction(
                                 Err(reason) => first_recoverable = Some(reason),
                                 Ok(display_context) => {
                                     let site = fiber.cursor;
-                                    fiber.push_call_frame_at(
+                                    fiber.push_call_frame_at_owned(
                                         program,
                                         method.function,
                                         FiberReturnPoint {
@@ -1783,7 +1835,7 @@ fn execute_instruction(
                                                 site,
                                             },
                                         },
-                                        &[receiver, display_context],
+                                        vec![receiver, display_context],
                                     )?;
                                     return Ok(InstructionControl::Transferred);
                                 }
@@ -1841,13 +1893,13 @@ fn execute_instruction(
                 role: crate::plan::RuntimeDialogueValueRole::Formatted,
                 value: formatted.into_runtime_value(),
             };
-            let value = crate::value::RuntimeDialogueContentValue::try_from_evaluated_bindings_parts_with_effect_bindings(
+            let value = crate::value::RuntimeDialogueContentValue::try_from_evaluated_bindings_parts_with_effect_bindings_owned(
                 context.artifact(),
                 manifest.id,
                 manifest.digest,
                 &[content_slot],
-                &[binding],
-                &[],
+                vec![binding],
+                Vec::new(),
             )
             .map_err(|error| VmError::Runtime(error.to_string()))?
             .into_runtime_value();
@@ -1882,12 +1934,26 @@ fn execute_instruction(
         } => {
             let context = context.ok_or(VmError::MissingExecutionContext)?;
             let owner = context.program_owner(program)?;
-            let target = register(fiber, *target)?.clone();
+            let mut operand_registers = vec![*target];
+            operand_registers.extend(fields.iter().filter_map(|field| match &field.operation {
+                CharacterDialoguePatchOperation::Set(source) => Some(*source),
+                CharacterDialoguePatchOperation::Clear => None,
+            }));
+            let mut transferred = take_register_values(fiber, &operand_registers)?.into_iter();
+            let target = transferred.next().ok_or_else(|| {
+                VmError::Runtime("CharacterDialogue target transfer is missing".to_owned())
+            })?;
             let mut evaluated = Vec::with_capacity(fields.len());
             for field in fields {
                 let operation = match &field.operation {
-                    CharacterDialoguePatchOperation::Set(source) => {
-                        CharacterDialoguePatchOperation::Set(register(fiber, *source)?.clone())
+                    CharacterDialoguePatchOperation::Set(_) => {
+                        CharacterDialoguePatchOperation::Set(transferred.next().ok_or_else(
+                            || {
+                                VmError::Runtime(
+                                    "CharacterDialogue field transfer is incomplete".to_owned(),
+                                )
+                            },
+                        )?)
                     }
                     CharacterDialoguePatchOperation::Clear => {
                         CharacterDialoguePatchOperation::Clear
@@ -1897,6 +1963,11 @@ fn execute_instruction(
                     coordinate: field.coordinate.clone(),
                     operation,
                 });
+            }
+            if transferred.next().is_some() {
+                return Err(VmError::Runtime(
+                    "CharacterDialogue received unexpected transferred values".to_owned(),
+                ));
             }
             let frame = fiber.active_frame()?;
             let layout =
@@ -1935,7 +2006,7 @@ fn execute_instruction(
                 .set_register(*destination, value)?;
         }
         AwbcInstruction::EmitEffect { effect, args } => {
-            let args = register_values(fiber, args)?;
+            let args = take_register_values(fiber, args)?;
             observations.push(VmObservation::Effect {
                 effect: *effect,
                 args,
@@ -1943,7 +2014,7 @@ fn execute_instruction(
         }
         AwbcInstruction::RegisterCleanup { key, effect, args } => {
             let key = string(program, *key)?.to_owned();
-            let args = register_values(fiber, args)?;
+            let args = take_register_values(fiber, args)?;
             let cleanup = FiberScopeCleanup {
                 key,
                 effect: *effect,
@@ -1964,8 +2035,9 @@ fn execute_instruction(
         } => {
             let captured = captures
                 .iter()
-                .map(|capture| Ok((*capture, register(fiber, *capture)?.clone())))
-                .collect::<Result<Vec<_>, VmError>>()?;
+                .copied()
+                .zip(take_register_values(fiber, captures)?)
+                .collect::<Vec<_>>();
             if *owner == super::schema::AwbcDeferOwner::LineRoot {
                 observations.push(VmObservation::LineDeferRegistration {
                     cursor: fiber.cursor,
@@ -2010,7 +2082,7 @@ fn execute_instruction(
             let owner = context
                 .ok_or(VmError::MissingExecutionContext)?
                 .program_owner(program)?;
-            let captures = register_values(fiber, captures)?;
+            let captures = take_register_values(fiber, captures)?;
             let callable = RuntimeCallableValue::try_new(owner, *state, captures)
                 .map_err(|error| VmError::Runtime(error.to_string()))?;
             fiber
@@ -2040,18 +2112,37 @@ fn execute_instruction(
                 .set_register(*dst, RuntimeValue::Callable(callable))?;
         }
         AwbcInstruction::ApplyGroup { dst, callee, args } => {
-            let callee = register(fiber, *callee)?.clone();
-            let args = register_values(fiber, args)?;
-            let RuntimeValue::Callable(callable) = callee else {
+            let RuntimeValue::Callable(callable) = register(fiber, *callee)? else {
+                let callee_value = register(fiber, *callee)?;
                 return Err(VmError::Runtime(format!(
                     "callable application expected callable, found {}",
-                    runtime_value_label(&callee)
+                    runtime_value_label(callee_value)
                 )));
             };
-            return apply_runtime_callable(program, fiber, context, &callable, &args, *dst);
+            let argument_refs = args
+                .iter()
+                .map(|argument| register(fiber, *argument))
+                .collect::<Result<Vec<_>, _>>()?;
+            callable
+                .inspect_arrow_arguments(&argument_refs)
+                .map_err(|error| VmError::Runtime(error.to_string()))?;
+            let mut operands = Vec::with_capacity(args.len() + 1);
+            operands.push(*callee);
+            operands.extend(args.iter().copied());
+            let mut values = take_register_values(fiber, &operands)?.into_iter();
+            let RuntimeValue::Callable(callable) = values.next().ok_or_else(|| {
+                VmError::Runtime("callable application lost its callee operand".to_owned())
+            })?
+            else {
+                return Err(VmError::Runtime(
+                    "callable application callee changed after preflight".to_owned(),
+                ));
+            };
+            let args = values.collect();
+            return apply_runtime_callable(program, fiber, context, callable, args, *dst);
         }
         AwbcInstruction::StartNeed { dst, plan, args } => {
-            let args = register_values(fiber, args)?;
+            let args = take_register_values(fiber, args)?;
             observations.push(VmObservation::NeedProducerStarted {
                 cursor: fiber.cursor,
                 fiber: crate::runtime_id::RuntimePersistentFiberId::from_allocated(
@@ -2068,7 +2159,7 @@ fn execute_instruction(
             function,
             args,
         } => {
-            let args = register_values(fiber, args)?;
+            let args = take_register_values(fiber, args)?;
             let handle = dst.map(|_| RuntimeValue::String(format!("awbc.fiber.{}", function.0)));
             if let (Some(dst), Some(handle)) = (dst, handle.as_ref()) {
                 fiber
@@ -2082,10 +2173,15 @@ fn execute_instruction(
             });
         }
         AwbcInstruction::StreamYield { stream, value } => {
-            let value = register(fiber, *value)?.clone();
+            let observed_value = {
+                let proof = RuntimeStreamYieldCopyProof::inspect(register(fiber, *value)?)
+                    .map_err(|error| VmError::Runtime(error.to_string()))?;
+                proof.copy()
+            };
+            let value = fiber.active_frame_mut()?.take_register(*value)?;
             observations.push(VmObservation::StreamYield {
                 stream: *stream,
-                value: value.clone(),
+                value: observed_value,
             });
             if let Some(state) = fiber.streams.iter_mut().find(|state| state.plan == *stream) {
                 state.queue.push(value);
@@ -2105,15 +2201,59 @@ fn execute_instruction(
             operation,
             args,
         } => {
+            let operation_row = program
+                .line_operations
+                .get(operation.index())
+                .ok_or(VmError::MissingLineOperation(*operation))?;
+            let mut seen = BTreeSet::new();
+            if args.iter().any(|register| !seen.insert(*register)) {
+                return Err(VmError::Runtime(
+                    "line-operation operands use one register more than once".to_owned(),
+                ));
+            }
+            let observed_args = match operation_row {
+                AwbcLineOperation::ActorLook { .. } => {
+                    if args.len() != 3 {
+                        return Err(VmError::Runtime(
+                            "ActorLook requires a borrowed actor and two owned operands".to_owned(),
+                        ));
+                    }
+                    register(fiber, args[0])?;
+                    let mut values = take_register_values(fiber, &args[1..])?.into_iter();
+                    let look = values
+                        .next()
+                        .expect("ActorLook's second operand was preflighted");
+                    let crossfade = values
+                        .next()
+                        .expect("ActorLook's third operand was preflighted");
+                    vec![
+                        VmLineOperationArgument::BorrowedRegister(args[0]),
+                        VmLineOperationArgument::OwnedValue {
+                            register: args[1],
+                            value: look,
+                        },
+                        VmLineOperationArgument::OwnedValue {
+                            register: args[2],
+                            value: crossfade,
+                        },
+                    ]
+                }
+                AwbcLineOperation::AcquireActor { .. }
+                | AwbcLineOperation::Schedule { .. }
+                | AwbcLineOperation::VoiceHandle { .. } => take_register_values(fiber, args)?
+                    .into_iter()
+                    .zip(args.iter().copied())
+                    .map(|(value, register)| VmLineOperationArgument::OwnedValue {
+                        register,
+                        value,
+                    })
+                    .collect(),
+            };
             observations.push(VmObservation::LineOperation {
                 cursor: fiber.cursor,
                 dst: *dst,
                 operation: *operation,
-                args: args
-                    .iter()
-                    .copied()
-                    .map(|slot| Ok((slot, register(fiber, slot)?.clone())))
-                    .collect::<Result<_, VmError>>()?,
+                args: observed_args,
             });
             return Ok(InstructionControl::Yield);
         }
@@ -2121,7 +2261,7 @@ fn execute_instruction(
             observations.push(VmObservation::DialogueResult {
                 cursor: fiber.cursor,
                 source_register: *source,
-                source: register(fiber, *source)?.clone(),
+                source: fiber.active_frame_mut()?.take_register(*source)?,
             });
             return Ok(InstructionControl::Yield);
         }
@@ -2169,8 +2309,8 @@ fn apply_runtime_callable(
     program: &AwbcProgram,
     fiber: &mut FiberState,
     context: Option<&VmExecutionContext>,
-    callable: &RuntimeCallableValue,
-    args: &[RuntimeValue],
+    callable: RuntimeCallableValue,
+    args: Vec<RuntimeValue>,
     destination: AwbcRegisterId,
 ) -> Result<InstructionControl, VmError> {
     let owner = context
@@ -2201,7 +2341,7 @@ fn apply_runtime_callable(
         .materialize_arrow_arguments(args)
         .map_err(|error| VmError::Runtime(error.to_string()))?;
     let application = callable
-        .prepare_group(&logical_arguments, None)
+        .prepare_group(logical_arguments, None)
         .map_err(|error| VmError::Runtime(error.to_string()))?;
     let caller = fiber.cursor;
     let return_cursor = FiberCursor {
@@ -2218,22 +2358,24 @@ fn apply_runtime_callable(
             let function = invocation_function(&invocation)?;
             let values = invocation_values(invocation)?;
             let return_to = FiberReturnPoint::ordinary(return_cursor, Some(destination));
-            fiber.push_call_frame_at(program, function, return_to, &values)?;
+            fiber.push_call_frame_at_owned(program, function, return_to, values)?;
             Ok(InstructionControl::Transferred)
         }
-        RuntimeCallableApplication::AttachedDefault(invocation) => {
+        RuntimeCallableApplication::AttachedDefault {
+            invocation,
+            pending,
+        } => {
             let function = invocation_function(&invocation)?;
             let values = invocation_values(invocation)?;
             let return_to = FiberReturnPoint {
                 cursor: return_cursor,
                 destination: None,
                 continuation: FiberReturnContinuation::ApplyGroupDefault {
-                    callable: RuntimeValue::Callable(callable.clone()),
-                    arguments: logical_arguments,
+                    pending,
                     destination,
                 },
             };
-            fiber.push_call_frame_with_continuation(program, function, return_to, &values)?;
+            fiber.push_call_frame_with_owned_continuation(program, function, return_to, values)?;
             Ok(InstructionControl::Transferred)
         }
     }
@@ -2311,7 +2453,7 @@ fn enter_context_callback_frame(
 ) -> Result<(), VmError> {
     let function = invocation_function(&invocation)?;
     let values = invocation_values(invocation)?;
-    fiber.push_call_frame_with_continuation(
+    fiber.push_call_frame_with_owned_continuation(
         program,
         function,
         FiberReturnPoint {
@@ -2319,7 +2461,7 @@ fn enter_context_callback_frame(
             destination: None,
             continuation,
         },
-        &values,
+        values,
     )?;
     host.record_context_callback_vm_call();
     Ok(())
@@ -2377,20 +2519,17 @@ fn complete_context_callback_return(
     value: Option<RuntimeValue>,
 ) -> Result<(), VmError> {
     let (site, pending, message) = match continuation {
-        FiberReturnContinuation::ContextCallbackDefault { site, pending } => {
+        FiberReturnContinuation::ContextCallbackDefault {
+            site,
+            pending,
+            callable_pending,
+        } => {
             let default_value = value.ok_or_else(|| {
                 VmError::Runtime("context callback default returned no value".to_owned())
             })?;
-            let (_, callback_register) = context_call_at_site(program, site)?;
-            let RuntimeValue::Callable(callback) = register(fiber, callback_register)? else {
-                return Err(VmError::Fiber(FiberStateError::InvalidFrame));
-            };
-            let callback = callback.clone();
-            let arguments = callback
-                .materialize_arrow_arguments(&[])
-                .map_err(|error| VmError::Runtime(error.to_string()))?;
-            let application = callback
-                .complete_group_default(&arguments, default_value.clone())
+            let callable_state = callable_pending.state();
+            let application = callable_pending
+                .complete_default(default_value)
                 .map_err(|error| VmError::Runtime(error.to_string()))?;
             match application {
                 RuntimeCallableApplication::Complete(message) => (site, pending, message),
@@ -2403,12 +2542,12 @@ fn complete_context_callback_return(
                         FiberReturnContinuation::ContextCallbackInvoke {
                             site,
                             pending,
-                            attached_default: Some(default_value),
+                            callable_state,
                         },
                     )?;
                     return Ok(());
                 }
-                RuntimeCallableApplication::AttachedDefault(_) => {
+                RuntimeCallableApplication::AttachedDefault { .. } => {
                     return Err(VmError::Runtime(
                         "context callback selected another default stage".to_owned(),
                     ));
@@ -2489,12 +2628,49 @@ fn execute_terminator(
             jump(fiber, if condition { *then_block } else { *else_block });
             Ok(VmExit::Running)
         }
+        AwbcTerminator::SequenceNext {
+            sequence,
+            item,
+            some_block,
+            none_block,
+        } => {
+            if sequence == item {
+                return Err(VmError::Runtime(
+                    "sequence next item aliases its owned source".to_owned(),
+                ));
+            }
+            let frame = fiber.active_frame_mut()?;
+            if frame
+                .registers
+                .get(item.index())
+                .is_none_or(Option::is_some)
+            {
+                return Err(VmError::Runtime(
+                    "sequence next requires a vacant item register".to_owned(),
+                ));
+            }
+            let popped = match frame.registers.get_mut(sequence.index()) {
+                Some(Some(RuntimeValue::Seq(values))) => values.pop_front(),
+                _ => {
+                    return Err(VmError::Runtime(
+                        "sequence next requires an owned sequence".to_owned(),
+                    ));
+                }
+            };
+            if let Some(value) = popped {
+                fiber.active_frame_mut()?.set_register(*item, value)?;
+                jump(fiber, *some_block);
+            } else {
+                jump(fiber, *none_block);
+            }
+            Ok(VmExit::Running)
+        }
         AwbcTerminator::Match {
             scrutinee,
             arms,
             default,
         } => {
-            let value = register(fiber, *scrutinee)?.clone();
+            let value = fiber.active_frame_mut()?.take_register(*scrutinee)?;
             let start = usize::try_from(arms.start)
                 .map_err(|_| VmError::Runtime("match arm start does not fit usize".to_owned()))?;
             let end = usize::try_from(arms.checked_end().unwrap_or(arms.start))
@@ -2516,20 +2692,20 @@ fn execute_terminator(
             dst,
             resume,
         } => {
-            let args = register_values(fiber, args)?;
-            fiber.push_call_frame_with_args(program, *function, *resume, *dst, &args)?;
+            let args = take_register_values(fiber, args)?;
+            fiber.push_call_frame_with_owned_args(program, *function, *resume, *dst, args)?;
             Ok(VmExit::Running)
         }
         AwbcTerminator::ProjectCall { call } => execute_project_call(program, fiber, context, call),
         AwbcTerminator::GotoStatic { function, args } => {
-            let args = register_values(fiber, args)?;
+            let args = take_register_values(fiber, args)?;
             emit_unwind_cleanup_observations(fiber, observations);
-            fiber.replace_root_function(program, *function, &args)?;
+            fiber.replace_root_function_owned(program, *function, args)?;
             observations.push(VmObservation::Goto(*function));
             Ok(VmExit::Running)
         }
         AwbcTerminator::GotoDynamic { target, args } => {
-            let target_value = register(fiber, *target)?.clone();
+            let target_value = fiber.active_frame_mut()?.take_register(*target)?;
             let target = match &target_value {
                 RuntimeValue::String(target) => program
                     .resolve_flow_target_value(target)
@@ -2546,9 +2722,9 @@ fn execute_terminator(
                     )));
                 }
             };
-            let args = register_values(fiber, args)?;
+            let args = take_register_values(fiber, args)?;
             emit_unwind_cleanup_observations(fiber, observations);
-            fiber.replace_root_function(program, target, &args)?;
+            fiber.replace_root_function_owned(program, target, args)?;
             observations.push(VmObservation::Goto(target));
             Ok(VmExit::Running)
         }
@@ -2573,21 +2749,34 @@ fn execute_terminator(
                 .get(target.index())
                 .ok_or_else(|| VmError::Runtime("dialogue target register is missing".to_owned()))?
                 .ty;
-            let target_value = register(fiber, *target)?.clone();
+            let mut operand_registers = Vec::with_capacity(
+                1 + values.len()
+                    + effects
+                        .iter()
+                        .map(|effect| effect.captures.len())
+                        .sum::<usize>()
+                    + line_task_captures.len(),
+            );
+            operand_registers.push(*target);
+            operand_registers.extend(values.iter().map(|binding| binding.value));
+            for effect in effects {
+                operand_registers.extend(effect.captures.iter().copied());
+            }
+            operand_registers.extend(line_task_captures.iter().copied());
+            let mut transferred = take_register_values(fiber, &operand_registers)?.into_iter();
+            let target_value = transferred.next().ok_or_else(|| {
+                VmError::Runtime("dialogue target transfer is missing".to_owned())
+            })?;
+            if !super::fiber::dialogue_target_matches_program(program, target_type, &target_value) {
+                return Err(VmError::Runtime(
+                    "dialogue target is not admitted by this AWBC executable".to_owned(),
+                ));
+            }
             let RuntimeValue::Opaque(target_value) = target_value else {
                 return Err(VmError::Runtime(
                     "dialogue target register is not an opaque value".to_owned(),
                 ));
             };
-            if !super::fiber::dialogue_target_matches_program(
-                program,
-                target_type,
-                &RuntimeValue::Opaque(target_value.clone()),
-            ) {
-                return Err(VmError::Runtime(
-                    "dialogue target is not admitted by this AWBC executable".to_owned(),
-                ));
-            }
             let values = values
                 .iter()
                 .map(|binding| {
@@ -2604,25 +2793,56 @@ fn execute_terminator(
                                 crate::plan::RuntimeDialogueValueRole::Formatted
                             }
                         },
-                        value: register(fiber, binding.value)?.clone(),
+                        value: transferred.next().ok_or_else(|| {
+                            VmError::Runtime("dialogue value transfer is incomplete".to_owned())
+                        })?,
+                    })
+                })
+                .collect::<Result<Vec<_>, VmError>>()?
+                .into_boxed_slice();
+            let effects = effects
+                .iter()
+                .map(|binding| {
+                    let captures = (0..binding.captures.len())
+                        .map(|_| {
+                            transferred.next().ok_or_else(|| {
+                                VmError::Runtime(
+                                    "dialogue effect capture transfer is incomplete".to_owned(),
+                                )
+                            })
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(super::fiber::FiberDialogueContentEffectBinding {
+                        site: binding.site,
+                        state: binding.state,
+                        captures: captures.into_boxed_slice(),
                     })
                 })
                 .collect::<Result<Vec<_>, VmError>>()?
                 .into_boxed_slice();
             let line_task_captures = line_task_captures
                 .iter()
-                .map(|register_id| register(fiber, *register_id).cloned())
-                .collect::<Result<Vec<_>, VmError>>()?
+                .map(|_| {
+                    transferred.next().ok_or_else(|| {
+                        VmError::Runtime("dialogue line capture transfer is incomplete".to_owned())
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?
                 .into_boxed_slice();
+            if transferred.next().is_some() {
+                return Err(VmError::Runtime(
+                    "dialogue terminator received unexpected transferred values".to_owned(),
+                ));
+            }
             suspend(
                 fiber,
                 *resume,
                 FiberSuspensionReason::Dialogue {
-                    target: target_value,
+                    target: Some(target_value),
                     target_type,
                     content: *content,
                     values,
-                    effects: effects.clone().into_boxed_slice(),
+                    effects,
                     line_task_captures,
                     result: result.clone(),
                 },
@@ -2663,10 +2883,26 @@ fn execute_terminator(
             binding,
             resume,
         } => {
-            let items = match register(fiber, *source)? {
-                RuntimeValue::Seq(sequence) => sequence.clone().into_values(),
-                value => vec![value.clone()],
+            let plan_record = program
+                .task_plans
+                .get(plan.index())
+                .ok_or_else(|| VmError::Runtime("AwaitMany plan is absent".to_owned()))?;
+            let signature = program
+                .signatures
+                .get(plan_record.signature.index())
+                .ok_or_else(|| VmError::Runtime("AwaitMany signature is absent".to_owned()))?;
+            let source_value = fiber.active_frame()?.register(*source)?;
+            if signature.params.len() == 1 && !source_value.ownership().permits_copy() {
+                return Err(VmError::Runtime(
+                    "AwaitMany host payload items require deep Copy values".to_owned(),
+                ));
+            }
+            let source = fiber.active_frame_mut()?.take_register(*source)?;
+            let items = match source {
+                RuntimeValue::Seq(sequence) => sequence.into_values(),
+                value => vec![value],
             };
+            let results = vec![None; items.len()];
             suspend(
                 fiber,
                 *resume,
@@ -2677,7 +2913,7 @@ fn execute_terminator(
                     items,
                     next_index: 0,
                     in_flight: Vec::new(),
-                    results: Vec::new(),
+                    results,
                 }),
             )
         }
@@ -2687,10 +2923,12 @@ fn execute_terminator(
             dst,
             resume,
         } => {
-            let args = args
+            let argument_values = args
                 .iter()
-                .map(|arg| register(fiber, *arg).cloned())
+                .map(|register| fiber.active_frame()?.register(*register))
                 .collect::<Result<Vec<_>, _>>()?;
+            validate_host_call_values(program, *call, &argument_values)?;
+            let args = take_register_values(fiber, args)?;
             suspend(
                 fiber,
                 *resume,
@@ -2703,48 +2941,51 @@ fn execute_terminator(
         }
         AwbcTerminator::Return { value } => {
             let value = value
-                .map(|value| register(fiber, value).cloned())
+                .map(|value| fiber.active_frame_mut()?.take_register(value))
                 .transpose()?;
             drain_active_frame_cleanups(fiber, observations)?;
             let returning_function = fiber.active_frame()?.function;
-            let return_to = fiber.active_frame()?.return_to.clone();
-            if fiber.finish_return(program, value.clone())? {
-                Ok(VmExit::Returned(value))
-            } else {
-                if let Some(return_to) = return_to {
-                    match return_to.continuation.clone() {
-                        FiberReturnContinuation::Ordinary
-                        | FiberReturnContinuation::FormatOperand { .. }
-                        | FiberReturnContinuation::FormatDisplay { .. }
-                        | FiberReturnContinuation::InstructionCall { .. } => {}
-                        continuation @ (FiberReturnContinuation::ContextCallbackDefault {
-                            ..
-                        }
-                        | FiberReturnContinuation::ContextCallbackInvoke {
-                            ..
-                        }) => {
-                            complete_context_callback_return(
-                                program,
-                                fiber,
-                                host,
-                                context,
+            let (return_to, returned_value) =
+                fiber.finish_return_with_continuation(program, value)?;
+            if let Some(return_to) = return_to {
+                let FiberReturnPoint {
+                    cursor,
+                    destination,
+                    continuation,
+                } = return_to;
+                match continuation {
+                    FiberReturnContinuation::Ordinary
+                    | FiberReturnContinuation::FormatOperand { .. }
+                    | FiberReturnContinuation::FormatDisplay { .. }
+                    | FiberReturnContinuation::InstructionCall { .. } => {}
+                    continuation @ (FiberReturnContinuation::ContextCallbackDefault { .. }
+                    | FiberReturnContinuation::ContextCallbackInvoke { .. }) => {
+                        complete_context_callback_return(
+                            program,
+                            fiber,
+                            host,
+                            context,
+                            continuation,
+                            returned_value,
+                        )?;
+                    }
+                    continuation => {
+                        complete_project_call_return(
+                            program,
+                            fiber,
+                            returning_function,
+                            FiberReturnPoint {
+                                cursor,
+                                destination,
                                 continuation,
-                                value,
-                            )?;
-                        }
-                        continuation => {
-                            complete_project_call_return(
-                                program,
-                                fiber,
-                                returning_function,
-                                return_to,
-                                continuation,
-                                value,
-                            )?;
-                        }
+                            },
+                            returned_value,
+                        )?;
                     }
                 }
                 Ok(VmExit::Running)
+            } else {
+                Ok(terminal_exit(fiber))
             }
         }
         AwbcTerminator::SelectDialogueResult { value } => {
@@ -2755,8 +2996,8 @@ fn execute_terminator(
             }
             let value = fiber.active_frame_mut()?.take_register(*value)?;
             drain_active_frame_cleanups(fiber, observations)?;
-            fiber.mark_dialogue_result_selected(value.clone())?;
-            Ok(VmExit::DialogueResultSelected(value))
+            fiber.mark_dialogue_result_selected(value)?;
+            Ok(terminal_exit(fiber))
         }
         AwbcTerminator::Trap { code, message } => {
             let message = message
@@ -2806,7 +3047,7 @@ fn execute_project_call(
     let owner = context
         .ok_or(VmError::MissingExecutionContext)?
         .program_owner(program)?;
-    let RuntimeValue::Callable(callable) = register(fiber, call.callee)?.clone() else {
+    let RuntimeValue::Callable(callable) = register(fiber, call.callee)? else {
         return Err(VmError::Runtime(
             "project-call callee register does not contain a callable".to_owned(),
         ));
@@ -2824,31 +3065,78 @@ fn execute_project_call(
         .get(call.state.index())
         .ok_or_else(|| VmError::Runtime("project-call callable state is absent".to_owned()))?;
 
-    let operands = call
+    let mut copied_spreads = vec![None::<Vec<RuntimeValue>>; call.operands.len()];
+    for (index, operand) in call.operands.iter().enumerate() {
+        if operand.mode != AwbcProjectCallOperandMode::Spread {
+            continue;
+        }
+        let value = register(fiber, operand.value)?;
+        match value {
+            RuntimeValue::Tuple(_) => {}
+            RuntimeValue::Seq(sequence) if sequence.as_values().is_some() => {}
+            RuntimeValue::Seq(sequence) if sequence.ownership().permits_copy() => {
+                copied_spreads[index] = Some(
+                    (0..sequence.len())
+                        .map(|ordinal| sequence.value_at(ordinal))
+                        .collect(),
+                );
+            }
+            RuntimeValue::Seq(_) => {
+                return Err(VmError::Runtime(
+                    "an affine project-call spread must use transferable value storage".to_owned(),
+                ));
+            }
+            _ => {
+                return Err(VmError::Runtime(format!(
+                    "project-call spread operand is not a sequence: {}",
+                    runtime_value_label(value)
+                )));
+            }
+        }
+    }
+    let operand_refs = call
         .operands
         .iter()
-        .map(|operand| {
-            let value = register(fiber, operand.value)?.clone();
-            match operand.mode {
-                AwbcProjectCallOperandMode::Value => Ok(vec![value]),
-                AwbcProjectCallOperandMode::Spread => {
-                    crate::value::runtime_value_into_sequence_values(value).map_err(|value| {
-                        VmError::Runtime(format!(
-                            "project-call spread operand is not a sequence: {}",
-                            runtime_value_label(&value)
-                        ))
-                    })
+        .enumerate()
+        .map(|(index, operand)| {
+            let value = register(fiber, operand.value)?;
+            Ok(match (operand.mode, value) {
+                (AwbcProjectCallOperandMode::Value, value) => vec![value],
+                (AwbcProjectCallOperandMode::Spread, RuntimeValue::Tuple(values)) => {
+                    values.iter().collect()
                 }
-            }
+                (AwbcProjectCallOperandMode::Spread, RuntimeValue::Seq(sequence)) => {
+                    if let Some(values) = sequence.as_values() {
+                        values.iter().collect()
+                    } else {
+                        copied_spreads[index]
+                            .as_ref()
+                            .expect("copyable spread was previewed")
+                            .iter()
+                            .collect()
+                    }
+                }
+                (AwbcProjectCallOperandMode::Spread, _) => {
+                    unreachable!("spread shape was checked before borrowed source projection")
+                }
+            })
         })
-        .collect::<Result<Vec<_>, VmError>>()?;
+        .collect::<Result<Vec<Vec<&RuntimeValue>>, VmError>>()?;
 
-    let mut logical_values = Vec::with_capacity(call.ordinary.len());
+    enum ProjectCallMaterializedRow<'a> {
+        Fixed(&'a RuntimeValue),
+        Rest(Vec<&'a RuntimeValue>),
+    }
+
+    let source_count = operand_refs.iter().map(Vec::len).sum::<usize>();
+    let mut used_sources = BTreeSet::new();
+    let mut materialized_rows = Vec::with_capacity(call.ordinary.len());
+    if call.ordinary.len() != state.parameters.len() {
+        return Err(VmError::Runtime(
+            "project-call logical parameters do not match the selected callable state".to_owned(),
+        ));
+    }
     for (parameter_index, row) in call.ordinary.iter().enumerate() {
-        let parameter = state
-            .parameters
-            .get(parameter_index)
-            .ok_or_else(|| VmError::Runtime("project-call parameter row is absent".to_owned()))?;
         let encoded_parameter = match row {
             AwbcProjectCallOrdinaryMaterialization::Fixed { parameter, .. }
             | AwbcProjectCallOrdinaryMaterialization::Rest { parameter, .. } => *parameter,
@@ -2860,32 +3148,33 @@ fn execute_project_call(
         }
         match row {
             AwbcProjectCallOrdinaryMaterialization::Fixed { source_index, .. } => {
-                let value = project_call_source_value(&operands, *source_index)?;
-                require_runtime_type(program, parameter.binding_ty, &value)?;
-                logical_values.push(value);
+                insert_project_call_source(
+                    &mut used_sources,
+                    *source_index,
+                    source_count,
+                    "project-call source",
+                )?;
+                materialized_rows.push(ProjectCallMaterializedRow::Fixed(project_call_source_ref(
+                    &operand_refs,
+                    *source_index,
+                )?));
             }
             AwbcProjectCallOrdinaryMaterialization::Rest { source_indices, .. } => {
                 let mut values = Vec::new();
                 for source_index in source_indices {
-                    let source = operands
-                        .get(usize::try_from(*source_index).map_err(|_| {
-                            VmError::Runtime("project-call source index exceeds usize".to_owned())
-                        })?)
-                        .ok_or_else(|| {
-                            VmError::Runtime("project-call source is absent".to_owned())
-                        })?;
-                    for value in source {
-                        require_runtime_type(program, parameter.abi_ty, value)?;
-                        values.push(value.clone());
-                    }
+                    insert_project_call_source(
+                        &mut used_sources,
+                        *source_index,
+                        source_count,
+                        "project-call source",
+                    )?;
+                    values.push(project_call_source_ref(&operand_refs, *source_index)?);
                 }
-                let packed = RuntimeValue::Seq(RuntimeSeq::Values(values));
-                require_runtime_type(program, parameter.binding_ty, &packed)?;
-                logical_values.push(packed);
+                materialized_rows.push(ProjectCallMaterializedRow::Rest(values));
             }
         }
     }
-    let attached = match &call.attached {
+    let attached_ref = match &call.attached {
         None => None,
         Some(attached) => match &attached.presence {
             AwbcProjectCallAttachedPresence::RequiredPresent
@@ -2894,14 +3183,107 @@ fn execute_project_call(
                 let source_index = attached.source_index.ok_or_else(|| {
                     VmError::Runtime("present attached project-call source is absent".to_owned())
                 })?;
-                Some(project_call_source_value(&operands, source_index)?)
+                insert_project_call_source(
+                    &mut used_sources,
+                    source_index,
+                    source_count,
+                    "attached project-call source",
+                )?;
+                Some(project_call_source_ref(&operand_refs, source_index)?)
             }
             AwbcProjectCallAttachedPresence::OptionalOmitted
             | AwbcProjectCallAttachedPresence::DefaultedOmitted => None,
         },
     };
+    if used_sources.len() != source_count {
+        return Err(VmError::Runtime(
+            "project-call left a physical operand source unused".to_owned(),
+        ));
+    }
+    let inspected_rows = materialized_rows
+        .iter()
+        .map(|row| match row {
+            ProjectCallMaterializedRow::Fixed(value) => {
+                RuntimeCallableMaterializedArgument::Fixed(value)
+            }
+            ProjectCallMaterializedRow::Rest(values) => {
+                RuntimeCallableMaterializedArgument::Rest(values)
+            }
+        })
+        .collect::<Vec<_>>();
+    callable
+        .inspect_group_materialization(&inspected_rows, attached_ref)
+        .map_err(|error| VmError::Runtime(error.to_string()))?;
+
+    let mut transfer_registers = Vec::with_capacity(call.operands.len() + 1);
+    transfer_registers.push(call.callee);
+    transfer_registers.extend(call.operands.iter().map(|operand| operand.value));
+    let mut transferred = take_register_values(fiber, &transfer_registers)?.into_iter();
+    let RuntimeValue::Callable(callable) = transferred
+        .next()
+        .ok_or_else(|| VmError::Runtime("project-call lost its callee".to_owned()))?
+    else {
+        return Err(VmError::Runtime(
+            "project-call callee changed after borrowed preflight".to_owned(),
+        ));
+    };
+    let physical = transferred.collect::<Vec<_>>();
+    let mut operands = Vec::with_capacity(call.operands.len());
+    for (operand, value) in call.operands.iter().zip(physical) {
+        operands.push(match operand.mode {
+            AwbcProjectCallOperandMode::Value => vec![Some(value)],
+            AwbcProjectCallOperandMode::Spread => {
+                crate::value::runtime_value_into_sequence_values(value)
+                    .map_err(|value| {
+                        VmError::Runtime(format!(
+                            "project-call spread operand changed after preflight: {}",
+                            runtime_value_label(&value)
+                        ))
+                    })?
+                    .into_iter()
+                    .map(Some)
+                    .collect()
+            }
+        });
+    }
+    let mut logical_values = Vec::with_capacity(call.ordinary.len());
+    for row in &call.ordinary {
+        logical_values.push(match row {
+            AwbcProjectCallOrdinaryMaterialization::Fixed { source_index, .. } => {
+                take_project_call_source_value(&mut operands, *source_index)?
+            }
+            AwbcProjectCallOrdinaryMaterialization::Rest { source_indices, .. } => {
+                let mut values = Vec::new();
+                for source_index in source_indices {
+                    values.push(take_project_call_source_value(
+                        &mut operands,
+                        *source_index,
+                    )?);
+                }
+                crate::value::runtime_sequence_values(values)
+            }
+        });
+    }
+    let attached = match &call.attached {
+        Some(attached)
+            if matches!(
+                attached.presence,
+                AwbcProjectCallAttachedPresence::RequiredPresent
+                    | AwbcProjectCallAttachedPresence::OptionalPresent
+                    | AwbcProjectCallAttachedPresence::DefaultedPresent
+            ) =>
+        {
+            Some(take_project_call_source_value(
+                &mut operands,
+                attached.source_index.ok_or_else(|| {
+                    VmError::Runtime("present attached project-call source is absent".to_owned())
+                })?,
+            )?)
+        }
+        _ => None,
+    };
     let application = callable
-        .prepare_group(&logical_values, attached)
+        .prepare_group(logical_values, attached)
         .map_err(|error| VmError::Runtime(error.to_string()))?;
 
     let resume = program
@@ -2922,7 +3304,7 @@ fn execute_project_call(
     match application {
         RuntimeCallableApplication::Complete(value) => {
             require_runtime_type(program, state.result, &value)?;
-            bind_pattern(program, fiber, call.result_pattern, &value)?;
+            bind_pattern_owned(program, fiber, call.result_pattern, value)?;
             jump(fiber, resume.block);
         }
         RuntimeCallableApplication::Invoke(invocation) => {
@@ -2933,20 +3315,20 @@ fn execute_project_call(
                 continuation: FiberReturnContinuation::ProjectCallTarget { site },
                 ..point
             };
-            fiber.push_call_frame_with_continuation(program, function, return_to, &args)?;
+            fiber.push_call_frame_with_owned_continuation(program, function, return_to, args)?;
         }
-        RuntimeCallableApplication::AttachedDefault(invocation) => {
+        RuntimeCallableApplication::AttachedDefault {
+            invocation,
+            pending,
+        } => {
             let function = invocation_function(&invocation)?;
             let args = invocation_values(invocation)?;
             let point = project_call_return_point(program, fiber, call.resume, site)?;
             let return_to = FiberReturnPoint {
-                continuation: FiberReturnContinuation::ProjectCallDefault {
-                    site,
-                    logical_values,
-                },
+                continuation: FiberReturnContinuation::ProjectCallDefault { site, pending },
                 ..point
             };
-            fiber.push_call_frame_with_continuation(program, function, return_to, &args)?;
+            fiber.push_call_frame_with_owned_continuation(program, function, return_to, args)?;
         }
     }
     Ok(VmExit::Running)
@@ -3006,25 +3388,23 @@ fn complete_project_call_return(
     fiber: &mut FiberState,
     returning_function: AwbcFunctionId,
     return_to: FiberReturnPoint,
-    continuation: FiberReturnContinuation,
     value: Option<RuntimeValue>,
 ) -> Result<(), VmError> {
+    let FiberReturnPoint {
+        cursor: return_cursor,
+        destination: _,
+        continuation,
+    } = return_to;
     let continuation = match continuation {
         FiberReturnContinuation::ApplyGroupDefault {
-            callable,
-            arguments,
+            pending,
             destination,
         } => {
-            let RuntimeValue::Callable(callable) = callable else {
-                return Err(VmError::Runtime(
-                    "callable default continuation lost its callable".to_owned(),
-                ));
-            };
             let default_value = value.ok_or_else(|| {
                 VmError::Runtime("callable default returned no attached value".to_owned())
             })?;
-            let application = callable
-                .complete_group_default(&arguments, default_value)
+            let application = pending
+                .complete_default(default_value)
                 .map_err(|error| VmError::Runtime(error.to_string()))?;
             match application {
                 RuntimeCallableApplication::Complete(value) => {
@@ -3033,10 +3413,12 @@ fn complete_project_call_return(
                 RuntimeCallableApplication::Invoke(invocation) => {
                     let function = invocation_function(&invocation)?;
                     let args = invocation_values(invocation)?;
-                    let return_to = FiberReturnPoint::ordinary(return_to.cursor, Some(destination));
-                    fiber.push_call_frame_with_continuation(program, function, return_to, &args)?;
+                    let return_to = FiberReturnPoint::ordinary(return_cursor, Some(destination));
+                    fiber.push_call_frame_with_owned_continuation(
+                        program, function, return_to, args,
+                    )?;
                 }
-                RuntimeCallableApplication::AttachedDefault(_) => {
+                RuntimeCallableApplication::AttachedDefault { .. } => {
                     return Err(VmError::Runtime(
                         "callable default selected another default stage".to_owned(),
                     ));
@@ -3066,7 +3448,7 @@ fn complete_project_call_return(
         .ok_or(VmError::Fiber(FiberStateError::UnknownResumePoint(
             call.resume.0,
         )))?;
-    if return_to.cursor
+    if return_cursor
         != (FiberCursor {
             function: resume.function,
             block: resume.block,
@@ -3078,18 +3460,14 @@ fn complete_project_call_return(
         ));
     }
     match continuation {
-        FiberReturnContinuation::ProjectCallDefault { logical_values, .. } => {
+        FiberReturnContinuation::ProjectCallDefault { pending, .. } => {
             let default_value = value.ok_or_else(|| {
                 VmError::Runtime("project-call default returned no attached value".to_owned())
             })?;
-            let RuntimeValue::Callable(callable) = register(fiber, call.callee)?.clone() else {
+            if pending.state() != call.state {
                 return Err(VmError::Runtime(
-                    "project-call default lost its callable".to_owned(),
-                ));
-            };
-            if callable.state() != call.state {
-                return Err(VmError::Runtime(
-                    "project-call default resumed with a different callable state".to_owned(),
+                    "project-call default resumed with a different pending callable state"
+                        .to_owned(),
                 ));
             }
             let state = program
@@ -3113,13 +3491,13 @@ fn complete_project_call_return(
                     "project-call returned from an unexpected default function".to_owned(),
                 ));
             }
-            let application = callable
-                .complete_group_default(&logical_values, default_value)
+            let application = pending
+                .complete_default(default_value)
                 .map_err(|error| VmError::Runtime(error.to_string()))?;
             match application {
                 RuntimeCallableApplication::Complete(result) => {
                     require_runtime_type(program, state.result, &result)?;
-                    bind_pattern(program, fiber, call.result_pattern, &result)?;
+                    bind_pattern_owned(program, fiber, call.result_pattern, result)?;
                     jump(fiber, resume.block);
                 }
                 RuntimeCallableApplication::Invoke(invocation) => {
@@ -3130,9 +3508,11 @@ fn complete_project_call_return(
                         continuation: FiberReturnContinuation::ProjectCallTarget { site },
                         ..point
                     };
-                    fiber.push_call_frame_with_continuation(program, function, return_to, &args)?;
+                    fiber.push_call_frame_with_owned_continuation(
+                        program, function, return_to, args,
+                    )?;
                 }
-                RuntimeCallableApplication::AttachedDefault(_) => {
+                RuntimeCallableApplication::AttachedDefault { .. } => {
                     return Err(VmError::Runtime(
                         "project-call default selected another default stage".to_owned(),
                     ));
@@ -3160,7 +3540,7 @@ fn complete_project_call_return(
                 VmError::Runtime("project-call target returned no result".to_owned())
             })?;
             require_runtime_type(program, state.result, &value)?;
-            bind_pattern(program, fiber, call.result_pattern, &value)?;
+            bind_pattern_owned(program, fiber, call.result_pattern, value)?;
             jump(fiber, resume.block);
         }
         FiberReturnContinuation::ApplyGroupDefault { .. } => unreachable!(
@@ -3178,22 +3558,52 @@ fn complete_project_call_return(
     Ok(())
 }
 
-fn project_call_source_value(
-    operands: &[Vec<RuntimeValue>],
+fn insert_project_call_source(
+    sources: &mut BTreeSet<u32>,
+    index: u32,
+    operand_count: usize,
+    label: &str,
+) -> Result<(), VmError> {
+    let index_usize = usize::try_from(index)
+        .map_err(|_| VmError::Runtime(format!("{label} index exceeds usize")))?;
+    if index_usize >= operand_count || !sources.insert(index) {
+        return Err(VmError::Runtime(format!("{label} is absent or repeated")));
+    }
+    Ok(())
+}
+
+fn project_call_source_ref<'a>(
+    operands: &[Vec<&'a RuntimeValue>],
+    index: u32,
+) -> Result<&'a RuntimeValue, VmError> {
+    let index_usize = usize::try_from(index)
+        .map_err(|_| VmError::Runtime("project-call source index exceeds usize".to_owned()))?;
+    let mut remaining = index_usize;
+    for operand in operands {
+        if remaining < operand.len() {
+            return Ok(operand[remaining]);
+        }
+        remaining -= operand.len();
+    }
+    Err(VmError::Runtime("project-call source is absent".to_owned()))
+}
+
+fn take_project_call_source_value(
+    operands: &mut [Vec<Option<RuntimeValue>>],
     index: u32,
 ) -> Result<RuntimeValue, VmError> {
-    let source =
-        operands
-            .get(usize::try_from(index).map_err(|_| {
-                VmError::Runtime("project-call source index exceeds usize".to_owned())
-            })?)
-            .ok_or_else(|| VmError::Runtime("project-call source is absent".to_owned()))?;
-    if source.len() != 1 {
-        return Err(VmError::Runtime(
-            "fixed project-call source expanded to multiple values".to_owned(),
-        ));
+    let index_usize = usize::try_from(index)
+        .map_err(|_| VmError::Runtime("project-call source index exceeds usize".to_owned()))?;
+    let mut remaining = index_usize;
+    for operand in operands {
+        if remaining < operand.len() {
+            return operand[remaining].take().ok_or_else(|| {
+                VmError::Runtime("project-call source was consumed twice".to_owned())
+            });
+        }
+        remaining -= operand.len();
     }
-    Ok(source[0].clone())
+    Err(VmError::Runtime("project-call source is absent".to_owned()))
 }
 
 fn require_runtime_type(
@@ -3288,7 +3698,7 @@ fn materialize_drop_policy(
 
 fn await_target(
     program: &AwbcProgram,
-    fiber: &FiberState,
+    fiber: &mut FiberState,
     register_id: AwbcRegisterId,
 ) -> Result<FiberAwaitTarget, VmError> {
     let frame = fiber.active_frame()?;
@@ -3298,7 +3708,7 @@ fn await_target(
         .and_then(|layout| layout.slots.get(register_id.index()))
         .and_then(|slot| program.runtime_types.get(slot.ty.index()))
         .ok_or_else(|| VmError::Runtime("await handle register has no runtime type".to_owned()))?;
-    let value = register(fiber, register_id)?.clone();
+    let value = fiber.active_frame_mut()?.take_register(register_id)?;
     match runtime_type.shape() {
         AwbcRuntimeTypeShape::Need(item_type) => match value {
             RuntimeValue::Need(id) if !id.0.is_empty() => Ok(FiberAwaitTarget::Need {
@@ -3317,14 +3727,82 @@ fn await_target(
     }
 }
 
-fn register_values(
-    fiber: &FiberState,
+fn validate_host_call_values(
+    program: &AwbcProgram,
+    call: AwbcHostCallId,
+    values: &[&RuntimeValue],
+) -> Result<(), VmError> {
+    let call = program
+        .host_calls
+        .get(call.index())
+        .ok_or_else(|| VmError::Runtime(format!("AWBC host call {} is absent", call.0)))?;
+    let signature = program
+        .signatures
+        .get(call.signature.index())
+        .ok_or_else(|| VmError::Runtime("host call signature is absent".to_owned()))?;
+    if values.len() != signature.params.len() {
+        return Err(VmError::FunctionArgumentCount {
+            expected: signature.params.len(),
+            actual: values.len(),
+        });
+    }
+    for (position, (value, expected)) in values.iter().zip(&signature.params).enumerate() {
+        if !runtime_value_view_matches_type(program, value.view(), *expected, 0) {
+            return Err(VmError::Runtime(format!(
+                "host call argument {position} violates its sealed input type"
+            )));
+        }
+        if !value.ownership().permits_copy() {
+            return Err(VmError::Runtime(format!(
+                "host call argument {position} contains an affine value"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn take_register_values(
+    fiber: &mut FiberState,
     registers: &[AwbcRegisterId],
 ) -> Result<Vec<RuntimeValue>, VmError> {
+    let mut seen = BTreeSet::new();
+    for register_id in registers {
+        if !seen.insert(*register_id) {
+            return Err(VmError::Runtime(format!(
+                "by-value AWBC operand register {} is listed more than once",
+                register_id.0
+            )));
+        }
+        register(fiber, *register_id)?;
+    }
+    let frame = fiber.active_frame_mut()?;
     registers
         .iter()
-        .map(|register_id| register(fiber, *register_id).cloned())
+        .map(|register_id| frame.take_register(*register_id).map_err(VmError::from))
         .collect()
+}
+
+fn take_sequence_value(sequence: RuntimeSeq, index: usize) -> Result<RuntimeValue, VmError> {
+    match sequence {
+        RuntimeSeq::Values(mut values) => Ok(values.remove(index)),
+        sequence if sequence.ownership().permits_copy() => Ok(sequence.value_at(index)),
+        _ => Err(VmError::Runtime(
+            "sequence storage cannot transfer an affine element".to_owned(),
+        )),
+    }
+}
+
+fn take_sequence_tail(sequence: RuntimeSeq, start: usize) -> Result<RuntimeSeq, VmError> {
+    match sequence {
+        RuntimeSeq::Values(mut values) => {
+            let start = start.min(values.len());
+            Ok(RuntimeSeq::Values(values.drain(start..).collect()))
+        }
+        sequence if sequence.ownership().permits_copy() => Ok(sequence.tail_from(start)),
+        _ => Err(VmError::Runtime(
+            "sequence storage cannot transfer an affine slice".to_owned(),
+        )),
+    }
 }
 
 fn jump(fiber: &mut FiberState, block: AwbcBlockId) {
@@ -3332,14 +3810,28 @@ fn jump(fiber: &mut FiberState, block: AwbcBlockId) {
     fiber.cursor.instruction_offset = 0;
 }
 
-fn terminal_exit(fiber: &FiberState) -> VmExit {
-    match fiber.terminal.as_ref() {
-        Some(FiberTerminalValue::Returned(value)) => VmExit::Returned(value.clone()),
-        Some(FiberTerminalValue::DialogueResultSelected(value)) => {
-            VmExit::DialogueResultSelected(value.clone())
+pub(crate) fn terminal_exit(fiber: &mut FiberState) -> VmExit {
+    match fiber.terminal.take() {
+        Some(FiberTerminalValue::Returned(value)) => {
+            if let Some(value) = value.as_ref() {
+                fiber.return_summary = Some(runtime_value_label(value));
+            }
+            fiber.terminal = Some(FiberTerminalValue::Returned(None));
+            VmExit::Returned(value)
         }
-        Some(FiberTerminalValue::Cancelled) => VmExit::Cancelled,
-        Some(FiberTerminalValue::Trapped(trap)) => VmExit::Trapped(trap.clone()),
+        Some(FiberTerminalValue::DialogueResultSelected(value)) => {
+            fiber.return_summary = None;
+            fiber.terminal = Some(FiberTerminalValue::Returned(None));
+            VmExit::DialogueResultSelected(value)
+        }
+        Some(FiberTerminalValue::Cancelled) => {
+            fiber.terminal = Some(FiberTerminalValue::Cancelled);
+            VmExit::Cancelled
+        }
+        Some(FiberTerminalValue::Trapped(trap)) => {
+            fiber.terminal = Some(FiberTerminalValue::Trapped(trap.clone()));
+            VmExit::Trapped(trap)
+        }
         None if matches!(fiber.status, FiberStatus::Suspended) => fiber
             .suspension
             .as_ref()
@@ -3619,53 +4111,120 @@ pub(crate) fn test_pattern(
     pattern: AwbcPatternId,
     value: &RuntimeValue,
 ) -> Result<bool, VmError> {
+    test_pattern_view(program, pattern, value.view(), 0)
+}
+
+fn test_pattern_view(
+    program: &AwbcProgram,
+    pattern: AwbcPatternId,
+    value: RuntimeValueView<'_>,
+    depth: usize,
+) -> Result<bool, VmError> {
+    if depth > 1024 {
+        return Err(VmError::Runtime("pattern depth exceeded".to_owned()));
+    }
     let pattern = program
         .patterns
         .get(pattern.index())
         .ok_or(VmError::MissingPattern(pattern))?;
     Ok(match pattern {
-        AwbcPattern::Bind { expected, .. } => {
-            expected.is_none_or(|expected| runtime_value_matches_type(program, value, expected, 0))
-        }
+        AwbcPattern::Bind { expected, .. } => expected
+            .is_none_or(|expected| runtime_value_view_matches_type(program, value, expected, 0)),
         AwbcPattern::Discard => true,
-        AwbcPattern::Literal(id) => constant_value(program, *id)? == *value,
+        AwbcPattern::Literal(id) => {
+            runtime_value_views_equal(constant_value(program, *id)?.view(), value)
+        }
         AwbcPattern::Entity(expected) => {
-            matches!(value, RuntimeValue::EntityRef(actual) if actual == expected)
+            matches!(value, RuntimeValueView::Scalar(RuntimeScalarView::EntityRef(actual)) if actual == expected)
         }
-        AwbcPattern::Tuple(patterns) => {
-            matches!(value, RuntimeValue::Tuple(values) if values.len() == patterns.len() && patterns.iter().zip(values).all(|(pattern, value)| test_pattern(program, *pattern, value).unwrap_or(false)))
-        }
+        AwbcPattern::Tuple(patterns) => match value {
+            RuntimeValueView::Tuple(values) if values.len() == patterns.len() => {
+                let mut matched = true;
+                for (index, pattern) in patterns.iter().enumerate() {
+                    let Some(value) = values.get(index) else {
+                        matched = false;
+                        break;
+                    };
+                    if !test_pattern_view(program, *pattern, value, depth + 1)? {
+                        matched = false;
+                        break;
+                    }
+                }
+                matched
+            }
+            _ => false,
+        },
         AwbcPattern::Record { ty, fields, rest } => {
             let owner_matches =
-                ty.is_none_or(|ty| runtime_value_matches_type(program, value, ty, 0));
+                ty.is_none_or(|ty| runtime_value_view_matches_type(program, value, ty, 0));
             owner_matches
                 && match value {
-                    RuntimeValue::Record(values) => {
-                        rest.accepts_len(fields.len(), values.len())
-                            && fields.iter().all(|field| {
-                                values.get(field.field as usize).is_some_and(|value| {
-                                    test_pattern(program, field.pattern, value.value())
-                                        .unwrap_or(false)
-                                })
-                            })
+                    RuntimeValueView::Record(values) => {
+                        if !rest.accepts_len(fields.len(), values.len()) {
+                            false
+                        } else {
+                            let mut matched = true;
+                            for field in fields {
+                                let Some((identity, _, value)) = values.get(field.field as usize)
+                                else {
+                                    matched = false;
+                                    break;
+                                };
+                                if identity.zero_based() != field.field
+                                    || !test_pattern_view(program, field.pattern, value, depth + 1)?
+                                {
+                                    matched = false;
+                                    break;
+                                }
+                            }
+                            matched
+                        }
                     }
-                    RuntimeValue::NominalRecord(record) => {
-                        rest.accepts_len(fields.len(), record.fields().len())
-                            && fields.iter().all(|field| {
-                                record
-                                    .fields()
-                                    .get(field.field as usize)
-                                    .is_some_and(|value| {
-                                        test_pattern(program, field.pattern, value).unwrap_or(false)
-                                    })
-                            })
+                    RuntimeValueView::NominalRecord(record) => {
+                        if !rest.accepts_len(fields.len(), record.fields().len()) {
+                            false
+                        } else {
+                            let mut matched = true;
+                            for field in fields {
+                                let Some(value) = record.fields().get(field.field as usize) else {
+                                    matched = false;
+                                    break;
+                                };
+                                if !test_pattern_view(
+                                    program,
+                                    field.pattern,
+                                    value.view(),
+                                    depth + 1,
+                                )? {
+                                    matched = false;
+                                    break;
+                                }
+                            }
+                            matched
+                        }
                     }
                     _ => false,
                 }
         }
-        AwbcPattern::Sequence { items, rest } => {
-            matches!(value, RuntimeValue::Seq(sequence) if rest.accepts_len(items.len(), sequence.len()) && items.iter().enumerate().all(|(index, pattern)| test_pattern(program, *pattern, &sequence.value_at(index)).unwrap_or(false)))
-        }
+        AwbcPattern::Sequence { items, rest } => match value {
+            RuntimeValueView::Sequence(sequence)
+                if rest.accepts_len(items.len(), sequence.len()) =>
+            {
+                let mut matched = true;
+                for (index, pattern) in items.iter().enumerate() {
+                    let Some(value) = sequence.value_view(index) else {
+                        matched = false;
+                        break;
+                    };
+                    if !test_pattern_view(program, *pattern, value, depth + 1)? {
+                        matched = false;
+                        break;
+                    }
+                }
+                matched
+            }
+            _ => false,
+        },
         AwbcPattern::Variant {
             ty,
             case,
@@ -3673,23 +4232,413 @@ pub(crate) fn test_pattern(
             payload,
         } => {
             let case_name = string(program, *case_name)?;
-            runtime_value_matches_type(program, value, *ty, 0)
-                && matches!(value, RuntimeValue::Variant { ordinal, name, payload: actual, .. } if case == ordinal && case_name == name && payload.is_none_or(|pattern| actual.as_deref().is_some_and(|value| test_pattern(program, pattern, value).unwrap_or(false))))
+            if !runtime_value_view_matches_type(program, value, *ty, 0) {
+                false
+            } else if let RuntimeValueView::Variant {
+                ordinal,
+                name,
+                payload: actual,
+                ..
+            } = value
+            {
+                if *case != ordinal || case_name != name {
+                    false
+                } else {
+                    match (payload, actual) {
+                        (None, None) => true,
+                        (Some(pattern), Some(value)) => {
+                            test_pattern_view(program, *pattern, value.view(), depth + 1)?
+                        }
+                        _ => false,
+                    }
+                }
+            } else {
+                false
+            }
         }
-        AwbcPattern::Whole { inner, .. } => test_pattern(program, *inner, value)?,
+        AwbcPattern::Whole { inner, .. } => test_pattern_view(program, *inner, value, depth + 1)?,
     })
 }
 
-pub(crate) fn bind_pattern(
+fn runtime_value_views_equal(left: RuntimeValueView<'_>, right: RuntimeValueView<'_>) -> bool {
+    match (left, right) {
+        (RuntimeValueView::Scalar(left), RuntimeValueView::Scalar(right)) => left == right,
+        (RuntimeValueView::Tuple(left), RuntimeValueView::Tuple(right)) => {
+            left.len() == right.len()
+                && (0..left.len()).all(|index| match (left.get(index), right.get(index)) {
+                    (Some(left), Some(right)) => runtime_value_views_equal(left, right),
+                    _ => false,
+                })
+        }
+        (RuntimeValueView::Record(left), RuntimeValueView::Record(right)) => {
+            left.len() == right.len()
+                && (0..left.len()).all(|index| match (left.get(index), right.get(index)) {
+                    (Some((left_id, left_name, left)), Some((right_id, right_name, right))) => {
+                        left_id == right_id
+                            && left_name == right_name
+                            && runtime_value_views_equal(left, right)
+                    }
+                    _ => false,
+                })
+        }
+        (RuntimeValueView::Sequence(left), RuntimeValueView::Sequence(right)) => {
+            left.len() == right.len()
+                && (0..left.len()).all(|index| {
+                    match (left.value_view(index), right.value_view(index)) {
+                        (Some(left), Some(right)) => runtime_value_views_equal(left, right),
+                        _ => false,
+                    }
+                })
+        }
+        (RuntimeValueView::NominalRecord(left), RuntimeValueView::NominalRecord(right)) => {
+            left == right
+        }
+        (RuntimeValueView::Opaque(left), RuntimeValueView::Opaque(right)) => left == right,
+        (RuntimeValueView::Reduction(left), RuntimeValueView::Reduction(right)) => left == right,
+        (RuntimeValueView::Agent(left), RuntimeValueView::Agent(right)) => left == right,
+        (
+            RuntimeValueView::Variant {
+                owner: left_owner,
+                ordinal: left_ordinal,
+                name: left_name,
+                payload: left_payload,
+            },
+            RuntimeValueView::Variant {
+                owner: right_owner,
+                ordinal: right_ordinal,
+                name: right_name,
+                payload: right_payload,
+            },
+        ) => {
+            left_owner == right_owner
+                && left_ordinal == right_ordinal
+                && left_name == right_name
+                && match (left_payload, right_payload) {
+                    (None, None) => true,
+                    (Some(left), Some(right)) => {
+                        runtime_value_views_equal(left.view(), right.view())
+                    }
+                    _ => false,
+                }
+        }
+        (RuntimeValueView::RuntimeOnly(left), RuntimeValueView::RuntimeOnly(right)) => {
+            left == right
+        }
+        _ => false,
+    }
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "borrowed AWBC type admission mirrors the single runtime type table without materializing affine rows"
+)]
+pub(crate) fn runtime_value_view_matches_type(
+    program: &AwbcProgram,
+    value: RuntimeValueView<'_>,
+    ty: AwbcTypeId,
+    depth: usize,
+) -> bool {
+    if depth > 64 {
+        return false;
+    }
+    let Some(ty_row) = program.runtime_types.get(ty.index()) else {
+        return false;
+    };
+    match (value, ty_row.shape()) {
+        (RuntimeValueView::Reduction(value), AwbcRuntimeTypeShape::Opaque { arguments, .. }) => {
+            program.opaque_owner(ty).ok().flatten().is_some_and(|owner| {
+                owner == *value.owner()
+                    && arguments.len() == 1
+                    && runtime_value_view_matches_type(
+                        program,
+                        value.state().view(),
+                        arguments[0],
+                        depth + 1,
+                    )
+            })
+        }
+        (RuntimeValueView::RuntimeOnly(RuntimeValue::Need(need)), AwbcRuntimeTypeShape::Need(_)) => {
+            !need.0.is_empty()
+        }
+        (_, AwbcRuntimeTypeShape::Dynamic)
+        | (RuntimeValueView::Scalar(RuntimeScalarView::Unit), AwbcRuntimeTypeShape::Unit)
+        | (RuntimeValueView::Scalar(RuntimeScalarView::Bool(_)), AwbcRuntimeTypeShape::Bool)
+        | (RuntimeValueView::Scalar(RuntimeScalarView::F32(_)), AwbcRuntimeTypeShape::F32)
+        | (RuntimeValueView::Scalar(RuntimeScalarView::F64(_)), AwbcRuntimeTypeShape::F64)
+        | (RuntimeValueView::Scalar(RuntimeScalarView::String(_)), AwbcRuntimeTypeShape::String)
+        | (RuntimeValueView::Scalar(RuntimeScalarView::String(_)), AwbcRuntimeTypeShape::Task(_))
+        | (RuntimeValueView::Scalar(RuntimeScalarView::Color(_)), AwbcRuntimeTypeShape::Color)
+        | (RuntimeValueView::Scalar(RuntimeScalarView::Char(_)), AwbcRuntimeTypeShape::Char)
+        | (RuntimeValueView::Scalar(RuntimeScalarView::Duration(_)), AwbcRuntimeTypeShape::Duration)
+        | (RuntimeValueView::Scalar(RuntimeScalarView::Progress(_)), AwbcRuntimeTypeShape::Progress)
+        | (RuntimeValueView::Scalar(RuntimeScalarView::EntityRef(_)), AwbcRuntimeTypeShape::EntityRef)
+        | (RuntimeValueView::RuntimeOnly(RuntimeValue::MatrixF32(_)), AwbcRuntimeTypeShape::MatrixF32)
+        | (RuntimeValueView::RuntimeOnly(RuntimeValue::MatrixF64(_)), AwbcRuntimeTypeShape::MatrixF64)
+        | (RuntimeValueView::RuntimeOnly(RuntimeValue::TensorF32(_)), AwbcRuntimeTypeShape::TensorF32)
+        | (RuntimeValueView::RuntimeOnly(RuntimeValue::TensorF64(_)), AwbcRuntimeTypeShape::TensorF64) => true,
+        (RuntimeValueView::RuntimeOnly(RuntimeValue::Callable(value)), AwbcRuntimeTypeShape::Function { .. }) => {
+            matches!(value.owner(), RuntimeProgramOwner::Awbc(owner) if std::ptr::eq(owner.as_ref(), program))
+                && value.function_type().ok() == Some(ty_row.semantic_identity())
+                && value.validate_retained().is_ok()
+        }
+        (RuntimeValueView::Agent(value), AwbcRuntimeTypeShape::Agent(expected)) => {
+            value.operational_type() == expected.operational_type()
+        }
+        (RuntimeValueView::Record(_), AwbcRuntimeTypeShape::Agent(expected)) => {
+            expected.operational_type().accepts_protocol_record()
+        }
+        (RuntimeValueView::Sequence(values), AwbcRuntimeTypeShape::Bytes) => {
+            (0..values.len()).all(|index| matches!(values.value_view(index), Some(RuntimeValueView::Scalar(RuntimeScalarView::UInt(value))) if value.width() == crate::value::RuntimeUnsignedIntWidth::U8))
+        }
+        (RuntimeValueView::Scalar(RuntimeScalarView::Int(value)), AwbcRuntimeTypeShape::Int(kind)) => {
+            signed_kind(value) == *kind
+        }
+        (RuntimeValueView::Scalar(RuntimeScalarView::UInt(value)), AwbcRuntimeTypeShape::UInt(kind)) => {
+            unsigned_kind(value) == *kind
+        }
+        (RuntimeValueView::Opaque(value), AwbcRuntimeTypeShape::Opaque { .. }) => program
+            .opaque_owner(ty)
+            .ok()
+            .flatten()
+            .is_some_and(|owner| owner.accepts_opaque_value(value)),
+        (RuntimeValueView::Tuple(values), AwbcRuntimeTypeShape::Tuple(types)) => {
+            values.len() == types.len()
+                && types.iter().enumerate().all(|(index, ty)| {
+                    values.get(index).is_some_and(|value| {
+                        runtime_value_view_matches_type(program, value, *ty, depth + 1)
+                    })
+                })
+        }
+        (RuntimeValueView::Sequence(values), AwbcRuntimeTypeShape::Sequence { item, .. }) => {
+            (0..values.len()).all(|index| values.value_view(index).is_some_and(|value| {
+                runtime_value_view_matches_type(program, value, *item, depth + 1)
+            }))
+        }
+        (RuntimeValueView::Sequence(values), AwbcRuntimeTypeShape::Array { item, length }) => {
+            length.constant().and_then(|length| usize::try_from(length).ok()) == Some(values.len())
+                && (0..values.len()).all(|index| values.value_view(index).is_some_and(|value| {
+                    runtime_value_view_matches_type(program, value, *item, depth + 1)
+                }))
+        }
+        (RuntimeValueView::Record(values), AwbcRuntimeTypeShape::Record { fields, .. }) => {
+            values.len() == fields.len()
+                && fields.iter().enumerate().all(|(index, field)| {
+                    values.get(index).is_some_and(|(_, _, value)| {
+                        runtime_value_view_matches_type(program, value, field.ty, depth + 1)
+                    })
+                })
+        }
+        (
+            RuntimeValueView::Variant { owner, ordinal, name, payload },
+            AwbcRuntimeTypeShape::Variant { owner: expected_owner, cases, .. },
+        ) => {
+            runtime_variant_identity(program, ty_row.semantic_identity(), expected_owner).as_ref()
+                == Some(owner)
+                && usize::try_from(ordinal).ok().and_then(|ordinal| cases.get(ordinal)).is_some_and(|case| {
+                    program.strings.get(case.name.index()).is_some_and(|case_name| {
+                        case_name == name && match (case.payload, payload) {
+                            (None, None) => true,
+                            (Some(expected), Some(value)) => runtime_value_view_matches_type(program, value.view(), expected, depth + 1),
+                            _ => false,
+                        }
+                    })
+                })
+        }
+        (value, AwbcRuntimeTypeShape::Choice(alternatives)) => alternatives
+            .iter()
+            .any(|alternative| runtime_value_view_matches_type(program, value, *alternative, depth + 1)),
+        (RuntimeValueView::NominalRecord(record), AwbcRuntimeTypeShape::Nominal { public_id, layout, .. }) => {
+            program.strings.get(public_id.index()).is_some_and(|expected| record.type_id().as_str() == expected)
+                && record.layout().as_bytes() == layout
+        }
+        (RuntimeValueView::NominalRecord(record), AwbcRuntimeTypeShape::NominalRecord { .. }) => program
+            .nominal_record_layout(ty)
+            .ok()
+            .flatten()
+            .is_some_and(|layout| record.validate_against_layout(&layout).is_ok()),
+        (RuntimeValueView::RuntimeOnly(RuntimeValue::Range(range)), AwbcRuntimeTypeShape::Range(item)) => {
+            use crate::value::RuntimeRange;
+            match range {
+                RuntimeRange::Int { start, end, .. } => {
+                    (start.is_some() || end.is_some())
+                        && start.is_none_or(|value| {
+                            runtime_value_view_matches_type(
+                                program,
+                                RuntimeValueView::Scalar(RuntimeScalarView::Int(value)),
+                                *item,
+                                depth + 1,
+                            )
+                        })
+                        && end.is_none_or(|value| {
+                            runtime_value_view_matches_type(
+                                program,
+                                RuntimeValueView::Scalar(RuntimeScalarView::Int(value)),
+                                *item,
+                                depth + 1,
+                            )
+                        })
+                }
+                RuntimeRange::UInt { start, end, .. } => {
+                    (start.is_some() || end.is_some())
+                        && start.is_none_or(|value| {
+                            runtime_value_view_matches_type(
+                                program,
+                                RuntimeValueView::Scalar(RuntimeScalarView::UInt(value)),
+                                *item,
+                                depth + 1,
+                            )
+                        })
+                        && end.is_none_or(|value| {
+                            runtime_value_view_matches_type(
+                                program,
+                                RuntimeValueView::Scalar(RuntimeScalarView::UInt(value)),
+                                *item,
+                                depth + 1,
+                            )
+                        })
+                }
+            }
+        }
+        (RuntimeValueView::RuntimeOnly(RuntimeValue::Iterator(_)), AwbcRuntimeTypeShape::Iterator { .. }) => true,
+        _ => false,
+    }
+}
+
+fn signed_kind(value: crate::value::RuntimeInt) -> AwbcSignedIntKind {
+    match value.width() {
+        crate::value::RuntimeSignedIntWidth::I8 => AwbcSignedIntKind::I8,
+        crate::value::RuntimeSignedIntWidth::I16 => AwbcSignedIntKind::I16,
+        crate::value::RuntimeSignedIntWidth::I32 => AwbcSignedIntKind::I32,
+        crate::value::RuntimeSignedIntWidth::I64 => AwbcSignedIntKind::I64,
+        crate::value::RuntimeSignedIntWidth::I128 => AwbcSignedIntKind::I128,
+        crate::value::RuntimeSignedIntWidth::ISize => AwbcSignedIntKind::ISize,
+    }
+}
+
+fn unsigned_kind(value: crate::value::RuntimeUInt) -> AwbcUnsignedIntKind {
+    match value.width() {
+        crate::value::RuntimeUnsignedIntWidth::U8 => AwbcUnsignedIntKind::U8,
+        crate::value::RuntimeUnsignedIntWidth::U16 => AwbcUnsignedIntKind::U16,
+        crate::value::RuntimeUnsignedIntWidth::U32 => AwbcUnsignedIntKind::U32,
+        crate::value::RuntimeUnsignedIntWidth::U64 => AwbcUnsignedIntKind::U64,
+        crate::value::RuntimeUnsignedIntWidth::U128 => AwbcUnsignedIntKind::U128,
+        crate::value::RuntimeUnsignedIntWidth::USize => AwbcUnsignedIntKind::USize,
+    }
+}
+
+pub(crate) fn bind_pattern_owned(
+    program: &AwbcProgram,
+    fiber: &mut FiberState,
+    pattern: AwbcPatternId,
+    value: RuntimeValue,
+) -> Result<(), VmError> {
+    let prepared = prepare_pattern_binding(program, fiber, pattern, &value)?;
+    bind_pattern_owned_prepared(program, fiber, prepared, value);
+    Ok(())
+}
+
+/// A single-use proof that an owned pattern bind has passed every fallible
+/// match, projection, duplication, and destination-slot check for one frame.
+pub(crate) struct PreparedPatternBinding {
+    pattern: AwbcPatternId,
+    frame: crate::runtime_id::RuntimeFrameInstanceId,
+    layout: crate::awbc::schema::AwbcFrameLayoutId,
+    cursor: FiberCursor,
+    registers: Box<[AwbcRegisterId]>,
+}
+
+impl PreparedPatternBinding {
+    pub(crate) fn registers(&self) -> &[AwbcRegisterId] {
+        &self.registers
+    }
+}
+
+pub(crate) fn prepare_pattern_binding(
+    program: &AwbcProgram,
+    fiber: &FiberState,
+    pattern: AwbcPatternId,
+    value: &RuntimeValue,
+) -> Result<PreparedPatternBinding, VmError> {
+    if !test_pattern(program, pattern, value)? {
+        return Err(VmError::PatternMismatch);
+    }
+    let frame = fiber.active_frame()?;
+    let layout = program
+        .frame_layouts
+        .get(frame.layout.index())
+        .ok_or(FiberStateError::UnknownFrameLayout(frame.layout.0))?;
+    let mut registers = Vec::new();
+    visit_pattern_bindings_view(program, pattern, value.view(), 0, &mut |register, view| {
+        let slot =
+            layout
+                .slots
+                .get(register.index())
+                .ok_or(FiberStateError::RegisterOutOfBounds {
+                    register: register.0,
+                    layout: frame.layout.0,
+                })?;
+        if !runtime_value_view_matches_type(program, view, slot.ty, 0) {
+            return Err(VmError::Runtime(format!(
+                "pattern target register {} rejects the projected value type",
+                register.0
+            )));
+        }
+        registers.push(register);
+        Ok(())
+    })?;
+    registers.sort_unstable();
+    let original_len = registers.len();
+    registers.dedup();
+    if registers.len() != original_len {
+        return Err(VmError::Runtime(
+            "AWBC pattern binds one register more than once".to_owned(),
+        ));
+    }
+    Ok(PreparedPatternBinding {
+        pattern,
+        frame: frame.instance,
+        layout: frame.layout,
+        cursor: fiber.cursor,
+        registers: registers.into_boxed_slice(),
+    })
+}
+
+/// Commits a value using a consumed preflight token. All indexing and pattern
+/// operations here were proven against the same frame before the source owner
+/// was moved.
+pub(crate) fn bind_pattern_owned_prepared(
+    program: &AwbcProgram,
+    fiber: &mut FiberState,
+    prepared: PreparedPatternBinding,
+    value: RuntimeValue,
+) {
+    assert_eq!(fiber.cursor, prepared.cursor);
+    {
+        let frame = fiber
+            .active_frame()
+            .expect("prepared pattern bind retains its active frame");
+        assert_eq!(frame.instance, prepared.frame);
+        assert_eq!(frame.layout, prepared.layout);
+    }
+    bind_tested_pattern_owned(program, fiber, prepared.pattern, value)
+        .expect("prepared pattern bind has no remaining validation failures");
+}
+
+/// Binds from a borrowed external payload only when that payload is explicitly
+/// proven copyable. Bytecode and owned product paths should use
+/// `bind_pattern_owned` so affine values move out of their source slot.
+pub(crate) fn bind_pattern_copyable(
     program: &AwbcProgram,
     fiber: &mut FiberState,
     pattern: AwbcPatternId,
     value: &RuntimeValue,
 ) -> Result<(), VmError> {
-    if !test_pattern(program, pattern, value)? {
-        return Err(VmError::PatternMismatch);
+    if !value.ownership().permits_copy() {
+        return Err(VmError::Runtime(
+            "borrowed pattern payload cannot duplicate an affine value".to_owned(),
+        ));
     }
-    bind_tested_pattern(program, fiber, pattern, value)
+    bind_pattern_owned(program, fiber, pattern, value.clone())
 }
 
 /// Applies a pattern graph only after the complete root has matched.
@@ -3697,11 +4646,11 @@ pub(crate) fn bind_pattern(
 /// Keeping all writes behind the root pretest makes binding atomic with
 /// respect to ordinary mismatch: no child register can be written before a
 /// later exact-length, literal, or type predicate fails.
-fn bind_tested_pattern(
+fn bind_tested_pattern_owned(
     program: &AwbcProgram,
     fiber: &mut FiberState,
     pattern: AwbcPatternId,
-    value: &RuntimeValue,
+    value: RuntimeValue,
 ) -> Result<(), VmError> {
     let pattern_record = program
         .patterns
@@ -3710,60 +4659,74 @@ fn bind_tested_pattern(
         .clone();
     match pattern_record {
         AwbcPattern::Bind { target, .. } => {
-            fiber
-                .active_frame_mut()?
-                .set_register(target, value.clone())?;
+            fiber.active_frame_mut()?.set_register(target, value)?;
         }
         AwbcPattern::Whole { target, inner } => {
-            bind_tested_pattern(program, fiber, inner, value)?;
-            fiber
-                .active_frame_mut()?
-                .set_register(target, value.clone())?;
+            let whole = if pattern_has_binding(program, inner, 0)? {
+                if !value.ownership().permits_copy() {
+                    return Err(VmError::Runtime(
+                        "Whole pattern would duplicate an affine value".to_owned(),
+                    ));
+                }
+                let inner_value = value.clone();
+                bind_tested_pattern_owned(program, fiber, inner, inner_value)?;
+                value
+            } else {
+                value
+            };
+            fiber.active_frame_mut()?.set_register(target, whole)?;
         }
         AwbcPattern::Tuple(children) => {
             if let RuntimeValue::Tuple(values) = value {
                 for (child, value) in children.into_iter().zip(values) {
-                    bind_tested_pattern(program, fiber, child, value)?;
+                    if pattern_has_binding(program, child, 0)? {
+                        bind_tested_pattern_owned(program, fiber, child, value)?;
+                    }
                 }
             }
         }
         AwbcPattern::Sequence { items, rest } => {
             if let RuntimeValue::Seq(sequence) = value {
-                let item_count = items.len();
-                for (index, child) in items.iter().copied().enumerate() {
-                    bind_tested_pattern(program, fiber, child, &sequence.value_at(index))?;
+                let mut values = sequence.into_values().into_iter();
+                for child in items {
+                    let value = values.next().ok_or_else(|| {
+                        VmError::Runtime("sequence pattern value is absent".to_owned())
+                    })?;
+                    if pattern_has_binding(program, child, 0)? {
+                        bind_tested_pattern_owned(program, fiber, child, value)?;
+                    }
                 }
                 if let AwbcPatternRest::Bind(rest) = rest {
+                    let tail = values.collect();
                     fiber
                         .active_frame_mut()?
-                        .set_register(rest, RuntimeValue::Seq(sequence.tail_from(item_count)))?;
+                        .set_register(rest, runtime_sequence_from_literal_values(tail))?;
                 }
             }
         }
         AwbcPattern::Record { fields, rest, .. } => {
-            match value {
-                RuntimeValue::Record(values) => {
-                    for field in fields {
-                        let value = values.get(field.field as usize).ok_or_else(|| {
-                            VmError::Runtime("record pattern field is absent".to_owned())
-                        })?;
-                        bind_tested_pattern(program, fiber, field.pattern, value.value())?;
-                    }
+            let has_field_bindings = fields.iter().try_fold(false, |has_bindings, field| {
+                Ok::<_, VmError>(has_bindings || pattern_has_binding(program, field.pattern, 0)?)
+            })?;
+            match rest {
+                AwbcPatternRest::Bind(rest) if !has_field_bindings => {
+                    fiber.active_frame_mut()?.set_register(rest, value)?;
                 }
-                RuntimeValue::NominalRecord(record) => {
-                    for field in fields {
-                        let value = record.fields().get(field.field as usize).ok_or_else(|| {
-                            VmError::Runtime("record pattern field is absent".to_owned())
-                        })?;
-                        bind_tested_pattern(program, fiber, field.pattern, value)?;
+                AwbcPatternRest::Bind(rest) => {
+                    if !value.ownership().permits_copy() {
+                        return Err(VmError::Runtime(
+                            "record rest pattern would duplicate an affine value".to_owned(),
+                        ));
                     }
+                    let retained = value.clone();
+                    let mut values = into_record_field_values(value)?;
+                    bind_record_pattern_fields(program, fiber, fields, &mut values)?;
+                    fiber.active_frame_mut()?.set_register(rest, retained)?;
                 }
-                _ => unreachable!("record pattern was tested before binding"),
-            }
-            if let AwbcPatternRest::Bind(rest) = rest {
-                fiber
-                    .active_frame_mut()?
-                    .set_register(rest, value.clone())?;
+                AwbcPatternRest::Exact | AwbcPatternRest::Ignore => {
+                    let mut values = into_record_field_values(value)?;
+                    bind_record_pattern_fields(program, fiber, fields, &mut values)?;
+                }
             }
         }
         AwbcPattern::Variant { payload, .. } => {
@@ -3775,10 +4738,349 @@ fn bind_tested_pattern(
                 },
             ) = (payload, value)
             {
-                bind_tested_pattern(program, fiber, pattern, value)?;
+                if pattern_has_binding(program, pattern, 0)? {
+                    bind_tested_pattern_owned(program, fiber, pattern, *value)?;
+                }
             }
         }
         AwbcPattern::Discard | AwbcPattern::Literal(_) | AwbcPattern::Entity(_) => {}
+    }
+    Ok(())
+}
+
+fn pattern_has_binding(
+    program: &AwbcProgram,
+    pattern: AwbcPatternId,
+    depth: usize,
+) -> Result<bool, VmError> {
+    if depth > 1024 {
+        return Err(VmError::Runtime("pattern depth exceeded".to_owned()));
+    }
+    let pattern = program
+        .patterns
+        .get(pattern.index())
+        .ok_or(VmError::MissingPattern(pattern))?;
+    match pattern {
+        AwbcPattern::Bind { .. } => Ok(true),
+        AwbcPattern::Tuple(items) => items.iter().try_fold(false, |found, item| {
+            Ok::<_, VmError>(found || pattern_has_binding(program, *item, depth + 1)?)
+        }),
+        AwbcPattern::Sequence { items, rest } => {
+            if matches!(rest, AwbcPatternRest::Bind(_)) {
+                Ok(true)
+            } else {
+                items.iter().try_fold(false, |found, item| {
+                    Ok::<_, VmError>(found || pattern_has_binding(program, *item, depth + 1)?)
+                })
+            }
+        }
+        AwbcPattern::Record { fields, rest, .. } => {
+            if matches!(rest, AwbcPatternRest::Bind(_)) {
+                Ok(true)
+            } else {
+                fields.iter().try_fold(false, |found, field| {
+                    Ok::<_, VmError>(
+                        found || pattern_has_binding(program, field.pattern, depth + 1)?,
+                    )
+                })
+            }
+        }
+        AwbcPattern::Variant {
+            payload: Some(payload),
+            ..
+        } => pattern_has_binding(program, *payload, depth + 1),
+        AwbcPattern::Whole { .. } => Ok(true),
+        AwbcPattern::Discard
+        | AwbcPattern::Literal(_)
+        | AwbcPattern::Entity(_)
+        | AwbcPattern::Variant { payload: None, .. } => Ok(false),
+    }
+}
+
+/// Maps each affine handle token in a borrowed value to the one register that
+/// the already-tested pattern will bind it into. This is used by Product's
+/// ownership preflight before the source value leaves line custody.
+pub(crate) fn pattern_handle_destinations(
+    program: &AwbcProgram,
+    fiber: &FiberState,
+    pattern: AwbcPatternId,
+    value: &RuntimeValue,
+    token: &crate::runtime_id::RuntimeLineHandleToken,
+) -> Result<Vec<AwbcRegisterId>, VmError> {
+    let prepared = prepare_pattern_binding(program, fiber, pattern, value)?;
+    let mut destinations = Vec::new();
+    visit_pattern_bindings_view(program, pattern, value.view(), 0, &mut |register, view| {
+        if view
+            .contains_line_handle(token)
+            .map_err(|error| VmError::Runtime(error.to_string()))?
+        {
+            destinations.push(register);
+        }
+        Ok(())
+    })?;
+    let admitted = prepared.registers.iter().copied().collect::<BTreeSet<_>>();
+    if destinations
+        .iter()
+        .any(|destination| !admitted.contains(destination))
+    {
+        return Err(VmError::Runtime(
+            "pattern handle preview referenced an unbound register".to_owned(),
+        ));
+    }
+    destinations.sort_unstable();
+    destinations.dedup();
+    if destinations.len() > 1 {
+        return Err(VmError::Runtime(
+            "AWBC result pattern duplicates one affine line handle into multiple registers"
+                .to_owned(),
+        ));
+    }
+    Ok(destinations)
+}
+
+/// Preflights every register that `bind_pattern_owned` will write, including
+/// target-slot type admission and duplication constraints, without moving any
+/// part of the borrowed result value.
+pub(crate) fn pattern_binding_registers(
+    program: &AwbcProgram,
+    fiber: &FiberState,
+    pattern: AwbcPatternId,
+    value: &RuntimeValue,
+) -> Result<Vec<AwbcRegisterId>, VmError> {
+    prepare_pattern_binding(program, fiber, pattern, value)
+        .map(|prepared| prepared.registers.into_vec())
+}
+
+fn visit_pattern_bindings_view(
+    program: &AwbcProgram,
+    pattern: AwbcPatternId,
+    value: RuntimeValueView<'_>,
+    depth: usize,
+    visitor: &mut impl FnMut(AwbcRegisterId, RuntimeValueView<'_>) -> Result<(), VmError>,
+) -> Result<(), VmError> {
+    if depth > 1024 {
+        return Err(VmError::Runtime("pattern depth exceeded".to_owned()));
+    }
+    let row = program
+        .patterns
+        .get(pattern.index())
+        .ok_or(VmError::MissingPattern(pattern))?;
+    match row {
+        AwbcPattern::Bind { target, .. } => visitor(*target, value),
+        AwbcPattern::Discard | AwbcPattern::Literal(_) | AwbcPattern::Entity(_) => Ok(()),
+        AwbcPattern::Tuple(patterns) => {
+            let RuntimeValueView::Tuple(values) = value else {
+                return Err(VmError::PatternMismatch);
+            };
+            for (index, pattern) in patterns.iter().enumerate() {
+                let value = values.get(index).ok_or(VmError::PatternMismatch)?;
+                visit_pattern_bindings_view(program, *pattern, value, depth + 1, visitor)?;
+            }
+            Ok(())
+        }
+        AwbcPattern::Record { fields, rest, .. } => {
+            let has_field_bindings = fields.iter().try_fold(false, |has_bindings, field| {
+                Ok::<_, VmError>(has_bindings || pattern_has_binding(program, field.pattern, 0)?)
+            })?;
+            if let AwbcPatternRest::Bind(register) = rest {
+                if has_field_bindings && !value.ownership().permits_copy() {
+                    return Err(VmError::Runtime(
+                        "record rest pattern would duplicate an affine value".to_owned(),
+                    ));
+                }
+                if !has_field_bindings {
+                    return visitor(*register, value);
+                }
+                visitor(*register, value)?;
+            }
+            let RuntimeValueView::Record(values) = value else {
+                return if matches!(value, RuntimeValueView::NominalRecord(_)) {
+                    let RuntimeValueView::NominalRecord(record) = value else {
+                        unreachable!()
+                    };
+                    for field in fields {
+                        let nested = record
+                            .fields()
+                            .get(field.field as usize)
+                            .ok_or(VmError::PatternMismatch)?
+                            .view();
+                        visit_pattern_bindings_view(
+                            program,
+                            field.pattern,
+                            nested,
+                            depth + 1,
+                            visitor,
+                        )?;
+                    }
+                    Ok(())
+                } else {
+                    Err(VmError::PatternMismatch)
+                };
+            };
+            for field in fields {
+                let (identity, _, nested) = values
+                    .get(field.field as usize)
+                    .ok_or(VmError::PatternMismatch)?;
+                if identity.zero_based() != field.field {
+                    return Err(VmError::PatternMismatch);
+                }
+                visit_pattern_bindings_view(program, field.pattern, nested, depth + 1, visitor)?;
+            }
+            Ok(())
+        }
+        AwbcPattern::Sequence { items, rest } => {
+            let RuntimeValueView::Sequence(values) = value else {
+                return Err(VmError::PatternMismatch);
+            };
+            for (index, pattern) in items.iter().enumerate() {
+                let nested = values.value_view(index).ok_or(VmError::PatternMismatch)?;
+                visit_pattern_bindings_view(program, *pattern, nested, depth + 1, visitor)?;
+            }
+            if let AwbcPatternRest::Bind(register) = rest {
+                for index in items.len()..values.len() {
+                    let nested = values.value_view(index).ok_or(VmError::PatternMismatch)?;
+                    visitor(*register, nested)?;
+                }
+            }
+            Ok(())
+        }
+        AwbcPattern::Variant { payload, .. } => {
+            if let (
+                Some(pattern),
+                RuntimeValueView::Variant {
+                    payload: Some(value),
+                    ..
+                },
+            ) = (payload, value)
+            {
+                visit_pattern_bindings_view(program, *pattern, value.view(), depth + 1, visitor)?;
+            }
+            Ok(())
+        }
+        AwbcPattern::Whole { target, inner } => {
+            if pattern_has_binding(program, *inner, 0)? {
+                if !value.ownership().permits_copy() {
+                    return Err(VmError::Runtime(
+                        "Whole pattern would duplicate an affine value".to_owned(),
+                    ));
+                }
+                visit_pattern_bindings_view(program, *inner, value, depth + 1, visitor)?;
+            }
+            visitor(*target, value)
+        }
+    }
+}
+
+/// Checks the exact entry-time deep-Copy facts sealed by the selected
+/// function's positional ABI before any argument owner moves into a frame.
+pub(crate) fn validate_function_input_ownership_values(
+    program: &AwbcProgram,
+    function: AwbcFunctionId,
+    values: &[&RuntimeValue],
+) -> Result<(), VmError> {
+    let function_record = program
+        .functions
+        .get(function.index())
+        .ok_or(VmError::MissingFunction(function))?;
+    let signature = program
+        .signatures
+        .get(function_record.signature.index())
+        .ok_or_else(|| VmError::Runtime("function signature is absent".to_owned()))?;
+    if values.len() != signature.params.len()
+        || function_record.input_ownership.len() != signature.params.len()
+    {
+        return Err(VmError::FunctionArgumentCount {
+            expected: signature.params.len(),
+            actual: values.len(),
+        });
+    }
+    for (position, (row, value)) in function_record
+        .input_ownership
+        .iter()
+        .zip(values)
+        .enumerate()
+    {
+        if row.requirement == RuntimeFunctionInputOwnershipRequirement::Unrestricted
+            && !value.ownership().permits_copy()
+        {
+            return Err(VmError::Runtime(format!(
+                "function input {position} requires a deep Copy value"
+            )));
+        }
+        let required = row
+            .unrestricted_bindings
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        if required.len() != row.unrestricted_bindings.len() {
+            return Err(VmError::Runtime(format!(
+                "function input {position} repeats an unrestricted binding coordinate"
+            )));
+        }
+        if required.is_empty() {
+            continue;
+        }
+        let pattern = row.pattern.ok_or_else(|| {
+            VmError::Runtime(format!(
+                "function input {position} has unrestricted bindings without a pattern"
+            ))
+        })?;
+        let mut observed = BTreeSet::new();
+        visit_pattern_bindings_view(
+            program,
+            pattern,
+            value.view(),
+            0,
+            &mut |register, projected| {
+                if required.contains(&register) {
+                    if !projected.ownership().permits_copy() {
+                        return Err(VmError::Runtime(format!(
+                            "function input {position} binding {register:?} requires a deep Copy value"
+                        )));
+                    }
+                    observed.insert(register);
+                }
+                Ok(())
+            },
+        )?;
+        if observed != required {
+            return Err(VmError::Runtime(format!(
+                "function input {position} unrestricted bindings disagree with its projected pattern"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn into_record_field_values(value: RuntimeValue) -> Result<Vec<Option<RuntimeValue>>, VmError> {
+    match value {
+        RuntimeValue::Record(fields) => Ok(fields
+            .into_iter()
+            .map(|field| Some(field.into_value()))
+            .collect()),
+        RuntimeValue::NominalRecord(record) => {
+            Ok(record.into_fields().into_iter().map(Some).collect())
+        }
+        _ => Err(VmError::Runtime(
+            "record pattern tested a non-record value".to_owned(),
+        )),
+    }
+}
+
+fn bind_record_pattern_fields(
+    program: &AwbcProgram,
+    fiber: &mut FiberState,
+    fields: Vec<super::schema::AwbcRecordPatternField>,
+    values: &mut [Option<RuntimeValue>],
+) -> Result<(), VmError> {
+    for field in fields {
+        let value = values
+            .get_mut(field.field as usize)
+            .and_then(Option::take)
+            .ok_or_else(|| VmError::Runtime("record pattern field is absent".to_owned()))?;
+        if pattern_has_binding(program, field.pattern, 0)? {
+            bind_tested_pattern_owned(program, fiber, field.pattern, value)?;
+        }
     }
     Ok(())
 }
@@ -3930,7 +5232,8 @@ impl VmError {
             | Self::MissingPattern(_)
             | Self::MissingType(_)
             | Self::MissingPureHelper(_)
-            | Self::MissingTraitMethod(_) => None,
+            | Self::MissingTraitMethod(_)
+            | Self::MissingLineOperation(_) => None,
         }
     }
 }

@@ -11,9 +11,10 @@ use arcweft_core::runtime_id::RuntimeLocalDeclarationId;
 use arcweft_core::{
     plan::{
         RuntimeCallArgumentSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeLocalDeclarationSeed,
-        RuntimeLocalSeedId, RuntimePlan, RuntimePlanBuilder, RuntimePlanTypeProjection,
-        RuntimePlanTypeSeed, RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin,
-        RuntimePureHelperSeed, RuntimePureInputType, RuntimePureOutputType,
+        RuntimeLocalReadSeed, RuntimeLocalSeedId, RuntimePlan, RuntimePlanBuilder,
+        RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimePureHelper, RuntimePureHelperId,
+        RuntimePureHelperOrigin, RuntimePureHelperSeed, RuntimePureInputType,
+        RuntimePureOutputType,
     },
     pure::{
         AotPureFunctionBackend, AotPureI64Plan, PureFunctionBackendKind, PureFunctionRequest,
@@ -22,7 +23,8 @@ use arcweft_core::{
     },
     value::{
         DenseSeq, RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeCallTarget, RuntimeExpr,
-        RuntimeExprKind, RuntimeIntrinsic, RuntimeSeq, RuntimeUnaryOp, RuntimeValue,
+        RuntimeExprKind, RuntimeIntrinsic, RuntimeLocalReadMode, RuntimeSeq, RuntimeUnaryOp,
+        RuntimeValue,
     },
 };
 use arcweft_lang_jit_cranelift::{
@@ -1028,7 +1030,10 @@ fn jit_check_target(options: &JitCheckOptions) -> Result<JitCheckTarget, ExitCod
 fn local(local: &RuntimeLocalSeedId) -> RuntimeExprSeed {
     RuntimeExprSeed::new(
         RuntimeSemanticTypeId::from_bytes([1; 32]),
-        RuntimeExprSeedKind::Local(local.clone()),
+        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+            local.clone(),
+            RuntimeLocalReadMode::Copy,
+        )),
     )
 }
 
@@ -1446,7 +1451,13 @@ fn julia_i64_expr(
 ) -> Result<String, String> {
     match expr.kind() {
         RuntimeExprKind::Value(RuntimeValue::Int(value)) => Ok(value.to_string()),
-        RuntimeExprKind::Local(local) => julia_local_identifier(*local, inputs, input_labels),
+        RuntimeExprKind::Local(read) if read.mode() == RuntimeLocalReadMode::Copy => {
+            julia_local_identifier(read.local(), inputs, input_labels)
+        }
+        RuntimeExprKind::Local(read) => Err(format!(
+            "move local read `{}` is outside the Julia i64 subset",
+            read.local()
+        )),
         RuntimeExprKind::Let {
             binding,
             expr,

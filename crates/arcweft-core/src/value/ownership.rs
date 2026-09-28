@@ -241,8 +241,8 @@ impl RuntimeValue {
                     handles,
                 ),
             },
-            Self::Iterator(RuntimeIterator::Values { items, index }) => {
-                for (offset, value) in items.iter().enumerate().skip(*index) {
+            Self::Iterator(RuntimeIterator::Values { items }) => {
+                for (offset, value) in items.iter().enumerate() {
                     let offset = u64::try_from(offset)
                         .map_err(|_| RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
                     value.collect_affine_line_handles(
@@ -401,17 +401,17 @@ impl RuntimeSeq {
 
 fn iterator_ownership(iterator: &RuntimeIterator) -> RuntimeValueOwnership {
     match iterator {
-        RuntimeIterator::Values { items, index } => {
-            values_ownership(items.get(*index..).unwrap_or_default())
-        }
+        RuntimeIterator::Values { items } => values_ownership(items),
         RuntimeIterator::Range(_) => RuntimeValueOwnership::Unrestricted,
         RuntimeIterator::Witness { state, .. } => state.ownership(),
     }
 }
 
-fn values_ownership(values: &[RuntimeValue]) -> RuntimeValueOwnership {
+fn values_ownership<'a>(
+    values: impl IntoIterator<Item = &'a RuntimeValue>,
+) -> RuntimeValueOwnership {
     values
-        .iter()
+        .into_iter()
         .fold(RuntimeValueOwnership::Unrestricted, |ownership, value| {
             ownership.join(value.ownership())
         })

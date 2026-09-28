@@ -6,6 +6,7 @@ use arcweft_interaction_model::audio::{
     AudioBusId, AudioCaptureId, AudioCommand, AudioEffectId, AudioMillis, AudioResourceId,
     AudioSnapshotId, AudioVoiceId, GainDbMilli, PanMilli,
 };
+use std::borrow::Cow;
 
 impl AwbcAudioCommand {
     #[allow(
@@ -142,20 +143,25 @@ struct AudioPayloadContext<'a> {
     args: &'a [RuntimeValue],
 }
 
-impl AudioPayloadContext<'_> {
+impl<'a> AudioPayloadContext<'a> {
     fn value(
-        &self,
+        &'a self,
         value: AwbcAudioValueRef,
         field: &str,
-    ) -> Result<RuntimeValue, ProductStepError> {
+    ) -> Result<Cow<'a, RuntimeValue>, ProductStepError> {
         match value {
-            AwbcAudioValueRef::Arg(arg) => self.args.get(arg.index()).cloned().ok_or_else(|| {
-                ProductStepError::Internal(format!(
-                    "AWBC audio field `{field}` references missing dynamic arg {}",
-                    arg.0
-                ))
-            }),
+            AwbcAudioValueRef::Arg(arg) => self
+                .args
+                .get(arg.index())
+                .map(Cow::Borrowed)
+                .ok_or_else(|| {
+                    ProductStepError::Internal(format!(
+                        "AWBC audio field `{field}` references missing dynamic arg {}",
+                        arg.0
+                    ))
+                }),
             AwbcAudioValueRef::Const(constant) => constant_value(self.program, constant)
+                .map(Cow::Owned)
                 .map_err(|error| ProductStepError::Internal(error.to_string())),
         }
     }
@@ -169,7 +175,7 @@ impl AudioPayloadContext<'_> {
         value.as_identifier().ok_or_else(|| {
             ProductStepError::Type(format!(
                 "AWBC audio field `{field}` expected audio identifier, found {}",
-                runtime_value_label(&value)
+                runtime_value_label(value.as_ref())
             ))
         })
     }
@@ -241,7 +247,7 @@ impl AudioPayloadContext<'_> {
         value.as_bool().ok_or_else(|| {
             ProductStepError::Type(format!(
                 "AWBC audio field `{field}` expected bool, found {}",
-                runtime_value_label(&value)
+                runtime_value_label(value.as_ref())
             ))
         })
     }
@@ -251,7 +257,7 @@ impl AudioPayloadContext<'_> {
         value.try_i64().ok_or_else(|| {
             ProductStepError::Type(format!(
                 "AWBC audio field `{field}` expected integer, found {}",
-                runtime_value_label(&value)
+                runtime_value_label(value.as_ref())
             ))
         })
     }
@@ -261,7 +267,7 @@ impl AudioPayloadContext<'_> {
         value.try_u64().ok_or_else(|| {
             ProductStepError::Type(format!(
                 "AWBC audio field `{field}` expected unsigned integer, found {}",
-                runtime_value_label(&value)
+                runtime_value_label(value.as_ref())
             ))
         })
     }

@@ -92,13 +92,13 @@ fn validate_value(
     }
 }
 
-fn validate_values(
-    values: &[RuntimeValue],
+fn validate_values<'a>(
+    values: impl IntoIterator<Item = &'a RuntimeValue>,
     depth: usize,
     maximum: usize,
 ) -> Result<(), RuntimeValueNestingError> {
     values
-        .iter()
+        .into_iter()
         .try_for_each(|value| validate_value(value, depth, maximum))
 }
 

@@ -12,15 +12,17 @@ use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeChoiceOptionSeed, RuntimeDialogueContentPlanSeed, RuntimeExprSeed,
     RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeLineId,
-    RuntimeLocalDeclarationSeed, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan,
-    RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+    RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed, RuntimePatternSeed, RuntimePatternSeedKind,
+    RuntimePlan, RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
 };
 use arcweft_core::task::{
     AssetLoadKind, CancelScopeId, GenerationId, HostRestartPolicy, NeedProducerContractDigest,
     NeedProducerRequestProjection, NeedProducerSiteDigest, NeedProducerTaskPlan, TaskClass,
     TaskPolicy, TaskPriority,
 };
-use arcweft_core::value::{RuntimeEntityReference, RuntimePayload, RuntimeValue};
+use arcweft_core::value::{
+    RuntimeEntityReference, RuntimeLocalReadMode, RuntimePayload, RuntimeValue,
+};
 use arcweft_dialogue::{DialoguePresentationProfile, DialogueProfileRevision};
 use arcweft_id::{AssetId, AssetVirtualPath, DeclarationIdentityFamily, TextKey};
 use arcweft_player_native::windowed_patch::{
@@ -1399,7 +1401,13 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
             RuntimeFlowOpSeed::Await {
                 binding: None,
                 target: arcweft_core::plan::RuntimeAwaitTargetSeed {
-                    source: RuntimeExprSeed::new(need_type, RuntimeExprSeedKind::Local(need_local)),
+                    source: RuntimeExprSeed::new(
+                        need_type,
+                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                            need_local,
+                            RuntimeLocalReadMode::Move,
+                        )),
+                    ),
                 },
                 observers: Vec::new(),
             },

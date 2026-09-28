@@ -17,6 +17,8 @@ fn constructor_program(
         .map(|(index, shape)| runtime_type(u8::try_from(index + 1).unwrap(), shape))
         .collect();
     program.signatures[0].params = operands.iter().copied().map(AwbcTypeId).collect();
+    program.functions[0].input_ownership =
+        vec![AwbcFunctionInputOwnership::default(); operands.len()];
     program.signatures[0].result = Some(AwbcTypeId(result));
     program.frame_layouts[0].slots = operands
         .iter()

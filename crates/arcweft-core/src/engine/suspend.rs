@@ -15,12 +15,14 @@ use crate::step::RuntimeDiagnosticCategory;
 use crate::task::{
     AssetRequest, AudioDecodeRequest, AwaitManyTarget, FileReadBytesRequest, FileReadTextRequest,
     FileWriteBytesRequest, FileWriteTextRequest, HostTaskRequest, HostTaskRequestTemplate,
-    HttpFetchRequest, HttpRespondRequest, NeedProducerRuntimeArgument, NeedProducerTaskDisposition,
-    ProcessRunRequest, RuntimeHostArgumentTemplate, RuntimeNeedPublication, ShaderRequest,
-    SystemInfoKind, SystemInfoRequest, TaskId, TaskOutcomeContract, TtsRequest, WasmCallRequest,
+    HttpFetchRequest, HttpRespondRequest, NeedId, NeedProducerRuntimeArgument,
+    NeedProducerTaskDisposition, ProcessRunRequest, RuntimeHostArgumentTemplate,
+    RuntimeNeedProducerState, RuntimeNeedPublication, ShaderRequest, SystemInfoKind,
+    SystemInfoRequest, TaskId, TaskOutcomeContract, TtsRequest, WasmCallRequest,
 };
 use crate::value::{DenseSeq, RuntimeFieldValue, RuntimeVirtualPath};
 use arcweft_need::Need;
+use std::collections::VecDeque;
 
 impl Engine {
     fn task_outcome_accepts_live_value(
@@ -50,7 +52,7 @@ impl Engine {
 
     pub(super) fn resume_suspended(
         &mut self,
-        input: &RuntimeStepInput,
+        input: &mut RuntimeStepInput,
         events: &[TaskEvent],
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
@@ -68,7 +70,7 @@ impl Engine {
                 self.resume_dialogue_state(
                     transaction,
                     input.dialogue_input_actions.as_slice(),
-                    input.host_call_results.as_slice(),
+                    &mut input.host_call_results,
                     output,
                     pure_backend,
                 );
@@ -107,7 +109,7 @@ impl Engine {
         &mut self,
         mut transaction: super::dialogue::DialogueActivationTransaction,
         input_actions: &[crate::step::RuntimeDialogueInputActionEvent],
-        host_results: &[crate::step::RuntimeHostCallResult],
+        host_results: &mut Vec<crate::step::RuntimeHostCallResult>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
@@ -166,9 +168,10 @@ impl Engine {
         };
         let content_events = transaction.take_content_events();
         let advance = transaction.take_advance();
-        let mut frame = transaction.frame().clone();
+        let frame = transaction.frame_mut();
         let mut start = None;
-        let mut callbacks = Vec::new();
+        let mut callback_sites = Vec::new();
+        let mut task_inputs = None;
         if let DialogueLineTaskState::Live(line_task) = &mut frame.line_task {
             let Some(group) = self
                 .plan
@@ -176,7 +179,6 @@ impl Engine {
                 .get(frame.task_group.index())
                 .cloned()
             else {
-                *transaction.frame_mut() = frame;
                 self.begin_dialogue_failure(
                     transaction,
                     crate::line_task::LineRuntimeError::UnknownTaskGroup.into(),
@@ -184,6 +186,19 @@ impl Engine {
                 );
                 return;
             };
+            if frame
+                .task_inputs
+                .iter()
+                .any(|binding| !binding.value.ownership().permits_copy())
+            {
+                self.begin_dialogue_failure(
+                    transaction,
+                    crate::line_task::LineRuntimeError::AffineGroupCapture.into(),
+                    output,
+                );
+                return;
+            }
+            task_inputs = Some(frame.task_inputs.to_vec().into_boxed_slice());
             let accepted_content =
                 match line_task.accept_content_event_kinds(&content_events, |event| match event {
                     crate::step::RuntimeDialogueContentEventKind::Mark(mark) => content
@@ -196,38 +211,21 @@ impl Engine {
                 }) {
                     Ok(events) => events,
                     Err(error) => {
-                        *transaction.frame_mut() = frame;
                         self.begin_dialogue_failure(transaction, error.into(), output);
                         return;
                     }
                 };
-            callbacks = match content_events
+            let requested_effects = content_events
                 .iter()
                 .filter_map(|event| match event {
                     crate::step::RuntimeDialogueContentEventKind::Mark(_) => None,
-                    crate::step::RuntimeDialogueContentEventKind::Effect(site) => Some(
-                        super::Engine::dialogue_effect_callback(&frame.effect_callbacks, *site)
-                            .map(|callback| (*site, callback))
-                            .ok_or_else(|| {
-                                RuntimeEvalError::Effect(format!(
-                                    "dialogue effect site {site} has no stored callback"
-                                ))
-                            }),
-                    ),
+                    crate::step::RuntimeDialogueContentEventKind::Effect(site) => Some(*site),
                 })
-                .collect::<Result<Vec<_>, _>>()
-            {
-                Ok(callbacks) => callbacks,
-                Err(error) => {
-                    *transaction.frame_mut() = frame;
-                    self.begin_dialogue_failure(transaction, error.into(), output);
-                    return;
-                }
-            };
+                .collect::<Vec<_>>();
+            callback_sites = requested_effects;
             let input_actions = match line_task.accept_input_action_events(input_actions) {
                 Ok(actions) => actions,
                 Err(error) => {
-                    *transaction.frame_mut() = frame;
                     self.begin_dialogue_failure(transaction, error.into(), output);
                     return;
                 }
@@ -243,10 +241,9 @@ impl Engine {
                     request_cancellation: true,
                     group,
                     activation: cancelled,
-                    captures: frame.task_inputs.clone(),
-                    callbacks: callbacks.clone(),
+                    captures: task_inputs.take().expect("live task inputs were checked"),
+                    callback_sites: std::mem::take(&mut callback_sites),
                 });
-                *transaction.frame_mut() = frame;
                 self.commit_and_suspend_dialogue(
                     transaction,
                     output,
@@ -268,10 +265,9 @@ impl Engine {
                     request_cancellation: false,
                     group,
                     activation,
-                    captures: frame.task_inputs.clone(),
-                    callbacks: callbacks.clone(),
+                    captures: task_inputs.take().expect("live task inputs were checked"),
+                    callback_sites: std::mem::take(&mut callback_sites),
                 });
-                *transaction.frame_mut() = frame;
                 self.commit_and_suspend_dialogue(
                     transaction,
                     output,
@@ -284,7 +280,6 @@ impl Engine {
             }
             for token in due_tokens {
                 if let Err(error) = line_task.mark_scheduled_ready(token) {
-                    *transaction.frame_mut() = frame;
                     self.begin_dialogue_failure(transaction, error.into(), output);
                     return;
                 }
@@ -293,7 +288,6 @@ impl Engine {
                 match progress_live_line_task_group(&group, frame.elapsed, ready, line_task) {
                     Ok(activation) => activation,
                     Err(error) => {
-                        *transaction.frame_mut() = frame;
                         self.begin_dialogue_failure(transaction, error.into(), output);
                         return;
                     }
@@ -303,12 +297,11 @@ impl Engine {
                 request_cancellation: false,
                 group,
                 activation,
-                captures: frame.task_inputs.clone(),
-                callbacks: callbacks.clone(),
+                captures: Box::new([]),
+                callback_sites: Vec::new(),
             });
         } else if !content_events.is_empty() {
             let event = content_events[0];
-            *transaction.frame_mut() = frame;
             self.begin_dialogue_failure(
                 transaction,
                 crate::line_task::LineRuntimeError::ContentEventOutsideLiveLineTask { event }
@@ -331,8 +324,8 @@ impl Engine {
                     request_cancellation: true,
                     group,
                     activation: cleanup,
-                    captures: frame.task_inputs.clone(),
-                    callbacks,
+                    captures: Box::new([]),
+                    callback_sites: Vec::new(),
                 });
             }
             if matches!(frame.line_task, DialogueLineTaskState::Closed)
@@ -345,7 +338,10 @@ impl Engine {
                 frame.phase = DialogueRuntimePhase::Closing;
             }
         }
-        *transaction.frame_mut() = frame;
+        if let Some(start) = &mut start {
+            start.captures = task_inputs.take().expect("live task inputs were checked");
+            start.callback_sites = callback_sites;
+        }
         self.commit_and_suspend_dialogue(
             transaction,
             output,
@@ -361,19 +357,10 @@ impl Engine {
         mut state: AwaitState,
         output: &mut RuntimeStepOutput,
     ) {
-        let publication = state.queued.pop_front().or_else(|| {
-            self.need_publications
-                .get(&state.need)
-                .and_then(|publications| {
-                    publications.iter().find(|publication| {
-                        state.observed_through.is_none_or(|cursor| {
-                            publication.cursor().compare_same_source(cursor)
-                                == Some(std::cmp::Ordering::Greater)
-                        })
-                    })
-                })
-                .cloned()
-        });
+        let publication = state
+            .queued
+            .pop_front()
+            .or_else(|| self.next_need_publication_for_await(&state.need, state.observed_through));
         let Some(publication) = publication else {
             self.fiber.status = FlowFiberStatus::NeedWaiting(Box::new(state));
             return;
@@ -414,7 +401,7 @@ impl Engine {
             }
             RuntimeNeedPublication::State {
                 state: need_state, ..
-            } => match &need_state {
+            } => match need_state {
                 Need::NotStarted => {
                     self.fiber.status = FlowFiberStatus::NeedWaiting(Box::new(state));
                 }
@@ -423,7 +410,7 @@ impl Engine {
                         need: state.need.clone(),
                         progress: progress.clone(),
                     });
-                    self.start_await_pending_observer(state, progress.clone(), output);
+                    self.start_await_pending_observer(state, progress, output);
                 }
                 Need::Ready(value) => {
                     let type_matches = match state.item_type {
@@ -450,7 +437,11 @@ impl Engine {
                         return;
                     }
                     if let Some(binding) = &state.binding {
-                        match self.try_bind_pattern(binding, value.value()) {
+                        match crate::pattern::inspect_runtime_pattern_owned(
+                            &self.plan,
+                            binding,
+                            value.value(),
+                        ) {
                             Ok(true) => {}
                             Ok(false) => {
                                 self.fiber.status = FlowFiberStatus::Failed(
@@ -467,9 +458,24 @@ impl Engine {
                             }
                         }
                     }
+                    let observed = value
+                        .value()
+                        .ownership()
+                        .permits_copy()
+                        .then(|| value.clone());
+                    if let Some(binding) = &state.binding {
+                        let bindings = crate::pattern::match_runtime_pattern_owned(
+                            &self.plan,
+                            binding,
+                            value.into_value(),
+                        )
+                        .expect("checked external Need binding remains valid")
+                        .expect("checked external Need binding matches");
+                        self.fiber.env.bind_all(bindings);
+                    }
                     output.flow_events.push(FlowEvent::AwaitReady {
                         need: state.need,
-                        value: value.clone(),
+                        value: observed,
                     });
                     self.fiber.cursor = state.resume;
                     self.fiber.status = FlowFiberStatus::Running;
@@ -478,6 +484,96 @@ impl Engine {
                     self.fiber.status = FlowFiberStatus::Done(FlowExit::Done);
                 }
             },
+            RuntimeNeedPublication::Producer { .. } => {
+                let Some(launch) = self.need_producers.launch_for_need(&state.need) else {
+                    self.fail_eval("local Need publication has no producer launch", output);
+                    return;
+                };
+                match launch.state() {
+                    RuntimeNeedProducerState::NotStarted => {
+                        self.fiber.status = FlowFiberStatus::NeedWaiting(Box::new(state));
+                    }
+                    RuntimeNeedProducerState::Pending(progress) => {
+                        let progress = progress.clone();
+                        output.flow_events.push(FlowEvent::AwaitProgress {
+                            need: state.need.clone(),
+                            progress: progress.clone(),
+                        });
+                        self.start_await_pending_observer(state, progress, output);
+                    }
+                    RuntimeNeedProducerState::Ready(value) => {
+                        let type_matches = match state.item_type {
+                            AwaitItemType::Plan(item_type) => self
+                                .plan
+                                .validate_live_value(
+                                    item_type,
+                                    value.value(),
+                                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                                )
+                                .is_ok(),
+                            AwaitItemType::Awbc(_) => false,
+                        };
+                        if !type_matches {
+                            self.fail_eval(
+                                "local Need Ready differs from its checked item type",
+                                output,
+                            );
+                            return;
+                        }
+                        if let Some(binding) = &state.binding {
+                            match crate::pattern::inspect_runtime_pattern_owned(
+                                &self.plan,
+                                binding,
+                                value.value(),
+                            ) {
+                                Ok(true) => {}
+                                Ok(false) => {
+                                    self.fail_eval(
+                                        "await result did not match binding pattern",
+                                        output,
+                                    );
+                                    return;
+                                }
+                                Err(error) => {
+                                    self.fail_eval(error, output);
+                                    return;
+                                }
+                            }
+                        }
+                        let observed = value
+                            .value()
+                            .ownership()
+                            .permits_copy()
+                            .then(|| value.clone());
+                        let value = self
+                            .need_producers
+                            .take_ready_for_need(&state.need)
+                            .expect("checked producer Ready remains available");
+                        if let Some(binding) = &state.binding {
+                            let bindings = crate::pattern::match_runtime_pattern_owned(
+                                &self.plan,
+                                binding,
+                                value.into_value(),
+                            )
+                            .expect("checked await binding remains valid")
+                            .expect("checked await binding matches");
+                            self.fiber.env.bind_all(bindings);
+                        }
+                        output.flow_events.push(FlowEvent::AwaitReady {
+                            need: state.need,
+                            value: observed,
+                        });
+                        self.fiber.cursor = state.resume;
+                        self.fiber.status = FlowFiberStatus::Running;
+                    }
+                    RuntimeNeedProducerState::ReadyTransferred => {
+                        self.fail_eval("local Need Ready was already consumed", output);
+                    }
+                    RuntimeNeedProducerState::Cancelled => {
+                        self.fiber.status = FlowFiberStatus::Done(FlowExit::Done);
+                    }
+                }
+            }
         }
     }
 
@@ -520,19 +616,18 @@ impl Engine {
                 None => Some(observed),
             },
         };
-        let additions = self
-            .need_publications
-            .get(&state.need)
-            .into_iter()
-            .flat_map(|publications| publications.iter())
-            .filter(|publication| {
-                queued_through.is_none_or(|cursor| {
-                    cursor.compare_same_source(publication.cursor())
-                        == Some(std::cmp::Ordering::Less)
-                })
-            })
-            .cloned()
-            .collect::<Vec<_>>();
+        let need = state.need.clone();
+        let mut through = queued_through;
+        let mut additions = Vec::new();
+        while let Some(publication) = self.next_need_publication_for_await(&need, through) {
+            through = Some(publication.cursor());
+            additions.push(publication);
+        }
+        let state = self
+            .fiber
+            .await_observer
+            .as_mut()
+            .expect("await observer remains active while publications are staged");
         for publication in additions {
             let cursor = publication.cursor();
             state.observed_through = Some(match state.observed_through {
@@ -544,6 +639,34 @@ impl Engine {
                 },
             });
             state.queued.push_back(publication);
+        }
+    }
+
+    /// Selects a publication for one observer. An affine Ready moves out of
+    /// the shared queue; only recursively unrestricted publications may be
+    /// copied for another observer of the same Need.
+    fn next_need_publication_for_await(
+        &mut self,
+        need: &NeedId,
+        through: Option<crate::task::TaskPublicationCursor>,
+    ) -> Option<RuntimeNeedPublication> {
+        let queue = self.need_publications.get_mut(need)?;
+        let index = queue.iter().position(|publication| {
+            through.is_none_or(|cursor| {
+                cursor.compare_same_source(publication.cursor()) == Some(std::cmp::Ordering::Less)
+            })
+        })?;
+        let publication = queue.get(index)?;
+        if matches!(
+            publication,
+            RuntimeNeedPublication::State {
+                state: Need::Ready(value),
+                ..
+            } if !value.value().ownership().permits_copy()
+        ) {
+            queue.remove(index)
+        } else {
+            Some(publication.clone())
         }
     }
 
@@ -571,18 +694,19 @@ impl Engine {
     pub(super) fn resume_host_call_state(
         &mut self,
         state: HostCallState,
-        input: &RuntimeStepInput,
+        input: &mut RuntimeStepInput,
         output: &mut RuntimeStepOutput,
     ) {
-        let Some(result) = input
+        let Some(index) = input
             .host_call_results
             .iter()
-            .find(|result| result.id == state.id)
+            .position(|result| result.id == state.id)
         else {
             self.fiber.status = FlowFiberStatus::HostCall(state);
             return;
         };
-        match &result.outcome {
+        let result = input.host_call_results.remove(index);
+        match result.outcome {
             Ok(value) => {
                 let super::HostCallResultType::Plan(ty) = state.result_type else {
                     self.fiber.status = FlowFiberStatus::Failed(
@@ -607,9 +731,9 @@ impl Engine {
                     return;
                 }
                 if let Some(binding) = &state.binding {
-                    match self.try_bind_pattern(binding, value.value()) {
-                        Ok(true) => {}
-                        Ok(false) => {
+                    match self.try_bind_pattern_owned(binding, value.into_value()) {
+                        Ok(None) => {}
+                        Ok(Some(_value)) => {
                             self.fiber.status = FlowFiberStatus::Failed(
                                 "host-call result did not match binding pattern".to_owned(),
                             );
@@ -754,11 +878,7 @@ impl Engine {
             need: need.clone(),
             task,
         });
-        let queued = self
-            .need_publications
-            .get(&need)
-            .map(|publications| publications.iter().cloned().collect())
-            .unwrap_or_default();
+        let queued = VecDeque::new();
         let state = AwaitState {
             binding,
             need,
@@ -814,54 +934,51 @@ impl Engine {
                 value,
             });
         }
-        let mut candidate_registry = self.need_producers.clone();
-        let invocation = match candidate_registry.begin_invocation(
+        let proof = match self.need_producers.inspect_start_visit(
             self.generation,
             self.fiber.persistent_id,
-            plan.site(),
+            plan,
+            arguments,
         ) {
-            Ok(invocation) => invocation,
+            Ok(proof) => proof,
             Err(error) => {
                 self.fail_eval(error, output);
                 return;
             }
         };
-        let admission = match candidate_registry.admit_start(invocation, plan, arguments) {
-            Ok(admission) => admission,
-            Err(error) => {
-                self.fail_eval(error, output);
-                return;
-            }
-        };
-        let launch = admission.launch();
-        let need_value = RuntimeValue::Need(launch.need().clone());
-        let bindings =
-            match crate::pattern::match_runtime_pattern(&self.plan, &binding, &need_value) {
-                Ok(Some(bindings)) => bindings,
-                Ok(None) => {
-                    self.fail_eval(
-                        "Need producer result did not match its checked binding",
-                        output,
-                    );
-                    return;
-                }
-                Err(error) => {
-                    self.fail_eval(error, output);
-                    return;
-                }
-            };
-        if admission.disposition() == NeedProducerTaskDisposition::Ensure {
-            if !self.reserve_new_task_request() {
-                self.fail_task_request_quota(
-                    "Need producer start exceeds the remaining task request quota",
+        let need_value = RuntimeValue::Need(proof.admission().need().clone());
+        match crate::pattern::inspect_runtime_pattern_owned(&self.plan, &binding, &need_value) {
+            Ok(true) => {}
+            Ok(false) => {
+                self.fail_eval(
+                    "Need producer result did not match its checked binding",
                     output,
                 );
                 return;
             }
+            Err(error) => {
+                self.fail_eval(error, output);
+                return;
+            }
+        }
+        let ensure = proof.admission().disposition() == NeedProducerTaskDisposition::Ensure;
+        if ensure && self.task_request_quota_remaining == 0 {
+            self.fail_task_request_quota(
+                "Need producer start exceeds the remaining task request quota",
+                output,
+            );
+            return;
+        }
+        let bindings =
+            crate::pattern::match_runtime_pattern_owned(&self.plan, &binding, need_value)
+                .expect("checked Need binding remains valid")
+                .expect("checked Need binding matches");
+        let admission = self.need_producers.commit_start_visit(proof);
+        if ensure {
+            self.task_request_quota_remaining -= 1;
         }
         let task_spec = (admission.disposition() == NeedProducerTaskDisposition::Ensure)
-            .then(|| launch.task_spec().clone());
-        self.need_producers = candidate_registry;
+            .then(|| admission.task_spec().clone());
         self.fiber.env.bind_all(bindings);
         self.advance_if_needed(next_op_index);
         if let Some(task_spec) = task_spec {
@@ -965,7 +1082,11 @@ impl Engine {
                     state.results[in_flight.index] = Some(value.clone());
                     output.flow_events.push(FlowEvent::AwaitReady {
                         need: in_flight.need,
-                        value: value.clone(),
+                        value: value
+                            .value()
+                            .ownership()
+                            .permits_copy()
+                            .then(|| value.clone()),
                     });
                 }
                 TaskEventKind::Progress(progress) => {
@@ -1060,22 +1181,33 @@ impl Engine {
         true
     }
 
-    fn commit_await_many_state(&mut self, state: AwaitManyState, output: &mut RuntimeStepOutput) {
+    fn commit_await_many_state(
+        &mut self,
+        mut state: AwaitManyState,
+        output: &mut RuntimeStepOutput,
+    ) {
         if !state.in_flight.is_empty() || state.results.iter().any(Option::is_none) {
             self.fiber.status =
                 FlowFiberStatus::WaitingMany(WaitingManyStatus::Native(Box::new(state)));
             return;
         }
-        let values = state
-            .results
-            .iter()
-            .filter_map(|value| value.as_ref().map(|value| value.value().clone()))
+        let values = std::mem::take(&mut state.results)
+            .into_iter()
+            .map(|value| {
+                value
+                    .expect("completed AwaitMany has every Ready result")
+                    .into_value()
+            })
             .collect::<Vec<_>>();
         let ready_value = runtime_sequence_values(values);
+        let observed = ready_value
+            .ownership()
+            .permits_copy()
+            .then(|| RuntimePayload::new(ready_value.clone()));
         if let Some(binding) = &state.binding {
-            match self.try_bind_pattern(binding, &ready_value) {
-                Ok(true) => {}
-                Ok(false) => {
+            match self.try_bind_pattern_owned(binding, ready_value) {
+                Ok(None) => {}
+                Ok(Some(_ready_value)) => {
                     self.fiber.status = FlowFiberStatus::Failed(
                         "await result did not match binding pattern".to_owned(),
                     );
@@ -1092,7 +1224,7 @@ impl Engine {
         }
         output.flow_events.push(FlowEvent::AwaitReady {
             need: state.target.need,
-            value: RuntimePayload::new(ready_value),
+            value: observed,
         });
         self.fiber.cursor = state.resume;
         self.fiber.status = FlowFiberStatus::Running;
@@ -1602,7 +1734,7 @@ mod host_result_tests {
             result_type: HostCallResultType::Plan(admission.type_ids()[0]),
             resume: None,
         };
-        let input = RuntimeStepInput {
+        let mut input = RuntimeStepInput {
             host_call_results: vec![RuntimeHostCallResult {
                 id: state.id.clone(),
                 outcome: Ok(RuntimePayload(RuntimeValue::Bool(true))),
@@ -1611,7 +1743,7 @@ mod host_result_tests {
         };
         let mut output = RuntimeStepOutput::default();
 
-        engine.resume_host_call_state(state, &input, &mut output);
+        engine.resume_host_call_state(state, &mut input, &mut output);
 
         assert!(matches!(engine.fiber.status, FlowFiberStatus::Failed(_)));
         assert!(!output.diagnostics.is_empty());

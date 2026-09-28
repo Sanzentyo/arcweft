@@ -9,7 +9,7 @@ use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeS
 use arcweft_core::task::GenerationId;
 use arcweft_core::{
     awbc::{
-        fiber::FiberScopeCleanup,
+        fiber::{AwbcFiberStateSnapshot, FiberScopeCleanup, FiberState},
         schema::{
             AwbcBlock, AwbcBlockId, AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
             AwbcEffectPlanId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
@@ -35,8 +35,8 @@ use arcweft_core::{
         RuntimeCallableStateDefinition, RuntimeCallableTransition, RuntimeEntryKind,
         RuntimeEntrySpec, RuntimeEntryTarget, RuntimeEvaluatedEffectSeed, RuntimeExprSeed,
         RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeFunctionTypeContract,
-        RuntimeLocalDeclarationSeed, RuntimePatternSeed, RuntimePatternSeedKind,
-        RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+        RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed, RuntimePatternSeed,
+        RuntimePatternSeedKind, RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
     },
     runtime_id::RuntimeCallableStateId,
     task::{
@@ -48,7 +48,7 @@ use arcweft_core::{
         RuntimeAssetContentDigest, RuntimeBinding, RuntimeBundleAssetArtifactDigest,
         RuntimeBundleAssetBinding, RuntimeBundleAssetContext, RuntimeBundleAssetOpaqueRole,
         RuntimeBundleAssetResourceId, RuntimeCallableValue, RuntimeEntityReference,
-        RuntimeImageHandleValue, RuntimeValue,
+        RuntimeImageHandleValue, RuntimeLocalReadMode, RuntimeValue,
     },
 };
 use arcweft_id::{AssetId, AssetVirtualPath, DeclarationIdentityFamily, LocaleTag};
@@ -73,12 +73,31 @@ use arcweft_runtime_driver::{
     session_save::{
         BUNDLE_SESSION_SAVE_SCHEMA_ID, BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
         BundleSessionArtifactIdentity, BundleSessionPendingBlocker, BundleSessionSaveError,
+        BundleSessionSnapshot,
     },
 };
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_text_model::DialogueContentCatalog;
 use arcweft_view::ViewMountId;
+
+fn live_snapshot_fiber(
+    owner: &RuntimeProgramOwner,
+    snapshot: &BundleSessionSnapshot,
+) -> FiberState {
+    snapshot
+        .executor
+        .state
+        .fiber
+        .clone()
+        .into_live_for_program(owner)
+        .expect("program-bound fiber snapshot reconstructs for inspection")
+}
+
+fn save_snapshot_fiber(snapshot: &mut BundleSessionSnapshot, fiber: &FiberState) {
+    snapshot.executor.state.fiber = AwbcFiberStateSnapshot::from_live(fiber)
+        .expect("live fiber projects to its inert snapshot");
+}
 
 fn fixture_runtime_artifact_fingerprint() -> arcweft_core::effect::RuntimeArtifactFingerprint {
     arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
@@ -843,25 +862,30 @@ fn awbc_save_load_preserves_cleanup_stacks() {
     let bytes = product_bundle_with_program("entry.main", "scoped-cleanup.arcw", program.clone())
         .to_format_bytes(BundleFormat::Awfb)
         .expect("scoped program encodes");
-    let mut session = product_session_from_bytes(&bytes);
+    let session = product_session_from_bytes(&bytes);
     let mut snapshot = session.snapshot_session().expect("snapshot exports");
-    let state = &mut snapshot.executor.state;
+    let owner = session.program_owner();
+    drop(session);
+    let mut fiber = live_snapshot_fiber(&owner, &snapshot);
     arcweft_core::awbc::vm::step(
         &program,
-        &mut state.fiber,
+        &mut fiber,
         arcweft_core::awbc::vm::VmStepOptions {
             max_instructions: 1,
         },
     )
     .expect("declared lexical scope enters");
-    let frame = state.fiber.active_frame_mut().expect("active frame");
+    let frame = fiber.active_frame_mut().expect("active frame");
     frame
         .root_cleanups
         .push(cleanup("handle.root", "root cleanup"));
     frame.scopes[0]
         .cleanups
         .push(cleanup("handle.scope", "scope cleanup"));
+    save_snapshot_fiber(&mut snapshot, &fiber);
+    drop(fiber);
 
+    let mut session = product_session_from_bytes(&bytes);
     session
         .restore_session_snapshot(snapshot.clone())
         .expect("snapshot with cleanup stacks restores");
@@ -885,13 +909,13 @@ fn awbc_save_load_preserves_cleanup_stacks() {
 #[test]
 fn session_save_round_trips_program_owned_awbc_callable_values() {
     let bytes = callable_product_awfb_bytes();
-    let mut session = product_session_from_bytes(&bytes);
+    let session = product_session_from_bytes(&bytes);
     let callable = captured_awbc_runtime_callable_value(session.program_owner());
     let mut snapshot = session.snapshot_session().expect("snapshot exports");
-    snapshot
-        .executor
-        .state
-        .fiber
+    let owner = session.program_owner();
+    drop(session);
+    let mut fiber = live_snapshot_fiber(&owner, &snapshot);
+    fiber
         .active_frame_mut()
         .expect("active frame")
         .root_cleanups
@@ -900,13 +924,17 @@ fn session_save_round_trips_program_owned_awbc_callable_values() {
             effect: AwbcEffectPlanId(0),
             args: vec![callable],
         });
+    save_snapshot_fiber(&mut snapshot, &fiber);
+    drop(fiber);
 
+    let mut session = product_session_from_bytes(&bytes);
     session
         .restore_session_snapshot(snapshot.clone())
         .expect("AWBC-backed callable state restores");
     let encoded = session
         .export_session_save_bytes()
         .expect("AWBC-backed callable state encodes");
+    drop(session);
     let mut restored = product_session_from_bytes(&bytes);
     restored
         .import_session_save_bytes(&encoded, &arcweft_save::SaveDecodeOptions::default())
@@ -915,42 +943,33 @@ fn session_save_round_trips_program_owned_awbc_callable_values() {
     let restored_snapshot = restored
         .snapshot_session()
         .expect("restored snapshot exports");
-    let original_value = &snapshot
-        .executor
-        .state
-        .fiber
-        .active_frame()
-        .expect("original active frame")
-        .root_cleanups[0]
-        .args[0];
-    let restored_value = &restored_snapshot
-        .executor
-        .state
-        .fiber
-        .active_frame()
-        .expect("restored active frame")
-        .root_cleanups[0]
-        .args[0];
-    let (RuntimeValue::Callable(original), RuntimeValue::Callable(rebound)) =
-        (original_value, restored_value)
+    let original_value = &snapshot.executor.state.fiber.frames[0].root_cleanups[0].args[0];
+    let restored_value = &restored_snapshot.executor.state.fiber.frames[0].root_cleanups[0].args[0];
+    let (
+        arcweft_core::value::AwbcRuntimeValueSnapshot::Callable(original),
+        arcweft_core::value::AwbcRuntimeValueSnapshot::Callable(rebound),
+    ) = (original_value, restored_value)
     else {
-        panic!("both snapshots retain callable values");
+        panic!("both snapshots retain callable value DTOs");
     };
-    assert_eq!(rebound.state(), original.state());
-    assert_eq!(rebound.retained(), original.retained());
-    assert!(!rebound.owner().same_program(original.owner()));
-    assert!(rebound.owner().same_program(&restored.program_owner()));
+    assert_eq!(rebound.state, original.state);
+    assert_eq!(rebound.retained, original.retained);
+    assert!(!restored.program_owner().same_program(&owner));
+    assert!(rebound.retained.iter().all(|value| matches!(
+        value,
+        arcweft_core::value::AwbcRuntimeValueSnapshot::String(_)
+    )));
 }
 
 #[test]
 fn session_save_round_trips_opaque_values_and_rejects_invalid_producer_atomically() {
     let bytes = product_awfb_bytes("entry.main");
-    let mut session = product_session_from_bytes(&bytes);
+    let session = product_session_from_bytes(&bytes);
     let mut snapshot = session.snapshot_session().expect("snapshot exports");
-    snapshot
-        .executor
-        .state
-        .fiber
+    let owner = session.program_owner();
+    drop(session);
+    let mut fiber = live_snapshot_fiber(&owner, &snapshot);
+    fiber
         .active_frame_mut()
         .expect("active frame")
         .root_cleanups
@@ -959,13 +978,18 @@ fn session_save_round_trips_opaque_values_and_rejects_invalid_producer_atomicall
             effect: AwbcEffectPlanId(0),
             args: vec![opaque_runtime_value()],
         });
+    save_snapshot_fiber(&mut snapshot, &fiber);
+    drop(fiber);
 
+    let mut session = product_session_from_bytes(&bytes);
     session
         .restore_session_snapshot(snapshot.clone())
         .expect("opaque cleanup state restores");
     let encoded = session
         .export_session_save_bytes()
         .expect("opaque cleanup state encodes");
+    let mut tampered = exported_session_json(&session);
+    drop(session);
     let mut restored = product_session_from_bytes(&bytes);
     restored
         .import_session_save_bytes(&encoded, &arcweft_save::SaveDecodeOptions::default())
@@ -978,7 +1002,6 @@ fn session_save_round_trips_opaque_values_and_rejects_invalid_producer_atomicall
         snapshot.executor
     );
 
-    let mut tampered = exported_session_json(&session);
     let producer = tampered
         .pointer_mut("/executor/state/fiber/frames/0/root_cleanups/0/args/0/Opaque/producer")
         .expect("opaque producer is explicit persisted evidence");
@@ -1008,17 +1031,17 @@ fn session_save_round_trips_opaque_values_and_rejects_invalid_producer_atomicall
 }
 
 #[test]
-fn session_restore_rejects_foreign_awbc_callable_owner() {
+fn session_restore_rebinds_awbc_callable_to_selected_program_and_rejects_unknown_state() {
     let bytes = callable_product_awfb_bytes();
-    let mut session = product_session_from_bytes(&bytes);
+    let session = product_session_from_bytes(&bytes);
     let foreign = captured_awbc_runtime_callable_value(RuntimeProgramOwner::Awbc(
         std::sync::Arc::new(callable_awbc_program()),
     ));
     let mut snapshot = session.snapshot_session().expect("snapshot exports");
-    snapshot
-        .executor
-        .state
-        .fiber
+    let owner = session.program_owner();
+    drop(session);
+    let mut fiber = live_snapshot_fiber(&owner, &snapshot);
+    fiber
         .active_frame_mut()
         .expect("active frame")
         .root_cleanups
@@ -1027,16 +1050,45 @@ fn session_restore_rejects_foreign_awbc_callable_owner() {
             effect: AwbcEffectPlanId(0),
             args: vec![foreign],
         });
+    save_snapshot_fiber(&mut snapshot, &fiber);
+    drop(fiber);
 
-    let error = session
-        .restore_session_snapshot(snapshot)
-        .expect_err("foreign callable program lease rejects");
+    let mut session = product_session_from_bytes(&bytes);
+    session
+        .restore_session_snapshot(snapshot.clone())
+        .expect("inert AWBC callable state rebinds to the selected program");
+    let restored_snapshot = session.snapshot_session().expect("snapshot exports");
+    let target_owner = session.program_owner();
+    let restored_fiber = live_snapshot_fiber(&target_owner, &restored_snapshot);
+    let RuntimeValue::Callable(rebound) = &restored_fiber
+        .active_frame()
+        .expect("restored active frame")
+        .root_cleanups[0]
+        .args[0]
+    else {
+        panic!("restored cleanup retains its AWBC callable");
+    };
+    assert!(rebound.owner().same_program(&target_owner));
+    assert!(!rebound.owner().same_program(&owner));
+    drop(restored_fiber);
+
+    let mut invalid_snapshot = snapshot;
+    let arcweft_core::value::AwbcRuntimeValueSnapshot::Callable(callable) =
+        &mut invalid_snapshot.executor.state.fiber.frames[0].root_cleanups[0].args[0]
+    else {
+        panic!("saved cleanup is a callable value DTO");
+    };
+    callable.state = RuntimeCallableStateId::from_zero_based(1)
+        .expect("unknown state identity is representable");
+    let mut invalid_target = product_session_from_bytes(&bytes);
+    let error = invalid_target
+        .restore_session_snapshot(invalid_snapshot)
+        .expect_err("unknown callable state rejects for the selected program");
     assert!(
         matches!(
             &error,
-            BundleSessionSaveError::InvalidRuntimeValue { path, message }
-                if path == "executor.product_awbc.fiber.frames[0].root_cleanups[0].args[0]"
-                && message.contains("callable is leased to a different AWBC program")
+            BundleSessionSaveError::Fiber { message }
+                if message.contains("callable state 2 is absent from its program")
         ),
         "{error:?}"
     );
@@ -1539,7 +1591,10 @@ fn restartable_need_awfb_bytes() -> Vec<u8> {
                     target: arcweft_core::plan::RuntimeAwaitTargetSeed {
                         source: RuntimeExprSeed::new(
                             need_ty,
-                            RuntimeExprSeedKind::Local(need_local),
+                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                need_local,
+                                RuntimeLocalReadMode::Move,
+                            )),
                         ),
                     },
                     observers: Vec::new(),
@@ -1890,6 +1945,7 @@ fn minimal_awbc_program(entry: &str) -> AwbcProgram {
                 public_id: Some(AwbcStringId(1)),
                 kind: AwbcFunctionKind::Flow,
                 signature: AwbcSignatureId(0),
+                input_ownership: Vec::new(),
                 frame_layout: AwbcFrameLayoutId(0),
                 blocks: AwbcTableRange::new(0, 1),
                 entry_block: AwbcBlockId(0),
@@ -1899,6 +1955,7 @@ fn minimal_awbc_program(entry: &str) -> AwbcProgram {
                 public_id: None,
                 kind: AwbcFunctionKind::Synthetic,
                 signature: AwbcSignatureId(1),
+                input_ownership: vec![Default::default()],
                 frame_layout: AwbcFrameLayoutId(1),
                 blocks: AwbcTableRange::new(1, 1),
                 entry_block: AwbcBlockId(1),

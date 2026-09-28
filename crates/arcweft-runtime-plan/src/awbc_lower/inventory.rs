@@ -9,8 +9,8 @@ use arcweft_core::awbc::schema::{
     AwbcDialogueValueRole, AwbcDisplayMapEntry, AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId,
     AwbcEffectSet, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFlowBinding,
     AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
-    AwbcFunctionId, AwbcFunctionKind, AwbcHostArgument, AwbcHostCall, AwbcHostCallId,
-    AwbcHostCallMode, AwbcInstruction, AwbcInstructionId, AwbcLineCleanupPolicy,
+    AwbcFunctionId, AwbcFunctionInputOwnership, AwbcFunctionKind, AwbcHostArgument, AwbcHostCall,
+    AwbcHostCallId, AwbcHostCallMode, AwbcInstruction, AwbcInstructionId, AwbcLineCleanupPolicy,
     AwbcLineTaskGroupId, AwbcPattern, AwbcPatternId, AwbcPresentationCleanup, AwbcProgram,
     AwbcPureHelperId, AwbcPureProgramBinding, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
     AwbcRoute, AwbcRouteBinding, AwbcRouteBindingSource, AwbcRouteSegment, AwbcRuntimeType,
@@ -676,10 +676,6 @@ impl AwbcInventory {
 
     pub(crate) fn plan_type(&self, plan_type: RuntimePlanTypeId) -> Option<AwbcTypeId> {
         self.plan_types.get(&plan_type).copied()
-    }
-
-    pub(crate) fn runtime_type_permits_copy(&self, ty: AwbcTypeId) -> bool {
-        self.program.runtime_type_permits_copy(ty)
     }
 
     pub(crate) fn semantic_type(
@@ -1520,6 +1516,7 @@ impl AwbcInventory {
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
             signature: AwbcSignatureId::default(),
+            input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId::default(),
             blocks: AwbcTableRange::new(0, 0),
             entry_block: AwbcBlockId::default(),
@@ -2236,6 +2233,7 @@ impl AwbcInventory {
             public_id,
             kind,
             signature,
+            input_ownership: Vec::<AwbcFunctionInputOwnership>::new(),
             frame_layout: layout,
             blocks: AwbcTableRange::new(block.0, 1),
             entry_block: block,

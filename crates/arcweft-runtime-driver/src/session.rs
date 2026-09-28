@@ -19,7 +19,7 @@ use crate::session_save::{
     BundleSessionExecutorSnapshot, BundleSessionGenerationSnapshot, BundleSessionPendingBlocker,
     BundleSessionRuntimeSnapshot, BundleSessionSaveError, BundleSessionSavePayload,
     BundleSessionSnapshot, digest_label, validate_presentation_runtime_status,
-    validate_presentation_snapshot, validate_product_awbc_snapshot,
+    validate_presentation_snapshot,
 };
 use crate::swap::{
     GenerationBuildError, ProgramGeneration, SwapCompatibility, SwapError, SwapSession,
@@ -192,7 +192,7 @@ struct PreparedBundleStepInput {
 }
 
 /// One deterministic VM step plus the host work and presentation state it emitted.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct BundleSessionStep {
     pub index: usize,
     pub clock: RuntimeClockStep,
@@ -276,7 +276,7 @@ pub struct StartedForegroundEntry {
 }
 
 /// Portable decoded bundle execution session.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct BundleSession {
     source_label: String,
     executor: ArcweftRuntimeExecutor,

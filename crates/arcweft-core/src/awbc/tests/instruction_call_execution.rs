@@ -42,6 +42,7 @@ fn mut_trait_program(receiver_out: AwbcRegisterId) -> std::sync::Arc<AwbcProgram
     program.frame_layouts[0].slots = vec![
         temp(AwbcFrameSlotRole::Temporary),
         temp(AwbcFrameSlotRole::Temporary),
+        temp(AwbcFrameSlotRole::Temporary),
     ];
     program.frame_layouts.push(AwbcFrameLayout {
         slots: vec![
@@ -96,6 +97,7 @@ fn mut_trait_program(receiver_out: AwbcRegisterId) -> std::sync::Arc<AwbcProgram
         public_id: None,
         kind: AwbcFunctionKind::TraitMethod,
         signature: AwbcSignatureId(1),
+        input_ownership: vec![AwbcFunctionInputOwnership::default()],
         frame_layout: AwbcFrameLayoutId(1),
         blocks: AwbcTableRange::new(1, 1),
         entry_block: AwbcBlockId(1),
@@ -116,7 +118,7 @@ fn mut_trait_program(receiver_out: AwbcRegisterId) -> std::sync::Arc<AwbcProgram
 
 #[test]
 fn mut_trait_return_updates_receiver_on_the_same_saved_fiber() {
-    for (receiver_out, expected_result) in [(AwbcRegisterId(0), 99), (AwbcRegisterId(1), 17)] {
+    for receiver_out in [AwbcRegisterId(0), AwbcRegisterId(2)] {
         let program = mut_trait_program(receiver_out);
         let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).unwrap();
         for _ in 0..8 {
@@ -174,7 +176,10 @@ fn mut_trait_return_updates_receiver_on_the_same_saved_fiber() {
         restored.validate_for_program(&program).unwrap();
         restored.resume_budget_yield(&program).unwrap();
         restored.replenish_budget();
-        let mut cancelled = restored.clone();
+        let mut cancelled = AwbcFiberStateSnapshot::from_live(&restored)
+            .unwrap()
+            .into_live_for_program(&owner)
+            .unwrap();
         assert!(matches!(
             super::super::vm::cancel_fiber(&mut cancelled).exit,
             super::super::vm::VmExit::Cancelled
@@ -195,27 +200,42 @@ fn mut_trait_return_updates_receiver_on_the_same_saved_fiber() {
         assert_eq!(
             output.exit,
             super::super::vm::VmExit::Returned(Some(RuntimeValue::Int(
-                crate::value::RuntimeInt::I64(expected_result)
+                crate::value::RuntimeInt::I64(99)
             )))
         );
-        let expected_receiver = if receiver_out == AwbcRegisterId(0) {
-            17
+        if receiver_out == AwbcRegisterId(0) {
+            assert_eq!(
+                restored.frames[0]
+                    .register(AwbcRegisterId(0))
+                    .unwrap()
+                    .try_i64(),
+                Some(17)
+            );
         } else {
-            7
-        };
-        assert_eq!(
-            restored.frames[0]
-                .register(AwbcRegisterId(0))
-                .unwrap()
-                .try_i64(),
-            Some(expected_receiver)
-        );
-        assert_eq!(
-            restored.frames[0]
-                .register(AwbcRegisterId(1))
-                .unwrap()
-                .try_i64(),
-            Some(expected_result)
+            assert!(restored.frames[0].register(AwbcRegisterId(0)).is_err());
+            assert_eq!(
+                restored.frames[0]
+                    .register(AwbcRegisterId(2))
+                    .unwrap()
+                    .try_i64(),
+                Some(17)
+            );
+        }
+        assert!(
+            restored.frames[0].register(AwbcRegisterId(1)).is_err(),
+            "the returned value was transferred to the VM exit"
         );
     }
+
+    let mut overlapping = (*mut_trait_program(AwbcRegisterId(2))).clone();
+    let AwbcInstruction::CallTraitMethod { receiver_out, .. } = &mut overlapping.instructions[1]
+    else {
+        unreachable!("fixture call remains at instruction one")
+    };
+    *receiver_out = Some(AwbcRegisterId(1));
+    assert!(matches!(
+        overlapping.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::InvalidInvariant { message, .. })
+            if message == "instruction destinations are distinct"
+    ));
 }

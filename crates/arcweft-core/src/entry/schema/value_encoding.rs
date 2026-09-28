@@ -317,6 +317,12 @@ enum Work<'a, E, C, A: Iterator<Item = E>> {
     Record(RuntimeRecordView<'a>, usize, usize, Rc<C>),
     Sequence(&'a RuntimeSeq, usize, usize, Rc<C>),
     Values(slice::Iter<'a, RuntimeValue>, usize, usize, Rc<C>),
+    DequeValues(
+        std::collections::vec_deque::Iter<'a, RuntimeValue>,
+        usize,
+        usize,
+        Rc<C>,
+    ),
     CommandList(&'a [RuntimeCommand], usize, Rc<C>),
     Commands(slice::Iter<'a, RuntimeCommand>, usize, usize, Rc<C>),
     Predicate(&'a RuntimeAgentPredicate, usize, Rc<C>, PathStep<'a>),
@@ -477,6 +483,18 @@ fn visit_with_encoding<S: CanonicalSink + ?Sized, V: ValueValidation>(
                     if let Some(value) = values.next() {
                         let expected = validation.child(&children, index)?;
                         work.push(Work::Values(values, index + 1, depth, children));
+                        work.push(Work::Value(
+                            value.view(),
+                            depth,
+                            expected,
+                            Some(PathStep::Index(index)),
+                        ));
+                    }
+                }
+                Work::DequeValues(mut values, index, depth, children) => {
+                    if let Some(value) = values.next() {
+                        let expected = validation.child(&children, index)?;
+                        work.push(Work::DequeValues(values, index + 1, depth, children));
                         work.push(Work::Value(
                             value.view(),
                             depth,
@@ -762,7 +780,7 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
                 if let Some(budget) = budget {
                     budget.collection(items.len())?;
                 }
-                work.push(Work::Values(items.iter(), 0, depth + 1, children));
+                work.push(Work::DequeValues(items.iter(), 0, depth + 1, children));
             }
         }
         RuntimeValueView::RuntimeOnly(_) => {

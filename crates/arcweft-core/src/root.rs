@@ -15,7 +15,7 @@ use crate::plan::{
 };
 use crate::value::{
     RuntimeAgentValue, RuntimeFlowParameterBinding, RuntimePayload, RuntimeReductionProducer,
-    RuntimeReductionValue, RuntimeValue,
+    RuntimeReductionValue, RuntimeScalarView, RuntimeValue, RuntimeValueView,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -155,6 +155,42 @@ pub struct RootRuntime {
     failure: Option<RootRuntimeFailure>,
 }
 
+/// An in-memory rollback image of the complete root owner. All live payloads
+/// are represented by inert value DTOs until the old runtime has been dropped.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RootRuntimeRollbackImage {
+    entry: EntryRuntimeId,
+    binding: EntryBindingIdentity,
+    state_identity: crate::entry::RuntimeNominalTypeId,
+    state_layout: TypeLayoutHash,
+    event_identity: crate::entry::RuntimeNominalTypeId,
+    event_layout: TypeLayoutHash,
+    value: crate::value::AwbcRuntimeValueSnapshot,
+    next_sequence: TransitionSequence,
+    queued_events: VecDeque<RootRollbackEvent>,
+    committed_commands: VecDeque<RootRollbackCommand>,
+    reducer_active: bool,
+    roles: RuntimeStatefulEntryRoles,
+    reducer: RuntimeCallableRole,
+    limits: RootExecutionLimits,
+    failure: Option<RootRuntimeFailure>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct RootRollbackEvent {
+    sequence: TransitionSequence,
+    payload: crate::value::AwbcRuntimeValueSnapshot,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct RootRollbackCommand {
+    transition: TransitionSequence,
+    index: u32,
+    constructor: crate::entry::RuntimeCommandConstructorId,
+    target: crate::entry::RuntimeCommandTargetId,
+    payload: crate::value::AwbcRuntimeValueSnapshot,
+}
+
 /// Fully verified metadata needed to construct one durable root transaction
 /// owner without coupling it to a concrete executable tier.
 #[derive(Clone, Debug, PartialEq)]
@@ -215,6 +251,8 @@ pub enum RootRuntimeError {
     },
     #[error("entry initializer returned an invalid root value: {0}")]
     InvalidInitialValue(#[source] crate::program_types::RuntimeProgramTypeError),
+    #[error("{phase} root state contains an affine value that root execution must copy")]
+    AffineRootState { phase: &'static str },
     #[error("saved root metadata does not match the selected {0} role")]
     SnapshotRoleMismatch(&'static str),
     #[error("saved root value is invalid: {0}")]
@@ -256,7 +294,7 @@ pub trait RootCallableEvaluator {
     fn evaluate_root_callable(
         &mut self,
         callable: &RuntimeCallableRole,
-        args: &[RuntimeValue],
+        args: Vec<RuntimeValue>,
     ) -> Result<RuntimeValue, RootCallableEvaluationError>;
 }
 
@@ -317,6 +355,108 @@ impl RootStartupContract {
 }
 
 impl RootRuntime {
+    pub fn inert_rollback_image(
+        &self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<RootRuntimeRollbackImage, String> {
+        let image = |value: &crate::value::RuntimeValue| {
+            crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
+                .map_err(|error| error.to_string())
+        };
+        Ok(RootRuntimeRollbackImage {
+            entry: self.active.entry.clone(),
+            binding: self.active.binding,
+            state_identity: self.active.state_identity.clone(),
+            state_layout: self.active.state_layout,
+            event_identity: self.active.event_identity.clone(),
+            event_layout: self.active.event_layout,
+            value: image(self.active.value.value())?,
+            next_sequence: self.active.next_sequence,
+            queued_events: self
+                .active
+                .queued_events
+                .iter()
+                .map(|event| {
+                    Ok(RootRollbackEvent {
+                        sequence: event.sequence,
+                        payload: image(event.payload.value())?,
+                    })
+                })
+                .collect::<Result<_, String>>()?,
+            committed_commands: self
+                .active
+                .committed_commands
+                .iter()
+                .map(|envelope| {
+                    Ok(RootRollbackCommand {
+                        transition: envelope.transition,
+                        index: envelope.index,
+                        constructor: envelope.command.constructor().clone(),
+                        target: envelope.command.target().clone(),
+                        payload: image(envelope.command.payload().value())?,
+                    })
+                })
+                .collect::<Result<_, String>>()?,
+            reducer_active: self.active.reducer_active,
+            roles: self.roles.clone(),
+            reducer: self.reducer.clone(),
+            limits: self.limits,
+            failure: self.failure.clone(),
+        })
+    }
+
+    pub fn from_rollback_image(
+        image: RootRuntimeRollbackImage,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<Self, String> {
+        let value = |image: crate::value::AwbcRuntimeValueSnapshot| {
+            image
+                .into_runtime_value_for_program(owner)
+                .map_err(|error| error.to_string())
+        };
+        Ok(Self {
+            active: ActiveRootState {
+                entry: image.entry,
+                binding: image.binding,
+                state_identity: image.state_identity,
+                state_layout: image.state_layout,
+                event_identity: image.event_identity,
+                event_layout: image.event_layout,
+                value: RuntimePayload(value(image.value)?),
+                next_sequence: image.next_sequence,
+                queued_events: image
+                    .queued_events
+                    .into_iter()
+                    .map(|event| {
+                        Ok(SequencedRootEvent {
+                            sequence: event.sequence,
+                            payload: RuntimePayload(value(event.payload)?),
+                        })
+                    })
+                    .collect::<Result<_, String>>()?,
+                committed_commands: image
+                    .committed_commands
+                    .into_iter()
+                    .map(|envelope| {
+                        Ok(RuntimeCommandEnvelope {
+                            transition: envelope.transition,
+                            index: envelope.index,
+                            command: RuntimeCommand::new_accepted(
+                                envelope.constructor,
+                                envelope.target,
+                                RuntimePayload(value(envelope.payload)?),
+                            ),
+                        })
+                    })
+                    .collect::<Result<_, String>>()?,
+                reducer_active: image.reducer_active,
+            },
+            roles: image.roles,
+            reducer: image.reducer,
+            limits: image.limits,
+            failure: image.failure,
+        })
+    }
     /// Executes the state initializer and constructs the root/flow candidates.
     ///
     /// The caller atomically installs both candidates only after its flow
@@ -334,10 +474,15 @@ impl RootRuntime {
             initial_state_parameter,
         } = contract;
         let value = evaluator
-            .evaluate_root_callable(&roles.initializer, &[])
+            .evaluate_root_callable(&roles.initializer, Vec::new())
             .map_err(RootRuntimeError::Initializer)?;
         let payload = RuntimePayload(value);
         let limits = roles.command_policy.root_limits;
+        if !payload.0.ownership().permits_copy() {
+            return Err(RootRuntimeError::AffineRootState {
+                phase: "initializer",
+            });
+        }
         let initializer_state_digest = roles
             .state
             .accepts_payload(program, &payload, limits.schema)
@@ -378,6 +523,15 @@ impl RootRuntime {
         &self.active
     }
 
+    /// Visits the sole live root state and any queued event payloads without
+    /// manufacturing another owner. Save and rollback admission use this view.
+    pub fn visit_runtime_values(&self, mut visitor: impl FnMut(&crate::value::RuntimeValue)) {
+        visitor(self.active.value.value());
+        for event in &self.active.queued_events {
+            visitor(event.payload.value());
+        }
+    }
+
     #[must_use]
     pub const fn roles(&self) -> &RuntimeStatefulEntryRoles {
         &self.roles
@@ -390,6 +544,10 @@ impl RootRuntime {
 
     #[must_use]
     pub fn snapshot_state(&self) -> RootStateSnapshotV1 {
+        assert!(
+            self.active.value.0.ownership().permits_copy(),
+            "admitted root state must remain recursively unrestricted"
+        );
         RootStateSnapshotV1 {
             state_identity: self.active.state_identity.clone(),
             state_layout: self.active.state_layout,
@@ -435,6 +593,9 @@ impl RootRuntime {
             return Err(RootRuntimeError::SnapshotRoleMismatch("event"));
         }
         let limits = roles.command_policy.root_limits;
+        if !snapshot.value.0.ownership().permits_copy() {
+            return Err(RootRuntimeError::AffineRootState { phase: "saved" });
+        }
         roles
             .state
             .accepts_payload(program, &snapshot.value, limits.schema)
@@ -471,8 +632,8 @@ impl RootRuntime {
         }
         self.ingress(events, program)?;
         let mut result = RootStepResult::default();
-        while let Some(event) = self.active.queued_events.front().cloned() {
-            match self.reduce_front(&event, evaluator, program) {
+        while let Some(event) = self.active.queued_events.pop_front() {
+            match self.reduce_front(event, evaluator, program) {
                 Ok(RootReductionDisposition::Committed(outcome)) => {
                     result.outcomes.push(outcome);
                 }
@@ -558,7 +719,7 @@ impl RootRuntime {
         for event in &events {
             self.roles
                 .event
-                .accepts_payload(program, &event.payload, self.limits.schema)
+                .accepts_live_payload(program, &event.payload, self.limits.schema)
                 .map_err(RootRuntimeError::InvalidEvent)?;
         }
         let first = match self.active.queued_events.back() {
@@ -599,7 +760,7 @@ impl RootRuntime {
 
     fn reduce_front(
         &mut self,
-        event: &SequencedRootEvent,
+        event: SequencedRootEvent,
         evaluator: &mut impl RootCallableEvaluator,
         program: crate::program_types::RuntimeProgramTypes<'_>,
     ) -> Result<RootReductionDisposition, RootRuntimeFailure> {
@@ -610,62 +771,69 @@ impl RootRuntime {
             ));
         }
         self.active.reducer_active = true;
+        let sequence = event.sequence;
         let returned = evaluator.evaluate_root_callable(
             &self.reducer,
-            &[self.active.value.0.clone(), event.payload.0.clone()],
+            vec![self.active.value.0.clone(), event.payload.0],
         );
         let returned = match returned {
             Ok(value) => value,
             Err(error) => {
                 self.active.reducer_active = false;
-                return Err(Self::failure_for(event.sequence, &error.to_string()));
+                return Err(Self::failure_for(sequence, &error.to_string()));
             }
         };
         match parse_reducer_result(returned) {
             Ok(ParsedReducerResult::Committed(reduction)) => {
-                self.commit_reduction(event, reduction, program)
+                self.commit_reduction(sequence, reduction, program)
             }
             Ok(ParsedReducerResult::Rejected {
                 code,
                 message,
                 value,
-            }) => self.reject_reduction(event, code, message, value),
+            }) => self.reject_reduction(sequence, code, message, value),
             Err(message) => {
                 self.active.reducer_active = false;
-                Err(Self::failure_for(event.sequence, &message))
+                Err(Self::failure_for(sequence, &message))
             }
         }
     }
 
     fn commit_reduction(
         &mut self,
-        event: &SequencedRootEvent,
+        sequence: TransitionSequence,
         reduction: RuntimeReductionValue,
         program: crate::program_types::RuntimeProgramTypes<'_>,
     ) -> Result<RootReductionDisposition, RootRuntimeFailure> {
         let (state, commands) = reduction.into_parts();
         let commands = commands.into_vec();
         let state = RuntimePayload(state);
+        if !state.0.ownership().permits_copy() {
+            return Err(Self::failure_for(
+                sequence,
+                "reducer state contains an affine value that root execution must copy",
+            ));
+        }
         let state_digest = self
             .roles
             .state
             .accepts_payload(program, &state, self.limits.schema)
-            .map_err(|error| Self::failure_for(event.sequence, &error.to_string()))?;
+            .map_err(|error| Self::failure_for(sequence, &error.to_string()))?;
         let command_digests =
             validate_commands(&commands, &self.roles.command_policy.admitted, self.limits)
-                .map_err(|message| Self::failure_for(event.sequence, &message))?;
+                .map_err(|message| Self::failure_for(sequence, &message))?;
         let envelopes = commands
             .into_iter()
             .enumerate()
             .map(|(index, command)| {
                 u32::try_from(index)
                     .map(|index| RuntimeCommandEnvelope {
-                        transition: event.sequence,
+                        transition: sequence,
                         index,
                         command,
                     })
                     .map_err(|_| {
-                        Self::failure_for(event.sequence, "command vector index does not fit u32")
+                        Self::failure_for(sequence, "command vector index does not fit u32")
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -675,28 +843,27 @@ impl RootRuntime {
             .len()
             .checked_add(envelopes.len())
             .ok_or_else(|| {
-                Self::failure_for(event.sequence, "pending root command count overflows usize")
+                Self::failure_for(sequence, "pending root command count overflows usize")
             })?;
         if !self.limits.permits_pending_commands(pending_commands) {
             return Err(Self::failure_for(
-                event.sequence,
+                sequence,
                 "pending root commands exceed the selected runtime limit",
             ));
         }
-        let next_sequence = event.sequence.next().ok_or_else(|| {
+        let next_sequence = sequence.next().ok_or_else(|| {
             Self::failure_for(
-                event.sequence,
+                sequence,
                 "ingress admitted an unconsumable terminal transition sequence",
             )
         })?;
         self.active.value = state;
-        self.active.queued_events.pop_front();
         self.active.next_sequence = next_sequence;
         self.active.committed_commands.extend(envelopes);
         self.active.reducer_active = false;
         Ok(RootReductionDisposition::Committed(
             RootTransitionOutcome::Committed {
-                sequence: event.sequence,
+                sequence,
                 state_digest,
                 command_digests,
             },
@@ -705,25 +872,24 @@ impl RootRuntime {
 
     fn reject_reduction(
         &mut self,
-        event: &SequencedRootEvent,
+        sequence: TransitionSequence,
         code: String,
         message: String,
         value: RuntimeValue,
     ) -> Result<RootReductionDisposition, RootRuntimeFailure> {
         let error_digest = validate_replay_safe_payload(&RuntimePayload(value), self.limits.schema)
-            .map_err(|message| Self::failure_for(event.sequence, &message))?;
-        let next_sequence = event.sequence.next().ok_or_else(|| {
+            .map_err(|message| Self::failure_for(sequence, &message))?;
+        let next_sequence = sequence.next().ok_or_else(|| {
             Self::failure_for(
-                event.sequence,
+                sequence,
                 "ingress admitted an unconsumable terminal transition sequence",
             )
         })?;
-        self.active.queued_events.pop_front();
         self.active.next_sequence = next_sequence;
         self.active.reducer_active = false;
         Ok(RootReductionDisposition::Rejected(
             RootTransitionOutcome::Rejected {
-                sequence: event.sequence,
+                sequence,
                 code,
                 message,
                 error_digest,
@@ -777,6 +943,9 @@ fn parse_reduction(value: RuntimeValue) -> Result<ParsedReducerResult, String> {
 }
 
 fn parse_reducer_error(value: RuntimeValue) -> Result<ParsedReducerResult, String> {
+    if !value.ownership().permits_copy() {
+        return Err("reducer error contains an affine value that root execution must copy".into());
+    }
     let original = value.clone();
     let value = unwrap_named_variant(value, "ReducerError")?;
     let fields = record_fields(value, "ReducerError")?;
@@ -926,6 +1095,15 @@ fn validate_replay_safe_value(
     depth: usize,
     nodes: &mut usize,
 ) -> Result<(), String> {
+    validate_replay_safe_view(value.view(), limits, depth, nodes)
+}
+
+fn validate_replay_safe_view(
+    value: RuntimeValueView<'_>,
+    limits: RuntimeSchemaLimits,
+    depth: usize,
+    nodes: &mut usize,
+) -> Result<(), String> {
     if !limits.permits_depth(depth) {
         return Err("replay-safe payload exceeds depth budget".to_owned());
     }
@@ -936,57 +1114,67 @@ fn validate_replay_safe_value(
         return Err("replay-safe payload exceeds node budget".to_owned());
     }
     match value {
-        RuntimeValue::F32(value) if !value.is_finite() => {
+        RuntimeValueView::Scalar(RuntimeScalarView::F32(value)) if !value.is_finite() => {
             Err("replay-safe payload contains non-finite f32".to_owned())
         }
-        RuntimeValue::F64(value) if !value.is_finite() => {
+        RuntimeValueView::Scalar(RuntimeScalarView::F64(value)) if !value.is_finite() => {
             Err("replay-safe payload contains non-finite f64".to_owned())
         }
-        RuntimeValue::String(value) if !limits.permits_string_bytes(value.len()) => {
+        RuntimeValueView::Scalar(RuntimeScalarView::String(value))
+            if !limits.permits_string_bytes(value.len()) =>
+        {
             Err("replay-safe payload exceeds string byte budget".to_owned())
         }
-        RuntimeValue::EntityRef(value)
+        RuntimeValueView::Scalar(RuntimeScalarView::EntityRef(value))
             if !limits.permits_string_bytes(value.runtime_label().len()) =>
         {
             Err("replay-safe payload exceeds string byte budget".to_owned())
         }
-        RuntimeValue::Progress(value)
+        RuntimeValueView::Scalar(RuntimeScalarView::Progress(value))
             if value
                 .label()
                 .is_some_and(|label| !limits.permits_string_bytes(label.len())) =>
         {
             Err("replay-safe progress label exceeds string byte budget".to_owned())
         }
-        RuntimeValue::Tuple(values) => {
-            for value in values {
-                validate_replay_safe_value(value, limits, depth + 1, nodes)?;
+        RuntimeValueView::Tuple(values) => {
+            for index in 0..values.len() {
+                let value = values
+                    .get(index)
+                    .ok_or_else(|| "replay-safe payload has an invalid tuple element".to_owned())?;
+                validate_replay_safe_view(value, limits, depth + 1, nodes)?;
             }
             Ok(())
         }
-        RuntimeValue::Seq(values) => {
-            let values = values.clone().into_values();
+        RuntimeValueView::Sequence(values) => {
             if !limits.permits_sequence_items(values.len()) {
                 return Err("replay-safe payload exceeds sequence item budget".to_owned());
             }
-            for value in &values {
-                validate_replay_safe_value(value, limits, depth + 1, nodes)?;
+            for index in 0..values.len() {
+                let value = values
+                    .value_view(index)
+                    .ok_or_else(|| "replay-safe payload has an invalid sequence item".to_owned())?;
+                validate_replay_safe_view(value, limits, depth + 1, nodes)?;
             }
             Ok(())
         }
-        RuntimeValue::Record(fields) => {
+        RuntimeValueView::Record(fields) => {
             let mut names = BTreeSet::new();
-            for field in fields {
-                if !names.insert(field.name()) {
+            for index in 0..fields.len() {
+                let (_, name, value) = fields
+                    .get(index)
+                    .ok_or_else(|| "replay-safe payload has an invalid record field".to_owned())?;
+                if !names.insert(name) {
                     return Err(format!(
                         "replay-safe payload contains duplicate field `{}`",
-                        field.name()
+                        name
                     ));
                 }
-                validate_replay_safe_value(field.value(), limits, depth + 1, nodes)?;
+                validate_replay_safe_view(value, limits, depth + 1, nodes)?;
             }
             Ok(())
         }
-        RuntimeValue::NominalRecord(record) => {
+        RuntimeValueView::NominalRecord(record) => {
             if !limits.permits_sequence_items(record.fields().len()) {
                 return Err("replay-safe payload exceeds nominal field budget".to_owned());
             }
@@ -995,37 +1183,21 @@ fn validate_replay_safe_value(
             }
             Ok(())
         }
-        RuntimeValue::Opaque(value) => validate_replay_safe_opaque(value, limits, depth, nodes),
-        RuntimeValue::Reduction(value) => {
+        RuntimeValueView::Opaque(value) => validate_replay_safe_opaque(value, limits, depth, nodes),
+        RuntimeValueView::Reduction(value) => {
             validate_replay_safe_reduction(value, limits, depth, nodes)
         }
-        RuntimeValue::Agent(value) => validate_replay_safe_agent_value(value, limits, depth, nodes),
-        RuntimeValue::Variant { payload, .. } => {
+        RuntimeValueView::Agent(value) => {
+            validate_replay_safe_agent_value(value, limits, depth, nodes)
+        }
+        RuntimeValueView::Variant { payload, .. } => {
             if let Some(payload) = payload {
                 validate_replay_safe_value(payload, limits, depth + 1, nodes)?;
             }
             Ok(())
         }
-        RuntimeValue::Callable(_)
-        | RuntimeValue::Need(_)
-        | RuntimeValue::Iterator(_)
-        | RuntimeValue::Range(_)
-        | RuntimeValue::MatrixF32(_)
-        | RuntimeValue::MatrixF64(_)
-        | RuntimeValue::TensorF32(_)
-        | RuntimeValue::TensorF64(_) => Err("runtime-only value is not replay-safe".to_owned()),
-        RuntimeValue::Unit
-        | RuntimeValue::Bool(_)
-        | RuntimeValue::Int(_)
-        | RuntimeValue::UInt(_)
-        | RuntimeValue::F32(_)
-        | RuntimeValue::F64(_)
-        | RuntimeValue::String(_)
-        | RuntimeValue::Color(_)
-        | RuntimeValue::Char(_)
-        | RuntimeValue::Duration(_)
-        | RuntimeValue::Progress(_)
-        | RuntimeValue::EntityRef(_) => Ok(()),
+        RuntimeValueView::RuntimeOnly(_) => Err("runtime-only value is not replay-safe".to_owned()),
+        RuntimeValueView::Scalar(_) => Ok(()),
     }
 }
 

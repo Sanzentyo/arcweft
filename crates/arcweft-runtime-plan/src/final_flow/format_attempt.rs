@@ -281,7 +281,10 @@ impl<'a> FinalFlowLowerer<'a> {
                     },
                     overrides.clone(),
                 )?;
-                (body, local_seed(operand.ty(), local))
+                (
+                    body,
+                    local_seed(operand.ty(), local, RuntimeLocalReadMode::Move),
+                )
             } else {
                 (
                     Vec::new(),

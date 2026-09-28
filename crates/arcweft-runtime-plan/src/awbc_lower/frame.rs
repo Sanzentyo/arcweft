@@ -5,6 +5,7 @@ use arcweft_core::awbc::schema::{
 };
 use arcweft_core::runtime_id::RuntimeLocalDeclarationId;
 use arcweft_core::scope::RuntimeScopeIdentity;
+use arcweft_core::value::RuntimeLocalReadMode;
 use std::collections::BTreeMap;
 
 /// Stable frame slot key. Accepted local declarations, rather than source
@@ -12,6 +13,7 @@ use std::collections::BTreeMap;
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum FrameSlotKey {
     Local(RuntimeLocalDeclarationId),
+    AbiParameter(u32),
     Temp(u32),
     RootTemp(u32),
     ReturnValue(u32),
@@ -22,6 +24,7 @@ pub enum FrameSlotKey {
 pub struct FrameCaptureSlot {
     pub local: RuntimeLocalDeclarationId,
     pub register: AwbcRegisterId,
+    pub mode: RuntimeLocalReadMode,
 }
 
 /// Function-local frame allocator.
@@ -98,6 +101,24 @@ impl FrameBuilder {
         name: AwbcStringId,
     ) -> AwbcRegisterId {
         let register = self.parameter(local, ty);
+        self.slots[register.index()].name = Some(name);
+        register
+    }
+
+    /// The ABI owner is distinct from locals introduced by its input pattern.
+    /// The pattern may bind the same source declaration without aliasing the
+    /// consumed parameter register.
+    pub fn abi_parameter(
+        &mut self,
+        position: usize,
+        ty: AwbcTypeId,
+        name: AwbcStringId,
+    ) -> AwbcRegisterId {
+        let register = self.slot(
+            FrameSlotKey::AbiParameter(table_index(position)),
+            ty,
+            AwbcFrameSlotRole::Parameter,
+        );
         self.slots[register.index()].name = Some(name);
         register
     }
@@ -203,8 +224,10 @@ impl FrameBuilder {
                 FrameSlotKey::Local(local) => Some(FrameCaptureSlot {
                     local: *local,
                     register: *register,
+                    mode: RuntimeLocalReadMode::Move,
                 }),
-                FrameSlotKey::Temp(_)
+                FrameSlotKey::AbiParameter(_)
+                | FrameSlotKey::Temp(_)
                 | FrameSlotKey::RootTemp(_)
                 | FrameSlotKey::ReturnValue(_)
                 | FrameSlotKey::RuntimeState(_) => None,

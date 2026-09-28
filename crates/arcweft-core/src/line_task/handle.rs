@@ -1,6 +1,6 @@
 use super::defer::{
     AwbcRuntimeDeferredRegistrationSnapshot, RuntimeDeferInFlight, RuntimeDeferUnwindState,
-    RuntimeDeferUnwindStep, RuntimeLineDeferredRegistration,
+    RuntimeDeferUnwindStep, RuntimeLineDeferredRegistration, RuntimeScopedDeferDecision,
 };
 use super::{
     LineTaskLiveSnapshot, LineTaskNodeState, LineTaskPlanView, LineTaskScheduledCompletion,
@@ -323,7 +323,7 @@ pub struct RuntimeLineHandleLedger {
     leases: BTreeMap<RuntimeLineHandleToken, RuntimeHandleLease>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct RuntimeDialogueActivationState<T> {
     ledger: RuntimeLineHandleLedger,
     command_sequence: u64,
@@ -343,6 +343,186 @@ pub struct RuntimeDialogueActivationState<T> {
     result: RuntimeDialogueResultState<T>,
     frame_released: bool,
     prepared_commands: Vec<crate::presentation::RuntimeLineHostCommand>,
+}
+
+/// Metadata-only rollback for host outcomes. The ledger and command rows hold
+/// handle identities, never runtime values or capture packets.
+#[derive(Clone, Debug, PartialEq)]
+struct RuntimeDialogueOutcomeJournal {
+    ledger: RuntimeLineHandleLedger,
+    command_sequence: u64,
+    issued_commands: BTreeMap<
+        crate::presentation::RuntimeLineCommandId,
+        crate::presentation::RuntimeLineHostCommand,
+    >,
+    superseded_commands: BTreeMap<
+        crate::presentation::RuntimeLineCommandId,
+        crate::presentation::RuntimeLineHostCommand,
+    >,
+    resolved_commands: std::collections::BTreeSet<crate::presentation::RuntimeLineCommandId>,
+    prepared_commands: Vec<crate::presentation::RuntimeLineHostCommand>,
+}
+
+/// A checked host-outcome transition over handle and command metadata only.
+/// The live activation retains sole custody of its result and capture values
+/// until this stage is committed.
+#[derive(Debug)]
+pub(crate) struct RuntimeDialogueOutcomeStage {
+    before: RuntimeDialogueOutcomeJournal,
+    after: RuntimeDialogueOutcomeJournal,
+}
+
+#[derive(Debug)]
+pub(crate) struct RuntimePreparedResultSelection<T> {
+    tag: LineTaskWorkTag,
+    ty: T,
+    journal: RuntimeDialogueOutcomeStage,
+    ledger: RuntimeLineHandleLedger,
+}
+
+#[derive(Debug)]
+pub(crate) struct RuntimePreparedLineCommands {
+    journal: RuntimeDialogueOutcomeStage,
+}
+
+#[derive(Debug)]
+pub(crate) struct RuntimePreparedScheduledPacketTake {
+    token: RuntimeLineHandleToken,
+    locals: Vec<RuntimeLocalDeclarationId>,
+}
+
+pub(crate) struct RuntimePreparedSchedule {
+    token: RuntimeLineHandleToken,
+    child: RuntimeLineTaskNodeId,
+    work: LineTaskWorkTag,
+    deadline: LogicalDuration,
+    capture_locals: Box<[RuntimeLocalDeclarationId]>,
+    observed_count: usize,
+}
+
+impl RuntimeDialogueOutcomeStage {
+    pub(crate) const fn ledger(&self) -> &RuntimeLineHandleLedger {
+        &self.after.ledger
+    }
+
+    pub(crate) fn ledger_mut(&mut self) -> &mut RuntimeLineHandleLedger {
+        &mut self.after.ledger
+    }
+
+    pub(crate) fn issued_command(
+        &self,
+        command: &crate::presentation::RuntimeLineCommandId,
+    ) -> Option<&crate::presentation::RuntimeLineHostCommand> {
+        self.after.issued_commands.get(command)
+    }
+
+    pub(crate) fn consume_issued_command(
+        &mut self,
+        command: &crate::presentation::RuntimeLineCommandId,
+    ) -> Result<crate::presentation::RuntimeLineHostCommand, LineRuntimeError> {
+        let issued = self
+            .after
+            .issued_commands
+            .remove(command)
+            .ok_or(LineRuntimeError::UnknownCommandOutcome)?;
+        self.after.resolved_commands.insert(command.clone());
+        Ok(issued)
+    }
+}
+
+#[derive(Debug)]
+struct RuntimeDeferredRegistrationStage {
+    ledger: RuntimeLineHandleLedger,
+    commands: Option<RuntimeCommandQueue>,
+    decision: RuntimeScopedDeferDecision,
+}
+
+#[derive(Debug)]
+pub(crate) struct RuntimePreparedNextDeferred {
+    exit: ScopeExit,
+    registration: Option<RuntimeDeferRegistrationId>,
+    transition: Option<RuntimeDeferredRegistrationStage>,
+    commands: Option<RuntimeDialogueOutcomeStage>,
+}
+
+#[derive(Debug)]
+pub(crate) struct RuntimePreparedDeferredRegistration {
+    id: RuntimeDeferRegistrationId,
+    next: u64,
+}
+
+/// Borrowed scheduled-packet preflight with a metadata-only ledger candidate.
+/// Packet custody moves only when the complete command batch commits.
+#[derive(Debug)]
+pub(crate) struct RuntimeScheduledCompletionStage {
+    before: RuntimeLineHandleLedger,
+    ledger: RuntimeLineHandleLedger,
+    packets: Vec<RuntimeScheduledPacketTransition>,
+}
+
+#[derive(Debug)]
+pub(crate) struct RuntimeScheduledChildAdmissionProof {
+    token: RuntimeLineHandleToken,
+    terminal: RuntimeScheduledState,
+    locals: Vec<RuntimeLocalDeclarationId>,
+}
+
+#[derive(Debug)]
+enum RuntimeScheduledPacketTransition {
+    Unstarted {
+        token: RuntimeLineHandleToken,
+        terminal: RuntimeScheduledState,
+    },
+    Work {
+        token: RuntimeLineHandleToken,
+        terminal: RuntimeScheduledState,
+    },
+}
+
+impl RuntimeScheduledPacketTransition {
+    fn token(&self) -> &RuntimeLineHandleToken {
+        match self {
+            Self::Unstarted { token, .. } | Self::Work { token, .. } => token,
+        }
+    }
+}
+
+impl RuntimeScheduledCompletionStage {
+    pub(crate) const fn ledger(&self) -> &RuntimeLineHandleLedger {
+        &self.ledger
+    }
+
+    pub(crate) fn ledger_mut(&mut self) -> &mut RuntimeLineHandleLedger {
+        &mut self.ledger
+    }
+}
+
+impl RuntimePreparedDeferredRegistration {
+    pub(crate) const fn id(&self) -> RuntimeDeferRegistrationId {
+        self.id
+    }
+}
+
+impl RuntimeDialogueOutcomeJournal {
+    fn capture<T>(state: &RuntimeDialogueActivationState<T>) -> Self {
+        Self {
+            ledger: state.ledger.clone(),
+            command_sequence: state.command_sequence,
+            issued_commands: state.issued_commands.clone(),
+            superseded_commands: state.superseded_commands.clone(),
+            resolved_commands: state.resolved_commands.clone(),
+            prepared_commands: state.prepared_commands.clone(),
+        }
+    }
+
+    fn restore<T>(self, state: &mut RuntimeDialogueActivationState<T>) {
+        state.ledger = self.ledger;
+        state.command_sequence = self.command_sequence;
+        state.issued_commands = self.issued_commands;
+        state.superseded_commands = self.superseded_commands;
+        state.resolved_commands = self.resolved_commands;
+        state.prepared_commands = self.prepared_commands;
+    }
 }
 
 impl<T> RuntimeDialogueActivationState<T> {
@@ -577,10 +757,85 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         outcome_filter: super::defer::RuntimeDeferOutcomeFilter,
         captures: Vec<RuntimeValue>,
     ) -> Result<RuntimeDeferRegistrationId, LineRuntimeError> {
-        let registration = self.allocate_deferred_registration(site, outcome_filter, captures)?;
+        let prepared = self.inspect_deferred_registration(&captures)?;
+        Ok(self.register_deferred_prepared(site, outcome_filter, captures, prepared))
+    }
+
+    pub(crate) fn register_deferred_prepared(
+        &mut self,
+        site: RuntimeDeferSiteId,
+        outcome_filter: super::defer::RuntimeDeferOutcomeFilter,
+        captures: Vec<RuntimeValue>,
+        prepared: RuntimePreparedDeferredRegistration,
+    ) -> RuntimeDeferRegistrationId {
+        let registration =
+            self.commit_deferred_registration(site, outcome_filter, captures, prepared);
         let id = registration.id();
         self.deferred.push(registration);
-        Ok(id)
+        id
+    }
+
+    /// Preflights every lifecycle and lease check before an executor takes
+    /// the capture packet from registers or lexical locals.
+    pub(crate) fn inspect_deferred_registration(
+        &self,
+        captures: &[RuntimeValue],
+    ) -> Result<RuntimePreparedDeferredRegistration, LineRuntimeError> {
+        self.inspect_deferred_registration_refs(&captures.iter().collect::<Vec<_>>())
+    }
+
+    pub(crate) fn inspect_deferred_registration_refs(
+        &self,
+        captures: &[&RuntimeValue],
+    ) -> Result<RuntimePreparedDeferredRegistration, LineRuntimeError> {
+        self.can_register_deferred()?;
+        let mut tokens = std::collections::BTreeSet::new();
+        for capture in captures {
+            for handle in capture
+                .affine_line_handles()
+                .map_err(|_| LineRuntimeError::InvalidDeferredTransition)?
+            {
+                if !tokens.insert(handle.token().clone()) {
+                    return Err(LineRuntimeError::DuplicateHandleOccurrence);
+                }
+                let lease = self
+                    .ledger
+                    .lease(handle.token())
+                    .ok_or(LineRuntimeError::UnknownHandle)?;
+                if lease.resource().kind() != handle.kind() {
+                    return Err(LineRuntimeError::WrongOpaqueProducer);
+                }
+                if matches!(lease.resource(), RuntimeHandleResource::StageActor(_))
+                    && lease.state() == RuntimeHandleLeaseState::Allocating
+                {
+                    return Err(LineRuntimeError::InvalidDeferredTransition);
+                }
+            }
+        }
+        Ok(RuntimePreparedDeferredRegistration {
+            id: RuntimeDeferRegistrationId::from_allocated(
+                NonZeroU64::new(self.next_defer_registration)
+                    .expect("checked defer registration ID is nonzero"),
+            ),
+            next: self.next_defer_registration + 1,
+        })
+    }
+
+    /// Commits the checked registration after its sole capture packet moves.
+    pub(crate) fn commit_deferred_registration(
+        &mut self,
+        site: RuntimeDeferSiteId,
+        outcome_filter: super::defer::RuntimeDeferOutcomeFilter,
+        captures: Vec<RuntimeValue>,
+        prepared: RuntimePreparedDeferredRegistration,
+    ) -> RuntimeLineDeferredRegistration {
+        assert_eq!(
+            self.next_defer_registration + 1,
+            prepared.next,
+            "deferred registration proof must match the current activation"
+        );
+        self.next_defer_registration = prepared.next;
+        RuntimeLineDeferredRegistration::new(prepared.id, site, outcome_filter, captures)
     }
 
     /// Allocates a distinct registration for an activation-local lexical scope.
@@ -592,34 +847,8 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         outcome_filter: super::defer::RuntimeDeferOutcomeFilter,
         captures: Vec<RuntimeValue>,
     ) -> Result<RuntimeLineDeferredRegistration, LineRuntimeError> {
-        self.can_register_deferred()?;
-        for capture in &captures {
-            for handle in capture
-                .affine_line_handles()
-                .map_err(|_| LineRuntimeError::InvalidDeferredTransition)?
-            {
-                let lease = self
-                    .ledger
-                    .lease(handle.token())
-                    .ok_or(LineRuntimeError::UnknownHandle)?;
-                if matches!(lease.resource(), RuntimeHandleResource::StageActor(_))
-                    && lease.state() == RuntimeHandleLeaseState::Allocating
-                {
-                    return Err(LineRuntimeError::InvalidDeferredTransition);
-                }
-            }
-        }
-        let id = RuntimeDeferRegistrationId::from_allocated(
-            NonZeroU64::new(self.next_defer_registration)
-                .expect("checked defer registration ID is nonzero"),
-        );
-        self.next_defer_registration += 1;
-        Ok(RuntimeLineDeferredRegistration::new(
-            id,
-            site,
-            outcome_filter,
-            captures,
-        ))
+        let prepared = self.inspect_deferred_registration(&captures)?;
+        Ok(self.commit_deferred_registration(site, outcome_filter, captures, prepared))
     }
 
     /// Freezes the exit reason before executing any deferred body. A body
@@ -650,38 +879,111 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         &mut self,
         activation: &DialogueActivationId,
     ) -> Result<Option<RuntimeDeferUnwindStep>, LineRuntimeError> {
-        let Some(unwind) = &self.defer_unwind else {
-            return Err(LineRuntimeError::InvalidDeferredTransition);
-        };
-        if unwind.inflight.is_some() {
+        let exit = self
+            .defer_unwind
+            .as_ref()
+            .ok_or(LineRuntimeError::InvalidDeferredTransition)?
+            .exit;
+        let prepared = self.inspect_next_deferred(activation, exit)?;
+        Ok(self.commit_next_deferred_prepared(prepared))
+    }
+
+    /// Preflights the fixed unwind reason, top capture packet, lease moves,
+    /// and command journal before any deferred owner is popped.
+    pub(crate) fn inspect_next_deferred(
+        &mut self,
+        activation: &DialogueActivationId,
+        exit: ScopeExit,
+    ) -> Result<RuntimePreparedNextDeferred, LineRuntimeError> {
+        if self.frame_released {
+            return Err(LineRuntimeError::ActivationFrameReleased);
+        }
+        if let Some(unwind) = &self.defer_unwind
+            && (unwind.exit != exit || unwind.inflight.is_some())
+        {
             return Err(LineRuntimeError::InvalidDeferredTransition);
         }
-        let Some(_) = self.deferred.last() else {
-            return Ok(None);
+        let Some(registration) = self.deferred.last() else {
+            return Ok(RuntimePreparedNextDeferred {
+                exit,
+                registration: None,
+                transition: None,
+                commands: None,
+            });
         };
-        let mut candidate = self.clone();
-        let registration = candidate
-            .deferred
-            .pop()
-            .expect("checked pending defer exists");
-        let step = candidate.prepare_deferred_registration(
+        let id = registration.id();
+        let mut transition = self.stage_deferred_registration(
             activation,
-            registration,
-            unwind.exit,
+            id,
+            registration.outcome_filter(),
+            registration.captures(),
+            exit,
             RuntimeHandleOwnerSlot::LineScope,
         )?;
-        if let RuntimeDeferUnwindStep::Run(registration) = &step {
-            candidate
-                .defer_unwind
-                .as_mut()
-                .expect("unwind exists")
-                .inflight = Some(RuntimeDeferInFlight {
-                id: registration.id(),
-                site: registration.site(),
-            });
+        let commands = if let Some(queue) = transition.commands.take() {
+            let before = RuntimeDialogueOutcomeJournal::capture(self);
+            self.record_commands(activation, queue)?;
+            let after = RuntimeDialogueOutcomeJournal::capture(self);
+            before.clone().restore(self);
+            Some(RuntimeDialogueOutcomeStage { before, after })
+        } else {
+            None
+        };
+        Ok(RuntimePreparedNextDeferred {
+            exit,
+            registration: Some(id),
+            transition: Some(transition),
+            commands,
+        })
+    }
+
+    /// Applies a checked top-of-stack transition and moves its sole capture
+    /// packet to the selected child or drops it after staged release commands.
+    pub(crate) fn commit_next_deferred_prepared(
+        &mut self,
+        prepared: RuntimePreparedNextDeferred,
+    ) -> Option<RuntimeDeferUnwindStep> {
+        let RuntimePreparedNextDeferred {
+            exit,
+            registration,
+            transition,
+            commands,
+        } = prepared;
+        assert!(
+            self.defer_unwind
+                .as_ref()
+                .is_none_or(|unwind| { unwind.exit == exit && unwind.inflight.is_none() })
+        );
+        assert_eq!(
+            self.deferred
+                .last()
+                .map(RuntimeLineDeferredRegistration::id),
+            registration
+        );
+        if let Some(commands) = commands {
+            self.commit_runtime_outcomes(commands);
         }
-        *self = candidate;
-        Ok(Some(step))
+        self.defer_unwind.get_or_insert(RuntimeDeferUnwindState {
+            exit,
+            inflight: None,
+        });
+        let transition = transition?;
+        self.ledger = transition.ledger;
+        let registration = self.deferred.pop().expect("checked pending defer exists");
+        let step = match transition.decision {
+            RuntimeScopedDeferDecision::Run => {
+                self.defer_unwind.as_mut().expect("unwind exists").inflight =
+                    Some(RuntimeDeferInFlight {
+                        id: registration.id(),
+                        site: registration.site(),
+                    });
+                RuntimeDeferUnwindStep::Run(registration)
+            }
+            RuntimeScopedDeferDecision::Skipped => {
+                RuntimeDeferUnwindStep::Skipped(registration.id())
+            }
+        };
+        Some(step)
     }
 
     /// Atomically transfers or drops one registration owned by an activation
@@ -689,29 +991,56 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
     pub(crate) fn prepare_scoped_deferred(
         &mut self,
         activation: &DialogueActivationId,
-        registration: RuntimeLineDeferredRegistration,
+        registration: &RuntimeLineDeferredRegistration,
         exit: ScopeExit,
-    ) -> Result<RuntimeDeferUnwindStep, LineRuntimeError> {
+    ) -> Result<RuntimeScopedDeferDecision, LineRuntimeError> {
+        self.prepare_scoped_deferred_parts(
+            activation,
+            registration.id(),
+            registration.outcome_filter(),
+            registration.captures(),
+            exit,
+        )
+    }
+
+    pub(crate) fn prepare_scoped_deferred_parts(
+        &mut self,
+        activation: &DialogueActivationId,
+        id: RuntimeDeferRegistrationId,
+        outcome_filter: super::defer::RuntimeDeferOutcomeFilter,
+        captures: &[RuntimeValue],
+        exit: ScopeExit,
+    ) -> Result<RuntimeScopedDeferDecision, LineRuntimeError> {
         if self.frame_released || self.defer_unwind.is_some() {
             return Err(LineRuntimeError::InvalidDeferredTransition);
         }
-        let mut candidate = self.clone();
-        let owner = RuntimeHandleOwnerSlot::ScopedDefer(registration.id());
-        let step =
-            candidate.prepare_deferred_registration(activation, registration, exit, owner)?;
-        *self = candidate;
-        Ok(step)
+        let owner = RuntimeHandleOwnerSlot::ScopedDefer(id);
+        let stage = self.stage_deferred_registration(
+            activation,
+            id,
+            outcome_filter,
+            captures,
+            exit,
+            owner,
+        )?;
+        if let Some(commands) = stage.commands {
+            self.record_commands(activation, commands)?;
+        }
+        self.ledger = stage.ledger;
+        Ok(stage.decision)
     }
 
-    fn prepare_deferred_registration(
-        &mut self,
+    fn stage_deferred_registration(
+        &self,
         activation: &DialogueActivationId,
-        registration: RuntimeLineDeferredRegistration,
+        id: RuntimeDeferRegistrationId,
+        outcome_filter: super::defer::RuntimeDeferOutcomeFilter,
+        captures: &[RuntimeValue],
         exit: ScopeExit,
         owner: RuntimeHandleOwnerSlot,
-    ) -> Result<RuntimeDeferUnwindStep, LineRuntimeError> {
+    ) -> Result<RuntimeDeferredRegistrationStage, LineRuntimeError> {
         let mut tokens = std::collections::BTreeSet::new();
-        for capture in registration.captures() {
+        for capture in captures {
             for handle in capture
                 .affine_line_handles()
                 .map_err(|_| LineRuntimeError::InvalidDeferredTransition)?
@@ -730,12 +1059,10 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                 }
             }
         }
-        let step = if registration.outcome_filter().matches(exit) {
-            let tag = LineTaskWorkTag::activation(
-                activation.clone(),
-                super::LineTaskWork::Defer(registration.id()),
-            );
-            let mut ledger = self.ledger.clone();
+        let mut ledger = self.ledger.clone();
+        let (commands, decision) = if outcome_filter.matches(exit) {
+            let tag =
+                LineTaskWorkTag::activation(activation.clone(), super::LineTaskWork::Defer(id));
             for token in &tokens {
                 ledger.transfer(
                     token,
@@ -743,19 +1070,19 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                     RuntimeHandleOwnerSlot::ChildScope(tag.clone()),
                 )?;
             }
-            self.ledger = ledger;
-            RuntimeDeferUnwindStep::Run(registration)
+            (None, RuntimeScopedDeferDecision::Run)
         } else {
-            let mut ledger = self.ledger.clone();
             let mut queue = RuntimeCommandQueue::new(activation.clone(), self.command_sequence);
             for token in &tokens {
                 ledger.drop_owned(token, &owner, &mut queue)?;
             }
-            self.ledger = ledger;
-            self.record_commands(activation, queue)?;
-            RuntimeDeferUnwindStep::Skipped(registration.id())
+            (Some(queue), RuntimeScopedDeferDecision::Skipped)
         };
-        Ok(step)
+        Ok(RuntimeDeferredRegistrationStage {
+            ledger,
+            commands,
+            decision,
+        })
     }
 
     /// Completes only the child named by the activation's in-flight record.
@@ -774,20 +1101,14 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         {
             return Err(LineRuntimeError::InvalidDeferredTransition);
         }
-        let mut candidate = self.clone();
         let tag = LineTaskWorkTag::activation(activation.clone(), super::LineTaskWork::Defer(id));
-        candidate.finish_child_scope(
+        self.finish_child_scope(
             &tag,
             live,
             &std::collections::BTreeSet::new(),
             RuntimeDropPolicy::Default,
         )?;
-        candidate
-            .defer_unwind
-            .as_mut()
-            .expect("unwind exists")
-            .inflight = None;
-        *self = candidate;
+        self.defer_unwind.as_mut().expect("unwind exists").inflight = None;
         Ok(())
     }
 
@@ -1333,6 +1654,47 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         &self.scheduled
     }
 
+    pub(crate) fn scheduled_packet_for_child(
+        &self,
+        token: &RuntimeLineHandleToken,
+    ) -> Result<&[RuntimeLocalBinding], LineRuntimeError> {
+        let packet = self
+            .scheduled
+            .iter()
+            .find(|scheduled| scheduled.token() == token)
+            .ok_or(LineRuntimeError::MissingScheduledWork)?;
+        packet.packet_for_child_fiber()
+    }
+
+    pub(crate) fn inspect_scheduled_packet_take(
+        &self,
+        token: &RuntimeLineHandleToken,
+    ) -> Result<RuntimePreparedScheduledPacketTake, LineRuntimeError> {
+        let packet = self.scheduled_packet_for_child(token)?;
+        Ok(RuntimePreparedScheduledPacketTake {
+            token: token.clone(),
+            locals: packet.iter().map(|binding| binding.local).collect(),
+        })
+    }
+
+    pub(crate) fn take_scheduled_capture_packet_prepared(
+        &mut self,
+        prepared: RuntimePreparedScheduledPacketTake,
+    ) -> Box<[RuntimeLocalBinding]> {
+        let packet = self
+            .take_scheduled_capture_packet(&prepared.token)
+            .expect("checked scheduled packet remains available for child transfer");
+        assert_eq!(
+            packet
+                .iter()
+                .map(|binding| binding.local)
+                .collect::<Vec<_>>(),
+            prepared.locals,
+            "scheduled child packet must match its borrowed proof"
+        );
+        packet
+    }
+
     pub(crate) fn take_scheduled_capture_packet(
         &mut self,
         token: &RuntimeLineHandleToken,
@@ -1347,8 +1709,61 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         bindings: Box<[RuntimeLocalBinding]>,
         terminal: RuntimeScheduledState,
     ) -> Result<(), LineRuntimeError> {
-        let packet = exact_scheduled_packet_mut(&mut self.scheduled, token)?;
-        packet.admit_child_fiber_bindings(bindings, terminal)
+        let proof = self.inspect_scheduled_child_bindings(token, &bindings, terminal)?;
+        self.admit_scheduled_child_bindings_prepared(proof, bindings);
+        Ok(())
+    }
+
+    pub(crate) fn inspect_scheduled_child_bindings(
+        &self,
+        token: &RuntimeLineHandleToken,
+        bindings: &[RuntimeLocalBinding],
+        terminal: RuntimeScheduledState,
+    ) -> Result<RuntimeScheduledChildAdmissionProof, LineRuntimeError> {
+        let references = bindings
+            .iter()
+            .map(|binding| (binding.local, &binding.value))
+            .collect::<Vec<_>>();
+        self.inspect_scheduled_child_binding_refs(token, &references, terminal)
+    }
+
+    pub(crate) fn inspect_scheduled_child_binding_refs(
+        &self,
+        token: &RuntimeLineHandleToken,
+        bindings: &[(RuntimeLocalDeclarationId, &RuntimeValue)],
+        terminal: RuntimeScheduledState,
+    ) -> Result<RuntimeScheduledChildAdmissionProof, LineRuntimeError> {
+        let packet = self
+            .scheduled
+            .iter()
+            .find(|scheduled| scheduled.token() == token)
+            .ok_or(LineRuntimeError::MissingScheduledWork)?;
+        packet.inspect_child_fiber_binding_refs(bindings, terminal)?;
+        Ok(RuntimeScheduledChildAdmissionProof {
+            token: token.clone(),
+            terminal,
+            locals: bindings.iter().map(|(local, _)| *local).collect(),
+        })
+    }
+
+    pub(crate) fn admit_scheduled_child_bindings_prepared(
+        &mut self,
+        proof: RuntimeScheduledChildAdmissionProof,
+        bindings: Box<[RuntimeLocalBinding]>,
+    ) {
+        assert_eq!(
+            bindings
+                .iter()
+                .map(|binding| binding.local)
+                .collect::<Vec<_>>(),
+            proof.locals,
+            "scheduled child bindings must match their borrowed admission proof"
+        );
+        let packet = exact_scheduled_packet_mut(&mut self.scheduled, &proof.token)
+            .expect("checked scheduled child packet remains present");
+        packet
+            .admit_child_fiber_bindings(bindings, proof.terminal)
+            .expect("checked scheduled child admission remains valid");
     }
 
     pub(crate) fn scheduled_child_locals(
@@ -1391,17 +1806,200 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         &mut self,
         completion: &LineTaskScheduledCompletion,
     ) -> Result<(), LineRuntimeError> {
+        let mut stage = self.begin_scheduled_completion_stage();
+        self.stage_unstarted_scheduled_completion(&mut stage, completion)?;
+        self.commit_scheduled_completion_stage(stage);
+        Ok(())
+    }
+
+    #[must_use]
+    pub(crate) fn begin_scheduled_completion_stage(&self) -> RuntimeScheduledCompletionStage {
+        RuntimeScheduledCompletionStage {
+            before: self.ledger.clone(),
+            ledger: self.ledger.clone(),
+            packets: Vec::new(),
+        }
+    }
+
+    pub(crate) fn stage_unstarted_scheduled_completion(
+        &self,
+        stage: &mut RuntimeScheduledCompletionStage,
+        completion: &LineTaskScheduledCompletion,
+    ) -> Result<(), LineRuntimeError> {
         let terminal = match completion.exit() {
             ScopeExit::Completed => RuntimeScheduledState::Completed,
             ScopeExit::Cancelled => RuntimeScheduledState::Cancelled,
             ScopeExit::Failed => RuntimeScheduledState::Failed,
         };
-        self.terminalize_unstarted_scheduled_packet(completion.token(), terminal)?;
-        self.complete_scheduled_work(
-            completion.token(),
-            completion.exit() == ScopeExit::Failed,
-            completion.exit() == ScopeExit::Cancelled,
+        if stage
+            .packets
+            .iter()
+            .any(|transition| transition.token() == completion.token())
+        {
+            return Err(LineRuntimeError::InvalidScheduledCaptureTransition);
+        }
+        let packet = self
+            .scheduled
+            .iter()
+            .find(|scheduled| scheduled.token() == completion.token())
+            .ok_or(LineRuntimeError::MissingScheduledWork)?;
+        stage_unstarted_scheduled_completion(&mut stage.ledger, packet, terminal)?;
+        stage
+            .packets
+            .push(RuntimeScheduledPacketTransition::Unstarted {
+                token: completion.token().clone(),
+                terminal,
+            });
+        Ok(())
+    }
+
+    pub(crate) fn stage_scheduled_work_completion(
+        &self,
+        stage: &mut RuntimeScheduledCompletionStage,
+        token: &RuntimeLineHandleToken,
+        failed: bool,
+        cancelled: bool,
+    ) -> Result<(), LineRuntimeError> {
+        if stage
+            .packets
+            .iter()
+            .any(|transition| transition.token() == token)
+        {
+            return Err(LineRuntimeError::InvalidScheduledCaptureTransition);
+        }
+        let packet = self
+            .scheduled
+            .iter()
+            .find(|scheduled| scheduled.token() == token)
+            .ok_or(LineRuntimeError::MissingScheduledWork)?;
+        let (expected, terminal) = scheduled_work_terminal(packet.state(), failed, cancelled)?;
+        packet.require_line_scope()?;
+        if expected != terminal
+            && (!scheduled_transition_is_legal(expected, terminal)
+                || !scheduled_custody_is_admissible(terminal, &packet.custody))
+        {
+            return Err(LineRuntimeError::InvalidScheduledCaptureTransition);
+        }
+        stage_scheduled_capture_completion(
+            &mut stage.ledger,
+            packet,
+            terminal,
+            packet
+                .line_scope_captures()?
+                .iter()
+                .map(|binding| &binding.value),
+        )?;
+        stage.packets.push(RuntimeScheduledPacketTransition::Work {
+            token: token.clone(),
+            terminal,
+        });
+        Ok(())
+    }
+
+    pub(crate) fn stage_scheduled_child_work_completion(
+        &self,
+        stage: &mut RuntimeScheduledCompletionStage,
+        proof: &RuntimeScheduledChildAdmissionProof,
+        bindings: &[RuntimeLocalBinding],
+        failed: bool,
+        cancelled: bool,
+    ) -> Result<(), LineRuntimeError> {
+        let references = bindings
+            .iter()
+            .map(|binding| (binding.local, &binding.value))
+            .collect::<Vec<_>>();
+        self.stage_scheduled_child_work_completion_refs(
+            stage,
+            proof,
+            &references,
+            failed,
+            cancelled,
         )
+    }
+
+    pub(crate) fn stage_scheduled_child_work_completion_refs(
+        &self,
+        stage: &mut RuntimeScheduledCompletionStage,
+        proof: &RuntimeScheduledChildAdmissionProof,
+        bindings: &[(RuntimeLocalDeclarationId, &RuntimeValue)],
+        failed: bool,
+        cancelled: bool,
+    ) -> Result<(), LineRuntimeError> {
+        if stage
+            .packets
+            .iter()
+            .any(|transition| transition.token() == &proof.token)
+            || bindings.iter().map(|(local, _)| *local).collect::<Vec<_>>() != proof.locals
+        {
+            return Err(LineRuntimeError::InvalidScheduledCaptureTransition);
+        }
+        let packet = self
+            .scheduled
+            .iter()
+            .find(|scheduled| scheduled.token() == &proof.token)
+            .ok_or(LineRuntimeError::MissingScheduledWork)?;
+        packet.inspect_child_fiber_binding_refs(bindings, proof.terminal)?;
+        let (_, terminal) = scheduled_work_terminal(packet.state(), failed, cancelled)?;
+        if terminal != proof.terminal {
+            return Err(LineRuntimeError::InvalidScheduledWorkState);
+        }
+        stage_scheduled_capture_completion(
+            &mut stage.ledger,
+            packet,
+            terminal,
+            bindings.iter().map(|(_, value)| *value),
+        )?;
+        stage.packets.push(RuntimeScheduledPacketTransition::Work {
+            token: proof.token.clone(),
+            terminal,
+        });
+        Ok(())
+    }
+
+    /// Simulates final child custody on a metadata-only scheduled completion
+    /// candidate. The caller may keep appending drop commands until its whole
+    /// dynamic line command batch has passed preflight.
+    pub(crate) fn stage_child_scope_finish(
+        &self,
+        stage: &mut RuntimeScheduledCompletionStage,
+        commands: &mut RuntimeCommandQueue,
+        tag: &LineTaskWorkTag,
+        live: &std::collections::BTreeSet<RuntimeLineHandleToken>,
+        returned: &std::collections::BTreeSet<RuntimeLineHandleToken>,
+        policy: RuntimeDropPolicy,
+    ) -> Result<(), LineRuntimeError> {
+        assert_eq!(
+            self.ledger, stage.before,
+            "child scope preflight must use the current activation ledger"
+        );
+        stage_child_scope_finish(&mut stage.ledger, commands, tag, live, returned, policy)
+    }
+
+    pub(crate) fn commit_scheduled_completion_stage(
+        &mut self,
+        stage: RuntimeScheduledCompletionStage,
+    ) {
+        assert_eq!(
+            self.ledger, stage.before,
+            "scheduled completion proof must match the original ledger"
+        );
+        for transition in stage.packets {
+            match transition {
+                RuntimeScheduledPacketTransition::Unstarted { token, terminal } => {
+                    let packet = exact_scheduled_packet_mut(&mut self.scheduled, &token)
+                        .expect("checked scheduled packet remains present");
+                    packet
+                        .move_packet_to_line_scope(terminal)
+                        .expect("checked scheduled packet transition remains valid");
+                }
+                RuntimeScheduledPacketTransition::Work { token, terminal } => {
+                    let packet = exact_scheduled_packet_mut(&mut self.scheduled, &token)
+                        .expect("checked scheduled packet remains present");
+                    packet.state = terminal;
+                }
+            }
+        }
+        self.ledger = stage.ledger;
     }
 
     pub(crate) const fn result(&self) -> &RuntimeDialogueResultState<T> {
@@ -1427,22 +2025,63 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         self.ledger = ledger;
     }
 
-    pub(crate) fn schedule(
-        &mut self,
-        scheduled: RuntimeScheduledLineTask,
-    ) -> Result<(), LineRuntimeError> {
+    pub(crate) fn inspect_schedule(
+        &self,
+        token: &RuntimeLineHandleToken,
+        child: RuntimeLineTaskNodeId,
+        work: &LineTaskWorkTag,
+        deadline: LogicalDuration,
+        capture_locals: &[RuntimeLocalDeclarationId],
+    ) -> Result<RuntimePreparedSchedule, LineRuntimeError> {
         if self.scheduled.len() >= MAX_LINE_SCHEDULED_CALLBACKS {
             return Err(LineRuntimeError::ScheduledCallbackLimitExceeded);
         }
         if self
             .scheduled
             .iter()
-            .any(|existing| existing.token() == scheduled.token())
+            .any(|existing| existing.token() == token)
         {
             return Err(LineRuntimeError::DuplicateHandleToken);
         }
-        self.scheduled.push(scheduled);
-        Ok(())
+        if work.scheduled_token() != Some(token)
+            || !matches!(work.work(), super::LineTaskWork::Node(_))
+        {
+            return Err(LineRuntimeError::InvalidScheduledCaptureOwner);
+        }
+        if !local_ids_are_unique(capture_locals.iter().copied()) {
+            return Err(LineRuntimeError::InvalidScheduledCaptureTransition);
+        }
+        Ok(RuntimePreparedSchedule {
+            token: token.clone(),
+            child,
+            work: work.clone(),
+            deadline,
+            capture_locals: capture_locals.to_vec().into_boxed_slice(),
+            observed_count: self.scheduled.len(),
+        })
+    }
+
+    pub(crate) fn schedule_prepared(
+        &mut self,
+        prepared: RuntimePreparedSchedule,
+        captures: Box<[RuntimeLocalBinding]>,
+    ) {
+        assert_eq!(self.scheduled.len(), prepared.observed_count);
+        assert!(
+            captures
+                .iter()
+                .map(|binding| binding.local)
+                .eq(prepared.capture_locals.iter().copied()),
+            "prepared schedule requires the same owned capture packet"
+        );
+        self.scheduled.push(RuntimeScheduledLineTask {
+            token: prepared.token,
+            child: prepared.child,
+            work: prepared.work,
+            deadline: prepared.deadline,
+            custody: RuntimeScheduledCaptureCustody::Packet(captures),
+            state: RuntimeScheduledState::Armed,
+        });
     }
 
     pub(crate) fn arm_due_schedules(
@@ -1450,17 +2089,24 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         elapsed: LogicalDuration,
     ) -> Result<Vec<RuntimeLineHandleToken>, LineRuntimeError> {
         let mut ledger = self.ledger.clone();
-        let mut scheduled = self.scheduled.clone();
+        let mut due_indices = Vec::new();
         let mut due = Vec::new();
-        for callback in &mut scheduled {
+        for (index, callback) in self.scheduled.iter().enumerate() {
             if callback.state() == RuntimeScheduledState::Armed && callback.deadline() <= elapsed {
-                callback
-                    .transition(RuntimeScheduledState::Armed, RuntimeScheduledState::Running)?;
+                if callback.validate_custody().is_err()
+                    || !scheduled_custody_is_admissible(
+                        RuntimeScheduledState::Running,
+                        &callback.custody,
+                    )
+                {
+                    return Err(LineRuntimeError::InvalidScheduledCaptureTransition);
+                }
                 ledger.set_state(
                     callback.token(),
                     RuntimeHandleLeaseState::Pending,
                     RuntimeHandleLeaseState::Running,
                 )?;
+                due_indices.push(index);
                 due.push((
                     callback.deadline(),
                     callback.token().clone(),
@@ -1468,8 +2114,10 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                 ));
             }
         }
+        for index in due_indices {
+            self.scheduled[index].state = RuntimeScheduledState::Running;
+        }
         self.ledger = ledger;
-        self.scheduled = scheduled;
         due.sort();
         Ok(due.into_iter().map(|(_, token, _)| token).collect())
     }
@@ -1480,97 +2128,9 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         failed: bool,
         cancelled: bool,
     ) -> Result<(), LineRuntimeError> {
-        let index = self
-            .scheduled
-            .iter()
-            .position(|scheduled| scheduled.token() == token)
-            .ok_or(LineRuntimeError::MissingScheduledWork)?;
-        let mut ledger = self.ledger.clone();
-        let mut scheduled = self.scheduled.clone();
-        let packet = &mut scheduled[index];
-        let (expected, terminal) = match packet.state() {
-            RuntimeScheduledState::Running => (
-                RuntimeScheduledState::Running,
-                if failed {
-                    RuntimeScheduledState::Failed
-                } else if cancelled {
-                    RuntimeScheduledState::Cancelled
-                } else {
-                    RuntimeScheduledState::Completed
-                },
-            ),
-            RuntimeScheduledState::Cancelling => (
-                RuntimeScheduledState::Cancelling,
-                if failed {
-                    RuntimeScheduledState::Failed
-                } else {
-                    RuntimeScheduledState::Cancelled
-                },
-            ),
-            RuntimeScheduledState::Completed => (
-                RuntimeScheduledState::Completed,
-                RuntimeScheduledState::Completed,
-            ),
-            RuntimeScheduledState::Cancelled => (
-                RuntimeScheduledState::Cancelled,
-                RuntimeScheduledState::Cancelled,
-            ),
-            RuntimeScheduledState::Failed => {
-                (RuntimeScheduledState::Failed, RuntimeScheduledState::Failed)
-            }
-            RuntimeScheduledState::Armed => {
-                return Err(LineRuntimeError::InvalidScheduledWorkState);
-            }
-        };
-        packet.require_line_scope()?;
-        if expected != terminal {
-            packet.transition(expected, terminal)?;
-        }
-        let lease = ledger
-            .lease(packet.token())
-            .ok_or(LineRuntimeError::UnknownHandle)?;
-        let lease_state = lease.state();
-        let terminal_lease = match terminal {
-            RuntimeScheduledState::Completed => RuntimeHandleLeaseState::Completed,
-            RuntimeScheduledState::Cancelled => RuntimeHandleLeaseState::Cancelled,
-            RuntimeScheduledState::Failed => RuntimeHandleLeaseState::Failed,
-            RuntimeScheduledState::Armed
-            | RuntimeScheduledState::Running
-            | RuntimeScheduledState::Cancelling => {
-                return Err(LineRuntimeError::InvalidScheduledWorkState);
-            }
-        };
-        ledger.set_state(packet.token(), lease_state, terminal_lease)?;
-        let expected_owner = RuntimeHandleOwnerSlot::ChildScope(packet.work().clone());
-        let mut tokens = std::collections::BTreeSet::new();
-        for capture in packet.line_scope_captures()? {
-            for handle in capture
-                .value
-                .affine_line_handles()
-                .map_err(|_| LineRuntimeError::InvalidScheduledCaptureGraph)?
-            {
-                if !tokens.insert(handle.token().clone()) {
-                    return Err(LineRuntimeError::DuplicateHandleOccurrence);
-                }
-                let lease = ledger
-                    .lease(handle.token())
-                    .ok_or(LineRuntimeError::UnknownHandle)?;
-                if lease.state() == RuntimeHandleLeaseState::Released {
-                    continue;
-                }
-                match lease.owner() {
-                    owner if owner == &expected_owner => ledger.transfer(
-                        handle.token(),
-                        &expected_owner,
-                        RuntimeHandleOwnerSlot::LineScope,
-                    )?,
-                    RuntimeHandleOwnerSlot::LineScope => {}
-                    _ => return Err(LineRuntimeError::WrongOwner),
-                }
-            }
-        }
-        self.ledger = ledger;
-        self.scheduled = scheduled;
+        let mut stage = self.begin_scheduled_completion_stage();
+        self.stage_scheduled_work_completion(&mut stage, token, failed, cancelled)?;
+        self.commit_scheduled_completion_stage(stage);
         Ok(())
     }
 
@@ -1638,6 +2198,53 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         Ok(())
     }
 
+    /// Checks a complete command queue while retaining the current line
+    /// journal. Host command rows contain identities and metadata only.
+    pub(crate) fn inspect_record_commands(
+        &mut self,
+        activation: &DialogueActivationId,
+        queue: &RuntimeCommandQueue,
+    ) -> Result<RuntimePreparedLineCommands, LineRuntimeError> {
+        self.inspect_record_commands_with_ledger(activation, queue, None, self.ledger.clone())
+    }
+
+    /// Preflights command publication and its checked lease transition as one
+    /// metadata transaction. Retained result and capture packets are never
+    /// copied, and the caller can move their sole owners after this succeeds.
+    pub(crate) fn inspect_record_commands_with_ledger(
+        &mut self,
+        activation: &DialogueActivationId,
+        queue: &RuntimeCommandQueue,
+        resolved: Option<&crate::presentation::RuntimeLineCommandId>,
+        ledger: RuntimeLineHandleLedger,
+    ) -> Result<RuntimePreparedLineCommands, LineRuntimeError> {
+        let before = RuntimeDialogueOutcomeJournal::capture(self);
+        let result = (|| {
+            if let Some(command) = resolved {
+                self.consume_issued_command(command)?;
+            }
+            self.record_commands(activation, queue.clone())?;
+            self.ledger = ledger;
+            Ok(RuntimeDialogueOutcomeJournal::capture(self))
+        })();
+        match result {
+            Ok(after) => {
+                before.clone().restore(self);
+                Ok(RuntimePreparedLineCommands {
+                    journal: RuntimeDialogueOutcomeStage { before, after },
+                })
+            }
+            Err(error) => {
+                before.restore(self);
+                Err(error)
+            }
+        }
+    }
+
+    pub(crate) fn record_commands_prepared(&mut self, prepared: RuntimePreparedLineCommands) {
+        self.commit_runtime_outcomes(prepared.journal);
+    }
+
     /// Reconciles one running child instruction against the coarse but exact
     /// `ChildScope(tag)` ledger owner. Register-local moves are executor
     /// details; disappearance is a typed drop and newly appearing tokens are
@@ -1652,11 +2259,10 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         if after.iter().any(|token| !before.contains(token)) {
             return Err(LineRuntimeError::UnexpectedChildHandleOccurrence);
         }
-        let mut candidate = self.clone();
         let owner = RuntimeHandleOwnerSlot::ChildScope(tag.clone());
-        let mut ledger = candidate.ledger.clone();
+        let mut ledger = self.ledger.clone();
         let mut queue =
-            RuntimeCommandQueue::new(tag.activation_id().clone(), candidate.command_sequence);
+            RuntimeCommandQueue::new(tag.activation_id().clone(), self.command_sequence);
         for token in before {
             if token.activation() != tag.activation_id() {
                 return Err(LineRuntimeError::WrongActivation);
@@ -1670,9 +2276,8 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                 ledger.drop_owned_with_policy(token, &owner, policy, &mut queue)?;
             }
         }
-        candidate.ledger = ledger;
-        candidate.record_commands(tag.activation_id(), queue)?;
-        *self = candidate;
+        self.record_commands(tag.activation_id(), queue)?;
+        self.ledger = ledger;
         Ok(())
     }
 
@@ -1686,31 +2291,12 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         returned: &std::collections::BTreeSet<RuntimeLineHandleToken>,
         policy: RuntimeDropPolicy,
     ) -> Result<(), LineRuntimeError> {
-        if returned.iter().any(|token| !live.contains(token)) {
-            return Err(LineRuntimeError::UnexpectedChildHandleOccurrence);
-        }
-        let mut candidate = self.clone();
-        let owner = RuntimeHandleOwnerSlot::ChildScope(tag.clone());
-        let mut ledger = candidate.ledger.clone();
+        let mut ledger = self.ledger.clone();
         let mut queue =
-            RuntimeCommandQueue::new(tag.activation_id().clone(), candidate.command_sequence);
-        for token in live {
-            if token.activation() != tag.activation_id() {
-                return Err(LineRuntimeError::WrongActivation);
-            }
-            let lease = ledger.lease(token).ok_or(LineRuntimeError::UnknownHandle)?;
-            if lease.owner() != &owner {
-                return Err(LineRuntimeError::WrongOwner);
-            }
-            if returned.contains(token) {
-                ledger.transfer(token, &owner, RuntimeHandleOwnerSlot::LineScope)?;
-            } else {
-                ledger.drop_owned_with_policy(token, &owner, policy, &mut queue)?;
-            }
-        }
-        candidate.ledger = ledger;
-        candidate.record_commands(tag.activation_id(), queue)?;
-        *self = candidate;
+            RuntimeCommandQueue::new(tag.activation_id().clone(), self.command_sequence);
+        stage_child_scope_finish(&mut ledger, &mut queue, tag, live, returned, policy)?;
+        self.record_commands(tag.activation_id(), queue)?;
+        self.ledger = ledger;
         Ok(())
     }
 
@@ -1807,10 +2393,10 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         &mut self,
         outcome: &crate::presentation::RuntimeLineHostOutcome,
     ) -> Result<Option<LineRuntimeError>, LineRuntimeError> {
-        let mut candidate = self.clone();
-        let diagnostic = candidate.reduce_runtime_outcome(outcome)?;
-        *self = candidate;
-        Ok(diagnostic)
+        let (stage, mut diagnostics) =
+            self.stage_runtime_outcomes(std::slice::from_ref(outcome))?;
+        self.commit_runtime_outcomes(stage);
+        Ok(diagnostics.pop())
     }
 
     /// Reduces one host delivery batch atomically. Duplicate, stale, or
@@ -1820,15 +2406,63 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         &mut self,
         outcomes: &[crate::presentation::RuntimeLineHostOutcome],
     ) -> Result<Vec<LineRuntimeError>, LineRuntimeError> {
-        let mut candidate = self.clone();
-        let mut diagnostics = Vec::new();
-        for outcome in outcomes {
-            if let Some(diagnostic) = candidate.reduce_runtime_outcome(outcome)? {
-                diagnostics.push(diagnostic);
+        let (stage, diagnostics) = self.stage_runtime_outcomes(outcomes)?;
+        self.commit_runtime_outcomes(stage);
+        Ok(diagnostics)
+    }
+
+    pub(crate) fn stage_runtime_outcomes(
+        &mut self,
+        outcomes: &[crate::presentation::RuntimeLineHostOutcome],
+    ) -> Result<(RuntimeDialogueOutcomeStage, Vec<LineRuntimeError>), LineRuntimeError> {
+        let before = RuntimeDialogueOutcomeJournal::capture(self);
+        let result = (|| {
+            let mut diagnostics = Vec::new();
+            for outcome in outcomes {
+                if let Some(diagnostic) = self.reduce_runtime_outcome(outcome)? {
+                    diagnostics.push(diagnostic);
+                }
+            }
+            Ok(diagnostics)
+        })();
+        match result {
+            Ok(diagnostics) => {
+                let after = RuntimeDialogueOutcomeJournal::capture(self);
+                before.clone().restore(self);
+                Ok((RuntimeDialogueOutcomeStage { before, after }, diagnostics))
+            }
+            Err(error) => {
+                before.restore(self);
+                Err(error)
             }
         }
-        *self = candidate;
-        Ok(diagnostics)
+    }
+
+    pub(crate) fn commit_runtime_outcomes(&mut self, stage: RuntimeDialogueOutcomeStage) {
+        assert_eq!(
+            RuntimeDialogueOutcomeJournal::capture(self),
+            stage.before,
+            "staged host outcomes must commit against their original activation metadata"
+        );
+        stage.after.restore(self);
+    }
+
+    /// Runs a read-only pending-operation preflight against the checked host
+    /// outcome state without publishing that state or copying retained values.
+    pub(crate) fn with_staged_outcomes<R>(
+        &mut self,
+        stage: &RuntimeDialogueOutcomeStage,
+        inspect: impl FnOnce(&Self) -> R,
+    ) -> R {
+        let before = RuntimeDialogueOutcomeJournal::capture(self);
+        assert_eq!(
+            before, stage.before,
+            "staged host outcomes must inspect their original activation metadata"
+        );
+        stage.after.clone().restore(self);
+        let result = inspect(self);
+        before.restore(self);
+        result
     }
 
     fn reduce_runtime_outcome(
@@ -2018,6 +2652,23 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
     where
         T: PartialEq,
     {
+        let prepared = self.validate_result_selection(tag, &ty, &value)?;
+        self.select_result_prepared(prepared, value);
+        Ok(())
+    }
+
+    /// Checks type, source transition, every old/new affine lease, and the
+    /// resulting command journal while the selected value is still borrowed
+    /// from its child owner.
+    pub(crate) fn validate_result_selection(
+        &mut self,
+        tag: &LineTaskWorkTag,
+        ty: &T,
+        value: &RuntimeValue,
+    ) -> Result<RuntimePreparedResultSelection<T>, LineRuntimeError>
+    where
+        T: PartialEq,
+    {
         if !tag.is_well_formed()
             || !matches!(
                 tag.work(),
@@ -2034,7 +2685,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                     value,
                 },
                 _,
-            ) if pending_ty == &ty => Some(value),
+            ) if pending_ty == ty => Some(value),
             (
                 RuntimeDialogueResultState::Selected {
                     ty: pending_ty,
@@ -2042,12 +2693,12 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                     source,
                 },
                 LineTaskWork::Cancellation(_),
-            ) if pending_ty == &ty && matches!(source.work(), LineTaskWork::Node(_)) => Some(value),
+            ) if pending_ty == ty && matches!(source.work(), LineTaskWork::Node(_)) => Some(value),
             (RuntimeDialogueResultState::Committed { .. }, _) => {
                 return Err(LineRuntimeError::ResultPatternOrTypeMismatch);
             }
             (RuntimeDialogueResultState::Selected { ty: pending_ty, .. }, _)
-                if pending_ty != &ty =>
+                if pending_ty != ty =>
             {
                 return Err(LineRuntimeError::ResultPatternOrTypeMismatch);
             }
@@ -2056,10 +2707,9 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             }
             _ => return Err(LineRuntimeError::InvalidResultTransition),
         };
-        let mut candidate = self.clone();
-        let mut ledger = candidate.ledger.clone();
+        let mut ledger = self.ledger.clone();
         let mut commands =
-            RuntimeCommandQueue::new(tag.activation_id().clone(), candidate.command_sequence);
+            RuntimeCommandQueue::new(tag.activation_id().clone(), self.command_sequence);
         let mut old_tokens = std::collections::BTreeSet::new();
         if let Some(pending_value) = pending_value {
             for handle in pending_value
@@ -2105,36 +2755,79 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                 RuntimeHandleOwnerSlot::DialogueResult(handle.path().clone()),
             )?;
         }
-        candidate.ledger = ledger;
-        candidate.record_commands(tag.activation_id(), commands)?;
-        candidate.result = RuntimeDialogueResultState::Selected {
+        let before = RuntimeDialogueOutcomeJournal::capture(self);
+        self.record_commands(tag.activation_id(), commands)?;
+        let after = RuntimeDialogueOutcomeJournal::capture(self);
+        before.clone().restore(self);
+        Ok(RuntimePreparedResultSelection {
+            tag: tag.clone(),
+            ty: ty.clone(),
+            journal: RuntimeDialogueOutcomeStage { before, after },
+            ledger,
+        })
+    }
+
+    /// Commits a checked selection after the child has yielded its sole
+    /// value. No validation or packet duplication occurs after this move.
+    pub(crate) fn select_result_prepared(
+        &mut self,
+        prepared: RuntimePreparedResultSelection<T>,
+        value: RuntimeValue,
+    ) {
+        let RuntimePreparedResultSelection {
+            tag,
+            ty,
+            mut journal,
+            ledger,
+        } = prepared;
+        journal.after.ledger = ledger;
+        self.commit_runtime_outcomes(journal);
+        self.result = RuntimeDialogueResultState::Selected {
             ty,
             value,
-            source: tag.clone(),
+            source: tag,
         };
-        *self = candidate;
-        Ok(())
     }
 
     pub(crate) fn begin_result_publication(&mut self) -> Result<(), LineRuntimeError> {
-        let (ty, value) = match &self.result {
+        if !matches!(
+            self.result,
+            RuntimeDialogueResultState::Committed { .. }
+                | RuntimeDialogueResultState::Selected { .. }
+        ) {
+            return Err(LineRuntimeError::InvalidResultTransition);
+        }
+        let previous = std::mem::replace(&mut self.result, RuntimeDialogueResultState::Uncommitted);
+        let (ty, value) = match previous {
             RuntimeDialogueResultState::Committed { ty, value }
             | RuntimeDialogueResultState::Selected { ty, value, .. } => (ty, value),
-            _ => return Err(LineRuntimeError::InvalidResultTransition),
+            _ => unreachable!("publication source was checked before taking its owner"),
         };
-        self.result = RuntimeDialogueResultState::Publishing {
-            ty: ty.clone(),
-            value: value.clone(),
-        };
+        self.result = RuntimeDialogueResultState::Publishing { ty, value };
         Ok(())
     }
 
-    pub(crate) fn finish_result_publication(&mut self) -> Result<(), LineRuntimeError> {
+    /// Transfers the sole result value out of line custody after every result
+    /// pattern and handle-ledger preflight has succeeded.
+    pub(crate) fn finish_result_publication(
+        &mut self,
+    ) -> Result<(T, RuntimeValue), LineRuntimeError> {
         if !matches!(self.result, RuntimeDialogueResultState::Publishing { .. }) {
             return Err(LineRuntimeError::InvalidResultTransition);
         }
-        self.result = RuntimeDialogueResultState::Published;
-        Ok(())
+        if self.has_pending_commands()
+            || self.ledger.leases().values().any(|lease| {
+                lease.state() != RuntimeHandleLeaseState::Released
+                    && !matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber(_))
+            })
+        {
+            return Err(LineRuntimeError::UnownedLeaseAtPublish);
+        }
+        let previous = std::mem::replace(&mut self.result, RuntimeDialogueResultState::Published);
+        let RuntimeDialogueResultState::Publishing { ty, value } = previous else {
+            unreachable!("publication result was checked before taking its owner")
+        };
+        Ok((ty, value))
     }
 
     pub(crate) fn abandon(&mut self) -> Result<(), LineRuntimeError> {
@@ -2165,29 +2858,29 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         if self.has_pending_deferred_work() {
             return Err(LineRuntimeError::DeferredRegistrationsRemain);
         }
-        let mut candidate = self.clone();
-        let unstarted = candidate
+        let unstarted = self
             .scheduled
             .iter()
+            .enumerate()
             .filter(|scheduled| {
                 matches!(
-                    &scheduled.custody,
+                    &scheduled.1.custody,
                     RuntimeScheduledCaptureCustody::Packet(_)
                 )
             })
-            .map(|scheduled| scheduled.token().clone())
+            .map(|(index, _)| index)
             .collect::<Vec<_>>();
-        for token in unstarted {
-            candidate.complete_unstarted_scheduled(&LineTaskScheduledCompletion::new(
-                token,
-                ScopeExit::Cancelled,
-            ))?;
+        let mut ledger = self.ledger.clone();
+        for &index in &unstarted {
+            stage_unstarted_scheduled_completion(
+                &mut ledger,
+                &self.scheduled[index],
+                RuntimeScheduledState::Cancelled,
+            )?;
         }
-
-        let mut ledger = candidate.ledger.clone();
         let mut commands = crate::presentation::RuntimeCommandQueue::new(
             activation.clone(),
-            candidate.command_sequence,
+            self.command_sequence,
         );
         let mut leases = ledger.leases().values().cloned().collect::<Vec<_>>();
         leases.reverse();
@@ -2212,9 +2905,13 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             }
             ledger.drop_owned(lease.token(), lease.owner(), &mut commands)?;
         }
-        candidate.ledger = ledger;
-        candidate.record_commands(activation, commands)?;
-        *self = candidate;
+        self.record_commands(activation, commands)?;
+        for index in unstarted {
+            self.scheduled[index]
+                .move_packet_to_line_scope(RuntimeScheduledState::Cancelled)
+                .expect("checked scheduled packet transition remains valid");
+        }
+        self.ledger = ledger;
         Ok(())
     }
 
@@ -2297,6 +2994,16 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
     pub(crate) fn into_published_handles(
         self,
     ) -> Result<RuntimePublishedDialogueHandles, LineRuntimeError> {
+        self.can_into_published_handles()?;
+        Ok(RuntimePublishedDialogueHandles {
+            ledger: self.ledger,
+            command_sequence: self.command_sequence,
+            issued_commands: self.issued_commands,
+            resolved_commands: self.resolved_commands,
+        })
+    }
+
+    pub(crate) fn can_into_published_handles(&self) -> Result<(), LineRuntimeError> {
         if self.terminal_kind() != Some(RuntimeDialogueTerminalKind::Published)
             || self.has_pending_deferred_work()
             || !self.issued_commands.is_empty()
@@ -2317,18 +3024,67 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         {
             return Err(LineRuntimeError::TerminalDispositionMismatch);
         }
-        Ok(RuntimePublishedDialogueHandles {
-            ledger: self.ledger,
-            command_sequence: self.command_sequence,
-            issued_commands: self.issued_commands,
-            resolved_commands: self.resolved_commands,
-        })
+        Ok(())
+    }
+
+    /// Checks the terminal published shape before releasing the frame and
+    /// moving the result into its prepared parent destination. The only two
+    /// subsequent line mutations must be `release_frame` and
+    /// `finish_result_publication`.
+    pub(crate) fn inspect_publish_completion(&self) -> Result<(), LineRuntimeError> {
+        if self.frame_released
+            || !matches!(self.result, RuntimeDialogueResultState::Publishing { .. })
+            || self.has_pending_deferred_work()
+            || !self.issued_commands.is_empty()
+            || !self.superseded_commands.is_empty()
+            || !self.prepared_commands.is_empty()
+            || self.scheduled.iter().any(|scheduled| {
+                !matches!(
+                    scheduled.state(),
+                    RuntimeScheduledState::Completed
+                        | RuntimeScheduledState::Cancelled
+                        | RuntimeScheduledState::Failed
+                )
+            })
+            || self.ledger.leases().values().any(|lease| {
+                lease.state() != RuntimeHandleLeaseState::Released
+                    && !matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber(_))
+            })
+        {
+            return Err(LineRuntimeError::TerminalDispositionMismatch);
+        }
+        Ok(())
+    }
+
+    /// Checks the abandoned terminal shape before the final frame release.
+    pub(crate) fn inspect_abandon_completion(&self) -> Result<(), LineRuntimeError> {
+        if self.frame_released
+            || !matches!(self.result, RuntimeDialogueResultState::Abandoned)
+            || !self.failure_close_ready()
+        {
+            return Err(LineRuntimeError::TerminalDispositionMismatch);
+        }
+        Ok(())
     }
 }
 
 impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
     pub(crate) fn from_live(
         state: &RuntimeDialogueActivationState<T>,
+    ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
+        Self::from_live_with_owner(state, None)
+    }
+
+    pub(crate) fn from_live_for_program(
+        state: &RuntimeDialogueActivationState<T>,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
+        Self::from_live_with_owner(state, Some(owner))
+    }
+
+    fn from_live_with_owner(
+        state: &RuntimeDialogueActivationState<T>,
+        owner: Option<&RuntimeProgramOwner>,
     ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
         Ok(Self {
             ledger: state.ledger.clone(),
@@ -2339,16 +3095,21 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
             scheduled: state
                 .scheduled
                 .iter()
-                .map(AwbcRuntimeScheduledLineTaskSnapshot::from_live)
+                .map(|scheduled| AwbcRuntimeScheduledLineTaskSnapshot::from_live(scheduled, owner))
                 .collect::<Result<_, _>>()?,
             deferred: state
                 .deferred
                 .iter()
-                .map(AwbcRuntimeDeferredRegistrationSnapshot::from_live)
+                .map(|deferred| match owner {
+                    Some(owner) => AwbcRuntimeDeferredRegistrationSnapshot::from_live_for_program(
+                        deferred, owner,
+                    ),
+                    None => AwbcRuntimeDeferredRegistrationSnapshot::from_live(deferred),
+                })
                 .collect::<Result<_, _>>()?,
             next_defer_registration: state.next_defer_registration,
             defer_unwind: state.defer_unwind.clone(),
-            result: AwbcRuntimeDialogueResultSnapshot::from_live(&state.result)?,
+            result: AwbcRuntimeDialogueResultSnapshot::from_live(&state.result, owner)?,
             frame_released: state.frame_released,
         })
     }
@@ -2406,6 +3167,7 @@ impl AwbcRuntimePublishedDialogueHandlesSnapshot {
 impl AwbcRuntimeScheduledLineTaskSnapshot {
     fn from_live(
         state: &RuntimeScheduledLineTask,
+        owner: Option<&RuntimeProgramOwner>,
     ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
         state
             .validate_custody()
@@ -2415,7 +3177,7 @@ impl AwbcRuntimeScheduledLineTaskSnapshot {
             child: state.child,
             work: state.work.clone(),
             deadline: state.deadline,
-            custody: AwbcRuntimeScheduledCaptureCustodySnapshot::from_live(&state.custody)?,
+            custody: AwbcRuntimeScheduledCaptureCustodySnapshot::from_live(&state.custody, owner)?,
             state: state.state,
         })
     }
@@ -2440,14 +3202,15 @@ impl AwbcRuntimeScheduledLineTaskSnapshot {
 impl AwbcRuntimeScheduledCaptureCustodySnapshot {
     fn from_live(
         custody: &RuntimeScheduledCaptureCustody,
+        owner: Option<&RuntimeProgramOwner>,
     ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
         Ok(match custody {
             RuntimeScheduledCaptureCustody::Packet(bindings) => {
-                Self::Packet(snapshot_local_bindings(bindings)?)
+                Self::Packet(snapshot_local_bindings(bindings, owner)?)
             }
             RuntimeScheduledCaptureCustody::ChildFiber(locals) => Self::ChildFiber(locals.to_vec()),
             RuntimeScheduledCaptureCustody::LineScope(bindings) => {
-                Self::LineScope(snapshot_local_bindings(bindings)?)
+                Self::LineScope(snapshot_local_bindings(bindings, owner)?)
             }
         })
     }
@@ -2470,15 +3233,28 @@ impl AwbcRuntimeScheduledCaptureCustodySnapshot {
     }
 }
 
+fn snapshot_runtime_value_for_owner(
+    value: &RuntimeValue,
+    owner: Option<&RuntimeProgramOwner>,
+) -> Result<crate::value::AwbcRuntimeValueSnapshot, crate::value::AwbcRuntimeValueSnapshotError> {
+    match owner {
+        Some(owner) => {
+            crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
+        }
+        None => crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(value),
+    }
+}
+
 fn snapshot_local_bindings(
     bindings: &[RuntimeLocalBinding],
+    owner: Option<&RuntimeProgramOwner>,
 ) -> Result<Vec<AwbcRuntimeLocalBindingSnapshot>, crate::value::AwbcRuntimeValueSnapshotError> {
     bindings
         .iter()
         .map(|capture| {
             Ok(AwbcRuntimeLocalBindingSnapshot {
                 local: capture.local,
-                value: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(&capture.value)?,
+                value: snapshot_runtime_value_for_owner(&capture.value, owner)?,
             })
         })
         .collect()
@@ -2521,21 +3297,22 @@ fn exact_scheduled_packet_mut<'a>(
 impl<T: Clone> AwbcRuntimeDialogueResultSnapshot<T> {
     fn from_live(
         state: &RuntimeDialogueResultState<T>,
+        owner: Option<&RuntimeProgramOwner>,
     ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
         Ok(match state {
             RuntimeDialogueResultState::Uncommitted => Self::Uncommitted,
             RuntimeDialogueResultState::Committed { ty, value } => Self::Committed {
                 ty: ty.clone(),
-                value: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(value)?,
+                value: snapshot_runtime_value_for_owner(value, owner)?,
             },
             RuntimeDialogueResultState::Selected { ty, value, source } => Self::Selected {
                 ty: ty.clone(),
-                value: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(value)?,
+                value: snapshot_runtime_value_for_owner(value, owner)?,
                 source: source.clone(),
             },
             RuntimeDialogueResultState::Publishing { ty, value } => Self::Publishing {
                 ty: ty.clone(),
-                value: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(value)?,
+                value: snapshot_runtime_value_for_owner(value, owner)?,
             },
             RuntimeDialogueResultState::Published => Self::Published,
             RuntimeDialogueResultState::Abandoned => Self::Abandoned,
@@ -3438,6 +4215,147 @@ pub struct RuntimeScheduledLineTask {
     state: RuntimeScheduledState,
 }
 
+fn scheduled_work_terminal(
+    state: RuntimeScheduledState,
+    failed: bool,
+    cancelled: bool,
+) -> Result<(RuntimeScheduledState, RuntimeScheduledState), LineRuntimeError> {
+    Ok(match state {
+        RuntimeScheduledState::Running => (
+            RuntimeScheduledState::Running,
+            if failed {
+                RuntimeScheduledState::Failed
+            } else if cancelled {
+                RuntimeScheduledState::Cancelled
+            } else {
+                RuntimeScheduledState::Completed
+            },
+        ),
+        RuntimeScheduledState::Cancelling => (
+            RuntimeScheduledState::Cancelling,
+            if failed {
+                RuntimeScheduledState::Failed
+            } else {
+                RuntimeScheduledState::Cancelled
+            },
+        ),
+        RuntimeScheduledState::Completed => (
+            RuntimeScheduledState::Completed,
+            RuntimeScheduledState::Completed,
+        ),
+        RuntimeScheduledState::Cancelled => (
+            RuntimeScheduledState::Cancelled,
+            RuntimeScheduledState::Cancelled,
+        ),
+        RuntimeScheduledState::Failed => {
+            (RuntimeScheduledState::Failed, RuntimeScheduledState::Failed)
+        }
+        RuntimeScheduledState::Armed => return Err(LineRuntimeError::InvalidScheduledWorkState),
+    })
+}
+
+fn stage_scheduled_capture_completion<'a>(
+    ledger: &mut RuntimeLineHandleLedger,
+    packet: &RuntimeScheduledLineTask,
+    terminal: RuntimeScheduledState,
+    captures: impl IntoIterator<Item = &'a RuntimeValue>,
+) -> Result<(), LineRuntimeError> {
+    let terminal_lease = match terminal {
+        RuntimeScheduledState::Completed => RuntimeHandleLeaseState::Completed,
+        RuntimeScheduledState::Cancelled => RuntimeHandleLeaseState::Cancelled,
+        RuntimeScheduledState::Failed => RuntimeHandleLeaseState::Failed,
+        RuntimeScheduledState::Armed
+        | RuntimeScheduledState::Running
+        | RuntimeScheduledState::Cancelling => {
+            return Err(LineRuntimeError::InvalidScheduledWorkState);
+        }
+    };
+    let lease_state = ledger
+        .lease(packet.token())
+        .ok_or(LineRuntimeError::UnknownHandle)?
+        .state();
+    ledger.set_state(packet.token(), lease_state, terminal_lease)?;
+    let expected_owner = RuntimeHandleOwnerSlot::ChildScope(packet.work().clone());
+    let mut tokens = std::collections::BTreeSet::new();
+    for capture in captures {
+        for handle in capture
+            .affine_line_handles()
+            .map_err(|_| LineRuntimeError::InvalidScheduledCaptureGraph)?
+        {
+            if !tokens.insert(handle.token().clone()) {
+                return Err(LineRuntimeError::DuplicateHandleOccurrence);
+            }
+            let lease = ledger
+                .lease(handle.token())
+                .ok_or(LineRuntimeError::UnknownHandle)?;
+            if lease.state() == RuntimeHandleLeaseState::Released {
+                continue;
+            }
+            match lease.owner() {
+                owner if owner == &expected_owner => ledger.transfer(
+                    handle.token(),
+                    &expected_owner,
+                    RuntimeHandleOwnerSlot::LineScope,
+                )?,
+                RuntimeHandleOwnerSlot::LineScope => {}
+                _ => return Err(LineRuntimeError::WrongOwner),
+            }
+        }
+    }
+    Ok(())
+}
+
+fn stage_child_scope_finish(
+    ledger: &mut RuntimeLineHandleLedger,
+    commands: &mut RuntimeCommandQueue,
+    tag: &LineTaskWorkTag,
+    live: &std::collections::BTreeSet<RuntimeLineHandleToken>,
+    returned: &std::collections::BTreeSet<RuntimeLineHandleToken>,
+    policy: RuntimeDropPolicy,
+) -> Result<(), LineRuntimeError> {
+    if returned.iter().any(|token| !live.contains(token)) {
+        return Err(LineRuntimeError::UnexpectedChildHandleOccurrence);
+    }
+    let owner = RuntimeHandleOwnerSlot::ChildScope(tag.clone());
+    for token in live {
+        if token.activation() != tag.activation_id() {
+            return Err(LineRuntimeError::WrongActivation);
+        }
+        let lease = ledger.lease(token).ok_or(LineRuntimeError::UnknownHandle)?;
+        if lease.owner() != &owner {
+            return Err(LineRuntimeError::WrongOwner);
+        }
+        if returned.contains(token) {
+            ledger.transfer(token, &owner, RuntimeHandleOwnerSlot::LineScope)?;
+        } else {
+            ledger.drop_owned_with_policy(token, &owner, policy, commands)?;
+        }
+    }
+    Ok(())
+}
+
+fn stage_unstarted_scheduled_completion(
+    ledger: &mut RuntimeLineHandleLedger,
+    packet: &RuntimeScheduledLineTask,
+    terminal: RuntimeScheduledState,
+) -> Result<(), LineRuntimeError> {
+    if !is_terminal_scheduled_state(terminal)
+        || !scheduled_transition_is_legal(packet.state, terminal)
+        || packet.validate_custody().is_err()
+    {
+        return Err(LineRuntimeError::InvalidScheduledCaptureTransition);
+    }
+    let RuntimeScheduledCaptureCustody::Packet(captures) = &packet.custody else {
+        return Err(LineRuntimeError::InvalidScheduledCaptureTransition);
+    };
+    stage_scheduled_capture_completion(
+        ledger,
+        packet,
+        terminal,
+        captures.iter().map(|binding| &binding.value),
+    )
+}
+
 impl RuntimeScheduledLineTask {
     #[must_use = "construct a validated scheduled line task"]
     pub fn new(
@@ -3482,15 +4400,23 @@ impl RuntimeScheduledLineTask {
         self.state
     }
 
+    fn packet_for_child_fiber(&self) -> Result<&[RuntimeLocalBinding], LineRuntimeError> {
+        if self.state != RuntimeScheduledState::Running || self.validate_custody().is_err() {
+            return Err(LineRuntimeError::InvalidScheduledCaptureTransition);
+        }
+        match &self.custody {
+            RuntimeScheduledCaptureCustody::Packet(bindings) => Ok(bindings),
+            RuntimeScheduledCaptureCustody::ChildFiber(_)
+            | RuntimeScheduledCaptureCustody::LineScope(_) => {
+                Err(LineRuntimeError::InvalidScheduledCaptureTransition)
+            }
+        }
+    }
+
     pub(crate) fn take_packet_for_child_fiber(
         &mut self,
     ) -> Result<Box<[RuntimeLocalBinding]>, LineRuntimeError> {
-        if self.state != RuntimeScheduledState::Running
-            || !matches!(&self.custody, RuntimeScheduledCaptureCustody::Packet(_))
-            || self.validate_custody().is_err()
-        {
-            return Err(LineRuntimeError::InvalidScheduledCaptureTransition);
-        }
+        self.packet_for_child_fiber()?;
 
         let custody = std::mem::replace(
             &mut self.custody,
@@ -3518,6 +4444,46 @@ impl RuntimeScheduledLineTask {
         bindings: Box<[RuntimeLocalBinding]>,
         terminal: RuntimeScheduledState,
     ) -> Result<(), LineRuntimeError> {
+        self.inspect_child_fiber_bindings(&bindings, terminal)?;
+        let original_locals = match &self.custody {
+            RuntimeScheduledCaptureCustody::ChildFiber(locals) => locals.clone(),
+            RuntimeScheduledCaptureCustody::Packet(_)
+            | RuntimeScheduledCaptureCustody::LineScope(_) => {
+                unreachable!("checked scheduled child custody remains present")
+            }
+        };
+        let mut returned = bindings
+            .into_vec()
+            .into_iter()
+            .map(|binding| (binding.local, binding))
+            .collect::<BTreeMap<_, _>>();
+        let ordered = original_locals
+            .iter()
+            .filter_map(|local| returned.remove(local))
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        self.custody = RuntimeScheduledCaptureCustody::LineScope(ordered);
+        self.state = terminal;
+        Ok(())
+    }
+
+    fn inspect_child_fiber_bindings(
+        &self,
+        bindings: &[RuntimeLocalBinding],
+        terminal: RuntimeScheduledState,
+    ) -> Result<(), LineRuntimeError> {
+        let references = bindings
+            .iter()
+            .map(|binding| (binding.local, &binding.value))
+            .collect::<Vec<_>>();
+        self.inspect_child_fiber_binding_refs(&references, terminal)
+    }
+
+    fn inspect_child_fiber_binding_refs(
+        &self,
+        bindings: &[(RuntimeLocalDeclarationId, &RuntimeValue)],
+        terminal: RuntimeScheduledState,
+    ) -> Result<(), LineRuntimeError> {
         if !matches!(
             self.state,
             RuntimeScheduledState::Running | RuntimeScheduledState::Cancelling
@@ -3530,31 +4496,24 @@ impl RuntimeScheduledLineTask {
         }
 
         let original_locals = match &self.custody {
-            RuntimeScheduledCaptureCustody::ChildFiber(locals) => locals.clone(),
+            RuntimeScheduledCaptureCustody::ChildFiber(locals) => locals,
             RuntimeScheduledCaptureCustody::Packet(_)
             | RuntimeScheduledCaptureCustody::LineScope(_) => {
                 return Err(LineRuntimeError::InvalidScheduledCaptureTransition);
             }
         };
-        let mut returned = BTreeMap::new();
-        for binding in bindings {
-            if returned.insert(binding.local, binding).is_some() {
+        let mut returned = std::collections::BTreeSet::new();
+        for (local, _) in bindings {
+            if !returned.insert(*local) {
                 return Err(LineRuntimeError::InvalidScheduledCaptureTransition);
             }
         }
         if returned
-            .keys()
+            .iter()
             .any(|local| !original_locals.iter().any(|original| original == local))
         {
             return Err(LineRuntimeError::InvalidScheduledCaptureTransition);
         }
-        let ordered = original_locals
-            .iter()
-            .filter_map(|local| returned.remove(local))
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
-        self.custody = RuntimeScheduledCaptureCustody::LineScope(ordered);
-        self.state = terminal;
         Ok(())
     }
 
@@ -4448,14 +5407,21 @@ mod tests {
             Err(LineRuntimeError::InvalidRestoredDeferredState)
         );
 
-        let mut bad_sequence = state.clone();
+        let mut bad_sequence = state;
         let first = bad_sequence.deferred[0].clone();
         bad_sequence.deferred.push(first);
         assert_eq!(
             bad_sequence.restore_admit(&activation),
             Err(LineRuntimeError::InvalidRestoredDeferredState)
         );
-        let mut bad_counter = state;
+        let mut bad_counter = RuntimeDialogueActivationState::<AwbcTypeId>::new();
+        bad_counter
+            .register_deferred(
+                defer_site(0),
+                RuntimeDeferOutcomeFilter::Always,
+                deferred("capture"),
+            )
+            .expect("register independent callback");
         bad_counter.next_defer_registration = 1;
         assert_eq!(
             bad_counter.restore_admit(&activation),
@@ -4635,9 +5601,14 @@ mod tests {
             .get_mut(&token)
             .expect("fixture cue")
             .state = RuntimeHandleLeaseState::Active;
-        let unchanged = state.clone();
+        let unchanged = AwbcRuntimeDialogueActivationSnapshot::from_live(&state)
+            .expect("inert scheduled state");
 
         assert!(state.prepare_handle_unwind(&activation, false).is_err());
-        assert_eq!(state, unchanged);
+        assert_eq!(
+            AwbcRuntimeDialogueActivationSnapshot::from_live(&state)
+                .expect("inert scheduled state after rejection"),
+            unchanged
+        );
     }
 }

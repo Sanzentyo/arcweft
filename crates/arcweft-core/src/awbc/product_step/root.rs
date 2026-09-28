@@ -256,7 +256,7 @@ impl<B: RuntimeCallBackend> RootCallableEvaluator for ProductRootEvaluator<'_, B
     fn evaluate_root_callable(
         &mut self,
         callable: &crate::plan::RuntimeCallableRole,
-        args: &[RuntimeValue],
+        args: Vec<RuntimeValue>,
     ) -> Result<RuntimeValue, RootCallableEvaluationError> {
         let executable = self
             .program

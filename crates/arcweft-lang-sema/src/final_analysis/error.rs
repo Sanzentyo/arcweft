@@ -298,6 +298,8 @@ pub enum FinalSemanticAnalysisError {
         implementation: ItemId,
         reason: super::analyzer::display::DisplayConformanceRejection,
     },
+    #[error(transparent)]
+    LocalUse(#[from] super::CheckedLocalUseError),
     #[error("DisplayText implementations {first:?} and {second:?} both match {target:?}")]
     DuplicateDisplayTextImpl {
         target: Box<TypeKind>,

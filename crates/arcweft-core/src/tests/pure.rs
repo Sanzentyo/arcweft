@@ -6,11 +6,11 @@ use crate::plan::{
     RuntimeDialogueContentTemplateManifestSeed, RuntimeDialogueValueRole, RuntimeExprSeed,
     RuntimeExprSeedKind, RuntimeFormatContentOperandSeed, RuntimeFunctionInputBindingSeed,
     RuntimeFunctionInputSource, RuntimeFunctionSiteSeedId, RuntimeLocalDeclarationSeed,
-    RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan,
-    RuntimePlanBuilder, RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
-    RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureHelperSeed, RuntimePureInputType,
-    RuntimePureOutputType, RuntimeReceiverMode, RuntimeTraitMethodId, RuntimeTraitMethodIdentity,
-    RuntimeTraitMethodSeed,
+    RuntimeLocalReadSeed, RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind,
+    RuntimePlan, RuntimePlanBuilder, RuntimePlanSequenceKind, RuntimePlanTypeProjection,
+    RuntimePlanTypeSeed, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureHelperSeed,
+    RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode, RuntimeTraitMethodId,
+    RuntimeTraitMethodIdentity, RuntimeTraitMethodSeed,
 };
 use crate::pure::{
     AotPureFunctionBackend, PureFunctionBackend, PureFunctionBackendKind, PureFunctionRequest,
@@ -21,10 +21,57 @@ use crate::scope::RuntimeScopeIdentity;
 use crate::value::{
     RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeCallTarget, RuntimeDialogueContentValue,
     RuntimeDialogueFormattedOutcome, RuntimeDialogueFormattedSuccess, RuntimeDialogueOpaqueRole,
-    RuntimeEvalError, RuntimeExprKind, RuntimeFmtParameterId, RuntimeFormatContext, RuntimeSeq,
-    RuntimeSignedIntWidth, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder, RuntimeValue,
+    RuntimeEvalError, RuntimeExprKind, RuntimeFmtParameterId, RuntimeFormatContext,
+    RuntimeLocalReadMode, RuntimeSeq, RuntimeSignedIntWidth, RuntimeStandardMapFamily,
+    RuntimeStandardMapOperandOrder, RuntimeValue,
 };
 use arcweft_id::{DeclarationName, LocaleTag};
+
+#[test]
+fn pure_value_backend_moves_an_affine_need_argument_into_its_result() {
+    let unit = RuntimeCheckedType::Unit.semantic_identity_digest();
+    let need = RuntimeSemanticTypeId::from_bytes([0x91; 32]);
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+                RuntimePlanTypeSeed::new(need, RuntimePlanTypeProjection::Need(unit)),
+            ],
+            [RuntimeLocalDeclarationSeed::new(need)],
+        )
+        .expect("affine pure input type");
+    let input = admission.local_ids()[0].clone();
+    builder
+        .push_pure_helper_seed(RuntimePureHelperSeed {
+            name: "move_need".to_owned(),
+            inputs: Box::new([input.clone()]),
+            input_abi: vec![RuntimePureInputType::Value],
+            output_abi: RuntimePureOutputType::Value,
+            body: RuntimeExprSeed::new(
+                need,
+                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                    input,
+                    RuntimeLocalReadMode::Move,
+                )),
+            ),
+            scalar_eval_supported: false,
+            origin: RuntimePureHelperOrigin::Annotated,
+        })
+        .expect("move-only pure helper");
+    let plan = Arc::new(builder.finish().expect("sealed pure helper"));
+    let helper =
+        RuntimePureHelperRef::resolve(&plan, plan.pure_helpers()[0].id).expect("helper reference");
+    let value = RuntimeValue::Need(crate::task::NeedId("need.pure.affine".to_owned()));
+    assert!(!value.ownership().permits_copy());
+    let mut backend = VmRuntimePureCallBackend::default();
+    assert_eq!(
+        backend
+            .call_values(helper, vec![value])
+            .expect("affine argument transfers into pure result"),
+        RuntimeValue::Need(crate::task::NeedId("need.pure.affine".to_owned()))
+    );
+}
 
 #[test]
 fn pure_format_content_uses_selected_ambient_locale() {
@@ -118,7 +165,13 @@ fn pure_format_content_uses_selected_ambient_locale() {
                 [
                     RuntimeFormatContentOperandSeed::new(
                         RuntimeFmtParameterId::Value,
-                        RuntimeExprSeed::new(int_type, RuntimeExprSeedKind::Local(receiver_local)),
+                        RuntimeExprSeed::new(
+                            int_type,
+                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                receiver_local,
+                                RuntimeLocalReadMode::Copy,
+                            )),
+                        ),
                     ),
                     RuntimeFormatContentOperandSeed::new(
                         RuntimeFmtParameterId::Style,
@@ -196,7 +249,7 @@ fn pure_format_content_uses_selected_ambient_locale() {
     let mut scratch = VmPureFunctionScratch::default();
     scratch.set_format_context(context);
     assert_eq!(
-        scratch.evaluate_values(&plan, helper, &[]).unwrap(),
+        scratch.evaluate_values(&plan, helper, vec![]).unwrap(),
         evaluated.value
     );
 }
@@ -235,7 +288,10 @@ fn i64_value(value: i64) -> RuntimeExprSeed {
 }
 
 fn i64_local(local: RuntimeLocalSeedId) -> RuntimeExprSeed {
-    RuntimeExprSeed::new(i64_semantic_type(), RuntimeExprSeedKind::Local(local))
+    RuntimeExprSeed::new(
+        i64_semantic_type(),
+        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(local, RuntimeLocalReadMode::Copy)),
+    )
 }
 
 fn i64_binary(lhs: RuntimeExprSeed, op: RuntimeBinaryOp, rhs: RuntimeExprSeed) -> RuntimeExprSeed {
@@ -400,6 +456,8 @@ fn standard_map_pure_plan() -> (Arc<RuntimePlan>, Vec<StandardMapPureCase>) {
             builder
                 .push_function_site_seed(
                     [RuntimeFunctionInputBindingSeed {
+                        ownership: Default::default(),
+                        unrestricted_bindings: Box::new([]),
                         source: RuntimeFunctionInputSource::Parameter { position: 0 },
                         input_local: local.clone(),
                         pattern: RuntimePatternSeed::new(
@@ -718,6 +776,34 @@ fn aot_plan_uses_the_helpers_plan_local_input_coordinates() {
 }
 
 #[test]
+fn aot_rejects_a_consuming_local_read_that_vm_executes() {
+    let helper = admit_i64_helper("consuming_input", 1, |inputs| {
+        RuntimeExprSeed::new(
+            i64_semantic_type(),
+            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                inputs[0].clone(),
+                RuntimeLocalReadMode::Move,
+            )),
+        )
+    });
+    let request = helper.request([RuntimeValue::i64(9)]);
+    let input_locals = helper.plan.pure_helpers()[0].input_locals.clone();
+
+    assert!(
+        AotPureFunctionBackend::new()
+            .compile_i64_with_inputs(&request, input_locals.iter().copied())
+            .is_err()
+    );
+    assert_eq!(
+        VmPureFunctionBackend
+            .evaluate(&request)
+            .expect("VM consumes the local")
+            .value,
+        RuntimeValue::i64(9)
+    );
+}
+
+#[test]
 fn aot_and_vm_compare_the_same_admitted_helper() {
     let helper = admit_i64_helper("conditional", 2, |inputs| {
         RuntimeExprSeed::new(
@@ -822,6 +908,8 @@ fn structured_closure_captures_the_exact_owning_plan() {
         .push_function_site_seed(
             [
                 RuntimeFunctionInputBindingSeed {
+                    ownership: Default::default(),
+                    unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Capture { position: 0 },
                     input_local: capture_input,
                     pattern: RuntimePatternSeed::new(
@@ -833,6 +921,8 @@ fn structured_closure_captures_the_exact_owning_plan() {
                     ),
                 },
                 RuntimeFunctionInputBindingSeed {
+                    ownership: Default::default(),
+                    unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Parameter { position: 0 },
                     input_local: parameter_input,
                     pattern: RuntimePatternSeed::new(
@@ -863,7 +953,10 @@ fn structured_closure_captures_the_exact_owning_plan() {
         RuntimeExprSeedKind::Apply {
             callee: Box::new(RuntimeExprSeed::new(
                 function_semantic_type,
-                RuntimeExprSeedKind::Local(closure_binding.clone()),
+                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                    closure_binding.clone(),
+                    RuntimeLocalReadMode::Copy,
+                )),
             )),
             args: Box::new([RuntimeCallArgumentSeed::new(
                 i64_value(3),
@@ -944,6 +1037,8 @@ fn structured_function_input_tuple_pattern_binds_body_locals() {
     let site = builder
         .push_function_site_seed(
             [RuntimeFunctionInputBindingSeed {
+                ownership: Default::default(),
+                unrestricted_bindings: Box::new([]),
                 source: RuntimeFunctionInputSource::Parameter { position: 0 },
                 input_local,
                 pattern: RuntimePatternSeed::new(
@@ -981,7 +1076,10 @@ fn structured_function_input_tuple_pattern_binds_body_locals() {
         RuntimeExprSeedKind::Apply {
             callee: Box::new(RuntimeExprSeed::new(
                 function_semantic_type,
-                RuntimeExprSeedKind::Local(closure_binding.clone()),
+                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                    closure_binding.clone(),
+                    RuntimeLocalReadMode::Copy,
+                )),
             )),
             args: Box::new([RuntimeCallArgumentSeed::new(
                 RuntimeExprSeed::new(
@@ -1064,6 +1162,8 @@ fn structured_function_input_sequence_rest_binds_one_logical_tail() {
     let site = builder
         .push_function_site_seed(
             [RuntimeFunctionInputBindingSeed {
+                ownership: Default::default(),
+                unrestricted_bindings: Box::new([]),
                 source: RuntimeFunctionInputSource::Parameter { position: 0 },
                 input_local,
                 pattern: RuntimePatternSeed::new(
@@ -1101,7 +1201,10 @@ fn structured_function_input_sequence_rest_binds_one_logical_tail() {
         RuntimeExprSeedKind::Apply {
             callee: Box::new(RuntimeExprSeed::new(
                 function_semantic_type,
-                RuntimeExprSeedKind::Local(closure_binding.clone()),
+                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                    closure_binding.clone(),
+                    RuntimeLocalReadMode::Copy,
+                )),
             )),
             args: Box::new([RuntimeCallArgumentSeed::new(
                 RuntimeExprSeed::new(
@@ -1183,6 +1286,8 @@ fn structured_function_input_record_pattern_binds_by_declared_field_coordinate()
     let site = builder
         .push_function_site_seed(
             [RuntimeFunctionInputBindingSeed {
+                ownership: Default::default(),
+                unrestricted_bindings: Box::new([]),
                 source: RuntimeFunctionInputSource::Parameter { position: 0 },
                 input_local,
                 pattern: RuntimePatternSeed::new(
@@ -1222,7 +1327,10 @@ fn structured_function_input_record_pattern_binds_by_declared_field_coordinate()
         RuntimeExprSeedKind::Apply {
             callee: Box::new(RuntimeExprSeed::new(
                 function_semantic_type,
-                RuntimeExprSeedKind::Local(closure_binding.clone()),
+                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                    closure_binding.clone(),
+                    RuntimeLocalReadMode::Copy,
+                )),
             )),
             args: Box::new([RuntimeCallArgumentSeed::new(
                 RuntimeExprSeed::new(record_semantic_type, RuntimeExprSeedKind::Value(record)),
@@ -1294,6 +1402,8 @@ fn structured_apply_reorders_source_arguments_to_the_checked_abi() {
         .push_function_site_seed(
             [
                 RuntimeFunctionInputBindingSeed {
+                    ownership: Default::default(),
+                    unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Parameter { position: 0 },
                     input_local: input_zero,
                     pattern: RuntimePatternSeed::new(
@@ -1305,6 +1415,8 @@ fn structured_apply_reorders_source_arguments_to_the_checked_abi() {
                     ),
                 },
                 RuntimeFunctionInputBindingSeed {
+                    ownership: Default::default(),
+                    unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Parameter { position: 1 },
                     input_local: input_one,
                     pattern: RuntimePatternSeed::new(
@@ -1338,7 +1450,10 @@ fn structured_apply_reorders_source_arguments_to_the_checked_abi() {
         RuntimeExprSeedKind::Apply {
             callee: Box::new(RuntimeExprSeed::new(
                 function_semantic_type,
-                RuntimeExprSeedKind::Local(closure_binding.clone()),
+                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                    closure_binding.clone(),
+                    RuntimeLocalReadMode::Copy,
+                )),
             )),
             args: Box::new([
                 RuntimeCallArgumentSeed::new(i64_value(10), RuntimeCallArgumentMode::Value, 1),

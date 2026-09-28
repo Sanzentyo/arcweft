@@ -245,6 +245,7 @@ impl Wire for AwbcFunction {
         self.public_id.write_wire(writer)?;
         self.kind.write_wire(writer)?;
         self.signature.write_wire(writer)?;
+        self.input_ownership.write_wire(writer)?;
         self.frame_layout.write_wire(writer)?;
         self.blocks.write_wire(writer)?;
         self.entry_block.write_wire(writer)?;
@@ -256,11 +257,52 @@ impl Wire for AwbcFunction {
             public_id: Option::<AwbcStringId>::read_wire(reader)?,
             kind: AwbcFunctionKind::read_wire(reader)?,
             signature: AwbcSignatureId::read_wire(reader)?,
+            input_ownership: Vec::read_wire(reader)?,
             frame_layout: AwbcFrameLayoutId::read_wire(reader)?,
             blocks: AwbcTableRange::read_wire(reader)?,
             entry_block: AwbcBlockId::read_wire(reader)?,
             flags: AwbcFunctionFlags::read_wire(reader)?,
         })
+    }
+}
+
+impl Wire for crate::awbc::schema::AwbcFunctionInputOwnership {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.requirement.write_wire(writer)?;
+        self.pattern.write_wire(writer)?;
+        self.unrestricted_bindings.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self {
+            requirement: crate::plan::RuntimeFunctionInputOwnershipRequirement::read_wire(reader)?,
+            pattern: Option::<crate::awbc::schema::AwbcPatternId>::read_wire(reader)?,
+            unrestricted_bindings: Vec::read_wire(reader)?,
+        })
+    }
+}
+
+impl Wire for crate::plan::RuntimeFunctionInputOwnershipRequirement {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(match self {
+            Self::Owned => 0,
+            Self::Unrestricted => 1,
+        });
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        match tag {
+            0 => Ok(Self::Owned),
+            1 => Ok(Self::Unrestricted),
+            _ => Err(AwbcCodecError::UnknownTag {
+                kind: "function input ownership requirement",
+                tag,
+                offset,
+            }),
+        }
     }
 }
 
@@ -1091,6 +1133,7 @@ impl Wire for AwbcInstruction {
             | AwbcOpcode::HostCall
             | AwbcOpcode::Return
             | AwbcOpcode::SelectDialogueResult
+            | AwbcOpcode::SequenceNext
             | AwbcOpcode::ProjectCall
             | AwbcOpcode::Trap
             | AwbcOpcode::BudgetYield
@@ -1300,6 +1343,17 @@ impl Wire for AwbcTerminator {
                 then_block.write_wire(writer)?;
                 else_block.write_wire(writer)?;
             }
+            Self::SequenceNext {
+                sequence,
+                item,
+                some_block,
+                none_block,
+            } => {
+                sequence.write_wire(writer)?;
+                item.write_wire(writer)?;
+                some_block.write_wire(writer)?;
+                none_block.write_wire(writer)?;
+            }
             Self::Match {
                 scrutinee,
                 arms,
@@ -1425,6 +1479,12 @@ impl Wire for AwbcTerminator {
                 condition: AwbcRegisterId::read_wire(reader)?,
                 then_block: AwbcBlockId::read_wire(reader)?,
                 else_block: AwbcBlockId::read_wire(reader)?,
+            },
+            AwbcOpcode::SequenceNext => Self::SequenceNext {
+                sequence: AwbcRegisterId::read_wire(reader)?,
+                item: AwbcRegisterId::read_wire(reader)?,
+                some_block: AwbcBlockId::read_wire(reader)?,
+                none_block: AwbcBlockId::read_wire(reader)?,
             },
             AwbcOpcode::Match => Self::Match {
                 scrutinee: AwbcRegisterId::read_wire(reader)?,

@@ -7,13 +7,14 @@
 use crate::pattern::RuntimeVariantIdentity;
 use crate::time::LogicalDuration;
 
+use super::ownership::RuntimeValueOwnership;
 use super::{
     DenseSeq, Progress, RecordSeqField, RuntimeAgentValue, RuntimeColor, RuntimeEntityReference,
     RuntimeInt, RuntimeNominalRecordValue, RuntimeOpaqueValue, RuntimeRecordFieldId,
     RuntimeRecordValue, RuntimeReductionValue, RuntimeSeq, RuntimeUInt, RuntimeValue,
 };
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum RuntimeScalarView<'a> {
     Unit,
     Bool(bool),
@@ -49,6 +50,194 @@ pub(crate) enum RuntimeValueView<'a> {
 }
 
 impl RuntimeValueView<'_> {
+    /// Materializes a second logical value only after recursive Copy proof.
+    /// Columnar rows are projected through borrowed children before any
+    /// physical row is constructed.
+    pub(crate) fn copy_unrestricted(self) -> Option<RuntimeValue> {
+        if !self.ownership().permits_copy() {
+            return None;
+        }
+        Some(match self {
+            Self::Scalar(scalar) => match scalar {
+                RuntimeScalarView::Unit => RuntimeValue::Unit,
+                RuntimeScalarView::Bool(value) => RuntimeValue::Bool(value),
+                RuntimeScalarView::Int(value) => RuntimeValue::Int(value),
+                RuntimeScalarView::UInt(value) => RuntimeValue::UInt(value),
+                RuntimeScalarView::F32(value) => RuntimeValue::F32(value),
+                RuntimeScalarView::F64(value) => RuntimeValue::F64(value),
+                RuntimeScalarView::String(value) => RuntimeValue::String(value.to_owned()),
+                RuntimeScalarView::Color(value) => RuntimeValue::Color(value),
+                RuntimeScalarView::Char(value) => RuntimeValue::Char(value),
+                RuntimeScalarView::Duration(value) => RuntimeValue::Duration(value),
+                RuntimeScalarView::Progress(value) => RuntimeValue::Progress(value.clone()),
+                RuntimeScalarView::EntityRef(value) => RuntimeValue::EntityRef(value.clone()),
+            },
+            Self::Tuple(values) => RuntimeValue::Tuple(
+                (0..values.len())
+                    .map(|index| values.get(index)?.copy_unrestricted())
+                    .collect::<Option<Vec<_>>>()?,
+            ),
+            Self::Record(values) => RuntimeValue::Record(
+                RuntimeRecordValue::try_new(
+                    (0..values.len())
+                        .map(|index| {
+                            let (_, name, value) = values.get(index)?;
+                            Some((name.to_owned(), value.copy_unrestricted()?))
+                        })
+                        .collect::<Option<Vec<_>>>()?,
+                )
+                .expect("an admitted record view retains valid field names"),
+            ),
+            Self::Sequence(values) => RuntimeValue::Seq(values.clone()),
+            Self::NominalRecord(value) => RuntimeValue::NominalRecord(value.clone()),
+            Self::Opaque(value) => RuntimeValue::Opaque(value.clone()),
+            Self::Reduction(value) => RuntimeValue::Reduction(value.clone()),
+            Self::Agent(value) => RuntimeValue::Agent(value.clone()),
+            Self::Variant {
+                owner,
+                ordinal,
+                name,
+                payload,
+            } => RuntimeValue::Variant {
+                owner: owner.clone(),
+                ordinal,
+                name: name.to_owned(),
+                payload: payload.map(|value| Box::new(value.clone())),
+            },
+            Self::RuntimeOnly(value) => value.clone(),
+        })
+    }
+
+    /// Checks a logical borrowed row for one handle without materializing a
+    /// second live value from columnar storage.
+    pub(crate) fn contains_line_handle(
+        self,
+        token: &crate::runtime_id::RuntimeLineHandleToken,
+    ) -> Result<bool, super::ownership::RuntimeAffineLineHandleError> {
+        match self {
+            Self::Scalar(_) => Ok(false),
+            Self::Tuple(values) => {
+                for index in 0..values.len() {
+                    if let Some(value) = values.get(index)
+                        && value.contains_line_handle(token)?
+                    {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+            Self::Record(values) => {
+                for index in 0..values.len() {
+                    if let Some((_, _, value)) = values.get(index)
+                        && value.contains_line_handle(token)?
+                    {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+            Self::Sequence(values) => {
+                for index in 0..values.len() {
+                    if let Some(value) = values.value_view(index)
+                        && value.contains_line_handle(token)?
+                    {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+            Self::NominalRecord(record) => {
+                record.fields().iter().try_fold(false, |found, value| {
+                    Ok(found || value.view().contains_line_handle(token)?)
+                })
+            }
+            Self::Opaque(value) => match value.value_class() {
+                super::RuntimeOpaqueValueClass::AffineHandle(_) => Ok(
+                    &crate::runtime_id::RuntimeLineHandleToken::try_decode_payload(
+                        value.payload(),
+                    )? == token,
+                ),
+                super::RuntimeOpaqueValueClass::Plain => {
+                    value.payload().view().contains_line_handle(token)
+                }
+            },
+            Self::Reduction(value) => {
+                if value.state().view().contains_line_handle(token)? {
+                    return Ok(true);
+                }
+                for command in value.commands() {
+                    if command
+                        .payload()
+                        .value()
+                        .view()
+                        .contains_line_handle(token)?
+                    {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+            Self::Agent(value) => {
+                for (_, nested) in value.nested_runtime_values_with_depth() {
+                    if nested.view().contains_line_handle(token)? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+            Self::Variant { payload, .. } => {
+                payload.map_or(Ok(false), |value| value.view().contains_line_handle(token))
+            }
+            Self::RuntimeOnly(value) => Ok(value
+                .affine_line_handles()?
+                .iter()
+                .any(|handle| handle.token() == token)),
+        }
+    }
+
+    /// Ownership of a borrowed logical row, including columnar children.
+    pub(crate) fn ownership(self) -> RuntimeValueOwnership {
+        let join = |current: RuntimeValueOwnership, value: RuntimeValueView<'_>| {
+            current.join(value.ownership())
+        };
+        match self {
+            Self::Scalar(_) => RuntimeValueOwnership::Unrestricted,
+            Self::Tuple(items) => (0..items.len())
+                .filter_map(|index| items.get(index))
+                .fold(RuntimeValueOwnership::Unrestricted, join),
+            Self::Record(fields) => (0..fields.len())
+                .filter_map(|index| fields.get(index))
+                .fold(
+                    RuntimeValueOwnership::Unrestricted,
+                    |current, (_, _, value)| join(current, value),
+                ),
+            Self::Sequence(sequence) => sequence.ownership(),
+            Self::NominalRecord(record) => record
+                .fields()
+                .iter()
+                .fold(RuntimeValueOwnership::Unrestricted, |current, value| {
+                    current.join(value.ownership())
+                }),
+            Self::Opaque(value) => match value.value_class() {
+                super::RuntimeOpaqueValueClass::Plain => value.payload().ownership(),
+                super::RuntimeOpaqueValueClass::AffineHandle(_) => {
+                    RuntimeValueOwnership::Affine.join(value.payload().ownership())
+                }
+            },
+            Self::Reduction(value) => value
+                .commands()
+                .iter()
+                .fold(value.state().ownership(), |current, command| {
+                    current.join(command.payload().0.ownership())
+                }),
+            Self::Agent(value) => value.ownership(),
+            Self::Variant { payload, .. } => {
+                payload.map_or(RuntimeValueOwnership::Unrestricted, RuntimeValue::ownership)
+            }
+            Self::RuntimeOnly(value) => value.ownership(),
+        }
+    }
+
     pub(crate) fn type_name(self) -> &'static str {
         match self {
             Self::Scalar(RuntimeScalarView::Unit) => "unit",

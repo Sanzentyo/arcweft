@@ -14,14 +14,14 @@ use std::sync::Arc;
 use thiserror::Error;
 
 /// Runtime image associated with one executable generation.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct GenerationRuntimeImage<R> {
     generation: Arc<ProgramGeneration>,
     runtime: R,
 }
 
 /// Runtime images keyed by generation id.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct GenerationRuntimeTable<R> {
     images: BTreeMap<GenerationId, GenerationRuntimeImage<R>>,
 }
@@ -73,15 +73,6 @@ impl<R> GenerationRuntimeImage<R> {
     /// Consumes the image and returns the runtime payload.
     pub fn into_runtime(self) -> R {
         self.runtime
-    }
-}
-
-impl<R: Clone> GenerationRuntimeImage<R> {
-    /// Clones the runtime payload. `BundleSession` uses this for new entry
-    /// binding so a fresh executor can be spawned from the active generation
-    /// template without mutating an existing fiber image.
-    pub fn cloned_runtime(&self) -> R {
-        self.runtime.clone()
     }
 }
 

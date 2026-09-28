@@ -9,15 +9,15 @@ use arcweft_core::plan::{
     RuntimeCallableStateSeedId, RuntimeDialogueContentEffectBindingSeed, RuntimeDialogueValueRole,
     RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed,
     RuntimeFlowOpSeed, RuntimeFormatContentOperandSeed, RuntimeFunctionSiteSeedId,
-    RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeLocalSeedId,
+    RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeLocalReadSeed, RuntimeLocalSeedId,
     RuntimeMutablePlaceSeed, RuntimeNominalRecordFieldSeed, RuntimeRecordFieldSeedId,
     RuntimeTraitMethodSeedId,
 };
 use arcweft_core::task::NamedHostArg;
 use arcweft_core::value::{
     RuntimeAgentCompareOp, RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeCallTarget,
-    RuntimeDialogueOpaqueRole, RuntimeFmtParameterId, RuntimeStandardMapFamily,
-    RuntimeStandardMapOperandOrder, RuntimeUnaryOp, RuntimeValue,
+    RuntimeDialogueOpaqueRole, RuntimeFmtParameterId, RuntimeLocalReadMode,
+    RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder, RuntimeUnaryOp, RuntimeValue,
 };
 use arcweft_dialogue::CharacterDialoguePolicyTypeGraph;
 use arcweft_lang_hir::expr::{HirBinaryOp, HirExprKind, HirUnaryOp};
@@ -26,6 +26,9 @@ use arcweft_lang_hir::item::HirFunctionBody;
 use arcweft_lang_hir::module::HirModule;
 use arcweft_lang_hir::stmt::HirStmtKind;
 use arcweft_lang_sema::callable::{CheckedFmtFailurePolicy, FmtParameterId};
+use arcweft_lang_sema::final_analysis::{
+    CheckedLocalReadMode, CheckedLocalUseSite, CheckedSyntheticUseOwner,
+};
 
 use crate::agent::RuntimeAgentIntrinsic;
 use crate::final_pattern::{FinalPatternLowerer, project_entity_reference};
@@ -36,8 +39,8 @@ use crate::flow::{ScopeLocalSeeds, TryLocalSeeds};
 use crate::semantic_facts::{
     RuntimeAssignmentFact, RuntimeCallParameterCoordinate, RuntimeCallResultShape,
     RuntimeCallableSpecializationKey, RuntimeClosureInstanceKey, RuntimeDialogueEffectProgramKey,
-    RuntimeFormatTemplateKey, RuntimeNormalizedType, RuntimePlanSemanticFacts,
-    RuntimePositionedAttachedContent, RuntimeProjectCallableSourceKey,
+    RuntimeFormatTemplateKey, RuntimeImplicitCallableSiteKey, RuntimeNormalizedType,
+    RuntimePlanSemanticFacts, RuntimePositionedAttachedContent, RuntimeProjectCallableSourceKey,
     RuntimeProjectCallableValueTarget, RuntimeRecordExpressionFact, RuntimeRecordExpressionSource,
     RuntimeReductionConstructor, RuntimeResolvedAttachedContent, RuntimeResolvedCall,
     RuntimeResolvedCallDispatch, RuntimeResolvedCallMutation, RuntimeResolvedCallOperand,
@@ -62,7 +65,7 @@ pub(crate) struct FinalExprLowerer<'hir> {
     format_attempts: Option<
         &'hir BTreeMap<RuntimeFormatTemplateKey, arcweft_core::plan::RuntimeFormatAttemptSeedId>,
     >,
-    function_sites: &'hir BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
+    function_sites: &'hir BTreeMap<RuntimeImplicitCallableSiteKey, RuntimeFunctionSiteSeedId>,
     dialogue_effect_sites:
         &'hir BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeFunctionSiteSeedId>,
     pipe_locals: &'hir BTreeMap<ExprId, RuntimeLocalSeedId>,
@@ -87,6 +90,16 @@ pub(crate) struct FinalExprLowerer<'hir> {
     callable_sources:
         Option<&'hir BTreeMap<RuntimeProjectCallableSourceKey, RuntimeCallableStateSeedId>>,
     overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+}
+
+pub(crate) const fn runtime_local_read_mode(mode: CheckedLocalReadMode) -> RuntimeLocalReadMode {
+    match mode {
+        CheckedLocalReadMode::Copy => RuntimeLocalReadMode::Copy,
+        CheckedLocalReadMode::Move => RuntimeLocalReadMode::Move,
+        CheckedLocalReadMode::Borrow => {
+            panic!("a selected borrowed receiver cannot lower as a value expression")
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -176,7 +189,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         facts: &'hir RuntimePlanSemanticFacts,
         locals: &'hir BTreeMap<LocalId, RuntimeLocalSeedId>,
         trait_methods: &'hir BTreeMap<RuntimeTraitMethodInstanceKey, RuntimeTraitMethodSeedId>,
-        function_sites: &'hir BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
+        function_sites: &'hir BTreeMap<RuntimeImplicitCallableSiteKey, RuntimeFunctionSiteSeedId>,
         dialogue_effect_sites: &'hir BTreeMap<
             RuntimeDialogueEffectProgramKey,
             RuntimeFunctionSiteSeedId,
@@ -423,6 +436,22 @@ impl<'hir> FinalExprLowerer<'hir> {
         }))
     }
 
+    /// Carries the selected guard's pattern-local Copy obligations on the
+    /// guard expression itself, rather than reconstructing reads at runtime.
+    pub(crate) fn lower_guard(&self, id: ExprId) -> Result<RuntimeExprSeed, String> {
+        let locals =
+            self.semantic_facts
+                .checked_guard_copy_locals(id)
+                .into_iter()
+                .map(|local| {
+                    self.locals.get(&local).cloned().ok_or_else(|| {
+                        format!("guard {id:?} reads unadmitted pattern local {local:?}")
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+        Ok(self.lower(id)?.with_guard_copy_locals(locals))
+    }
+
     pub(crate) fn lower(&self, id: ExprId) -> Result<RuntimeExprSeed, String> {
         if let Some(value) = self.overrides.get(&id) {
             return self.specialize_result(id, value.clone());
@@ -442,13 +471,28 @@ impl<'hir> FinalExprLowerer<'hir> {
             return Ok(RuntimeExprSeed::new(
                 self.expression_source_type(id)?,
                 RuntimeExprSeedKind::Function {
-                    site: self.function_sites.get(&id).cloned().ok_or_else(|| {
-                        format!("builder-issued function site seed is missing for {id:?}")
-                    })?,
+                    site: self
+                        .function_sites
+                        .get(&RuntimeImplicitCallableSiteKey::new(
+                            self.semantic_facts.scope(),
+                            id,
+                        ))
+                        .cloned()
+                        .ok_or_else(|| {
+                            format!("builder-issued function site seed is missing for {id:?}")
+                        })?,
                     captures: callable
                         .captures()
                         .iter()
-                        .map(|local| self.lower_local_capture(*local))
+                        .map(|local| {
+                            self.lower_local_capture(
+                                CheckedLocalUseSite::Capture {
+                                    owner: id,
+                                    local: *local,
+                                },
+                                *local,
+                            )
+                        })
                         .collect::<Result<Vec<_>, _>>()?
                         .into_boxed_slice(),
                 },
@@ -647,7 +691,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                 expr: Box::new(self.lower(branch.scrutinee())?),
                 guard: branch
                     .guard()
-                    .map(|guard| self.lower(guard))
+                    .map(|guard| self.lower_guard(guard))
                     .transpose()?
                     .map(Box::new),
                 then_expr: Box::new(self.lower(branch.then_branch())?),
@@ -661,7 +705,9 @@ impl<'hir> FinalExprLowerer<'hir> {
                     .map(|arm| {
                         Ok(RuntimeExprMatchArmSeed::new(
                             self.pattern().lower(arm.pattern())?,
-                            arm.guard().map(|guard| self.lower(guard)).transpose()?,
+                            arm.guard()
+                                .map(|guard| self.lower_guard(guard))
+                                .transpose()?,
                             self.lower(arm.value())?,
                         ))
                     })
@@ -695,17 +741,39 @@ impl<'hir> FinalExprLowerer<'hir> {
                 let binding = self.pipe_locals.get(&id).cloned().ok_or_else(|| {
                     format!("builder-issued once-only pipe local is missing for {id:?}")
                 })?;
-                let value = RuntimeExprSeed::new(
-                    self.expression_type(pipe.left())?,
-                    RuntimeExprSeedKind::Local(binding.clone()),
-                );
-                let overrides = self
+                let left_type = self.expression_type(pipe.left())?;
+                let pipe_fact = self
                     .pipe(id)
-                    .ok_or_else(|| format!("checked pipe fact is missing for {id:?}"))?
+                    .ok_or_else(|| format!("checked pipe fact is missing for {id:?}"))?;
+                let overrides = pipe_fact
                     .placeholders()
                     .iter()
-                    .map(|placeholder| (*placeholder, value.clone()))
-                    .collect();
+                    .map(|placeholder| {
+                        let use_row = self
+                            .semantic_facts
+                            .checked_synthetic_use(*placeholder)
+                            .ok_or_else(|| {
+                                format!("checked pipe use is missing for {placeholder:?}")
+                            })?;
+                        if use_row.owner()
+                            != CheckedSyntheticUseOwner::Pipe(pipe_fact.binding_identity())
+                        {
+                            return Err(format!(
+                                "checked pipe use at {placeholder:?} has another owner"
+                            ));
+                        }
+                        Ok((
+                            *placeholder,
+                            RuntimeExprSeed::new(
+                                left_type,
+                                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                    binding.clone(),
+                                    runtime_local_read_mode(use_row.mode()),
+                                )),
+                            ),
+                        ))
+                    })
+                    .collect::<Result<BTreeMap<_, _>, String>>()?;
                 let body = self.clone_with_overrides(overrides).lower(pipe.right())?;
                 return Ok(RuntimeExprSeed::new(
                     self.expression_source_type(id)?,
@@ -797,7 +865,10 @@ impl<'hir> FinalExprLowerer<'hir> {
             .ok_or_else(|| format!("admitted Try locals are missing for {owner:?}"))?;
         let success_value = RuntimeExprSeed::new(
             tried.carrier().success().identity(),
-            RuntimeExprSeedKind::Local(locals.success.clone()),
+            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                locals.success.clone(),
+                RuntimeLocalReadMode::Move,
+            )),
         );
         let success = self.apply_try_continuation(success_value, outer.clone())?;
         let success_pattern = normalized_variant_binding_pattern_seed(
@@ -822,7 +893,10 @@ impl<'hir> FinalExprLowerer<'hir> {
                     })?,
                     Some(RuntimeExprSeed::new(
                         residual.identity(),
-                        RuntimeExprSeedKind::Local(local),
+                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                            local,
+                            RuntimeLocalReadMode::Move,
+                        )),
                     )),
                 )
             }
@@ -1278,17 +1352,35 @@ impl<'hir> FinalExprLowerer<'hir> {
         let binding = self.pipe_locals.get(&owner).cloned().ok_or_else(|| {
             format!("builder-issued once-only pipe local is missing for {owner:?}")
         })?;
-        let local = RuntimeExprSeed::new(
-            self.expression_type(pipe.left())?,
-            RuntimeExprSeedKind::Local(binding.clone()),
-        );
-        let overrides = self
+        let left_type = self.expression_type(pipe.left())?;
+        let pipe_fact = self
             .pipe(owner)
-            .ok_or_else(|| format!("checked pipe fact is missing for {owner:?}"))?
+            .ok_or_else(|| format!("checked pipe fact is missing for {owner:?}"))?;
+        let overrides = pipe_fact
             .placeholders()
             .iter()
-            .map(|placeholder| (*placeholder, local.clone()))
-            .collect();
+            .map(|placeholder| {
+                let use_row = self
+                    .semantic_facts
+                    .checked_synthetic_use(*placeholder)
+                    .ok_or_else(|| format!("checked pipe use is missing for {placeholder:?}"))?;
+                if use_row.owner() != CheckedSyntheticUseOwner::Pipe(pipe_fact.binding_identity()) {
+                    return Err(format!(
+                        "checked pipe use at {placeholder:?} has another owner"
+                    ));
+                }
+                Ok((
+                    *placeholder,
+                    RuntimeExprSeed::new(
+                        left_type,
+                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                            binding.clone(),
+                            runtime_local_read_mode(use_row.mode()),
+                        )),
+                    ),
+                ))
+            })
+            .collect::<Result<BTreeMap<_, _>, String>>()?;
         let body = self
             .clone_with_overrides(overrides)
             .lower_with_try_continuation(pipe.right(), continuation)?;
@@ -1420,7 +1512,9 @@ impl<'hir> FinalExprLowerer<'hir> {
             ty = Some(value.ty());
             arms.push(RuntimeExprMatchArmSeed::new(
                 self.pattern().lower(arm.pattern())?,
-                arm.guard().map(|guard| self.lower(guard)).transpose()?,
+                arm.guard()
+                    .map(|guard| self.lower_guard(guard))
+                    .transpose()?,
                 value,
             ));
         }
@@ -1458,7 +1552,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                 expr: Box::new(scrutinee),
                 guard: branch
                     .guard()
-                    .map(|guard| self.lower(guard))
+                    .map(|guard| self.lower_guard(guard))
                     .transpose()?
                     .map(Box::new),
                 then_expr: Box::new(then_expr),
@@ -1526,12 +1620,14 @@ impl<'hir> FinalExprLowerer<'hir> {
             .value(id)
             .ok_or_else(|| format!("checked value fact is missing for expression {id:?}"))?
         {
-            RuntimeResolvedValue::Local(local) => {
-                Ok(RuntimeExprSeedKind::Local(self.local(*local)?))
-            }
+            RuntimeResolvedValue::Local(local) => Ok(RuntimeExprSeedKind::Local(
+                self.checked_local_read(CheckedLocalUseSite::Expression(id), *local)?,
+            )),
             RuntimeResolvedValue::NominalField { base, owner, field } => {
                 Ok(RuntimeExprSeedKind::Field {
-                    target: Box::new(self.lower_local_capture(*base)?),
+                    target: Box::new(
+                        self.lower_local_capture(CheckedLocalUseSite::Expression(id), *base)?,
+                    ),
                     field: RuntimeFieldProjectionSeed::Nominal {
                         owner: *owner,
                         field: RuntimeRecordFieldSeedId::from_zero_based(field.zero_based()),
@@ -1572,10 +1668,35 @@ impl<'hir> FinalExprLowerer<'hir> {
         }
     }
 
-    fn lower_local_capture(&self, local: LocalId) -> Result<RuntimeExprSeed, String> {
+    fn checked_local_read(
+        &self,
+        site: CheckedLocalUseSite,
+        local: LocalId,
+    ) -> Result<RuntimeLocalReadSeed, String> {
+        let checked = self
+            .semantic_facts
+            .checked_local_use(site)
+            .ok_or_else(|| format!("checked local use is missing for {site:?}"))?;
+        if checked.local() != local {
+            return Err(format!(
+                "checked local use at {site:?} targets {:?}, not {local:?}",
+                checked.local()
+            ));
+        }
+        Ok(RuntimeLocalReadSeed::new(
+            self.local(local)?,
+            runtime_local_read_mode(checked.mode()),
+        ))
+    }
+
+    fn lower_local_capture(
+        &self,
+        site: CheckedLocalUseSite,
+        local: LocalId,
+    ) -> Result<RuntimeExprSeed, String> {
         Ok(RuntimeExprSeed::new(
             self.local_type(local)?,
-            RuntimeExprSeedKind::Local(self.local(local)?),
+            RuntimeExprSeedKind::Local(self.checked_local_read(site, local)?),
         ))
     }
 
@@ -1598,7 +1719,13 @@ impl<'hir> FinalExprLowerer<'hir> {
             .captures()
             .iter()
             .map(|capture| {
-                let value = self.lower_local_capture(capture.source())?;
+                let value = self.lower_local_capture(
+                    CheckedLocalUseSite::Capture {
+                        owner: id,
+                        local: capture.source(),
+                    },
+                    capture.source(),
+                )?;
                 if value.ty() != capture.ty().identity() {
                     return Err(format!(
                         "project closure {:?} capture {} type disagrees with its closed ABI",
@@ -2035,7 +2162,13 @@ impl<'hir> FinalExprLowerer<'hir> {
                         )
                     })?;
                 Ok((
-                    RuntimeExprSeed::new(value.ty(), RuntimeExprSeedKind::Local(local)),
+                    RuntimeExprSeed::new(
+                        value.ty(),
+                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                            local,
+                            RuntimeLocalReadMode::Move,
+                        )),
+                    ),
                     RuntimeCallArgumentMode::Value,
                 ))
             })
@@ -2526,10 +2659,8 @@ impl<'hir> FinalExprLowerer<'hir> {
             .effects()
             .iter()
             .map(|effect| {
-                let program = RuntimeDialogueEffectProgramKey::new(
-                    fragment.template().id(),
-                    effect.site(),
-                );
+                let program =
+                    RuntimeDialogueEffectProgramKey::new(fragment.template().id(), effect.site());
                 let function = self
                     .dialogue_effect_sites
                     .get(&program)
@@ -2544,16 +2675,16 @@ impl<'hir> FinalExprLowerer<'hir> {
                     .captures()
                     .iter()
                     .map(|capture| {
-                        let local = self.locals.get(&capture.local()).cloned().ok_or_else(|| {
-                            format!(
-                                "attached content effect site {:?} capture {:?} has no runtime local",
-                                effect.site(),
-                                capture.local()
-                            )
-                        })?;
+                        let read = self.checked_local_read(
+                            CheckedLocalUseSite::Capture {
+                                owner: effect.operation().root(),
+                                local: capture.local(),
+                            },
+                            capture.local(),
+                        )?;
                         Ok(RuntimeExprSeed::new(
                             capture.ty().identity(),
-                            RuntimeExprSeedKind::Local(local),
+                            RuntimeExprSeedKind::Local(read),
                         ))
                     })
                     .collect::<Result<Vec<_>, String>>()?;
@@ -2744,12 +2875,21 @@ impl<'hir> FinalExprLowerer<'hir> {
         record
             .fields()
             .iter()
-            .map(|field| {
+            .enumerate()
+            .map(|(source_ordinal, field)| {
                 let value = match field.source() {
                     RuntimeRecordExpressionSource::Expression(value) => self.lower(value)?,
                     RuntimeRecordExpressionSource::Binding(local) => RuntimeExprSeed::new(
                         self.local_type(local)?,
-                        RuntimeExprSeedKind::Local(self.local(local)?),
+                        RuntimeExprSeedKind::Local(self.checked_local_read(
+                            CheckedLocalUseSite::RecordField {
+                                owner: id,
+                                source_ordinal: u32::try_from(source_ordinal).map_err(|_| {
+                                    format!("record {id:?} has too many source fields")
+                                })?,
+                            },
+                            local,
+                        )?),
                     ),
                 };
                 Ok(RuntimeNominalRecordFieldSeed::new(

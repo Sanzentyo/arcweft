@@ -194,8 +194,11 @@ Continue -> pop body scopes, discard queued body ops, enqueue LoopNext(body)
 ```
 
 `while` and `while let` use the same frame stack. `while let` keeps successful
-pattern bindings in the body scope only; guard evaluation receives temporary
-bindings and restores the outer environment before the selected body is queued.
+pattern bindings in the body scope only. Guard evaluation receives temporary
+copies of only the pattern-bound values selected by semantic Copy obligations;
+the original scrutinee remains owned until the guard succeeds. A failed guard
+discards those temporary copies before trying the next arm or restoring the
+outer environment.
 
 ```text
 PushWhileLetFrame(pattern, expr, guard, body)

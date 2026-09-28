@@ -102,6 +102,8 @@ mod executable_ingress;
 mod generic_calls;
 #[path = "tests/higher_order_effects.rs"]
 mod higher_order_effects;
+#[path = "tests/local_use.rs"]
+mod local_use;
 #[path = "tests/match_coverage.rs"]
 mod match_coverage;
 #[path = "tests/project_callable_source.rs"]
@@ -1143,8 +1145,9 @@ fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
         "        let actor = akane.stage.acquire(scope=line)\n",
         "        at(0.20s):\n",
         "            actor.look(.normal)\n",
+        "        let later_actor = akane.stage.acquire(scope=line)\n",
         "        let cue = at(0.42s):\n",
-        "            actor.look(.normal, crossfade=120ms)\n",
+        "            later_actor.look(.normal, crossfade=120ms)\n",
         "        let voice = line.voice_handle()\n",
         "        out (voice, cue)\n",
         "    return \"done\"\n",

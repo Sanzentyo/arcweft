@@ -415,6 +415,23 @@ fn runtime_range_iterates_one_value_at_a_time() {
 }
 
 #[test]
+fn runtime_iterator_moves_affine_items_out_of_its_owned_sequence() {
+    let mut iterator = RuntimeIterator::values(vec![RuntimeValue::Need(crate::task::NeedId(
+        "need.iterator".to_owned(),
+    ))]);
+
+    assert!(matches!(
+        iterator.next(),
+        Some(RuntimeValue::Need(id)) if id.0 == "need.iterator"
+    ));
+    assert!(matches!(
+        &iterator,
+        RuntimeIterator::Values { items } if items.is_empty()
+    ));
+    assert_eq!(iterator.next(), None);
+}
+
+#[test]
 fn core_iter_collect_materializes_range_sequence() {
     let range = RuntimeValue::Range(
         RuntimeRange::new(

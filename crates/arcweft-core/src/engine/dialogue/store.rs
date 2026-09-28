@@ -1,8 +1,9 @@
 use crate::effect::RuntimeDropPolicy;
 use crate::line_task::{
-    LineRuntimeError, LineTaskLiveState, RuntimeDialogueActivationRegistry,
-    RuntimeDialogueActivationState, RuntimeDialogueActivationTransaction,
-    RuntimeDialogueCommitReceipt, RuntimeHandleDropReceipt,
+    LineRuntimeError, LineTaskLiveState, RuntimeDialogueAbandonedCommitProof,
+    RuntimeDialogueActivationRegistry, RuntimeDialogueActivationState,
+    RuntimeDialogueActivationTransaction, RuntimeDialogueCommitProof, RuntimeDialogueCommitReceipt,
+    RuntimeDialoguePublishedCommitProof, RuntimeHandleDropReceipt,
 };
 use crate::pattern::RuntimePattern;
 use crate::runtime_id::{DialogueActivationId, RuntimeLocalDeclarationId, RuntimePlanTypeId};
@@ -50,14 +51,16 @@ impl DialogueIngressError {
 }
 
 /// Suspended dialogue line awaiting explicit host progression.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct DialogueActivationFrame {
     pub(in crate::engine) line: crate::plan::RuntimeLineId,
     pub(in crate::engine) content: crate::runtime_id::RuntimeDialogueContentPlanId,
-    pub(in crate::engine) target: crate::value::RuntimeOpaqueValue,
+    pub(in crate::engine) target: Option<crate::value::RuntimeOpaqueValue>,
     pub(in crate::engine) task_group: crate::runtime_id::RuntimeLineTaskGroupId,
     pub(in crate::engine) resume: Option<super::super::FlowCursor>,
-    pub(in crate::engine) captures: Box<[RuntimeLocalBinding]>,
+    /// Source-order capture coordinates; the values themselves live only in
+    /// `locals` and may be affine while activation executes.
+    pub(in crate::engine) captures: Box<[RuntimeLocalDeclarationId]>,
     /// Copyable external and activation-local inputs for unscheduled line work.
     pub(in crate::engine) task_inputs: Box<[RuntimeLocalBinding]>,
     /// Activation-local execution environment. The parent fiber never owns
@@ -87,13 +90,412 @@ pub(crate) struct DialogueActivationFrame {
     pub(in crate::engine) failure: Option<super::DialogueExecutionError>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+struct NativeDialogueBindingRollbackImage {
+    local: RuntimeLocalDeclarationId,
+    value: crate::value::AwbcRuntimeValueSnapshot,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct NativeDialogueValueRollbackImage {
+    slot: crate::runtime_id::RuntimeDialogueValueSlotId,
+    role: crate::plan::RuntimeDialogueValueRole,
+    value: crate::value::AwbcRuntimeValueSnapshot,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct NativeDialogueEffectCallbackRollbackImage {
+    site: crate::runtime_id::RuntimeDialogueEffectSiteId,
+    callback: crate::value::AwbcRuntimeValueSnapshot,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct NativeDialogueScopeRollbackImage {
+    deferred: Vec<crate::line_task::AwbcRuntimeDeferredRegistrationSnapshot>,
+    exit: Option<crate::line_task::ScopeExit>,
+    inflight: Option<(
+        crate::runtime_id::RuntimeDeferRegistrationId,
+        crate::runtime_id::RuntimeDeferSiteId,
+    )>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum NativePendingLineOperationRollbackImage {
+    AcquireActor {
+        command: crate::presentation::RuntimeLineCommandId,
+        binding: Option<RuntimePattern>,
+        value: crate::value::AwbcRuntimeValueSnapshot,
+        token: crate::runtime_id::RuntimeLineHandleToken,
+    },
+    ActorLook {
+        command: crate::presentation::RuntimeLineCommandId,
+        binding: Option<RuntimePattern>,
+        value: crate::value::AwbcRuntimeValueSnapshot,
+        token: crate::runtime_id::RuntimeLineHandleToken,
+    },
+    StartVoice {
+        command: crate::presentation::RuntimeLineCommandId,
+        binding: Option<RuntimePattern>,
+        site: crate::runtime_id::RuntimeLineHandleSiteId,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct NativeDialogueActivationFrameRollbackImage {
+    line: crate::plan::RuntimeLineId,
+    content: crate::runtime_id::RuntimeDialogueContentPlanId,
+    target: Option<crate::value::AwbcRuntimeValueSnapshot>,
+    task_group: crate::runtime_id::RuntimeLineTaskGroupId,
+    resume: Option<super::super::FlowCursor>,
+    captures: Box<[RuntimeLocalDeclarationId]>,
+    task_inputs: Vec<NativeDialogueBindingRollbackImage>,
+    locals: crate::value::RuntimeEnvRollbackImage,
+    line_task: DialogueLineTaskState,
+    elapsed: crate::time::LogicalDuration,
+    phase: DialogueRuntimePhase,
+    result_target: crate::plan::RuntimeDialogueResultTarget,
+    voice: crate::presentation::RuntimeDialogueVoiceState,
+    values: Vec<NativeDialogueValueRollbackImage>,
+    effect_callbacks: Vec<NativeDialogueEffectCallbackRollbackImage>,
+    activation_pc: usize,
+    exiting_for_result: bool,
+    scopes: Vec<NativeDialogueScopeRollbackImage>,
+    pending_line_operation: Option<NativePendingLineOperationRollbackImage>,
+    pending_host_call: Option<PendingActivationHostCall>,
+    failure: Option<super::DialogueExecutionError>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct NativeEngineDialogueFrameRollbackImage {
+    frame: NativeDialogueActivationFrameRollbackImage,
+    inbox: DialogueStepInbox,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct DialogueActivationStoreRollbackImage {
+    registry: crate::line_task::RuntimeDialogueRegistrySaveSnapshot<
+        NativeEngineDialogueFrameRollbackImage,
+        RuntimePlanTypeId,
+    >,
+}
+
+fn inert_dialogue_value(
+    value: &RuntimeValue,
+    owner: &crate::task::RuntimeProgramOwner,
+) -> Result<crate::value::AwbcRuntimeValueSnapshot, String> {
+    crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
+        .map_err(|error| error.to_string())
+}
+
+fn live_dialogue_value(
+    image: crate::value::AwbcRuntimeValueSnapshot,
+    owner: &crate::task::RuntimeProgramOwner,
+) -> Result<RuntimeValue, String> {
+    image
+        .into_runtime_value_for_program(owner)
+        .map_err(|error| error.to_string())
+}
+
+impl NativeDialogueBindingRollbackImage {
+    fn from_live(
+        binding: &RuntimeLocalBinding,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            local: binding.local,
+            value: inert_dialogue_value(&binding.value, owner)?,
+        })
+    }
+
+    fn into_live(
+        self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<RuntimeLocalBinding, String> {
+        Ok(RuntimeLocalBinding {
+            local: self.local,
+            value: live_dialogue_value(self.value, owner)?,
+        })
+    }
+}
+
+impl NativePendingLineOperationRollbackImage {
+    fn from_live(
+        pending: &PendingLineOperation,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<Self, String> {
+        Ok(match pending {
+            PendingLineOperation::AcquireActor {
+                command,
+                binding,
+                value,
+                token,
+            } => Self::AcquireActor {
+                command: command.clone(),
+                binding: binding.clone(),
+                value: inert_dialogue_value(value, owner)?,
+                token: token.clone(),
+            },
+            PendingLineOperation::ActorLook {
+                command,
+                binding,
+                value,
+                token,
+            } => Self::ActorLook {
+                command: command.clone(),
+                binding: binding.clone(),
+                value: inert_dialogue_value(value, owner)?,
+                token: token.clone(),
+            },
+            PendingLineOperation::StartVoice {
+                command,
+                binding,
+                site,
+            } => Self::StartVoice {
+                command: command.clone(),
+                binding: binding.clone(),
+                site: *site,
+            },
+        })
+    }
+
+    fn into_live(
+        self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<PendingLineOperation, String> {
+        Ok(match self {
+            Self::AcquireActor {
+                command,
+                binding,
+                value,
+                token,
+            } => PendingLineOperation::AcquireActor {
+                command,
+                binding,
+                value: live_dialogue_value(value, owner)?,
+                token,
+            },
+            Self::ActorLook {
+                command,
+                binding,
+                value,
+                token,
+            } => PendingLineOperation::ActorLook {
+                command,
+                binding,
+                value: live_dialogue_value(value, owner)?,
+                token,
+            },
+            Self::StartVoice {
+                command,
+                binding,
+                site,
+            } => PendingLineOperation::StartVoice {
+                command,
+                binding,
+                site,
+            },
+        })
+    }
+}
+
+impl NativeDialogueScopeRollbackImage {
+    fn from_live(
+        scope: &DialogueActivationScope,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            deferred: scope
+                .deferred
+                .iter()
+                .map(|registration| {
+                    crate::line_task::AwbcRuntimeDeferredRegistrationSnapshot::from_live_for_program(
+                        registration, owner,
+                    )
+                    .map_err(|error| error.to_string())
+                })
+                .collect::<Result<_, String>>()?,
+            exit: scope.exit,
+            inflight: scope.inflight,
+        })
+    }
+
+    fn into_live(
+        self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<DialogueActivationScope, String> {
+        Ok(DialogueActivationScope {
+            deferred: self
+                .deferred
+                .into_iter()
+                .map(|registration| {
+                    registration
+                        .into_live(owner)
+                        .map_err(|error| error.to_string())
+                })
+                .collect::<Result<_, String>>()?,
+            exit: self.exit,
+            inflight: self.inflight,
+        })
+    }
+}
+
+impl DialogueActivationFrame {
+    fn inert_rollback_image(
+        &self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<NativeDialogueActivationFrameRollbackImage, String> {
+        Ok(NativeDialogueActivationFrameRollbackImage {
+            line: self.line.clone(),
+            content: self.content,
+            target: self
+                .target
+                .as_ref()
+                .map(|target| {
+                    crate::value::AwbcRuntimeValueSnapshot::from_opaque_for_program(target, owner)
+                        .map_err(|error| error.to_string())
+                })
+                .transpose()?,
+            task_group: self.task_group,
+            resume: self.resume,
+            captures: self.captures.clone(),
+            task_inputs: self
+                .task_inputs
+                .iter()
+                .map(|binding| NativeDialogueBindingRollbackImage::from_live(binding, owner))
+                .collect::<Result<_, String>>()?,
+            locals: self.locals.inert_rollback_image(owner)?,
+            line_task: self.line_task.clone(),
+            elapsed: self.elapsed,
+            phase: self.phase,
+            result_target: self.result_target.clone(),
+            voice: self.voice.clone(),
+            values: self
+                .values
+                .iter()
+                .map(|binding| {
+                    Ok(NativeDialogueValueRollbackImage {
+                        slot: binding.slot,
+                        role: binding.role,
+                        value: inert_dialogue_value(&binding.value, owner)?,
+                    })
+                })
+                .collect::<Result<_, String>>()?,
+            effect_callbacks: self
+                .effect_callbacks
+                .iter()
+                .map(|binding| {
+                    Ok(NativeDialogueEffectCallbackRollbackImage {
+                        site: binding.site(),
+                        callback:
+                            crate::value::AwbcRuntimeValueSnapshot::from_callable_for_program(
+                                binding.callback(),
+                                owner,
+                            )
+                            .map_err(|error| error.to_string())?,
+                    })
+                })
+                .collect::<Result<_, String>>()?,
+            activation_pc: self.activation_pc,
+            exiting_for_result: self.exiting_for_result,
+            scopes: self
+                .scopes
+                .iter()
+                .map(|scope| NativeDialogueScopeRollbackImage::from_live(scope, owner))
+                .collect::<Result<_, String>>()?,
+            pending_line_operation: self
+                .pending_line_operation
+                .as_ref()
+                .map(|pending| NativePendingLineOperationRollbackImage::from_live(pending, owner))
+                .transpose()?,
+            pending_host_call: self.pending_host_call.clone(),
+            failure: self.failure.clone(),
+        })
+    }
+
+    fn from_rollback_image(
+        image: NativeDialogueActivationFrameRollbackImage,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<Self, String> {
+        let target = image
+            .target
+            .map(|saved| {
+                let RuntimeValue::Opaque(value) = live_dialogue_value(saved, owner)? else {
+                    return Err("dialogue rollback target is not opaque".to_owned());
+                };
+                Ok(value)
+            })
+            .transpose()?;
+        Ok(Self {
+            line: image.line,
+            content: image.content,
+            target,
+            task_group: image.task_group,
+            resume: image.resume,
+            captures: image.captures,
+            task_inputs: image
+                .task_inputs
+                .into_iter()
+                .map(|binding| binding.into_live(owner))
+                .collect::<Result<Vec<_>, String>>()?
+                .into_boxed_slice(),
+            locals: crate::value::RuntimeEnv::from_rollback_image(image.locals, owner)?,
+            line_task: image.line_task,
+            elapsed: image.elapsed,
+            phase: image.phase,
+            result_target: image.result_target,
+            voice: image.voice,
+            values: image
+                .values
+                .into_iter()
+                .map(|binding| {
+                    Ok(crate::plan::RuntimeDialogueValueBinding {
+                        slot: binding.slot,
+                        role: binding.role,
+                        value: live_dialogue_value(binding.value, owner)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()?
+                .into_boxed_slice(),
+            effect_callbacks: image
+                .effect_callbacks
+                .into_iter()
+                .map(|binding| {
+                    let RuntimeValue::Callable(callback) =
+                        live_dialogue_value(binding.callback, owner)?
+                    else {
+                        return Err("dialogue rollback callback is not callable".to_owned());
+                    };
+                    Ok(crate::value::RuntimeDialogueContentEffectBinding::new(
+                        binding.site,
+                        callback,
+                    ))
+                })
+                .collect::<Result<Vec<_>, String>>()?
+                .into_boxed_slice(),
+            activation_pc: image.activation_pc,
+            exiting_for_result: image.exiting_for_result,
+            scopes: image
+                .scopes
+                .into_iter()
+                .map(|scope| scope.into_live(owner))
+                .collect::<Result<_, String>>()?,
+            pending_line_operation: image
+                .pending_line_operation
+                .map(|pending| pending.into_live(owner))
+                .transpose()?,
+            pending_host_call: image.pending_host_call,
+            failure: image.failure,
+        })
+    }
+}
+
 impl DialogueActivationFrame {
     pub(in crate::engine) fn task_inputs_for_reveal(
         &self,
         exports: &[RuntimeLocalDeclarationId],
     ) -> Result<Box<[RuntimeLocalBinding]>, LineRuntimeError> {
-        let mut inputs = self.captures.to_vec();
-        for local in exports {
+        let mut inputs = Vec::with_capacity(self.captures.len() + exports.len());
+        for local in self.captures.iter().chain(exports.iter()) {
             let value = self
                 .locals
                 .get(*local)
@@ -117,7 +519,7 @@ pub(crate) struct PendingActivationHostCall {
     pub(in crate::engine) binding: Option<RuntimePattern>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct DialogueActivationScope {
     pub(in crate::engine) deferred: Vec<crate::line_task::RuntimeLineDeferredRegistration>,
     /// Frozen on first exit. A failing cleanup must not change its filter.
@@ -158,7 +560,7 @@ pub(crate) enum DialogueLineTaskState {
     Closed,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) enum PendingLineOperation {
     AcquireActor {
         command: crate::presentation::RuntimeLineCommandId,
@@ -189,12 +591,173 @@ pub(crate) enum DialogueRuntimePhase {
 
 /// Sole engine execution owner of dialogue frames and their line-runtime
 /// transaction state. Fiber suspension retains only the activation key.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub(crate) struct DialogueActivationStore {
     registry: RuntimeDialogueActivationRegistry<EngineDialogueActivationFrame, RuntimePlanTypeId>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+impl DialogueActivationStore {
+    pub(crate) fn inspect_commit_transaction(
+        &self,
+        transaction: &DialogueActivationTransaction,
+    ) -> Result<RuntimeDialogueCommitProof, LineRuntimeError> {
+        if transaction.disposition.is_some() {
+            return Err(LineRuntimeError::UnexpectedTerminalDisposition);
+        }
+        self.registry.inspect_commit(&transaction.inner)
+    }
+
+    pub(crate) fn commit_prepared(
+        &mut self,
+        transaction: DialogueActivationTransaction,
+        proof: RuntimeDialogueCommitProof,
+    ) -> DialogueCommitReceipt {
+        assert!(transaction.disposition.is_none());
+        DialogueCommitReceipt {
+            line: self
+                .registry
+                .commit_prepared(transaction.inner, proof)
+                .into_line(),
+        }
+    }
+
+    pub(crate) fn restore_rejected_transaction(
+        &mut self,
+        transaction: DialogueActivationTransaction,
+    ) -> Result<(), LineRuntimeError> {
+        assert!(
+            !matches!(
+                transaction.disposition,
+                Some(DialogueCommitDisposition::Published { .. })
+            ),
+            "published bindings require their prepared owning commit"
+        );
+        self.registry.restore_transaction(transaction.inner)
+    }
+
+    pub(crate) fn inspect_terminal_transaction(
+        &self,
+        transaction: &DialogueActivationTransaction,
+    ) -> Result<RuntimeDialogueAbandonedCommitProof, LineRuntimeError> {
+        if !matches!(
+            transaction.disposition.as_ref(),
+            Some(DialogueCommitDisposition::Failed { .. })
+        ) {
+            return Err(LineRuntimeError::TerminalDispositionMismatch);
+        }
+        self.registry.inspect_abandoned(&transaction.inner)
+    }
+
+    pub(crate) fn commit_terminal_prepared(
+        &mut self,
+        mut transaction: DialogueActivationTransaction,
+        proof: RuntimeDialogueAbandonedCommitProof,
+    ) -> DialogueTerminalReceipt {
+        let disposition = transaction
+            .disposition
+            .take()
+            .expect("prepared failure close has one disposition");
+        let line = self
+            .registry
+            .commit_abandoned_prepared(transaction.inner, proof)
+            .into_line();
+        DialogueTerminalReceipt { line, disposition }
+    }
+
+    pub(crate) fn inspect_published_transaction(
+        &self,
+        transaction: &DialogueActivationTransaction,
+    ) -> Result<RuntimeDialoguePublishedCommitProof, LineRuntimeError> {
+        if transaction.disposition.is_some() {
+            return Err(LineRuntimeError::UnexpectedTerminalDisposition);
+        }
+        self.registry.inspect_published(&transaction.inner)
+    }
+
+    pub(crate) fn commit_published_prepared(
+        &mut self,
+        mut transaction: DialogueActivationTransaction,
+        proof: RuntimeDialoguePublishedCommitProof,
+    ) -> DialogueTerminalReceipt {
+        let disposition = transaction
+            .disposition
+            .take()
+            .expect("prepared publication has one disposition");
+        assert!(matches!(
+            disposition,
+            DialogueCommitDisposition::Published { .. }
+        ));
+        let line = self
+            .registry
+            .commit_published_prepared(transaction.inner, proof)
+            .into_line();
+        DialogueTerminalReceipt { line, disposition }
+    }
+
+    pub(crate) fn active_line(
+        &self,
+        activation: &DialogueActivationId,
+    ) -> Option<&RuntimeDialogueActivationState<RuntimePlanTypeId>> {
+        self.registry.active_line(activation)
+    }
+
+    pub(crate) fn inert_rollback_image(
+        &self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<DialogueActivationStoreRollbackImage, String> {
+        let registry = self
+            .registry
+            .to_rollback_snapshot(owner, |active| {
+                Ok(NativeEngineDialogueFrameRollbackImage {
+                    frame: active
+                        .frame
+                        .inert_rollback_image(owner)
+                        .map_err(|message| {
+                            crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                                message,
+                            }
+                        })?,
+                    inbox: active.inbox.clone(),
+                })
+            })
+            .map_err(|error| error.to_string())?;
+        Ok(DialogueActivationStoreRollbackImage { registry })
+    }
+
+    pub(crate) fn from_rollback_image(
+        image: DialogueActivationStoreRollbackImage,
+        owner: &crate::task::RuntimeProgramOwner,
+        expected_deferred_children: &BTreeMap<
+            DialogueActivationId,
+            (
+                crate::runtime_id::RuntimeDeferRegistrationId,
+                crate::runtime_id::RuntimeDeferSiteId,
+            ),
+        >,
+    ) -> Result<Self, String> {
+        let registry =
+            RuntimeDialogueActivationRegistry::from_save_snapshot_with_deferred_children(
+                image.registry,
+                owner,
+                expected_deferred_children,
+                |_, active, _| {
+                    Ok(EngineDialogueActivationFrame {
+                        frame: DialogueActivationFrame::from_rollback_image(active.frame, owner)
+                            .map_err(|message| {
+                                crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                                    message,
+                                }
+                            })?,
+                        inbox: active.inbox,
+                    })
+                },
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(Self { registry })
+    }
+}
+
+#[derive(Debug, PartialEq)]
 struct EngineDialogueActivationFrame {
     frame: DialogueActivationFrame,
     inbox: DialogueStepInbox,
@@ -202,13 +765,13 @@ struct EngineDialogueActivationFrame {
 
 /// Opaque optimistic transaction over one complete dialogue activation.
 /// The key and revision cannot be mixed with another frame or line component.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct DialogueActivationTransaction {
     inner: RuntimeDialogueActivationTransaction<EngineDialogueActivationFrame, RuntimePlanTypeId>,
     disposition: Option<DialogueCommitDisposition>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) enum DialogueCommitDisposition {
     Published {
         resume: Option<super::super::FlowCursor>,
@@ -224,7 +787,7 @@ pub(crate) struct DialogueCommitReceipt {
     line: RuntimeDialogueCommitReceipt,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct DialogueTerminalReceipt {
     line: RuntimeDialogueCommitReceipt,
     disposition: DialogueCommitDisposition,
@@ -320,7 +883,7 @@ impl DialogueActivationStore {
     }
 
     pub(crate) fn begin_transaction(
-        &self,
+        &mut self,
         activation: &DialogueActivationId,
     ) -> Result<DialogueActivationTransaction, LineRuntimeError> {
         Ok(DialogueActivationTransaction {
@@ -339,7 +902,134 @@ impl DialogueActivationStore {
         advances: &[DialogueActivationId],
         line_outcomes: &[crate::presentation::RuntimeLineHostOutcome],
     ) -> Result<DialogueIngressReceipt, DialogueIngressError> {
-        let mut next = self.clone();
+        let published = self
+            .registry
+            .stage_published_outcomes(line_outcomes)
+            .map_err(|source| DialogueIngressError {
+                activation: None,
+                source,
+            })?;
+        let mut revision_steps = BTreeMap::<DialogueActivationId, u64>::new();
+        for activation in self.registry.active_ids() {
+            let frame = self
+                .registry
+                .active_frame(&activation)
+                .expect("active id has frame");
+            if frame.frame.phase == DialogueRuntimePhase::Ready
+                && frame.frame.elapsed.checked_add(dt).is_none()
+            {
+                return Err(DialogueIngressError::for_activation(
+                    &activation,
+                    LineRuntimeError::DialogueElapsedOverflow,
+                ));
+            }
+            *revision_steps.entry(activation).or_default() += 1;
+        }
+        let mut seen_events = Vec::new();
+        for event in content_events {
+            let activation = event.activation();
+            let frame = self.registry.active_frame(activation).ok_or_else(|| {
+                DialogueIngressError::for_activation(
+                    activation,
+                    LineRuntimeError::DialogueIngressNotReady {
+                        activation: activation.clone(),
+                    },
+                )
+            })?;
+            if frame.frame.phase != DialogueRuntimePhase::Ready {
+                return Err(DialogueIngressError::for_activation(
+                    activation,
+                    LineRuntimeError::DialogueIngressNotReady {
+                        activation: activation.clone(),
+                    },
+                ));
+            }
+            let kind = event.kind();
+            if frame.inbox.content_events.contains(&kind)
+                || seen_events.contains(&(activation.clone(), kind))
+            {
+                return Err(DialogueIngressError::for_activation(
+                    activation,
+                    LineRuntimeError::DuplicateContentEvent { event: kind },
+                ));
+            }
+            seen_events.push((activation.clone(), kind));
+            *revision_steps.entry(activation.clone()).or_default() += 1;
+        }
+        let mut seen_advances = Vec::new();
+        for activation in advances {
+            let frame = self.registry.active_frame(activation).ok_or_else(|| {
+                DialogueIngressError::for_activation(
+                    activation,
+                    LineRuntimeError::DialogueIngressNotReady {
+                        activation: activation.clone(),
+                    },
+                )
+            })?;
+            if frame.frame.phase != DialogueRuntimePhase::Ready {
+                return Err(DialogueIngressError::for_activation(
+                    activation,
+                    LineRuntimeError::DialogueIngressNotReady {
+                        activation: activation.clone(),
+                    },
+                ));
+            }
+            if frame.inbox.advance || seen_advances.contains(activation) {
+                return Err(DialogueIngressError::for_activation(
+                    activation,
+                    LineRuntimeError::DuplicateDialogueAdvance {
+                        activation: activation.clone(),
+                    },
+                ));
+            }
+            seen_advances.push(activation.clone());
+            *revision_steps.entry(activation.clone()).or_default() += 1;
+        }
+        let mut seen_outcomes: Vec<crate::presentation::RuntimeLineCommandId> = Vec::new();
+        for outcome in line_outcomes {
+            let command = outcome.command();
+            if self.registry.is_published(command.activation()) {
+                continue;
+            }
+            let frame = self
+                .registry
+                .active_frame(command.activation())
+                .ok_or_else(|| {
+                    DialogueIngressError::for_activation(
+                        command.activation(),
+                        LineRuntimeError::UnknownActivationLedger,
+                    )
+                })?;
+            if frame
+                .inbox
+                .line_outcomes
+                .iter()
+                .any(|pending| pending.command() == command)
+                || seen_outcomes.contains(&command)
+            {
+                return Err(DialogueIngressError::for_activation(
+                    command.activation(),
+                    LineRuntimeError::DuplicateCommandOutcome,
+                ));
+            }
+            seen_outcomes.push(command.clone());
+            *revision_steps
+                .entry(command.activation().clone())
+                .or_default() += 1;
+        }
+        for (activation, steps) in revision_steps {
+            let revision = self
+                .registry
+                .active_revision(&activation)
+                .expect("preflight active revision");
+            if revision.checked_add(steps).is_none() {
+                return Err(DialogueIngressError::for_activation(
+                    &activation,
+                    LineRuntimeError::ActivationTransactionRevisionOverflow,
+                ));
+            }
+        }
+        let next = self;
         let mut receipt = DialogueIngressReceipt::default();
         for activation in next.registry.active_ids() {
             let mut transaction = next
@@ -405,15 +1095,6 @@ impl DialogueActivationStore {
         for outcome in line_outcomes {
             let command = outcome.command();
             if next.registry.is_published(command.activation()) {
-                if let Some(diagnostic) =
-                    next.registry
-                        .accept_published_outcome(outcome)
-                        .map_err(|source| {
-                            DialogueIngressError::for_activation(command.activation(), source)
-                        })?
-                {
-                    receipt.diagnostics.push(diagnostic);
-                }
                 continue;
             }
             let mut transaction =
@@ -444,7 +1125,9 @@ impl DialogueActivationStore {
                 DialogueIngressError::for_activation(command.activation(), source)
             })?;
         }
-        *self = next;
+        receipt
+            .diagnostics
+            .extend(next.registry.commit_published_outcomes(published));
         Ok(receipt)
     }
 
@@ -463,70 +1146,29 @@ impl DialogueActivationStore {
         &mut self,
         transaction: DialogueActivationTransaction,
     ) -> Result<DialogueCommitReceipt, LineRuntimeError> {
-        if transaction.disposition.is_some() {
-            return Err(LineRuntimeError::UnexpectedTerminalDisposition);
-        }
+        assert!(
+            transaction.disposition.is_none(),
+            "ordinary dialogue commit cannot discard a terminal disposition"
+        );
         Ok(DialogueCommitReceipt {
             line: self.registry.commit(transaction.inner)?.into_line(),
         })
     }
 
-    pub(crate) fn commit_terminal_transaction(
-        &mut self,
-        mut transaction: DialogueActivationTransaction,
-    ) -> Result<DialogueTerminalReceipt, LineRuntimeError> {
-        if !transaction.line().is_terminal() {
-            return Err(LineRuntimeError::ActivationTransactionNotTerminal);
-        }
-        let disposition = transaction
-            .disposition
-            .take()
-            .ok_or(LineRuntimeError::TerminalDispositionMismatch)?;
-        if !matches!(disposition, DialogueCommitDisposition::Failed { .. }) {
-            return Err(LineRuntimeError::TerminalDispositionMismatch);
-        }
-        let receipt = DialogueTerminalReceipt {
-            line: self
-                .registry
-                .commit_abandoned(transaction.inner)?
-                .into_line(),
-            disposition,
-        };
-        Ok(receipt)
-    }
-
-    pub(crate) fn commit_published_transaction(
-        &mut self,
-        mut transaction: DialogueActivationTransaction,
-    ) -> Result<DialogueTerminalReceipt, LineRuntimeError> {
-        let disposition = transaction
-            .disposition
-            .take()
-            .ok_or(LineRuntimeError::TerminalDispositionMismatch)?;
-        if !matches!(disposition, DialogueCommitDisposition::Published { .. }) {
-            return Err(LineRuntimeError::TerminalDispositionMismatch);
-        }
-        let receipt = DialogueTerminalReceipt {
-            line: self
-                .registry
-                .commit_published(transaction.inner)?
-                .into_line(),
-            disposition,
-        };
-        Ok(receipt)
-    }
-
     fn ready_transaction(
-        &self,
+        &mut self,
         activation: &DialogueActivationId,
     ) -> Result<DialogueActivationTransaction, LineRuntimeError> {
-        let transaction = self.begin_transaction(activation)?;
-        if transaction.frame().phase == DialogueRuntimePhase::Ready {
-            Ok(transaction)
-        } else {
+        if self
+            .registry
+            .active_frame(activation)
+            .is_none_or(|frame| frame.frame.phase != DialogueRuntimePhase::Ready)
+        {
             Err(LineRuntimeError::DialogueIngressNotReady {
                 activation: activation.clone(),
             })
+        } else {
+            self.begin_transaction(activation)
         }
     }
 }
@@ -563,13 +1205,13 @@ mod tests {
             line: crate::plan::RuntimeLineId::from_runtime_line_value("line.fixture")
                 .expect("line identity"),
             content: RuntimeDialogueContentPlanId::from_accepted_ordinal(NonZeroU32::MIN),
-            target: RuntimeOpaqueValue::new_exact(
+            target: Some(RuntimeOpaqueValue::new_exact(
                 &RuntimeOpaqueTypeOwner::exact(
                     crate::value::RuntimeCharacterDialogueProducerId::get(),
                     RuntimeSemanticTypeId::from_bytes([0x47; 32]),
                 ),
                 crate::value::RuntimeValue::Unit,
-            ),
+            )),
             task_group: RuntimeLineTaskGroupId::from_zero_based(0).expect("task group"),
             resume: None,
             captures: Box::default(),
@@ -612,11 +1254,8 @@ mod tests {
             NonZeroU32::new(2).expect("nonzero local"),
         );
         let mut state = frame(DialogueRuntimePhase::Activating);
-        state.captures = vec![RuntimeLocalBinding {
-            local: external,
-            value: RuntimeValue::Unit,
-        }]
-        .into_boxed_slice();
+        state.captures = vec![external].into_boxed_slice();
+        state.locals.set(external, RuntimeValue::Unit);
         state.locals.set(export, RuntimeValue::Bool(true));
         let inputs = state
             .task_inputs_for_reveal(&[export])
@@ -700,13 +1339,16 @@ mod tests {
         transaction.line_mut().commit_ledger(ledger);
         transaction
             .line_mut()
-            .commit_result(ty, value.clone())
+            .commit_result(ty, value)
             .expect("result");
         transaction
             .line_mut()
             .begin_result_publication()
             .expect("publishing");
-        transaction
+        let proof = store
+            .inspect_published_transaction(&transaction)
+            .expect("publication proof");
+        let (_, value) = transaction
             .line_mut()
             .finish_result_publication()
             .expect("published");
@@ -720,10 +1362,17 @@ mod tests {
                 bindings: Vec::new(),
             })
             .expect("disposition");
-        store
-            .commit_published_transaction(transaction)
-            .expect("published handles");
+        store.commit_published_prepared(transaction, proof);
         (value, execution)
+    }
+
+    fn published_registry_snapshot(
+        store: &DialogueActivationStore,
+    ) -> crate::line_task::RuntimeDialogueRegistrySaveSnapshot<(), RuntimePlanTypeId> {
+        store
+            .registry
+            .to_save_snapshot(|_| panic!("published fixture has no active frame"))
+            .expect("published metadata snapshot")
     }
 
     #[test]
@@ -739,24 +1388,38 @@ mod tests {
             store.begin(id.clone(), frame(DialogueRuntimePhase::Ready)),
             Err(LineRuntimeError::DuplicateActivationLedger)
         );
-        assert_eq!(store.begin_transaction(&id).expect("preserved"), before);
+        assert_eq!(
+            store.begin_transaction(&id),
+            Err(LineRuntimeError::StaleActivationTransaction)
+        );
+        store
+            .commit_transaction(before)
+            .expect("first owner commits");
+        assert_eq!(
+            store
+                .begin_transaction(&id)
+                .expect("preserved")
+                .frame()
+                .phase,
+            DialogueRuntimePhase::Activating
+        );
     }
 
     #[test]
-    fn stale_transaction_cannot_overwrite_a_newer_commit() {
+    fn in_flight_transaction_excludes_a_second_owner() {
         let id = activation(1);
         let mut store = DialogueActivationStore::default();
         store
             .begin(id.clone(), frame(DialogueRuntimePhase::Activating))
             .expect("activation");
         let first = store.begin_transaction(&id).expect("first");
-        let stale = store.begin_transaction(&id).expect("stale");
-        store.commit_transaction(first).expect("first commit");
-
         assert_eq!(
-            store.commit_transaction(stale),
+            store.begin_transaction(&id),
             Err(LineRuntimeError::StaleActivationTransaction)
         );
+        store.commit_transaction(first).expect("first commit");
+        let next = store.begin_transaction(&id).expect("next sole owner");
+        store.commit_transaction(next).expect("next commit");
     }
 
     #[test]
@@ -826,7 +1489,7 @@ mod tests {
     }
 
     #[test]
-    fn terminal_commit_requires_matching_typed_outcome() {
+    fn terminal_preflight_preserves_the_owner_for_matching_disposition() {
         let id = activation(4);
         let mut store = DialogueActivationStore::default();
         store
@@ -834,32 +1497,29 @@ mod tests {
             .expect("activation");
         let mut mismatch = store.begin_transaction(&id).expect("mismatch");
         mismatch.line_mut().abandon().expect("abandon");
-        mismatch.line_mut().release_frame().expect("release frame");
         mismatch
             .stage_disposition(DialogueCommitDisposition::Published {
                 resume: None,
                 bindings: Vec::new(),
             })
             .expect("stage mismatch");
-        assert_eq!(
-            store.commit_terminal_transaction(mismatch),
+        assert!(matches!(
+            store.inspect_terminal_transaction(&mismatch),
             Err(LineRuntimeError::TerminalDispositionMismatch)
-        );
-
-        let mut terminal = store.begin_transaction(&id).expect("terminal");
-        terminal.line_mut().abandon().expect("abandon");
-        terminal.line_mut().release_frame().expect("release frame");
+        ));
+        mismatch.disposition = None;
         let failure = super::super::DialogueExecutionError::Line(
             LineRuntimeError::InvalidActivationOperation,
         );
-        terminal.frame_mut().failure = Some(failure.clone());
-        terminal
+        mismatch.frame_mut().failure = Some(failure.clone());
+        mismatch
             .stage_disposition(DialogueCommitDisposition::Failed { error: failure })
             .expect("stage failure");
-        assert!(matches!(
-            store.commit_terminal_transaction(terminal),
-            Ok(DialogueTerminalReceipt { .. })
-        ));
+        let proof = store
+            .inspect_terminal_transaction(&mismatch)
+            .expect("terminal proof");
+        mismatch.line_mut().release_frame().expect("release frame");
+        let _ = store.commit_terminal_prepared(mismatch, proof);
         assert_eq!(
             store.begin_transaction(&id),
             Err(LineRuntimeError::UnknownActivationLedger)
@@ -879,7 +1539,7 @@ mod tests {
         };
         let before = BTreeMap::from([(token, source)]);
 
-        let before_wrong_owner = store.clone();
+        let before_wrong_owner = published_registry_snapshot(&store);
         assert_eq!(
             store.reconcile_parent_fiber(
                 ExecutionInstanceId::from_allocated(NonZeroU64::new(18).expect("nonzero")),
@@ -889,7 +1549,7 @@ mod tests {
             ),
             Err(LineRuntimeError::WrongOwner)
         );
-        assert_eq!(store, before_wrong_owner);
+        assert_eq!(published_registry_snapshot(&store), before_wrong_owner);
 
         let commands = store
             .reconcile_parent_fiber(
@@ -915,7 +1575,7 @@ mod tests {
             Err(LineRuntimeError::ActivationFrameReleased)
         );
 
-        let before_mismatch = store.clone();
+        let before_mismatch = published_registry_snapshot(&store);
         let mismatch = crate::presentation::RuntimeLineHostOutcome::Stage(
             crate::presentation::RuntimeStageCommandOutcome::Acquired {
                 command: command.clone(),
@@ -929,7 +1589,7 @@ mod tests {
                 ..
             })
         ));
-        assert_eq!(store, before_mismatch);
+        assert_eq!(published_registry_snapshot(&store), before_mismatch);
 
         let released = crate::presentation::RuntimeLineHostOutcome::Stage(
             crate::presentation::RuntimeStageCommandOutcome::ReleasedActor {
@@ -963,7 +1623,7 @@ mod tests {
         };
         let before = BTreeMap::from([(token.clone(), source)]);
 
-        let unchanged = store.clone();
+        let unchanged = published_registry_snapshot(&store);
         assert!(
             store
                 .reconcile_parent_fiber(execution, &before, &before, None)
@@ -971,13 +1631,13 @@ mod tests {
                 .into_commands()
                 .is_empty()
         );
-        assert_eq!(store, unchanged);
+        assert_eq!(published_registry_snapshot(&store), unchanged);
 
         assert_eq!(
             store.reconcile_parent_fiber(execution, &before, &BTreeMap::new(), None),
             Err(LineRuntimeError::UnjournaledHandleDrop)
         );
-        assert_eq!(store, unchanged);
+        assert_eq!(published_registry_snapshot(&store), unchanged);
 
         let destination = RuntimeOwnedSlotId::EnvironmentLocal {
             execution,
@@ -991,7 +1651,7 @@ mod tests {
                 .into_commands()
                 .is_empty()
         );
-        let moved = store.clone();
+        let moved = published_registry_snapshot(&store);
         assert_eq!(
             store.reconcile_parent_fiber(
                 execution,
@@ -1001,7 +1661,7 @@ mod tests {
             ),
             Err(LineRuntimeError::WrongOwner)
         );
-        assert_eq!(store, moved);
+        assert_eq!(published_registry_snapshot(&store), moved);
     }
 
     #[test]

@@ -489,6 +489,79 @@ impl NeedProducerTaskPlan {
         }
     }
 
+    /// Checks a saved host request against the selected arguments without
+    /// constructing a second RuntimeValue owner during snapshot validation.
+    fn request_matches(
+        &self,
+        arguments: &[NeedProducerRuntimeArgument],
+        actual: &HostTaskRequest,
+    ) -> Result<bool, NeedProducerRequestError> {
+        match (&self.request, actual) {
+            (
+                NeedProducerRequestProjection::AssetLoad {
+                    kind,
+                    argument_name,
+                },
+                HostTaskRequest::AssetLoad(saved),
+            ) => {
+                if arguments.len() != 1
+                    || arguments[0]
+                        .name
+                        .as_deref()
+                        .is_some_and(|name| name != argument_name)
+                {
+                    return Err(NeedProducerRequestError::ArgumentBindingMismatch);
+                }
+                let RuntimeValue::EntityRef(reference) = &arguments[0].value else {
+                    return Err(NeedProducerRequestError::ExpectedEntityReference);
+                };
+                Ok(saved.id == reference.runtime_label() && saved.kind == kind.as_str())
+            }
+            (
+                NeedProducerRequestProjection::ExternCapability {
+                    capability,
+                    operation,
+                    contract,
+                    argument_names,
+                },
+                HostTaskRequest::Custom {
+                    capability: saved_capability,
+                    operation: saved_operation,
+                    args,
+                    named_args,
+                    manifest_contract,
+                },
+            ) => {
+                if argument_names.len() != arguments.len()
+                    || arguments.iter().zip(argument_names.iter()).any(
+                        |(argument, expected)| match (&argument.name, expected) {
+                            (None, _) => false,
+                            (Some(actual), Some(expected)) => actual != expected,
+                            (Some(_), None) => true,
+                        },
+                    )
+                {
+                    return Err(NeedProducerRequestError::ArgumentBindingMismatch);
+                }
+                let positional = arguments.iter().filter(|argument| argument.name.is_none());
+                let named = arguments.iter().filter(|argument| argument.name.is_some());
+                Ok(saved_capability == capability
+                    && saved_operation == operation
+                    && *manifest_contract == Some(*contract)
+                    && args.len() == positional.clone().count()
+                    && named_args.len() == named.clone().count()
+                    && positional
+                        .zip(args)
+                        .all(|(argument, saved)| argument.value == *saved.value())
+                    && named.zip(named_args).all(|(argument, saved)| {
+                        argument.name.as_deref() == Some(saved.name.as_str())
+                            && argument.value == *saved.value.value()
+                    }))
+            }
+            _ => Ok(false),
+        }
+    }
+
     #[must_use]
     pub const fn outcome(&self) -> TaskOutcomeContract {
         TaskOutcomeContract::program(self.payload_type)
@@ -702,7 +775,7 @@ pub struct RuntimeNeedProducerLaunch {
     need: NeedId,
     task: TaskId,
     task_spec: TaskSpec,
-    state: Need<RuntimePayload>,
+    state: RuntimeNeedProducerState,
     publication: Option<TaskPublicationCursor>,
     task_submitted: bool,
     task_terminal: bool,
@@ -766,7 +839,7 @@ impl RuntimeNeedProducerLaunch {
     }
 
     #[must_use]
-    pub const fn state(&self) -> &Need<RuntimePayload> {
+    pub const fn state(&self) -> &RuntimeNeedProducerState {
         &self.state
     }
 
@@ -791,6 +864,28 @@ impl RuntimeNeedProducerLaunch {
     }
 }
 
+/// The producer's terminal Ready metadata remains after an AlwaysStart
+/// payload moves to its one Await consumer. JoinSameKey retains a checked
+/// unrestricted Ready payload for later joiners.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub enum RuntimeNeedProducerState {
+    NotStarted,
+    Pending(Progress),
+    Ready(RuntimePayload),
+    ReadyTransferred,
+    Cancelled,
+}
+
+impl RuntimeNeedProducerState {
+    #[must_use]
+    pub const fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            Self::Ready(_) | Self::ReadyTransferred | Self::Cancelled
+        )
+    }
+}
+
 /// Whether an admission must emit a host task request. Rejoining an active or
 /// terminal Need does not submit the task again.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -801,15 +896,21 @@ pub enum NeedProducerTaskDisposition {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct NeedProducerAdmission {
-    launch: RuntimeNeedProducerLaunch,
+    need: NeedId,
+    task_spec: TaskSpec,
     invocation: NeedProducerInvocationToken,
     disposition: NeedProducerTaskDisposition,
 }
 
 impl NeedProducerAdmission {
     #[must_use]
-    pub const fn launch(&self) -> &RuntimeNeedProducerLaunch {
-        &self.launch
+    pub const fn need(&self) -> &NeedId {
+        &self.need
+    }
+
+    #[must_use]
+    pub const fn task_spec(&self) -> &TaskSpec {
+        &self.task_spec
     }
 
     #[must_use]
@@ -821,11 +922,46 @@ impl NeedProducerAdmission {
     pub const fn invocation(&self) -> NeedProducerInvocationToken {
         self.invocation
     }
+}
 
+/// Sealed, metadata-only start decision. The caller can inspect the Need and
+/// task request before committing any registry mutation or moving an affine
+/// value elsewhere in the runtime.
+pub struct NeedProducerStartProof {
+    frontier: (
+        GenerationId,
+        RuntimePersistentFiberId,
+        NeedProducerSiteDigest,
+    ),
+    observed_sequence: u64,
+    next_sequence: u64,
+    admission: NeedProducerAdmission,
+    decision: NeedProducerStartDecision,
+}
+
+impl NeedProducerStartProof {
     #[must_use]
-    pub fn into_launch(self) -> RuntimeNeedProducerLaunch {
-        self.launch
+    pub const fn admission(&self) -> &NeedProducerAdmission {
+        &self.admission
     }
+}
+
+enum NeedProducerStartDecision {
+    Replay {
+        key: NeedProducerLaunchKey,
+        mark_submitted: bool,
+    },
+    Join {
+        key: NeedProducerLaunchKey,
+        invocation: NeedProducerInvocationToken,
+        mark_submitted: bool,
+    },
+    New {
+        key: NeedProducerLaunchKey,
+        launch: RuntimeNeedProducerLaunch,
+        invocation: NeedProducerInvocationToken,
+        next_ordinal: Option<((GenerationId, NeedProducerInstanceKey), u64)>,
+    },
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -861,6 +997,12 @@ pub enum NeedProducerAdmissionError {
     Request(#[from] NeedProducerRequestError),
     #[error("evaluated Need producer arguments have no canonical persistent digest")]
     InvalidProducerArguments,
+    #[error("host Need producer arguments must be recursively unrestricted")]
+    AffineHostProducerArgument,
+    #[error("JoinSameKey Ready must be recursively unrestricted for joined or later observers")]
+    AffineJoinedReadyPublication,
+    #[error("producer Need has no Ready payload available for this Await")]
+    ReadyUnavailable,
     #[error("producer invocation counter is exhausted")]
     InvocationSequenceExhausted,
     #[error("AlwaysStart producer launch ordinal is exhausted")]
@@ -885,6 +1027,68 @@ pub enum NeedProducerAdmissionError {
     StaleTaskPublication,
     #[error("task publication revision was reused with a conflicting payload")]
     ConflictingTaskPublication,
+    #[error("borrowed task Ready publication requires a recursively unrestricted payload")]
+    AffineBorrowedTaskPublication,
+    #[error(transparent)]
+    HostReadyOwnership(#[from] RuntimeHostPayloadOwnershipError),
+}
+
+/// An owned task publication either transfers its payload to the selected
+/// producer or returns the unchanged event to its caller.
+#[derive(Debug, PartialEq)]
+pub enum NeedProducerOwnedTaskEventDisposition {
+    Published,
+    Duplicate(TaskEvent),
+    NotLocal(TaskEvent),
+}
+
+#[derive(Debug, Error, PartialEq)]
+#[error("{reason}")]
+pub struct NeedProducerOwnedTaskEventError {
+    reason: NeedProducerAdmissionError,
+    event: TaskEvent,
+}
+
+#[derive(Debug, Error, PartialEq)]
+#[error("{reason}")]
+pub struct NeedProducerReadyRestoreError {
+    reason: NeedProducerAdmissionError,
+    value: RuntimePayload,
+}
+
+pub struct NeedProducerReadyRestoreProof {
+    key: NeedProducerLaunchKey,
+    publication: TaskPublicationCursor,
+}
+
+pub struct NeedProducerReadyTakeProof {
+    key: NeedProducerLaunchKey,
+    publication: TaskPublicationCursor,
+    policy: TaskPolicy,
+}
+
+pub struct NeedProducerTaskEnsuredProof {
+    key: Option<NeedProducerLaunchKey>,
+    task_spec: Option<TaskSpec>,
+}
+
+impl NeedProducerTaskEnsuredProof {
+    #[must_use]
+    pub const fn task_spec(&self) -> Option<&TaskSpec> {
+        self.task_spec.as_ref()
+    }
+}
+
+impl NeedProducerReadyRestoreError {
+    pub fn into_parts(self) -> (NeedProducerAdmissionError, RuntimePayload) {
+        (self.reason, self.value)
+    }
+}
+
+impl NeedProducerOwnedTaskEventError {
+    pub fn into_parts(self) -> (NeedProducerAdmissionError, TaskEvent) {
+        (self.reason, self.event)
+    }
 }
 
 /// Typed, decoded input for restoring a producer launch. AWBC decodes any
@@ -900,7 +1104,7 @@ pub struct NeedProducerLaunchRestore {
     pub need: NeedId,
     pub task: TaskId,
     pub task_spec: TaskSpec,
-    pub state: Need<RuntimePayload>,
+    pub state: RuntimeNeedProducerState,
     pub publication: Option<TaskPublicationCursor>,
     pub task_submitted: bool,
     pub task_terminal: bool,
@@ -944,7 +1148,314 @@ pub struct NeedProducerRegistryRestore {
     pub launch_frontiers: Vec<NeedProducerLaunchFrontier>,
 }
 
+/// In-memory rollback representation of a producer registry. Every runtime
+/// argument and Ready payload is inert until the prior live owner is gone.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct NeedProducerRegistryRollbackImage {
+    launches: Vec<NeedProducerLaunchRollbackImage>,
+    invocations: Vec<(NeedProducerInvocationToken, NeedId)>,
+    invocation_frontiers: Vec<NeedProducerInvocationFrontier>,
+    launch_frontiers: Vec<NeedProducerLaunchFrontier>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct NeedProducerLaunchRollbackImage {
+    invocation: NeedProducerInvocationToken,
+    plan: NeedProducerTaskPlan,
+    arguments: Vec<(Option<String>, crate::value::AwbcRuntimeValueSnapshot)>,
+    ordinal: TaskLaunchOrdinal,
+    need: NeedId,
+    task: TaskId,
+    state: NeedProducerStateRollbackImage,
+    publication: Option<TaskPublicationCursor>,
+    task_submitted: bool,
+    task_terminal: bool,
+    task_fault: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum NeedProducerStateRollbackImage {
+    NotStarted,
+    Pending(Progress),
+    Ready(crate::value::AwbcRuntimeValueSnapshot),
+    ReadyTransferred,
+    Cancelled,
+}
+
+struct ValidatedRestoreLaunch {
+    producer: NeedProducerSpec,
+    instance_key: NeedProducerInstanceKey,
+    key: NeedProducerLaunchKey,
+    invocation_key: (
+        GenerationId,
+        RuntimePersistentFiberId,
+        NeedProducerSiteDigest,
+    ),
+    invocation_next: u64,
+    launch_next: Option<((GenerationId, NeedProducerInstanceKey), u64)>,
+}
+
+fn validate_restore_launch(
+    restore: &NeedProducerLaunchRestore,
+) -> Result<ValidatedRestoreLaunch, NeedProducerAdmissionError> {
+    if restore
+        .arguments
+        .iter()
+        .any(|argument| !argument.value.ownership().permits_copy())
+    {
+        return Err(NeedProducerAdmissionError::AffineHostProducerArgument);
+    }
+    let generation = restore.invocation.generation;
+    let producer = restore.plan.producer_spec(&restore.arguments)?;
+    let instance_key = producer.instance_key()?;
+    let (need, task, task_key) = producer_runtime_ids(generation, instance_key, restore.ordinal);
+    let saved_spec = &restore.task_spec;
+    if restore.need != need
+        || restore.task != task
+        || saved_spec.id != task
+        || saved_spec.key != task_key
+        || saved_spec.class != restore.plan.class
+        || saved_spec.priority != restore.plan.priority
+        || saved_spec.cancel_scope != restore.plan.cancel_scope
+        || saved_spec.policy != restore.plan.policy
+        || saved_spec.outcome != restore.plan.outcome()
+        || saved_spec.debug_label != saved_spec.request.debug_label()
+        || !restore
+            .plan
+            .request_matches(&restore.arguments, &saved_spec.request)?
+        || restore.invocation.producer_site != restore.plan.site
+        || (restore.plan.policy == TaskPolicy::JoinSameKey
+            && restore.ordinal != TaskLaunchOrdinal::JOIN)
+        || (restore.plan.policy == TaskPolicy::AlwaysStart
+            && restore.ordinal == TaskLaunchOrdinal::JOIN)
+        || !restored_need_state_is_valid(
+            &restore.state,
+            restore.publication,
+            restore.task_submitted,
+            restore.task_terminal,
+            restore.task_fault.as_deref(),
+            restore.plan.restart,
+            restore.plan.policy,
+        )
+    {
+        return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
+    }
+    let launch_next = if restore.plan.policy == TaskPolicy::AlwaysStart {
+        Some((
+            (generation, instance_key),
+            restore
+                .ordinal
+                .get()
+                .checked_add(1)
+                .ok_or(NeedProducerAdmissionError::LaunchOrdinalExhausted)?,
+        ))
+    } else {
+        None
+    };
+    let invocation_next = restore
+        .invocation
+        .sequence
+        .checked_add(1)
+        .ok_or(NeedProducerAdmissionError::InvocationSequenceExhausted)?;
+    Ok(ValidatedRestoreLaunch {
+        producer,
+        instance_key,
+        key: NeedProducerLaunchKey {
+            generation,
+            instance_key,
+            ordinal: restore.ordinal,
+        },
+        invocation_key: (
+            generation,
+            restore.invocation.fiber,
+            restore.invocation.producer_site,
+        ),
+        invocation_next,
+        launch_next,
+    })
+}
+
 impl NeedProducerRegistry {
+    pub(crate) fn inert_rollback_image(
+        &self,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<NeedProducerRegistryRollbackImage, String> {
+        let image = |value: &RuntimeValue| {
+            crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
+                .map_err(|error| error.to_string())
+        };
+        Ok(NeedProducerRegistryRollbackImage {
+            launches: self
+                .launches
+                .values()
+                .map(|launch| {
+                    Ok(NeedProducerLaunchRollbackImage {
+                        invocation: launch.invocation,
+                        plan: launch.plan.clone(),
+                        arguments: launch
+                            .arguments
+                            .iter()
+                            .map(|argument| Ok((argument.name.clone(), image(&argument.value)?)))
+                            .collect::<Result<_, String>>()?,
+                        ordinal: launch.ordinal,
+                        need: launch.need.clone(),
+                        task: launch.task.clone(),
+                        state: match &launch.state {
+                            RuntimeNeedProducerState::NotStarted => {
+                                NeedProducerStateRollbackImage::NotStarted
+                            }
+                            RuntimeNeedProducerState::Pending(progress) => {
+                                NeedProducerStateRollbackImage::Pending(progress.clone())
+                            }
+                            RuntimeNeedProducerState::Ready(value) => {
+                                NeedProducerStateRollbackImage::Ready(image(value.value())?)
+                            }
+                            RuntimeNeedProducerState::ReadyTransferred => {
+                                NeedProducerStateRollbackImage::ReadyTransferred
+                            }
+                            RuntimeNeedProducerState::Cancelled => {
+                                NeedProducerStateRollbackImage::Cancelled
+                            }
+                        },
+                        publication: launch.publication,
+                        task_submitted: launch.task_submitted,
+                        task_terminal: launch.task_terminal,
+                        task_fault: launch.task_fault.clone(),
+                    })
+                })
+                .collect::<Result<_, String>>()?,
+            invocations: self
+                .invocation_launches
+                .iter()
+                .map(|(invocation, key)| (*invocation, self.launches[key].need.clone()))
+                .collect(),
+            invocation_frontiers: self
+                .next_invocation_sequence
+                .iter()
+                .map(|((generation, fiber, producer_site), next_sequence)| {
+                    NeedProducerInvocationFrontier {
+                        generation: *generation,
+                        fiber: *fiber,
+                        producer_site: *producer_site,
+                        next_sequence: *next_sequence,
+                    }
+                })
+                .collect(),
+            launch_frontiers: self
+                .next_launch_ordinal
+                .iter()
+                .map(
+                    |((generation, instance_key), next_ordinal)| NeedProducerLaunchFrontier {
+                        generation: *generation,
+                        instance_key: *instance_key,
+                        next_ordinal: *next_ordinal,
+                    },
+                )
+                .collect(),
+        })
+    }
+
+    pub(crate) fn from_rollback_image(
+        image: NeedProducerRegistryRollbackImage,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<Self, String> {
+        let value = |image: crate::value::AwbcRuntimeValueSnapshot| {
+            image
+                .into_runtime_value_for_program(owner)
+                .map_err(|error| error.to_string())
+        };
+        let launches = image
+            .launches
+            .into_iter()
+            .map(|launch| {
+                let arguments = launch
+                    .arguments
+                    .into_iter()
+                    .map(|(name, saved)| {
+                        Ok(NeedProducerRuntimeArgument {
+                            name,
+                            value: value(saved)?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                if arguments
+                    .iter()
+                    .any(|argument| !argument.value.ownership().permits_copy())
+                {
+                    return Err(NeedProducerAdmissionError::AffineHostProducerArgument.to_string());
+                }
+                let producer = launch
+                    .plan
+                    .producer_spec(&arguments)
+                    .map_err(|error| error.to_string())?;
+                let instance_key = producer.instance_key().map_err(|error| error.to_string())?;
+                let (_, _, task_key) = producer_runtime_ids(
+                    launch.invocation.generation,
+                    instance_key,
+                    launch.ordinal,
+                );
+                let request = launch
+                    .plan
+                    .project_request(&arguments)
+                    .map_err(|error| error.to_string())?;
+                let task_spec = TaskSpec::new(
+                    launch.task.clone(),
+                    task_key,
+                    launch.plan.class.clone(),
+                    launch.plan.priority,
+                    launch.plan.cancel_scope.clone(),
+                    launch.plan.policy,
+                    request,
+                )
+                .with_outcome(launch.plan.outcome());
+                let state = match launch.state {
+                    NeedProducerStateRollbackImage::NotStarted => {
+                        RuntimeNeedProducerState::NotStarted
+                    }
+                    NeedProducerStateRollbackImage::Pending(progress) => {
+                        RuntimeNeedProducerState::Pending(progress)
+                    }
+                    NeedProducerStateRollbackImage::Ready(saved) => {
+                        RuntimeNeedProducerState::Ready(RuntimePayload(value(saved)?))
+                    }
+                    NeedProducerStateRollbackImage::ReadyTransferred => {
+                        RuntimeNeedProducerState::ReadyTransferred
+                    }
+                    NeedProducerStateRollbackImage::Cancelled => {
+                        RuntimeNeedProducerState::Cancelled
+                    }
+                };
+                Ok(NeedProducerLaunchRestore {
+                    invocation: launch.invocation,
+                    plan: launch.plan,
+                    arguments,
+                    ordinal: launch.ordinal,
+                    need: launch.need,
+                    task: launch.task,
+                    task_spec,
+                    state,
+                    publication: launch.publication,
+                    task_submitted: launch.task_submitted,
+                    task_terminal: launch.task_terminal,
+                    task_fault: launch.task_fault,
+                })
+            })
+            .collect::<Result<_, String>>()?;
+        let mut registry = Self::default();
+        registry
+            .restore_registry_with_policy(
+                NeedProducerRegistryRestore {
+                    launches,
+                    invocations: image.invocations,
+                    invocation_frontiers: image.invocation_frontiers,
+                    launch_frontiers: image.launch_frontiers,
+                },
+                false,
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(registry)
+    }
+
     /// Begins one checked producer-site visit. Call this inside the same
     /// candidate transaction that admits the start and advances its cursor.
     /// An uncommitted candidate therefore reissues the same token on retry.
@@ -982,18 +1493,74 @@ impl NeedProducerRegistry {
         plan: NeedProducerTaskPlan,
         arguments: Vec<NeedProducerRuntimeArgument>,
     ) -> Result<NeedProducerAdmission, NeedProducerAdmissionError> {
-        let mut candidate = self.clone();
-        let admission = candidate.admit_start_inner(invocation, plan, arguments)?;
-        *self = candidate;
+        let (admission, decision) = self.prepare_start_decision(invocation, plan, arguments)?;
+        self.commit_start_decision(decision);
         Ok(admission)
     }
 
-    fn admit_start_inner(
-        &mut self,
+    /// Prepares one producer visit while preserving the current registry and
+    /// every live Ready payload. The proof holds only metadata and host-safe
+    /// arguments; binding/quota checks can run before `commit_start_visit`.
+    pub fn inspect_start_visit(
+        &self,
+        generation: GenerationId,
+        fiber: RuntimePersistentFiberId,
+        plan: NeedProducerTaskPlan,
+        arguments: Vec<NeedProducerRuntimeArgument>,
+    ) -> Result<NeedProducerStartProof, NeedProducerAdmissionError> {
+        let frontier = (generation, fiber, plan.site);
+        let observed_sequence = self
+            .next_invocation_sequence
+            .get(&frontier)
+            .copied()
+            .unwrap_or(0);
+        let next_sequence = observed_sequence
+            .checked_add(1)
+            .ok_or(NeedProducerAdmissionError::InvocationSequenceExhausted)?;
+        let invocation = NeedProducerInvocationToken {
+            generation,
+            fiber,
+            producer_site: plan.site,
+            sequence: observed_sequence,
+        };
+        let (admission, decision) = self.prepare_start_decision(invocation, plan, arguments)?;
+        Ok(NeedProducerStartProof {
+            frontier,
+            observed_sequence,
+            next_sequence,
+            admission,
+            decision,
+        })
+    }
+
+    pub fn commit_start_visit(&mut self, proof: NeedProducerStartProof) -> NeedProducerAdmission {
+        assert_eq!(
+            self.next_invocation_sequence
+                .get(&proof.frontier)
+                .copied()
+                .unwrap_or(0),
+            proof.observed_sequence,
+            "prepared Need producer visit requires an unchanged invocation frontier"
+        );
+        self.commit_start_decision(proof.decision);
+        self.next_invocation_sequence
+            .insert(proof.frontier, proof.next_sequence);
+        proof.admission
+    }
+
+    fn prepare_start_decision(
+        &self,
         invocation: NeedProducerInvocationToken,
         plan: NeedProducerTaskPlan,
         arguments: Vec<NeedProducerRuntimeArgument>,
-    ) -> Result<NeedProducerAdmission, NeedProducerAdmissionError> {
+    ) -> Result<(NeedProducerAdmission, NeedProducerStartDecision), NeedProducerAdmissionError>
+    {
+        if arguments
+            .iter()
+            .any(|argument| !argument.value.ownership().permits_copy())
+        {
+            return Err(NeedProducerAdmissionError::AffineHostProducerArgument);
+        }
         if invocation.producer_site != plan.site {
             return Err(NeedProducerAdmissionError::InvocationSiteMismatch);
         }
@@ -1024,27 +1591,25 @@ impl NeedProducerRegistry {
                 return Err(NeedProducerAdmissionError::InvocationSpecificationConflict);
             }
             let disposition = admission_disposition(existing);
-            let mut launch = existing.clone();
-            if disposition == NeedProducerTaskDisposition::Ensure {
-                let stored = self
-                    .launches
-                    .get_mut(&key)
-                    .ok_or(NeedProducerAdmissionError::InvalidRestoredLaunch)?;
-                stored.task_submitted = true;
-                launch.task_submitted = true;
-            }
-            return Ok(NeedProducerAdmission {
-                launch,
-                invocation,
-                disposition,
-            });
+            return Ok((
+                NeedProducerAdmission {
+                    need: existing.need.clone(),
+                    task_spec: existing.task_spec.clone(),
+                    invocation,
+                    disposition,
+                },
+                NeedProducerStartDecision::Replay {
+                    key,
+                    mark_submitted: disposition == NeedProducerTaskDisposition::Ensure,
+                },
+            ));
         }
 
         if policy == TaskPolicy::JoinSameKey {
             if let Some(key) = self.joined.get(&(generation, instance_key)).copied() {
                 let existing = self
                     .launches
-                    .get_mut(&key)
+                    .get(&key)
                     .ok_or(NeedProducerAdmissionError::InvalidRestoredLaunch)?;
                 if !launch_matches_plan(
                     existing,
@@ -1057,21 +1622,25 @@ impl NeedProducerRegistry {
                 ) {
                     return Err(NeedProducerAdmissionError::JoinSpecificationConflict);
                 }
-                self.invocation_launches.insert(invocation, key);
                 let disposition = admission_disposition(existing);
-                if disposition == NeedProducerTaskDisposition::Ensure {
-                    existing.task_submitted = true;
-                }
-                return Ok(NeedProducerAdmission {
-                    launch: existing.clone(),
-                    invocation,
-                    disposition,
-                });
+                return Ok((
+                    NeedProducerAdmission {
+                        need: existing.need.clone(),
+                        task_spec: existing.task_spec.clone(),
+                        invocation,
+                        disposition,
+                    },
+                    NeedProducerStartDecision::Join {
+                        key,
+                        invocation,
+                        mark_submitted: disposition == NeedProducerTaskDisposition::Ensure,
+                    },
+                ));
             }
         }
 
-        let ordinal = match policy {
-            TaskPolicy::JoinSameKey => TaskLaunchOrdinal::JOIN,
+        let (ordinal, next_ordinal) = match policy {
+            TaskPolicy::JoinSameKey => (TaskLaunchOrdinal::JOIN, None),
             TaskPolicy::AlwaysStart => {
                 let counter_key = (generation, instance_key);
                 let ordinal = self
@@ -1082,8 +1651,7 @@ impl NeedProducerRegistry {
                 let next = ordinal
                     .checked_add(1)
                     .ok_or(NeedProducerAdmissionError::LaunchOrdinalExhausted)?;
-                self.next_launch_ordinal.insert(counter_key, next);
-                TaskLaunchOrdinal(ordinal)
+                (TaskLaunchOrdinal(ordinal), Some((counter_key, next)))
             }
         };
         let key = NeedProducerLaunchKey {
@@ -1113,7 +1681,7 @@ impl NeedProducerRegistry {
             need,
             task,
             task_spec,
-            state: Need::NotStarted,
+            state: RuntimeNeedProducerState::NotStarted,
             publication: None,
             task_submitted: true,
             task_terminal: false,
@@ -1125,16 +1693,65 @@ impl NeedProducerRegistry {
             }
             return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
         }
-        self.launches.insert(key, launch.clone());
-        self.invocation_launches.insert(invocation, key);
-        if policy == TaskPolicy::JoinSameKey {
-            self.joined.insert((generation, instance_key), key);
-        }
-        Ok(NeedProducerAdmission {
-            launch,
+        let admission = NeedProducerAdmission {
+            need: launch.need.clone(),
+            task_spec: launch.task_spec.clone(),
             invocation,
             disposition: NeedProducerTaskDisposition::Ensure,
-        })
+        };
+        Ok((
+            admission,
+            NeedProducerStartDecision::New {
+                key,
+                launch,
+                invocation,
+                next_ordinal,
+            },
+        ))
+    }
+
+    fn commit_start_decision(&mut self, decision: NeedProducerStartDecision) {
+        match decision {
+            NeedProducerStartDecision::Replay {
+                key,
+                mark_submitted,
+            } => {
+                if mark_submitted {
+                    self.launches
+                        .get_mut(&key)
+                        .expect("prepared replay launch exists")
+                        .task_submitted = true;
+                }
+            }
+            NeedProducerStartDecision::Join {
+                key,
+                invocation,
+                mark_submitted,
+            } => {
+                self.invocation_launches.insert(invocation, key);
+                if mark_submitted {
+                    self.launches
+                        .get_mut(&key)
+                        .expect("prepared joined launch exists")
+                        .task_submitted = true;
+                }
+            }
+            NeedProducerStartDecision::New {
+                key,
+                launch,
+                invocation,
+                next_ordinal,
+            } => {
+                if let Some((counter_key, next)) = next_ordinal {
+                    self.next_launch_ordinal.insert(counter_key, next);
+                }
+                if launch.plan.policy == TaskPolicy::JoinSameKey {
+                    self.joined.insert((key.generation, key.instance_key), key);
+                }
+                self.launches.insert(key, launch);
+                self.invocation_launches.insert(invocation, key);
+            }
+        }
     }
 
     /// Returns accepted launches in deterministic identity order for Product
@@ -1273,42 +1890,15 @@ impl NeedProducerRegistry {
         let need = self.need_for_task(&event.task_id)?.clone();
         let cursor = TaskPublicationCursor::from_event(event);
         Some(match &event.kind {
-            TaskEventKind::Ready(value) => RuntimeNeedPublication::State {
-                need,
-                state: Need::Ready(value.clone()),
-                cursor,
-            },
-            TaskEventKind::Progress(progress) => RuntimeNeedPublication::State {
-                need,
-                state: Need::Pending(progress.clone()),
-                cursor,
-            },
-            TaskEventKind::Cancelled => RuntimeNeedPublication::State {
-                need,
-                state: Need::Cancelled,
-                cursor,
-            },
+            TaskEventKind::Ready(_) | TaskEventKind::Progress(_) | TaskEventKind::Cancelled => {
+                RuntimeNeedPublication::Producer { need, cursor }
+            }
             TaskEventKind::Failed(message) => RuntimeNeedPublication::Failed {
                 need,
                 cursor,
                 message: message.clone(),
             },
         })
-    }
-
-    /// Reconstructs and validates one saved launch. The supplied task
-    /// specification is compared against the canonical specification derived
-    /// from the typed producer/request fields before it enters the live
-    /// registry. Restartable active work is returned as not yet submitted so
-    /// the restored owner can ensure it exactly once.
-    pub fn restore_launch(
-        &mut self,
-        restore: NeedProducerLaunchRestore,
-    ) -> Result<(), NeedProducerAdmissionError> {
-        let mut candidate = self.clone();
-        candidate.restore_launch_inner(restore)?;
-        *self = candidate;
-        Ok(())
     }
 
     /// Atomically rebuilds the full launch, invocation, and counter journal.
@@ -1318,9 +1908,26 @@ impl NeedProducerRegistry {
         &mut self,
         restore: NeedProducerRegistryRestore,
     ) -> Result<(), NeedProducerAdmissionError> {
+        self.restore_registry_with_policy(restore, true)
+    }
+
+    fn restore_registry_with_policy(
+        &mut self,
+        restore: NeedProducerRegistryRestore,
+        reset_restartable_submission: bool,
+    ) -> Result<(), NeedProducerAdmissionError> {
+        if !self.launches.is_empty()
+            || !self.joined.is_empty()
+            || !self.invocation_launches.is_empty()
+            || !self.next_launch_ordinal.is_empty()
+            || !self.next_invocation_sequence.is_empty()
+        {
+            return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
+        }
+        Self::validate_restore(&restore)?;
         let mut candidate = Self::default();
         for launch in restore.launches {
-            candidate.restore_launch_inner(launch)?;
+            candidate.insert_validated_restore_launch(launch, reset_restartable_submission);
         }
         for (invocation, need) in restore.invocations {
             let already_restored = candidate
@@ -1329,46 +1936,98 @@ impl NeedProducerRegistry {
                 .and_then(|key| candidate.launches.get(key))
                 .is_some_and(|launch| launch.need == need);
             if !already_restored {
-                candidate.restore_invocation_alias(invocation, &need)?;
+                candidate
+                    .restore_invocation_alias(invocation, &need)
+                    .expect("borrowed Need registry preflight established this alias");
             }
         }
-        let mut invocation_frontier_keys = BTreeSet::new();
-        for frontier in restore.invocation_frontiers {
+        *self = candidate;
+        Ok(())
+    }
+
+    /// Validates a saved producer journal by borrowing its payloads. In
+    /// particular, an AlwaysStart Ready may be affine, so snapshot validation
+    /// must not copy it into a temporary live registry.
+    pub fn validate_restore(
+        restore: &NeedProducerRegistryRestore,
+    ) -> Result<(), NeedProducerAdmissionError> {
+        let mut launches = BTreeMap::new();
+        let mut joined = BTreeSet::new();
+        let mut invocations = BTreeMap::new();
+        let mut next_launch_ordinal = BTreeMap::new();
+        let mut next_invocation_sequence = BTreeMap::new();
+        for launch in &restore.launches {
+            let checked = validate_restore_launch(launch)?;
+            if launches.insert(checked.key, launch).is_some()
+                || invocations.insert(launch.invocation, checked.key).is_some()
+                || (launch.plan.policy == TaskPolicy::JoinSameKey
+                    && !joined.insert((launch.invocation.generation, checked.instance_key)))
+            {
+                return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
+            }
+            if let Some((key, next)) = checked.launch_next {
+                let entry = next_launch_ordinal.entry(key).or_insert(1);
+                *entry = (*entry).max(next);
+            }
+            let entry = next_invocation_sequence
+                .entry(checked.invocation_key)
+                .or_insert(0);
+            *entry = (*entry).max(checked.invocation_next);
+        }
+        for (invocation, need) in &restore.invocations {
+            if let Some(key) = invocations.get(invocation) {
+                if launches.get(key).is_none_or(|launch| &launch.need != need) {
+                    return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
+                }
+                continue;
+            }
+            let Some((key, launch)) = launches.iter().find(|(_, launch)| &launch.need == need)
+            else {
+                return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
+            };
+            if invocation.generation != launch.invocation.generation
+                || invocation.producer_site != launch.plan.site
+                || launch.plan.policy != TaskPolicy::JoinSameKey
+            {
+                return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
+            }
+            let next = invocation
+                .sequence
+                .checked_add(1)
+                .ok_or(NeedProducerAdmissionError::InvocationSequenceExhausted)?;
+            let frontier = (
+                invocation.generation,
+                invocation.fiber,
+                invocation.producer_site,
+            );
+            let entry = next_invocation_sequence.entry(frontier).or_insert(0);
+            *entry = (*entry).max(next);
+            invocations.insert(*invocation, *key);
+        }
+        let mut invocation_frontiers = BTreeSet::new();
+        for frontier in &restore.invocation_frontiers {
             let key = (frontier.generation, frontier.fiber, frontier.producer_site);
-            let Some(inferred) = candidate.next_invocation_sequence.get(&key).copied() else {
-                return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
-            };
-            if !invocation_frontier_keys.insert(key) || frontier.next_sequence != inferred {
-                return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
-            }
-        }
-        let mut launch_frontier_keys = BTreeSet::new();
-        for frontier in restore.launch_frontiers {
-            let key = (frontier.generation, frontier.instance_key);
-            let Some(inferred) = candidate.next_launch_ordinal.get(&key).copied() else {
-                return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
-            };
-            if !launch_frontier_keys.insert(key)
-                || frontier.next_ordinal != inferred
-                || frontier.next_ordinal == 0
+            if !invocation_frontiers.insert(key)
+                || next_invocation_sequence.get(&key) != Some(&frontier.next_sequence)
             {
                 return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
             }
         }
-        if candidate
-            .next_invocation_sequence
-            .keys()
-            .any(|key| !invocation_frontier_keys.contains(key))
-            || invocation_frontier_keys.len() != candidate.next_invocation_sequence.len()
-            || candidate
-                .next_launch_ordinal
-                .keys()
-                .any(|key| !launch_frontier_keys.contains(key))
-            || launch_frontier_keys.len() != candidate.next_launch_ordinal.len()
+        let mut launch_frontiers = BTreeSet::new();
+        for frontier in &restore.launch_frontiers {
+            let key = (frontier.generation, frontier.instance_key);
+            if !launch_frontiers.insert(key)
+                || frontier.next_ordinal == 0
+                || next_launch_ordinal.get(&key) != Some(&frontier.next_ordinal)
+            {
+                return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
+            }
+        }
+        if invocation_frontiers.len() != next_invocation_sequence.len()
+            || launch_frontiers.len() != next_launch_ordinal.len()
         {
             return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
         }
-        *self = candidate;
         Ok(())
     }
 
@@ -1396,55 +2055,260 @@ impl NeedProducerRegistry {
         &mut self,
         event: &TaskEvent,
     ) -> Result<bool, NeedProducerAdmissionError> {
-        let Some(launch) = self
-            .launches
-            .values_mut()
-            .find(|launch| launch.task == event.task_id)
-        else {
-            return Ok(false);
-        };
-        if launch.generation != event.generation {
-            return Err(NeedProducerAdmissionError::StaleTaskGeneration);
+        if let TaskEventKind::Ready(value) = &event.kind
+            && !value.value().ownership().permits_copy()
+        {
+            return Err(NeedProducerAdmissionError::AffineBorrowedTaskPublication);
         }
-        let cursor = TaskPublicationCursor::from_event(event);
+        match self.publish_task_event_owned(event.clone()) {
+            Ok(NeedProducerOwnedTaskEventDisposition::Published) => Ok(true),
+            Ok(
+                NeedProducerOwnedTaskEventDisposition::Duplicate(_)
+                | NeedProducerOwnedTaskEventDisposition::NotLocal(_),
+            ) => Ok(false),
+            Err(error) => Err(error.into_parts().0),
+        }
+    }
+
+    /// Transfers a Ready payload into its producer launch after all cursor and
+    /// transition checks. A rejected or unclaimed event keeps its sole owner.
+    pub fn publish_task_event_owned(
+        &mut self,
+        event: TaskEvent,
+    ) -> Result<NeedProducerOwnedTaskEventDisposition, NeedProducerOwnedTaskEventError> {
+        if let Err(error) = event.inspect_host_ready_ownership() {
+            return Err(NeedProducerOwnedTaskEventError {
+                reason: NeedProducerAdmissionError::HostReadyOwnership(error),
+                event,
+            });
+        }
+        let Some(key) = self
+            .launches
+            .iter()
+            .find_map(|(key, launch)| (launch.task == event.task_id).then_some(*key))
+        else {
+            return Ok(NeedProducerOwnedTaskEventDisposition::NotLocal(event));
+        };
+        let launch = &self.launches[&key];
+        let reject = |reason, event| NeedProducerOwnedTaskEventError { reason, event };
+        if launch.generation != event.generation {
+            return Err(reject(
+                NeedProducerAdmissionError::StaleTaskGeneration,
+                event,
+            ));
+        }
+        let cursor = TaskPublicationCursor::from_event(&event);
         if let Some(observed) = launch.publication {
             match observed.compare_same_source(cursor) {
                 Some(Ordering::Equal) => {
-                    return if task_event_matches_launch(launch, event) {
-                        Ok(false)
+                    return if task_event_matches_launch(launch, &event)
+                        && !matches!(
+                            &event.kind,
+                            TaskEventKind::Ready(value) if !value.value().ownership().permits_copy()
+                        ) {
+                        Ok(NeedProducerOwnedTaskEventDisposition::Duplicate(event))
                     } else {
-                        Err(NeedProducerAdmissionError::ConflictingTaskPublication)
+                        Err(reject(
+                            NeedProducerAdmissionError::ConflictingTaskPublication,
+                            event,
+                        ))
                     };
                 }
                 Some(Ordering::Greater) => {
-                    return Err(NeedProducerAdmissionError::StaleTaskPublication);
+                    return Err(reject(
+                        NeedProducerAdmissionError::StaleTaskPublication,
+                        event,
+                    ));
                 }
                 Some(Ordering::Less) => {}
-                None => return Err(NeedProducerAdmissionError::InvalidPublicationSource),
+                None => {
+                    return Err(reject(
+                        NeedProducerAdmissionError::InvalidPublicationSource,
+                        event,
+                    ));
+                }
             }
         }
         if launch.task_terminal {
-            return Err(NeedProducerAdmissionError::InvalidNeedTransition);
+            return Err(reject(
+                NeedProducerAdmissionError::InvalidNeedTransition,
+                event,
+            ));
         }
-        let state = match &event.kind {
-            TaskEventKind::Ready(value) => Need::Ready(value.clone()),
-            TaskEventKind::Progress(progress) => Need::Pending(progress.clone()),
-            TaskEventKind::Cancelled => Need::Cancelled,
+        if let TaskEventKind::Ready(value) = &event.kind
+            && launch.plan.policy == TaskPolicy::JoinSameKey
+            && !value.value().ownership().permits_copy()
+        {
+            return Err(reject(
+                NeedProducerAdmissionError::AffineJoinedReadyPublication,
+                event,
+            ));
+        }
+        if !matches!(event.kind, TaskEventKind::Failed(_))
+            && !matches!(
+                launch.state,
+                RuntimeNeedProducerState::NotStarted | RuntimeNeedProducerState::Pending(_)
+            )
+        {
+            return Err(reject(
+                NeedProducerAdmissionError::InvalidNeedTransition,
+                event,
+            ));
+        }
+
+        let launch = self.launches.get_mut(&key).expect("selected launch exists");
+        match event.kind {
+            TaskEventKind::Ready(value) => {
+                launch.state = RuntimeNeedProducerState::Ready(value);
+                launch.task_terminal = true;
+            }
+            TaskEventKind::Progress(progress) => {
+                launch.state = RuntimeNeedProducerState::Pending(progress);
+            }
+            TaskEventKind::Cancelled => {
+                launch.state = RuntimeNeedProducerState::Cancelled;
+                launch.task_terminal = true;
+            }
             TaskEventKind::Failed(error) => {
                 launch.task_terminal = true;
-                launch.task_fault = Some(error.clone());
-                launch.publication = Some(cursor);
-                return Ok(true);
+                launch.task_fault = Some(error);
             }
-        };
-        if !need_transition_is_valid(&launch.state, &state) {
-            return Err(NeedProducerAdmissionError::InvalidNeedTransition);
         }
-        let terminal = state.is_terminal();
-        launch.state = state;
         launch.publication = Some(cursor);
-        launch.task_terminal = terminal;
-        Ok(true)
+        Ok(NeedProducerOwnedTaskEventDisposition::Published)
+    }
+
+    #[must_use]
+    pub fn ready_for_need(&self, need: &NeedId) -> Option<&RuntimePayload> {
+        let launch = self.launch_for_need(need)?;
+        match launch.state() {
+            RuntimeNeedProducerState::Ready(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    /// Supplies one owned Ready to Await. AlwaysStart transfers the sole
+    /// payload and retains terminal cursor metadata; JoinSameKey copies only
+    /// after publication proved the complete value unrestricted.
+    pub fn take_ready_for_need(
+        &mut self,
+        need: &NeedId,
+    ) -> Result<RuntimePayload, NeedProducerAdmissionError> {
+        let proof = self.inspect_ready_take_for_need(need)?;
+        Ok(self.take_ready_for_need_prepared(proof))
+    }
+
+    pub fn inspect_ready_take_for_need(
+        &self,
+        need: &NeedId,
+    ) -> Result<NeedProducerReadyTakeProof, NeedProducerAdmissionError> {
+        let (key, launch) = self
+            .launches
+            .iter()
+            .find(|(_, launch)| &launch.need == need)
+            .ok_or(NeedProducerAdmissionError::ReadyUnavailable)?;
+        let RuntimeNeedProducerState::Ready(value) = &launch.state else {
+            return Err(NeedProducerAdmissionError::ReadyUnavailable);
+        };
+        if launch.plan.policy == TaskPolicy::JoinSameKey
+            && !value.value().ownership().permits_copy()
+        {
+            return Err(NeedProducerAdmissionError::AffineJoinedReadyPublication);
+        }
+        let publication = launch
+            .publication
+            .ok_or(NeedProducerAdmissionError::ReadyUnavailable)?;
+        Ok(NeedProducerReadyTakeProof {
+            key: *key,
+            publication,
+            policy: launch.plan.policy,
+        })
+    }
+
+    pub fn take_ready_for_need_prepared(
+        &mut self,
+        proof: NeedProducerReadyTakeProof,
+    ) -> RuntimePayload {
+        let launch = self
+            .launches
+            .get_mut(&proof.key)
+            .expect("prepared Ready take launch exists");
+        assert!(
+            launch.publication == Some(proof.publication) && launch.plan.policy == proof.policy,
+            "prepared Ready take requires unchanged producer cursor and policy"
+        );
+        if proof.policy == TaskPolicy::JoinSameKey {
+            let RuntimeNeedProducerState::Ready(value) = &launch.state else {
+                unreachable!("prepared joined Ready remains present")
+            };
+            assert!(value.value().ownership().permits_copy());
+            return value.clone();
+        }
+        let previous = std::mem::replace(
+            &mut launch.state,
+            RuntimeNeedProducerState::ReadyTransferred,
+        );
+        let RuntimeNeedProducerState::Ready(value) = previous else {
+            unreachable!("prepared AlwaysStart Ready remains present")
+        };
+        value
+    }
+
+    /// Returns a temporarily transferred AlwaysStart Ready to its exact
+    /// producer during an aborted Await transaction. Failure returns the
+    /// untouched payload to the caller.
+    pub fn restore_ready_for_need(
+        &mut self,
+        need: &NeedId,
+        value: RuntimePayload,
+    ) -> Result<(), NeedProducerReadyRestoreError> {
+        let proof = match self.inspect_ready_restore_for_need(need) {
+            Ok(proof) => proof,
+            Err(reason) => return Err(NeedProducerReadyRestoreError { reason, value }),
+        };
+        self.restore_ready_for_need_prepared(proof, value);
+        Ok(())
+    }
+
+    pub fn inspect_ready_restore_for_need(
+        &self,
+        need: &NeedId,
+    ) -> Result<NeedProducerReadyRestoreProof, NeedProducerAdmissionError> {
+        let (key, launch) = self
+            .launches
+            .iter()
+            .find(|(_, launch)| &launch.need == need)
+            .ok_or(NeedProducerAdmissionError::ReadyUnavailable)?;
+        if launch.plan.policy != TaskPolicy::AlwaysStart
+            || !matches!(launch.state, RuntimeNeedProducerState::ReadyTransferred)
+            || !launch.task_terminal
+        {
+            return Err(NeedProducerAdmissionError::ReadyUnavailable);
+        }
+        let publication = launch
+            .publication
+            .ok_or(NeedProducerAdmissionError::ReadyUnavailable)?;
+        Ok(NeedProducerReadyRestoreProof {
+            key: *key,
+            publication,
+        })
+    }
+
+    pub fn restore_ready_for_need_prepared(
+        &mut self,
+        proof: NeedProducerReadyRestoreProof,
+        value: RuntimePayload,
+    ) {
+        let launch = self
+            .launches
+            .get_mut(&proof.key)
+            .expect("prepared Ready restore launch exists");
+        assert!(
+            launch.publication == Some(proof.publication)
+                && matches!(launch.state, RuntimeNeedProducerState::ReadyTransferred),
+            "prepared Ready restore requires unchanged producer state"
+        );
+        launch.state = RuntimeNeedProducerState::Ready(value);
     }
 
     /// Lists active Restartable launches whose host request must be ensured
@@ -1463,134 +2327,112 @@ impl NeedProducerRegistry {
         &mut self,
         need: &NeedId,
     ) -> Result<Option<TaskSpec>, NeedProducerAdmissionError> {
-        let Some(launch) = self
+        let proof = self.inspect_task_ensured(need)?;
+        Ok(self.mark_task_ensured_prepared(proof))
+    }
+
+    pub fn inspect_task_ensured(
+        &self,
+        need: &NeedId,
+    ) -> Result<NeedProducerTaskEnsuredProof, NeedProducerAdmissionError> {
+        let Some((key, launch)) = self
             .launches
-            .values_mut()
-            .find(|launch| &launch.need == need)
+            .iter()
+            .find(|(_, launch)| &launch.need == need)
         else {
-            return Ok(None);
+            return Ok(NeedProducerTaskEnsuredProof {
+                key: None,
+                task_spec: None,
+            });
         };
         if launch.task_terminal || launch.state.is_terminal() || launch.task_submitted {
-            return Ok(None);
+            return Ok(NeedProducerTaskEnsuredProof {
+                key: None,
+                task_spec: None,
+            });
         }
         if launch.plan.restart != HostRestartPolicy::Restartable {
             return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
         }
-        launch.task_submitted = true;
-        Ok(Some(launch.task_spec.clone()))
+        Ok(NeedProducerTaskEnsuredProof {
+            key: Some(*key),
+            task_spec: Some(launch.task_spec.clone()),
+        })
     }
 
-    fn restore_launch_inner(
+    pub fn mark_task_ensured_prepared(
+        &mut self,
+        proof: NeedProducerTaskEnsuredProof,
+    ) -> Option<TaskSpec> {
+        if let Some(key) = proof.key {
+            let launch = self
+                .launches
+                .get_mut(&key)
+                .expect("prepared reensure launch exists");
+            assert!(
+                !launch.task_terminal && !launch.state.is_terminal() && !launch.task_submitted,
+                "prepared reensure requires unchanged producer state"
+            );
+            launch.task_submitted = true;
+        }
+        proof.task_spec
+    }
+
+    fn insert_validated_restore_launch(
         &mut self,
         restore: NeedProducerLaunchRestore,
-    ) -> Result<(), NeedProducerAdmissionError> {
+        reset_restartable_submission: bool,
+    ) {
+        // `restore_registry` validates the entire borrowed journal before the
+        // first owner moves into this candidate.
+        let checked = validate_restore_launch(&restore)
+            .expect("borrowed Need registry preflight established this launch");
         let generation = restore.invocation.generation;
-        let producer = restore.plan.producer_spec(&restore.arguments)?;
-        let request = restore.plan.project_request(&restore.arguments)?;
-        let outcome = restore.plan.outcome();
-        let instance_key = producer.instance_key()?;
-        let (need, task, task_key) =
-            producer_runtime_ids(generation, instance_key, restore.ordinal);
-        let expected_task_spec = TaskSpec::new(
-            task.clone(),
-            task_key,
-            restore.plan.class.clone(),
-            restore.plan.priority,
-            restore.plan.cancel_scope.clone(),
-            restore.plan.policy,
-            request,
-        )
-        .with_outcome(outcome);
-        if restore.need != need
-            || restore.task != task
-            || restore.task_spec != expected_task_spec
-            || restore.invocation.producer_site != restore.plan.site
-            || (restore.plan.policy == TaskPolicy::JoinSameKey
-                && restore.ordinal != TaskLaunchOrdinal::JOIN)
-            || (restore.plan.policy == TaskPolicy::AlwaysStart
-                && restore.ordinal == TaskLaunchOrdinal::JOIN)
-            || !restored_need_state_is_valid(
-                &restore.state,
-                restore.publication,
-                restore.task_submitted,
-                restore.task_terminal,
-                restore.task_fault.as_deref(),
-                restore.plan.restart,
-            )
-        {
-            return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
-        }
         let mut launch = RuntimeNeedProducerLaunch {
             generation,
             invocation: restore.invocation,
             plan: restore.plan,
-            producer,
+            producer: checked.producer,
             arguments: restore.arguments,
-            instance_key,
+            instance_key: checked.instance_key,
             ordinal: restore.ordinal,
-            need,
-            task,
-            task_spec: expected_task_spec,
+            need: restore.need,
+            task: restore.task,
+            task_spec: restore.task_spec,
             state: restore.state,
             publication: restore.publication,
             task_submitted: restore.task_submitted,
             task_terminal: restore.task_terminal,
             task_fault: restore.task_fault,
         };
-        let key = NeedProducerLaunchKey {
-            generation,
-            instance_key,
-            ordinal: launch.ordinal,
-        };
-        if self.launches.contains_key(&key)
-            || self.invocation_launches.contains_key(&launch.invocation)
-        {
-            return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
-        }
+        let key = checked.key;
+        assert!(!self.launches.contains_key(&key));
+        assert!(!self.invocation_launches.contains_key(&launch.invocation));
         if launch.plan.policy == TaskPolicy::JoinSameKey
             && self
                 .joined
-                .insert((launch.generation, instance_key), key)
+                .insert((launch.generation, checked.instance_key), key)
                 .is_some()
         {
-            return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
+            unreachable!("borrowed Need registry preflight checked joined uniqueness");
         }
-        if launch.plan.policy == TaskPolicy::AlwaysStart {
-            if launch.ordinal == TaskLaunchOrdinal::JOIN {
-                return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
-            }
-            let counter_key = (launch.generation, instance_key);
-            let next = launch
-                .ordinal
-                .get()
-                .checked_add(1)
-                .ok_or(NeedProducerAdmissionError::LaunchOrdinalExhausted)?;
+        if let Some((counter_key, next)) = checked.launch_next {
             let entry = self.next_launch_ordinal.entry(counter_key).or_insert(1);
             *entry = (*entry).max(next);
-        } else if launch.ordinal != TaskLaunchOrdinal::JOIN {
-            return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
         }
-        let invocation_key = (
-            launch.generation,
-            launch.invocation.fiber,
-            launch.invocation.producer_site,
-        );
-        let invocation_next = launch
-            .invocation
-            .sequence
-            .checked_add(1)
-            .ok_or(NeedProducerAdmissionError::InvocationSequenceExhausted)?;
         let entry = self
             .next_invocation_sequence
-            .entry(invocation_key)
+            .entry(checked.invocation_key)
             .or_insert(0);
-        *entry = (*entry).max(invocation_next);
-        if launch.plan.restart == HostRestartPolicy::Restartable && !launch.task_terminal {
+        *entry = (*entry).max(checked.invocation_next);
+        if reset_restartable_submission
+            && launch.plan.restart == HostRestartPolicy::Restartable
+            && !launch.task_terminal
+        {
             launch.task_submitted = false;
         }
         self.invocation_launches.insert(launch.invocation, key);
         self.launches.insert(key, launch);
-        Ok(())
     }
 
     /// Restores a committed invocation alias for a previously restored
@@ -1645,13 +2487,13 @@ fn admission_disposition(launch: &RuntimeNeedProducerLaunch) -> NeedProducerTask
 
 fn task_event_matches_launch(launch: &RuntimeNeedProducerLaunch, event: &TaskEvent) -> bool {
     match (&event.kind, &launch.state) {
-        (TaskEventKind::Ready(value), Need::Ready(current)) => {
+        (TaskEventKind::Ready(value), RuntimeNeedProducerState::Ready(current)) => {
             value == current && launch.task_terminal && launch.task_fault.is_none()
         }
-        (TaskEventKind::Progress(progress), Need::Pending(current)) => {
+        (TaskEventKind::Progress(progress), RuntimeNeedProducerState::Pending(current)) => {
             progress == current && !launch.task_terminal && launch.task_fault.is_none()
         }
-        (TaskEventKind::Cancelled, Need::Cancelled) => {
+        (TaskEventKind::Cancelled, RuntimeNeedProducerState::Cancelled) => {
             launch.task_terminal && launch.task_fault.is_none()
         }
         (TaskEventKind::Failed(message), _) => {
@@ -1661,31 +2503,32 @@ fn task_event_matches_launch(launch: &RuntimeNeedProducerLaunch, event: &TaskEve
     }
 }
 
-fn need_transition_is_valid(current: &Need<RuntimePayload>, next: &Need<RuntimePayload>) -> bool {
-    match current {
-        Need::NotStarted => true,
-        Need::Pending(_) => matches!(next, Need::Pending(_) | Need::Ready(_) | Need::Cancelled),
-        Need::Ready(value) => matches!(next, Need::Ready(next_value) if value == next_value),
-        Need::Cancelled => matches!(next, Need::Cancelled),
-    }
-}
-
 fn restored_need_state_is_valid(
-    state: &Need<RuntimePayload>,
+    state: &RuntimeNeedProducerState,
     publication: Option<TaskPublicationCursor>,
     task_submitted: bool,
     task_terminal: bool,
     task_fault: Option<&str>,
     restart: HostRestartPolicy,
+    policy: TaskPolicy,
 ) -> bool {
     let cursor_matches_state = match state {
-        Need::NotStarted => publication.is_none() || (task_terminal && task_fault.is_some()),
-        Need::Pending(_) => publication.is_some() && !task_terminal && task_fault.is_none(),
-        Need::Ready(_) | Need::Cancelled => {
+        RuntimeNeedProducerState::NotStarted => {
+            publication.is_none() || (task_terminal && task_fault.is_some())
+        }
+        RuntimeNeedProducerState::Pending(_) => {
+            publication.is_some() && !task_terminal && task_fault.is_none()
+        }
+        RuntimeNeedProducerState::Ready(_)
+        | RuntimeNeedProducerState::ReadyTransferred
+        | RuntimeNeedProducerState::Cancelled => {
             publication.is_some() && task_terminal && task_fault.is_none()
         }
     };
     cursor_matches_state
+        && (!matches!(state, RuntimeNeedProducerState::ReadyTransferred)
+            || policy == TaskPolicy::AlwaysStart)
+        && (!matches!(state, RuntimeNeedProducerState::Ready(value) if policy == TaskPolicy::JoinSameKey && !value.value().ownership().permits_copy()))
         && task_fault.is_none_or(|_| task_terminal && !state.is_terminal())
         && (task_submitted || (!task_terminal && restart == HostRestartPolicy::Restartable))
         && (restart != HostRestartPolicy::MustBeQuiescent || task_terminal)
@@ -1791,6 +2634,7 @@ pub enum ViewTaskPlanValidationError {
 #[cfg(test)]
 mod identity_tests {
     use super::*;
+    use std::sync::Arc;
 
     fn producer_plan(
         site: u8,
@@ -1906,6 +2750,68 @@ mod identity_tests {
     }
 
     #[test]
+    fn rollback_image_restores_one_affine_ready_without_changing_dispatch_state() {
+        let owner = RuntimeProgramOwner::Plan(Arc::new(
+            crate::plan::RuntimePlanBuilder::new()
+                .finish()
+                .expect("empty owner plan"),
+        ));
+        let generation = GenerationId::new(3);
+        let fiber = RuntimePersistentFiberId::from_allocated(7);
+        let mut registry = NeedProducerRegistry::default();
+        let proof = registry
+            .inspect_start_visit(
+                generation,
+                fiber,
+                producer_plan(
+                    2,
+                    3,
+                    TaskPolicy::AlwaysStart,
+                    HostRestartPolicy::Restartable,
+                    TaskClass::Io,
+                ),
+                Vec::new(),
+            )
+            .expect("producer start preflight");
+        let admission = registry.commit_start_visit(proof);
+        let need = admission.need().clone();
+        let task = admission.task_spec().id.clone();
+        let ensured = registry
+            .inspect_task_ensured(&need)
+            .expect("task ensured preflight");
+        registry.mark_task_ensured_prepared(ensured);
+        let ready = RuntimeValue::Need(NeedId("need.inner.affine".to_owned()));
+        assert!(!ready.ownership().permits_copy());
+        let event = TaskEvent {
+            generation,
+            logical_epoch: LogicalEpoch(1),
+            task_id: task,
+            sequence: TaskSequence(1),
+            publication_revision: TaskPublicationRevision::FIRST,
+            kind: TaskEventKind::Ready(RuntimePayload(ready)),
+        };
+        assert!(matches!(
+            registry.publish_task_event_owned(event),
+            Ok(NeedProducerOwnedTaskEventDisposition::Published)
+        ));
+        let image = registry
+            .inert_rollback_image(&owner)
+            .expect("inert registry image");
+        drop(registry);
+        let mut restored = NeedProducerRegistry::from_rollback_image(image, &owner)
+            .expect("exact registry restore");
+        assert!(restored.launch_for_need(&need).unwrap().task_submitted());
+        assert_eq!(
+            restored.take_ready_for_need(&need).unwrap().into_value(),
+            RuntimeValue::Need(NeedId("need.inner.affine".to_owned()))
+        );
+        assert!(matches!(
+            restored.launch_for_need(&need).unwrap().state(),
+            RuntimeNeedProducerState::ReadyTransferred
+        ));
+    }
+
+    #[test]
     fn need_producer_registry_replays_join_and_advances_always_start_per_instance() {
         let generation = GenerationId::new(8);
         let fiber = RuntimePersistentFiberId::from_allocated(17);
@@ -1924,14 +2830,17 @@ mod identity_tests {
             .admit_start(first_token, join_plan.clone(), Vec::new())
             .expect("first join producer");
         assert_eq!(first.disposition(), NeedProducerTaskDisposition::Ensure);
-        assert_eq!(first.launch().ordinal(), TaskLaunchOrdinal::JOIN);
+        assert_eq!(
+            registry.launch_for_need(first.need()).unwrap().ordinal(),
+            TaskLaunchOrdinal::JOIN
+        );
 
         let replay = registry
             .admit_start(first_token, join_plan.clone(), Vec::new())
             .expect("same accepted invocation replays");
         assert_eq!(replay.disposition(), NeedProducerTaskDisposition::Reuse);
-        assert_eq!(replay.launch().need(), first.launch().need());
-        assert_eq!(replay.launch().task(), first.launch().task());
+        assert_eq!(replay.need(), first.need());
+        assert_eq!(replay.task_spec().id, first.task_spec().id);
 
         let joined_token = registry
             .begin_invocation(generation, fiber, join_plan.site())
@@ -1940,7 +2849,7 @@ mod identity_tests {
             .admit_start(joined_token, join_plan.clone(), Vec::new())
             .expect("join existing producer");
         assert_eq!(joined.disposition(), NeedProducerTaskDisposition::Reuse);
-        assert_eq!(joined.launch().need(), first.launch().need());
+        assert_eq!(joined.need(), first.need());
         assert_eq!(registry.invocations().count(), 2);
 
         let changed_plan = producer_plan(
@@ -1974,33 +2883,42 @@ mod identity_tests {
         let always_second = registry
             .admit_start(always_second_token, always_plan, Vec::new())
             .expect("AlwaysStart launch 2");
-        assert_eq!(always_first.launch().ordinal().get(), 1);
-        assert_eq!(always_second.launch().ordinal().get(), 2);
         assert_eq!(
-            always_first.launch().task_spec().key,
-            always_second.launch().task_spec().key
+            registry
+                .launch_for_need(always_first.need())
+                .unwrap()
+                .ordinal()
+                .get(),
+            1
         );
-        assert_ne!(always_first.launch().need(), always_second.launch().need());
-        assert_ne!(always_first.launch().task(), always_second.launch().task());
+        assert_eq!(
+            registry
+                .launch_for_need(always_second.need())
+                .unwrap()
+                .ordinal()
+                .get(),
+            2
+        );
+        assert_eq!(always_first.task_spec().key, always_second.task_spec().key);
+        assert_ne!(always_first.need(), always_second.need());
+        assert_ne!(always_first.task_spec().id, always_second.task_spec().id);
 
         let next_generation = GenerationId::new(9);
+        let always_plan = registry
+            .launch_for_need(always_second.need())
+            .unwrap()
+            .plan()
+            .clone();
         let next_generation_token = registry
-            .begin_invocation(next_generation, fiber, always_second.launch().plan().site())
+            .begin_invocation(next_generation, fiber, always_plan.site())
             .expect("new generation token");
         let next_generation_launch = registry
-            .admit_start(
-                next_generation_token,
-                always_second.launch().plan().clone(),
-                Vec::new(),
-            )
+            .admit_start(next_generation_token, always_plan, Vec::new())
             .expect("new generation launch");
+        assert_ne!(next_generation_launch.need(), always_second.need());
         assert_ne!(
-            next_generation_launch.launch().need(),
-            always_second.launch().need()
-        );
-        assert_ne!(
-            next_generation_launch.launch().task_spec().key,
-            always_second.launch().task_spec().key
+            next_generation_launch.task_spec().key,
+            always_second.task_spec().key
         );
     }
 
@@ -2053,13 +2971,13 @@ mod identity_tests {
         );
         assert_eq!(restored.pending_reensure().count(), 1);
         let reissued = restored
-            .mark_task_ensured(first_launch.launch().need())
+            .mark_task_ensured(first_launch.need())
             .expect("mark one restartable ensure")
             .expect("active task needs ensure");
-        assert_eq!(reissued, *first_launch.launch().task_spec());
+        assert_eq!(reissued, *first_launch.task_spec());
         assert!(
             restored
-                .mark_task_ensured(first_launch.launch().need())
+                .mark_task_ensured(first_launch.need())
                 .expect("duplicate ensure is harmless")
                 .is_none()
         );

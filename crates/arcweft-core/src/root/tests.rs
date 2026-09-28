@@ -11,14 +11,20 @@ use crate::{
         RuntimeNominalSchemaField, RuntimeNominalSchemaGraph, RuntimeNominalSchemaIdentity,
         RuntimeNominalTypeId, RuntimeTypeSchema as Schema,
     },
-    pattern::{RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId},
+    pattern::{
+        RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId,
+        RuntimeSemanticTypeId,
+    },
     plan::{
         RuntimeNominalRecordDomainFieldSeed, RuntimeNominalRecordDomainSeed, RuntimePlanBuilder,
         RuntimePlanTypeProjection as Type, RuntimePlanTypeSeed, RuntimeVariantCaseSeed,
         RuntimeVariantDomainSeed,
     },
     program_types::RuntimeProgramTypes,
-    value::{RuntimeNominalRecordValue, RuntimeRecordFieldId},
+    value::{
+        RuntimeHandleKind, RuntimeNominalRecordValue, RuntimeOpaquePersistence,
+        RuntimeOpaqueValueClass, RuntimeRecordFieldId,
+    },
 };
 
 fn semantic(tag: u8) -> RuntimeSemanticTypeId {
@@ -47,8 +53,36 @@ struct Fixture {
     payload_layout: TypeLayoutHash,
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum AffineField {
+    None,
+    State,
+    Event,
+}
+
+fn affine_owner() -> RuntimeOpaqueTypeOwner {
+    RuntimeOpaqueTypeOwner::exact_with(
+        RuntimeOpaqueTypeProducerId::try_new("test.affine").unwrap(),
+        semantic(6),
+        RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::Cue),
+        RuntimeOpaquePersistence::SnapshotOnly,
+    )
+}
+
+fn affine_value() -> RuntimeValue {
+    affine_owner().try_wrap(RuntimeValue::Unit).unwrap()
+}
+
 impl Fixture {
     fn new() -> Self {
+        Self::with_affine_field(AffineField::None)
+    }
+
+    fn with_affine_field(affine: AffineField) -> Self {
+        let opaque_schema = || Schema::ExactOpaque {
+            owner: affine_owner(),
+            arguments: Box::new([]),
+        };
         let graph = RuntimeNominalSchemaGraph::try_new(
             vec![
                 RuntimeNominalSchemaDefinition::new(
@@ -73,7 +107,14 @@ impl Fixture {
                             RuntimeNominalSchemaCase::new(
                                 1,
                                 "Set".into(),
-                                Some(Schema::Tuple(vec![Schema::Bool].into())),
+                                Some(Schema::Tuple(
+                                    vec![if affine == AffineField::Event {
+                                        opaque_schema()
+                                    } else {
+                                        Schema::Bool
+                                    }]
+                                    .into(),
+                                )),
                             ),
                         ]
                         .into(),
@@ -84,8 +125,16 @@ impl Fixture {
                     vec![],
                     RuntimeNominalSchemaBody::Record {
                         shape: Shape::Newtype,
-                        fields: vec![RuntimeNominalSchemaField::new(field(), None, Schema::Bool)]
-                            .into(),
+                        fields: vec![RuntimeNominalSchemaField::new(
+                            field(),
+                            None,
+                            if affine == AffineField::State {
+                                opaque_schema()
+                            } else {
+                                Schema::Bool
+                            },
+                        )]
+                        .into(),
                     },
                 ),
             ],
@@ -107,8 +156,25 @@ impl Fixture {
             .collect::<Vec<_>>();
         types.extend([
             RuntimePlanTypeSeed::new(semantic(4), Type::Bool),
-            RuntimePlanTypeSeed::new(semantic(5), Type::Tuple(vec![semantic(4)].into())),
+            RuntimePlanTypeSeed::new(
+                semantic(5),
+                Type::Tuple(
+                    vec![semantic(if affine == AffineField::Event { 6 } else { 4 })].into(),
+                ),
+            ),
         ]);
+        if affine != AffineField::None {
+            types.push(RuntimePlanTypeSeed::new(
+                semantic(6),
+                Type::Opaque {
+                    producer: affine_owner().producer().clone(),
+                    admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+                    value_class: RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::Cue),
+                    persistence: RuntimeOpaquePersistence::SnapshotOnly,
+                    arguments: Box::new([]),
+                },
+            ));
+        }
         let mut builder = RuntimePlanBuilder::new();
         builder
             .admit_semantic_batch(
@@ -130,7 +196,7 @@ impl Fixture {
                         [RuntimeNominalRecordDomainFieldSeed::new(
                             field(),
                             None,
-                            semantic(4),
+                            semantic(if affine == AffineField::State { 6 } else { 4 }),
                         )],
                     ),
                 ],
@@ -147,6 +213,77 @@ impl Fixture {
             )
             .unwrap();
         let plan = builder.finish().unwrap();
+        let mut runtime_types = vec![
+            AwbcRuntimeType::new(
+                semantic(1),
+                AwbcType::NominalRecord {
+                    public_id: AwbcStringId(0),
+                    layout: *layout(1).as_bytes(),
+                    arguments: vec![],
+                    shape: Shape::Record,
+                    fields: vec![AwbcRecordField {
+                        field: field(),
+                        name: Some(AwbcStringId(3)),
+                        ty: AwbcTypeId(2),
+                    }],
+                },
+            ),
+            AwbcRuntimeType::new(
+                semantic(2),
+                AwbcType::Variant {
+                    owner: AwbcVariantIdentity::Nominal {
+                        public_id: AwbcStringId(1),
+                        layout: *layout(2).as_bytes(),
+                    },
+                    arguments: vec![],
+                    cases: vec![
+                        AwbcVariantCase {
+                            name: AwbcStringId(4),
+                            payload: None,
+                        },
+                        AwbcVariantCase {
+                            name: AwbcStringId(5),
+                            payload: Some(AwbcTypeId(4)),
+                        },
+                    ],
+                },
+            ),
+            AwbcRuntimeType::new(
+                semantic(3),
+                AwbcType::NominalRecord {
+                    public_id: AwbcStringId(2),
+                    layout: *layout(3).as_bytes(),
+                    arguments: vec![],
+                    shape: Shape::Newtype,
+                    fields: vec![AwbcRecordField {
+                        field: field(),
+                        name: None,
+                        ty: AwbcTypeId(if affine == AffineField::State { 5 } else { 3 }),
+                    }],
+                },
+            ),
+            AwbcRuntimeType::new(semantic(4), AwbcType::Bool),
+            AwbcRuntimeType::new(
+                semantic(5),
+                AwbcType::Tuple(vec![AwbcTypeId(if affine == AffineField::Event {
+                    5
+                } else {
+                    3
+                })]),
+            ),
+        ];
+        if affine != AffineField::None {
+            runtime_types.push(AwbcRuntimeType::new(
+                semantic(6),
+                AwbcType::Opaque {
+                    producer: AwbcStringId(6),
+                    admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+                    value_class: RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::Cue),
+                    persistence: RuntimeOpaquePersistence::SnapshotOnly,
+                    arguments: vec![],
+                },
+            ));
+        }
         let awbc = AwbcProgram {
             strings: vec![
                 "root.State".into(),
@@ -155,59 +292,9 @@ impl Fixture {
                 "payload".into(),
                 "Tick".into(),
                 "Set".into(),
+                "test.affine".into(),
             ],
-            runtime_types: vec![
-                AwbcRuntimeType::new(
-                    semantic(1),
-                    AwbcType::NominalRecord {
-                        public_id: AwbcStringId(0),
-                        layout: *layout(1).as_bytes(),
-                        arguments: vec![],
-                        shape: Shape::Record,
-                        fields: vec![AwbcRecordField {
-                            field: field(),
-                            name: Some(AwbcStringId(3)),
-                            ty: AwbcTypeId(2),
-                        }],
-                    },
-                ),
-                AwbcRuntimeType::new(
-                    semantic(2),
-                    AwbcType::Variant {
-                        owner: AwbcVariantIdentity::Nominal {
-                            public_id: AwbcStringId(1),
-                            layout: *layout(2).as_bytes(),
-                        },
-                        arguments: vec![],
-                        cases: vec![
-                            AwbcVariantCase {
-                                name: AwbcStringId(4),
-                                payload: None,
-                            },
-                            AwbcVariantCase {
-                                name: AwbcStringId(5),
-                                payload: Some(AwbcTypeId(4)),
-                            },
-                        ],
-                    },
-                ),
-                AwbcRuntimeType::new(
-                    semantic(3),
-                    AwbcType::NominalRecord {
-                        public_id: AwbcStringId(2),
-                        layout: *layout(3).as_bytes(),
-                        arguments: vec![],
-                        shape: Shape::Newtype,
-                        fields: vec![AwbcRecordField {
-                            field: field(),
-                            name: None,
-                            ty: AwbcTypeId(3),
-                        }],
-                    },
-                ),
-                AwbcRuntimeType::new(semantic(4), AwbcType::Bool),
-                AwbcRuntimeType::new(semantic(5), AwbcType::Tuple(vec![AwbcTypeId(3)])),
-            ],
+            runtime_types,
             ..AwbcProgram::default()
         };
         let flow = FlowRuntimeId::from_runtime_target_value("flow.root").unwrap();
@@ -295,22 +382,30 @@ impl Fixture {
 }
 
 struct ReturnValue {
-    value: RuntimeValue,
+    value: Option<RuntimeValue>,
     calls: usize,
+    last_args: Option<Vec<RuntimeValue>>,
 }
 impl ReturnValue {
     fn new(value: RuntimeValue) -> Self {
-        Self { value, calls: 0 }
+        Self {
+            value: Some(value),
+            calls: 0,
+            last_args: None,
+        }
     }
 }
 impl RootCallableEvaluator for ReturnValue {
     fn evaluate_root_callable(
         &mut self,
         _: &RuntimeCallableRole,
-        _: &[RuntimeValue],
+        args: Vec<RuntimeValue>,
     ) -> Result<RuntimeValue, RootCallableEvaluationError> {
         self.calls += 1;
-        Ok(self.value.clone())
+        self.last_args = Some(args);
+        self.value
+            .take()
+            .ok_or_else(|| RootCallableEvaluationError::new("test evaluator was called twice"))
     }
 }
 
@@ -359,6 +454,60 @@ fn initializer_and_snapshot_validate_nested_values_through_each_program() {
             Err(RootRuntimeError::InvalidRole { role: "event", .. })
         ));
         assert_eq!(evaluator.calls, 0);
+    }
+}
+
+#[test]
+fn root_state_copy_obligation_rejects_nested_affine_value_at_both_ingresses() {
+    let fixture = Fixture::with_affine_field(AffineField::State);
+    for program in fixture.programs() {
+        let value = fixture.state(affine_value());
+        assert!(matches!(
+            RootRuntime::start(
+                fixture.contract.clone(),
+                &mut ReturnValue::new(value),
+                program,
+            ),
+            Err(RootRuntimeError::AffineRootState {
+                phase: "initializer"
+            })
+        ));
+        let snapshot = RootStateSnapshotV1 {
+            state_identity: fixture.contract.roles.state.identity.clone(),
+            state_layout: fixture.contract.roles.state.layout,
+            event_identity: fixture.contract.roles.event.identity.clone(),
+            event_layout: fixture.contract.roles.event.layout,
+            value: RuntimePayload(fixture.state(affine_value())),
+            next_sequence: TransitionSequence::ZERO,
+        };
+        assert!(matches!(
+            RootRuntime::from_snapshot(fixture.contract.clone(), snapshot, program),
+            Err(RootRuntimeError::AffineRootState { phase: "saved" })
+        ));
+    }
+}
+
+#[test]
+fn reducer_receives_one_owned_affine_event_without_copying_it() {
+    let fixture = Fixture::with_affine_field(AffineField::Event);
+    for program in fixture.programs() {
+        let mut root = fixture.start(program);
+        let mut reducer = ReturnValue::new(reduction(fixture.state(RuntimeValue::Bool(false))));
+        let result = root
+            .step(vec![fixture.event(affine_value())], &mut reducer, program)
+            .unwrap();
+        assert_eq!(result.outcomes.len(), 1);
+        assert!(!result.failed);
+        let args = reducer
+            .last_args
+            .take()
+            .expect("reducer received owned inputs");
+        assert_eq!(args.len(), 2);
+        assert!(args[1].ownership() == crate::value::ownership::RuntimeValueOwnership::Affine);
+        assert_eq!(
+            root.snapshot_state().value.0,
+            fixture.state(RuntimeValue::Bool(false))
+        );
     }
 }
 

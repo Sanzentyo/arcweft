@@ -365,6 +365,11 @@ with:
 
 Only values exported with `out` from the line plan can escape the line. Borrowed values such as `&'frame T` and `&'lease T` cannot be exported or captured across `at`, `await`, `yield`, or cancellation boundaries.
 
+A scheduled child takes its captured handles from the line packet exactly once,
+when its complete `Run` command batch is admitted. If a later command in that
+batch is invalid, the packet and its leases remain in line custody; no child is
+published from a partial batch.
+
 ---
 
 ## Stage object handles and preload
@@ -386,6 +391,9 @@ let actor = alice.stage.acquire(scope=line)
 let pose = actor.pose(normal)
 let face = actor.look(smile)
 ```
+
+`actor.look` borrows the `StageActor` receiver. The actor remains available for
+another look or for `out`; each returned cue owns its own new handle.
 
 The stage subsystem owns reuse of loaded sprite atlases, expression meshes, and
 text-layout assets. Authors select the handle lifetime; they do not construct a

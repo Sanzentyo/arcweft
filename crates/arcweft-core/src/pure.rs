@@ -8,12 +8,12 @@ use arcweft_interaction_model::dialogue::{
 mod function_application_tests;
 use crate::pattern::{
     RuntimeBuiltinVariantCaseIdentity, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
-    RuntimePattern, match_runtime_pattern,
+    RuntimePattern,
 };
 use crate::plan::{
-    RuntimeFunctionInputSource, RuntimeFunctionSiteBody, RuntimePlan, RuntimePlanTypeDeclaration,
-    RuntimePlanTypeProjection, RuntimePureHelper, RuntimePureHelperId, RuntimePureInputType,
-    RuntimePureOutputType, RuntimeReceiverMode, RuntimeTraitMethodId,
+    RuntimePlan, RuntimePlanTypeDeclaration, RuntimePlanTypeProjection, RuntimePureHelper,
+    RuntimePureHelperId, RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode,
+    RuntimeTraitMethodId,
 };
 use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLocalDeclarationId};
 use crate::scope::RuntimeScopeIdentity;
@@ -23,14 +23,14 @@ use crate::value::{
     RuntimeCallArgumentMode, RuntimeCallTarget, RuntimeCallableValue, RuntimeEnv, RuntimeEvalError,
     RuntimeExactInteger, RuntimeExpr, RuntimeExprKind, RuntimeExprMatchArm, RuntimeFieldProjection,
     RuntimeFunctionApplyError, RuntimeISizeValue, RuntimeIntrinsic, RuntimeIterator,
-    RuntimeLocalBinding, RuntimeNominalRecordExpr, RuntimeReductionValue, RuntimeSeq,
-    RuntimeSignedIntWidth, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
-    RuntimeUSizeValue, RuntimeUnaryOp, RuntimeUnsignedIntWidth, RuntimeValue, evaluate_binary,
-    evaluate_capacity_intrinsic, evaluate_core_iter_collect_intrinsic,
-    evaluate_core_iter_into_iter_intrinsic, evaluate_core_iter_next_intrinsic,
-    evaluate_core_option_is_some_intrinsic, evaluate_core_option_unwrap_intrinsic,
-    evaluate_core_range_intrinsic, evaluate_index_intrinsic, evaluate_numeric_op,
-    evaluate_std_float_intrinsic, evaluate_string_intrinsic, evaluate_unary,
+    RuntimeLocalBinding, RuntimeLocalRead, RuntimeLocalReadMode, RuntimeNominalRecordExpr,
+    RuntimeReductionValue, RuntimeSeq, RuntimeSignedIntWidth, RuntimeStandardMapFamily,
+    RuntimeStandardMapOperandOrder, RuntimeUSizeValue, RuntimeUnaryOp, RuntimeUnsignedIntWidth,
+    RuntimeValue, evaluate_binary, evaluate_capacity_intrinsic,
+    evaluate_core_iter_collect_intrinsic, evaluate_core_iter_into_iter_intrinsic,
+    evaluate_core_iter_next_intrinsic, evaluate_core_option_is_some_intrinsic,
+    evaluate_core_option_unwrap_intrinsic, evaluate_core_range_intrinsic, evaluate_index_intrinsic,
+    evaluate_numeric_op, evaluate_std_float_intrinsic, evaluate_string_intrinsic, evaluate_unary,
     runtime_sequence_values, runtime_value_into_sequence_values, runtime_value_label,
     sum_i64_sequence_ref,
 };
@@ -683,7 +683,7 @@ pub trait RuntimePureCallBackend {
     fn call_values(
         &mut self,
         helper: RuntimePureHelperRef<'_>,
-        args: &[RuntimeValue],
+        args: Vec<RuntimeValue>,
     ) -> Result<RuntimeValue, RuntimeEvalError>;
 
     /// Optionally evaluates a canonical compact-AWBC helper directly.
@@ -1103,7 +1103,7 @@ impl VmPureFunctionScratch {
         &mut self,
         plan: &Arc<RuntimePlan>,
         site: RuntimeFunctionSiteId,
-        args: &[RuntimeValue],
+        args: Vec<RuntimeValue>,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let declaration =
             plan.function_sites()
@@ -1117,58 +1117,10 @@ impl VmPureFunctionScratch {
                 reason: "an Entry function site must be capture-free".to_owned(),
             });
         }
-        let parameter_inputs = declaration.parameter_inputs().collect::<Vec<_>>();
-        if args.len() != parameter_inputs.len() {
-            return Err(RuntimeEvalError::FunctionArgumentCount {
-                expected: parameter_inputs.len(),
-                found: args.len(),
-            });
-        }
-
-        let mut bindings = Vec::with_capacity(declaration.inputs().len());
-        for (index, input) in parameter_inputs.iter().enumerate() {
-            let RuntimeFunctionInputSource::Parameter { position } = input.source() else {
-                unreachable!("capture-free function-site parameter inventory is filtered above")
-            };
-            let expected_position = u32::try_from(index).map_err(|_| {
-                RuntimeEvalError::FunctionApply(
-                    RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site },
-                )
-            })?;
-            if position != expected_position {
-                return Err(RuntimeEvalError::FunctionApply(
-                    RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site },
-                ));
-            }
-            let value = args.get(index).ok_or(RuntimeEvalError::FunctionApply(
-                RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site },
-            ))?;
-            bindings.push(RuntimeLocalBinding {
-                local: input.input_local(),
-                value: value.clone(),
-            });
-            let matched = match_runtime_pattern(plan, input.pattern(), value)?;
-            let Some(pattern_bindings) = matched else {
-                return Err(RuntimeEvalError::PatternMismatch(runtime_value_label(
-                    value,
-                )));
-            };
-            bindings.extend(pattern_bindings);
-        }
-        let body = match declaration.body() {
-            RuntimeFunctionSiteBody::Expression(body) => body,
-            RuntimeFunctionSiteBody::Executable(_) => {
-                return Err(RuntimeEvalError::UnsupportedPure {
-                    name: "structured.function".to_owned(),
-                    reason: "an executable Entry function site requires the flow runtime"
-                        .to_owned(),
-                });
-            }
-        };
-        self.env.replace_scopes_with_bindings([bindings]);
+        self.env.replace_scopes_with_bindings([Vec::new()]);
         let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
             .with_format_context(self.format_context.clone());
-        let result = evaluator.evaluate_expr(body);
+        let result = evaluator.evaluate_function_site(site, Vec::new(), args);
         self.env = evaluator.into_env();
         result
     }
@@ -1346,10 +1298,10 @@ impl VmPureFunctionScratch {
         &mut self,
         plan: &Arc<RuntimePlan>,
         helper: RuntimePureHelperId,
-        args: &[RuntimeValue],
+        args: Vec<RuntimeValue>,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let helper = resolve_validated_pure_helper(plan, helper)?;
-        let bindings = prepare_helper_bindings(plan, helper, args.iter().cloned())?;
+        let bindings = prepare_helper_bindings(plan, helper, args)?;
         self.env.replace_scopes_with_bindings([bindings]);
         let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
             .with_format_context(self.format_context.clone());
@@ -1828,9 +1780,16 @@ impl<'a, T: RuntimePureScalarInteger> PureScalarEvaluator<'a, T> {
         match expr.kind() {
             RuntimeExprKind::Value(value) => runtime_value_as_scalar(value)
                 .ok_or_else(|| RuntimeEvalError::ExpectedInt(runtime_value_label(value))),
-            RuntimeExprKind::Local(local) => self
-                .get(*local)
-                .ok_or(RuntimeEvalError::UnknownLocal(*local)),
+            RuntimeExprKind::Local(read) => {
+                if read.mode() != RuntimeLocalReadMode::Copy {
+                    return Err(RuntimeEvalError::UnsupportedPure {
+                        name: "scalar accelerator".to_owned(),
+                        reason: "a moved local requires the general pure evaluator".to_owned(),
+                    });
+                }
+                self.get(read.local())
+                    .ok_or(RuntimeEvalError::UnknownLocal(read.local()))
+            }
             RuntimeExprKind::Let {
                 binding,
                 expr,
@@ -1955,9 +1914,13 @@ impl<'a> PureEvaluator<'a> {
             }
         }
         let value = match expr.kind() {
-            RuntimeExprKind::Value(value) => Ok(value.clone()),
+            RuntimeExprKind::Value(value) => value
+                .ownership()
+                .permits_copy()
+                .then(|| value.clone())
+                .ok_or(RuntimeEvalError::AffineLiteralCopy),
             RuntimeExprKind::Agent(agent) => self.evaluate_agent_expr(agent),
-            RuntimeExprKind::Local(local) => self.evaluate_local(*local),
+            RuntimeExprKind::Local(read) => self.evaluate_local(*read),
             RuntimeExprKind::SequencePopFront { place } => {
                 self.env.pop_sequence_front(*place).map(|value| {
                     value.map_or_else(RuntimeValue::option_none, RuntimeValue::option_some)
@@ -2455,14 +2418,8 @@ impl<'a> PureEvaluator<'a> {
             .map(collect)
     }
 
-    fn evaluate_local(
-        &self,
-        local: RuntimeLocalDeclarationId,
-    ) -> Result<RuntimeValue, RuntimeEvalError> {
-        self.env
-            .get(local)
-            .cloned()
-            .ok_or(RuntimeEvalError::UnknownLocal(local))
+    fn evaluate_local(&mut self, read: RuntimeLocalRead) -> Result<RuntimeValue, RuntimeEvalError> {
+        self.env.read(read)
     }
 
     fn evaluate_agent_expr(
@@ -2774,15 +2731,20 @@ impl<'a> PureEvaluator<'a> {
         else_expr: &RuntimeExpr,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr(expr)?;
-        let Some(bindings) = match_runtime_pattern(self.plan, pattern, &value)? else {
+        if !crate::pattern::inspect_runtime_pattern_owned(self.plan, pattern, &value)? {
             return self.evaluate_expr(else_expr);
-        };
+        }
         let guard_matched = if let Some(guard) = guard {
-            self.with_temp_bindings_ref(&bindings, |this| this.evaluate_bool(guard))?
+            let projected = crate::pattern::prepare_runtime_pattern_guard_bindings(
+                self.plan, pattern, &value, guard,
+            )?;
+            self.with_temp_bindings(projected, |this| this.evaluate_bool(guard))?
         } else {
             true
         };
         if guard_matched {
+            let bindings = crate::pattern::match_runtime_pattern_owned(self.plan, pattern, value)?
+                .expect("checked pure if-let pattern remains matched");
             self.with_temp_bindings(bindings, |this| this.evaluate_expr(then_expr))
         } else {
             self.evaluate_expr(else_expr)
@@ -2796,14 +2758,23 @@ impl<'a> PureEvaluator<'a> {
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr(scrutinee)?;
         for arm in arms {
-            let Some(bindings) = match_runtime_pattern(self.plan, arm.pattern(), &value)? else {
-                continue;
-            };
-            if let Some(guard) = arm.guard()
-                && !self.with_temp_bindings_ref(&bindings, |this| this.evaluate_bool(guard))?
-            {
+            if !crate::pattern::inspect_runtime_pattern_owned(self.plan, arm.pattern(), &value)? {
                 continue;
             }
+            if let Some(guard) = arm.guard() {
+                let projected = crate::pattern::prepare_runtime_pattern_guard_bindings(
+                    self.plan,
+                    arm.pattern(),
+                    &value,
+                    guard,
+                )?;
+                if !self.with_temp_bindings(projected, |this| this.evaluate_bool(guard))? {
+                    continue;
+                }
+            }
+            let bindings =
+                crate::pattern::match_runtime_pattern_owned(self.plan, arm.pattern(), value)?
+                    .expect("checked pure match arm remains selected");
             return self.with_temp_bindings(bindings, |this| this.evaluate_expr(arm.value()));
         }
         Err(RuntimeEvalError::PatternMismatch(runtime_value_label(
@@ -2818,18 +2789,6 @@ impl<'a> PureEvaluator<'a> {
     ) -> Result<T, RuntimeEvalError> {
         self.env.push_scope_with_capacity(bindings.len());
         self.env.bind_all(bindings);
-        let result = f(self);
-        self.env.pop_scope();
-        result
-    }
-
-    fn with_temp_bindings_ref<T>(
-        &mut self,
-        bindings: &[RuntimeLocalBinding],
-        f: impl FnOnce(&mut Self) -> Result<T, RuntimeEvalError>,
-    ) -> Result<T, RuntimeEvalError> {
-        self.env.push_scope_with_capacity(bindings.len());
-        self.env.bind_all_ref(bindings);
         let result = f(self);
         self.env.pop_scope();
         result
@@ -2880,10 +2839,10 @@ impl<'a> PureEvaluator<'a> {
             RuntimeExprKind::Value(RuntimeValue::UInt(value)) => Ok(runtime_uint_as_scalar(*value)),
             RuntimeExprKind::Value(RuntimeValue::F32(value)) => Ok(RuntimePureScalar::F32(*value)),
             RuntimeExprKind::Value(RuntimeValue::F64(value)) => Ok(RuntimePureScalar::F64(*value)),
-            RuntimeExprKind::Local(local) => match self.env.get(*local) {
-                Some(value) => runtime_value_as_scalar(value)
-                    .ok_or_else(|| RuntimeEvalError::ExpectedInt(runtime_value_label(value))),
-                None => Err(RuntimeEvalError::UnknownLocal(*local)),
+            RuntimeExprKind::Local(read) => match self.env.read(*read) {
+                Ok(value) => runtime_value_as_scalar(&value)
+                    .ok_or_else(|| RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
+                Err(error) => Err(error),
             },
             RuntimeExprKind::Let {
                 binding,
@@ -2966,7 +2925,10 @@ impl<'a> PureEvaluator<'a> {
                     RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(&value))
                 })?;
                 iterator
-                    .map(|item| self.apply_runtime_function(&mapping, &[item]))
+                    .map(|item| {
+                        let use_value = mapping.try_duplicate_unrestricted()?;
+                        self.apply_runtime_function(use_value, vec![item])
+                    })
                     .collect::<Result<Vec<_>, _>>()
                     .map(runtime_sequence_values)
             }
@@ -2976,7 +2938,7 @@ impl<'a> PureEvaluator<'a> {
                     .map_err(|_| RuntimeEvalError::InvalidStandardMapSource { family })?;
                 match (case, payload) {
                     (RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(value)) => self
-                        .apply_runtime_function(&mapping, &[value])
+                        .apply_runtime_function(mapping, vec![value])
                         .map(RuntimeValue::option_some),
                     (RuntimeBuiltinVariantCaseIdentity::OptionNone, None) => {
                         Ok(RuntimeValue::option_none())
@@ -2990,7 +2952,7 @@ impl<'a> PureEvaluator<'a> {
                     .map_err(|_| RuntimeEvalError::InvalidStandardMapSource { family })?;
                 match (case, payload) {
                     (RuntimeBuiltinVariantCaseIdentity::ResultOk, Some(value)) => self
-                        .apply_runtime_function(&mapping, &[value])
+                        .apply_runtime_function(mapping, vec![value])
                         .map(RuntimeValue::result_ok),
                     (RuntimeBuiltinVariantCaseIdentity::ResultErr, Some(error)) => {
                         Ok(RuntimeValue::result_err(error))
@@ -3032,8 +2994,9 @@ impl<'a> PureEvaluator<'a> {
         &mut self,
         source: &RuntimeExpr,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        if let RuntimeExprKind::Local(local) = source.kind()
-            && let Some(sum) = self.evaluate_i64_local_sequence_sum(*local)?
+        if let RuntimeExprKind::Local(read) = source.kind()
+            && read.mode() == RuntimeLocalReadMode::Copy
+            && let Some(sum) = self.evaluate_i64_local_sequence_sum(read.local())?
         {
             return Ok(RuntimeValue::i64(sum));
         }
@@ -3494,12 +3457,16 @@ mod opaque_record_projection_tests {
             .type_table()
             .id_for_semantic(expected.semantic_identity())
             .expect("opaque owner type");
-        for actual in tampered {
+        for (index, actual) in tampered.into_iter().enumerate() {
             let result = evaluator.evaluate_expr(&expression(&plan, &expected, &actual));
-            assert_eq!(
-                result,
-                Err(RuntimeEvalError::InvalidExpressionType(owner_ty))
-            );
+            if index == 1 {
+                assert_eq!(result, Err(RuntimeEvalError::AffineLiteralCopy));
+            } else {
+                assert_eq!(
+                    result,
+                    Err(RuntimeEvalError::InvalidExpressionType(owner_ty))
+                );
+            }
         }
     }
 }

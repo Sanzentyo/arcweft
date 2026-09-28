@@ -20,7 +20,8 @@ fn surplus_arguments_reject_before_creating_an_executable_frame() {
     )
     .unwrap();
     let result = returning_function_result(&engine.plan);
-    let before = engine.fiber().clone();
+    let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&engine.plan));
+    let before = engine.fiber().inert_rollback_image(&owner).unwrap();
     let mut backend = crate::pure::VmRuntimePureCallBackend::default();
     let mut output = RuntimeStepOutput::default();
     assert!(matches!(
@@ -40,6 +41,6 @@ fn surplus_arguments_reject_before_creating_an_executable_frame() {
             }
         ))
     ));
-    assert_eq!(engine.fiber(), &before);
+    assert_eq!(engine.fiber().inert_rollback_image(&owner).unwrap(), before);
     assert_eq!(output, RuntimeStepOutput::default());
 }

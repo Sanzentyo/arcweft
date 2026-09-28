@@ -7,8 +7,8 @@ use super::{
     Arc, ArcweftBundle, BundleHotSwapError, BundleHotSwapReport, BundlePatchArtifact,
     BundlePatchReadiness, BundlePatchReadinessReport, BundlePresentationSnapshot, BundleSession,
     BundleSessionArtifactIdentity, BundleSessionError, BundleView, BundleViewRuntime, GenerationId,
-    GenerationRuntimeImage, PatchMaterializedTarget, ProgramGeneration, ReadBudget,
-    SwapCompatibility, ViewProjectionInput, ViewRuntimeTextControl, apply_patch_bundle,
+    GenerationRuntimeError, GenerationRuntimeImage, PatchMaterializedTarget, ProgramGeneration,
+    ReadBudget, SwapCompatibility, ViewProjectionInput, ViewRuntimeTextControl, apply_patch_bundle,
     build_session_runtime, classify_swap_for_entry, decode_patch_bundle, project_view_resources,
     reconciled_root_handles_for_restore, validate_virtual_list_scroll_owner,
 };
@@ -41,6 +41,12 @@ impl BundleSession {
         compatibility_floor: SwapCompatibility,
     ) -> Result<BundleHotSwapReport, BundleHotSwapError> {
         let next_id = GenerationId::new(self.next_generation_id);
+        if self.runtime_images.contains_generation(next_id) {
+            return Err(GenerationRuntimeError::DuplicateGeneration {
+                generation: next_id,
+            }
+            .into());
+        }
         let next_generation = Arc::new(ProgramGeneration::from_bundle(
             next_id,
             next_artifact_identity,
@@ -111,15 +117,15 @@ impl BundleSession {
             build_session_runtime(bundle, &self.options, next_id, self.active_locale.clone())?;
         let compatibility =
             compatibility.max(self.view_replacement_compatibility(&next_runtime.view_runtime));
-        if matches!(
+        // Runtime images are pristine generation factories. Active View mounts
+        // and the sole executor are never copied into the image retained for
+        // a future entry start.
+        let image_runtime = matches!(
             compatibility,
             SwapCompatibility::ContentOnly | SwapCompatibility::CodeCompatible
-        ) {
-            next_runtime.retain_executor_state(
-                &self.executor,
-                compatibility == SwapCompatibility::CodeCompatible,
-            )?;
-        }
+        )
+        .then(|| build_session_runtime(bundle, &self.options, next_id, self.active_locale.clone()))
+        .transpose()?;
         let mut next_environment = self.environment.clone();
         if matches!(
             compatibility,
@@ -255,30 +261,35 @@ impl BundleSession {
             .begin_quiescence()
             .map_err(BundleHotSwapError::Prepare)?;
 
+        if matches!(
+            compatibility,
+            SwapCompatibility::ContentOnly | SwapCompatibility::CodeCompatible
+        ) {
+            let replacement = if let Some(proof) = next_runtime.plain_text_context_proof {
+                self.executor
+                    .replace_product_awbc_program_arc_with_plain_text_context_proof(
+                        Arc::clone(&next_runtime.program),
+                        proof,
+                    )
+            } else {
+                self.executor
+                    .replace_product_awbc_program_arc(Arc::clone(&next_runtime.program))
+            };
+            if let Err(error) = replacement {
+                self.swap.abort_prepared();
+                return Err(BundleSessionError::from(error).into());
+            }
+        }
+
+        let mut next_runtime = Some(next_runtime);
+
         match compatibility {
             SwapCompatibility::ContentOnly => {
-                bundle
-                    .source_display_name()
-                    .clone_into(&mut self.source_label);
-                self.dialogue_content = bundle.dialogue_content.clone();
-                self.character_presentation = next_runtime.character_presentation.clone();
-                self.project_locale = next_runtime.project_locale.clone();
-                self.active_locale = next_runtime.active_locale.clone();
-                self.image_objects.clone_from(&bundle.image_objects);
-                self.text_inputs.clone_from(&next_runtime.text_inputs);
-                self.action_buttons.clone_from(&next_runtime.action_buttons);
-                self.scroll_regions.clone_from(&next_runtime.scroll_regions);
-                self.surfaces.clone_from(&next_runtime.surfaces);
-                self.focus_groups.clone_from(&next_runtime.focus_groups);
-                self.focus_navigation
-                    .clone_from(&next_runtime.focus_navigation);
-                self.fx_definitions.clone_from(&next_runtime.fx_definitions);
-                self.view_runtime = next_runtime.view_runtime.clone();
-                self.view_style_palettes = next_runtime.view_style_palettes;
+                self.activate_runtime(next_runtime.take().expect("active runtime is staged"));
                 self.presentation = next_presentation;
             }
             SwapCompatibility::CodeCompatible => {
-                self.activate_runtime(next_runtime.clone());
+                self.activate_runtime(next_runtime.take().expect("active runtime is staged"));
                 self.pending_input_events.clear();
                 self.pending_dialogue_input_actions.clear();
                 self.pending_presentation_inputs.clear();
@@ -295,11 +306,21 @@ impl BundleSession {
             }
         }
 
-        let committed = self.swap.commit().map_err(BundleHotSwapError::Commit)?;
-        self.runtime_images.insert(GenerationRuntimeImage::new(
-            self.swap.active().clone(),
-            next_runtime,
-        ))?;
+        let committed = self
+            .swap
+            .commit()
+            .expect("prepared quiescent swap has no remaining fallible commit step");
+        if committed == SwapCompatibility::CodeCompatible {
+            self.executor
+                .rebind_generation(next_id)
+                .expect("the generation allocator advances past the active executor");
+        }
+        self.runtime_images
+            .insert(GenerationRuntimeImage::new(
+                self.swap.active().clone(),
+                image_runtime.unwrap_or_else(|| next_runtime.take().expect("new image is staged")),
+            ))
+            .expect("the next generation id was reserved before mutation");
         if matches!(
             committed,
             SwapCompatibility::ContentOnly | SwapCompatibility::CodeCompatible

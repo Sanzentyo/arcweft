@@ -78,6 +78,17 @@ impl RuntimeNominalRole {
         self.validate_for_program(program)?;
         program.accepts_value(self.semantic_identity, &payload.0, limits)
     }
+
+    /// Admits an owned event that may be affine; no persistent digest is made.
+    pub fn accepts_live_payload(
+        &self,
+        program: crate::program_types::RuntimeProgramTypes<'_>,
+        payload: &crate::value::RuntimePayload,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<(), crate::program_types::RuntimeProgramTypeError> {
+        self.validate_for_program(program)?;
+        program.validate_live_value(self.semantic_identity, &payload.0, limits)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

@@ -2,9 +2,9 @@
 
 use super::{
     BTreeMap, ExprId, FinalExprLowerer, PureTryContinuation, RuntimeExprMatchArmSeed,
-    RuntimeExprSeed, RuntimeExprSeedKind, RuntimeNormalizedType, RuntimeScopeOwner,
-    RuntimeTryBoundaryOwner, StmtId, normalized_variant_binding_pattern_seed,
-    normalized_variant_expression_seed,
+    RuntimeExprSeed, RuntimeExprSeedKind, RuntimeLocalReadMode, RuntimeLocalReadSeed,
+    RuntimeNormalizedType, RuntimeScopeOwner, RuntimeTryBoundaryOwner, StmtId,
+    normalized_variant_binding_pattern_seed, normalized_variant_expression_seed,
 };
 
 impl FinalExprLowerer<'_> {
@@ -81,14 +81,20 @@ impl FinalExprLowerer<'_> {
         let success = self.apply_try_continuation(
             RuntimeExprSeed::new(
                 continuation.value_type().identity(),
-                RuntimeExprSeedKind::Local(locals.success.clone()),
+                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                    locals.success.clone(),
+                    RuntimeLocalReadMode::Move,
+                )),
             ),
             outer.clone(),
         )?;
         let residual = match (continuation.residual_type(), &locals.residual) {
             (Some(ty), Some(local)) => Some(RuntimeExprSeed::new(
                 ty.identity(),
-                RuntimeExprSeedKind::Local(local.clone()),
+                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                    local.clone(),
+                    RuntimeLocalReadMode::Move,
+                )),
             )),
             (None, None) => None,
             _ => {

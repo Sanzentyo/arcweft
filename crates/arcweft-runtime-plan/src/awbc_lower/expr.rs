@@ -1,15 +1,17 @@
 use crate::awbc_lower::frame::{FrameBuilder, FrameCaptureSlot};
 use crate::awbc_lower::inventory::{AwbcInventory, AwbcLowerDiagnostic, PendingAwbcClosure};
-use crate::awbc_lower::pattern::{admitted_plan_type, admitted_variant_case_name, lower_pattern};
+use crate::awbc_lower::pattern::{
+    admitted_plan_type, admitted_variant_case_name, function_input_ownership, lower_pattern,
+};
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
     AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcDialogueContentEffectBinding,
     AwbcDialogueValueBinding, AwbcDialogueValueRole, AwbcEffectSetId, AwbcFieldProjection,
     AwbcFormatAttemptOperand, AwbcFormatOperand, AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags,
-    AwbcFunctionKind, AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcMutablePlace,
-    AwbcPattern, AwbcPatternId, AwbcPureHelperId, AwbcRegisterId, AwbcRuntimeTypeShape,
-    AwbcSafePointKind, AwbcScopeId, AwbcTableRange, AwbcTerminator, AwbcTraitMethodId,
-    AwbcTrapCode, AwbcUnaryOp, AwbcUnsignedIntKind,
+    AwbcFunctionInputOwnership, AwbcFunctionKind, AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId,
+    AwbcMutablePlace, AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcPureHelperId,
+    AwbcRegisterId, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId, AwbcTableRange,
+    AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcUnaryOp, AwbcUnsignedIntKind,
 };
 use arcweft_core::entry::RuntimeCallableId;
 use arcweft_core::pattern::{RuntimeBuiltinVariantCaseIdentity, RuntimePattern};
@@ -19,7 +21,7 @@ use arcweft_core::plan::{
 };
 use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeExprKind, RuntimeExprMatchArm,
-    RuntimeFieldProjection, RuntimeMutablePlace, RuntimeStandardMapFamily,
+    RuntimeFieldProjection, RuntimeLocalReadMode, RuntimeMutablePlace, RuntimeStandardMapFamily,
     RuntimeStandardMapOperandOrder, RuntimeUnaryOp,
 };
 use arcweft_interaction_model::dialogue::{
@@ -70,24 +72,27 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                     .push_instruction(AwbcInstruction::LoadConst { dst, constant });
                 dst
             }
-            RuntimeExprKind::Local(name) => {
-                let source = self.frame.register_for_local(*name).unwrap_or_else(|| {
+            RuntimeExprKind::Local(read) => {
+                let source = self.frame.register_for_local(read.local()).unwrap_or_else(|| {
                     panic!(
-                        "admitted local `{name}` is read before it is allocated in AWBC frame at {}",
+                        "admitted local `{}` is read before it is allocated in AWBC frame at {}",
+                        read.local(),
                         self.path
                     )
                 });
                 let ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
-                if self.inventory.runtime_type_permits_copy(ty) {
-                    let destination = self.frame.temp(ty);
-                    self.inventory.push_instruction(AwbcInstruction::CopyValue {
+                let destination = self.frame.temp(ty);
+                self.inventory.push_instruction(match read.mode() {
+                    RuntimeLocalReadMode::Copy => AwbcInstruction::CopyValue {
                         dst: destination,
                         src: source,
-                    });
-                    destination
-                } else {
-                    source
-                }
+                    },
+                    RuntimeLocalReadMode::Move => AwbcInstruction::Move {
+                        dst: destination,
+                        src: source,
+                    },
+                });
+                destination
             }
             RuntimeExprKind::SequencePopFront { place } => {
                 let place = self.lower_mutable_place(place, "Vec.pop_front");
@@ -251,6 +256,7 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                     .map(|operand| {
                         let expression = operand.expression();
                         let captures = self.control_expr_captures(expression);
+                        let captures = self.materialize_control_expr_captures(captures);
                         let function = self.inventory.reserve_function_slot();
                         self.inventory
                             .push_pending_closure(PendingAwbcClosure::FormatOperand {
@@ -611,11 +617,12 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 args,
             } => {
                 let receiver_register = if *receiver_mode == RuntimeReceiverMode::MutRef
-                    && let RuntimeExprKind::Local(local) = receiver.kind()
+                    && let RuntimeExprKind::Local(read) = receiver.kind()
                 {
-                    self.frame.register_for_local(*local).unwrap_or_else(|| {
+                    self.frame.register_for_local(read.local()).unwrap_or_else(|| {
                         panic!(
-                            "admitted mutable receiver local `{local}` is not in the AWBC frame at {}",
+                            "admitted mutable receiver local `{}` is not in the AWBC frame at {}",
+                            read.local(),
                             self.path
                         )
                     })
@@ -815,51 +822,56 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 arcweft_core::value::RuntimeCallArgumentMode::Spread => {
                     match plan_type_projection(self.plan, argument.value().ty()) {
                         RuntimePlanTypeProjection::Tuple(items) => {
-                            for (ordinal, item) in items.iter().enumerate() {
-                                let dst = self.frame.temp(admitted_plan_type(
-                                    self.inventory,
-                                    self.plan,
-                                    *item,
-                                ));
-                                self.inventory
-                                    .push_instruction(AwbcInstruction::ProjectTuple {
-                                        dst,
-                                        target: value,
-                                        ordinal: table_index(ordinal),
-                                    });
+                            let mut patterns = Vec::with_capacity(items.len());
+                            for item in items {
+                                let item_type =
+                                    admitted_plan_type(self.inventory, self.plan, *item);
+                                let dst = self.frame.temp(item_type);
+                                patterns.push(self.inventory.intern_pattern(AwbcPattern::Bind {
+                                    target: dst,
+                                    mutable: false,
+                                    expected: Some(item_type),
+                                }));
                                 values.push(dst);
                             }
+                            let pattern =
+                                self.inventory.intern_pattern(AwbcPattern::Tuple(patterns));
+                            self.inventory
+                                .push_instruction(AwbcInstruction::BindPattern {
+                                    pattern,
+                                    value,
+                                    mode: AwbcBindMode::Declare,
+                                });
                         }
                         RuntimePlanTypeProjection::Array { item, length } => {
-                            let index_ty = self.inventory.intern_type(AwbcRuntimeTypeShape::UInt(
-                                AwbcUnsignedIntKind::USize,
-                            ));
-                            for index in 0..length
-                                .constant()
-                                .expect("admitted executable array length is closed")
-                            {
-                                let index_register = self.frame.temp(index_ty);
-                                let constant = self.inventory.constant_runtime_value_typed(
-                                    &arcweft_core::value::RuntimeValue::usize(index),
-                                    index_ty,
-                                );
-                                self.inventory.push_instruction(AwbcInstruction::LoadConst {
-                                    dst: index_register,
-                                    constant,
-                                });
-                                let dst = self.frame.temp(admitted_plan_type(
-                                    self.inventory,
-                                    self.plan,
-                                    *item,
-                                ));
-                                self.inventory
-                                    .push_instruction(AwbcInstruction::SequenceGet {
-                                        dst,
-                                        sequence: value,
-                                        index: index_register,
-                                    });
+                            let length = usize::try_from(
+                                length
+                                    .constant()
+                                    .expect("admitted executable array length is closed"),
+                            )
+                            .expect("admitted executable array length fits host usize");
+                            let mut patterns = Vec::with_capacity(length);
+                            for _ in 0..length {
+                                let item_type =
+                                    admitted_plan_type(self.inventory, self.plan, *item);
+                                let dst = self.frame.temp(item_type);
+                                patterns.push(self.inventory.intern_pattern(AwbcPattern::Bind {
+                                    target: dst,
+                                    mutable: false,
+                                    expected: Some(item_type),
+                                }));
                                 values.push(dst);
                             }
+                            let pattern = self.inventory.intern_pattern(AwbcPattern::Sequence {
+                                items: patterns,
+                                rest: AwbcPatternRest::Exact,
+                            });
+                            self.inventory
+                                .push_instruction(AwbcInstruction::BindPattern {
+                                    pattern,
+                                    value,
+                                    mode: AwbcBindMode::Declare,
+                                });
                         }
                         _ => unreachable!(
                             "admitted function application spreads only tuples and fixed arrays"
@@ -881,6 +893,7 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
 
     fn lower_value_control_expr(&mut self, expr: &RuntimeExpr) -> AwbcRegisterId {
         let captures = self.control_expr_captures(expr);
+        let captures = self.materialize_control_expr_captures(captures);
         let function = self.inventory.reserve_function_slot();
         self.inventory
             .push_pending_closure(PendingAwbcClosure::Control {
@@ -946,7 +959,7 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
     }
 
     fn control_expr_captures(&self, expr: &RuntimeExpr) -> Vec<FrameCaptureSlot> {
-        expr.evaluation_free_locals(self.plan)
+        expr.evaluation_free_local_reads(self.plan)
             .unwrap_or_else(|error| {
                 panic!(
                     "admitted control expression has invalid free-local authority at {}: {error}",
@@ -954,15 +967,47 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 )
             })
             .iter()
-            .copied()
-            .map(|local| FrameCaptureSlot {
-                local,
-                register: self.frame.register_for_local(local).unwrap_or_else(|| {
+            .map(|(local, mode)| FrameCaptureSlot {
+                local: *local,
+                mode: *mode,
+                register: self.frame.register_for_local(*local).unwrap_or_else(|| {
                     panic!(
                         "admitted control expression reads local `{local}` outside the AWBC frame at {}",
                         self.path
                     )
                 }),
+            })
+            .collect()
+    }
+
+    fn materialize_control_expr_captures(
+        &mut self,
+        captures: Vec<FrameCaptureSlot>,
+    ) -> Vec<FrameCaptureSlot> {
+        captures
+            .into_iter()
+            .map(|capture| {
+                let ty = admitted_plan_type(
+                    self.inventory,
+                    self.plan,
+                    local_type(self.plan, capture.local),
+                );
+                let register = self.frame.temp(ty);
+                let instruction = match capture.mode {
+                    RuntimeLocalReadMode::Copy => AwbcInstruction::CopyValue {
+                        dst: register,
+                        src: capture.register,
+                    },
+                    RuntimeLocalReadMode::Move => AwbcInstruction::Move {
+                        dst: register,
+                        src: capture.register,
+                    },
+                };
+                self.inventory.push_instruction(instruction);
+                FrameCaptureSlot {
+                    register,
+                    ..capture
+                }
             })
             .collect()
     }
@@ -1080,28 +1125,21 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                 path,
             } => {
                 let mut frame = FrameBuilder::new();
-                for input in &inputs {
+                let mut abi_parameters = Vec::with_capacity(inputs.len());
+                for (position, input) in inputs.iter().enumerate() {
                     let input_local = input.input_local();
                     let name = inventory.local_name(input_local);
-                    frame.named_parameter(
-                        input_local,
-                        admitted_plan_type(inventory, plan, local_type(plan, input_local)),
-                        name,
-                    );
+                    let input_ty =
+                        admitted_plan_type(inventory, plan, local_type(plan, input_local));
+                    abi_parameters.push(frame.abi_parameter(position, input_ty, name));
                 }
                 let mut body = ExprBodyBuilder::new(inventory, function);
-                for input in &inputs {
-                    let input_local = input.input_local();
-                    let Some(value) = frame.register_for_local(input_local) else {
-                        inventory.diagnostic(AwbcLowerDiagnostic::error(
-                            &path,
-                            format!(
-                                "function-site input `{input_local}` is not present in its AWBC frame"
-                            ),
-                        ));
-                        continue;
-                    };
+                let mut input_ownership = Vec::with_capacity(inputs.len());
+                for (input, value) in inputs.iter().zip(abi_parameters) {
                     let pattern = lower_pattern(inventory, plan, &mut frame, input.pattern());
+                    input_ownership.push(function_input_ownership(
+                        inventory, &frame, input, pattern, &path,
+                    ));
                     inventory.push_instruction(AwbcInstruction::BindPattern {
                         pattern,
                         value,
@@ -1128,6 +1166,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                         public_id: None,
                         kind: AwbcFunctionKind::Ordinary,
                         signature,
+                        input_ownership,
                         frame_layout: layout,
                         blocks: AwbcTableRange::new(block.0, block_len),
                         entry_block: block,
@@ -1170,6 +1209,10 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                         public_id: None,
                         kind: AwbcFunctionKind::Ordinary,
                         signature,
+                        input_ownership: vec![
+                            AwbcFunctionInputOwnership::default();
+                            captures.len()
+                        ],
                         frame_layout: layout,
                         blocks: AwbcTableRange::new(block.0, block_len),
                         entry_block: block,
@@ -1215,6 +1258,10 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                         public_id: None,
                         kind: AwbcFunctionKind::Synthetic,
                         signature,
+                        input_ownership: vec![
+                            AwbcFunctionInputOwnership::default();
+                            captures.len()
+                        ],
                         frame_layout: layout,
                         blocks: AwbcTableRange::new(block.0, block_len),
                         entry_block: block,
@@ -1435,6 +1482,7 @@ fn lower_standard_map_value_expr(
         }
     };
     let types = standard_map_plan_types(plan, input.family, input.source.ty(), input.result.ty());
+    let mapping_ty = admitted_plan_type(inventory, plan, input.mapping.ty());
     match input.family {
         RuntimeStandardMapFamily::Vec
         | RuntimeStandardMapFamily::Seq
@@ -1445,6 +1493,7 @@ fn lower_standard_map_value_expr(
             body,
             input.result.ty(),
             types,
+            mapping_ty,
             mapping,
             source,
         ),
@@ -1456,6 +1505,7 @@ fn lower_standard_map_value_expr(
             input.source.ty(),
             input.result.ty(),
             types,
+            mapping_ty,
             mapping,
             source,
         ),
@@ -1575,6 +1625,10 @@ fn plan_type_projection(
         .projection()
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Sequence map lowering consumes one checked callback, source, and typed plan transaction."
+)]
 fn lower_standard_sequence_map(
     inventory: &mut AwbcInventory,
     frame: &mut FrameBuilder,
@@ -1582,6 +1636,7 @@ fn lower_standard_sequence_map(
     body: &mut ExprBodyBuilder,
     result_ty: arcweft_core::runtime_id::RuntimePlanTypeId,
     types: StandardMapPlanTypes,
+    mapping_ty: arcweft_core::awbc::schema::AwbcTypeId,
     mapping: AwbcRegisterId,
     source: AwbcRegisterId,
 ) {
@@ -1590,27 +1645,6 @@ fn lower_standard_sequence_map(
         dst: result,
         items: Vec::new(),
     });
-    let index_ty = inventory.intern_type(AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::USize));
-    let index = frame.runtime_state(index_ty);
-    let zero = inventory
-        .constant_runtime_value_typed(&arcweft_core::value::RuntimeValue::usize(0), index_ty);
-    inventory.push_instruction(AwbcInstruction::LoadConst {
-        dst: index,
-        constant: zero,
-    });
-    let one = frame.temp(index_ty);
-    let one_constant = inventory
-        .constant_runtime_value_typed(&arcweft_core::value::RuntimeValue::usize(1), index_ty);
-    inventory.push_instruction(AwbcInstruction::LoadConst {
-        dst: one,
-        constant: one_constant,
-    });
-    let len = frame.temp(index_ty);
-    inventory.push_instruction(AwbcInstruction::SequenceLen {
-        dst: len,
-        sequence: source,
-    });
-
     let header = AwbcBlockId(table_index(
         inventory.program.blocks.len().saturating_add(1),
     ));
@@ -1619,50 +1653,33 @@ fn lower_standard_sequence_map(
         AwbcTerminator::Jump { target: header },
         AwbcSafePointKind::CallableBoundary,
     );
-    let condition = frame.temp(inventory.bool_ty());
-    inventory.push_instruction(AwbcInstruction::Binary {
-        dst: condition,
-        op: AwbcBinaryOp::Lt,
-        lhs: index,
-        rhs: len,
-    });
+    let item = frame.temp(admitted_plan_type(inventory, plan, types.input));
     let loop_body = AwbcBlockId(header.0.saturating_add(1));
-    let branch = body.close_block(
+    let next = body.close_block(
         inventory,
-        AwbcTerminator::Branch {
-            condition,
-            then_block: loop_body,
-            else_block: loop_body,
+        AwbcTerminator::SequenceNext {
+            sequence: source,
+            item,
+            some_block: loop_body,
+            none_block: loop_body,
         },
         AwbcSafePointKind::LoopBackedge,
     );
 
-    let item = frame.temp(admitted_plan_type(inventory, plan, types.input));
-    inventory.push_instruction(AwbcInstruction::SequenceGet {
-        dst: item,
-        sequence: source,
-        index,
+    let callable = frame.temp(mapping_ty);
+    inventory.push_instruction(AwbcInstruction::CopyValue {
+        dst: callable,
+        src: mapping,
     });
     let mapped = frame.temp(admitted_plan_type(inventory, plan, types.output));
     inventory.push_instruction(AwbcInstruction::ApplyGroup {
         dst: mapped,
-        callee: mapping,
+        callee: callable,
         args: vec![item],
     });
     inventory.push_instruction(AwbcInstruction::SequencePush {
         sequence: result,
         value: mapped,
-    });
-    let next = frame.temp(index_ty);
-    inventory.push_instruction(AwbcInstruction::Binary {
-        dst: next,
-        op: AwbcBinaryOp::Add,
-        lhs: index,
-        rhs: one,
-    });
-    inventory.push_instruction(AwbcInstruction::Move {
-        dst: index,
-        src: next,
     });
     body.close_block(
         inventory,
@@ -1670,7 +1687,7 @@ fn lower_standard_sequence_map(
         AwbcSafePointKind::LoopBackedge,
     );
     let exit = AwbcBlockId(table_index(inventory.program.blocks.len()));
-    patch_branch_else_block(inventory, branch, exit);
+    patch_sequence_next_none_block(inventory, next, exit);
     body.terminate(
         inventory,
         AwbcTerminator::Return {
@@ -1692,6 +1709,7 @@ fn lower_standard_array_map(
     source_ty: arcweft_core::runtime_id::RuntimePlanTypeId,
     result_ty: arcweft_core::runtime_id::RuntimePlanTypeId,
     types: StandardMapPlanTypes,
+    mapping_ty: arcweft_core::awbc::schema::AwbcTypeId,
     mapping: AwbcRegisterId,
     source: AwbcRegisterId,
 ) {
@@ -1705,28 +1723,38 @@ fn lower_standard_array_map(
             .expect("admitted executable array length is closed"),
     )
     .expect("admitted array length fits this platform");
-    let index_ty = inventory.intern_type(AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::USize));
+    let item_ty = admitted_plan_type(inventory, plan, types.input);
+    let source_items = (0..length).map(|_| frame.temp(item_ty)).collect::<Vec<_>>();
+    let item_patterns = source_items
+        .iter()
+        .map(|item| {
+            inventory.intern_pattern(AwbcPattern::Bind {
+                target: *item,
+                mutable: false,
+                expected: Some(item_ty),
+            })
+        })
+        .collect();
+    let source_pattern = inventory.intern_pattern(AwbcPattern::Sequence {
+        items: item_patterns,
+        rest: AwbcPatternRest::Exact,
+    });
+    inventory.push_instruction(AwbcInstruction::BindPattern {
+        pattern: source_pattern,
+        value: source,
+        mode: AwbcBindMode::Declare,
+    });
     let mut mapped_items = Vec::with_capacity(length);
-    for index in 0..length {
-        let index_register = frame.temp(index_ty);
-        let index_constant = inventory.constant_runtime_value_typed(
-            &arcweft_core::value::RuntimeValue::usize(index as u64),
-            index_ty,
-        );
-        inventory.push_instruction(AwbcInstruction::LoadConst {
-            dst: index_register,
-            constant: index_constant,
-        });
-        let item = frame.temp(admitted_plan_type(inventory, plan, types.input));
-        inventory.push_instruction(AwbcInstruction::SequenceGet {
-            dst: item,
-            sequence: source,
-            index: index_register,
+    for item in source_items {
+        let callable = frame.temp(mapping_ty);
+        inventory.push_instruction(AwbcInstruction::CopyValue {
+            dst: callable,
+            src: mapping,
         });
         let mapped = frame.temp(admitted_plan_type(inventory, plan, types.output));
         inventory.push_instruction(AwbcInstruction::ApplyGroup {
             dst: mapped,
-            callee: mapping,
+            callee: callable,
             args: vec![item],
         });
         mapped_items.push(mapped);
@@ -2322,6 +2350,25 @@ fn patch_branch_else_block(
         return;
     };
     *target = else_block;
+}
+
+fn patch_sequence_next_none_block(
+    inventory: &mut AwbcInventory,
+    next_block: AwbcBlockId,
+    none_block: AwbcBlockId,
+) {
+    let block = inventory
+        .program
+        .blocks
+        .get_mut(next_block.index())
+        .expect("sequence-next block was just emitted");
+    let AwbcTerminator::SequenceNext {
+        none_block: target, ..
+    } = &mut block.terminator
+    else {
+        unreachable!("sequence-next terminator was just emitted")
+    };
+    *target = none_block;
 }
 
 fn patch_jump_target(

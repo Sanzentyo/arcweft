@@ -42,6 +42,8 @@ pub enum SavedViewOwner {
 /// Failure to project or resolve a stable persisted View owner.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ViewSaveError {
+    #[error("View runtime binding contains an affine value that evaluation must copy")]
+    AffineRuntimeBinding,
     #[error("anonymous Rust Views cannot be persisted")]
     AnonymousRustViewNotPersistable,
     #[error("public View identity is no longer registered: {0}")]

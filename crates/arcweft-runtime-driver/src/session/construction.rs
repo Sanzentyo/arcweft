@@ -17,14 +17,13 @@ use arcweft_core::value::RuntimeFormatContext;
 use arcweft_id::LocaleTag;
 use arcweft_manifest_model::ProjectLocaleSpec;
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub(super) struct SessionRuntime {
     pub(super) source_label: String,
     pub(super) generation: GenerationId,
     pub(super) program: Arc<AwbcProgram>,
     pub(super) entry: AwbcEntryId,
     pub(super) plain_text_context_proof: Option<RuntimeDialoguePlainTextContextTemplateProof>,
-    pub(super) executor: ArcweftRuntimeExecutor,
     pub(super) dialogue_content: DialogueContentCatalog,
     pub(super) character_dialogue_schema:
         Option<Arc<arcweft_dialogue::CharacterDialogueRuntimeSchema>>,
@@ -124,7 +123,7 @@ impl BundleSession {
             .clone()
             .unwrap_or_else(|| bundle.manifest.locale.default_locale().clone());
         let runtime = build_session_runtime(bundle, &options, generation.id, active_locale)?;
-        let executor = runtime.executor.clone();
+        let executor = runtime.spawn_executor()?;
         let dialogue_content = runtime.dialogue_content.clone();
         let character_presentation = runtime.character_presentation.clone();
         let project_locale = runtime.project_locale.clone();
@@ -242,48 +241,12 @@ impl SessionRuntime {
         plain_text_context_proof: Option<RuntimeDialoguePlainTextContextTemplateProof>,
         resources: SessionRuntimeResources,
     ) -> Result<Self, AwbcProductStepBuildError> {
-        let mut executor = if let Some(proof) = plain_text_context_proof {
-            ArcweftRuntimeExecutor::from_awbc_product_arc_with_plain_text_context_proof_and_generation(
-                Arc::clone(&program),
-                entry,
-                proof,
-                generation,
-            )?
-        } else {
-            ArcweftRuntimeExecutor::from_awbc_product_arc_with_generation(
-                Arc::clone(&program),
-                entry,
-                generation,
-            )?
-        };
-        executor.set_format_context(RuntimeFormatContext::new(resources.active_locale.clone()));
-        Ok(Self::with_executor(
+        let runtime = Self {
             source_label,
             generation,
             program,
             entry,
             plain_text_context_proof,
-            resources,
-            executor,
-        ))
-    }
-
-    fn with_executor(
-        source_label: String,
-        generation: GenerationId,
-        program: Arc<AwbcProgram>,
-        entry: AwbcEntryId,
-        plain_text_context_proof: Option<RuntimeDialoguePlainTextContextTemplateProof>,
-        resources: SessionRuntimeResources,
-        executor: ArcweftRuntimeExecutor,
-    ) -> Self {
-        Self {
-            source_label,
-            generation,
-            program,
-            entry,
-            plain_text_context_proof,
-            executor,
             dialogue_content: resources.dialogue_content,
             character_dialogue_schema: resources.character_dialogue_schema,
             character_presentation: resources.character_presentation,
@@ -300,7 +263,39 @@ impl SessionRuntime {
             view_runtime: resources.view_runtime,
             view_theme_environment: resources.view_theme_environment,
             view_style_palettes: resources.view_style_palettes,
-        }
+        };
+        // Admit the generation only if its selected entry can instantiate.
+        // The constructed executor is fresh and has no shared live owner.
+        drop(runtime.spawn_executor()?);
+        Ok(runtime)
+    }
+
+    pub(super) fn spawn_executor(
+        &self,
+    ) -> Result<ArcweftRuntimeExecutor, AwbcProductStepBuildError> {
+        self.spawn_executor_for_entry(self.entry)
+    }
+
+    pub(super) fn spawn_executor_for_entry(
+        &self,
+        entry: AwbcEntryId,
+    ) -> Result<ArcweftRuntimeExecutor, AwbcProductStepBuildError> {
+        let mut executor = if let Some(proof) = self.plain_text_context_proof {
+            ArcweftRuntimeExecutor::from_awbc_product_arc_with_plain_text_context_proof_and_generation(
+                Arc::clone(&self.program),
+                entry,
+                proof,
+                self.generation,
+            )?
+        } else {
+            ArcweftRuntimeExecutor::from_awbc_product_arc_with_generation(
+                Arc::clone(&self.program),
+                entry,
+                self.generation,
+            )?
+        };
+        executor.set_format_context(RuntimeFormatContext::new(self.active_locale.clone()));
+        Ok(executor)
     }
 
     pub(super) fn start_entry(
@@ -336,33 +331,12 @@ impl SessionRuntime {
                 focus_groups: self.focus_groups.clone(),
                 focus_navigation: self.focus_navigation.clone(),
                 fx_definitions: self.fx_definitions.clone(),
-                view_runtime: self.view_runtime.clone(),
+                view_runtime: self.view_runtime.fresh_for_entry(),
                 view_theme_environment: self.view_theme_environment,
                 view_style_palettes: self.view_style_palettes,
             },
         )
         .map_err(BundleEntryStartError::from)
-    }
-
-    pub(super) fn retain_executor_state(
-        &mut self,
-        current: &ArcweftRuntimeExecutor,
-        rebind_generation: bool,
-    ) -> Result<(), BundleSessionError> {
-        let mut executor = current.clone();
-        if let Some(proof) = self.plain_text_context_proof {
-            executor.replace_product_awbc_program_arc_with_plain_text_context_proof(
-                Arc::clone(&self.program),
-                proof,
-            )?;
-        } else {
-            executor.replace_product_awbc_program_arc(Arc::clone(&self.program))?;
-        }
-        if rebind_generation {
-            executor.rebind_generation(self.generation)?;
-        }
-        self.executor = executor;
-        Ok(())
     }
 }
 

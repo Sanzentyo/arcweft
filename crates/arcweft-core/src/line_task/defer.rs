@@ -109,6 +109,14 @@ pub(crate) enum RuntimeDeferUnwindStep {
     Skipped(RuntimeDeferRegistrationId),
 }
 
+/// A lexical defer keeps its capture packet in the owning frame until the
+/// shared line ledger has accepted the transition.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RuntimeScopedDeferDecision {
+    Run,
+    Skipped,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct AwbcRuntimeDeferredRegistrationSnapshot {
@@ -122,6 +130,20 @@ impl AwbcRuntimeDeferredRegistrationSnapshot {
     pub(crate) fn from_live(
         registration: &RuntimeLineDeferredRegistration,
     ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
+        Self::from_live_with_owner(registration, None)
+    }
+
+    pub(crate) fn from_live_for_program(
+        registration: &RuntimeLineDeferredRegistration,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
+        Self::from_live_with_owner(registration, Some(owner))
+    }
+
+    fn from_live_with_owner(
+        registration: &RuntimeLineDeferredRegistration,
+        owner: Option<&crate::task::RuntimeProgramOwner>,
+    ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
         Ok(Self {
             id: registration.id,
             site: registration.site,
@@ -129,7 +151,14 @@ impl AwbcRuntimeDeferredRegistrationSnapshot {
             captures: registration
                 .captures
                 .iter()
-                .map(crate::value::AwbcRuntimeValueSnapshot::from_runtime_value)
+                .map(|value| match owner {
+                    Some(owner) => {
+                        crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                            value, owner,
+                        )
+                    }
+                    None => crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(value),
+                })
                 .collect::<Result<_, _>>()?,
         })
     }

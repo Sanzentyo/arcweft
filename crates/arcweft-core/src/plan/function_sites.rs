@@ -2,6 +2,7 @@
 
 use std::num::NonZeroU32;
 
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use super::RuntimeExecutableBody;
@@ -25,6 +26,18 @@ pub enum RuntimeFunctionInputSource {
     Parameter { position: u32 },
 }
 
+/// The live value guarantee required when an input enters a function frame.
+/// Function types do not imply this guarantee; the selected caller supplies it.
+#[derive(
+    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeFunctionInputOwnershipRequirement {
+    #[default]
+    Owned,
+    Unrestricted,
+}
+
 /// One synthetic input local and its checked pattern prologue.
 ///
 /// The input local receives the raw ABI value. The pattern then binds the
@@ -35,6 +48,8 @@ pub struct RuntimeFunctionInputBinding {
     source: RuntimeFunctionInputSource,
     input_local: RuntimeLocalDeclarationId,
     pattern: RuntimePattern,
+    ownership: RuntimeFunctionInputOwnershipRequirement,
+    unrestricted_bindings: Box<[RuntimeLocalDeclarationId]>,
 }
 
 impl RuntimeFunctionInputBinding {
@@ -42,11 +57,15 @@ impl RuntimeFunctionInputBinding {
         source: RuntimeFunctionInputSource,
         input_local: RuntimeLocalDeclarationId,
         pattern: RuntimePattern,
+        ownership: RuntimeFunctionInputOwnershipRequirement,
+        unrestricted_bindings: Box<[RuntimeLocalDeclarationId]>,
     ) -> Self {
         Self {
             source,
             input_local,
             pattern,
+            ownership,
+            unrestricted_bindings,
         }
     }
 
@@ -63,6 +82,16 @@ impl RuntimeFunctionInputBinding {
     #[must_use]
     pub const fn pattern(&self) -> &RuntimePattern {
         &self.pattern
+    }
+
+    #[must_use]
+    pub const fn ownership(&self) -> RuntimeFunctionInputOwnershipRequirement {
+        self.ownership
+    }
+
+    #[must_use]
+    pub const fn unrestricted_bindings(&self) -> &[RuntimeLocalDeclarationId] {
+        &self.unrestricted_bindings
     }
 }
 

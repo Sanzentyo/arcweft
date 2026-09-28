@@ -16,8 +16,65 @@ use crate::value::runtime_value_into_sequence_values;
 use arcweft_need::Need;
 use std::cmp::Ordering;
 
-struct NeedProducerStartOutput {
-    spec: crate::task::TaskSpec,
+fn observed_ready_payload(value: &RuntimePayload) -> Option<RuntimePayload> {
+    value
+        .value()
+        .ownership()
+        .permits_copy()
+        .then(|| value.clone())
+}
+
+enum AwaitNeedPublicationKind {
+    NotStarted,
+    Pending(arcweft_need::Progress),
+    LocalReady,
+    ExternalReady,
+    ReadyTransferred,
+    Cancelled,
+}
+
+enum DeferredSuspensionDispatch {
+    BudgetYield,
+    AwaitNeed {
+        need: NeedId,
+        item_type: crate::awbc::schema::AwbcTypeId,
+        binding: Option<crate::awbc::schema::AwbcPatternId>,
+        observer: Option<AwbcAwaitObserverResume>,
+    },
+    AwaitMany,
+    HostCall {
+        call: AwbcHostCallId,
+        destination: Option<crate::awbc::schema::AwbcRegisterId>,
+    },
+    Unsupported,
+}
+
+impl DeferredSuspensionDispatch {
+    fn from_reason(reason: &FiberSuspensionReason) -> Self {
+        match reason {
+            FiberSuspensionReason::BudgetYield => Self::BudgetYield,
+            FiberSuspensionReason::Await {
+                target: FiberAwaitTarget::Need { id, item_type, .. },
+                binding,
+                observer,
+            } => Self::AwaitNeed {
+                need: id.clone(),
+                item_type: *item_type,
+                binding: *binding,
+                observer: *observer,
+            },
+            FiberSuspensionReason::AwaitMany(_) => Self::AwaitMany,
+            FiberSuspensionReason::HostCall {
+                call, destination, ..
+            } => Self::HostCall {
+                call: *call,
+                destination: *destination,
+            },
+            FiberSuspensionReason::Dialogue { .. } | FiberSuspensionReason::Choice { .. } => {
+                Self::Unsupported
+            }
+        }
+    }
 }
 
 impl AwbcProductStepExecutor {
@@ -31,19 +88,17 @@ impl AwbcProductStepExecutor {
             return true;
         }
 
-        let mut candidate = self.need_producers.clone();
-        let mut requests = Vec::new();
+        let mut proofs = Vec::with_capacity(pending.len());
         for need in &pending {
-            match candidate.mark_task_ensured(need) {
-                Ok(Some(spec)) => requests.push(spec),
-                Ok(None) => continue,
+            match self.need_producers.inspect_task_ensured(need) {
+                Ok(proof) => proofs.push(proof),
                 Err(error) => {
                     self.fail_with_error(ProductStepError::Internal(error.to_string()), output);
                     return false;
                 }
             }
         }
-        if requests.is_empty() {
+        if proofs.iter().all(|proof| proof.task_spec().is_none()) {
             self.fail_with_error(
                 ProductStepError::Internal(
                     "Restartable Need re-registration produced no task specification".to_owned(),
@@ -52,17 +107,30 @@ impl AwbcProductStepExecutor {
             );
             return false;
         }
-        self.need_producers = candidate;
+        let requests = proofs
+            .into_iter()
+            .filter_map(|proof| self.need_producers.mark_task_ensured_prepared(proof))
+            .collect::<Vec<_>>();
         output.requests.tasks.extend(requests);
         true
     }
 
     pub(super) fn latch_task_events(
         &mut self,
-        events: &[TaskEvent],
+        events: Vec<TaskEvent>,
         output: &mut RuntimeStepOutput,
     ) {
         for event in events {
+            if let Err(error) = event.inspect_host_ready_ownership() {
+                self.fail_with_trap(
+                    AwbcTrapCode::HostAbiMismatch,
+                    error.to_string(),
+                    None,
+                    output,
+                );
+                // A rejected host packet never becomes a runtime owner.
+                continue;
+            }
             let local_launch = self
                 .need_producers
                 .launches()
@@ -99,21 +167,47 @@ impl AwbcProductStepExecutor {
                         continue;
                     }
                 }
-                if let Err(error) = self.need_producers.publish_task_event(event) {
+            }
+            let event = match self.need_producers.publish_task_event_owned(event) {
+                Ok(crate::task::NeedProducerOwnedTaskEventDisposition::Published)
+                | Ok(crate::task::NeedProducerOwnedTaskEventDisposition::Duplicate(_)) => {
+                    continue;
+                }
+                Ok(crate::task::NeedProducerOwnedTaskEventDisposition::NotLocal(event)) => event,
+                Err(error) => {
+                    let (reason, rejected_event) = error.into_parts();
                     self.fail_with_trap(
                         AwbcTrapCode::InternalInvariant,
-                        error.to_string(),
+                        reason.to_string(),
                         None,
                         output,
                     );
+                    // An invalid host packet never enters the runtime owner
+                    // graph; its sole inbound carrier is rejected here.
+                    drop(rejected_event);
+                    continue;
                 }
-                continue;
-            }
-            let cursor = crate::task::TaskPublicationCursor::from_event(event);
+            };
+            let cursor = crate::task::TaskPublicationCursor::from_event(&event);
             if let Some(observed) = self.task_publications.get(&event.task_id) {
                 match cursor.compare_same_source(*observed) {
                     Some(Ordering::Greater) => {}
-                    Some(Ordering::Equal | Ordering::Less) => continue,
+                    Some(Ordering::Equal | Ordering::Less) => {
+                        if matches!(
+                            &event.kind,
+                            TaskEventKind::Ready(value)
+                                if !value.value().ownership().permits_copy()
+                        ) {
+                            self.fail_with_trap(
+                                AwbcTrapCode::HostAbiMismatch,
+                                "duplicate affine task Ready publication is not admissible"
+                                    .to_owned(),
+                                None,
+                                output,
+                            );
+                        }
+                        continue;
+                    }
                     None => {
                         self.fail_with_trap(
                             AwbcTrapCode::InternalInvariant,
@@ -126,7 +220,7 @@ impl AwbcProductStepExecutor {
                 }
             }
             self.task_publications.insert(event.task_id.clone(), cursor);
-            self.queued_task_events.push_back(event.clone());
+            self.queued_task_events.push_back(event);
         }
     }
 
@@ -137,7 +231,7 @@ impl AwbcProductStepExecutor {
         binding: Option<crate::awbc::schema::AwbcPatternId>,
         observer: Option<AwbcAwaitObserverResume>,
         resume: AwbcResumePointId,
-        states: &[RuntimeNeedState],
+        states: &mut Vec<RuntimeNeedState>,
         output: &mut RuntimeStepOutput,
     ) -> bool {
         let local_launch = self
@@ -166,14 +260,37 @@ impl AwbcProductStepExecutor {
             let Some(cursor) = launch.publication() else {
                 return false;
             };
-            (cursor, launch.state().clone())
+            let state = match launch.state() {
+                crate::task::RuntimeNeedProducerState::NotStarted => {
+                    AwaitNeedPublicationKind::NotStarted
+                }
+                crate::task::RuntimeNeedProducerState::Pending(progress) => {
+                    AwaitNeedPublicationKind::Pending(progress.clone())
+                }
+                crate::task::RuntimeNeedProducerState::Ready(_) => {
+                    AwaitNeedPublicationKind::LocalReady
+                }
+                crate::task::RuntimeNeedProducerState::ReadyTransferred => {
+                    AwaitNeedPublicationKind::ReadyTransferred
+                }
+                crate::task::RuntimeNeedProducerState::Cancelled => {
+                    AwaitNeedPublicationKind::Cancelled
+                }
+            };
+            (cursor, state)
         } else {
             let Some(state) = resolved_runtime_need_state(states, need) else {
                 return false;
             };
+            let kind = match state.state() {
+                Need::NotStarted => AwaitNeedPublicationKind::NotStarted,
+                Need::Pending(progress) => AwaitNeedPublicationKind::Pending(progress.clone()),
+                Need::Ready(_) => AwaitNeedPublicationKind::ExternalReady,
+                Need::Cancelled => AwaitNeedPublicationKind::Cancelled,
+            };
             (
                 crate::task::TaskPublicationCursor::from_need_state(state),
-                state.state().clone(),
+                kind,
             )
         };
         let waiter = crate::runtime_id::RuntimePersistentFiberId::from_allocated(
@@ -196,9 +313,9 @@ impl AwbcProductStepExecutor {
             }
         }
         self.need_publications.insert(publication_key, cursor);
-        match &state {
-            Need::NotStarted => false,
-            Need::Pending(progress) => {
+        match state {
+            AwaitNeedPublicationKind::NotStarted => false,
+            AwaitNeedPublicationKind::Pending(progress) => {
                 output.flow_events.push(FlowEvent::AwaitProgress {
                     need: need.clone(),
                     progress: progress.clone(),
@@ -207,7 +324,33 @@ impl AwbcProductStepExecutor {
                     self.resume_await_progress(observer, progress.clone(), output)
                 })
             }
-            Need::Ready(value) => {
+            kind @ (AwaitNeedPublicationKind::LocalReady
+            | AwaitNeedPublicationKind::ExternalReady) => {
+                let local = matches!(kind, AwaitNeedPublicationKind::LocalReady);
+                let selected = if local {
+                    self.need_producers
+                        .ready_for_need(need)
+                        .map(|value| (value, None))
+                } else {
+                    resolved_runtime_need_state(states, need).and_then(|state| {
+                        let index = states
+                            .iter()
+                            .position(|candidate| std::ptr::eq(candidate, state))?;
+                        match state.state() {
+                            Need::Ready(value) => Some((value, Some((index, state.sequence())))),
+                            _ => None,
+                        }
+                    })
+                };
+                let Some((value, _external)) = selected else {
+                    self.fail_with_trap(
+                        AwbcTrapCode::InternalInvariant,
+                        "Need Ready publication lost its selected payload owner".to_owned(),
+                        None,
+                        output,
+                    );
+                    return true;
+                };
                 if !crate::awbc::fiber::runtime_value_matches_type(
                     &self.program,
                     value.value(),
@@ -225,13 +368,18 @@ impl AwbcProductStepExecutor {
                     );
                     return true;
                 }
-                output.flow_events.push(FlowEvent::AwaitReady {
-                    need: need.clone(),
-                    value: value.clone(),
-                });
-                self.resume_await_value(binding, resume, value.value(), output)
+                self.resume_need_ready_owned(need, binding, resume, states, local, output)
             }
-            Need::Cancelled => {
+            AwaitNeedPublicationKind::ReadyTransferred => {
+                self.fail_with_trap(
+                    AwbcTrapCode::HostAbiMismatch,
+                    "Need Ready payload has already transferred to its unique waiter".to_owned(),
+                    None,
+                    output,
+                );
+                true
+            }
+            AwaitNeedPublicationKind::Cancelled => {
                 let cancellation = cancel_fiber(&mut self.fiber);
                 self.consume_observations(cancellation.observations, output);
                 true
@@ -269,26 +417,137 @@ impl AwbcProductStepExecutor {
         }
     }
 
-    fn resume_await_value(
+    fn resume_need_ready_owned(
         &mut self,
+        need: &NeedId,
         binding: Option<crate::awbc::schema::AwbcPatternId>,
         resume: AwbcResumePointId,
-        value: &RuntimeValue,
+        states: &mut Vec<RuntimeNeedState>,
+        local: bool,
         output: &mut RuntimeStepOutput,
     ) -> bool {
-        if let Some(pattern) = binding
-            && let Err(error) =
-                crate::awbc::vm::bind_pattern(&self.program, &mut self.fiber, pattern, value)
-        {
+        let selected = if local {
+            self.need_producers
+                .ready_for_need(need)
+                .map(|value| (value, None))
+        } else {
+            resolved_runtime_need_state(states, need).and_then(|state| match state.state() {
+                Need::Ready(value) => Some((value, Some(state.sequence()))),
+                _ => None,
+            })
+        };
+        let Some((value, sequence)) = selected else {
             self.fail_with_trap(
-                AwbcTrapCode::PatternMismatch,
-                error.to_string(),
+                AwbcTrapCode::InternalInvariant,
+                "selected Need Ready payload is unavailable".to_owned(),
                 None,
                 output,
             );
             return true;
+        };
+        let local_take = if local {
+            match self.need_producers.inspect_ready_take_for_need(need) {
+                Ok(proof) => Some(proof),
+                Err(error) => {
+                    self.fail_with_trap(
+                        AwbcTrapCode::InternalInvariant,
+                        error.to_string(),
+                        None,
+                        output,
+                    );
+                    return true;
+                }
+            }
+        } else {
+            None
+        };
+        let observed = observed_ready_payload(value);
+        let copyable = value.value().ownership().permits_copy();
+        let prepared_resume = match self.fiber.validate_resume_at(&self.program, resume) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                self.fail_with_trap(
+                    AwbcTrapCode::InternalInvariant,
+                    error.to_string(),
+                    None,
+                    output,
+                );
+                return true;
+            }
+        };
+        let prepared_binding = if let Some(pattern) = binding {
+            let prepared = match crate::awbc::vm::prepare_pattern_binding(
+                &self.program,
+                &self.fiber,
+                pattern,
+                value.value(),
+            ) {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    self.fail_with_trap(
+                        AwbcTrapCode::PatternMismatch,
+                        error.to_string(),
+                        None,
+                        output,
+                    );
+                    return true;
+                }
+            };
+            let vacant = self.fiber.active_frame().ok().is_some_and(|frame| {
+                prepared.registers().iter().all(|register| {
+                    frame
+                        .registers
+                        .get(register.index())
+                        .is_some_and(Option::is_none)
+                })
+            });
+            if !vacant {
+                self.fail_with_trap(
+                    AwbcTrapCode::TypeMismatch,
+                    "Need Ready binding destination is occupied".to_owned(),
+                    None,
+                    output,
+                );
+                return true;
+            }
+            Some(prepared)
+        } else {
+            None
+        };
+        let payload = if let Some(proof) = local_take {
+            Ok(self.need_producers.take_ready_for_need_prepared(proof))
+        } else if copyable {
+            Ok(value.clone())
+        } else {
+            sequence
+                .and_then(|sequence| super::take_runtime_need_state(states, need, sequence))
+                .and_then(|(_, state)| match state.into_parts().3 {
+                    Need::Ready(value) => Some(value),
+                    _ => None,
+                })
+                .ok_or_else(|| "selected external Need Ready owner is unavailable".to_owned())
+        };
+        let payload = match payload {
+            Ok(payload) => payload,
+            Err(error) => {
+                self.fail_with_trap(AwbcTrapCode::InternalInvariant, error, None, output);
+                return true;
+            }
+        };
+        if let Some(binding) = prepared_binding {
+            crate::awbc::vm::bind_pattern_owned_prepared(
+                &self.program,
+                &mut self.fiber,
+                binding,
+                payload.into_value(),
+            );
         }
-        self.resume_at(resume, output)
+        self.fiber.resume_at_prepared(prepared_resume);
+        output.flow_events.push(FlowEvent::AwaitReady {
+            need: need.clone(),
+            value: observed,
+        });
+        true
     }
 
     fn task_payload_accepts(
@@ -378,7 +637,13 @@ impl AwbcProductStepExecutor {
             return;
         };
         if state.results.len() != state.items.len() {
-            state.results = vec![None; state.items.len()];
+            self.fail_with_trap(
+                AwbcTrapCode::InternalInvariant,
+                "AwaitMany fan-out result slots disagree with the admitted item count".to_owned(),
+                None,
+                output,
+            );
+            return;
         }
         let Some(invocation) = state.invocation else {
             self.fail_with_trap(
@@ -422,7 +687,18 @@ impl AwbcProductStepExecutor {
             };
             let args = match argument_count {
                 0 => Vec::new(),
-                1 => vec![state.items[index].clone()],
+                1 => {
+                    if !state.items[index].ownership().permits_copy() {
+                        self.fail_with_trap(
+                            AwbcTrapCode::HostAbiMismatch,
+                            "AwaitMany task item requires a deep Copy carrier".to_owned(),
+                            None,
+                            output,
+                        );
+                        return;
+                    }
+                    vec![state.items[index].clone()]
+                }
                 count => {
                     output.diagnostics.push(RuntimeDiagnostic::categorized(
                         RuntimeDiagnosticCategory::Input,
@@ -487,11 +763,23 @@ impl AwbcProductStepExecutor {
         &mut self,
         mut state: crate::awbc::fiber::FiberAwaitManyState,
         resume: AwbcResumePointId,
-        _events: &[TaskEvent],
+        before_handles: std::collections::BTreeMap<
+            crate::runtime_id::RuntimeLineHandleToken,
+            crate::value::ownership::RuntimeOwnedSlotId,
+        >,
         output: &mut RuntimeStepOutput,
     ) -> bool {
         if state.results.len() != state.items.len() {
-            state.results = vec![None; state.items.len()];
+            if let Some(suspension) = self.fiber.suspension.as_mut() {
+                suspension.reason = FiberSuspensionReason::AwaitMany(state);
+            }
+            self.record_error(
+                ProductStepError::Internal(
+                    "AwaitMany result slots disagree with the admitted item count".to_owned(),
+                ),
+                output,
+            );
+            return false;
         }
         let in_flight_tasks = state
             .in_flight
@@ -500,7 +788,8 @@ impl AwbcProductStepExecutor {
             .collect::<std::collections::BTreeSet<_>>();
         let events = self.take_await_many_task_events(&in_flight_tasks);
         let mut progressed = false;
-        for event in &events {
+        let mut accepted_ready = false;
+        for event in events {
             let Some(position) = state
                 .in_flight
                 .iter()
@@ -508,9 +797,17 @@ impl AwbcProductStepExecutor {
             else {
                 continue;
             };
-            match &event.kind {
+            match event.kind {
                 TaskEventKind::Ready(value) => {
                     if !self.task_payload_accepts(state.plan, value.value()) {
+                        if !self.discard_extracted_await_many(
+                            state,
+                            &before_handles,
+                            crate::effect::RuntimeDropPolicy::Default,
+                            output,
+                        ) {
+                            return false;
+                        }
                         self.fail_with_trap(
                             AwbcTrapCode::HostAbiMismatch,
                             format!(
@@ -523,33 +820,47 @@ impl AwbcProductStepExecutor {
                         return true;
                     }
                     let in_flight = state.in_flight.remove(position);
-                    state.results[in_flight.index as usize] = Some(value.value().clone());
+                    let observation = observed_ready_payload(&value);
+                    state.results[in_flight.index as usize] = Some(value.into_value());
                     output.flow_events.push(FlowEvent::AwaitReady {
                         need: NeedId(in_flight.need_id),
-                        value: value.clone(),
+                        value: observation,
                     });
                     progressed = true;
+                    accepted_ready = true;
                 }
                 TaskEventKind::Progress(progress) => {
                     output.flow_events.push(FlowEvent::AwaitProgress {
                         need: NeedId(state.in_flight[position].need_id.clone()),
-                        progress: progress.clone(),
+                        progress,
                     });
                     progressed = true;
                 }
                 TaskEventKind::Failed(error) => {
-                    self.fail_with_trap(
-                        AwbcTrapCode::HostAbiMismatch,
-                        format!(
-                            "await task {} at index {} failed: {}",
-                            event.task_id.0, state.in_flight[position].index, error
-                        ),
-                        None,
-                        output,
+                    let message = format!(
+                        "await task {} at index {} failed: {}",
+                        event.task_id.0, state.in_flight[position].index, error
                     );
+                    if !self.discard_extracted_await_many(
+                        state,
+                        &before_handles,
+                        crate::effect::RuntimeDropPolicy::Default,
+                        output,
+                    ) {
+                        return false;
+                    }
+                    self.fail_with_trap(AwbcTrapCode::HostAbiMismatch, message, None, output);
                     return true;
                 }
                 TaskEventKind::Cancelled => {
+                    if !self.discard_extracted_await_many(
+                        state,
+                        &before_handles,
+                        crate::effect::RuntimeDropPolicy::Cancel,
+                        output,
+                    ) {
+                        return false;
+                    }
                     let cancellation = cancel_fiber(&mut self.fiber);
                     self.consume_observations(cancellation.observations, output);
                     return true;
@@ -560,38 +871,152 @@ impl AwbcProductStepExecutor {
             && state.next_index as usize >= state.items.len()
             && state.results.iter().all(Option::is_some)
         {
-            let values = state
-                .results
-                .iter()
-                .filter_map(Clone::clone)
-                .collect::<Vec<_>>();
-            let value = runtime_sequence_values(values);
-            if let Some(pattern) = state.binding
-                && let Err(error) =
-                    crate::awbc::vm::bind_pattern(&self.program, &mut self.fiber, pattern, &value)
-            {
-                self.fail_with_trap(
-                    AwbcTrapCode::PatternMismatch,
-                    error.to_string(),
-                    None,
-                    output,
-                );
+            if accepted_ready {
+                if let Some(suspension) = self.fiber.suspension.as_mut() {
+                    suspension.reason = FiberSuspensionReason::AwaitMany(state);
+                }
                 return true;
             }
-            let Some((_, need)) = self.task_plan_ids(state.plan) else {
-                self.fail_with_trap(
-                    AwbcTrapCode::InternalInvariant,
-                    "AwaitMany completion references a non-AwaitMany plan".to_owned(),
-                    None,
-                    output,
+            let values = state
+                .results
+                .iter_mut()
+                .map(|slot| {
+                    slot.take()
+                        .expect("completed AwaitMany result remains present")
+                })
+                .collect::<Vec<_>>();
+            let value = runtime_sequence_values(values);
+            let prepared = (|| -> Result<_, ProductStepError> {
+                let (_, need) = self.task_plan_ids(state.plan).ok_or_else(|| {
+                    ProductStepError::Internal(
+                        "AwaitMany completion references a non-AwaitMany plan".to_owned(),
+                    )
+                })?;
+                let resume = self
+                    .fiber
+                    .validate_resume_at(&self.program, resume)
+                    .map_err(ProductStepError::Fiber)?;
+                let frame = self.fiber.active_frame().map_err(ProductStepError::Fiber)?;
+                let binding = if let Some(pattern) = state.binding {
+                    let prepared = crate::awbc::vm::prepare_pattern_binding(
+                        &self.program,
+                        &self.fiber,
+                        pattern,
+                        &value,
+                    )
+                    .map_err(|error| ProductStepError::Internal(error.to_string()))?;
+                    if prepared.registers().iter().any(|register| {
+                        !frame
+                            .registers
+                            .get(register.index())
+                            .is_some_and(Option::is_none)
+                    }) {
+                        return Err(ProductStepError::Internal(
+                            "AwaitMany binding destination register is occupied".to_owned(),
+                        ));
+                    }
+                    Some(prepared)
+                } else {
+                    None
+                };
+                let mut after = super::line::without_await_many_slots(
+                    &before_handles,
+                    self.fiber.instance,
+                    state.plan,
                 );
-                return true;
+                if let Some(pattern) = state.binding {
+                    for handle in super::line::unique_line_handles(&value)? {
+                        let token = handle.token().clone();
+                        let destinations = crate::awbc::vm::pattern_handle_destinations(
+                            &self.program,
+                            &self.fiber,
+                            pattern,
+                            &value,
+                            &token,
+                        )
+                        .map_err(|error| ProductStepError::Internal(error.to_string()))?;
+                        if let Some(register) = destinations.first().copied() {
+                            after.insert(
+                                token,
+                                crate::value::ownership::RuntimeOwnedSlotId::AwbcRegister {
+                                    execution: self.facade_fiber.execution,
+                                    fiber: self.fiber.instance,
+                                    frame: frame.instance,
+                                    register,
+                                },
+                            );
+                        }
+                    }
+                }
+                let reconciliation = self.dialogues.inspect_parent_fiber_reconciliation(
+                    self.facade_fiber.execution,
+                    &before_handles,
+                    &after,
+                    Some(crate::effect::RuntimeDropPolicy::Default),
+                )?;
+                Ok((need, resume, binding, reconciliation))
+            })();
+            let (need, prepared_resume, binding, reconciliation) = match prepared {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    let dropped = super::line::without_await_many_slots(
+                        &before_handles,
+                        self.fiber.instance,
+                        state.plan,
+                    );
+                    if let Ok(reconciliation) = self.dialogues.inspect_parent_fiber_reconciliation(
+                        self.facade_fiber.execution,
+                        &before_handles,
+                        &dropped,
+                        Some(crate::effect::RuntimeDropPolicy::Default),
+                    ) {
+                        let receipt = self
+                            .dialogues
+                            .commit_parent_fiber_reconciliation(reconciliation);
+                        output
+                            .requests
+                            .line_commands
+                            .extend(receipt.into_commands());
+                        self.fail_with_error(error, output);
+                        return true;
+                    }
+                    state.results = runtime_value_into_sequence_values(value)
+                        .expect("owned AwaitMany aggregate remains a sequence")
+                        .into_iter()
+                        .map(Some)
+                        .collect();
+                    if let Some(suspension) = self.fiber.suspension.as_mut() {
+                        suspension.reason = FiberSuspensionReason::AwaitMany(state);
+                    }
+                    self.record_error(error, output);
+                    return false;
+                }
             };
+            let observation = value
+                .ownership()
+                .permits_copy()
+                .then(|| RuntimePayload::from(value.clone()));
+            if let Some(binding) = binding {
+                crate::awbc::vm::bind_pattern_owned_prepared(
+                    &self.program,
+                    &mut self.fiber,
+                    binding,
+                    value,
+                );
+            }
+            self.fiber.resume_at_prepared(prepared_resume);
+            let receipt = self
+                .dialogues
+                .commit_parent_fiber_reconciliation(reconciliation);
+            output
+                .requests
+                .line_commands
+                .extend(receipt.into_commands());
             output.flow_events.push(FlowEvent::AwaitReady {
                 need,
-                value: RuntimePayload::from(value),
+                value: observation,
             });
-            return self.resume_at(resume, output);
+            return true;
         }
         if let Some(suspension) = self.fiber.suspension.as_mut() {
             suspension.reason = FiberSuspensionReason::AwaitMany(state);
@@ -600,12 +1025,104 @@ impl AwbcProductStepExecutor {
         progressed || !output.requests.tasks.is_empty()
     }
 
+    /// An AwaitMany source may have been moved out of the suspension while
+    /// host events are inspected. Reconcile its typed slots before a trap or
+    /// cancellation clears the runtime owner graph.
+    fn discard_extracted_await_many(
+        &mut self,
+        state: crate::awbc::fiber::FiberAwaitManyState,
+        before: &std::collections::BTreeMap<
+            crate::runtime_id::RuntimeLineHandleToken,
+            crate::value::ownership::RuntimeOwnedSlotId,
+        >,
+        policy: crate::effect::RuntimeDropPolicy,
+        output: &mut RuntimeStepOutput,
+    ) -> bool {
+        let after = super::line::without_await_many_slots(before, self.fiber.instance, state.plan);
+        let prepared = match self.dialogues.inspect_parent_fiber_reconciliation(
+            self.facade_fiber.execution,
+            before,
+            &after,
+            Some(policy),
+        ) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                if let Some(suspension) = self.fiber.suspension.as_mut() {
+                    suspension.reason = FiberSuspensionReason::AwaitMany(state);
+                }
+                self.record_error(error.into(), output);
+                return false;
+            }
+        };
+        let receipt = self.dialogues.commit_parent_fiber_reconciliation(prepared);
+        output
+            .requests
+            .line_commands
+            .extend(receipt.into_commands());
+        true
+    }
+
+    /// The ordinary trap path can still own an installed AwaitMany packet.
+    /// Its item/result slots must be released through the parent ledger before
+    /// FiberState clears the suspension.
+    pub(super) fn release_installed_await_many_for_trap(
+        &mut self,
+        output: &mut RuntimeStepOutput,
+    ) -> bool {
+        let Some(FiberSuspensionReason::AwaitMany(state)) = self
+            .fiber
+            .suspension
+            .as_ref()
+            .map(|suspension| &suspension.reason)
+        else {
+            return true;
+        };
+        let before = match super::line::product_fiber_handle_owners(
+            self.facade_fiber.execution,
+            &self.fiber,
+        ) {
+            Ok(before) => before,
+            Err(error) => {
+                self.record_error(error, output);
+                return false;
+            }
+        };
+        let after = super::line::without_await_many_slots(&before, self.fiber.instance, state.plan);
+        let prepared = match self.dialogues.inspect_parent_fiber_reconciliation(
+            self.facade_fiber.execution,
+            &before,
+            &after,
+            Some(crate::effect::RuntimeDropPolicy::Default),
+        ) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                self.record_error(error.into(), output);
+                return false;
+            }
+        };
+        let receipt = self.dialogues.commit_parent_fiber_reconciliation(prepared);
+        output
+            .requests
+            .line_commands
+            .extend(receipt.into_commands());
+        true
+    }
+
     pub(super) fn emit_host_call(
         &mut self,
         call: AwbcHostCallId,
         args: &[RuntimeValue],
         output: &mut RuntimeStepOutput,
     ) {
+        if args.iter().any(|value| !value.ownership().permits_copy()) {
+            self.record_error(
+                ProductStepError::Type(
+                    "external host-call arguments require deep Copy carriers".to_owned(),
+                ),
+                output,
+            );
+            return;
+        }
         if self
             .pending_host_call
             .as_ref()
@@ -720,25 +1237,38 @@ impl AwbcProductStepExecutor {
         call: AwbcHostCallId,
         destination: Option<crate::awbc::schema::AwbcRegisterId>,
         resume: AwbcResumePointId,
-        results: &[crate::step::RuntimeHostCallResult],
+        results: &mut Vec<crate::step::RuntimeHostCallResult>,
         output: &mut RuntimeStepOutput,
     ) -> bool {
         if self.pending_host_call.is_none() {
-            let args = self
+            let Some(args) = self.fiber.suspension.as_mut().and_then(|suspension| {
+                match &mut suspension.reason {
+                    FiberSuspensionReason::HostCall { args, .. } => Some(std::mem::take(args)),
+                    _ => None,
+                }
+            }) else {
+                self.fail_with_trap(
+                    AwbcTrapCode::InternalInvariant,
+                    "host-call suspension lost its argument owner".to_owned(),
+                    None,
+                    output,
+                );
+                return true;
+            };
+            self.emit_host_call(call, &args, output);
+            if let Some(FiberSuspensionReason::HostCall { args: retained, .. }) = self
                 .fiber
                 .suspension
-                .as_ref()
-                .and_then(|suspension| match &suspension.reason {
-                    FiberSuspensionReason::HostCall { args, .. } => Some(args.clone()),
-                    _ => None,
-                })
-                .unwrap_or_default();
-            self.emit_host_call(call, &args, output);
+                .as_mut()
+                .map(|suspension| &mut suspension.reason)
+            {
+                *retained = args;
+            }
         }
         let Some(pending) = self.pending_host_call.clone() else {
             return false;
         };
-        let Some(result) = results.iter().find(|result| result.id == pending.id) else {
+        let Some(index) = results.iter().position(|result| result.id == pending.id) else {
             return false;
         };
         if pending.call != call {
@@ -751,7 +1281,7 @@ impl AwbcProductStepExecutor {
             );
             return true;
         }
-        match &result.outcome {
+        match &results[index].outcome {
             Ok(value) => {
                 let checked = self
                     .program
@@ -779,17 +1309,49 @@ impl AwbcProductStepExecutor {
                     );
                     return true;
                 }
-                if let Some(destination) = destination
-                    && let Ok(frame) = self.fiber.active_frame_mut()
-                    && let Err(error) = frame.set_register(destination, value.value().clone())
-                {
-                    self.fail_with_error(ProductStepError::Internal(error.to_string()), output);
-                    return true;
+                let prepared_resume = match self.fiber.validate_resume_at(&self.program, resume) {
+                    Ok(prepared) => prepared,
+                    Err(error) => {
+                        self.fail_with_error(ProductStepError::Internal(error.to_string()), output);
+                        return true;
+                    }
+                };
+                if let Some(destination) = destination {
+                    let vacant = self.fiber.active_frame().ok().is_some_and(|frame| {
+                        frame
+                            .registers
+                            .get(destination.index())
+                            .is_some_and(Option::is_none)
+                    });
+                    if !vacant {
+                        self.fail_with_trap(
+                            AwbcTrapCode::HostAbiMismatch,
+                            "host-call destination register is unavailable".to_owned(),
+                            None,
+                            output,
+                        );
+                        return true;
+                    }
+                }
+                let result = results.remove(index);
+                let value = result
+                    .outcome
+                    .expect("validated host-call result remains successful")
+                    .into_value();
+                if let Some(destination) = destination {
+                    self.fiber
+                        .active_frame_mut()
+                        .expect("validated host-call frame remains active")
+                        .set_register(destination, value)
+                        .expect("validated host-call destination remains available");
                 }
                 self.pending_host_call = None;
-                self.resume_at(resume, output)
+                self.fiber.resume_at_prepared(prepared_resume);
+                true
             }
             Err(error) => {
+                let error = error.clone();
+                results.remove(index);
                 self.pending_host_call = None;
                 self.fail_with_trap(
                     match error.kind {
@@ -815,14 +1377,11 @@ impl AwbcProductStepExecutor {
         child: &mut super::ProductChildFiber,
         output: &mut RuntimeStepOutput,
     ) -> Result<(), ProductStepError> {
-        let Some(suspension) = child.fiber.suspension.clone() else {
+        let Some(suspension) = child.fiber.suspension.as_ref() else {
             return Ok(());
         };
-        if let FiberSuspensionReason::Await {
-            target: FiberAwaitTarget::Need { id, .. },
-            ..
-        } = &suspension.reason
-        {
+        let dispatch = DeferredSuspensionDispatch::from_reason(&suspension.reason);
+        if let DeferredSuspensionDispatch::AwaitNeed { need: id, .. } = &dispatch {
             let task = self
                 .need_producers
                 .launches()
@@ -833,13 +1392,10 @@ impl AwbcProductStepExecutor {
                 task,
             });
         }
-        match suspension.reason {
-            FiberSuspensionReason::Await {
-                target: FiberAwaitTarget::Need { .. },
-                ..
-            }
-            | FiberSuspensionReason::BudgetYield => {}
-            FiberSuspensionReason::AwaitMany(_) => {
+        match dispatch {
+            DeferredSuspensionDispatch::AwaitNeed { .. }
+            | DeferredSuspensionDispatch::BudgetYield => {}
+            DeferredSuspensionDispatch::AwaitMany => {
                 let diagnostics = output.diagnostics.len();
                 self.fill_await_many_for_fiber(&mut child.fiber, output);
                 if output.diagnostics.len() > diagnostics {
@@ -851,10 +1407,26 @@ impl AwbcProductStepExecutor {
                     ));
                 }
             }
-            FiberSuspensionReason::HostCall { call, args, .. } => {
+            DeferredSuspensionDispatch::HostCall { call, .. } => {
                 if child.pending_host_call.is_none() {
+                    let Some(args) = child.fiber.suspension.as_ref().and_then(|suspension| {
+                        match &suspension.reason {
+                            FiberSuspensionReason::HostCall { args, .. } => Some(args.as_slice()),
+                            _ => None,
+                        }
+                    }) else {
+                        return Err(ProductStepError::Internal(
+                            "deferred child host-call suspension lost its argument owner"
+                                .to_owned(),
+                        ));
+                    };
+                    if args.iter().any(|value| !value.ownership().permits_copy()) {
+                        return Err(ProductStepError::Type(
+                            "external host-call arguments require deep Copy carriers".to_owned(),
+                        ));
+                    }
                     let parent_pending = self.pending_host_call.take();
-                    self.emit_host_call(call, &args, output);
+                    self.emit_host_call(call, args, output);
                     child.pending_host_call = self.pending_host_call.take();
                     self.pending_host_call = parent_pending;
                     if child.pending_host_call.is_none() {
@@ -865,7 +1437,7 @@ impl AwbcProductStepExecutor {
                     }
                 }
             }
-            FiberSuspensionReason::Dialogue { .. } | FiberSuspensionReason::Choice { .. } => {
+            DeferredSuspensionDispatch::Unsupported => {
                 return Err(ProductStepError::Internal(
                     "deferred child suspended on a product-owned dialogue or choice boundary"
                         .to_owned(),
@@ -878,16 +1450,19 @@ impl AwbcProductStepExecutor {
     pub(super) fn resume_deferred_child_suspension(
         &mut self,
         child: &mut super::ProductChildFiber,
-        need_states: &[RuntimeNeedState],
-        host_results: &[crate::step::RuntimeHostCallResult],
+        need_states: &mut Vec<RuntimeNeedState>,
+        host_results: &mut Vec<crate::step::RuntimeHostCallResult>,
         output: &mut RuntimeStepOutput,
+        journal: &mut super::DeferredChildResumeJournal,
     ) -> Result<bool, ProductStepError> {
-        let Some(suspension) = child.fiber.suspension.clone() else {
+        let Some(suspension) = child.fiber.suspension.as_ref() else {
             return Ok(false);
         };
-        let Some(resume) = suspension.declared_resume() else {
-            return match suspension.reason {
-                FiberSuspensionReason::BudgetYield => {
+        let resume = suspension.declared_resume();
+        let dispatch = DeferredSuspensionDispatch::from_reason(&suspension.reason);
+        let Some(resume) = resume else {
+            return match dispatch {
+                DeferredSuspensionDispatch::BudgetYield => {
                     child
                         .fiber
                         .resume_budget_yield(&self.program)
@@ -900,14 +1475,10 @@ impl AwbcProductStepExecutor {
                 )),
             };
         };
-        match suspension.reason {
-            FiberSuspensionReason::Await {
-                target:
-                    FiberAwaitTarget::Need {
-                        id: need,
-                        item_type,
-                        ..
-                    },
+        match dispatch {
+            DeferredSuspensionDispatch::AwaitNeed {
+                need,
+                item_type,
                 binding,
                 observer,
             } => Ok(self.resume_deferred_await_need(
@@ -919,27 +1490,43 @@ impl AwbcProductStepExecutor {
                 resume,
                 need_states,
                 output,
+                journal,
             )),
-            FiberSuspensionReason::AwaitMany(state) => {
-                Ok(self.resume_deferred_await_many(&mut child.fiber, state, resume, output))
-            }
-            FiberSuspensionReason::HostCall {
-                call, destination, ..
-            } => Ok(self.resume_deferred_host_call(
-                child,
-                call,
-                destination,
-                resume,
-                host_results,
-                output,
-            )),
-            FiberSuspensionReason::Dialogue { .. } | FiberSuspensionReason::Choice { .. } => {
-                Err(ProductStepError::Internal(
-                    "deferred child suspended on a product-owned dialogue or choice boundary"
-                        .to_owned(),
+            DeferredSuspensionDispatch::AwaitMany => {
+                let reason = &mut child
+                    .fiber
+                    .suspension
+                    .as_mut()
+                    .expect("checked deferred child suspension remains present")
+                    .reason;
+                let FiberSuspensionReason::AwaitMany(state) =
+                    std::mem::replace(reason, FiberSuspensionReason::BudgetYield)
+                else {
+                    unreachable!("checked deferred AwaitMany dispatch retains its sole owner")
+                };
+                Ok(self.resume_deferred_await_many(
+                    &mut child.fiber,
+                    state,
+                    resume,
+                    output,
+                    journal,
                 ))
             }
-            FiberSuspensionReason::BudgetYield => Ok(false),
+            DeferredSuspensionDispatch::HostCall { call, destination } => Ok(self
+                .resume_deferred_host_call(
+                    child,
+                    call,
+                    destination,
+                    resume,
+                    host_results,
+                    journal,
+                    output,
+                )),
+            DeferredSuspensionDispatch::Unsupported => Err(ProductStepError::Internal(
+                "deferred child suspended on a product-owned dialogue or choice boundary"
+                    .to_owned(),
+            )),
+            DeferredSuspensionDispatch::BudgetYield => Ok(false),
         }
     }
 
@@ -951,8 +1538,9 @@ impl AwbcProductStepExecutor {
         binding: Option<crate::awbc::schema::AwbcPatternId>,
         observer: Option<AwbcAwaitObserverResume>,
         resume: AwbcResumePointId,
-        states: &[RuntimeNeedState],
+        states: &mut Vec<RuntimeNeedState>,
         output: &mut RuntimeStepOutput,
+        journal: &mut super::DeferredChildResumeJournal,
     ) -> bool {
         let local_launch = self
             .need_producers
@@ -978,14 +1566,37 @@ impl AwbcProductStepExecutor {
             let Some(cursor) = launch.publication() else {
                 return false;
             };
-            (cursor, launch.state().clone())
+            let state = match launch.state() {
+                crate::task::RuntimeNeedProducerState::NotStarted => {
+                    AwaitNeedPublicationKind::NotStarted
+                }
+                crate::task::RuntimeNeedProducerState::Pending(progress) => {
+                    AwaitNeedPublicationKind::Pending(progress.clone())
+                }
+                crate::task::RuntimeNeedProducerState::Ready(_) => {
+                    AwaitNeedPublicationKind::LocalReady
+                }
+                crate::task::RuntimeNeedProducerState::ReadyTransferred => {
+                    AwaitNeedPublicationKind::ReadyTransferred
+                }
+                crate::task::RuntimeNeedProducerState::Cancelled => {
+                    AwaitNeedPublicationKind::Cancelled
+                }
+            };
+            (cursor, state)
         } else {
             let Some(state) = resolved_runtime_need_state(states, need) else {
                 return false;
             };
+            let kind = match state.state() {
+                Need::NotStarted => AwaitNeedPublicationKind::NotStarted,
+                Need::Pending(progress) => AwaitNeedPublicationKind::Pending(progress.clone()),
+                Need::Ready(_) => AwaitNeedPublicationKind::ExternalReady,
+                Need::Cancelled => AwaitNeedPublicationKind::Cancelled,
+            };
             (
                 crate::task::TaskPublicationCursor::from_need_state(state),
-                state.state().clone(),
+                kind,
             )
         };
         let waiter =
@@ -1006,9 +1617,9 @@ impl AwbcProductStepExecutor {
             }
         }
         self.need_publications.insert(publication_key, cursor);
-        match &state {
-            Need::NotStarted => false,
-            Need::Pending(progress) => {
+        match state {
+            AwaitNeedPublicationKind::NotStarted => false,
+            AwaitNeedPublicationKind::Pending(progress) => {
                 output.flow_events.push(FlowEvent::AwaitProgress {
                     need: need.clone(),
                     progress: progress.clone(),
@@ -1023,7 +1634,32 @@ impl AwbcProductStepExecutor {
                     )
                 })
             }
-            Need::Ready(value) => {
+            kind @ (AwaitNeedPublicationKind::LocalReady
+            | AwaitNeedPublicationKind::ExternalReady) => {
+                let local = matches!(kind, AwaitNeedPublicationKind::LocalReady);
+                let selected = if local {
+                    self.need_producers
+                        .ready_for_need(need)
+                        .map(|value| (value, None))
+                } else {
+                    resolved_runtime_need_state(states, need).and_then(|state| {
+                        let index = states
+                            .iter()
+                            .position(|candidate| std::ptr::eq(candidate, state))?;
+                        match state.state() {
+                            Need::Ready(value) => Some((value, Some((index, state.sequence())))),
+                            _ => None,
+                        }
+                    })
+                };
+                let Some((value, external)) = selected else {
+                    mark_child_trapped(
+                        fiber,
+                        AwbcTrapCode::InternalInvariant,
+                        "selected deferred Need Ready payload is unavailable".to_owned(),
+                    );
+                    return true;
+                };
                 if !crate::awbc::fiber::runtime_value_matches_type(
                     &self.program,
                     value.value(),
@@ -1040,22 +1676,98 @@ impl AwbcProductStepExecutor {
                     );
                     return true;
                 }
+                let resume_proof = match fiber.validate_resume_at(&self.program, resume) {
+                    Ok(proof) => proof,
+                    Err(error) => {
+                        mark_child_trapped(
+                            fiber,
+                            AwbcTrapCode::InternalInvariant,
+                            error.to_string(),
+                        );
+                        return true;
+                    }
+                };
+                let binding_proof = if let Some(pattern) = binding {
+                    let proof = match crate::awbc::vm::prepare_pattern_binding(
+                        &self.program,
+                        fiber,
+                        pattern,
+                        value.value(),
+                    ) {
+                        Ok(proof) => proof,
+                        Err(error) => {
+                            mark_child_trapped(
+                                fiber,
+                                AwbcTrapCode::PatternMismatch,
+                                error.to_string(),
+                            );
+                            return true;
+                        }
+                    };
+                    let vacant = fiber.active_frame().ok().is_some_and(|frame| {
+                        proof.registers().iter().all(|register| {
+                            frame
+                                .registers
+                                .get(register.index())
+                                .is_some_and(Option::is_none)
+                        })
+                    });
+                    if !vacant {
+                        mark_child_trapped(
+                            fiber,
+                            AwbcTrapCode::TypeMismatch,
+                            "deferred Need Ready binding destination is occupied".to_owned(),
+                        );
+                        return true;
+                    }
+                    Some(proof)
+                } else {
+                    None
+                };
+                let observation = observed_ready_payload(value);
+                let source = if let Some((index, sequence)) = external {
+                    super::DeferredNeedReadySource::External { index, sequence }
+                } else {
+                    let proof = match self.need_producers.inspect_ready_take_for_need(need) {
+                        Ok(proof) => proof,
+                        Err(error) => {
+                            mark_child_trapped(
+                                fiber,
+                                AwbcTrapCode::InternalInvariant,
+                                error.to_string(),
+                            );
+                            return true;
+                        }
+                    };
+                    super::DeferredNeedReadySource::Local(proof)
+                };
+                if let Err(error) = journal.stage_need_ready(super::DeferredNeedReadyStage {
+                    need: need.clone(),
+                    source,
+                    resume: resume_proof,
+                    binding: binding_proof,
+                }) {
+                    mark_child_trapped(fiber, AwbcTrapCode::InternalInvariant, error.to_string());
+                    return true;
+                }
                 output.flow_events.push(FlowEvent::AwaitReady {
                     need: need.clone(),
-                    value: value.clone(),
+                    value: observation,
                 });
-                resume_deferred_await_value(
-                    &self.program,
-                    fiber,
-                    binding,
-                    resume,
-                    value.value(),
-                    output,
-                )
+                true
             }
-            Need::Cancelled => {
+            AwaitNeedPublicationKind::ReadyTransferred => {
+                mark_child_trapped(
+                    fiber,
+                    AwbcTrapCode::HostAbiMismatch,
+                    "Need Ready payload has already transferred to its unique waiter".to_owned(),
+                );
+                true
+            }
+            AwaitNeedPublicationKind::Cancelled => {
+                journal.record_drop_policy(crate::effect::RuntimeDropPolicy::Cancel);
                 let cancellation = cancel_fiber(fiber);
-                self.consume_observations(cancellation.observations, output);
+                journal.record_deferred_observations(cancellation.observations);
                 true
             }
         }
@@ -1067,28 +1779,45 @@ impl AwbcProductStepExecutor {
         call: AwbcHostCallId,
         destination: Option<crate::awbc::schema::AwbcRegisterId>,
         resume: AwbcResumePointId,
-        results: &[crate::step::RuntimeHostCallResult],
+        results: &mut Vec<crate::step::RuntimeHostCallResult>,
+        journal: &mut super::DeferredChildResumeJournal,
         output: &mut RuntimeStepOutput,
     ) -> bool {
         if child.pending_host_call.is_none() {
-            let args = child
-                .fiber
-                .suspension
-                .as_ref()
-                .and_then(|suspension| match &suspension.reason {
-                    FiberSuspensionReason::HostCall { args, .. } => Some(args.clone()),
-                    _ => None,
-                })
-                .unwrap_or_default();
+            let Some(args) =
+                child
+                    .fiber
+                    .suspension
+                    .as_ref()
+                    .and_then(|suspension| match &suspension.reason {
+                        FiberSuspensionReason::HostCall { args, .. } => Some(args.as_slice()),
+                        _ => None,
+                    })
+            else {
+                mark_child_trapped(
+                    &mut child.fiber,
+                    AwbcTrapCode::InternalInvariant,
+                    "deferred child host-call suspension lost its argument owner".to_owned(),
+                );
+                return true;
+            };
+            if args.iter().any(|value| !value.ownership().permits_copy()) {
+                mark_child_trapped(
+                    &mut child.fiber,
+                    AwbcTrapCode::HostAbiMismatch,
+                    "external host-call arguments require deep Copy carriers".to_owned(),
+                );
+                return true;
+            }
             let parent_pending = self.pending_host_call.take();
-            self.emit_host_call(call, &args, output);
+            self.emit_host_call(call, args, output);
             child.pending_host_call = self.pending_host_call.take();
             self.pending_host_call = parent_pending;
         }
         let Some(pending) = child.pending_host_call.clone() else {
             return false;
         };
-        let Some(result) = results.iter().find(|result| result.id == pending.id) else {
+        let Some(index) = results.iter().position(|result| result.id == pending.id) else {
             return false;
         };
         if pending.call != call {
@@ -1100,7 +1829,7 @@ impl AwbcProductStepExecutor {
             );
             return true;
         }
-        match &result.outcome {
+        match &results[index].outcome {
             Ok(value) => {
                 let checked = self
                     .program
@@ -1127,20 +1856,46 @@ impl AwbcProductStepExecutor {
                     );
                     return true;
                 }
-                if let Some(destination) = destination
-                    && let Ok(frame) = child.fiber.active_frame_mut()
-                    && let Err(error) = frame.set_register(destination, value.value().clone())
-                {
-                    child.pending_host_call = None;
-                    mark_child_trapped(
-                        &mut child.fiber,
-                        AwbcTrapCode::TypeMismatch,
-                        error.to_string(),
-                    );
-                    return true;
+                let prepared_resume = match child.fiber.validate_resume_at(&self.program, resume) {
+                    Ok(prepared) => prepared,
+                    Err(error) => {
+                        mark_child_trapped(
+                            &mut child.fiber,
+                            AwbcTrapCode::InternalInvariant,
+                            error.to_string(),
+                        );
+                        return true;
+                    }
+                };
+                if let Some(destination) = destination {
+                    let vacant = child.fiber.active_frame().ok().is_some_and(|frame| {
+                        frame
+                            .registers
+                            .get(destination.index())
+                            .is_some_and(Option::is_none)
+                    });
+                    if !vacant {
+                        mark_child_trapped(
+                            &mut child.fiber,
+                            AwbcTrapCode::TypeMismatch,
+                            "deferred host-call destination register is unavailable".to_owned(),
+                        );
+                        return true;
+                    }
                 }
-                child.pending_host_call = None;
-                if let Err(error) = child.fiber.resume_at(&self.program, resume) {
+                let stage = super::PreparedHostResultTake {
+                    result_id: pending.id,
+                    result_index: index,
+                    target: super::PreparedHostResultTarget::Deferred {
+                        child: child.fiber.instance,
+                        call,
+                        outcome: super::PreparedHostResultOutcome::Ready {
+                            destination,
+                            resume: prepared_resume,
+                        },
+                    },
+                };
+                if let Err(error) = journal.stage_host_call(stage) {
                     mark_child_trapped(
                         &mut child.fiber,
                         AwbcTrapCode::InternalInvariant,
@@ -1150,20 +1905,25 @@ impl AwbcProductStepExecutor {
                 true
             }
             Err(error) => {
-                child.pending_host_call = None;
-                mark_child_trapped(
-                    &mut child.fiber,
-                    match error.kind {
-                        crate::step::RuntimeHostCallErrorKind::UnsupportedCapability => {
-                            AwbcTrapCode::CapabilityDenied
-                        }
-                        crate::step::RuntimeHostCallErrorKind::Rejected
-                        | crate::step::RuntimeHostCallErrorKind::Failed => {
-                            AwbcTrapCode::HostAbiMismatch
-                        }
+                let stage = super::PreparedHostResultTake {
+                    result_id: pending.id,
+                    result_index: index,
+                    target: super::PreparedHostResultTarget::Deferred {
+                        child: child.fiber.instance,
+                        call,
+                        outcome: super::PreparedHostResultOutcome::Failed {
+                            kind: error.kind,
+                            message: error.message.clone(),
+                        },
                     },
-                    error.message.clone(),
-                );
+                };
+                if let Err(error) = journal.stage_host_call(stage) {
+                    mark_child_trapped(
+                        &mut child.fiber,
+                        AwbcTrapCode::InternalInvariant,
+                        error.to_string(),
+                    );
+                }
                 true
             }
         }
@@ -1230,7 +1990,13 @@ impl AwbcProductStepExecutor {
             return;
         };
         if state.results.len() != state.items.len() {
-            state.results = vec![None; state.items.len()];
+            mark_child_trapped(
+                fiber,
+                AwbcTrapCode::InternalInvariant,
+                "AwaitMany child fan-out result slots disagree with the admitted item count"
+                    .to_owned(),
+            );
+            return;
         }
         let Some(invocation) = state.invocation else {
             mark_child_trapped(
@@ -1263,7 +2029,17 @@ impl AwbcProductStepExecutor {
             };
             let args = match argument_count {
                 0 => Vec::new(),
-                1 => vec![state.items[index].clone()],
+                1 => {
+                    if !state.items[index].ownership().permits_copy() {
+                        mark_child_trapped(
+                            fiber,
+                            AwbcTrapCode::HostAbiMismatch,
+                            "AwaitMany task item requires a deep Copy carrier".to_owned(),
+                        );
+                        return;
+                    }
+                    vec![state.items[index].clone()]
+                }
                 count => {
                     output.diagnostics.push(RuntimeDiagnostic::categorized(
                         RuntimeDiagnosticCategory::Input,
@@ -1329,18 +2105,28 @@ impl AwbcProductStepExecutor {
         mut state: crate::awbc::fiber::FiberAwaitManyState,
         resume: AwbcResumePointId,
         output: &mut RuntimeStepOutput,
+        journal: &mut super::DeferredChildResumeJournal,
     ) -> bool {
         if state.results.len() != state.items.len() {
-            state.results = vec![None; state.items.len()];
+            journal.record_default_drop_policy();
+            mark_child_trapped(
+                fiber,
+                AwbcTrapCode::InternalInvariant,
+                "deferred AwaitMany result slots disagree with the admitted item count".to_owned(),
+            );
+            return true;
         }
         let in_flight_tasks = state
             .in_flight
             .iter()
             .map(|in_flight| in_flight.task_id.clone())
             .collect::<std::collections::BTreeSet<_>>();
-        let events = self.take_await_many_task_events(&in_flight_tasks);
+        let events = self.take_await_many_task_events_for_deferred(&in_flight_tasks, journal);
         let mut progressed = false;
-        for event in &events {
+        for event_index in events {
+            let event = journal
+                .task_event(event_index)
+                .expect("recorded deferred task event remains present");
             let Some(position) = state
                 .in_flight
                 .iter()
@@ -1351,23 +2137,45 @@ impl AwbcProductStepExecutor {
             match &event.kind {
                 TaskEventKind::Ready(value) => {
                     if !self.task_payload_accepts(state.plan, value.value()) {
+                        let task_id = event.task_id.0.clone();
+                        journal.record_default_drop_policy();
                         mark_child_trapped(
                             fiber,
                             AwbcTrapCode::HostAbiMismatch,
                             format!(
                                 "await task {} published a payload outside its checked outcome contract",
-                                event.task_id.0
+                                task_id
                             ),
                         );
                         return true;
                     }
                     let in_flight = state.in_flight.remove(position);
-                    state.results[in_flight.index as usize] = Some(value.value().clone());
+                    let observation = observed_ready_payload(value);
+                    let value = match journal.take_ready_value(
+                        event_index,
+                        state.plan,
+                        in_flight.index as usize,
+                    ) {
+                        Ok(value) => value,
+                        Err(error) => {
+                            journal.record_default_drop_policy();
+                            mark_child_trapped(
+                                fiber,
+                                AwbcTrapCode::InternalInvariant,
+                                error.to_string(),
+                            );
+                            return true;
+                        }
+                    };
+                    state.results[in_flight.index as usize] = Some(value);
                     output.flow_events.push(FlowEvent::AwaitReady {
                         need: NeedId(in_flight.need_id),
-                        value: value.clone(),
+                        value: observation,
                     });
-                    progressed = true;
+                    if let Some(suspension) = fiber.suspension.as_mut() {
+                        suspension.reason = FiberSuspensionReason::AwaitMany(state);
+                    }
+                    return true;
                 }
                 TaskEventKind::Progress(progress) => {
                     output.flow_events.push(FlowEvent::AwaitProgress {
@@ -1377,19 +2185,18 @@ impl AwbcProductStepExecutor {
                     progressed = true;
                 }
                 TaskEventKind::Failed(error) => {
-                    mark_child_trapped(
-                        fiber,
-                        AwbcTrapCode::HostAbiMismatch,
-                        format!(
-                            "await task {} at index {} failed: {}",
-                            event.task_id.0, state.in_flight[position].index, error
-                        ),
+                    let message = format!(
+                        "await task {} at index {} failed: {}",
+                        event.task_id.0, state.in_flight[position].index, error
                     );
+                    journal.record_default_drop_policy();
+                    mark_child_trapped(fiber, AwbcTrapCode::HostAbiMismatch, message);
                     return true;
                 }
                 TaskEventKind::Cancelled => {
+                    journal.record_drop_policy(crate::effect::RuntimeDropPolicy::Cancel);
                     let cancellation = cancel_fiber(fiber);
-                    self.consume_observations(cancellation.observations, output);
+                    journal.record_deferred_observations(cancellation.observations);
                     return true;
                 }
             }
@@ -1400,18 +2207,15 @@ impl AwbcProductStepExecutor {
         {
             let values = state
                 .results
-                .iter()
-                .filter_map(Clone::clone)
+                .iter_mut()
+                .map(|slot| {
+                    slot.take()
+                        .expect("completed deferred AwaitMany result remains present")
+                })
                 .collect::<Vec<_>>();
             let value = runtime_sequence_values(values);
-            if let Some(pattern) = state.binding
-                && let Err(error) =
-                    crate::awbc::vm::bind_pattern(&self.program, fiber, pattern, &value)
-            {
-                mark_child_trapped(fiber, AwbcTrapCode::PatternMismatch, error.to_string());
-                return true;
-            }
             let Some((_, need)) = self.task_plan_ids(state.plan) else {
+                journal.record_default_drop_policy();
                 mark_child_trapped(
                     fiber,
                     AwbcTrapCode::InternalInvariant,
@@ -1419,13 +2223,62 @@ impl AwbcProductStepExecutor {
                 );
                 return true;
             };
+            let prepared_resume = match fiber.validate_resume_at(&self.program, resume) {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    journal.record_default_drop_policy();
+                    mark_child_trapped(fiber, AwbcTrapCode::InternalInvariant, error.to_string());
+                    return true;
+                }
+            };
+            let binding = if let Some(pattern) = state.binding {
+                let prepared = match crate::awbc::vm::prepare_pattern_binding(
+                    &self.program,
+                    fiber,
+                    pattern,
+                    &value,
+                ) {
+                    Ok(prepared) => prepared,
+                    Err(error) => {
+                        journal.record_default_drop_policy();
+                        mark_child_trapped(fiber, AwbcTrapCode::PatternMismatch, error.to_string());
+                        return true;
+                    }
+                };
+                let vacant = fiber.active_frame().ok().is_some_and(|frame| {
+                    prepared.registers().iter().all(|register| {
+                        frame
+                            .registers
+                            .get(register.index())
+                            .is_some_and(Option::is_none)
+                    })
+                });
+                if !vacant {
+                    journal.record_default_drop_policy();
+                    mark_child_trapped(
+                        fiber,
+                        AwbcTrapCode::TypeMismatch,
+                        "deferred AwaitMany binding destination is occupied".to_owned(),
+                    );
+                    return true;
+                }
+                Some(prepared)
+            } else {
+                None
+            };
+            let observation = value
+                .ownership()
+                .permits_copy()
+                .then(|| RuntimePayload::from(value.clone()));
+            if let Some(binding) = binding {
+                crate::awbc::vm::bind_pattern_owned_prepared(&self.program, fiber, binding, value);
+            }
+            fiber.resume_at_prepared(prepared_resume);
+            journal.record_default_drop_policy();
             output.flow_events.push(FlowEvent::AwaitReady {
                 need,
-                value: RuntimePayload::from(value),
+                value: observation,
             });
-            if let Err(error) = fiber.resume_at(&self.program, resume) {
-                mark_child_trapped(fiber, AwbcTrapCode::InternalInvariant, error.to_string());
-            }
             return true;
         }
         if let Some(suspension) = fiber.suspension.as_mut() {
@@ -1434,7 +2287,11 @@ impl AwbcProductStepExecutor {
         let request_count = output.requests.tasks.len();
         let diagnostic_count = output.diagnostics.len();
         self.fill_await_many_for_fiber(fiber, output);
+        if fiber.status == crate::awbc::fiber::FiberStatus::Trapped {
+            journal.record_default_drop_policy();
+        }
         if output.diagnostics.len() > diagnostic_count {
+            journal.record_default_drop_policy();
             mark_child_trapped(
                 fiber,
                 AwbcTrapCode::InternalInvariant,
@@ -1459,11 +2316,46 @@ impl AwbcProductStepExecutor {
                 if let Some(event) = self.queued_task_events.remove(index) {
                     events.push(event);
                 }
+                break;
             } else {
                 index += 1;
             }
         }
         events
+    }
+
+    fn take_await_many_task_events_for_deferred(
+        &mut self,
+        in_flight_tasks: &std::collections::BTreeSet<String>,
+        journal: &mut super::DeferredChildResumeJournal,
+    ) -> std::ops::Range<usize> {
+        let start = journal.consumed_task_events.len();
+        let mut index = 0;
+        while index < self.queued_task_events.len() {
+            if in_flight_tasks.contains(&self.queued_task_events[index].task_id.0) {
+                let event = self
+                    .queued_task_events
+                    .remove(index)
+                    .expect("checked queued task event remains present");
+                let mut original_index = index;
+                let mut prior_positions = journal
+                    .consumed_task_events
+                    .iter()
+                    .map(|entry| entry.queue_index)
+                    .collect::<Vec<_>>();
+                prior_positions.sort_unstable();
+                for position in prior_positions {
+                    if position <= original_index {
+                        original_index += 1;
+                    }
+                }
+                journal.record_consumed_task_event(original_index, event);
+                break;
+            } else {
+                index += 1;
+            }
+        }
+        start..journal.consumed_task_events.len()
     }
 
     pub(super) fn consume_observations(
@@ -1506,18 +2398,26 @@ impl AwbcProductStepExecutor {
                     self.spawn_child(function, &args, output);
                 }
                 VmObservation::StreamYield { stream, value } => {
+                    let event_value =
+                        match crate::stream::RuntimeStreamYieldCopyProof::inspect(&value) {
+                            Ok(proof) => proof.copy(),
+                            Err(error) => {
+                                self.fail_with_error(
+                                    super::ProductStepError::Internal(error.to_string()),
+                                    output,
+                                );
+                                continue;
+                            }
+                        };
+                    let stream_id = stream_id_for(&self.program, stream);
                     let sequence = self.stream_sequences.entry(stream).or_default();
                     output.effects.stream_events.push(RuntimeStreamEvent {
-                        stream: stream_id_for(&self.program, stream),
+                        stream: stream_id.clone(),
                         sequence: TaskSequence(*sequence),
-                        kind: StreamEventKind::Item(RuntimePayload::from(value.clone())),
+                        kind: StreamEventKind::Item(RuntimePayload::from(event_value)),
                     });
                     *sequence = sequence.saturating_add(1);
-                    if let Some(state) = self
-                        .facade_fiber
-                        .stream_states
-                        .get_mut(&stream_id_for(&self.program, stream))
-                    {
+                    if let Some(state) = self.facade_fiber.stream_states.get_mut(&stream_id) {
                         state.push_item(RuntimePayload::from(value));
                     }
                 }
@@ -1654,15 +2554,12 @@ impl AwbcProductStepExecutor {
         values: Vec<RuntimeValue>,
         output: &mut RuntimeStepOutput,
     ) {
-        let mut candidate_fiber = self.fiber.clone();
-        let mut candidate_registry = self.need_producers.clone();
         let started = self.stage_need_producer_started(
-            &mut candidate_fiber,
-            &mut candidate_registry,
+            &self.fiber,
+            &self.need_producers,
             self.runtime_generation,
             cursor,
             fiber,
-            dst,
             plan_id,
             values,
         );
@@ -1673,18 +2570,43 @@ impl AwbcProductStepExecutor {
                 return;
             }
         };
-        if started.is_some() && self.remaining_new_task_requests == 0 {
+        let ensure =
+            started.admission().disposition() == crate::task::NeedProducerTaskDisposition::Ensure;
+        if ensure && self.remaining_new_task_requests == 0 {
             self.fail_with_budget_error(
                 "Need producer start exceeds this step's task request quota".to_owned(),
                 output,
             );
             return;
         }
-        self.fiber = candidate_fiber;
-        self.need_producers = candidate_registry;
-        if let Some(started) = started {
+        let checkpoint = match self.fiber.checkpoint() {
+            Ok(checkpoint) => checkpoint,
+            Err(error) => {
+                self.fail_with_error(ProductStepError::Fiber(error), output);
+                return;
+            }
+        };
+        let committed = self
+            .fiber
+            .active_frame_mut()
+            .and_then(|frame| {
+                frame.set_register(dst, RuntimeValue::Need(started.admission().need().clone()))
+            })
+            .and_then(|()| self.fiber.commit_yielded_instruction(cursor));
+        if let Err(error) = committed {
+            let owner =
+                crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&self.program));
+            if let Err(restore_error) = self.fiber.restore(checkpoint, &owner) {
+                self.fail_with_error(ProductStepError::Fiber(restore_error), output);
+            } else {
+                self.fail_with_error(ProductStepError::Internal(error.to_string()), output);
+            }
+            return;
+        }
+        let admission = self.need_producers.commit_start_visit(started);
+        if ensure {
             self.remaining_new_task_requests -= 1;
-            output.requests.tasks.push(started.spec);
+            output.requests.tasks.push(admission.task_spec().clone());
         }
     }
 
@@ -1710,15 +2632,12 @@ impl AwbcProductStepExecutor {
             );
             return;
         };
-        let mut candidate_fiber = self.child_fibers[index].fiber.clone();
-        let mut candidate_registry = self.need_producers.clone();
         let started = self.stage_need_producer_started(
-            &mut candidate_fiber,
-            &mut candidate_registry,
+            &self.child_fibers[index].fiber,
+            &self.need_producers,
             self.runtime_generation,
             cursor,
             persistent_fiber,
-            dst,
             plan_id,
             values,
         );
@@ -1729,18 +2648,47 @@ impl AwbcProductStepExecutor {
                 return;
             }
         };
-        if started.is_some() && self.remaining_new_task_requests == 0 {
+        let ensure =
+            started.admission().disposition() == crate::task::NeedProducerTaskDisposition::Ensure;
+        if ensure && self.remaining_new_task_requests == 0 {
             self.fail_with_budget_error(
                 "Need producer start exceeds this step's task request quota".to_owned(),
                 output,
             );
             return;
         }
-        self.child_fibers[index].fiber = candidate_fiber;
-        self.need_producers = candidate_registry;
-        if let Some(started) = started {
+        let checkpoint = match self.child_fibers[index].fiber.checkpoint() {
+            Ok(checkpoint) => checkpoint,
+            Err(error) => {
+                self.fail_with_error(ProductStepError::Fiber(error), output);
+                return;
+            }
+        };
+        let committed = self.child_fibers[index]
+            .fiber
+            .active_frame_mut()
+            .and_then(|frame| {
+                frame.set_register(dst, RuntimeValue::Need(started.admission().need().clone()))
+            })
+            .and_then(|()| {
+                self.child_fibers[index]
+                    .fiber
+                    .commit_yielded_instruction(cursor)
+            });
+        if let Err(error) = committed {
+            let owner =
+                crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&self.program));
+            if let Err(restore_error) = self.child_fibers[index].fiber.restore(checkpoint, &owner) {
+                self.fail_with_error(ProductStepError::Fiber(restore_error), output);
+            } else {
+                self.fail_with_error(ProductStepError::Internal(error.to_string()), output);
+            }
+            return;
+        }
+        let admission = self.need_producers.commit_start_visit(started);
+        if ensure {
             self.remaining_new_task_requests -= 1;
-            output.requests.tasks.push(started.spec);
+            output.requests.tasks.push(admission.task_spec().clone());
         }
     }
 
@@ -1754,15 +2702,14 @@ impl AwbcProductStepExecutor {
 
     fn stage_need_producer_started(
         &self,
-        fiber: &mut FiberState,
-        registry: &mut crate::task::NeedProducerRegistry,
+        fiber: &FiberState,
+        registry: &crate::task::NeedProducerRegistry,
         generation: crate::task::GenerationId,
         cursor: crate::awbc::fiber::FiberCursor,
         persistent_fiber: crate::runtime_id::RuntimePersistentFiberId,
-        dst: crate::awbc::schema::AwbcRegisterId,
         plan_id: crate::awbc::schema::AwbcTaskPlanId,
         values: Vec<RuntimeValue>,
-    ) -> Result<Option<NeedProducerStartOutput>, ProductStepError> {
+    ) -> Result<crate::task::NeedProducerStartProof, ProductStepError> {
         if fiber.cursor != cursor || fiber.instance.get().get() != persistent_fiber.get() {
             return Err(ProductStepError::Internal(
                 "Need producer observation does not belong to the selected Product fiber cursor"
@@ -1829,23 +2776,9 @@ impl AwbcProductStepExecutor {
                 .transpose()?;
             arguments.push(NeedProducerRuntimeArgument { name, value });
         }
-        let invocation = registry
-            .begin_invocation(generation, persistent_fiber, plan.site())
-            .map_err(|error| ProductStepError::Internal(error.to_string()))?;
-        let admission = registry
-            .admit_start(invocation, plan, arguments)
-            .map_err(|error| ProductStepError::Host(error.to_string()))?;
-        let launch = admission.launch();
-        let started = (admission.disposition() == crate::task::NeedProducerTaskDisposition::Ensure)
-            .then(|| NeedProducerStartOutput {
-                spec: launch.task_spec().clone(),
-            });
-        fiber
-            .active_frame_mut()
-            .and_then(|frame| frame.set_register(dst, RuntimeValue::Need(launch.need().clone())))
-            .and_then(|()| fiber.commit_yielded_instruction(cursor))
-            .map_err(|error| ProductStepError::Internal(error.to_string()))?;
-        Ok(started)
+        registry
+            .inspect_start_visit(generation, persistent_fiber, plan, arguments)
+            .map_err(|error| ProductStepError::Host(error.to_string()))
     }
 }
 
@@ -1855,26 +2788,6 @@ fn mark_child_trapped(fiber: &mut FiberState, code: AwbcTrapCode, message: Strin
         message: Some(message),
         source_map: None,
     });
-}
-
-fn resume_deferred_await_value(
-    program: &AwbcProgram,
-    fiber: &mut FiberState,
-    binding: Option<crate::awbc::schema::AwbcPatternId>,
-    resume: AwbcResumePointId,
-    value: &RuntimeValue,
-    _output: &mut RuntimeStepOutput,
-) -> bool {
-    if let Some(pattern) = binding
-        && let Err(error) = crate::awbc::vm::bind_pattern(program, fiber, pattern, value)
-    {
-        mark_child_trapped(fiber, AwbcTrapCode::PatternMismatch, error.to_string());
-        return true;
-    }
-    if let Err(error) = fiber.resume_at(program, resume) {
-        mark_child_trapped(fiber, AwbcTrapCode::InternalInvariant, error.to_string());
-    }
-    true
 }
 
 fn resume_deferred_await_progress(

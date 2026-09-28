@@ -2,7 +2,10 @@
 
 use super::{RuntimeOwnedSlotId, RuntimeValuePath, RuntimeValuePathError, RuntimeValuePathSegment};
 use crate::{
-    awbc::{fiber::FiberCursor, schema::AwbcRegisterId},
+    awbc::{
+        fiber::FiberCursor,
+        schema::{AwbcRegisterId, AwbcScopeId, AwbcTaskPlanId},
+    },
     runtime_id::{
         ExecutionInstanceId, RuntimeCaptureSlotId, RuntimeChildInstanceId, RuntimeChildPacketId,
         RuntimeCleanupScopeId, RuntimeCleanupSlotId, RuntimeClosureInstanceId,
@@ -24,6 +27,8 @@ pub(super) enum RuntimeOwnershipBinaryError {
     TrailingBytes,
     #[error("runtime owned-slot binary tag {tag} is unknown")]
     UnknownOwnedSlotTag { tag: u8 },
+    #[error("runtime AWBC cleanup scope presence tag {tag} is invalid")]
+    InvalidCleanupScopeTag { tag: u8 },
     #[error("runtime value-path binary tag {tag} is unknown")]
     UnknownPathSegmentTag { tag: u8 },
     #[error(transparent)]
@@ -86,6 +91,92 @@ pub(super) fn encode_owned_slot(slot: RuntimeOwnedSlotId) -> Vec<u8> {
             push_raw_u32(&mut bytes, site.instruction_offset);
             push_raw_u32(&mut bytes, ordinal);
         }
+        RuntimeOwnedSlotId::AwbcCleanupArg {
+            execution,
+            fiber,
+            frame,
+            scope,
+            cleanup_ordinal,
+            arg_ordinal,
+        } => {
+            push_u64(&mut bytes, execution.get());
+            push_u64(&mut bytes, fiber.get());
+            push_u64(&mut bytes, frame.get());
+            match scope {
+                None => bytes.push(0),
+                Some(scope) => {
+                    bytes.push(1);
+                    push_raw_u32(&mut bytes, scope.0);
+                }
+            }
+            push_raw_u32(&mut bytes, cleanup_ordinal);
+            push_raw_u32(&mut bytes, arg_ordinal);
+        }
+        RuntimeOwnedSlotId::AwbcAwaitManyResult {
+            execution,
+            fiber,
+            frame,
+            plan,
+            index,
+        }
+        | RuntimeOwnedSlotId::AwbcAwaitManyItem {
+            execution,
+            fiber,
+            frame,
+            plan,
+            index,
+        } => {
+            push_u64(&mut bytes, execution.get());
+            push_u64(&mut bytes, fiber.get());
+            push_u64(&mut bytes, frame.get());
+            push_raw_u32(&mut bytes, plan.0);
+            push_raw_u32(&mut bytes, index);
+        }
+        RuntimeOwnedSlotId::AwbcLineObservationArg {
+            execution,
+            fiber,
+            frame,
+            site,
+            ordinal,
+        } => {
+            push_u64(&mut bytes, execution.get());
+            push_u64(&mut bytes, fiber.get());
+            push_u64(&mut bytes, frame.get());
+            push_raw_u32(&mut bytes, site.function.0);
+            push_raw_u32(&mut bytes, site.block.0);
+            push_raw_u32(&mut bytes, site.instruction_offset);
+            push_raw_u32(&mut bytes, ordinal);
+        }
+        RuntimeOwnedSlotId::AwbcDialogueResultObservation {
+            execution,
+            fiber,
+            frame,
+            site,
+        } => {
+            push_u64(&mut bytes, execution.get());
+            push_u64(&mut bytes, fiber.get());
+            push_u64(&mut bytes, frame.get());
+            push_raw_u32(&mut bytes, site.function.0);
+            push_raw_u32(&mut bytes, site.block.0);
+            push_raw_u32(&mut bytes, site.instruction_offset);
+        }
+        RuntimeOwnedSlotId::AwbcEffectObservationArg {
+            execution,
+            fiber,
+            frame,
+            site,
+            effect_ordinal,
+            arg_ordinal,
+        } => {
+            push_u64(&mut bytes, execution.get());
+            push_u64(&mut bytes, fiber.get());
+            push_u64(&mut bytes, frame.get());
+            push_raw_u32(&mut bytes, site.function.0);
+            push_raw_u32(&mut bytes, site.block.0);
+            push_raw_u32(&mut bytes, site.instruction_offset);
+            push_raw_u32(&mut bytes, effect_ordinal);
+            push_raw_u32(&mut bytes, arg_ordinal);
+        }
         RuntimeOwnedSlotId::NativeFormatOperand {
             execution,
             fiber,
@@ -144,7 +235,7 @@ pub(super) fn decode_owned_slot(
 ) -> Result<RuntimeOwnedSlotId, RuntimeOwnershipBinaryError> {
     let mut reader = Reader::new(bytes);
     let tag = reader.u8()?;
-    if tag > 9 {
+    if tag > 15 {
         return Err(RuntimeOwnershipBinaryError::UnknownOwnedSlotTag { tag });
     }
     let execution = ExecutionInstanceId::from_allocated(reader.nonzero_u64()?);
@@ -207,6 +298,70 @@ pub(super) fn decode_owned_slot(
             frame: reader.u32()?,
             attempt: RuntimeFormatAttemptId::from_accepted_ordinal(reader.nonzero_u32()?),
             ordinal: reader.u32()?,
+        },
+        10 => {
+            let fiber = RuntimeFiberInstanceId::from_allocated(reader.nonzero_u64()?);
+            let frame = RuntimeFrameInstanceId::from_allocated(reader.nonzero_u64()?);
+            let scope = match reader.u8()? {
+                0 => None,
+                1 => Some(AwbcScopeId(reader.u32()?)),
+                tag => return Err(RuntimeOwnershipBinaryError::InvalidCleanupScopeTag { tag }),
+            };
+            RuntimeOwnedSlotId::AwbcCleanupArg {
+                execution,
+                fiber,
+                frame,
+                scope,
+                cleanup_ordinal: reader.u32()?,
+                arg_ordinal: reader.u32()?,
+            }
+        }
+        11 => RuntimeOwnedSlotId::AwbcAwaitManyResult {
+            execution,
+            fiber: RuntimeFiberInstanceId::from_allocated(reader.nonzero_u64()?),
+            frame: RuntimeFrameInstanceId::from_allocated(reader.nonzero_u64()?),
+            plan: AwbcTaskPlanId(reader.u32()?),
+            index: reader.u32()?,
+        },
+        12 => RuntimeOwnedSlotId::AwbcAwaitManyItem {
+            execution,
+            fiber: RuntimeFiberInstanceId::from_allocated(reader.nonzero_u64()?),
+            frame: RuntimeFrameInstanceId::from_allocated(reader.nonzero_u64()?),
+            plan: AwbcTaskPlanId(reader.u32()?),
+            index: reader.u32()?,
+        },
+        13 => RuntimeOwnedSlotId::AwbcLineObservationArg {
+            execution,
+            fiber: RuntimeFiberInstanceId::from_allocated(reader.nonzero_u64()?),
+            frame: RuntimeFrameInstanceId::from_allocated(reader.nonzero_u64()?),
+            site: FiberCursor {
+                function: crate::awbc::schema::AwbcFunctionId(reader.u32()?),
+                block: crate::awbc::schema::AwbcBlockId(reader.u32()?),
+                instruction_offset: reader.u32()?,
+            },
+            ordinal: reader.u32()?,
+        },
+        14 => RuntimeOwnedSlotId::AwbcDialogueResultObservation {
+            execution,
+            fiber: RuntimeFiberInstanceId::from_allocated(reader.nonzero_u64()?),
+            frame: RuntimeFrameInstanceId::from_allocated(reader.nonzero_u64()?),
+            site: FiberCursor {
+                function: crate::awbc::schema::AwbcFunctionId(reader.u32()?),
+                block: crate::awbc::schema::AwbcBlockId(reader.u32()?),
+                instruction_offset: reader.u32()?,
+            },
+        },
+        15 => RuntimeOwnedSlotId::AwbcEffectObservationArg {
+            execution,
+            fiber: RuntimeFiberInstanceId::from_allocated(reader.nonzero_u64()?),
+            frame: RuntimeFrameInstanceId::from_allocated(reader.nonzero_u64()?),
+            site: FiberCursor {
+                function: crate::awbc::schema::AwbcFunctionId(reader.u32()?),
+                block: crate::awbc::schema::AwbcBlockId(reader.u32()?),
+                instruction_offset: reader.u32()?,
+            },
+            effect_ordinal: reader.u32()?,
+            arg_ordinal: reader.u32()?,
         },
         _ => unreachable!("owned-slot tag was validated above"),
     };
@@ -422,6 +577,34 @@ mod tests {
                 r#"{"kind":"native_format_operand","execution":"1","fiber":2,"frame":3,"attempt":4,"ordinal":5}"#,
                 "0901000000000000000200000000000000030000000400000005000000",
             ),
+            (
+                r#"{"kind":"awbc_cleanup_arg","execution":"1","fiber":"2","frame":"3","scope":null,"cleanup_ordinal":4,"arg_ordinal":5}"#,
+                "0a010000000000000002000000000000000300000000000000000400000005000000",
+            ),
+            (
+                r#"{"kind":"awbc_cleanup_arg","execution":"1","fiber":"2","frame":"3","scope":6,"cleanup_ordinal":4,"arg_ordinal":5}"#,
+                "0a01000000000000000200000000000000030000000000000001060000000400000005000000",
+            ),
+            (
+                r#"{"kind":"awbc_await_many_result","execution":"1","fiber":"2","frame":"3","plan":4,"index":5}"#,
+                "0b0100000000000000020000000000000003000000000000000400000005000000",
+            ),
+            (
+                r#"{"kind":"awbc_await_many_item","execution":"1","fiber":"2","frame":"3","plan":4,"index":5}"#,
+                "0c0100000000000000020000000000000003000000000000000400000005000000",
+            ),
+            (
+                r#"{"kind":"awbc_line_observation_arg","execution":"1","fiber":"2","frame":"3","site":{"function":4,"block":5,"instruction_offset":6},"ordinal":7}"#,
+                "0d01000000000000000200000000000000030000000000000004000000050000000600000007000000",
+            ),
+            (
+                r#"{"kind":"awbc_dialogue_result_observation","execution":"1","fiber":"2","frame":"3","site":{"function":4,"block":5,"instruction_offset":6}}"#,
+                "0e010000000000000002000000000000000300000000000000040000000500000006000000",
+            ),
+            (
+                r#"{"kind":"awbc_effect_observation_arg","execution":"1","fiber":"2","frame":"3","site":{"function":4,"block":5,"instruction_offset":6},"effect_ordinal":7,"arg_ordinal":8}"#,
+                "0f0100000000000000020000000000000003000000000000000400000005000000060000000700000008000000",
+            ),
         ];
         for (json, expected) in goldens {
             let slot: RuntimeOwnedSlotId = self::json(json);
@@ -457,8 +640,16 @@ mod tests {
     #[test]
     fn binary_decoders_reject_unknown_zero_truncated_and_trailing_forms() {
         assert!(matches!(
-            decode_owned_slot(&[10]),
-            Err(RuntimeOwnershipBinaryError::UnknownOwnedSlotTag { tag: 10 })
+            decode_owned_slot(&[16]),
+            Err(RuntimeOwnershipBinaryError::UnknownOwnedSlotTag { tag: 16 })
+        ));
+        let mut invalid_cleanup_scope = encode_owned_slot(self::json(
+            r#"{"kind":"awbc_cleanup_arg","execution":"1","fiber":"2","frame":"3","scope":null,"cleanup_ordinal":4,"arg_ordinal":5}"#,
+        ));
+        invalid_cleanup_scope[25] = 2;
+        assert!(matches!(
+            decode_owned_slot(&invalid_cleanup_scope),
+            Err(RuntimeOwnershipBinaryError::InvalidCleanupScopeTag { tag: 2 })
         ));
         assert!(decode_owned_slot(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0]).is_err());
         assert!(matches!(

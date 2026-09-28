@@ -23,8 +23,9 @@ use crate::awbc::schema::{
 use crate::pattern::RuntimeBuiltinVariantCaseIdentity;
 use crate::plan::{
     RuntimeAgentTypeProjection, RuntimeCallableAttachedContract, RuntimeCallableDefault,
-    RuntimeCallableParameterKind, RuntimeCallablePosition, RuntimeCallableRetainedRole,
-    RuntimeCallableTransition, RuntimePlanSequenceKind,
+    RuntimeCallableInputSource, RuntimeCallableParameterKind, RuntimeCallablePosition,
+    RuntimeCallableRetainedRole, RuntimeCallableStateDefinition, RuntimeCallableTransition,
+    RuntimeFunctionInputOwnershipRequirement, RuntimePlanSequenceKind,
 };
 use crate::value::{
     RuntimeAgentField, RuntimeAgentFieldResult, RuntimeAgentFieldValue, RuntimeAgentSignatureError,
@@ -43,8 +44,92 @@ mod capacity_tests;
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct FlowState {
     initialized: Vec<bool>,
+    copy_proofs: Vec<CopyProof>,
     scopes: Vec<AwbcScopeId>,
     format_attempts: Vec<format::FormatAttemptFlowState>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum CopyProof {
+    Copyable,
+    Affine,
+    Tuple(Vec<CopyProof>),
+    Record(Vec<CopyProof>),
+    Variant {
+        case: u32,
+        payload: Option<Box<CopyProof>>,
+    },
+    Sequence(Vec<CopyProof>),
+    Function(Vec<CopyProof>),
+}
+
+impl CopyProof {
+    fn permits_copy(&self) -> bool {
+        match self {
+            Self::Copyable => true,
+            Self::Affine => false,
+            Self::Tuple(values)
+            | Self::Record(values)
+            | Self::Sequence(values)
+            | Self::Function(values) => values.iter().all(Self::permits_copy),
+            Self::Variant { payload, .. } => payload.as_deref().is_none_or(Self::permits_copy),
+        }
+    }
+
+    fn compact(self) -> Self {
+        if self.permits_copy() {
+            Self::Copyable
+        } else {
+            self
+        }
+    }
+
+    fn merge(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Copyable, Self::Copyable) => Self::Copyable,
+            (Self::Tuple(left), Self::Tuple(right)) if left.len() == right.len() => {
+                Self::Tuple(left.iter().zip(right).map(|(a, b)| a.merge(b)).collect()).compact()
+            }
+            (Self::Record(left), Self::Record(right)) if left.len() == right.len() => {
+                Self::Record(left.iter().zip(right).map(|(a, b)| a.merge(b)).collect()).compact()
+            }
+            (Self::Sequence(left), Self::Sequence(right)) if left.len() == right.len() => {
+                Self::Sequence(left.iter().zip(right).map(|(a, b)| a.merge(b)).collect()).compact()
+            }
+            (Self::Function(left), Self::Function(right)) if left.len() == right.len() => {
+                Self::Function(left.iter().zip(right).map(|(a, b)| a.merge(b)).collect()).compact()
+            }
+            (
+                Self::Variant {
+                    case: left_case,
+                    payload: left,
+                },
+                Self::Variant {
+                    case: right_case,
+                    payload: right,
+                },
+            ) if left_case == right_case => Self::Variant {
+                case: *left_case,
+                payload: match (left, right) {
+                    (Some(left), Some(right)) => Some(Box::new(left.merge(right))),
+                    (None, None) => None,
+                    _ => return Self::Affine,
+                },
+            }
+            .compact(),
+            _ => Self::Affine,
+        }
+    }
+
+    fn element(&self, ordinal: usize) -> Option<Self> {
+        match self {
+            Self::Tuple(values) | Self::Record(values) | Self::Sequence(values) => {
+                values.get(ordinal).cloned()
+            }
+            Self::Copyable => Some(Self::Copyable),
+            Self::Affine | Self::Function(_) | Self::Variant { .. } => None,
+        }
+    }
 }
 
 fn block_index_to_u32(index: usize) -> u32 {
@@ -175,6 +260,7 @@ fn verify_function(
     let program = verifier.program;
     let function = &program.functions[function_index];
     let layout = &program.frame_layouts[function.frame_layout.index()];
+    validate_function_input_ownership(verifier, function_index)?;
     let block_range = checked_range(
         function.blocks,
         program.blocks.len(),
@@ -184,6 +270,17 @@ fn verify_function(
     let mut states = vec![None::<FlowState>; program.blocks.len()];
     let mut initial = FlowState {
         initialized: vec![false; layout.slots.len()],
+        copy_proofs: layout
+            .slots
+            .iter()
+            .map(|slot| {
+                if runtime_type_permits_copy(program, slot.ty, 0) {
+                    CopyProof::Copyable
+                } else {
+                    CopyProof::Affine
+                }
+            })
+            .collect(),
         scopes: Vec::new(),
         format_attempts: Vec::new(),
     };
@@ -192,6 +289,15 @@ fn verify_function(
             slot.role,
             AwbcFrameSlotRole::Parameter | AwbcFrameSlotRole::RuntimeState
         );
+    }
+    for (row, parameter) in function
+        .input_ownership
+        .iter()
+        .zip(positional_parameter_registers(layout))
+    {
+        if row.requirement == RuntimeFunctionInputOwnershipRequirement::Unrestricted {
+            initial.copy_proofs[parameter.index()] = CopyProof::Copyable;
+        }
     }
     states[function.entry_block.index()] = Some(initial);
     let mut queue = VecDeque::from([function.entry_block.index()]);
@@ -276,6 +382,196 @@ fn verify_function(
         }
     }
     Ok(queried_scopes)
+}
+
+fn validate_function_input_ownership(
+    verifier: &Verifier<'_, '_>,
+    function_index: usize,
+) -> Result<(), AwbcVerifyError> {
+    let program = verifier.program;
+    let function = &program.functions[function_index];
+    let at = format!("function {function_index} input ownership");
+    let signature = program
+        .signatures
+        .get(function.signature.index())
+        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+            at: at.clone(),
+            message: "function signature is absent".to_owned(),
+        })?;
+    let layout = program
+        .frame_layouts
+        .get(function.frame_layout.index())
+        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+            at: at.clone(),
+            message: "function frame layout is absent".to_owned(),
+        })?;
+    let parameters = positional_parameter_registers(layout);
+    if parameters.len() != signature.params.len()
+        || function.input_ownership.len() != signature.params.len()
+    {
+        return Err(AwbcVerifyError::InvalidInvariant {
+            at,
+            message: "input ownership rows do not match the positional function ABI".to_owned(),
+        });
+    }
+    let entry = program
+        .blocks
+        .get(function.entry_block.index())
+        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+            at: at.clone(),
+            message: "entry block is absent".to_owned(),
+        })?;
+    let instructions = checked_range(
+        entry.instructions,
+        program.instructions.len(),
+        "instructions",
+        &at,
+    )?;
+
+    let mut prologue_offset = 0;
+    for (position, (row, parameter)) in function.input_ownership.iter().zip(parameters).enumerate()
+    {
+        let mut required = BTreeSet::new();
+        for target in &row.unrestricted_bindings {
+            if !required.insert(*target) {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: format!(
+                        "input {position} repeats unrestricted binding register {}",
+                        target.0
+                    ),
+                });
+            }
+        }
+        let Some(pattern) = row.pattern else {
+            if !required.is_empty() {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: format!(
+                        "input {position} names unrestricted bindings without a pattern"
+                    ),
+                });
+            }
+            continue;
+        };
+        if program.patterns.get(pattern.index()).is_none() {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at: at.clone(),
+                message: format!("input {position} references absent pattern {}", pattern.0),
+            });
+        }
+        let mut targets = BTreeSet::new();
+        validate_unique_pattern_binding_targets(
+            program,
+            pattern,
+            pattern,
+            &mut targets,
+            0,
+            verifier.budget.pattern_depth,
+        )?;
+        for target in &targets {
+            if layout.slots.get(target.index()).map(|slot| slot.role)
+                != Some(AwbcFrameSlotRole::Local)
+            {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: format!(
+                        "input {position} pattern register {} is not a local binding",
+                        target.0
+                    ),
+                });
+            }
+        }
+        for target in &required {
+            if !targets.contains(target) {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: format!(
+                        "input {position} unrestricted register {} is not produced by its pattern",
+                        target.0
+                    ),
+                });
+            }
+        }
+        let matching_prologue = instructions
+            .clone()
+            .filter(|instruction| {
+                matches!(
+                    &program.instructions[*instruction],
+                    AwbcInstruction::BindPattern {
+                        pattern: actual_pattern,
+                        value,
+                        mode: AwbcBindMode::Declare,
+                    } if *actual_pattern == pattern && *value == parameter
+                )
+            })
+            .count();
+        let expected_instruction = instructions
+            .clone()
+            .nth(prologue_offset)
+            .map(|index| &program.instructions[index]);
+        if matching_prologue != 1
+            || !matches!(
+                expected_instruction,
+                Some(AwbcInstruction::BindPattern {
+                    pattern: actual_pattern,
+                    value,
+                    mode: AwbcBindMode::Declare,
+                }) if *actual_pattern == pattern && *value == parameter
+            )
+        {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at: at.clone(),
+                message: format!(
+                    "input {position} pattern is not bound exactly once in its ABI prologue"
+                ),
+            });
+        }
+        prologue_offset += 1;
+    }
+    Ok(())
+}
+
+fn positional_parameter_registers(layout: &AwbcFrameLayout) -> Vec<AwbcRegisterId> {
+    layout
+        .slots
+        .iter()
+        .enumerate()
+        .filter_map(|(register, slot)| {
+            (slot.role == AwbcFrameSlotRole::Parameter)
+                .then(|| u32::try_from(register).ok().map(AwbcRegisterId))
+                .flatten()
+        })
+        .collect()
+}
+
+/// Only the designated ABI prologue may mint the selected deep-Copy binding
+/// facts. The VM checks these same leaves before admitting the input frame.
+fn assign_input_pattern_copy_proofs(
+    verifier: &Verifier<'_, '_>,
+    function: usize,
+    block: usize,
+    instruction_index: usize,
+    state: &mut FlowState,
+) {
+    let function_row = &verifier.program.functions[function];
+    if block != function_row.entry_block.index() {
+        return;
+    }
+    let start = verifier.program.blocks[block].instructions.start as usize;
+    let mut prologue_offset = 0;
+    for row in &function_row.input_ownership {
+        if row.pattern.is_none() {
+            continue;
+        }
+        if start.checked_add(prologue_offset) == Some(instruction_index) {
+            for target in &row.unrestricted_bindings {
+                state.copy_proofs[target.index()] = CopyProof::Copyable;
+            }
+            return;
+        }
+        prologue_offset += 1;
+    }
 }
 
 pub(super) fn scope_stack_at(
@@ -375,6 +671,11 @@ fn merge_state(
                 changed |= merged != *current;
                 *current = merged;
             }
+            for (current, incoming) in current.copy_proofs.iter_mut().zip(incoming.copy_proofs) {
+                let merged = current.merge(&incoming);
+                changed |= merged != *current;
+                *current = merged;
+            }
             if changed {
                 queue.push_back(target);
             }
@@ -460,21 +761,25 @@ fn apply_instruction(
         }
         AwbcInstruction::Move { dst, src } => {
             let src_ty = read_register(verifier, function, block, *src, state)?;
+            let copy_proof = state.copy_proofs[src.index()].clone();
             let dst_ty = register_type(verifier, function, block, *dst)?;
             require_compatible(program, dst_ty, src_ty, &at)?;
             write_register(verifier, function, block, *dst, state)?;
+            state.copy_proofs[dst.index()] = copy_proof;
             if dst != src {
                 clear_register(verifier, function, block, *src, state)?;
             }
         }
         AwbcInstruction::CopyValue { dst, src } => {
             let src_ty = read_register(verifier, function, block, *src, state)?;
-            if !runtime_type_permits_copy(program, src_ty, 0) {
-                return invalid_type(&at, "recursively unrestricted CopyValue source");
+            let copy_proof = state.copy_proofs[src.index()].clone();
+            if !copy_proof.permits_copy() {
+                return invalid_type(&at, "producer-proven unrestricted CopyValue source");
             }
             let dst_ty = register_type(verifier, function, block, *dst)?;
             require_compatible(program, dst_ty, src_ty, &at)?;
             write_register(verifier, function, block, *dst, state)?;
+            state.copy_proofs[dst.index()] = copy_proof;
         }
         AwbcInstruction::Clear { register } => {
             let ty = read_register(verifier, function, block, *register, state)?;
@@ -528,18 +833,15 @@ fn apply_instruction(
                 u32::try_from(state.scopes.len()).map_err(|_| AwbcVerifyError::BudgetExceeded {
                     budget: "scope_depth",
                 })?;
-            for (slot, initialized) in function_layout(verifier, function)
-                .slots
-                .iter()
-                .zip(&mut state.initialized)
-            {
+            for (index, slot) in function_layout(verifier, function).slots.iter().enumerate() {
                 if slot.scope_depth > depth
                     && !matches!(
                         slot.role,
                         AwbcFrameSlotRole::Parameter | AwbcFrameSlotRole::RuntimeState
                     )
                 {
-                    *initialized = false;
+                    state.initialized[index] = false;
+                    state.copy_proofs[index] = CopyProof::Affine;
                 }
             }
         }
@@ -549,6 +851,19 @@ fn apply_instruction(
             mode,
         } => {
             let value_ty = read_register(verifier, function, block, *value, state)?;
+            let value_proof = state.copy_proofs[value.index()].clone();
+            let mut binding_targets = BTreeSet::new();
+            validate_unique_pattern_binding_targets(
+                program,
+                *pattern,
+                *pattern,
+                &mut binding_targets,
+                0,
+                verifier.budget.pattern_depth,
+            )?;
+            if binding_targets.contains(value) {
+                return invalid_type(&at, "pattern binding targets distinct from consumed source");
+            }
             validate_pattern(
                 verifier,
                 function,
@@ -559,6 +874,18 @@ fn apply_instruction(
                 state,
                 0,
             )?;
+            assign_pattern_copy_proofs(
+                verifier,
+                function,
+                block,
+                *pattern,
+                value_ty,
+                &value_proof,
+                state,
+                0,
+            )?;
+            assign_input_pattern_copy_proofs(verifier, function, block, instruction_index, state);
+            clear_register(verifier, function, block, *value, state)?;
         }
         AwbcInstruction::TestPattern {
             dst,
@@ -1582,6 +1909,13 @@ fn apply_instruction(
             }
             let dst_ty = register_type(verifier, function, block, *dst)?;
             require_compatible(program, operation.result_type(), dst_ty, &at)?;
+            let mut consumed = BTreeSet::new();
+            if args.iter().any(|register| !consumed.insert(*register)) {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "line-operation operands must use distinct registers".to_owned(),
+                });
+            }
             match operation {
                 crate::awbc::schema::AwbcLineOperation::AcquireActor {
                     character,
@@ -1639,6 +1973,7 @@ fn apply_instruction(
                     ..
                 } => {
                     if args.len() != 3
+                        || args[0] == *dst
                         || site.kind != crate::value::RuntimeHandleKind::Cue
                         || site.character.as_ref() != Some(character)
                         || site.scheduled_child.is_some()
@@ -1673,6 +2008,13 @@ fn apply_instruction(
                     }
                 }
             }
+            if state.initialized[dst.index()] {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "line-operation destination must be vacant after operand transfer"
+                        .to_owned(),
+                });
+            }
             write_register(verifier, function, block, *dst, state)?;
         }
         AwbcInstruction::CommitDialogueResult { source } => {
@@ -1703,7 +2045,585 @@ fn apply_instruction(
             clear_register(verifier, function, block, *register, state)?;
         }
     }
+    apply_instruction_copy_and_move_effects(verifier, function, block, instruction, state, &at)?;
     Ok(())
+}
+
+fn apply_instruction_copy_and_move_effects(
+    verifier: &Verifier<'_, '_>,
+    function: usize,
+    block: usize,
+    instruction: &AwbcInstruction,
+    state: &mut FlowState,
+    at: &str,
+) -> Result<(), AwbcVerifyError> {
+    let program = verifier.program;
+    let mut consumed = Vec::new();
+    let mut outputs = Vec::new();
+    let mut output_proof = None;
+    let mut mutated = Vec::new();
+    let mut mutated_proof = None;
+    let mut extra_output_proofs = Vec::new();
+    match instruction {
+        AwbcInstruction::Move { .. }
+        | AwbcInstruction::CopyValue { .. }
+        | AwbcInstruction::Clear { .. }
+        | AwbcInstruction::BindPattern { .. }
+        | AwbcInstruction::TestPattern { .. }
+        | AwbcInstruction::EnterScope { .. }
+        | AwbcInstruction::ExitScope { .. }
+        | AwbcInstruction::Nop
+        | AwbcInstruction::EnsureContent { .. }
+        | AwbcInstruction::FormatOperandAttempt { .. }
+        | AwbcInstruction::AbandonFormatAttempt { .. }
+        | AwbcInstruction::CancelCleanup { .. }
+        | AwbcInstruction::StreamClose { .. } => return Ok(()),
+        AwbcInstruction::LoadConst { .. } | AwbcInstruction::SequenceLen { .. } => {}
+        AwbcInstruction::MakeTuple { dst, items } => {
+            consumed.extend(items.iter().copied());
+            outputs.push(*dst);
+            output_proof = Some(
+                CopyProof::Tuple(
+                    items
+                        .iter()
+                        .map(|item| state.copy_proofs[item.index()].clone())
+                        .collect(),
+                )
+                .compact(),
+            );
+        }
+        AwbcInstruction::MakeSequence { dst, items } => {
+            consumed.extend(items.iter().copied());
+            outputs.push(*dst);
+            output_proof = Some(
+                CopyProof::Sequence(
+                    items
+                        .iter()
+                        .map(|item| state.copy_proofs[item.index()].clone())
+                        .collect(),
+                )
+                .compact(),
+            );
+        }
+        AwbcInstruction::RepeatSequence { dst, value, len } => {
+            consumed.extend([*value, *len]);
+            outputs.push(*dst);
+            let source_proof = state.copy_proofs[value.index()].clone();
+            let dst_ty = register_type(verifier, function, block, *dst)?;
+            let repeat_count = match runtime_shape(program, dst_ty) {
+                Some(AwbcRuntimeTypeShape::Array { length, .. }) => length
+                    .constant()
+                    .and_then(|value| usize::try_from(value).ok()),
+                _ => None,
+            };
+            if !source_proof.permits_copy() && repeat_count.is_none_or(|count| count > 1) {
+                return invalid_type(at, "repeat sequence source is producer-proven copyable");
+            }
+            output_proof = Some(if source_proof.permits_copy() {
+                CopyProof::Copyable
+            } else {
+                CopyProof::Sequence(vec![source_proof; repeat_count.unwrap_or(1)]).compact()
+            });
+        }
+        AwbcInstruction::SequenceGet {
+            dst,
+            sequence,
+            index,
+        } => {
+            consumed.extend([*sequence, *index]);
+            outputs.push(*dst);
+            let item_ty = match runtime_shape(
+                program,
+                register_type(verifier, function, block, *sequence)?,
+            ) {
+                Some(AwbcRuntimeTypeShape::Sequence { item, .. })
+                | Some(AwbcRuntimeTypeShape::Array { item, .. }) => *item,
+                _ => register_type(verifier, function, block, *dst)?,
+            };
+            output_proof = Some(sequence_element_proof(
+                &state.copy_proofs[sequence.index()],
+                program,
+                item_ty,
+            ));
+        }
+        AwbcInstruction::SequenceSlice {
+            dst,
+            sequence,
+            start,
+        } => {
+            consumed.extend([*sequence, *start]);
+            outputs.push(*dst);
+            output_proof = Some(match &state.copy_proofs[sequence.index()] {
+                CopyProof::Copyable => CopyProof::Copyable,
+                CopyProof::Sequence(values) => CopyProof::Sequence(values.clone()).compact(),
+                _ => base_copy_proof(program, dst_type(verifier, function, block, *dst)?),
+            });
+        }
+        AwbcInstruction::SequencePush { sequence, value } => {
+            consumed.push(*value);
+            mutated.push(*sequence);
+            if sequence == value {
+                return invalid_type(
+                    at,
+                    "sequence push value distinct from mutable sequence place",
+                );
+            }
+            let mut proof = state.copy_proofs[sequence.index()].clone();
+            proof = append_sequence_proof(proof, state.copy_proofs[value.index()].clone());
+            mutated_proof = Some(proof);
+        }
+        AwbcInstruction::VecPush { place, value } => {
+            consumed.push(*value);
+            let base = mutable_place_base(place);
+            mutated.push(base);
+            if base == *value {
+                return invalid_type(at, "Vec push value distinct from mutable receiver");
+            }
+            let item_proof = state.copy_proofs[value.index()].clone();
+            mutated_proof = Some(match place {
+                AwbcMutablePlace::Local(_) => {
+                    append_sequence_proof(state.copy_proofs[base.index()].clone(), item_proof)
+                }
+                AwbcMutablePlace::NominalField { field, .. } => update_record_proof_field(
+                    &state.copy_proofs[base.index()],
+                    *field as usize,
+                    match runtime_shape(program, register_type(verifier, function, block, base)?) {
+                        Some(AwbcRuntimeTypeShape::NominalRecord { fields, .. }) => fields.len(),
+                        _ => 0,
+                    },
+                    |field_proof| append_sequence_proof(field_proof, item_proof.clone()),
+                ),
+            });
+        }
+        AwbcInstruction::SequencePopFront { dst, place }
+        | AwbcInstruction::VecPop { dst, place } => {
+            let base = mutable_place_base(place);
+            outputs.push(*dst);
+            let base_ty = register_type(verifier, function, block, base)?;
+            let item_ty = match place {
+                AwbcMutablePlace::Local(_) => match runtime_shape(program, base_ty) {
+                    Some(AwbcRuntimeTypeShape::Sequence { item, .. }) => *item,
+                    _ => register_type(verifier, function, block, *dst)?,
+                },
+                AwbcMutablePlace::NominalField { field, .. } => {
+                    match runtime_shape(program, base_ty) {
+                        Some(AwbcRuntimeTypeShape::NominalRecord { fields, .. }) => fields
+                            .get(*field as usize)
+                            .and_then(|field| match runtime_shape(program, field.ty) {
+                                Some(AwbcRuntimeTypeShape::Sequence { item, .. }) => Some(*item),
+                                _ => None,
+                            })
+                            .unwrap_or(register_type(verifier, function, block, *dst)?),
+                        _ => register_type(verifier, function, block, *dst)?,
+                    }
+                }
+            };
+            let sequence_proof = match place {
+                AwbcMutablePlace::Local(_) => state.copy_proofs[base.index()].clone(),
+                AwbcMutablePlace::NominalField { field, .. } => {
+                    match &state.copy_proofs[base.index()] {
+                        CopyProof::Record(fields) => fields
+                            .get(*field as usize)
+                            .cloned()
+                            .unwrap_or(CopyProof::Affine),
+                        _ => CopyProof::Affine,
+                    }
+                }
+            };
+            let item_proof = sequence_element_proof(&sequence_proof, program, item_ty);
+            let option_ty = register_type(verifier, function, block, *dst)?;
+            output_proof = Some(if item_proof.permits_copy() {
+                CopyProof::Copyable
+            } else {
+                base_copy_proof(program, option_ty)
+            });
+            let popped_proof = pop_sequence_proof(sequence_proof);
+            mutated_proof = Some(match place {
+                AwbcMutablePlace::Local(_) => popped_proof,
+                AwbcMutablePlace::NominalField { field, .. } => update_record_proof_field(
+                    &state.copy_proofs[base.index()],
+                    *field as usize,
+                    match runtime_shape(program, base_ty) {
+                        Some(AwbcRuntimeTypeShape::NominalRecord { fields, .. }) => fields.len(),
+                        _ => 0,
+                    },
+                    |_| popped_proof,
+                ),
+            });
+            mutated.push(base);
+        }
+        AwbcInstruction::MakeRecord { dst, fields, .. } => {
+            consumed.extend(fields.iter().copied());
+            outputs.push(*dst);
+            output_proof = Some(
+                CopyProof::Record(
+                    fields
+                        .iter()
+                        .map(|field| state.copy_proofs[field.index()].clone())
+                        .collect(),
+                )
+                .compact(),
+            );
+        }
+        AwbcInstruction::MakeVariant {
+            dst, case, payload, ..
+        } => {
+            consumed.extend(payload.iter().copied());
+            outputs.push(*dst);
+            output_proof = Some(
+                CopyProof::Variant {
+                    case: *case,
+                    payload: payload
+                        .map(|value| Box::new(state.copy_proofs[value.index()].clone())),
+                }
+                .compact(),
+            );
+        }
+        AwbcInstruction::ProjectTuple {
+            dst,
+            target,
+            ordinal,
+        }
+        | AwbcInstruction::ProjectRecord {
+            dst,
+            target,
+            ordinal,
+        } => {
+            consumed.push(*target);
+            outputs.push(*dst);
+            let dst_ty = register_type(verifier, function, block, *dst)?;
+            output_proof = Some(
+                state.copy_proofs[target.index()]
+                    .element(*ordinal as usize)
+                    .unwrap_or_else(|| base_copy_proof(program, dst_ty)),
+            );
+        }
+        AwbcInstruction::ProjectField { dst, target, field } => {
+            consumed.push(*target);
+            outputs.push(*dst);
+            let dst_ty = register_type(verifier, function, block, *dst)?;
+            output_proof = Some(match field {
+                crate::awbc::schema::AwbcFieldProjection::Named(field) => {
+                    let target_ty = register_type(verifier, function, block, *target)?;
+                    let named_index = match runtime_shape(program, target_ty) {
+                        Some(
+                            AwbcRuntimeTypeShape::Record { fields, .. }
+                            | AwbcRuntimeTypeShape::NominalRecord { fields, .. },
+                        ) => fields
+                            .iter()
+                            .position(|candidate| candidate.name == Some(*field)),
+                        _ => None,
+                    };
+                    named_index
+                        .and_then(|ordinal| state.copy_proofs[target.index()].element(ordinal))
+                        .unwrap_or_else(|| base_copy_proof(program, dst_ty))
+                }
+                crate::awbc::schema::AwbcFieldProjection::OpaqueRecord { field_type, .. } => {
+                    base_copy_proof(program, *field_type)
+                }
+            });
+        }
+        AwbcInstruction::Unary { dst, src, .. } => {
+            consumed.push(*src);
+            outputs.push(*dst);
+        }
+        AwbcInstruction::Binary { dst, lhs, rhs, .. } => {
+            consumed.extend([*lhs, *rhs]);
+            outputs.push(*dst);
+        }
+        AwbcInstruction::CallPureHelper { dst, args, .. } => {
+            consumed.extend(args.iter().copied());
+            outputs.push(*dst);
+        }
+        AwbcInstruction::CallIntrinsic { dst, args, .. } => {
+            consumed.extend(args.iter().copied());
+            outputs.extend(dst.iter().copied());
+        }
+        AwbcInstruction::MakeDialogueContent {
+            destination,
+            values,
+            effects,
+            ..
+        } => {
+            consumed.extend(values.iter().map(|binding| binding.value));
+            consumed.extend(
+                effects
+                    .iter()
+                    .flat_map(|effect| effect.captures.iter().copied()),
+            );
+            outputs.push(*destination);
+        }
+        AwbcInstruction::FormatContent {
+            destination,
+            operands,
+            ..
+        } => {
+            consumed.extend(
+                operands
+                    .iter()
+                    .flat_map(|operand| operand.captures.iter().copied()),
+            );
+            outputs.push(*destination);
+        }
+        AwbcInstruction::CompleteFormatOperand { value, .. } => consumed.push(*value),
+        AwbcInstruction::CharacterDialogue {
+            destination,
+            target,
+            fields,
+            ..
+        } => {
+            consumed.push(*target);
+            consumed.extend(fields.iter().filter_map(|field| match field.operation {
+                CharacterDialoguePatchOperation::Set(value) => Some(value),
+                CharacterDialoguePatchOperation::Clear => None,
+            }));
+            outputs.push(*destination);
+        }
+        AwbcInstruction::ExecuteLineOperation {
+            dst,
+            operation,
+            args,
+        } => {
+            let borrowed_actor = matches!(
+                program.line_operations.get(operation.index()),
+                Some(crate::awbc::schema::AwbcLineOperation::ActorLook { .. })
+            );
+            if borrowed_actor {
+                consumed.extend(args.iter().skip(1).copied());
+            } else {
+                consumed.extend(args.iter().copied());
+            }
+            outputs.push(*dst);
+        }
+        AwbcInstruction::EmitEffect { args, .. }
+        | AwbcInstruction::RegisterCleanup { args, .. }
+        | AwbcInstruction::StartNeed { args, .. }
+        | AwbcInstruction::SpawnFiber { args, .. } => {
+            consumed.extend(args.iter().copied());
+            match instruction {
+                AwbcInstruction::StartNeed { dst, .. } => outputs.push(*dst),
+                AwbcInstruction::SpawnFiber { dst, .. } => outputs.extend(dst.iter().copied()),
+                _ => {}
+            }
+        }
+        AwbcInstruction::StreamYield { value, .. } => {
+            if !state.copy_proofs[value.index()].permits_copy() {
+                return invalid_type(at, "stream item is producer-proven copyable");
+            }
+            consumed.push(*value);
+        }
+        AwbcInstruction::RegisterDefer { captures, .. } => {
+            consumed.extend(captures.iter().copied())
+        }
+        AwbcInstruction::MakeCallable { dst, captures, .. } => {
+            consumed.extend(captures.iter().copied());
+            outputs.push(*dst);
+            output_proof = Some(
+                CopyProof::Function(
+                    captures
+                        .iter()
+                        .map(|capture| state.copy_proofs[capture.index()].clone())
+                        .collect(),
+                )
+                .compact(),
+            );
+        }
+        AwbcInstruction::SpecializeCallable { dst, src, .. } => {
+            consumed.push(*src);
+            outputs.push(*dst);
+            output_proof = Some(state.copy_proofs[src.index()].clone());
+        }
+        AwbcInstruction::ApplyGroup { dst, callee, args } => {
+            consumed.push(*callee);
+            consumed.extend(args.iter().copied());
+            outputs.push(*dst);
+        }
+        AwbcInstruction::MakeAgent { dst, operands, .. } => {
+            consumed.extend(operands.iter().copied());
+            outputs.push(*dst);
+            output_proof = Some(
+                CopyProof::Record(
+                    operands
+                        .iter()
+                        .map(|operand| state.copy_proofs[operand.index()].clone())
+                        .collect(),
+                )
+                .compact(),
+            );
+        }
+        AwbcInstruction::MakeReductionUnchanged {
+            dst, state: value, ..
+        } => {
+            consumed.push(*value);
+            outputs.push(*dst);
+        }
+        AwbcInstruction::CallTraitMethod {
+            dst,
+            receiver,
+            args,
+            receiver_out,
+            ..
+        } => {
+            consumed.push(*receiver);
+            consumed.extend(args.iter().copied());
+            outputs.push(*dst);
+            outputs.extend(receiver_out.iter().copied());
+            if let Some(receiver_out) = receiver_out {
+                extra_output_proofs
+                    .push((*receiver_out, state.copy_proofs[receiver.index()].clone()));
+            }
+        }
+        AwbcInstruction::CommitDialogueResult { source } => consumed.push(*source),
+        AwbcInstruction::AssignRecordField {
+            target,
+            field,
+            value,
+        } => {
+            consumed.push(*value);
+            mutated.push(*target);
+            let value_proof = state.copy_proofs[value.index()].clone();
+            let record_ty = register_type(verifier, function, block, *target)?;
+            let field_count = match runtime_shape(program, record_ty) {
+                Some(
+                    AwbcRuntimeTypeShape::Record { fields, .. }
+                    | AwbcRuntimeTypeShape::NominalRecord { fields, .. },
+                ) => fields.len(),
+                _ => 0,
+            };
+            mutated_proof = Some(update_record_proof_field(
+                &state.copy_proofs[target.index()],
+                *field as usize,
+                field_count,
+                |_| value_proof,
+            ));
+        }
+        AwbcInstruction::Drop { .. } => return Ok(()),
+    }
+
+    let mut unique = BTreeSet::new();
+    let mut unique_outputs = BTreeSet::new();
+    for output in &outputs {
+        if !unique_outputs.insert(*output) {
+            return invalid_type(at, "instruction destinations are distinct");
+        }
+    }
+    for source in &consumed {
+        if !unique.insert(*source) {
+            return invalid_type(at, "by-value operand registers are unique");
+        }
+        read_register(verifier, function, block, *source, state)?;
+    }
+    for source in &consumed {
+        if outputs.contains(source) && !mutated.contains(source) {
+            // Binary consumes each input before writing its result, so its
+            // destination may reuse either vacated input register. The
+            // uniqueness check above still rejects reading one owner twice.
+            if !matches!(instruction, AwbcInstruction::Binary { dst, .. } if dst == source)
+                && !matches!(instruction, AwbcInstruction::CallTraitMethod { receiver_out: Some(out), receiver, .. } if out == source && receiver == source)
+            {
+                return invalid_type(at, "consumed source distinct from instruction destination");
+            }
+        }
+        if mutated.contains(source) {
+            return invalid_type(at, "by-value source distinct from mutable receiver");
+        }
+    }
+    for source in consumed {
+        clear_register(verifier, function, block, source, state)?;
+    }
+    for target in mutated {
+        if let Some(proof) = mutated_proof.clone() {
+            state.copy_proofs[target.index()] = proof;
+        }
+    }
+    if let Some(proof) = output_proof {
+        if let Some(output) = outputs.first() {
+            state.copy_proofs[output.index()] = proof;
+        }
+    }
+    for output in outputs {
+        state.initialized[output.index()] = true;
+    }
+    for (output, proof) in extra_output_proofs {
+        state.copy_proofs[output.index()] = proof;
+    }
+    Ok(())
+}
+
+fn dst_type(
+    verifier: &Verifier<'_, '_>,
+    function: usize,
+    block: usize,
+    register: AwbcRegisterId,
+) -> Result<AwbcTypeId, AwbcVerifyError> {
+    register_type(verifier, function, block, register)
+}
+
+fn sequence_element_proof(
+    proof: &CopyProof,
+    program: &AwbcProgram,
+    item_ty: AwbcTypeId,
+) -> CopyProof {
+    match proof {
+        CopyProof::Copyable => CopyProof::Copyable,
+        CopyProof::Sequence(values) => values
+            .iter()
+            .cloned()
+            .reduce(|left, right| left.merge(&right))
+            .unwrap_or_else(|| base_copy_proof(program, item_ty)),
+        _ => base_copy_proof(program, item_ty),
+    }
+}
+
+fn append_sequence_proof(sequence: CopyProof, value: CopyProof) -> CopyProof {
+    match sequence {
+        CopyProof::Copyable => CopyProof::Sequence(vec![CopyProof::Copyable, value]).compact(),
+        CopyProof::Sequence(mut values) => {
+            values.push(value);
+            CopyProof::Sequence(values).compact()
+        }
+        _ => CopyProof::Affine,
+    }
+}
+
+fn pop_sequence_proof(sequence: CopyProof) -> CopyProof {
+    match sequence {
+        CopyProof::Copyable => CopyProof::Copyable,
+        CopyProof::Sequence(mut values) => {
+            if !values.is_empty() {
+                values.remove(0);
+            }
+            CopyProof::Sequence(values).compact()
+        }
+        _ => CopyProof::Affine,
+    }
+}
+
+fn update_record_proof_field(
+    proof: &CopyProof,
+    field: usize,
+    field_count: usize,
+    update: impl FnOnce(CopyProof) -> CopyProof,
+) -> CopyProof {
+    match proof {
+        CopyProof::Copyable if field < field_count => {
+            let mut fields = vec![CopyProof::Copyable; field_count];
+            fields[field] = update(CopyProof::Copyable);
+            CopyProof::Record(fields).compact()
+        }
+        CopyProof::Record(values) if field < values.len() => {
+            let mut values = values.clone();
+            values[field] = update(values[field].clone());
+            CopyProof::Record(values).compact()
+        }
+        _ => CopyProof::Affine,
+    }
+}
+
+fn mutable_place_base(place: &AwbcMutablePlace) -> AwbcRegisterId {
+    match place {
+        AwbcMutablePlace::Local(base) | AwbcMutablePlace::NominalField { base, .. } => *base,
+    }
 }
 
 impl RuntimeAgentTypeContext for AwbcProgram {
@@ -1814,6 +2734,62 @@ fn apply_terminator(
                 &mut successors,
             )?;
         }
+        AwbcTerminator::SequenceNext {
+            sequence,
+            item,
+            some_block,
+            none_block,
+        } => {
+            if sequence == item {
+                return invalid_type(&at, "sequence next item distinct from owned source");
+            }
+            let sequence_ty = read_register(verifier, function, block, *sequence, state)?;
+            let Some(AwbcRuntimeTypeShape::Sequence {
+                kind,
+                item: item_ty,
+            }) = runtime_shape(program, sequence_ty)
+            else {
+                return invalid_type(&at, "sequence next requires a variable-length sequence");
+            };
+            if !matches!(
+                kind,
+                RuntimePlanSequenceKind::Vec
+                    | RuntimePlanSequenceKind::Seq
+                    | RuntimePlanSequenceKind::Slice
+            ) {
+                return invalid_type(&at, "sequence next requires a variable-length sequence");
+            }
+            let dst_ty = register_type(verifier, function, block, *item)?;
+            require_compatible(program, dst_ty, *item_ty, &at)?;
+            if state.initialized[item.index()] {
+                return invalid_type(&at, "sequence next item destination is vacant");
+            }
+            let mut nonempty = state.clone();
+            let source_proof = state.copy_proofs[sequence.index()].clone();
+            nonempty.copy_proofs[sequence.index()] = pop_sequence_proof(source_proof.clone());
+            write_register(verifier, function, block, *item, &mut nonempty)?;
+            nonempty.copy_proofs[item.index()] = source_proof
+                .element(0)
+                .unwrap_or_else(|| base_copy_proof(program, *item_ty));
+            push_target(
+                verifier,
+                function,
+                block,
+                *some_block,
+                &nonempty,
+                &mut successors,
+            )?;
+            let mut empty = state.clone();
+            empty.copy_proofs[sequence.index()] = CopyProof::Copyable;
+            push_target(
+                verifier,
+                function,
+                block,
+                *none_block,
+                &empty,
+                &mut successors,
+            )?;
+        }
         AwbcTerminator::Match {
             scrutinee,
             arms,
@@ -1873,6 +2849,7 @@ fn apply_terminator(
             resume,
         } => {
             check_index(program.functions.len(), callee.0, "functions", &at)?;
+            let mut next = state.clone();
             verify_callable(
                 verifier,
                 function,
@@ -1880,7 +2857,7 @@ fn apply_terminator(
                 program.functions[callee.index()].signature,
                 args,
                 *dst,
-                &mut state.clone(),
+                &mut next,
                 &at,
                 &format!("function {}", callee.0),
             )?;
@@ -1891,7 +2868,7 @@ fn apply_terminator(
                 AwbcSafePointKind::CallableBoundary,
                 &at,
             )?;
-            successors.push((target, state.clone()));
+            successors.push((target, next));
         }
         AwbcTerminator::ProjectCall { call } => {
             let mut next = state.clone();
@@ -2176,10 +3153,9 @@ fn apply_terminator(
                     0,
                 )?;
             }
-            successors.push((
-                verify_resume(verifier, function, *resume, AwbcSafePointKind::Await, &at)?,
-                next,
-            ));
+            let ready_block =
+                verify_resume(verifier, function, *resume, AwbcSafePointKind::Await, &at)?;
+            successors.push((ready_block, next));
             if let Some(observer) = observer {
                 require_type_kind(
                     verifier,
@@ -2198,16 +3174,17 @@ fn apply_terminator(
                     observer.destination,
                     &mut pending,
                 )?;
-                successors.push((
-                    verify_resume(
-                        verifier,
-                        function,
-                        observer.resume,
-                        AwbcSafePointKind::Await,
-                        &at,
-                    )?,
-                    pending,
-                ));
+                let observer_block = verify_resume(
+                    verifier,
+                    function,
+                    observer.resume,
+                    AwbcSafePointKind::Await,
+                    &at,
+                )?;
+                if observer_block == ready_block {
+                    return invalid_type(&at, "await ready and observer resumes are distinct");
+                }
+                successors.push((observer_block, pending));
             }
         }
         AwbcTerminator::AwaitMany {
@@ -2363,7 +3340,164 @@ fn apply_terminator(
         }
         AwbcTerminator::Unreachable => {}
     }
+    apply_terminator_copy_and_move_effects(
+        verifier,
+        function,
+        block,
+        terminator,
+        state,
+        &mut successors,
+        &at,
+    )?;
+    if let AwbcTerminator::Await {
+        handle,
+        observer: Some(observer),
+        ..
+    } = terminator
+    {
+        // A progress continuation transfers the suspended Need identity back
+        // to its original register. The ready continuation consumes it.
+        let observer_block = program.resume_points[observer.resume.index()].block.index();
+        let (_, pending) = successors
+            .iter_mut()
+            .find(|(block, _)| *block == observer_block)
+            .expect("verified observer resume has a successor");
+        write_register(verifier, function, block, *handle, pending)?;
+    }
     Ok(successors)
+}
+
+fn apply_terminator_copy_and_move_effects(
+    verifier: &Verifier<'_, '_>,
+    function: usize,
+    block: usize,
+    terminator: &AwbcTerminator,
+    state: &FlowState,
+    successors: &mut [(usize, FlowState)],
+    at: &str,
+) -> Result<(), AwbcVerifyError> {
+    let mut consumed = Vec::new();
+    let mut outputs = BTreeSet::new();
+    match terminator {
+        AwbcTerminator::Match { scrutinee, .. } => consumed.push(*scrutinee),
+        AwbcTerminator::CallFunction { args, dst, .. } => {
+            consumed.extend(args.iter().copied());
+            outputs.extend(dst.iter().copied());
+        }
+        AwbcTerminator::GotoStatic { args, .. } => consumed.extend(args.iter().copied()),
+        AwbcTerminator::HostCall { args, dst, .. } => {
+            consumed.extend(args.iter().copied());
+            outputs.extend(dst.iter().copied());
+        }
+        AwbcTerminator::ProjectCall { call } => {
+            consumed.push(call.callee);
+            consumed.extend(call.operands.iter().map(|operand| operand.value));
+            extend_pattern_targets(verifier.program, call.result_pattern, &mut outputs)?;
+        }
+        AwbcTerminator::GotoDynamic { target, args } => {
+            consumed.push(*target);
+            consumed.extend(args.iter().copied());
+        }
+        AwbcTerminator::Dialogue {
+            target,
+            values,
+            effects,
+            line_task_captures,
+            result,
+            ..
+        } => {
+            consumed.push(*target);
+            consumed.extend(values.iter().map(|binding| binding.value));
+            consumed.extend(
+                effects
+                    .iter()
+                    .flat_map(|effect| effect.captures.iter().copied()),
+            );
+            consumed.extend(line_task_captures.iter().copied());
+            outputs.insert(result.destination);
+            extend_pattern_targets(verifier.program, result.pattern, &mut outputs)?;
+        }
+        AwbcTerminator::Await {
+            handle,
+            binding,
+            observer,
+            ..
+        } => {
+            consumed.push(*handle);
+            if let Some(pattern) = binding {
+                extend_pattern_targets(verifier.program, *pattern, &mut outputs)?;
+            }
+            outputs.extend(observer.iter().map(|observer| observer.destination));
+        }
+        AwbcTerminator::AwaitMany {
+            source, binding, ..
+        } => {
+            consumed.push(*source);
+            if let Some(pattern) = binding {
+                extend_pattern_targets(verifier.program, *pattern, &mut outputs)?;
+            }
+        }
+        AwbcTerminator::Choice { dst, .. } => {
+            outputs.insert(*dst);
+        }
+        AwbcTerminator::Jump { .. }
+        | AwbcTerminator::Branch { .. }
+        | AwbcTerminator::SequenceNext { .. }
+        | AwbcTerminator::Return { .. }
+        | AwbcTerminator::SelectDialogueResult { .. }
+        | AwbcTerminator::Trap { .. }
+        | AwbcTerminator::BudgetYield { .. }
+        | AwbcTerminator::Unreachable => {}
+    }
+    let mut unique = BTreeSet::new();
+    for source in &consumed {
+        if !unique.insert(*source) {
+            return invalid_type(at, "terminator by-value operand registers are unique");
+        }
+        read_register(verifier, function, block, *source, state)?;
+    }
+    for (_, state) in successors {
+        let restored_outputs = consumed
+            .iter()
+            .filter(|register| {
+                outputs.contains(register)
+                    && state
+                        .initialized
+                        .get(register.index())
+                        .copied()
+                        .unwrap_or(false)
+            })
+            .copied()
+            .collect::<BTreeSet<_>>();
+        for source in &consumed {
+            if !outputs.contains(source)
+                && state
+                    .initialized
+                    .get(source.index())
+                    .copied()
+                    .unwrap_or(false)
+            {
+                clear_register(verifier, function, block, *source, state)?;
+            }
+        }
+        for output in restored_outputs {
+            let ty = register_type(verifier, function, block, output)?;
+            state.initialized[output.index()] = true;
+            state.copy_proofs[output.index()] = base_copy_proof(verifier.program, ty);
+        }
+    }
+    Ok(())
+}
+
+fn extend_pattern_targets(
+    program: &AwbcProgram,
+    pattern: AwbcPatternId,
+    outputs: &mut BTreeSet<AwbcRegisterId>,
+) -> Result<(), AwbcVerifyError> {
+    let mut targets = BTreeSet::new();
+    validate_unique_pattern_binding_targets(program, pattern, pattern, &mut targets, 0, 1024)?;
+    outputs.extend(targets);
+    Ok(())
 }
 
 fn verify_project_call(
@@ -2502,6 +3636,19 @@ fn verify_project_call(
         }
     }
 
+    let mut consumed_registers = BTreeSet::new();
+    if !consumed_registers.insert(call.callee)
+        || call
+            .operands
+            .iter()
+            .any(|operand| !consumed_registers.insert(operand.value))
+    {
+        return invalid_type(
+            at,
+            "project-call callee and physical operands must use distinct registers",
+        );
+    }
+
     if let RuntimeCallableAttachedContract::Defaulted { default, .. } = &definition.attached {
         let crate::plan::RuntimeCallableDefault::Body {
             function: default_function,
@@ -2541,6 +3688,10 @@ fn verify_project_call(
             "callable invocation",
         )?;
     }
+    let result_proof = project_call_result_copy_proof(program, call, definition, state);
+    for register in consumed_registers {
+        clear_register(verifier, function, block, register, state)?;
+    }
     validate_pattern(
         verifier,
         function,
@@ -2550,7 +3701,98 @@ fn verify_project_call(
         Some(AwbcBindMode::Declare),
         state,
         0,
+    )?;
+    assign_pattern_copy_proofs(
+        verifier,
+        function,
+        block,
+        call.result_pattern,
+        definition.result,
+        &result_proof,
+        state,
+        0,
     )
+}
+
+/// A retained ProjectCall result is a new callable whose slots are projected
+/// from the exact input state and materialized group. Invocation results have
+/// no interprocedural Copy summary, so only the sealed Retain transition can
+/// carry a producer proof into the result pattern.
+fn project_call_result_copy_proof(
+    program: &AwbcProgram,
+    call: &crate::awbc::schema::AwbcProjectCall,
+    definition: &RuntimeCallableStateDefinition<AwbcTypeId, crate::awbc::schema::AwbcFunctionId>,
+    state: &FlowState,
+) -> CopyProof {
+    let RuntimeCallableTransition::Retain { values, .. } = &definition.transition else {
+        return base_copy_proof(program, definition.result);
+    };
+    let callee = &state.copy_proofs[call.callee.index()];
+    let arguments = call
+        .ordinary
+        .iter()
+        .map(|row| match row {
+            AwbcProjectCallOrdinaryMaterialization::Fixed { source_index, .. } => call
+                .operands
+                .get(*source_index as usize)
+                .map(|operand| state.copy_proofs[operand.value.index()].clone())
+                .unwrap_or(CopyProof::Affine),
+            AwbcProjectCallOrdinaryMaterialization::Rest { source_indices, .. } => {
+                if source_indices.iter().all(|index| {
+                    call.operands.get(*index as usize).is_some_and(|operand| {
+                        state.copy_proofs[operand.value.index()].permits_copy()
+                    })
+                }) {
+                    CopyProof::Copyable
+                } else {
+                    CopyProof::Affine
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+    let attached = match (&definition.attached, &call.attached) {
+        (
+            RuntimeCallableAttachedContract::Optional { .. },
+            Some(crate::awbc::schema::AwbcProjectCallAttachedMaterialization {
+                presence: AwbcProjectCallAttachedPresence::OptionalOmitted,
+                ..
+            }),
+        ) => CopyProof::Copyable,
+        (
+            RuntimeCallableAttachedContract::Defaulted { ty, .. },
+            Some(crate::awbc::schema::AwbcProjectCallAttachedMaterialization {
+                presence: AwbcProjectCallAttachedPresence::DefaultedOmitted,
+                ..
+            }),
+        ) => base_copy_proof(program, *ty),
+        (_, Some(attached)) => attached
+            .source_index
+            .and_then(|index| call.operands.get(index as usize))
+            .map(|operand| state.copy_proofs[operand.value.index()].clone())
+            .unwrap_or(CopyProof::Affine),
+        _ => CopyProof::Affine,
+    };
+    CopyProof::Function(
+        values
+            .iter()
+            .map(|source| match source {
+                RuntimeCallableInputSource::Retained { position } => match callee {
+                    CopyProof::Copyable => CopyProof::Copyable,
+                    CopyProof::Function(retained) => retained
+                        .get(*position as usize)
+                        .cloned()
+                        .unwrap_or(CopyProof::Affine),
+                    _ => CopyProof::Affine,
+                },
+                RuntimeCallableInputSource::Argument { position } => arguments
+                    .get(*position as usize)
+                    .cloned()
+                    .unwrap_or(CopyProof::Affine),
+                RuntimeCallableInputSource::Attached => attached.clone(),
+            })
+            .collect(),
+    )
+    .compact()
 }
 
 fn verify_apply_group(
@@ -3153,14 +4395,34 @@ fn validate_pattern(
         }
         AwbcPattern::Sequence { items, rest } => {
             let item_ty = match runtime_shape(program, value_ty) {
-                Some(AwbcRuntimeTypeShape::Sequence { item: item_ty, .. }) => Some(*item_ty),
-                Some(AwbcRuntimeTypeShape::Dynamic) => dynamic_type(program),
-                _ => None,
-            }
-            .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
-                at: "sequence pattern".to_owned(),
-                message: "sequence pattern requires sequence/dynamic type".to_owned(),
-            })?;
+                Some(AwbcRuntimeTypeShape::Sequence { item: item_ty, .. }) => *item_ty,
+                Some(AwbcRuntimeTypeShape::Array { item, length }) => {
+                    let actual = length
+                        .constant()
+                        .and_then(|length| usize::try_from(length).ok())
+                        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                            at: "sequence pattern".to_owned(),
+                            message: "Array pattern requires a closed length".to_owned(),
+                        })?;
+                    if !rest.accepts_len(items.len(), actual) {
+                        return argument_count("Array pattern", actual, items.len());
+                    }
+                    *item
+                }
+                Some(AwbcRuntimeTypeShape::Dynamic) => {
+                    dynamic_type(program).ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                        at: "sequence pattern".to_owned(),
+                        message: "dynamic sequence pattern has no Dynamic runtime type".to_owned(),
+                    })?
+                }
+                _ => {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at: "sequence pattern".to_owned(),
+                        message: "sequence pattern requires sequence, Array, or Dynamic type"
+                            .to_owned(),
+                    });
+                }
+            };
             for child in items {
                 validate_pattern(
                     verifier,
@@ -3254,6 +4516,257 @@ fn validate_pattern(
         }
     }
     Ok(())
+}
+
+fn assign_pattern_copy_proofs(
+    verifier: &Verifier<'_, '_>,
+    function: usize,
+    block: usize,
+    pattern: AwbcPatternId,
+    value_ty: AwbcTypeId,
+    proof: &CopyProof,
+    state: &mut FlowState,
+    depth: usize,
+) -> Result<(), AwbcVerifyError> {
+    if depth > verifier.budget.pattern_depth {
+        return Err(AwbcVerifyError::PatternDepthExceeded {
+            pattern: pattern.index(),
+            limit: verifier.budget.pattern_depth,
+        });
+    }
+    let program = verifier.program;
+    match program
+        .patterns
+        .get(pattern.index())
+        .ok_or(AwbcVerifyError::IndexOutOfBounds {
+            table: "patterns",
+            index: pattern.0,
+            at: format!("pattern proof in block {block}"),
+        })? {
+        AwbcPattern::Bind { target, .. } => {
+            state.copy_proofs[target.index()] = proof.clone();
+        }
+        AwbcPattern::Tuple(items) => {
+            let types = match runtime_shape(program, value_ty) {
+                Some(AwbcRuntimeTypeShape::Tuple(types)) => Some(types.as_slice()),
+                _ => None,
+            };
+            for (ordinal, child) in items.iter().enumerate() {
+                let child_ty = types
+                    .and_then(|types| types.get(ordinal).copied())
+                    .unwrap_or(value_ty);
+                let child_proof = proof
+                    .element(ordinal)
+                    .unwrap_or_else(|| base_copy_proof(program, child_ty));
+                assign_pattern_copy_proofs(
+                    verifier,
+                    function,
+                    block,
+                    *child,
+                    child_ty,
+                    &child_proof,
+                    state,
+                    depth + 1,
+                )?;
+            }
+        }
+        AwbcPattern::Sequence { items, rest } => {
+            let item_ty = match runtime_shape(program, value_ty) {
+                Some(AwbcRuntimeTypeShape::Sequence { item, .. })
+                | Some(AwbcRuntimeTypeShape::Array { item, .. }) => *item,
+                Some(AwbcRuntimeTypeShape::Dynamic) => dynamic_type(program).unwrap_or(value_ty),
+                _ => value_ty,
+            };
+            for (ordinal, child) in items.iter().enumerate() {
+                let child_proof = proof
+                    .element(ordinal)
+                    .unwrap_or_else(|| base_copy_proof(program, item_ty));
+                assign_pattern_copy_proofs(
+                    verifier,
+                    function,
+                    block,
+                    *child,
+                    item_ty,
+                    &child_proof,
+                    state,
+                    depth + 1,
+                )?;
+            }
+            if let AwbcPatternRest::Bind(target) = rest {
+                let rest_ty = register_type(verifier, function, block, *target)?;
+                let tail_proofs = match proof {
+                    CopyProof::Sequence(values) => {
+                        values.iter().skip(items.len()).cloned().collect::<Vec<_>>()
+                    }
+                    CopyProof::Copyable => Vec::new(),
+                    _ => vec![base_copy_proof(program, item_ty)],
+                };
+                state.copy_proofs[target.index()] = if proof.permits_copy() {
+                    CopyProof::Copyable
+                } else if tail_proofs.is_empty() {
+                    base_copy_proof(program, rest_ty)
+                } else {
+                    CopyProof::Sequence(tail_proofs).compact()
+                };
+            }
+        }
+        AwbcPattern::Record { ty, fields, rest } => {
+            let record_ty = ty.unwrap_or(value_ty);
+            let field_layouts = match runtime_shape(program, record_ty) {
+                Some(
+                    AwbcRuntimeTypeShape::Record { fields, .. }
+                    | AwbcRuntimeTypeShape::NominalRecord { fields, .. },
+                ) => Some(fields.as_slice()),
+                _ => None,
+            };
+            for field in fields {
+                let child_ty = field_layouts
+                    .and_then(|fields| fields.get(field.field as usize).map(|field| field.ty))
+                    .unwrap_or(value_ty);
+                let child_proof = proof
+                    .element(field.field as usize)
+                    .unwrap_or_else(|| base_copy_proof(program, child_ty));
+                assign_pattern_copy_proofs(
+                    verifier,
+                    function,
+                    block,
+                    field.pattern,
+                    child_ty,
+                    &child_proof,
+                    state,
+                    depth + 1,
+                )?;
+            }
+            if let AwbcPatternRest::Bind(target) = rest {
+                let field_bindings = fields.iter().try_fold(false, |found, field| {
+                    Ok::<_, AwbcVerifyError>(
+                        found || pattern_has_binding(program, field.pattern, depth + 1)?,
+                    )
+                })?;
+                if field_bindings && !proof.permits_copy() {
+                    return invalid_type(
+                        "record pattern",
+                        "affine record cannot be retained alongside field bindings",
+                    );
+                }
+                state.copy_proofs[target.index()] = proof.clone();
+            }
+        }
+        AwbcPattern::Variant {
+            ty, case, payload, ..
+        } => {
+            if let Some(payload) = payload {
+                let payload_ty = match runtime_shape(program, *ty) {
+                    Some(AwbcRuntimeTypeShape::Variant { cases, .. }) => {
+                        cases.get(*case as usize).and_then(|case| case.payload)
+                    }
+                    _ => None,
+                }
+                .unwrap_or(value_ty);
+                let payload_proof = match proof {
+                    CopyProof::Variant {
+                        case: proof_case,
+                        payload: Some(payload_proof),
+                    } if proof_case == case => (**payload_proof).clone(),
+                    CopyProof::Copyable => CopyProof::Copyable,
+                    _ => base_copy_proof(program, payload_ty),
+                };
+                assign_pattern_copy_proofs(
+                    verifier,
+                    function,
+                    block,
+                    *payload,
+                    payload_ty,
+                    &payload_proof,
+                    state,
+                    depth + 1,
+                )?;
+            }
+        }
+        AwbcPattern::Whole { target, inner } => {
+            if pattern_has_binding(program, *inner, depth + 1)? && !proof.permits_copy() {
+                return invalid_type(
+                    "whole pattern",
+                    "affine whole value cannot be retained alongside inner bindings",
+                );
+            }
+            state.copy_proofs[target.index()] = proof.clone();
+            assign_pattern_copy_proofs(
+                verifier,
+                function,
+                block,
+                *inner,
+                value_ty,
+                proof,
+                state,
+                depth + 1,
+            )?;
+        }
+        AwbcPattern::Discard | AwbcPattern::Literal(_) | AwbcPattern::Entity(_) => {}
+    }
+    Ok(())
+}
+
+fn pattern_has_binding(
+    program: &AwbcProgram,
+    pattern: AwbcPatternId,
+    depth: usize,
+) -> Result<bool, AwbcVerifyError> {
+    if depth > 1024 {
+        return Err(AwbcVerifyError::PatternDepthExceeded {
+            pattern: pattern.index(),
+            limit: 1024,
+        });
+    }
+    let pattern =
+        program
+            .patterns
+            .get(pattern.index())
+            .ok_or(AwbcVerifyError::IndexOutOfBounds {
+                table: "patterns",
+                index: pattern.0,
+                at: "pattern binding query".to_owned(),
+            })?;
+    match pattern {
+        AwbcPattern::Bind { .. } | AwbcPattern::Whole { .. } => Ok(true),
+        AwbcPattern::Tuple(items)
+        | AwbcPattern::Sequence {
+            items,
+            rest: AwbcPatternRest::Exact | AwbcPatternRest::Ignore,
+        } => items.iter().try_fold(false, |found, item| {
+            Ok::<_, AwbcVerifyError>(found || pattern_has_binding(program, *item, depth + 1)?)
+        }),
+        AwbcPattern::Sequence { items, rest } => {
+            if matches!(rest, AwbcPatternRest::Bind(_)) {
+                Ok(true)
+            } else {
+                items.iter().try_fold(false, |found, item| {
+                    Ok::<_, AwbcVerifyError>(
+                        found || pattern_has_binding(program, *item, depth + 1)?,
+                    )
+                })
+            }
+        }
+        AwbcPattern::Record { fields, rest, .. } => {
+            if matches!(rest, AwbcPatternRest::Bind(_)) {
+                Ok(true)
+            } else {
+                fields.iter().try_fold(false, |found, field| {
+                    Ok::<_, AwbcVerifyError>(
+                        found || pattern_has_binding(program, field.pattern, depth + 1)?,
+                    )
+                })
+            }
+        }
+        AwbcPattern::Variant {
+            payload: Some(payload),
+            ..
+        } => pattern_has_binding(program, *payload, depth + 1),
+        AwbcPattern::Discard
+        | AwbcPattern::Literal(_)
+        | AwbcPattern::Entity(_)
+        | AwbcPattern::Variant { payload: None, .. } => Ok(false),
+    }
 }
 
 fn validate_unique_pattern_binding_targets(
@@ -3431,8 +4944,9 @@ fn write_register(
     register: AwbcRegisterId,
     state: &mut FlowState,
 ) -> Result<(), AwbcVerifyError> {
-    register_type(verifier, function, block, register)?;
+    let ty = register_type(verifier, function, block, register)?;
     state.initialized[register.index()] = true;
+    state.copy_proofs[register.index()] = base_copy_proof(verifier.program, ty);
     Ok(())
 }
 
@@ -3445,7 +4959,16 @@ fn clear_register(
 ) -> Result<(), AwbcVerifyError> {
     register_type(verifier, function, block, register)?;
     state.initialized[register.index()] = false;
+    state.copy_proofs[register.index()] = CopyProof::Affine;
     Ok(())
+}
+
+fn base_copy_proof(program: &AwbcProgram, ty: AwbcTypeId) -> CopyProof {
+    if runtime_type_permits_copy(program, ty, 0) {
+        CopyProof::Copyable
+    } else {
+        CopyProof::Affine
+    }
 }
 
 fn register_type(

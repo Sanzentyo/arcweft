@@ -75,8 +75,11 @@ attempts, cache hits/misses, and compile elapsed time.
 For deterministic integer helpers, VM fallback evaluation also consumes the
 fixed-stack argument pack directly; `arg_vec_allocations` therefore identifies
 runtime call-site argument materialization rather than backend fallback
-wrapping. Value-slice VM fallback receives the caller's argument slice by
-borrow and reuses VM scratch root bindings between calls.
+wrapping. Value-shaped VM fallback takes the caller's evaluated argument vector
+by ownership transfer, including affine values, and reuses VM scratch root
+bindings between calls.
+`arg_bytes_borrowed` counts the backend's temporary slice inspection of that
+owned vector; it does not represent a copy of the value graph.
 Bytecode VM programs preserve the runtime plan's pure-helper table, so executor
 artifact lowering does not change whether ordinary flow calls can use the
 adapter-provided pure backend.
@@ -214,6 +217,14 @@ pub struct RuntimePayload(pub RuntimeValue);
 `StreamEvent<String, String>` is removed. Use `RuntimeStreamEvent` for typed
 external-capability stream events. Display tooling may derive a payload label,
 but the runtime boundary preserves the structured value.
+
+Host `Ready` and HostCall results transfer their admitted `RuntimePayload` into
+the runtime owner. `FlowEvent::AwaitReady` includes a value only when that exact
+payload is deeply Copy; an affine Ready value still reaches its destination
+without a second observer copy.
+An Await progress observer returns its pending `Need` handle from suspension
+to the verified frame before the observer runs; a re-await then consumes that
+same handle again. The Ready branch does not restore the handle.
 
 ## Product AWBC parity contract
 

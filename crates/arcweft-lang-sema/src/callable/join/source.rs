@@ -393,6 +393,7 @@ impl CheckedProjectFunctionCallableSource {
             function_type: function_type.clone(),
             effects,
             solution: CheckedProjectFunctionInstanceSolution {
+                declaration: self.declaration.clone(),
                 solution: Arc::new(body),
                 instantiation,
                 function_type,

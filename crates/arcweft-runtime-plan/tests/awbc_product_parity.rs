@@ -20,10 +20,10 @@ use arcweft_core::plan::{
     RuntimeAwaitTargetSeed, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
     RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed,
     RuntimeFunctionInputBindingSeed, RuntimeFunctionInputSource, RuntimeFunctionSiteSeedId,
-    RuntimeLocalDeclarationSeed, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan,
-    RuntimePlanBuilder, RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
-    RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureHelperSeed, RuntimePureOutputType,
-    RuntimePureProgramBindingSeed,
+    RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed, RuntimePatternSeed, RuntimePatternSeedKind,
+    RuntimePlan, RuntimePlanBuilder, RuntimePlanSequenceKind, RuntimePlanTypeProjection,
+    RuntimePlanTypeSeed, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureHelperSeed,
+    RuntimePureOutputType, RuntimePureProgramBindingSeed,
 };
 use arcweft_core::pure::{
     PureFunctionBackend, PureFunctionRequest, RuntimePureCallBackend, VmPureFunctionBackend,
@@ -38,8 +38,8 @@ use arcweft_core::task::{
     TaskEventKind, TaskPolicy, TaskPriority, TaskPublicationRevision, TaskSequence,
 };
 use arcweft_core::value::{
-    Progress, RuntimeBinaryOp, RuntimeSeq, RuntimeSignedIntWidth, RuntimeStandardMapFamily,
-    RuntimeStandardMapOperandOrder, RuntimeValue,
+    Progress, RuntimeBinaryOp, RuntimeLocalReadMode, RuntimeSeq, RuntimeSignedIntWidth,
+    RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder, RuntimeValue,
 };
 use arcweft_id::runtime_program::RuntimePureProgramId;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
@@ -221,13 +221,18 @@ fn standard_map_awbc_plan() -> (Arc<RuntimePlan>, Vec<AwbcStandardMapCase>) {
                         local: callback_local.clone(),
                     },
                 ),
+                ownership: Default::default(),
+                unrestricted_bindings: Box::new([]),
             }],
             RuntimeExprSeed::new(
                 item_ty,
                 RuntimeExprSeedKind::Binary {
                     lhs: Box::new(RuntimeExprSeed::new(
                         item_ty,
-                        RuntimeExprSeedKind::Local(callback_local),
+                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                            callback_local,
+                            RuntimeLocalReadMode::Copy,
+                        )),
                     )),
                     op: RuntimeBinaryOp::Add,
                     rhs: Box::new(standard_map_i64(1)),
@@ -501,7 +506,10 @@ fn plan_with_await_observer() -> RuntimePlan {
                     target: RuntimeAwaitTargetSeed {
                         source: RuntimeExprSeed::new(
                             need_type,
-                            RuntimeExprSeedKind::Local(need_local),
+                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                need_local,
+                                RuntimeLocalReadMode::Move,
+                            )),
                         ),
                     },
                     observers: vec![

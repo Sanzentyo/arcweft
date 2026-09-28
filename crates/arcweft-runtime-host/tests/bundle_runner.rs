@@ -17,9 +17,9 @@ use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
     EntryRuntimeId, FlowRuntimeId, RuntimeAwaitTargetSeed, RuntimeEntryKind, RuntimeEntrySpec,
     RuntimeEntryTarget, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed,
-    RuntimeLocalDeclarationSeed, RuntimeNeedProducerStartTargetSeed, RuntimePatternSeed,
-    RuntimePatternSeedKind, RuntimePlan, RuntimePlanBuilder, RuntimePlanTypeProjection,
-    RuntimePlanTypeSeed,
+    RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed, RuntimeNeedProducerStartTargetSeed,
+    RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan, RuntimePlanBuilder,
+    RuntimePlanTypeProjection, RuntimePlanTypeSeed,
 };
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
@@ -30,7 +30,7 @@ use arcweft_core::task::{
     NeedProducerTaskPlan, TaskClass, TaskDispatchIdentity, TaskEvent, TaskEventKind, TaskPolicy,
     TaskPriority, TaskPublicationRevision, TaskSequence,
 };
-use arcweft_core::value::{RuntimePayload, RuntimeValue};
+use arcweft_core::value::{RuntimeLocalReadMode, RuntimePayload, RuntimeValue};
 use arcweft_host_adapter::{
     HostAdapter, HostAdapterError, HostAdapterRegistry, HostTaskCompletion, HostTaskMetrics,
     HostTaskOutcome,
@@ -415,7 +415,10 @@ fn custom_echo_plan() -> RuntimePlan {
                     target: RuntimeAwaitTargetSeed {
                         source: RuntimeExprSeed::new(
                             need_ty,
-                            RuntimeExprSeedKind::Local(need_local),
+                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                need_local,
+                                RuntimeLocalReadMode::Move,
+                            )),
                         ),
                     },
                     observers: Vec::new(),

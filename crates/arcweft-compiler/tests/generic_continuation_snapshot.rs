@@ -1,19 +1,19 @@
 use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary};
 use arcweft_compiler::source::compile_source;
-use arcweft_core::awbc::fiber::FiberState;
+use arcweft_core::awbc::fiber::{AwbcFiberStateSnapshot, AwbcFiberTerminalSnapshot};
 use arcweft_core::awbc::schema::{AwbcProgram, AwbcRuntimeTypeShape, AwbcSignedIntKind};
 use arcweft_core::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext};
 use arcweft_core::engine::{Engine, FlowExit, FlowFiberStatus};
 use arcweft_core::plan::{
-    RuntimeCallableParameterCoordinate, RuntimeCallablePosition, RuntimeCallableRetainedRole,
-    RuntimePlanTypeProjection,
+    FlowEvent, RuntimeCallableParameterCoordinate, RuntimeCallablePosition,
+    RuntimeCallableRetainedRole, RuntimePlanTypeProjection,
 };
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
 };
 use arcweft_core::task::{GenerationId, RuntimeProgramOwner};
 use arcweft_core::value::{
-    AwbcRuntimeCallableSnapshot, AwbcRuntimeValueSnapshot, RuntimeCallableValue,
+    AwbcRuntimeCallableSnapshot, AwbcRuntimeValueSnapshot, RuntimeCallableValue, RuntimeInt,
     RuntimeSignedIntWidth, RuntimeValue,
 };
 use arcweft_runtime_driver::clock::RuntimeClockStep;
@@ -130,25 +130,18 @@ fn awfb_session_save_restores_the_generic_prefix_into_its_pinned_program() {
     let restored_prefix =
         find_awbc_prefix(&restored_snapshot.executor.state.fiber, &restored_program)
             .expect("restored fiber retains the generic prefix");
-    let RuntimeProgramOwner::Awbc(restored_program) = restored_prefix.owner() else {
-        panic!("restored callable is AWBC-owned");
-    };
-    assert_awbc_prefix_scheme(restored_program, restored_prefix);
-    assert_eq!(restored_prefix.state(), prefix.state());
-    assert_eq!(restored_prefix.retained(), prefix.retained());
-    let original_state = &original_program.callable_states[prefix.state().index()];
-    let restored_state = &restored_program.callable_states[restored_prefix.state().index()];
+    assert_awbc_prefix_scheme(&restored_program, restored_prefix);
+    assert_eq!(restored_prefix.state, prefix.state);
+    assert_eq!(restored_prefix.retained, prefix.retained);
+    let original_state = &original_program.callable_states[prefix.state.index()];
+    let restored_state = &restored_program.callable_states[restored_prefix.state.index()];
     assert_eq!(restored_state.origin, original_state.origin);
     assert_eq!(restored_state.position, original_state.position);
     assert_eq!(restored_state.function_type, original_state.function_type);
     assert_eq!(restored_state.retained, original_state.retained);
-    assert!(!restored_prefix.owner().same_program(prefix.owner()));
-    assert!(
-        restored_prefix
-            .owner()
-            .same_program(&restored.program_owner())
-    );
+    assert!(!original_owner.same_program(&restored.program_owner()));
 
+    let mut returned_true = false;
     for _ in 0..2048 {
         if restored.is_finished() {
             break;
@@ -158,17 +151,24 @@ fn awfb_session_save_restores_the_generic_prefix_into_its_pinned_program() {
             BundleStepInput::default(),
         );
         assert!(step.diagnostics.is_empty(), "{:?}", step.diagnostics);
+        returned_true |= step
+            .flow_events
+            .iter()
+            .any(|event| matches!(event, FlowEvent::Return { value } if value == "true"));
     }
     assert!(restored.is_finished(), "restored calls finish");
+    assert!(returned_true, "restored execution returns true");
     let completed = restored
         .snapshot_session()
         .expect("completed session snapshot exports");
     assert!(matches!(
         completed.executor.state.fiber.terminal,
-        Some(arcweft_core::awbc::fiber::FiberTerminalValue::Returned(
-            Some(RuntimeValue::Bool(true))
-        ))
+        Some(AwbcFiberTerminalSnapshot::Returned(None))
     ));
+    assert_eq!(
+        completed.executor.state.fiber.return_summary.as_deref(),
+        Some("true")
+    );
 }
 
 #[test]
@@ -179,7 +179,7 @@ fn awbc_callable_snapshot_rejects_a_forged_retained_type() {
     let owner = session.program_owner();
 
     let forged = AwbcRuntimeValueSnapshot::Callable(AwbcRuntimeCallableSnapshot {
-        state: prefix.state(),
+        state: prefix.state,
         retained: vec![AwbcRuntimeValueSnapshot::String("wrong type".to_owned())],
     });
     let error = forged
@@ -255,7 +255,7 @@ fn advance_to_awbc_prefix(
     session: &mut BundleSession,
 ) -> (
     arcweft_runtime_driver::session_save::BundleSessionSnapshot,
-    RuntimeCallableValue,
+    AwbcRuntimeCallableSnapshot,
 ) {
     for _ in 0..2048 {
         let step = session.step_with_clock(
@@ -277,25 +277,27 @@ fn advance_to_awbc_prefix(
 }
 
 fn find_awbc_prefix<'a>(
-    fiber: &'a FiberState,
+    fiber: &'a AwbcFiberStateSnapshot,
     program: &AwbcProgram,
-) -> Option<&'a RuntimeCallableValue> {
+) -> Option<&'a AwbcRuntimeCallableSnapshot> {
     fiber
         .frames
         .iter()
         .flat_map(|frame| frame.registers.iter().flatten())
         .filter_map(|value| match value {
-            RuntimeValue::Callable(callable) => Some(callable),
+            AwbcRuntimeValueSnapshot::Callable(callable) => Some(callable),
             _ => None,
         })
         .find(|callable| {
-            is_i64_prefix(callable)
-                && program
-                    .callable_states
-                    .get(callable.state().index())
-                    .is_some_and(|state| {
-                        state.position == (RuntimeCallablePosition::AfterGroup { completed: 0 })
-                    })
+            matches!(
+                callable.retained.as_slice(),
+                [AwbcRuntimeValueSnapshot::Int(RuntimeInt::I64(7))]
+            ) && program
+                .callable_states
+                .get(callable.state.index())
+                .is_some_and(|state| {
+                    state.position == (RuntimeCallablePosition::AfterGroup { completed: 0 })
+                })
         })
 }
 
@@ -371,10 +373,10 @@ fn assert_plan_prefix_scheme(
     assert_eq!((bound.depth(), bound.slot()), (0, 0));
 }
 
-fn assert_awbc_prefix_scheme(program: &AwbcProgram, prefix: &RuntimeCallableValue) {
+fn assert_awbc_prefix_scheme(program: &AwbcProgram, prefix: &AwbcRuntimeCallableSnapshot) {
     let state = program
         .callable_states
-        .get(prefix.state().index())
+        .get(prefix.state.index())
         .expect("AWBC continuation state belongs to its program");
     assert_eq!(
         state.position,

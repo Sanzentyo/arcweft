@@ -6,22 +6,25 @@ use crate::awbc_lower::inventory::{
     AwbcInventory, AwbcLowerDiagnostic, PendingAwbcClosure, line_cleanup,
 };
 use crate::awbc_lower::line::AwbcLineLowerer;
-use crate::awbc_lower::pattern::{admitted_local_type, admitted_plan_type, lower_pattern};
+use crate::awbc_lower::pattern::{
+    admitted_local_type, admitted_plan_type, function_input_ownership, lower_pattern,
+};
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
     AwbcAwaitObserverResume, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcChoiceOption,
     AwbcDialogueContentEffectBinding, AwbcDialogueResultTarget, AwbcDialogueValueBinding,
     AwbcDialogueValueRole, AwbcDropPolicy, AwbcEffectPlanId, AwbcEffectSetId, AwbcFrameLayoutId,
     AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionId,
-    AwbcFunctionKind, AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcLineActivationExport,
-    AwbcLineCancelHandler, AwbcLineHandleSite, AwbcLineHandleSiteId, AwbcLineOperation,
-    AwbcLineOperationId, AwbcLineTaskGroup, AwbcLineTaskGroupId, AwbcLineTaskNode,
-    AwbcLineTaskNodeId, AwbcLineTaskTrigger, AwbcParallelPolicy, AwbcPatternId, AwbcProjectCall,
-    AwbcProjectCallAttachedMaterialization, AwbcProjectCallAttachedPresence,
-    AwbcProjectCallOperand, AwbcProjectCallOperandMode, AwbcProjectCallOrdinaryMaterialization,
-    AwbcPureHelper, AwbcPureHelperOrigin, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
-    AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId, AwbcTableRange, AwbcTerminator,
-    AwbcTraitMethodId, AwbcTrapCode,
+    AwbcFunctionInputOwnership, AwbcFunctionKind, AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId,
+    AwbcLineActivationExport, AwbcLineCancelHandler, AwbcLineHandleSite, AwbcLineHandleSiteId,
+    AwbcLineOperation, AwbcLineOperationId, AwbcLineTaskGroup, AwbcLineTaskGroupId,
+    AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger, AwbcParallelPolicy, AwbcPattern,
+    AwbcPatternId, AwbcProjectCall, AwbcProjectCallAttachedMaterialization,
+    AwbcProjectCallAttachedPresence, AwbcProjectCallOperand, AwbcProjectCallOperandMode,
+    AwbcProjectCallOrdinaryMaterialization, AwbcPureHelper, AwbcPureHelperOrigin, AwbcRegisterId,
+    AwbcResumePoint, AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSafePointKind,
+    AwbcScopeId, AwbcTableRange, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode,
+    AwbcVariantIdentity,
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeDropPolicyExpr, RuntimeEffectExpr};
 use arcweft_core::entry::RuntimeEntryRoles;
@@ -29,7 +32,10 @@ use arcweft_core::line_task::{
     ChildCancelPolicy, ChildJoinPolicy, LineTaskGroup, LineTaskNode, LineTaskTrigger,
     ParallelPolicy,
 };
-use arcweft_core::pattern::{RuntimePattern, RuntimePatternKind};
+use arcweft_core::pattern::{
+    RuntimeBuiltinVariantCaseIdentity, RuntimeBuiltinVariantIdentity, RuntimePattern,
+    RuntimePatternKind,
+};
 use arcweft_core::plan::{
     ChoiceRuntimeOption, EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeDeferOwner,
     RuntimeDialogueValueRole, RuntimeEffectSet, RuntimeEntrySpec, RuntimeEntryTarget,
@@ -471,6 +477,10 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 public_id: Some(public_id),
                 kind: AwbcFunctionKind::PureHelper,
                 signature,
+                input_ownership: vec![
+                    AwbcFunctionInputOwnership::default();
+                    helper.input_locals.len()
+                ],
                 frame_layout: layout,
                 blocks: AwbcTableRange::new(block.0, 1),
                 entry_block: block,
@@ -899,6 +909,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 public_id,
                 kind,
                 signature,
+                input_ownership: vec![AwbcFunctionInputOwnership::default(); captures.len()],
                 frame_layout: layout,
                 blocks: body.blocks,
                 entry_block: body.entry_block,
@@ -923,24 +934,25 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         path: &str,
     ) -> AwbcFunctionId {
         let mut frame = FrameBuilder::new();
-        for input in inputs {
+        let mut abi_parameters = Vec::with_capacity(inputs.len());
+        for (position, input) in inputs.iter().enumerate() {
             let input_local = input.input_local();
             let ty = self.local_type(input_local);
             let name = self.inventory.local_name(input_local);
-            frame.named_parameter(input_local, ty, name);
+            abi_parameters.push(frame.abi_parameter(position, ty, name));
         }
         let mut body =
             FlowBodyBuilder::new(self.inventory, owner, AwbcSafePointKind::CallableBoundary);
-        for input in inputs {
-            let input_local = input.input_local();
-            let Some(value) = frame.register_for_local(input_local) else {
-                self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                    path,
-                    format!("function-site input `{input_local}` is not present in its AWBC frame"),
-                ));
-                continue;
-            };
+        let mut input_ownership = Vec::with_capacity(inputs.len());
+        for (input, value) in inputs.iter().zip(abi_parameters) {
             let pattern = lower_pattern(self.inventory, self.plan, &mut frame, input.pattern());
+            input_ownership.push(function_input_ownership(
+                self.inventory,
+                &frame,
+                input,
+                pattern,
+                path,
+            ));
             self.inventory
                 .push_instruction(AwbcInstruction::BindPattern {
                     pattern,
@@ -997,6 +1009,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 public_id: None,
                 kind: AwbcFunctionKind::Ordinary,
                 signature,
+                input_ownership,
                 frame_layout: layout,
                 blocks: body.blocks,
                 entry_block: body.entry_block,
@@ -1064,6 +1077,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 public_id: Some(public_id),
                 kind: AwbcFunctionKind::Flow,
                 signature,
+                input_ownership: vec![AwbcFunctionInputOwnership::default(); flow.params.len()],
                 frame_layout: layout,
                 blocks: body.blocks,
                 entry_block: body.entry_block,
@@ -2146,14 +2160,19 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 crossfade,
                 ..
             } => {
-                let actor_type = admitted_plan_type(self.inventory, self.plan, actor.ty());
+                let actor_type = self.local_type(actor.local());
                 let look_type = admitted_plan_type(self.inventory, self.plan, look.ty());
-                let args = [actor, look, crossfade]
-                    .into_iter()
-                    .map(|argument| {
-                        AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(argument)
-                    })
-                    .collect();
+                let actor_register = frame.register_for_local(actor.local()).unwrap_or_else(|| {
+                    panic!(
+                        "admitted actor.look borrowed local `{}` is outside the AWBC frame at {path}",
+                        actor.local()
+                    )
+                });
+                let args = vec![
+                    actor_register,
+                    AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(look),
+                    AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(crossfade),
+                ];
                 (
                     AwbcLineOperation::ActorLook {
                         group: context.id,
@@ -3251,6 +3270,10 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         self.lower_intrinsic_iterator_for(frame, body, input);
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "The owned iterator step, Option branch, lexical scope, and loop backedge form one lowering transaction."
+    )]
     fn lower_intrinsic_iterator_for(
         &mut self,
         frame: &mut FrameBuilder,
@@ -3306,33 +3329,29 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 intrinsic: next,
                 args: vec![iterator],
             });
-        self.inventory
-            .push_instruction(AwbcInstruction::ProjectTuple {
-                dst: iterator,
-                target: next_pair,
-                ordinal: 0,
-            });
         let next_value_ty = admitted_plan_type(self.inventory, self.plan, evidence.next_value);
         let next_value = frame.temp(next_value_ty);
+        let iterator_pattern = self.inventory.intern_pattern(AwbcPattern::Bind {
+            target: iterator,
+            mutable: false,
+            expected: Some(iterator_ty),
+        });
+        let next_value_pattern = self.inventory.intern_pattern(AwbcPattern::Bind {
+            target: next_value,
+            mutable: false,
+            expected: Some(next_value_ty),
+        });
+        let pair_pattern = self.inventory.intern_pattern(AwbcPattern::Tuple(vec![
+            iterator_pattern,
+            next_value_pattern,
+        ]));
         self.inventory
-            .push_instruction(AwbcInstruction::ProjectTuple {
-                dst: next_value,
-                target: next_pair,
-                ordinal: 1,
+            .push_instruction(AwbcInstruction::BindPattern {
+                pattern: pair_pattern,
+                value: next_pair,
+                mode: AwbcBindMode::Declare,
             });
-        let condition_ty = self.inventory.bool_ty();
-        let condition = frame.temp(condition_ty);
-        let is_some = self.intrinsic(
-            RuntimeCallTarget::intrinsic(arcweft_core::value::RuntimeIntrinsic::CoreOptionIsSome),
-            &[next_value_ty],
-            Some(condition_ty),
-        );
-        self.inventory
-            .push_instruction(AwbcInstruction::CallIntrinsic {
-                dst: Some(condition),
-                intrinsic: is_some,
-                args: vec![next_value],
-            });
+        let condition = self.test_option_some(frame, next_value, next_value_ty);
         let condition_block = AwbcBlockId(table_index(self.inventory.program.blocks.len()));
         let body_block = AwbcBlockId(condition_block.0.saturating_add(1));
         body.close_block(
@@ -3467,19 +3486,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 args: Vec::new(),
                 receiver_out: Some(iterator),
             });
-        let condition_ty = self.inventory.bool_ty();
-        let condition = frame.temp(condition_ty);
-        let is_some = self.intrinsic(
-            RuntimeCallTarget::intrinsic(arcweft_core::value::RuntimeIntrinsic::CoreOptionIsSome),
-            &[next_value_ty],
-            Some(condition_ty),
-        );
-        self.inventory
-            .push_instruction(AwbcInstruction::CallIntrinsic {
-                dst: Some(condition),
-                intrinsic: is_some,
-                args: vec![next_value],
-            });
+        let condition = self.test_option_some(frame, next_value, next_value_ty);
         let condition_block = AwbcBlockId(table_index(self.inventory.program.blocks.len()));
         let body_block = AwbcBlockId(condition_block.0.saturating_add(1));
         body.close_block(
@@ -3554,6 +3561,51 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         signature
             .result
             .unwrap_or_else(|| panic!("admitted {role} signature has no result type"))
+    }
+
+    fn test_option_some(
+        &mut self,
+        frame: &mut FrameBuilder,
+        option: AwbcRegisterId,
+        option_ty: arcweft_core::awbc::schema::AwbcTypeId,
+    ) -> AwbcRegisterId {
+        let case_identity = RuntimeBuiltinVariantCaseIdentity::OptionSome;
+        let (case, _) = case_identity
+            .owner()
+            .resolve_case(case_identity)
+            .expect("Option::Some belongs to its builtin variant owner");
+        let Some(AwbcRuntimeTypeShape::Variant {
+            owner: AwbcVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Option),
+            cases,
+            ..
+        }) = self
+            .inventory
+            .program
+            .runtime_types
+            .get(option_ty.index())
+            .map(AwbcRuntimeType::shape)
+        else {
+            panic!("admitted iterator next value must be Option");
+        };
+        let case_name = cases
+            .get(case as usize)
+            .expect("admitted Option::Some case exists")
+            .name;
+        let payload = self.inventory.intern_pattern(AwbcPattern::Discard);
+        let pattern = self.inventory.intern_pattern(AwbcPattern::Variant {
+            ty: option_ty,
+            case,
+            case_name,
+            payload: Some(payload),
+        });
+        let condition = frame.temp(self.inventory.bool_ty());
+        self.inventory
+            .push_instruction(AwbcInstruction::TestPattern {
+                dst: condition,
+                pattern,
+                value: option,
+            });
+        condition
     }
 
     fn reopen_loop_exit_after_terminated_body(

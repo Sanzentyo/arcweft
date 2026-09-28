@@ -1,7 +1,7 @@
 //! Exact free-local projection for admitted runtime expressions.
 
 use super::{
-    RuntimeCallArgument, RuntimeExpr, RuntimeExprKind, RuntimeMutablePlace,
+    RuntimeCallArgument, RuntimeExpr, RuntimeExprKind, RuntimeLocalReadMode, RuntimeMutablePlace,
     RuntimeStandardMapOperandOrder,
 };
 use crate::pattern::{RuntimePattern, RuntimePatternKind};
@@ -21,6 +21,12 @@ pub enum RuntimeExprFreeLocalError {
     },
 }
 
+#[derive(Clone, Copy)]
+struct FreeLocalUse {
+    local: RuntimeLocalDeclarationId,
+    mode: RuntimeLocalReadMode,
+}
+
 impl RuntimeExpr {
     /// Returns the locals required to evaluate this expression in deterministic
     /// first-use order.
@@ -33,16 +39,38 @@ impl RuntimeExpr {
         &self,
         plan: &RuntimePlan,
     ) -> Result<Box<[RuntimeLocalDeclarationId]>, RuntimeExprFreeLocalError> {
+        Ok(self
+            .evaluation_free_local_reads(plan)?
+            .into_vec()
+            .into_iter()
+            .map(|(local, _)| local)
+            .collect::<Vec<_>>()
+            .into_boxed_slice())
+    }
+
+    /// Returns free locals in deterministic first-use order together with the
+    /// strictest transfer mode admitted for each capture. Repeated uses merge
+    /// to `Move` if any occurrence is affine; only all-Copy reads permit a
+    /// copied closure capture.
+    pub fn evaluation_free_local_reads(
+        &self,
+        plan: &RuntimePlan,
+    ) -> Result<Box<[(RuntimeLocalDeclarationId, RuntimeLocalReadMode)]>, RuntimeExprFreeLocalError>
+    {
         let mut locals = Vec::new();
         self.collect_evaluation_free_locals(plan, &[], &mut locals)?;
-        Ok(locals.into_boxed_slice())
+        Ok(locals
+            .into_iter()
+            .map(|use_| (use_.local, use_.mode))
+            .collect::<Vec<_>>()
+            .into_boxed_slice())
     }
 
     fn collect_evaluation_free_locals(
         &self,
         plan: &RuntimePlan,
         bound: &[RuntimeLocalDeclarationId],
-        locals: &mut Vec<RuntimeLocalDeclarationId>,
+        locals: &mut Vec<FreeLocalUse>,
     ) -> Result<(), RuntimeExprFreeLocalError> {
         match self.kind() {
             RuntimeExprKind::Value(_) | RuntimeExprKind::EntityRef(_) => {}
@@ -51,7 +79,9 @@ impl RuntimeExpr {
                     operand.collect_evaluation_free_locals(plan, bound, locals)?;
                 }
             }
-            RuntimeExprKind::Local(local) => push_free_local(*local, bound, locals),
+            RuntimeExprKind::Local(read) => {
+                push_free_local_with_mode(read.local(), read.mode(), bound, locals)
+            }
             RuntimeExprKind::SequencePopFront { place } => match place {
                 RuntimeMutablePlace::Local(local) => push_free_local(*local, bound, locals),
                 RuntimeMutablePlace::NominalField { base, .. } => {
@@ -243,7 +273,7 @@ fn collect_slice_free_locals(
     plan: &RuntimePlan,
     expressions: &[RuntimeExpr],
     bound: &[RuntimeLocalDeclarationId],
-    locals: &mut Vec<RuntimeLocalDeclarationId>,
+    locals: &mut Vec<FreeLocalUse>,
 ) -> Result<(), RuntimeExprFreeLocalError> {
     for expression in expressions {
         expression.collect_evaluation_free_locals(plan, bound, locals)?;
@@ -255,7 +285,7 @@ fn collect_argument_free_locals(
     plan: &RuntimePlan,
     arguments: &[RuntimeCallArgument],
     bound: &[RuntimeLocalDeclarationId],
-    locals: &mut Vec<RuntimeLocalDeclarationId>,
+    locals: &mut Vec<FreeLocalUse>,
 ) -> Result<(), RuntimeExprFreeLocalError> {
     for argument in arguments {
         argument
@@ -309,9 +339,25 @@ fn collect_pattern_bindings(pattern: &RuntimePattern, bound: &mut Vec<RuntimeLoc
 fn push_free_local(
     local: RuntimeLocalDeclarationId,
     bound: &[RuntimeLocalDeclarationId],
-    locals: &mut Vec<RuntimeLocalDeclarationId>,
+    locals: &mut Vec<FreeLocalUse>,
 ) {
-    if !bound.contains(&local) && !locals.contains(&local) {
-        locals.push(local);
+    push_free_local_with_mode(local, RuntimeLocalReadMode::Move, bound, locals);
+}
+
+fn push_free_local_with_mode(
+    local: RuntimeLocalDeclarationId,
+    mode: RuntimeLocalReadMode,
+    bound: &[RuntimeLocalDeclarationId],
+    locals: &mut Vec<FreeLocalUse>,
+) {
+    if bound.contains(&local) {
+        return;
+    }
+    if let Some(existing) = locals.iter_mut().find(|use_| use_.local == local) {
+        if mode == RuntimeLocalReadMode::Move {
+            existing.mode = RuntimeLocalReadMode::Move;
+        }
+    } else {
+        locals.push(FreeLocalUse { local, mode });
     }
 }

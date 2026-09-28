@@ -13,8 +13,7 @@ use super::{
     RuntimeTaskListOptions, RuntimeTaskRegistry, SessionRuntime, StartedForegroundEntry,
     ViewProjectionInput, ViewVirtualizationRuntime, digest_label, project_view_resources,
     reconciled_root_handles_for_restore, validate_presentation_runtime_status,
-    validate_presentation_snapshot, validate_product_awbc_snapshot,
-    validate_virtual_list_scroll_owner,
+    validate_presentation_snapshot, validate_virtual_list_scroll_owner,
 };
 
 struct SessionRestoreValueValidator<'a> {
@@ -67,11 +66,9 @@ impl<'a> SessionRestoreValueValidator<'a> {
 
     fn visit_product(
         &mut self,
-        product: &arcweft_core::awbc::product_step::AwbcProductExecutorSnapshot,
+        executor: &arcweft_core::executor::ArcweftRuntimeExecutor,
     ) -> Result<(), BundleSessionSaveError> {
-        let result = product
-            .visit_runtime_values(|value| self.validate_value(value))
-            .map_err(|error| error.to_string());
+        let result = executor.visit_product_live_runtime_values(|value| self.validate_value(value));
         self.finish(result)
     }
 
@@ -99,7 +96,9 @@ impl BundleSession {
         let mut environment = self.environment.clone();
         let _environment_update = environment.replace_theme(runtime.view_theme_environment)?;
         let entry = runtime.entry;
+        let executor = runtime.spawn_executor()?;
         self.activate_runtime(runtime);
+        self.executor = executor;
         self.environment = environment;
         self.presentation_generation = self.swap.pin_active_generation();
         self.runtime_generation_pin = Some(self.swap.pin_active_generation());
@@ -138,19 +137,14 @@ impl BundleSession {
         validate_dialogue_view_save_point(&self.view_runtime, &self.presentation)?;
         validate_presentation_runtime_status(&self.presentation, &self.executor.fiber().status)?;
         let active = self.active_generation();
-        let product_program = self.executor.product_awbc_program().ok_or_else(|| {
+        self.executor.product_awbc_program().ok_or_else(|| {
             BundleSessionSaveError::UnsupportedExecutorTier {
                 tier: self.executor.tier().as_str().to_owned(),
             }
         })?;
-        let executor = match self.executor.snapshot()? {
-            ArcweftRuntimeExecutorSnapshot::AwbcProduct(state) => {
-                validate_product_awbc_snapshot(&state, product_program)?;
-                BundleSessionExecutorSnapshot {
-                    generation: active.id,
-                    state,
-                }
-            }
+        let executor = BundleSessionExecutorSnapshot {
+            generation: active.id,
+            state: self.executor.product_inert_rollback_image()?.product,
         };
         let active_entry = self
             .executor
@@ -162,12 +156,9 @@ impl BundleSession {
                 tier: self.executor.tier().as_str().to_owned(),
             })?;
         let root = self.executor.product_root_state_snapshot();
-        let mut validated_root_owner = self.executor.clone();
-        validated_root_owner
-            .restore_product_root_snapshot(&active_entry, root.clone())
-            .map_err(|error| BundleSessionSaveError::Root {
-                message: error.to_string(),
-            })?;
+        // The root snapshot is projected from this sealed live root. Its
+        // state/event payloads passed recursive unrestricted admission before
+        // root execution could retain or copy them.
         let next_step_index =
             u64::try_from(self.next_step_index).map_err(|_| BundleSessionSaveError::Encode {
                 message: "next step index does not fit the final u64 session field".to_owned(),
@@ -434,136 +425,190 @@ impl BundleSession {
             }
             None => false,
         };
-        let product_program = self.executor.product_awbc_program().ok_or_else(|| {
+        self.executor.product_awbc_program().ok_or_else(|| {
             BundleSessionSaveError::UnsupportedExecutorTier {
                 tier: self.executor.tier().as_str().to_owned(),
             }
         })?;
-        validate_product_awbc_snapshot(&state, product_program)?;
-        let executor_snapshot = ArcweftRuntimeExecutorSnapshot::AwbcProduct(state);
-        let mut restored_executor = self.executor.clone();
-        restored_executor.restore_snapshot(executor_snapshot)?;
-        restored_executor
-            .restore_product_root_snapshot(&active_entry, snapshot.root.clone())
-            .map_err(|error| BundleSessionSaveError::Root {
-                message: error.to_string(),
-            })?;
-        let restored_launches = restored_executor.restartable_dispatches();
-        let restored_tasks = RuntimeTaskRegistry::restore_restartable(
-            &restartable_tasks,
-            &restored_launches,
-            next_task_sequence,
-        )
-        .map_err(|message| BundleSessionSaveError::TaskDispatch { message })?;
-        let mut restored_task_pins = std::collections::BTreeMap::new();
-        let mut restored_reensure = std::collections::BTreeMap::new();
-        for row in &restartable_tasks {
-            let image = self.runtime_images.get(row.generation).map_err(|_| {
-                BundleSessionSaveError::GenerationMismatch {
-                    field: "restartable_task_runtime_image",
-                    saved: format!("{:?}", row.generation),
-                    actual: "runtime image unavailable for exact restart".to_owned(),
-                }
-            })?;
-            let generation = Arc::clone(image.generation());
-            let launch = restored_launches
-                .iter()
-                .find(|launch| launch.need_id == row.need_id)
-                .expect("registry restore matched each Need identity");
-            let task = launch.task_spec.clone();
-            let bundle_asset_context = matches!(
-                &task.request,
-                arcweft_core::task::HostTaskRequest::AssetLoad(_)
+        let old_image = self.executor.product_inert_rollback_image()?;
+        let old_entry = old_image.product.fiber.entry;
+        drop(
+            self.executor
+                .take_product_for_restore()
+                .expect("validated Product tier has one executor owner"),
+        );
+        let restored = (|| -> Result<_, BundleSessionSaveError> {
+            let restored_executor = self
+                .runtime_images
+                .get(active_generation)
+                .expect("validated active generation has a runtime image")
+                .runtime()
+                .spawn_executor_for_entry(state.fiber.entry)
+                .map_err(|error| BundleSessionSaveError::Fiber {
+                    message: error.to_string(),
+                })?;
+            let executor_snapshot = ArcweftRuntimeExecutorSnapshot::AwbcProduct(state);
+            let mut restored_executor = restored_executor
+                .restore_snapshot(executor_snapshot)
+                .map_err(|error| BundleSessionSaveError::from(error.into_parts().1))?;
+            restored_executor
+                .restore_product_root_snapshot(&active_entry, snapshot.root.clone())
+                .map_err(|error| BundleSessionSaveError::Root {
+                    message: error.to_string(),
+                })?;
+            let restored_launches = restored_executor.restartable_dispatches();
+            let restored_tasks = RuntimeTaskRegistry::restore_restartable(
+                &restartable_tasks,
+                &restored_launches,
+                next_task_sequence,
             )
-            .then(|| image.generation().bundle_asset_context());
-            restored_task_pins.insert(row.sequence, generation);
-            restored_reensure.insert(
-                row.task_id.clone(),
-                super::HostTaskDispatch {
-                    generation: row.generation,
-                    logical_epoch: row.logical_epoch,
-                    sequence: row.sequence,
-                    task,
-                    last_publication_revision: row.last_publication_revision,
-                    bundle_asset_context,
-                },
-            );
-        }
-        let restored_view_virtualization = ViewVirtualizationRuntime::from_snapshot(
-            &snapshot.view_virtualization,
-        )
-        .map_err(|error| BundleSessionSaveError::ViewVirtualization {
-            message: error.to_string(),
-        })?;
-        let mut restored_view_runtime = self.view_runtime.clone();
-        let dialogue = snapshot.presentation.dialogue.view_inputs();
-        let reconciled_root_handles = reconciled_root_handles_for_restore(
-            &snapshot.presentation.presentation_handles,
-            &dialogue,
-        )
-        .map_err(|error| BundleSessionSaveError::ViewRuntime {
-            message: error.to_string(),
-        })?;
-        restored_view_runtime
-            .restore(&snapshot.view_runtime, &reconciled_root_handles)
-            .map_err(|error| BundleSessionSaveError::ViewRuntime {
-                message: error.to_string(),
-            })?;
-        validate_dialogue_view_save_point(&restored_view_runtime, &snapshot.presentation)?;
-        restored_view_runtime
-            .validate_frame(&snapshot.presentation.view)
-            .map_err(|error| BundleSessionSaveError::ViewRuntime {
-                message: error.to_string(),
-            })?;
-        let executable_definitions = restored_view_runtime.definition_ids();
-        let projected_buttons = project_view_resources(
-            &snapshot.presentation.view,
-            &ViewProjectionInput {
-                executable_definitions: &executable_definitions,
-                current_images: &snapshot.presentation.images,
-                current_text_inputs: &snapshot.presentation.text_inputs,
-                images: &self.image_objects,
-                text_inputs: &self.text_inputs,
-                action_buttons: &self.action_buttons,
-                scroll_regions: &self.scroll_regions,
-                surfaces: &self.surfaces,
-                focus_groups: &self.focus_groups,
-                focus_navigation: &self.focus_navigation,
-            },
-        )
-        .action_buttons;
-        if snapshot
-            .presentation
-            .action_buttons
-            .iter()
-            .filter(|button| button.dialogue_mount.is_some())
-            .any(|button| !projected_buttons.contains(button))
-        {
-            return Err(BundleSessionSaveError::Presentation {
-                message: "dialogue action-button provenance differs from its sealed View mount"
-                    .to_owned(),
-            });
-        }
-        for list in restored_view_virtualization.mounts() {
-            validate_virtual_list_scroll_owner(
-                &self.scroll_regions,
-                list.scroll_target(),
-                list.axis(),
+            .map_err(|message| BundleSessionSaveError::TaskDispatch { message })?;
+            let mut restored_task_pins = std::collections::BTreeMap::new();
+            let mut restored_reensure = std::collections::BTreeMap::new();
+            for row in &restartable_tasks {
+                let image = self.runtime_images.get(row.generation).map_err(|_| {
+                    BundleSessionSaveError::GenerationMismatch {
+                        field: "restartable_task_runtime_image",
+                        saved: format!("{:?}", row.generation),
+                        actual: "runtime image unavailable for exact restart".to_owned(),
+                    }
+                })?;
+                let generation = Arc::clone(image.generation());
+                let launch = restored_launches
+                    .iter()
+                    .find(|launch| launch.need_id == row.need_id)
+                    .expect("registry restore matched each Need identity");
+                let task = launch.task_spec.clone();
+                let bundle_asset_context = matches!(
+                    &task.request,
+                    arcweft_core::task::HostTaskRequest::AssetLoad(_)
+                )
+                .then(|| image.generation().bundle_asset_context());
+                restored_task_pins.insert(row.sequence, generation);
+                restored_reensure.insert(
+                    row.task_id.clone(),
+                    super::HostTaskDispatch {
+                        generation: row.generation,
+                        logical_epoch: row.logical_epoch,
+                        sequence: row.sequence,
+                        task,
+                        last_publication_revision: row.last_publication_revision,
+                        bundle_asset_context,
+                    },
+                );
+            }
+            let restored_view_virtualization = ViewVirtualizationRuntime::from_snapshot(
+                &snapshot.view_virtualization,
             )
             .map_err(|error| BundleSessionSaveError::ViewVirtualization {
                 message: error.to_string(),
             })?;
-        }
-        validate_presentation_runtime_status(
-            &snapshot.presentation,
-            &restored_executor.fiber().status,
-        )?;
-        let ArcweftRuntimeExecutorSnapshot::AwbcProduct(restored_product_snapshot) =
-            restored_executor.snapshot()?;
-        let mut value_validator = SessionRestoreValueValidator::new(validator);
-        value_validator.visit_root(snapshot.root.as_ref())?;
-        value_validator.visit_product(&restored_product_snapshot)?;
-        value_validator.visit_view_runtime(&restored_view_runtime)?;
+            let mut restored_view_runtime = self
+                .view_runtime
+                .try_duplicate_unrestricted()
+                .map_err(|error| BundleSessionSaveError::ViewRuntime {
+                    message: error.to_string(),
+                })?;
+            let dialogue = snapshot.presentation.dialogue.view_inputs();
+            let reconciled_root_handles = reconciled_root_handles_for_restore(
+                &snapshot.presentation.presentation_handles,
+                &dialogue,
+            )
+            .map_err(|error| BundleSessionSaveError::ViewRuntime {
+                message: error.to_string(),
+            })?;
+            restored_view_runtime
+                .restore(&snapshot.view_runtime, &reconciled_root_handles)
+                .map_err(|error| BundleSessionSaveError::ViewRuntime {
+                    message: error.to_string(),
+                })?;
+            validate_dialogue_view_save_point(&restored_view_runtime, &snapshot.presentation)?;
+            restored_view_runtime
+                .validate_frame(&snapshot.presentation.view)
+                .map_err(|error| BundleSessionSaveError::ViewRuntime {
+                    message: error.to_string(),
+                })?;
+            let executable_definitions = restored_view_runtime.definition_ids();
+            let projected_buttons = project_view_resources(
+                &snapshot.presentation.view,
+                &ViewProjectionInput {
+                    executable_definitions: &executable_definitions,
+                    current_images: &snapshot.presentation.images,
+                    current_text_inputs: &snapshot.presentation.text_inputs,
+                    images: &self.image_objects,
+                    text_inputs: &self.text_inputs,
+                    action_buttons: &self.action_buttons,
+                    scroll_regions: &self.scroll_regions,
+                    surfaces: &self.surfaces,
+                    focus_groups: &self.focus_groups,
+                    focus_navigation: &self.focus_navigation,
+                },
+            )
+            .action_buttons;
+            if snapshot
+                .presentation
+                .action_buttons
+                .iter()
+                .filter(|button| button.dialogue_mount.is_some())
+                .any(|button| !projected_buttons.contains(button))
+            {
+                return Err(BundleSessionSaveError::Presentation {
+                    message: "dialogue action-button provenance differs from its sealed View mount"
+                        .to_owned(),
+                });
+            }
+            for list in restored_view_virtualization.mounts() {
+                validate_virtual_list_scroll_owner(
+                    &self.scroll_regions,
+                    list.scroll_target(),
+                    list.axis(),
+                )
+                .map_err(|error| BundleSessionSaveError::ViewVirtualization {
+                    message: error.to_string(),
+                })?;
+            }
+            validate_presentation_runtime_status(
+                &snapshot.presentation,
+                &restored_executor.fiber().status,
+            )?;
+            let mut value_validator = SessionRestoreValueValidator::new(validator);
+            value_validator.visit_root(snapshot.root.as_ref())?;
+            value_validator.visit_product(&restored_executor)?;
+            value_validator.visit_view_runtime(&restored_view_runtime)?;
+
+            Ok((
+                restored_executor,
+                restored_tasks,
+                restored_task_pins,
+                restored_reensure,
+                restored_view_virtualization,
+                restored_view_runtime,
+            ))
+        })();
+        let (
+            mut restored_executor,
+            restored_tasks,
+            restored_task_pins,
+            restored_reensure,
+            restored_view_virtualization,
+            restored_view_runtime,
+        ) = match restored {
+            Ok(restored) => restored,
+            Err(error) => {
+                let mut rollback = self
+                    .runtime_images
+                    .get(active_generation)
+                    .expect("validated active generation has a runtime image")
+                    .runtime()
+                    .spawn_executor_for_entry(old_entry)
+                    .expect("captured Product owner can rebuild its selected entry");
+                rollback
+                    .restore_product_rollback_image(old_image)
+                    .expect("captured inert image restores the exact prior Product owner");
+                self.executor.install_after_restore(rollback);
+                return Err(error);
+            }
+        };
 
         restored_executor.set_format_context(RuntimeFormatContext::new(restored_locale.clone()));
         let active_image = self
@@ -571,17 +616,13 @@ impl BundleSession {
             .get_mut(active_generation)
             .expect("validated active generation has one runtime image");
         active_image.runtime_mut().active_locale = restored_locale.clone();
-        active_image
-            .runtime_mut()
-            .executor
-            .set_format_context(RuntimeFormatContext::new(restored_locale.clone()));
 
         self.source_label = source_label;
         self.next_step_index = next_step_index;
         self.next_task_sequence = next_task_sequence;
         self.next_dialogue_input_sequence = next_dialogue_input_sequence;
         self.next_generation_id = next_generation_id;
-        self.executor = restored_executor;
+        self.executor.install_after_restore(restored_executor);
         self.active_locale = restored_locale;
         self.runtime_generation_pin =
             restore_runtime_generation_pin.then(|| self.swap.pin_active_generation());
@@ -768,7 +809,6 @@ impl BundleSession {
 
     pub(super) fn activate_runtime(&mut self, runtime: SessionRuntime) {
         self.source_label = runtime.source_label;
-        self.executor = runtime.executor;
         self.dialogue_content = runtime.dialogue_content;
         self.character_presentation = runtime.character_presentation;
         self.project_locale = runtime.project_locale;

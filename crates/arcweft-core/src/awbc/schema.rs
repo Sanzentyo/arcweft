@@ -10,7 +10,8 @@ use crate::pattern::{
 use crate::plan::{
     FlowRuntimeId, RuntimeAgentOperationalType, RuntimeArrayLength, RuntimeBoundTypeReference,
     RuntimeCallableStateDefinition, RuntimeDialogueContentEffectTrigger, RuntimeFlowTargetError,
-    RuntimeFunctionTypeContract, RuntimePlanSequenceKind, RuntimeTypeScope,
+    RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionTypeContract, RuntimePlanSequenceKind,
+    RuntimeTypeScope,
 };
 use crate::runtime_id::{
     RuntimeCallableSpecializationId, RuntimeCallableStateId, RuntimeDialogueContentTemplateId,
@@ -1238,10 +1239,24 @@ pub struct AwbcFunction {
     pub public_id: Option<AwbcStringId>,
     pub kind: AwbcFunctionKind,
     pub signature: AwbcSignatureId,
+    /// Per-entry ownership proof required before a positional input enters
+    /// this function. It is aligned with `signature.params`.
+    pub input_ownership: Vec<AwbcFunctionInputOwnership>,
     pub frame_layout: AwbcFrameLayoutId,
     pub blocks: AwbcTableRange,
     pub entry_block: AwbcBlockId,
     pub flags: AwbcFunctionFlags,
+}
+
+/// Exact bindings whose values must be unrestricted when one positional
+/// function input enters its frame. Rows are aligned with `signature.params`;
+/// an empty binding list admits an owned input without projecting a copy proof.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AwbcFunctionInputOwnership {
+    pub requirement: RuntimeFunctionInputOwnershipRequirement,
+    pub pattern: Option<AwbcPatternId>,
+    pub unrestricted_bindings: Vec<AwbcRegisterId>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1658,6 +1673,7 @@ pub enum AwbcOpcode {
     AwaitMany = 0x8a,
     BudgetYield = 0x8b,
     SelectDialogueResult = 0x8c,
+    SequenceNext = 0x8d,
     Dialogue = 0x98,
     Choice = 0x99,
     Trap = 0xa0,
@@ -1732,6 +1748,7 @@ impl AwbcOpcode {
         Self::AwaitMany,
         Self::BudgetYield,
         Self::SelectDialogueResult,
+        Self::SequenceNext,
         Self::Dialogue,
         Self::Choice,
         Self::Trap,
@@ -1835,6 +1852,7 @@ impl AwbcOpcode {
             | Self::AwaitMany
             | Self::BudgetYield
             | Self::SelectDialogueResult
+            | Self::SequenceNext
             | Self::Dialogue
             | Self::Choice
             | Self::Trap
@@ -2359,6 +2377,14 @@ pub enum AwbcTerminator {
         then_block: AwbcBlockId,
         else_block: AwbcBlockId,
     },
+    /// Moves one item out of an owned variable-length sequence. Only the
+    /// nonempty successor receives `item`; the sequence stays in its register.
+    SequenceNext {
+        sequence: AwbcRegisterId,
+        item: AwbcRegisterId,
+        some_block: AwbcBlockId,
+        none_block: AwbcBlockId,
+    },
     Match {
         scrutinee: AwbcRegisterId,
         arms: AwbcTableRange,
@@ -2441,6 +2467,7 @@ impl AwbcTerminator {
         match self {
             Self::Jump { .. } => AwbcOpcode::Jump,
             Self::Branch { .. } => AwbcOpcode::Branch,
+            Self::SequenceNext { .. } => AwbcOpcode::SequenceNext,
             Self::Match { .. } => AwbcOpcode::Match,
             Self::CallFunction { .. } => AwbcOpcode::CallFunction,
             Self::GotoStatic { .. } => AwbcOpcode::GotoStatic,
@@ -2471,6 +2498,7 @@ impl AwbcTerminator {
             Self::ProjectCall { call } => Some(call.resume),
             Self::Jump { .. }
             | Self::Branch { .. }
+            | Self::SequenceNext { .. }
             | Self::Match { .. }
             | Self::GotoStatic { .. }
             | Self::GotoDynamic { .. }

@@ -17,14 +17,14 @@ use arcweft_core::plan::{
     RuntimeEntrySpec, RuntimeEntryTarget, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed,
     RuntimeFlowSchema, RuntimeFlowSeed, RuntimeHostCallTargetSeed, RuntimeHttpMethod,
     RuntimeLineTaskCancelRuleSeed, RuntimeLineTaskGroupSeed, RuntimeLineTaskNodeSeed,
-    RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind,
-    RuntimePlan, RuntimePlanBuildError, RuntimePlanBuilder, RuntimePlanTypeProjection,
-    RuntimePlanTypeSeed, RuntimePureHelperOrigin, RuntimePureHelperSeed, RuntimePureInputType,
-    RuntimePureOutputType, RuntimeReceiverMode, RuntimeRoutePath, RuntimeRoutePathSegment,
-    RuntimeRouteSpec, RuntimeTraitMethodIdentity, RuntimeTraitMethodSeed,
+    RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed, RuntimeLocalSeedId, RuntimePatternSeed,
+    RuntimePatternSeedKind, RuntimePlan, RuntimePlanBuildError, RuntimePlanBuilder,
+    RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimePureHelperOrigin, RuntimePureHelperSeed,
+    RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode, RuntimeRoutePath,
+    RuntimeRoutePathSegment, RuntimeRouteSpec, RuntimeTraitMethodIdentity, RuntimeTraitMethodSeed,
 };
 use arcweft_core::step::RuntimeHostCallMode;
-use arcweft_core::value::RuntimeValue;
+use arcweft_core::value::{RuntimeLocalReadMode, RuntimeValue};
 use std::sync::Arc;
 
 fn flow_id(value: &str) -> FlowRuntimeId {
@@ -221,8 +221,15 @@ fn build_while_let_plan(
             local: binding.clone(),
         },
     );
-    let guard =
-        include_guard.then(|| RuntimeExprSeed::new(bool_type, RuntimeExprSeedKind::Local(binding)));
+    let guard = include_guard.then(|| {
+        RuntimeExprSeed::new(
+            bool_type,
+            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                binding,
+                RuntimeLocalReadMode::Copy,
+            )),
+        )
+    });
     builder
         .push_flow_executable(flow_executable(&flow))
         .expect("while-let test flow executable admits");
@@ -707,7 +714,13 @@ fn line_activation_local_is_exported_only_to_post_reveal_work() {
                 trigger: arcweft_interaction_model::input::InputActionId::new("dialogue.cancel")
                     .expect("cancel action"),
                 action: vec![RuntimeFlowOpSeed::SelectDialogueResult {
-                    value: RuntimeExprSeed::new(type_id(1), RuntimeExprSeedKind::Local(local)),
+                    value: RuntimeExprSeed::new(
+                        type_id(1),
+                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                            local,
+                            RuntimeLocalReadMode::Copy,
+                        )),
+                    ),
                 }],
             }]
             .into_boxed_slice(),
@@ -1471,7 +1484,10 @@ fn loop_break_paths_initialize_one_typed_result_before_binding() {
                 },
                 RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
                     type_id(1),
-                    RuntimeExprSeedKind::Local(result),
+                    RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                        result,
+                        RuntimeLocalReadMode::Copy,
+                    )),
                 )),
             ],
         ))
@@ -1548,13 +1564,19 @@ fn nested_loops_bind_the_nearest_break_result() {
                         },
                         RuntimeFlowOpSeed::Break(Some(RuntimeExprSeed::new(
                             type_id(1),
-                            RuntimeExprSeedKind::Local(inner_result),
+                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                inner_result,
+                                RuntimeLocalReadMode::Copy,
+                            )),
                         ))),
                     ],
                 },
                 RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
                     type_id(1),
-                    RuntimeExprSeedKind::Local(outer_result),
+                    RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                        outer_result,
+                        RuntimeLocalReadMode::Copy,
+                    )),
                 )),
             ],
         ))
@@ -1971,7 +1993,13 @@ fn await_observers_lower_to_progress_dispatch_and_rewait_backedge() {
             vec![RuntimeFlowOpSeed::Await {
                 binding: None,
                 target: RuntimeAwaitTargetSeed {
-                    source: RuntimeExprSeed::new(need_type, RuntimeExprSeedKind::Local(need_local)),
+                    source: RuntimeExprSeed::new(
+                        need_type,
+                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                            need_local,
+                            RuntimeLocalReadMode::Move,
+                        )),
+                    ),
                 },
                 observers: vec![RuntimeAwaitPendingObserverSeed {
                     pattern: RuntimePatternSeed::new(

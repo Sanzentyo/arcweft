@@ -177,11 +177,11 @@ impl VmPureFunctionScratch {
         &mut self,
         plan: &Arc<RuntimePlan>,
         helper: RuntimePureHelperId,
-        args: &[RuntimeValue],
+        args: Vec<RuntimeValue>,
         backend: &mut dyn RuntimeExternalCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let helper = resolve_validated_pure_helper(plan, helper)?;
-        let bindings = prepare_helper_bindings(plan, helper, args.iter().cloned())?;
+        let bindings = prepare_helper_bindings(plan, helper, args)?;
         self.env.replace_scopes_with_bindings([bindings]);
         let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
             .with_format_context(self.format_context.clone());

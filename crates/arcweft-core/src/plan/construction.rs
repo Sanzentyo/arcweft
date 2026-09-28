@@ -26,13 +26,13 @@ use lower::{function_input_scope, require_same};
 use seed::RuntimePlanConstructionIssuer;
 pub use seed::{
     RuntimeAgentExprSeed, RuntimeAudioCommandSeed, RuntimeAwaitManyTargetSeed,
-    RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed, RuntimeBuiltinIteratorEvidenceSeed,
-    RuntimeCallArgumentSeed, RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode,
-    RuntimeChoiceOptionSeed, RuntimeDialogueContentEffectBindingSeed,
-    RuntimeDialogueContentEffectSlotSeed, RuntimeDialogueContentPlanSeed,
-    RuntimeDialogueContentPlanSeedId, RuntimeDialogueContentSlotSeed,
-    RuntimeDialogueContentTemplateManifestSeed, RuntimeDialogueEffectSiteSeed,
-    RuntimeDialogueMarkSeedId, RuntimeDialogueResultTargetSeed,
+    RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed, RuntimeBorrowedLocalSeed,
+    RuntimeBuiltinIteratorEvidenceSeed, RuntimeCallArgumentSeed, RuntimeCallableExecutableSeed,
+    RuntimeCallableExecutableSeedCode, RuntimeChoiceOptionSeed,
+    RuntimeDialogueContentEffectBindingSeed, RuntimeDialogueContentEffectSlotSeed,
+    RuntimeDialogueContentPlanSeed, RuntimeDialogueContentPlanSeedId,
+    RuntimeDialogueContentSlotSeed, RuntimeDialogueContentTemplateManifestSeed,
+    RuntimeDialogueEffectSiteSeed, RuntimeDialogueMarkSeedId, RuntimeDialogueResultTargetSeed,
     RuntimeDialogueResultTargetSeedError, RuntimeDialogueValueSiteSeed, RuntimeDropPolicySeed,
     RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed, RuntimeExecutableBodySeed,
     RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed,
@@ -45,14 +45,14 @@ pub use seed::{
     RuntimeIteratorWitnessExecutableSeed, RuntimeLineEffectSeed, RuntimeLineHandleSiteSeed,
     RuntimeLineOperationSeed, RuntimeLineTaskCancelRuleSeed, RuntimeLineTaskGroupSeed,
     RuntimeLineTaskGroupSeedId, RuntimeLineTaskNodeSeed, RuntimeLineTaskNodeSeedId,
-    RuntimeLineTaskTriggerSeed, RuntimeLocalDeclarationSeed, RuntimeLocalSeedId,
-    RuntimeMutablePlaceSeed, RuntimeNeedProducerStartTargetSeed, RuntimeNominalRecordFieldSeed,
-    RuntimePatternRestSeed, RuntimePatternSeed, RuntimePatternSeedKind,
-    RuntimePureHelperDeclarationSeed, RuntimePureHelperSeed, RuntimePureHelperSeedId,
-    RuntimePureProgramBindingSeed, RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed,
-    RuntimeScheduledCaptureSeed, RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed,
-    RuntimeStreamPlanSeed, RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodSeed,
-    RuntimeTraitMethodSeedId,
+    RuntimeLineTaskTriggerSeed, RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed,
+    RuntimeLocalSeedId, RuntimeMutablePlaceSeed, RuntimeNeedProducerStartTargetSeed,
+    RuntimeNominalRecordFieldSeed, RuntimePatternRestSeed, RuntimePatternSeed,
+    RuntimePatternSeedKind, RuntimePureHelperDeclarationSeed, RuntimePureHelperSeed,
+    RuntimePureHelperSeedId, RuntimePureProgramBindingSeed, RuntimeRecordFieldSeedId,
+    RuntimeRecordPatternFieldSeed, RuntimeScheduledCaptureSeed, RuntimeStreamMatchArmSeed,
+    RuntimeStreamOpSeed, RuntimeStreamPlanSeed, RuntimeTraitMethodDeclarationSeed,
+    RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
 };
 
 use crate::entry::{
@@ -149,6 +149,12 @@ pub enum RuntimePlanBuildError {
     Poisoned,
     #[error("internal flow construction invariant failed: {context}")]
     FlowLoweringInvariant { context: &'static str },
+    #[error("guard Copy obligations are attached to an expression outside a pattern guard")]
+    GuardCopyRequirementOutsideGuard,
+    #[error("guard Copy local {local} is not bound by the selected pattern")]
+    InvalidGuardCopyBinding {
+        local: crate::runtime_id::RuntimeLocalDeclarationId,
+    },
     #[error(transparent)]
     TypeGraph(#[from] RuntimePlanTypeTableError),
     #[error(transparent)]
@@ -431,6 +437,11 @@ pub enum RuntimePlanBuildError {
     FunctionParameterCaptureOverlap { local: RuntimeLocalDeclarationId },
     #[error("function site input row {index} has a non-canonical source order")]
     InvalidFunctionInputSource { index: usize },
+    #[error("function site input row {index} has an invalid unrestricted binding {local}")]
+    InvalidFunctionInputOwnership {
+        index: usize,
+        local: RuntimeLocalDeclarationId,
+    },
     #[error("function site input row {index} repeats a synthetic input local {local}")]
     DuplicateFunctionInputLocal {
         index: usize,
@@ -479,6 +490,8 @@ pub enum RuntimePlanBuildError {
     FunctionValueInPlan { context: &'static str },
     #[error("runtime-plan {context} contains a non-constant opaque value")]
     NonConstantOpaqueValueInPlan { context: &'static str },
+    #[error("runtime-plan {context} literal must be recursively unrestricted")]
+    AffineLiteralInPlan { context: &'static str },
     #[error("runtime-plan {context} contains a detached expression carrier")]
     RawExpressionCarrier { context: &'static str },
     #[error("runtime-plan contains non-canonical flow operation {operation}")]
@@ -906,12 +919,26 @@ impl RuntimePlanBuilder {
                 .ok_or(RuntimePlanBuildError::ForeignLocalSeed)?;
             let pattern = self.lower_pattern_seed(input.pattern)?;
             require_same("function input pattern", input_type, pattern.ty())?;
+            let mut unrestricted_bindings = input
+                .unrestricted_bindings
+                .into_vec()
+                .into_iter()
+                .map(|local| {
+                    local
+                        .resolve(&self.issuer)
+                        .map(|(id, _)| id)
+                        .ok_or(RuntimePlanBuildError::ForeignLocalSeed)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            unrestricted_bindings.sort_unstable();
             input_types.push(input_type);
             input_sources.push(input.source);
             inputs.push(RuntimeFunctionInputBinding::new(
                 input.source,
                 input_local,
                 pattern,
+                input.ownership,
+                unrestricted_bindings.into_boxed_slice(),
             ));
         }
         validate_function_input_bindings(&inputs)?;
@@ -2817,6 +2844,18 @@ fn validate_function_input_bindings(
     let mut parameter_phase = false;
     let mut locals = BTreeSet::new();
     for (index, input) in inputs.iter().enumerate() {
+        if input
+            .unrestricted_bindings()
+            .windows(2)
+            .any(|pair| pair[0] >= pair[1])
+        {
+            return Err(RuntimePlanBuildError::InvalidFunctionInputSource { index });
+        }
+        for &local in input.unrestricted_bindings() {
+            if !crate::pattern::runtime_pattern_contains_binding(input.pattern(), local) {
+                return Err(RuntimePlanBuildError::InvalidFunctionInputOwnership { index, local });
+            }
+        }
         if !locals.insert(input.input_local()) {
             return Err(RuntimePlanBuildError::DuplicateFunctionInputLocal {
                 index,
@@ -3309,6 +3348,8 @@ mod tests {
         assert_eq!(
             second.push_function_site_seed(
                 [RuntimeFunctionInputBindingSeed {
+                    ownership: Default::default(),
+                    unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Parameter { position: 0 },
                     input_local: foreign.clone(),
                     pattern: RuntimePatternSeed::new(

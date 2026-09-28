@@ -32,14 +32,14 @@ use super::match_edges;
 use super::{
     CallTargetFacts, CaptureId, CheckedBinding, CheckedCallableCatalog, CheckedExpression,
     CheckedExpressionCallCallee, CheckedExpressionExecutionPlan, CheckedExpressionResolution,
-    CheckedImplicitCallable, CheckedImplicitCallableBody, CheckedImplicitCapture,
-    CheckedImplicitParameterOccurrence, CheckedItem, CheckedPattern, CheckedPipe,
-    CheckedPipeLeftOccurrence, CheckedRuntimeValueDisposition, CheckedStatement, CheckedTry,
-    CheckedTryBoundary, CheckedTryCarrier, ExprId, FinalSemanticAnalysisControl,
-    FinalSemanticAnalysisError, FinalSemanticAnalysisInput, FinalSemanticAnalysisWork,
-    FinalSemanticProjectError, HirAnalysisProjectView, HirModule, HirModuleId, ItemId, LocalId,
-    PatternId, ProjectSymbolTable, SemanticFactFamily, StmtId, TypeId, TypeKind,
-    TypeResolutionReport,
+    CheckedImplicitCallable, CheckedImplicitCallableBody, CheckedImplicitCallableIdentity,
+    CheckedImplicitCapture, CheckedImplicitParameterOccurrence, CheckedItem, CheckedPattern,
+    CheckedPipe, CheckedPipeBindingIdentity, CheckedPipeLeftOccurrence,
+    CheckedRuntimeValueDisposition, CheckedStatement, CheckedTry, CheckedTryBoundary,
+    CheckedTryCarrier, ExprId, FinalSemanticAnalysisControl, FinalSemanticAnalysisError,
+    FinalSemanticAnalysisInput, FinalSemanticAnalysisWork, FinalSemanticProjectError,
+    HirAnalysisProjectView, HirModule, HirModuleId, ItemId, LocalId, PatternId, ProjectSymbolTable,
+    SemanticFactFamily, StmtId, TypeId, TypeKind, TypeResolutionReport,
     validation::{
         SemanticFactInventory, accepted_type_owners, collect_unique, collect_work,
         validate_bindings, validate_calls, validate_complete_inventory, validate_expressions,
@@ -66,6 +66,7 @@ pub struct FinalSemanticAnalysis {
     checked_text_proxies: crate::checked_text_proxy::CheckedTextProxyCatalog,
     checked_fx_definitions: super::CheckedFxDefinitionCatalog,
     display_conformances: super::analyzer::display::DisplayConformanceCatalog,
+    local_uses: super::CheckedLocalUseCatalog,
     semantic_shapes: AcceptedSemanticShapeCatalog,
     runtime_nominals: RuntimeNominalProjectionCatalog,
     dialogue_lines: arcweft_lang_hir::project::AcceptedDialogueLineInventory,
@@ -840,6 +841,10 @@ pub struct FinalAnalysisImplicitCallableView<'analysis> {
 }
 
 impl FinalAnalysisImplicitCallableView<'_> {
+    pub const fn identity(&self) -> CheckedImplicitCallableIdentity {
+        self.callable.identity()
+    }
+
     pub fn parameter(&self) -> &TypeKind {
         self.callable.parameter()
     }
@@ -916,6 +921,10 @@ pub struct FinalAnalysisPipeView<'analysis> {
 }
 
 impl FinalAnalysisPipeView<'_> {
+    pub const fn binding_identity(&self) -> CheckedPipeBindingIdentity {
+        self.pipe.binding_identity()
+    }
+
     pub const fn left(&self) -> ExprId {
         self.pipe.lookup_left()
     }
@@ -1288,6 +1297,9 @@ impl FinalSemanticAnalysisPostEntryDraft {
             checked_text_proxies,
             checked_fx_definitions,
             display_conformances: Default::default(),
+            local_uses: super::CheckedLocalUseCatalog::empty(Arc::clone(
+                evaluation_topology.generation(),
+            )),
             semantic_shapes,
             runtime_nominals,
             dialogue_lines,
@@ -1314,6 +1326,7 @@ impl FinalSemanticAnalysisPostEntryDraft {
             executable_suspensions,
             control,
         )?;
+        analysis.local_uses = super::CheckedLocalUseCatalog::seal(&analysis, project)?;
         Ok(analysis)
     }
 }
@@ -1716,6 +1729,61 @@ fn validate_checked_entry_references(
 }
 
 impl FinalSemanticAnalysis {
+    /// A plain accepted opaque carrier may be copied only after the exact
+    /// supplied runtime binding passes the function-ingress ownership check.
+    pub(super) fn accepted_plain_opaque_nominal(
+        &self,
+        nominal: &crate::types::AcceptedNominalType,
+    ) -> bool {
+        match &self.authority {
+            FinalSemanticAnalysisAuthority::Registered(world) => world
+                .environment
+                .nominal_catalog()
+                .exact(nominal.declaration().canonical_path())
+                .is_some_and(|record| {
+                    record.id() == nominal.declaration()
+                        && matches!(
+                            record.semantics(),
+                            crate::env::nominal::AcceptedNominalSemantics::Opaque(carrier)
+                                if carrier.value_class()
+                                    == arcweft_core::value::RuntimeOpaqueValueClass::Plain
+                        )
+                }),
+            #[cfg(test)]
+            FinalSemanticAnalysisAuthority::Fixture => false,
+        }
+    }
+
+    pub(super) fn character_dialogue_policy_types(
+        &self,
+    ) -> Option<&arcweft_dialogue::CharacterDialoguePolicyTypeGraph> {
+        match &self.authority {
+            FinalSemanticAnalysisAuthority::Registered(world) => {
+                Some(world.environment.character_dialogue_roles().policy_types())
+            }
+            #[cfg(test)]
+            FinalSemanticAnalysisAuthority::Fixture => None,
+        }
+    }
+
+    /// Source-site local read and capture-transfer modes sealed for this exact
+    /// accepted HIR generation.
+    pub const fn checked_local_uses(&self) -> &super::CheckedLocalUseCatalog {
+        &self.local_uses
+    }
+
+    /// Closes one generic function, DisplayText method, and all its nested
+    /// executable closure uses under the selected frozen type environment.
+    /// The supplied project lease must be the report's exact HIR generation.
+    pub fn checked_local_uses_for_instance(
+        &self,
+        project: HirAnalysisProjectView<'_>,
+        symbols: &ProjectSymbolTable,
+        instance: super::CheckedLocalUseInstantiation<'_>,
+    ) -> Result<super::CheckedLocalUseInstanceCatalog, super::CheckedLocalUseError> {
+        super::CheckedLocalUseCatalog::seal_closed_instance(self, project, symbols, instance)
+    }
+
     pub(super) fn with_display_conformances(
         mut self,
         catalog: super::analyzer::display::DisplayConformanceCatalog,

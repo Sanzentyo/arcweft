@@ -154,12 +154,18 @@ fn cancellation_can_supersede_one_mark_selection_without_mutating_on_rejection()
     result
         .select_result(&mark, ty, RuntimeValue::String("mark".to_owned()))
         .expect("mark selects from uncommitted");
-    let selected_mark = result.clone();
     assert_eq!(
         result.select_result(&mark, ty, RuntimeValue::String("second".to_owned())),
         Err(LineRuntimeError::InvalidResultTransition),
     );
-    assert_eq!(result, selected_mark);
+    assert_eq!(
+        result.result(),
+        &RuntimeDialogueResultState::Selected {
+            ty,
+            value: RuntimeValue::String("mark".to_owned()),
+            source: mark,
+        }
+    );
     result
         .select_result(
             &cancellation,

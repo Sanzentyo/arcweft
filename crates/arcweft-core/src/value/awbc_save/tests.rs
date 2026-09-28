@@ -21,6 +21,73 @@ use crate::{
 };
 
 #[test]
+fn native_rollback_image_round_trips_plan_callable_and_affine_iterator_without_live_clone() {
+    let plan = Arc::new(crate::tests::function_application::returning_function_plan(
+        crate::plan::RuntimeFunctionSiteBodyKind::Expression,
+    ));
+    let owner = RuntimeProgramOwner::Plan(Arc::clone(&plan));
+    let callable = RuntimeCallableValue::try_new(
+        owner.clone(),
+        crate::tests::function_application::returning_callable_state(&plan),
+        [],
+    )
+    .unwrap();
+    let value = RuntimeValue::Tuple(vec![
+        RuntimeValue::Callable(callable),
+        RuntimeValue::Iterator(RuntimeIterator::values(vec![RuntimeValue::Need(
+            crate::task::NeedId("need.once".to_owned()),
+        )])),
+    ]);
+    assert!(!value.ownership().permits_copy());
+    assert!(AwbcRuntimeValueSnapshot::from_runtime_value(&value).is_err());
+    let image = AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner)
+        .expect("the native rollback image records a Plan callable and iterator");
+    drop(value);
+    let restored = image
+        .into_runtime_value_for_program(&owner)
+        .expect("the sole native owner restores after the old value is dropped");
+    assert!(!restored.ownership().permits_copy());
+    assert!(
+        matches!(restored, RuntimeValue::Tuple(values) if matches!(&values[0], RuntimeValue::Callable(_)) && matches!(&values[1], RuntimeValue::Iterator(_)))
+    );
+}
+
+#[test]
+fn iterator_snapshot_round_trips_only_the_owned_remainder() {
+    let owner = RuntimeProgramOwner::Awbc(Arc::new(AwbcProgram::default()));
+    let mut iterator = RuntimeIterator::values(vec![
+        RuntimeValue::Need(crate::task::NeedId("need.consumed".to_owned())),
+        RuntimeValue::Need(crate::task::NeedId("need.remaining".to_owned())),
+    ]);
+    assert_eq!(
+        iterator.next(),
+        Some(RuntimeValue::Need(crate::task::NeedId(
+            "need.consumed".to_owned()
+        )))
+    );
+
+    let value = RuntimeValue::Iterator(iterator);
+    let snapshot = AwbcRuntimeValueSnapshot::from_runtime_value(&value)
+        .expect("the iterator remainder is a valid AWBC snapshot");
+    let encoded = serde_json::to_vec(&snapshot).expect("iterator remainder serializes");
+    let decoded: AwbcRuntimeValueSnapshot =
+        serde_json::from_slice(&encoded).expect("iterator remainder decodes");
+    let restored = decoded
+        .into_runtime_value_for_program(&owner)
+        .expect("the iterator remainder restores");
+
+    let RuntimeValue::Iterator(mut restored_iterator) = restored else {
+        panic!("snapshot restores a runtime iterator");
+    };
+    assert_eq!(
+        restored_iterator.next(),
+        Some(RuntimeValue::Need(crate::task::NeedId(
+            "need.remaining".to_owned()
+        )))
+    );
+}
+
+#[test]
 fn need_snapshot_preserves_handle_identity_and_rejects_empty_ids() {
     let value = RuntimeValue::Need(crate::task::NeedId("need.profile".to_owned()));
     let snapshot =

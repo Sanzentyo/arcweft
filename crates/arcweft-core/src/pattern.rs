@@ -5,10 +5,11 @@ use crate::plan::{
 };
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::value::{
-    RuntimeEntityReference, RuntimeLocalBinding, RuntimeNominalRecordValue,
-    RuntimeOpaquePersistence, RuntimeOpaqueValue, RuntimeOpaqueValueClass, RuntimeOpaqueValueError,
-    RuntimePayload, RuntimeRecordFieldId, RuntimeSeq, RuntimeSignedIntWidth,
-    RuntimeUnsignedIntWidth, RuntimeValue,
+    RuntimeEntityReference, RuntimeEvalError, RuntimeExpr, RuntimeLocalBinding,
+    RuntimeLocalReadMode, RuntimeNominalRecordValue, RuntimeOpaquePersistence, RuntimeOpaqueValue,
+    RuntimeOpaqueValueClass, RuntimeOpaqueValueError, RuntimePayload, RuntimeRecordFieldId,
+    RuntimeScalarView, RuntimeSeq, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue,
+    RuntimeValueView,
 };
 pub use arcweft_id::RuntimeSemanticTypeId;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -1113,82 +1114,64 @@ impl RuntimeCheckedType {
     }
 
     fn accepts_value_at_depth(&self, value: &RuntimeValue, depth: usize) -> bool {
+        self.accepts_value_view(value.view(), depth)
+    }
+
+    fn accepts_value_view(&self, value: RuntimeValueView<'_>, depth: usize) -> bool {
         if depth > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH {
             return false;
         }
         match (value, self) {
-            (RuntimeValue::Unit, Self::Unit)
-            | (RuntimeValue::Bool(_), Self::Bool)
-            | (RuntimeValue::F32(_), Self::F32)
-            | (RuntimeValue::F64(_), Self::F64)
-            | (RuntimeValue::String(_), Self::String)
-            | (RuntimeValue::Color(_), Self::Color)
-            | (RuntimeValue::Char(_), Self::Char)
-            | (RuntimeValue::Duration(_), Self::Duration)
-            | (RuntimeValue::Progress(_), Self::Progress)
-            | (RuntimeValue::EntityRef(_), Self::EntityReference) => true,
-            (value, Self::AgentValue) => runtime_value_is_agent_value(value, depth),
-            (RuntimeValue::Int(value), Self::Signed(width)) => value.width() == *width,
-            (RuntimeValue::UInt(value), Self::Unsigned(width)) => value.width() == *width,
-            (RuntimeValue::Seq(sequence), Self::Bytes) => sequence
-                .clone()
-                .into_values()
-                .iter()
-                .all(|value| matches!(value, RuntimeValue::UInt(value) if value.width() == RuntimeUnsignedIntWidth::U8)),
-            (RuntimeValue::Seq(sequence), Self::Sequence(item)) => sequence
-                .clone()
-                .into_values()
-                .iter()
-                .all(|value| item.accepts_value_at_depth(value, depth + 1)),
-            (
-                RuntimeValue::Seq(sequence),
-                Self::Map { key, value, .. },
-            ) => sequence.clone().into_values().iter().all(|entry| {
-                let RuntimeValue::Tuple(pair) = entry else {
-                    return false;
-                };
-                let [actual_key, actual_value] = pair.as_slice() else {
-                    return false;
-                };
-                key.accepts_value_at_depth(actual_key, depth + 1)
-                    && value.accepts_value_at_depth(actual_value, depth + 1)
+            (RuntimeValueView::Scalar(RuntimeScalarView::Unit), Self::Unit)
+            | (RuntimeValueView::Scalar(RuntimeScalarView::Bool(_)), Self::Bool)
+            | (RuntimeValueView::Scalar(RuntimeScalarView::F32(_)), Self::F32)
+            | (RuntimeValueView::Scalar(RuntimeScalarView::F64(_)), Self::F64)
+            | (RuntimeValueView::Scalar(RuntimeScalarView::String(_)), Self::String)
+            | (RuntimeValueView::Scalar(RuntimeScalarView::Color(_)), Self::Color)
+            | (RuntimeValueView::Scalar(RuntimeScalarView::Char(_)), Self::Char)
+            | (RuntimeValueView::Scalar(RuntimeScalarView::Duration(_)), Self::Duration)
+            | (RuntimeValueView::Scalar(RuntimeScalarView::Progress(_)), Self::Progress)
+            | (RuntimeValueView::Scalar(RuntimeScalarView::EntityRef(_)), Self::EntityReference) => true,
+            (value, Self::AgentValue) => runtime_value_view_is_agent_value(value, depth),
+            (RuntimeValueView::Scalar(RuntimeScalarView::Int(value)), Self::Signed(width)) => value.width() == *width,
+            (RuntimeValueView::Scalar(RuntimeScalarView::UInt(value)), Self::Unsigned(width)) => value.width() == *width,
+            (RuntimeValueView::Sequence(sequence), Self::Bytes) => (0..sequence.len()).all(|index| {
+                matches!(sequence.value_view(index), Some(RuntimeValueView::Scalar(RuntimeScalarView::UInt(value))) if value.width() == RuntimeUnsignedIntWidth::U8)
             }),
-            (RuntimeValue::Seq(sequence), Self::Array { item, length }) => {
+            (RuntimeValueView::Sequence(sequence), Self::Sequence(item)) => (0..sequence.len()).all(|index| {
+                sequence.value_view(index).is_some_and(|value| item.accepts_value_view(value, depth + 1))
+            }),
+            (RuntimeValueView::Sequence(sequence), Self::Map { key, value, .. }) => (0..sequence.len()).all(|index| {
+                let Some(RuntimeValueView::Tuple(pair)) = sequence.value_view(index) else { return false; };
+                pair.len() == 2
+                    && pair.get(0).is_some_and(|actual| key.accepts_value_view(actual, depth + 1))
+                    && pair.get(1).is_some_and(|actual| value.accepts_value_view(actual, depth + 1))
+            }),
+            (RuntimeValueView::Sequence(sequence), Self::Array { item, length }) => {
                 u64::try_from(sequence.len()) == Ok(*length)
-                    && sequence
-                        .clone()
-                        .into_values()
-                        .iter()
-                        .all(|value| item.accepts_value_at_depth(value, depth + 1))
+                    && (0..sequence.len()).all(|index| sequence.value_view(index).is_some_and(|value| item.accepts_value_view(value, depth + 1)))
             }
-            (RuntimeValue::Tuple(values), Self::Tuple(items)) => {
+            (RuntimeValueView::Tuple(values), Self::Tuple(items)) => {
                 values.len() == items.len()
-                    && values
-                        .iter()
-                        .zip(items)
-                        .all(|(value, item)| item.accepts_value_at_depth(value, depth + 1))
+                    && items.iter().enumerate().all(|(index, item)| values.get(index).is_some_and(|value| item.accepts_value_view(value, depth + 1)))
             }
-            (RuntimeValue::Record(values), Self::Record(fields)) => {
+            (RuntimeValueView::Record(values), Self::Record(fields)) => {
                 values.len() == fields.len()
-                    && values.iter().zip(fields).all(|(value, field)| {
-                        value.field() == field.field
-                            && value.name() == field.diagnostic_name
-                            && field
-                                .ty
-                                .accepts_value_at_depth(value.value(), depth + 1)
-                    })
+                    && fields.iter().enumerate().all(|(index, field)| values.get(index).is_some_and(|(id, name, value)| {
+                        id == field.field && name == field.diagnostic_name && field.ty.accepts_value_view(value, depth + 1)
+                    }))
             }
             (value, Self::Choice(alternatives)) => alternatives
                 .iter()
-                .any(|alternative| alternative.accepts_value_at_depth(value, depth + 1)),
-            (RuntimeValue::Opaque(value), Self::Opaque { owner }) => {
+                .any(|alternative| alternative.accepts_value_view(value, depth + 1)),
+            (RuntimeValueView::Opaque(value), Self::Opaque { owner }) => {
                 owner.accepts_opaque_value(value)
             }
-            (RuntimeValue::Reduction(value), Self::Opaque { owner }) => {
+            (RuntimeValueView::Reduction(value), Self::Opaque { owner }) => {
                 owner.accepts_owner(value.owner())
             }
             (
-                RuntimeValue::NominalRecord(record),
+                RuntimeValueView::NominalRecord(record),
                 Self::Nominal {
                     nominal, semantic_identity, layout, ..
                 },
@@ -1196,7 +1179,7 @@ impl RuntimeCheckedType {
                 && record.semantic_identity() == *semantic_identity
                 && record.layout() == *layout,
             (
-                RuntimeValue::Variant {
+                RuntimeValueView::Variant {
                     owner,
                     ordinal,
                     name,
@@ -1205,47 +1188,43 @@ impl RuntimeCheckedType {
                 Self::Variant { .. },
             ) => self.accepts_nominal_variant_at_depth(
                 owner,
-                *ordinal,
+                ordinal,
                 name,
-                payload.as_deref(),
+                payload,
                 depth,
             ),
             (
-                value @ RuntimeValue::Variant { .. },
+                RuntimeValueView::Variant { owner, ordinal, name, payload },
                 Self::Result { .. } | Self::Option(_),
-            ) => {
-                self.accepts_builtin_variant_at_depth(value, depth)
-            }
-            (RuntimeValue::Agent(value), Self::Agent(expected)) => {
+            ) => self.accepts_builtin_variant_parts_at_depth(owner, ordinal, name, payload, depth),
+            (RuntimeValueView::Agent(value), Self::Agent(expected)) => {
                 !matches!(expected, crate::plan::RuntimeAgentTypeProjection::DataShape(_))
                     && value.operational_type() == expected.operational_type()
             }
-            (RuntimeValue::Record(_), Self::Agent(expected)) => {
+            (RuntimeValueView::Record(_), Self::Agent(expected)) => {
                 expected.operational_type().accepts_protocol_record()
             }
             _ => false,
         }
     }
 
-    fn accepts_builtin_variant_at_depth(&self, value: &RuntimeValue, depth: usize) -> bool {
-        let RuntimeValue::Variant {
-            owner,
-            ordinal,
-            name,
-            payload,
-        } = value
-        else {
-            return false;
-        };
+    fn accepts_builtin_variant_parts_at_depth(
+        &self,
+        owner: &RuntimeVariantIdentity,
+        ordinal: u32,
+        name: &str,
+        payload: Option<&RuntimeValue>,
+        depth: usize,
+    ) -> bool {
         let Some(expected_owner) = self.variant_identity() else {
             return false;
         };
         if owner != &expected_owner {
             return false;
         }
-        self.variant_case(*ordinal).is_some_and(|case| {
-            case.name == *name
-                && match (case.payload.as_deref(), payload.as_deref()) {
+        self.variant_case(ordinal).is_some_and(|case| {
+            case.name == name
+                && match (case.payload.as_deref(), payload) {
                     (Some(expected), Some(actual)) => {
                         expected.accepts_value_at_depth(actual, depth + 1)
                     }
@@ -1438,20 +1417,21 @@ fn write_checked_type_identity(
     }
 }
 
-fn runtime_value_is_agent_value(value: &RuntimeValue, depth: usize) -> bool {
-    if depth > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH || !value.view().is_agent_value_node()
-    {
+fn runtime_value_view_is_agent_value(value: RuntimeValueView<'_>, depth: usize) -> bool {
+    if depth > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH || !value.is_agent_value_node() {
         return false;
     }
     match value {
-        RuntimeValue::Seq(values) => values
-            .clone()
-            .into_values()
-            .iter()
-            .all(|value| runtime_value_is_agent_value(value, depth + 1)),
-        RuntimeValue::Record(fields) => fields
-            .iter()
-            .all(|field| runtime_value_is_agent_value(field.value(), depth + 1)),
+        RuntimeValueView::Sequence(values) => (0..values.len()).all(|index| {
+            values
+                .value_view(index)
+                .is_some_and(|value| runtime_value_view_is_agent_value(value, depth + 1))
+        }),
+        RuntimeValueView::Record(fields) => (0..fields.len()).all(|index| {
+            fields
+                .get(index)
+                .is_some_and(|(_, _, value)| runtime_value_view_is_agent_value(value, depth + 1))
+        }),
         _ => true,
     }
 }
@@ -1530,6 +1510,776 @@ pub(crate) fn match_runtime_pattern(
     }
 }
 
+/// Borrows a matched pattern for guard evaluation while the original value
+/// remains available to later arms. Only recursively unrestricted binding
+/// leaves enter the temporary guard scope; an affine sibling stays in the
+/// original scrutinee until the selected arm performs one owned bind.
+pub(crate) fn project_runtime_pattern_guard_bindings(
+    plan: &RuntimePlan,
+    pattern: &RuntimePattern,
+    value: &RuntimeValue,
+    required: &[RuntimeLocalDeclarationId],
+) -> Result<Option<Vec<RuntimeLocalBinding>>, RuntimePatternMatchError> {
+    if !inspect_runtime_pattern_owned(plan, pattern, value)? {
+        return Ok(None);
+    }
+    let required = required.iter().copied().collect::<BTreeSet<_>>();
+    for &local in &required {
+        let Some(ownership) = runtime_pattern_binding_ownership(pattern, value, local) else {
+            return Err(RuntimePatternMatchError::UnknownLocal { local });
+        };
+        if !ownership.permits_copy() {
+            return Err(RuntimePatternMatchError::AffineGuardBinding { local });
+        }
+    }
+    let mut bindings = Vec::new();
+    collect_copy_guard_bindings(pattern, value.view(), &required, &mut bindings);
+    Ok(Some(bindings))
+}
+
+/// Checks the guard's exact admitted local-read inventory before any guard
+/// expression runs, then projects only its selected Copy binding leaves.
+pub(crate) fn prepare_runtime_pattern_guard_bindings(
+    plan: &RuntimePlan,
+    pattern: &RuntimePattern,
+    value: &RuntimeValue,
+    guard: &RuntimeExpr,
+) -> Result<Vec<RuntimeLocalBinding>, RuntimeEvalError> {
+    let selected = guard.guard_copy_locals();
+    for (local, mode) in guard.evaluation_free_local_reads(plan)?.iter().copied() {
+        if !runtime_pattern_contains_binding(pattern, local) {
+            continue;
+        }
+        if mode != RuntimeLocalReadMode::Copy {
+            return Err(RuntimeEvalError::GuardMovedPatternBinding { local });
+        }
+        if !selected.contains(&local) {
+            return Err(RuntimeEvalError::MissingGuardCopyRequirement { local });
+        }
+    }
+    project_runtime_pattern_guard_bindings(plan, pattern, value, selected)?
+        .ok_or_else(|| RuntimeEvalError::PatternMismatch(crate::value::runtime_value_label(value)))
+}
+
+fn collect_copy_guard_bindings(
+    pattern: &RuntimePattern,
+    value: RuntimeValueView<'_>,
+    required: &BTreeSet<RuntimeLocalDeclarationId>,
+    bindings: &mut Vec<RuntimeLocalBinding>,
+) {
+    let add = |binding: &RuntimePatternBindingCoordinate,
+               value: RuntimeValueView<'_>,
+               bindings: &mut Vec<RuntimeLocalBinding>| {
+        if required.contains(&binding.local()) {
+            let value = value
+                .copy_unrestricted()
+                .expect("guard binding Copy was proven before projection");
+            bindings.push(RuntimeLocalBinding {
+                local: binding.local(),
+                value,
+            });
+        }
+    };
+    match pattern.kind() {
+        RuntimePatternKind::Bind { binding, .. } | RuntimePatternKind::Typed { binding } => {
+            add(binding, value, bindings);
+        }
+        RuntimePatternKind::Whole { binding, pattern } => {
+            add(binding, value, bindings);
+            collect_copy_guard_bindings(pattern, value, required, bindings);
+        }
+        RuntimePatternKind::Tuple(items) => {
+            let RuntimeValueView::Tuple(values) = value else {
+                unreachable!("checked tuple pattern retains a tuple view")
+            };
+            for (index, pattern) in items.iter().enumerate() {
+                let nested = values
+                    .get(index)
+                    .expect("checked tuple field remains present");
+                collect_copy_guard_bindings(pattern, nested, required, bindings);
+            }
+        }
+        RuntimePatternKind::Record { fields, rest } => {
+            if let Some(binding) = rest.binding() {
+                add(binding, value, bindings);
+            }
+            for field in fields {
+                let index = field.field().zero_based() as usize;
+                let nested = match value {
+                    RuntimeValueView::Record(values) => values
+                        .get(index)
+                        .filter(|(id, _, _)| *id == field.field())
+                        .map(|(_, _, value)| value),
+                    RuntimeValueView::NominalRecord(record) => {
+                        record.fields().get(index).map(RuntimeValue::view)
+                    }
+                    _ => None,
+                }
+                .expect("checked record field remains present");
+                collect_copy_guard_bindings(field.pattern(), nested, required, bindings);
+            }
+        }
+        RuntimePatternKind::Sequence { items, rest } => {
+            let RuntimeValueView::Sequence(sequence) = value else {
+                unreachable!("checked sequence pattern retains a sequence view")
+            };
+            for (index, pattern) in items.iter().enumerate() {
+                let nested = sequence
+                    .value_view(index)
+                    .expect("checked sequence item remains present");
+                collect_copy_guard_bindings(pattern, nested, required, bindings);
+            }
+            if let Some(binding) = rest.binding()
+                && required.contains(&binding.local())
+            {
+                bindings.push(RuntimeLocalBinding {
+                    local: binding.local(),
+                    value: RuntimeValue::Seq(sequence.tail_from(items.len())),
+                });
+            }
+        }
+        RuntimePatternKind::Variant { payload, .. } => {
+            if let Some(pattern) = payload
+                && let RuntimeValueView::Variant {
+                    payload: Some(value),
+                    ..
+                } = value
+            {
+                collect_copy_guard_bindings(pattern, value.view(), required, bindings);
+            }
+        }
+        RuntimePatternKind::Discard
+        | RuntimePatternKind::Literal(_)
+        | RuntimePatternKind::Entity(_) => {}
+    }
+}
+
+/// Reads the ownership of exactly one admitted pattern binding without
+/// creating a second runtime owner. Function input ABI checks use this before
+/// any frame mutation.
+pub(crate) fn runtime_pattern_binding_ownership(
+    pattern: &RuntimePattern,
+    value: &RuntimeValue,
+    local: RuntimeLocalDeclarationId,
+) -> Option<crate::value::ownership::RuntimeValueOwnership> {
+    runtime_pattern_binding_ownership_view(pattern, value.view(), local)
+}
+
+fn runtime_pattern_binding_ownership_view(
+    pattern: &RuntimePattern,
+    value: RuntimeValueView<'_>,
+    local: RuntimeLocalDeclarationId,
+) -> Option<crate::value::ownership::RuntimeValueOwnership> {
+    use crate::value::ownership::RuntimeValueOwnership;
+    match pattern.kind() {
+        RuntimePatternKind::Bind { binding, .. } | RuntimePatternKind::Typed { binding } => {
+            (binding.local() == local).then(|| value.ownership())
+        }
+        RuntimePatternKind::Whole {
+            binding,
+            pattern: inner,
+        } => {
+            if binding.local() == local {
+                Some(value.ownership())
+            } else {
+                runtime_pattern_binding_ownership_view(inner, value, local)
+            }
+        }
+        RuntimePatternKind::Tuple(items) => {
+            let RuntimeValueView::Tuple(values) = value else {
+                return None;
+            };
+            items.iter().enumerate().find_map(|(index, item)| {
+                values
+                    .get(index)
+                    .and_then(|value| runtime_pattern_binding_ownership_view(item, value, local))
+            })
+        }
+        RuntimePatternKind::Record { fields, rest } => {
+            if rest
+                .binding()
+                .is_some_and(|binding| binding.local() == local)
+            {
+                return Some(value.ownership());
+            }
+            fields.iter().find_map(|field| {
+                let index = field.field().zero_based() as usize;
+                let nested = match value {
+                    RuntimeValueView::Record(values) => values
+                        .get(index)
+                        .filter(|(id, _, _)| *id == field.field())
+                        .map(|(_, _, value)| value),
+                    RuntimeValueView::NominalRecord(record) => {
+                        record.fields().get(index).map(RuntimeValue::view)
+                    }
+                    _ => None,
+                };
+                nested.and_then(|value| {
+                    runtime_pattern_binding_ownership_view(field.pattern(), value, local)
+                })
+            })
+        }
+        RuntimePatternKind::Sequence { items, rest } => {
+            let RuntimeValueView::Sequence(sequence) = value else {
+                return None;
+            };
+            if rest
+                .binding()
+                .is_some_and(|binding| binding.local() == local)
+            {
+                return Some(
+                    (items.len()..sequence.len())
+                        .filter_map(|index| sequence.value_view(index))
+                        .fold(RuntimeValueOwnership::Unrestricted, |ownership, value| {
+                            ownership.join(value.ownership())
+                        }),
+                );
+            }
+            items.iter().enumerate().find_map(|(index, item)| {
+                sequence
+                    .value_view(index)
+                    .and_then(|value| runtime_pattern_binding_ownership_view(item, value, local))
+            })
+        }
+        RuntimePatternKind::Variant { payload, .. } => {
+            let RuntimeValueView::Variant {
+                payload: actual, ..
+            } = value
+            else {
+                return None;
+            };
+            payload.as_deref().zip(actual).and_then(|(pattern, value)| {
+                runtime_pattern_binding_ownership_view(pattern, value.view(), local)
+            })
+        }
+        RuntimePatternKind::Discard
+        | RuntimePatternKind::Literal(_)
+        | RuntimePatternKind::Entity(_) => None,
+    }
+}
+
+pub(crate) fn runtime_pattern_contains_binding(
+    pattern: &RuntimePattern,
+    local: RuntimeLocalDeclarationId,
+) -> bool {
+    match pattern.kind() {
+        RuntimePatternKind::Bind { binding, .. } | RuntimePatternKind::Typed { binding } => {
+            binding.local() == local
+        }
+        RuntimePatternKind::Whole { binding, pattern } => {
+            binding.local() == local || runtime_pattern_contains_binding(pattern, local)
+        }
+        RuntimePatternKind::Tuple(items) => items
+            .iter()
+            .any(|item| runtime_pattern_contains_binding(item, local)),
+        RuntimePatternKind::Record { fields, rest } => {
+            rest.binding()
+                .is_some_and(|binding| binding.local() == local)
+                || fields
+                    .iter()
+                    .any(|field| runtime_pattern_contains_binding(field.pattern(), local))
+        }
+        RuntimePatternKind::Sequence { items, rest } => {
+            rest.binding()
+                .is_some_and(|binding| binding.local() == local)
+                || items
+                    .iter()
+                    .any(|item| runtime_pattern_contains_binding(item, local))
+        }
+        RuntimePatternKind::Variant { payload, .. } => payload
+            .as_deref()
+            .is_some_and(|pattern| runtime_pattern_contains_binding(pattern, local)),
+        RuntimePatternKind::Discard
+        | RuntimePatternKind::Literal(_)
+        | RuntimePatternKind::Entity(_) => false,
+    }
+}
+
+/// Borrowed handle destination preview for dialogue result publication. The
+/// actual result value remains in line custody until all host commands clear.
+pub(crate) fn runtime_pattern_handle_destinations(
+    pattern: &RuntimePattern,
+    value: &RuntimeValue,
+    token: &crate::runtime_id::RuntimeLineHandleToken,
+) -> Result<Vec<RuntimeLocalDeclarationId>, crate::value::ownership::RuntimeAffineLineHandleError> {
+    let mut destinations = Vec::new();
+    collect_pattern_handle_destinations(pattern, value.view(), token, &mut destinations)?;
+    Ok(destinations)
+}
+
+fn collect_pattern_handle_destinations(
+    pattern: &RuntimePattern,
+    value: RuntimeValueView<'_>,
+    token: &crate::runtime_id::RuntimeLineHandleToken,
+    destinations: &mut Vec<RuntimeLocalDeclarationId>,
+) -> Result<(), crate::value::ownership::RuntimeAffineLineHandleError> {
+    match pattern.kind() {
+        RuntimePatternKind::Bind { binding, .. } | RuntimePatternKind::Typed { binding } => {
+            if value.contains_line_handle(token)? {
+                destinations.push(binding.local());
+            }
+        }
+        RuntimePatternKind::Whole { binding, pattern } => {
+            if value.contains_line_handle(token)? {
+                destinations.push(binding.local());
+            }
+            collect_pattern_handle_destinations(pattern, value, token, destinations)?;
+        }
+        RuntimePatternKind::Tuple(items) => {
+            if let RuntimeValueView::Tuple(values) = value {
+                for (index, item) in items.iter().enumerate() {
+                    if let Some(value) = values.get(index) {
+                        collect_pattern_handle_destinations(item, value, token, destinations)?;
+                    }
+                }
+            }
+        }
+        RuntimePatternKind::Record { fields, rest } => {
+            if let Some(binding) = rest.binding()
+                && value.contains_line_handle(token)?
+            {
+                destinations.push(binding.local());
+            }
+            for field in fields {
+                let index = field.field().zero_based() as usize;
+                let nested = match value {
+                    RuntimeValueView::Record(record) => {
+                        record.get(index).map(|(_, _, value)| value)
+                    }
+                    RuntimeValueView::NominalRecord(record) => {
+                        record.fields().get(index).map(RuntimeValue::view)
+                    }
+                    _ => None,
+                };
+                if let Some(value) = nested {
+                    collect_pattern_handle_destinations(
+                        field.pattern(),
+                        value,
+                        token,
+                        destinations,
+                    )?;
+                }
+            }
+        }
+        RuntimePatternKind::Sequence { items, rest } => {
+            if let RuntimeValueView::Sequence(values) = value {
+                for (index, item) in items.iter().enumerate() {
+                    if let Some(value) = values.value_view(index) {
+                        collect_pattern_handle_destinations(item, value, token, destinations)?;
+                    }
+                }
+                if let Some(binding) = rest.binding() {
+                    for index in items.len()..values.len() {
+                        if let Some(value) = values.value_view(index) {
+                            if value.contains_line_handle(token)? {
+                                destinations.push(binding.local());
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        RuntimePatternKind::Variant {
+            payload: Some(pattern),
+            ..
+        } => {
+            if let RuntimeValueView::Variant {
+                payload: Some(value),
+                ..
+            } = value
+            {
+                collect_pattern_handle_destinations(pattern, value.view(), token, destinations)?;
+            }
+        }
+        RuntimePatternKind::Discard
+        | RuntimePatternKind::Literal(_)
+        | RuntimePatternKind::Entity(_)
+        | RuntimePatternKind::Variant { payload: None, .. } => {}
+    }
+    Ok(())
+}
+
+/// Consuming binder for function-frame inputs. Matching and overlap admission
+/// finish against borrowed values before any field owner is transferred.
+pub(crate) fn match_runtime_pattern_owned(
+    plan: &RuntimePlan,
+    pattern: &RuntimePattern,
+    value: RuntimeValue,
+) -> Result<Option<Vec<RuntimeLocalBinding>>, RuntimePatternMatchError> {
+    if !inspect_runtime_pattern_owned(plan, pattern, &value)? {
+        return Ok(None);
+    }
+    let mut bindings = Vec::with_capacity(pattern_binding_capacity(pattern));
+    collect_pattern_bindings_owned(pattern, value, &mut bindings);
+    Ok(Some(bindings))
+}
+
+/// Exact borrowed preflight for a later owning bind. Success seals all
+/// refutable tests and affine overlap checks before an owner is taken.
+pub(crate) fn inspect_runtime_pattern_owned(
+    plan: &RuntimePlan,
+    pattern: &RuntimePattern,
+    value: &RuntimeValue,
+) -> Result<bool, RuntimePatternMatchError> {
+    validate_runtime_pattern(plan, pattern)?;
+    let need_handle = plan
+        .type_table()
+        .get(pattern.ty())
+        .is_some_and(|declaration| {
+            matches!(declaration.projection(), RuntimePlanTypeProjection::Need(_))
+        });
+    let type_matches = if need_handle {
+        matches!(&value, RuntimeValue::Need(need) if !need.0.is_empty())
+    } else {
+        plan.value_matches_type(pattern.ty(), &value)?
+    };
+    if !type_matches || !pattern_matches_borrowed(pattern, value) {
+        return Ok(false);
+    }
+    check_owned_pattern_overlap(pattern, value)?;
+    Ok(true)
+}
+
+fn pattern_matches_borrowed(pattern: &RuntimePattern, value: &RuntimeValue) -> bool {
+    pattern_matches_view(pattern, value.view())
+}
+
+fn pattern_matches_view(pattern: &RuntimePattern, value: RuntimeValueView<'_>) -> bool {
+    match pattern.kind() {
+        RuntimePatternKind::Bind { .. }
+        | RuntimePatternKind::Typed { .. }
+        | RuntimePatternKind::Discard => true,
+        RuntimePatternKind::Literal(expected) => runtime_value_views_equal(expected.view(), value),
+        RuntimePatternKind::Entity(expected) => matches!(value,
+            RuntimeValueView::Scalar(RuntimeScalarView::EntityRef(actual)) if actual == expected),
+        RuntimePatternKind::Whole { pattern, .. } => pattern_matches_view(pattern, value),
+        RuntimePatternKind::Tuple(patterns) => matches!(value,
+            RuntimeValueView::Tuple(values) if patterns.len() == values.len()
+                && patterns.iter().enumerate().all(|(index, pattern)|
+                    values.get(index).is_some_and(|value| pattern_matches_view(pattern, value)))),
+        RuntimePatternKind::Record { fields, rest } => {
+            let count = match &value {
+                RuntimeValueView::Record(record) => record.len(),
+                RuntimeValueView::NominalRecord(record) => record.fields().len(),
+                _ => return false,
+            };
+            rest.accepts_len(fields.len(), count)
+                && fields.iter().all(|field| {
+                    let index = field.field().zero_based() as usize;
+                    match value {
+                        RuntimeValueView::Record(record) => {
+                            record.get(index).is_some_and(|(id, _, value)| {
+                                id == field.field() && pattern_matches_view(field.pattern(), value)
+                            })
+                        }
+                        RuntimeValueView::NominalRecord(record) => {
+                            record.fields().get(index).is_some_and(|value| {
+                                pattern_matches_view(field.pattern(), value.view())
+                            })
+                        }
+                        _ => false,
+                    }
+                })
+        }
+        RuntimePatternKind::Sequence { items, rest } => {
+            let RuntimeValueView::Sequence(sequence) = value else {
+                return false;
+            };
+            if !rest.accepts_len(items.len(), sequence.len()) {
+                return false;
+            }
+            items.iter().enumerate().all(|(index, pattern)| {
+                sequence
+                    .value_view(index)
+                    .is_some_and(|value| pattern_matches_view(pattern, value))
+            })
+        }
+        RuntimePatternKind::Variant {
+            ordinal, payload, ..
+        } => matches!(value,
+        RuntimeValueView::Variant { ordinal: actual, payload: actual_payload, .. }
+            if *ordinal == actual && match (payload.as_deref(), actual_payload) {
+                (Some(pattern), Some(value)) => pattern_matches_view(pattern, value.view()),
+                (None, None) => true,
+                _ => false,
+            }),
+    }
+}
+
+fn runtime_value_views_equal(left: RuntimeValueView<'_>, right: RuntimeValueView<'_>) -> bool {
+    match (left, right) {
+        (RuntimeValueView::Scalar(left), RuntimeValueView::Scalar(right)) => left == right,
+        (RuntimeValueView::Tuple(left), RuntimeValueView::Tuple(right)) => {
+            left.len() == right.len()
+                && (0..left.len()).all(|index| match (left.get(index), right.get(index)) {
+                    (Some(left), Some(right)) => runtime_value_views_equal(left, right),
+                    _ => false,
+                })
+        }
+        (RuntimeValueView::Record(left), RuntimeValueView::Record(right)) => {
+            left.len() == right.len()
+                && (0..left.len()).all(|index| match (left.get(index), right.get(index)) {
+                    (Some((left_id, left_name, left)), Some((right_id, right_name, right))) => {
+                        left_id == right_id
+                            && left_name == right_name
+                            && runtime_value_views_equal(left, right)
+                    }
+                    _ => false,
+                })
+        }
+        (RuntimeValueView::Sequence(left), RuntimeValueView::Sequence(right)) => {
+            left.len() == right.len()
+                && (0..left.len()).all(|index| {
+                    match (left.value_view(index), right.value_view(index)) {
+                        (Some(left), Some(right)) => runtime_value_views_equal(left, right),
+                        _ => false,
+                    }
+                })
+        }
+        (RuntimeValueView::NominalRecord(left), RuntimeValueView::NominalRecord(right)) => {
+            left == right
+        }
+        (RuntimeValueView::Opaque(left), RuntimeValueView::Opaque(right)) => left == right,
+        (RuntimeValueView::Reduction(left), RuntimeValueView::Reduction(right)) => left == right,
+        (RuntimeValueView::Agent(left), RuntimeValueView::Agent(right)) => left == right,
+        (
+            RuntimeValueView::Variant {
+                owner: left_owner,
+                ordinal: left_ordinal,
+                name: left_name,
+                payload: left_payload,
+            },
+            RuntimeValueView::Variant {
+                owner: right_owner,
+                ordinal: right_ordinal,
+                name: right_name,
+                payload: right_payload,
+            },
+        ) => {
+            left_owner == right_owner
+                && left_ordinal == right_ordinal
+                && left_name == right_name
+                && match (left_payload, right_payload) {
+                    (Some(left), Some(right)) => {
+                        runtime_value_views_equal(left.view(), right.view())
+                    }
+                    (None, None) => true,
+                    _ => false,
+                }
+        }
+        (RuntimeValueView::RuntimeOnly(left), RuntimeValueView::RuntimeOnly(right)) => {
+            left == right
+        }
+        _ => false,
+    }
+}
+
+fn check_owned_pattern_overlap(
+    pattern: &RuntimePattern,
+    value: &RuntimeValue,
+) -> Result<(), RuntimePatternMatchError> {
+    check_owned_pattern_overlap_view(pattern, value.view())
+}
+
+fn check_owned_pattern_overlap_view(
+    pattern: &RuntimePattern,
+    value: RuntimeValueView<'_>,
+) -> Result<(), RuntimePatternMatchError> {
+    match pattern.kind() {
+        RuntimePatternKind::Whole { pattern: inner, .. } => {
+            if pattern_binding_capacity(inner) != 0 && !value.ownership().permits_copy() {
+                return Err(RuntimePatternMatchError::AffineBindingOverlap);
+            }
+            check_owned_pattern_overlap_view(inner, value)
+        }
+        RuntimePatternKind::Record { fields, rest } => {
+            if rest.binding().is_some()
+                && fields
+                    .iter()
+                    .any(|field| pattern_binding_capacity(field.pattern()) != 0)
+                && !value.ownership().permits_copy()
+            {
+                return Err(RuntimePatternMatchError::AffineBindingOverlap);
+            }
+            for field in fields {
+                let index = field.field().zero_based() as usize;
+                let nested = match value {
+                    RuntimeValueView::Record(record) => {
+                        record.get(index).map(|(_, _, value)| value)
+                    }
+                    RuntimeValueView::NominalRecord(record) => {
+                        record.fields().get(index).map(RuntimeValue::view)
+                    }
+                    _ => None,
+                };
+                if let Some(value) = nested {
+                    check_owned_pattern_overlap_view(field.pattern(), value)?;
+                }
+            }
+            Ok(())
+        }
+        RuntimePatternKind::Tuple(items) => {
+            let RuntimeValueView::Tuple(values) = value else {
+                return Ok(());
+            };
+            for (index, pattern) in items.iter().enumerate() {
+                if let Some(value) = values.get(index) {
+                    check_owned_pattern_overlap_view(pattern, value)?;
+                }
+            }
+            Ok(())
+        }
+        RuntimePatternKind::Sequence { items, .. } => {
+            let RuntimeValueView::Sequence(sequence) = value else {
+                return Ok(());
+            };
+            for (index, pattern) in items.iter().enumerate() {
+                if let Some(value) = sequence.value_view(index) {
+                    check_owned_pattern_overlap_view(pattern, value)?;
+                }
+            }
+            Ok(())
+        }
+        RuntimePatternKind::Variant {
+            payload: Some(pattern),
+            ..
+        } => {
+            let RuntimeValueView::Variant {
+                payload: Some(value),
+                ..
+            } = value
+            else {
+                return Ok(());
+            };
+            check_owned_pattern_overlap_view(pattern, value.view())
+        }
+        RuntimePatternKind::Bind { .. }
+        | RuntimePatternKind::Typed { .. }
+        | RuntimePatternKind::Discard
+        | RuntimePatternKind::Literal(_)
+        | RuntimePatternKind::Entity(_)
+        | RuntimePatternKind::Variant { payload: None, .. } => Ok(()),
+    }
+}
+
+fn collect_pattern_bindings_owned(
+    pattern: &RuntimePattern,
+    value: RuntimeValue,
+    bindings: &mut Vec<RuntimeLocalBinding>,
+) {
+    match pattern.kind() {
+        RuntimePatternKind::Bind { binding, .. } | RuntimePatternKind::Typed { binding } => {
+            bindings.push(RuntimeLocalBinding {
+                local: binding.local(),
+                value,
+            })
+        }
+        RuntimePatternKind::Whole {
+            binding,
+            pattern: inner,
+        } => {
+            if pattern_binding_capacity(inner) == 0 {
+                bindings.push(RuntimeLocalBinding {
+                    local: binding.local(),
+                    value,
+                });
+            } else {
+                let whole = value.clone(); // overlap preflight proved unrestricted
+                collect_pattern_bindings_owned(inner, value, bindings);
+                bindings.push(RuntimeLocalBinding {
+                    local: binding.local(),
+                    value: whole,
+                });
+            }
+        }
+        RuntimePatternKind::Tuple(patterns) => {
+            let RuntimeValue::Tuple(values) = value else {
+                unreachable!("preflight matched tuple");
+            };
+            for (pattern, value) in patterns.iter().zip(values) {
+                collect_pattern_bindings_owned(pattern, value, bindings);
+            }
+        }
+        RuntimePatternKind::Record { fields, rest } => {
+            let whole = rest.binding().and_then(|binding| {
+                fields
+                    .iter()
+                    .any(|field| pattern_binding_capacity(field.pattern()) != 0)
+                    .then(|| RuntimeLocalBinding {
+                        local: binding.local(),
+                        value: value.clone(), // overlap preflight proved unrestricted
+                    })
+            });
+            if rest.binding().is_some() && whole.is_none() {
+                bindings.push(RuntimeLocalBinding {
+                    local: rest.binding().expect("checked record rest").local(),
+                    value,
+                });
+                return;
+            }
+            let mut values = match value {
+                RuntimeValue::Record(record) => record
+                    .into_iter()
+                    .map(|field| Some(field.into_value()))
+                    .collect::<Vec<_>>(),
+                RuntimeValue::NominalRecord(record) => record
+                    .into_fields()
+                    .into_iter()
+                    .map(Some)
+                    .collect::<Vec<_>>(),
+                _ => unreachable!("preflight matched record"),
+            };
+            for field in fields {
+                let index = field.field().zero_based() as usize;
+                let value = values[index]
+                    .take()
+                    .expect("preflight matched record field");
+                collect_pattern_bindings_owned(field.pattern(), value, bindings);
+            }
+            if let Some(whole) = whole {
+                bindings.push(whole);
+            }
+        }
+        RuntimePatternKind::Sequence { items, rest } => {
+            let RuntimeValue::Seq(sequence) = value else {
+                unreachable!("preflight matched sequence");
+            };
+            let mut values = sequence.into_values().into_iter();
+            for pattern in items {
+                collect_pattern_bindings_owned(
+                    pattern,
+                    values.next().expect("preflight matched sequence item"),
+                    bindings,
+                );
+            }
+            if let Some(binding) = rest.binding() {
+                bindings.push(RuntimeLocalBinding {
+                    local: binding.local(),
+                    value: RuntimeValue::Seq(crate::value::RuntimeSeq::Values(values.collect())),
+                });
+            }
+        }
+        RuntimePatternKind::Variant {
+            payload: Some(pattern),
+            ..
+        } => {
+            let RuntimeValue::Variant {
+                payload: Some(value),
+                ..
+            } = value
+            else {
+                unreachable!("preflight matched variant");
+            };
+            collect_pattern_bindings_owned(pattern, *value, bindings);
+        }
+        RuntimePatternKind::Variant { payload: None, .. }
+        | RuntimePatternKind::Discard
+        | RuntimePatternKind::Literal(_)
+        | RuntimePatternKind::Entity(_) => {}
+    }
+}
+
 pub(crate) fn pattern_binding_capacity(pattern: &RuntimePattern) -> usize {
     let direct = match pattern.kind() {
         RuntimePatternKind::Bind { .. } | RuntimePatternKind::Typed { .. } => 1,
@@ -1566,6 +2316,12 @@ pub(crate) fn pattern_binding_capacity(pattern: &RuntimePattern) -> usize {
 pub enum RuntimePatternMatchError {
     #[error(transparent)]
     ValueType(#[from] RuntimePlanValueTypeError),
+    #[error("an affine pattern input would be bound both whole and through a nested field")]
+    AffineBindingOverlap,
+    #[error("a borrowed pattern cannot duplicate an affine binding input")]
+    AffineBorrowedPatternBinding,
+    #[error("guard local {local} requires Copy but its selected pattern leaf is affine")]
+    AffineGuardBinding { local: RuntimeLocalDeclarationId },
     #[error("runtime pattern references unknown plan type {ty}")]
     UnknownType { ty: RuntimePlanTypeId },
     #[error("runtime pattern kind is incompatible with plan type {ty}")]
@@ -2870,6 +3626,130 @@ mod tests {
                 },
             ]))
         );
+    }
+
+    #[test]
+    fn guard_copies_only_selected_scalar_sibling_before_moving_affine_tuple() {
+        let mut builder = RuntimePlanBuilder::new();
+        let admitted = builder
+            .admit_type_batch(
+                [
+                    RuntimePlanTypeSeed::new(identity(101), RuntimePlanTypeProjection::Bool),
+                    RuntimePlanTypeSeed::new(
+                        identity(102),
+                        RuntimePlanTypeProjection::Signed(crate::value::RuntimeSignedIntWidth::I64),
+                    ),
+                    RuntimePlanTypeSeed::new(
+                        identity(103),
+                        RuntimePlanTypeProjection::Need(identity(102)),
+                    ),
+                    RuntimePlanTypeSeed::new(
+                        identity(104),
+                        RuntimePlanTypeProjection::Tuple(
+                            vec![identity(102), identity(103)].into_boxed_slice(),
+                        ),
+                    ),
+                ],
+                [
+                    RuntimeLocalDeclarationSeed::new(identity(102)),
+                    RuntimeLocalDeclarationSeed::new(identity(103)),
+                ],
+            )
+            .expect("typed affine tuple admission");
+        let pattern = builder
+            .lower_pattern_seed_for_test(RuntimePatternSeed::new(
+                identity(104),
+                RuntimePatternSeedKind::Tuple(
+                    vec![
+                        RuntimePatternSeed::new(
+                            identity(102),
+                            RuntimePatternSeedKind::Bind {
+                                mutable: false,
+                                local: admitted.local_ids()[0].clone(),
+                            },
+                        ),
+                        RuntimePatternSeed::new(
+                            identity(103),
+                            RuntimePatternSeedKind::Bind {
+                                mutable: false,
+                                local: admitted.local_ids()[1].clone(),
+                            },
+                        ),
+                    ]
+                    .into_boxed_slice(),
+                ),
+            ))
+            .expect("affine tuple pattern");
+        let RuntimePatternKind::Tuple(items) = pattern.kind() else {
+            panic!("tuple pattern kind")
+        };
+        let RuntimePatternKind::Bind {
+            binding: scalar, ..
+        } = items[0].kind()
+        else {
+            panic!("scalar binding")
+        };
+        let RuntimePatternKind::Bind {
+            binding: affine, ..
+        } = items[1].kind()
+        else {
+            panic!("affine binding")
+        };
+        let scalar = scalar.local();
+        let affine = affine.local();
+        let plan = builder.finish().expect("plan");
+        let value = RuntimeValue::Tuple(vec![
+            RuntimeValue::i64(7),
+            RuntimeValue::Need(crate::task::NeedId("need.guard.affine".to_owned())),
+        ]);
+        let guard = crate::value::RuntimeExpr::from_admitted_parts(
+            admitted.type_ids()[0],
+            crate::value::RuntimeExprKind::Local(
+                crate::value::RuntimeLocalRead::from_admitted_parts(
+                    scalar,
+                    RuntimeLocalReadMode::Copy,
+                ),
+            ),
+        )
+        .with_guard_copy_locals(vec![scalar]);
+        let projected = prepare_runtime_pattern_guard_bindings(&plan, &pattern, &value, &guard)
+            .expect("Copy scalar guard projection");
+        assert_eq!(
+            projected,
+            vec![RuntimeLocalBinding {
+                local: scalar,
+                value: RuntimeValue::i64(7),
+            }]
+        );
+        let bindings = match_runtime_pattern_owned(&plan, &pattern, value)
+            .expect("owned tuple bind")
+            .expect("matched tuple");
+        assert!(bindings.iter().any(|binding| {
+            binding.local == affine
+                && binding.value
+                    == RuntimeValue::Need(crate::task::NeedId("need.guard.affine".to_owned()))
+        }));
+
+        let affine_guard = crate::value::RuntimeExpr::from_admitted_parts(
+            admitted.type_ids()[0],
+            crate::value::RuntimeExprKind::Local(
+                crate::value::RuntimeLocalRead::from_admitted_parts(
+                    affine,
+                    RuntimeLocalReadMode::Copy,
+                ),
+            ),
+        )
+        .with_guard_copy_locals(vec![affine]);
+        let value = RuntimeValue::Tuple(vec![
+            RuntimeValue::i64(7),
+            RuntimeValue::Need(crate::task::NeedId("need.guard.affine".to_owned())),
+        ]);
+        assert!(matches!(
+            prepare_runtime_pattern_guard_bindings(&plan, &pattern, &value, &affine_guard),
+            Err(RuntimeEvalError::Pattern(
+                RuntimePatternMatchError::AffineGuardBinding { local }
+            )) if local == affine
+        ));
     }
 
     #[test]

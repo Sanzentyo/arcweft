@@ -72,8 +72,8 @@ use arcweft_core::{
         RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimeExprSeed,
         RuntimeExprSeedKind, RuntimeFieldProjectionSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
         RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeLocalDeclarationSeed,
-        RuntimeNeedProducerStartTargetSeed, RuntimePatternSeed, RuntimePatternSeedKind,
-        RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+        RuntimeLocalReadSeed, RuntimeNeedProducerStartTargetSeed, RuntimePatternSeed,
+        RuntimePatternSeedKind, RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
     },
     step::{HostCallContractDigest, RuntimeHostCallMode},
     task::{
@@ -85,7 +85,7 @@ use arcweft_core::{
     value::{
         DenseSeq, DenseSeqStorage, RuntimeAgentCompareOp, RuntimeAgentField, RuntimeAgentPath,
         RuntimeAgentPredicate, RuntimeAgentProbe, RuntimeAgentValue, RuntimeDataShape,
-        RuntimeFieldValue, RuntimePayload, RuntimeSeq, RuntimeValue,
+        RuntimeFieldValue, RuntimeLocalReadMode, RuntimePayload, RuntimeSeq, RuntimeValue,
     },
 };
 use arcweft_debug_model::{
@@ -1337,7 +1337,13 @@ fn capture_binding_program_with_budget(budget: AgentBudget) -> AwbcProgram {
                         shot.clone(),
                     )),
                     target: RuntimeAwaitTargetSeed {
-                        source: RuntimeExprSeed::new(need_ty, RuntimeExprSeedKind::Local(need)),
+                        source: RuntimeExprSeed::new(
+                            need_ty,
+                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                need,
+                                RuntimeLocalReadMode::Move,
+                            )),
+                        ),
                     },
                     observers: Vec::new(),
                 },
@@ -1346,7 +1352,10 @@ fn capture_binding_program_with_budget(budget: AgentBudget) -> AwbcProgram {
                     RuntimeExprSeedKind::Field {
                         target: Box::new(controller_expr(
                             CAPTURE_REFERENCE_TY,
-                            RuntimeExprSeedKind::Local(shot),
+                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                shot,
+                                RuntimeLocalReadMode::Move,
+                            )),
                         )),
                         field: RuntimeFieldProjectionSeed::Agent(
                             RuntimeAgentField::CaptureReferenceUri,
@@ -1402,7 +1411,13 @@ fn read_resource_binding_program() -> AwbcProgram {
                         resource.clone(),
                     )),
                     target: RuntimeAwaitTargetSeed {
-                        source: RuntimeExprSeed::new(need_ty, RuntimeExprSeedKind::Local(need)),
+                        source: RuntimeExprSeed::new(
+                            need_ty,
+                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                need,
+                                RuntimeLocalReadMode::Move,
+                            )),
+                        ),
                     },
                     observers: Vec::new(),
                 },
@@ -1411,7 +1426,10 @@ fn read_resource_binding_program() -> AwbcProgram {
                     RuntimeExprSeedKind::Field {
                         target: Box::new(controller_expr(
                             RESOURCE_TY,
-                            RuntimeExprSeedKind::Local(resource),
+                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                resource,
+                                RuntimeLocalReadMode::Move,
+                            )),
                         )),
                         field: RuntimeFieldProjectionSeed::Agent(RuntimeAgentField::ResourceBody),
                     },
@@ -1479,7 +1497,13 @@ fn single_response_field_program(request: SingleResponseFieldRequest) -> AwbcPro
                         response.clone(),
                     )),
                     target: RuntimeAwaitTargetSeed {
-                        source: RuntimeExprSeed::new(need_ty, RuntimeExprSeedKind::Local(need)),
+                        source: RuntimeExprSeed::new(
+                            need_ty,
+                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                need,
+                                RuntimeLocalReadMode::Move,
+                            )),
+                        ),
                     },
                     observers: Vec::new(),
                 },
@@ -1488,7 +1512,10 @@ fn single_response_field_program(request: SingleResponseFieldRequest) -> AwbcPro
                     RuntimeExprSeedKind::Field {
                         target: Box::new(controller_expr(
                             response_ty,
-                            RuntimeExprSeedKind::Local(response),
+                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                response,
+                                RuntimeLocalReadMode::Move,
+                            )),
                         )),
                         field: RuntimeFieldProjectionSeed::Agent(field),
                     },

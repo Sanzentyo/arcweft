@@ -37,6 +37,8 @@ mod character_dialogue;
 mod color;
 mod data_shape;
 mod env;
+pub(crate) use env::RuntimeEnvRollbackImage;
+mod expression_literals;
 mod expression_locals;
 mod format_content;
 mod integer;
@@ -101,6 +103,9 @@ pub use awbc_save::{
 };
 pub(crate) use callable::{
     RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableInvocation,
+    RuntimeCallableMaterializedArgument, RuntimeCallablePendingGroup,
+    RuntimeCallablePendingGroupParts, RuntimeCallablePendingRollbackImage,
+    RuntimeCallableZeroArgInvocationProof,
 };
 pub use callable::{RuntimeCallableValue, RuntimeCallableValueError};
 pub use character_dialogue::RuntimeCharacterDialogueProducerId;
@@ -214,6 +219,16 @@ pub enum RuntimeFunctionApplyError {
         index: usize,
         local: RuntimeLocalDeclarationId,
         expected: RuntimePlanTypeId,
+    },
+    #[error("structured function site {site} input {input:?} requires an unrestricted value")]
+    UnrestrictedInputRequired {
+        site: RuntimeFunctionSiteId,
+        input: crate::plan::RuntimeFunctionInputSource,
+    },
+    #[error("structured function site {site} local {local} requires an unrestricted bound value")]
+    UnrestrictedBindingRequired {
+        site: RuntimeFunctionSiteId,
+        local: RuntimeLocalDeclarationId,
     },
     #[error("function has {remaining} remaining parameters, received {provided} arguments")]
     TooManyArguments { remaining: usize, provided: usize },
@@ -1309,6 +1324,41 @@ pub struct DenseSeqStorage<T> {
 pub struct RuntimeExpr {
     ty: RuntimePlanTypeId,
     kind: RuntimeExprKind,
+    guard_copy_locals: Vec<RuntimeLocalDeclarationId>,
+}
+
+/// How one checked local use transfers the value from its owning binding.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum RuntimeLocalReadMode {
+    Copy,
+    Move,
+}
+
+/// One plan-owned local read. The semantic producer selects its transfer mode;
+/// runtime execution never infers a move from the current value alone.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct RuntimeLocalRead {
+    local: RuntimeLocalDeclarationId,
+    mode: RuntimeLocalReadMode,
+}
+
+impl RuntimeLocalRead {
+    pub(crate) const fn from_admitted_parts(
+        local: RuntimeLocalDeclarationId,
+        mode: RuntimeLocalReadMode,
+    ) -> Self {
+        Self { local, mode }
+    }
+
+    #[must_use]
+    pub const fn local(self) -> RuntimeLocalDeclarationId {
+        self.local
+    }
+
+    #[must_use]
+    pub const fn mode(self) -> RuntimeLocalReadMode {
+        self.mode
+    }
 }
 
 /// Parameter identity retained by a checked standard `fmt` expression.
@@ -1546,7 +1596,21 @@ impl RuntimeEntityReference {
 
 impl RuntimeExpr {
     pub(crate) const fn from_admitted_parts(ty: RuntimePlanTypeId, kind: RuntimeExprKind) -> Self {
-        Self { ty, kind }
+        Self {
+            ty,
+            kind,
+            guard_copy_locals: Vec::new(),
+        }
+    }
+
+    pub(crate) fn with_guard_copy_locals(mut self, locals: Vec<RuntimeLocalDeclarationId>) -> Self {
+        self.guard_copy_locals = locals;
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn guard_copy_locals(&self) -> &[RuntimeLocalDeclarationId] {
+        &self.guard_copy_locals
     }
 
     /// Constructs an admitted `DialogueContent` expression with effect-site
@@ -1585,7 +1649,7 @@ impl RuntimeExpr {
 pub enum RuntimeExprKind {
     Value(RuntimeValue),
     Agent(RuntimeAgentExpr),
-    Local(RuntimeLocalDeclarationId),
+    Local(RuntimeLocalRead),
     /// Removes the first item from an admitted Vec place and returns `Option<T>`.
     SequencePopFront {
         place: RuntimeMutablePlace,
@@ -1886,7 +1950,7 @@ impl fmt::Display for RuntimeExpr {
         match self.kind() {
             RuntimeExprKind::Value(value) => f.write_str(&runtime_value_label(value)),
             RuntimeExprKind::Agent(agent) => write!(f, "agent/{:?}", agent.constructor()),
-            RuntimeExprKind::Local(local) => write!(f, "local#{local}"),
+            RuntimeExprKind::Local(read) => write!(f, "local#{}", read.local()),
             RuntimeExprKind::SequencePopFront { place } => match place {
                 RuntimeMutablePlace::Local(local) => {
                     write!(f, "vec_pop_front/local#{local}")
@@ -2126,6 +2190,16 @@ pub enum RuntimeEvalError {
     UnknownBinding(String),
     #[error("unknown runtime local declaration {0}")]
     UnknownLocal(RuntimeLocalDeclarationId),
+    #[error("runtime local {0} contains an affine value and cannot be copied")]
+    AffineLocalCopy(RuntimeLocalDeclarationId),
+    #[error(transparent)]
+    GuardReadInventory(#[from] RuntimeExprFreeLocalError),
+    #[error("guard local {local} moves a pattern binding while later arms retain the scrutinee")]
+    GuardMovedPatternBinding { local: RuntimeLocalDeclarationId },
+    #[error("guard local {local} has no selected Copy obligation")]
+    MissingGuardCopyRequirement { local: RuntimeLocalDeclarationId },
+    #[error("a runtime expression literal contains an affine value and cannot be copied")]
+    AffineLiteralCopy,
     #[error(
         "runtime flow `{flow}` cannot accept binding `{binding}` without selected flow metadata"
     )]
@@ -2289,6 +2363,8 @@ pub enum RuntimeEvalError {
     MisplacedLoopControl(&'static str),
     #[error("audio command error: {0}")]
     Audio(String),
+    #[error(transparent)]
+    StreamYield(#[from] crate::stream::RuntimeStreamYieldError),
     #[error("runtime effect error: {0}")]
     Effect(String),
     #[error("Agent value construction failed: {0}")]

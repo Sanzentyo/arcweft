@@ -3,7 +3,7 @@ use super::{
     AwbcProductStepExecutor, ProductChildFiber, ProductChildFiberOwner, ProductDialoguePhase,
     ProductLineTaskFiberPhase, ProductStepError,
 };
-use crate::awbc::fiber::{FiberStatus, FiberTerminalValue};
+use crate::awbc::fiber::{AwbcFiberStateSnapshot, FiberState, FiberStatus, FiberTerminalValue};
 use crate::awbc::product_step::mapping::MappedEffect;
 use crate::awbc::schema::{
     AwbcAudioArg, AwbcAudioCommand, AwbcAudioCommandId, AwbcAudioValueRef, AwbcBlock, AwbcBlockId,
@@ -11,12 +11,13 @@ use crate::awbc::schema::{
     AwbcContentUnitId, AwbcDialogueContentTemplate, AwbcEffectKind, AwbcEffectPlan,
     AwbcEffectPlanId, AwbcEffectSetId, AwbcEntryId, AwbcFlowBinding, AwbcFlowExecutable,
     AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunction,
-    AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcHostArgument,
-    AwbcHostCall, AwbcHostCallId, AwbcHostCallMode, AwbcInstruction, AwbcLineCancelHandler,
-    AwbcPattern, AwbcPatternId, AwbcProgram, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
-    AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcSignature, AwbcSignatureId,
-    AwbcStringId, AwbcTableRange, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanKind, AwbcTaskPolicy,
-    AwbcTaskRequestProjection, AwbcTaskRestartPolicy, AwbcTerminator, AwbcTrapCode, AwbcTypeId,
+    AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionInputOwnership,
+    AwbcFunctionKind, AwbcHostArgument, AwbcHostCall, AwbcHostCallId, AwbcHostCallMode,
+    AwbcInstruction, AwbcLineCancelHandler, AwbcPattern, AwbcPatternId, AwbcProgram,
+    AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape,
+    AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTaskClass,
+    AwbcTaskPlan, AwbcTaskPlanKind, AwbcTaskPolicy, AwbcTaskRequestProjection,
+    AwbcTaskRestartPolicy, AwbcTerminator, AwbcTrapCode, AwbcTypeId,
 };
 use crate::effect::{LineEffectRequest, RuntimeAssertionGuardId, RuntimeAssertionProfile};
 use crate::engine::{FlowExit, FlowFiberStatus};
@@ -32,6 +33,47 @@ use crate::task::{
 };
 use crate::value::{RuntimeFlowParameterBinding, RuntimePayload, RuntimeValue};
 use arcweft_need::{Need, Progress};
+use std::collections::BTreeMap;
+
+fn product_snapshot(
+    executor: &AwbcProductStepExecutor,
+) -> crate::awbc::product_step::AwbcProductExecutorSnapshot {
+    executor
+        .snapshot()
+        .expect("fixture Product snapshot is valid")
+}
+
+/// These line-task fixtures need a second test fiber from a root fixture whose
+/// entire runtime-value graph is unrestricted. Keep the test-only copy proof
+/// explicit and reconstruct through the inert snapshot representation.
+fn copyable_fixture_fiber(executor: &AwbcProductStepExecutor) -> FiberState {
+    executor
+        .fiber
+        .visit_runtime_values(|value| {
+            assert!(
+                value.ownership().permits_copy(),
+                "fixture fiber must be unrestricted before test reconstruction"
+            );
+            Ok::<_, std::convert::Infallible>(())
+        })
+        .expect("copyable test fiber visits cleanly");
+    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
+    AwbcFiberStateSnapshot::from_live(&executor.fiber)
+        .expect("copyable fixture fiber has an inert snapshot")
+        .into_live_for_program(&owner)
+        .expect("copyable fixture fiber restores")
+}
+
+fn commit_test_dialogue_transaction(
+    executor: &mut AwbcProductStepExecutor,
+    transaction: super::dialogue::ProductDialogueTransaction,
+) -> crate::line_task::RuntimeDialogueRegistryCommitReceipt {
+    let proof = executor
+        .dialogues
+        .inspect_commit(&transaction)
+        .expect("fixture dialogue transaction is committable");
+    executor.dialogues.commit_prepared(transaction, proof)
+}
 
 #[path = "tests/context.rs"]
 mod context;
@@ -96,10 +138,10 @@ fn product_snapshot_visitor_finds_asset_handles_in_dialogue_captures() {
             captures: Box::new([RuntimeValue::Tuple(vec![fixture_bundle_image_handle()])]),
             task_inputs: Box::new([]),
             values: Box::new([]),
-            effect_callbacks: Box::new([]),
+            effect_callbacks: BTreeMap::new(),
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
             phase: ProductDialoguePhase::Activating {
-                fiber: executor.fiber.clone(),
+                fiber: copyable_fixture_fiber(&executor),
                 pending: None,
             },
             elapsed_nanos: 0,
@@ -109,15 +151,14 @@ fn product_snapshot_visitor_finds_asset_handles_in_dialogue_captures() {
             pending_activation_host_call: None,
         })
         .expect("dialogue capture remains owned by Product state");
-    let snapshot = executor.snapshot();
     let mut roles = Vec::new();
 
-    snapshot
-        .visit_runtime_values(|value| {
+    executor
+        .visit_live_runtime_values(|value| {
             if let Some(role) = crate::value::runtime_bundle_asset_opaque_role(value) {
                 roles.push(role);
             }
-            Ok(())
+            Ok::<(), std::convert::Infallible>(())
         })
         .expect("Product snapshot visits every runtime value");
 
@@ -222,7 +263,7 @@ fn only_explicit_selector_terminal_selects_dialogue_result_for_its_owner() {
                 captures: Box::new([]),
                 task_inputs: Box::new([]),
                 values: Box::new([]),
-                effect_callbacks: Box::new([]),
+                effect_callbacks: BTreeMap::new(),
                 voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
                 result: crate::awbc::schema::AwbcDialogueResultTarget {
                     ty: AwbcTypeId(1),
@@ -248,12 +289,16 @@ fn only_explicit_selector_terminal_selects_dialogue_result_for_its_owner() {
                 RuntimeValue::String("committed-result".to_owned()),
             )
             .expect("normal dialogue result commits");
-        let mut child = executor.fiber.clone();
+        let mut child = copyable_fixture_fiber(&executor);
         child.status = FiberStatus::Returned;
         child.terminal = Some(terminal);
         let expected_tag = tag.clone();
         let batch = super::ProductLineTaskExecutionBatch {
             child_fibers: std::collections::VecDeque::new(),
+            existing_child_actions: BTreeMap::new(),
+            line_task_activations: Vec::new(),
+            line_task_baseline: None,
+            line_task_reserved_runs: Vec::new(),
             dialogue_effect_callback_activations: std::collections::BTreeSet::new(),
             next_generation: executor.next_generation,
             next_fiber_instance: executor.next_fiber_instance,
@@ -369,7 +414,7 @@ fn mark_action_selection_restores_and_cancellation_can_override_it() {
             captures: Box::new([]),
             task_inputs: Box::new([]),
             values: Box::new([]),
-            effect_callbacks: Box::new([]),
+            effect_callbacks: BTreeMap::new(),
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
             result: crate::awbc::schema::AwbcDialogueResultTarget {
                 ty: AwbcTypeId(1),
@@ -388,13 +433,17 @@ fn mark_action_selection_restores_and_cancellation_can_override_it() {
         .dialogues
         .begin_transaction(&activation)
         .expect("active dialogue transaction");
-    let mut child = executor.fiber.clone();
+    let mut child = copyable_fixture_fiber(&executor);
     child.status = FiberStatus::Returned;
     child.terminal = Some(FiberTerminalValue::DialogueResultSelected(
         RuntimeValue::String("selected-result".to_owned()),
     ));
     let batch = super::ProductLineTaskExecutionBatch {
         child_fibers: std::collections::VecDeque::new(),
+        existing_child_actions: BTreeMap::new(),
+        line_task_activations: Vec::new(),
+        line_task_baseline: None,
+        line_task_reserved_runs: Vec::new(),
         dialogue_effect_callback_activations: std::collections::BTreeSet::new(),
         next_generation: executor.next_generation,
         next_fiber_instance: executor.next_fiber_instance,
@@ -422,11 +471,8 @@ fn mark_action_selection_restores_and_cancellation_can_override_it() {
         } if source == &mark_tag && value == "selected-result"
     ));
 
-    executor
-        .dialogues
-        .commit(transaction)
-        .expect("mark selection commits as one authority transaction");
-    let snapshot = executor.snapshot();
+    commit_test_dialogue_transaction(&mut executor, transaction);
+    let snapshot = product_snapshot(&executor);
     let mut restored = AwbcProductStepExecutor::for_entry_arc(
         std::sync::Arc::clone(&executor.program),
         crate::awbc::schema::AwbcEntryId(0),
@@ -472,13 +518,17 @@ fn mark_action_selection_restores_and_cancellation_can_override_it() {
             crate::line_task::LineTaskCommand::Cancel { .. } => None,
         })
         .expect("cancellation handler tag");
-    let mut child = restored.fiber.clone();
+    let mut child = copyable_fixture_fiber(&restored);
     child.status = FiberStatus::Returned;
     child.terminal = Some(FiberTerminalValue::DialogueResultSelected(
         RuntimeValue::String("cancelled-result".to_owned()),
     ));
     let batch = super::ProductLineTaskExecutionBatch {
         child_fibers: std::collections::VecDeque::new(),
+        existing_child_actions: BTreeMap::new(),
+        line_task_activations: Vec::new(),
+        line_task_baseline: None,
+        line_task_reserved_runs: Vec::new(),
         dialogue_effect_callback_activations: std::collections::BTreeSet::new(),
         next_generation: restored.next_generation,
         next_fiber_instance: restored.next_fiber_instance,
@@ -586,6 +636,10 @@ fn line_activation_register_defer_commits_captures_and_cursor() {
             public_id: None,
             kind: AwbcFunctionKind::LineActivation,
             signature: AwbcSignatureId(1),
+            input_ownership: vec![
+                AwbcFunctionInputOwnership::default();
+                program.signatures[AwbcSignatureId(1).index()].params.len()
+            ],
             frame_layout: AwbcFrameLayoutId(1),
             blocks: AwbcTableRange::new(1, 1),
             entry_block: AwbcBlockId(1),
@@ -595,6 +649,10 @@ fn line_activation_register_defer_commits_captures_and_cursor() {
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(2),
+            input_ownership: vec![
+                AwbcFunctionInputOwnership::default();
+                program.signatures[AwbcSignatureId(2).index()].params.len()
+            ],
             frame_layout: AwbcFrameLayoutId(2),
             blocks: AwbcTableRange::new(2, 1),
             entry_block: AwbcBlockId(2),
@@ -656,7 +714,7 @@ fn line_activation_register_defer_commits_captures_and_cursor() {
             captures: Box::new([]),
             task_inputs: Box::new([]),
             values: Box::new([]),
-            effect_callbacks: Box::new([]),
+            effect_callbacks: BTreeMap::new(),
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
             result: crate::awbc::schema::AwbcDialogueResultTarget {
                 ty: AwbcTypeId(0),
@@ -693,7 +751,8 @@ fn line_activation_register_defer_commits_captures_and_cursor() {
     assert_eq!(fiber.cursor.instruction_offset, 2);
     assert_eq!(
         fiber.active_frame().unwrap().registers[0],
-        Some(RuntimeValue::String("captured at defer".to_owned()))
+        None,
+        "a reached RegisterDefer transfers its capture out of the source register"
     );
     let [registration] = transaction.line().deferred_registrations() else {
         panic!("one reached statement creates one line-root registration");
@@ -722,7 +781,7 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
         ),
         0,
     );
-    let activation_fiber = crate::awbc::fiber::FiberState::for_function(
+    let mut activation_fiber = crate::awbc::fiber::FiberState::for_function(
         &executor.program,
         AwbcEntryId(0),
         AwbcFunctionId(1),
@@ -730,6 +789,14 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
         64,
     )
     .expect("Init activation fiber initializes");
+    activation_fiber
+        .active_frame_mut()
+        .expect("Init activation frame")
+        .bind_positional_arguments(
+            &executor.program,
+            &[RuntimeValue::String("before host result".to_owned())],
+        )
+        .expect("Init activation input seeds the typed destination register");
     let target_owner = executor
         .program
         .opaque_owner(AwbcTypeId(2))
@@ -744,10 +811,10 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
             target_type: AwbcTypeId(2),
             line: crate::plan::RuntimeLineId::from_runtime_line_value("line.init.out.defer")
                 .expect("line identity"),
-            captures: Box::new([]),
+            captures: Box::new([RuntimeValue::String("before host result".to_owned())]),
             task_inputs: Box::new([]),
             values: Box::new([]),
-            effect_callbacks: Box::new([]),
+            effect_callbacks: BTreeMap::new(),
             voice: crate::presentation::RuntimeDialogueVoiceState::Ready(
                 crate::presentation::RuntimeVoiceSessionId::try_new("init.voice")
                     .expect("voice session identity"),
@@ -772,7 +839,7 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
     fn activation_step(
         executor: &mut AwbcProductStepExecutor,
         activation: &crate::runtime_id::DialogueActivationId,
-        host_results: &[RuntimeHostCallResult],
+        mut host_results: Vec<RuntimeHostCallResult>,
         backend: &mut crate::pure::VmRuntimePureCallBackend,
     ) -> (
         crate::awbc::product_step::line::ProductActivationProgress,
@@ -782,21 +849,29 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
             .dialogues
             .begin_transaction(activation)
             .expect("activation transaction");
-        let progress = executor
-            .step_dialogue_activation_with_host_results(&mut transaction, host_results, backend)
-            .expect("one activation instruction progresses");
-        let receipt = executor
-            .dialogues
-            .commit(transaction)
-            .expect("activation progress commits");
+        let cursor = match &transaction.frame().phase {
+            ProductDialoguePhase::Activating { fiber, .. } => fiber.cursor,
+            _ => panic!("activation transaction has left its running phase"),
+        };
+        let mut progress = executor
+            .step_dialogue_activation_with_host_results(
+                &mut transaction,
+                &mut host_results,
+                backend,
+            )
+            .unwrap_or_else(|error| panic!("activation step at {cursor:?} failed: {error:?}"));
+        if let Some(ticket) = progress.host_result_take.take() {
+            executor.commit_activation_host_result(&mut transaction, &mut host_results, ticket);
+        }
+        let receipt = commit_test_dialogue_transaction(executor, transaction);
         let mut output = crate::step::RuntimeStepOutput::default();
-        if let Some(batch) = progress.execution.clone() {
+        if let Some(batch) = progress.execution.take() {
             executor.commit_line_task_commands(batch, &mut output);
         }
         output
             .requests
             .host_calls
-            .extend(progress.host_calls.clone());
+            .extend(std::mem::take(&mut progress.host_calls));
         output
             .requests
             .line_commands
@@ -806,12 +881,12 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
 
     let mut backend = crate::pure::VmRuntimePureCallBackend::default();
     let (host_progress, host_output) =
-        activation_step(&mut executor, &activation, &[], &mut backend);
+        activation_step(&mut executor, &activation, Vec::new(), &mut backend);
     assert_eq!(host_output.requests.host_calls.len(), 1);
     assert!(!host_progress.progressed);
     let host_id = host_output.requests.host_calls[0].id.clone();
 
-    let snapshot = executor.snapshot();
+    let snapshot = product_snapshot(&executor);
     let save = AwbcProductExecutorSaveSnapshot::from_live(&snapshot)
         .expect("suspended activation host call is saveable");
     let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&executor.program));
@@ -822,13 +897,14 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
         .restore_snapshot(restored_snapshot)
         .expect("activation host call restores with its suspended fiber");
 
-    let (_, repeated_output) = activation_step(&mut executor, &activation, &[], &mut backend);
+    let (_, repeated_output) =
+        activation_step(&mut executor, &activation, Vec::new(), &mut backend);
     assert_eq!(repeated_output.requests.host_calls[0].id, host_id);
 
     let (resumed, resumed_output) = activation_step(
         &mut executor,
         &activation,
-        &[RuntimeHostCallResult {
+        vec![RuntimeHostCallResult {
             id: host_id,
             outcome: Ok(RuntimePayload(RuntimeValue::String(
                 "captured from Init".to_owned(),
@@ -839,10 +915,12 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
     assert!(resumed.progressed);
     assert!(resumed_output.requests.host_calls.is_empty());
 
-    activation_step(&mut executor, &activation, &[], &mut backend); // EnterScope
+    activation_step(&mut executor, &activation, Vec::new(), &mut backend); // EnterScope
+    activation_step(&mut executor, &activation, Vec::new(), &mut backend); // Copy effect field
+    activation_step(&mut executor, &activation, Vec::new(), &mut backend); // Copy effect message
     let (effect_progress, effect_output) =
-        activation_step(&mut executor, &activation, &[], &mut backend); // EvaluatedEffect
-    assert!(effect_progress.execution.is_some());
+        activation_step(&mut executor, &activation, Vec::new(), &mut backend); // EvaluatedEffect
+    assert!(effect_progress.progressed);
     assert_eq!(
         effect_output.effects.line,
         [crate::effect::LineEffectRequest::Log(
@@ -856,8 +934,8 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
             }
         )]
     );
-    activation_step(&mut executor, &activation, &[], &mut backend); // VoiceHandle
-    activation_step(&mut executor, &activation, &[], &mut backend); // RegisterDefer
+    activation_step(&mut executor, &activation, Vec::new(), &mut backend); // VoiceHandle
+    activation_step(&mut executor, &activation, Vec::new(), &mut backend); // RegisterDefer
     let (deferred_id, voice_token) = {
         let transaction = executor
             .dialogues
@@ -894,10 +972,15 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
                 .owner(),
             &crate::line_task::RuntimeHandleOwnerSlot::ScopedDefer(registration.id)
         );
-        (registration.id, token)
+        let result = (registration.id, token);
+        executor
+            .dialogues
+            .restore_transaction(transaction)
+            .expect("inspection restores the active dialogue owner");
+        result
     };
 
-    let save = AwbcProductExecutorSaveSnapshot::from_live(&executor.snapshot())
+    let save = AwbcProductExecutorSaveSnapshot::from_live(&product_snapshot(&executor))
         .expect("reached lexical defer packet is saveable");
     let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&executor.program));
     let restored_snapshot = save
@@ -920,10 +1003,14 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
                 .owner(),
             &crate::line_task::RuntimeHandleOwnerSlot::ScopedDefer(deferred_id)
         );
+        executor
+            .dialogues
+            .restore_transaction(transaction)
+            .expect("restored lease inspection returns the active dialogue owner");
     }
 
-    activation_step(&mut executor, &activation, &[], &mut backend); // LoadConst Unit
-    activation_step(&mut executor, &activation, &[], &mut backend); // CommitDialogueResult
+    activation_step(&mut executor, &activation, Vec::new(), &mut backend); // LoadConst Unit
+    activation_step(&mut executor, &activation, Vec::new(), &mut backend); // CommitDialogueResult
     {
         let transaction = executor
             .dialogues
@@ -940,9 +1027,14 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
             transaction.frame().phase,
             ProductDialoguePhase::Activating { .. }
         ));
+        executor
+            .dialogues
+            .restore_transaction(transaction)
+            .expect("result inspection returns the active dialogue owner");
     }
 
-    let (cleanup, cleanup_output) = activation_step(&mut executor, &activation, &[], &mut backend);
+    let (cleanup, cleanup_output) =
+        activation_step(&mut executor, &activation, Vec::new(), &mut backend);
     assert!(cleanup.progressed);
     assert!(cleanup.presented.is_none());
     assert!(cleanup_output.requests.line_commands.is_empty());
@@ -960,6 +1052,10 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
             transaction.frame().phase,
             ProductDialoguePhase::Activating { .. }
         ));
+        executor
+            .dialogues
+            .restore_transaction(transaction)
+            .expect("cleanup inspection returns the active dialogue owner");
     }
 
     let mut release = None;
@@ -971,9 +1067,8 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
         assert!(executor.step_next_child(
             &mut child_output,
             &mut backend,
-            &RuntimeStepInput::default(),
-            &[],
-            &[],
+            &mut RuntimeStepInput::default(),
+            &mut Vec::new(),
         ));
         for command in child_output.requests.line_commands {
             if let crate::presentation::RuntimeLineHostCommand::Voice(
@@ -1001,18 +1096,15 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
                 crate::presentation::RuntimeVoiceCommandOutcome::Released { command, handle },
             ),
         );
-        executor
-            .dialogues
-            .commit(transaction)
-            .expect("queue accepted affine release outcome");
+        commit_test_dialogue_transaction(&mut executor, transaction);
     }
-    let (released, _) = activation_step(&mut executor, &activation, &[], &mut backend);
+    let (released, _) = activation_step(&mut executor, &activation, Vec::new(), &mut backend);
     assert!(released.progressed);
 
-    let (popped, _) = activation_step(&mut executor, &activation, &[], &mut backend);
+    let (popped, _) = activation_step(&mut executor, &activation, Vec::new(), &mut backend);
     assert!(popped.progressed);
     assert!(popped.presented.is_none());
-    let (revealed, _) = activation_step(&mut executor, &activation, &[], &mut backend);
+    let (revealed, _) = activation_step(&mut executor, &activation, Vec::new(), &mut backend);
     assert!(revealed.progressed);
     assert!(revealed.presented.is_some());
     let transaction = executor
@@ -1024,6 +1116,10 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
         ProductDialoguePhase::Reducing { .. }
     ));
     assert!(transaction.line().deferred_registrations().is_empty());
+    executor
+        .dialogues
+        .restore_transaction(transaction)
+        .expect("revealed dialogue inspection returns the active owner");
 }
 
 #[test]
@@ -1056,7 +1152,7 @@ fn line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls() {
             captures: Box::new([]),
             task_inputs: Box::new([]),
             values: Box::new([]),
-            effect_callbacks: Box::new([]),
+            effect_callbacks: BTreeMap::new(),
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
             result: crate::awbc::schema::AwbcDialogueResultTarget {
                 ty: AwbcTypeId(0),
@@ -1093,10 +1189,7 @@ fn line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls() {
             .expect("activation reaches one defer instruction");
     }
     assert_eq!(transaction.line().deferred_registrations().len(), 3);
-    executor
-        .dialogues
-        .commit(transaction)
-        .expect("registrations commit");
+    commit_test_dialogue_transaction(&mut executor, transaction);
 
     fn prepare_next(
         executor: &mut AwbcProductStepExecutor,
@@ -1113,7 +1206,11 @@ fn line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls() {
             .begin_transaction(activation)
             .expect("deferred activation transaction");
         let mut batch = super::ProductLineTaskExecutionBatch {
-            child_fibers: executor.child_fibers.clone(),
+            child_fibers: std::collections::VecDeque::new(),
+            existing_child_actions: BTreeMap::new(),
+            line_task_activations: Vec::new(),
+            line_task_baseline: None,
+            line_task_reserved_runs: Vec::new(),
             dialogue_effect_callback_activations: executor
                 .dialogue_effect_callback_activations
                 .clone(),
@@ -1130,10 +1227,7 @@ fn line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls() {
             )
             .expect("next defer transition prepares");
         let inflight = transaction.line().deferred_inflight();
-        let receipt = executor
-            .dialogues
-            .commit(transaction)
-            .expect("deferred transition commits");
+        let receipt = commit_test_dialogue_transaction(executor, transaction);
         let mut output = crate::step::RuntimeStepOutput::default();
         executor.commit_line_task_commands(batch, &mut output);
         assert!(output.requests.line_commands.is_empty());
@@ -1151,9 +1245,8 @@ fn line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls() {
         assert!(executor.step_next_child(
             &mut output,
             backend,
-            &RuntimeStepInput::default(),
-            &[],
-            &[],
+            &mut RuntimeStepInput::default(),
+            &mut Vec::new(),
         ));
         let [request] = output.requests.host_calls.as_slice() else {
             panic!("deferred body emits its captured host call before suspending");
@@ -1164,7 +1257,7 @@ fn line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls() {
                 expected_capture.to_owned()
             ))]
         );
-        let mut unpaired = executor.snapshot();
+        let mut unpaired = product_snapshot(executor);
         unpaired.child_fibers[0].owner = super::AwbcProductChildFiberOwnerSnapshot::Independent;
         let mut rejected = AwbcProductStepExecutor::for_entry_arc(
             std::sync::Arc::clone(&executor.program),
@@ -1174,7 +1267,7 @@ fn line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls() {
         .expect("unpaired restore candidate starts");
         assert!(rejected.restore_snapshot(unpaired).is_err());
 
-        let save = AwbcProductExecutorSaveSnapshot::from_live(&executor.snapshot())
+        let save = AwbcProductExecutorSaveSnapshot::from_live(&product_snapshot(executor))
             .expect("inflight defer saves with its child packet");
         let owner =
             crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&executor.program));
@@ -1200,20 +1293,36 @@ fn line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls() {
         assert!(executor.step_next_child(
             &mut output,
             backend,
-            &RuntimeStepInput {
+            &mut RuntimeStepInput {
                 host_call_results: vec![result],
                 ..RuntimeStepInput::default()
             },
-            &[],
-            &[],
+            &mut Vec::new(),
         ));
         assert!(output.requests.host_calls.is_empty());
+        for _ in 0..4 {
+            if executor.child_fibers.is_empty() {
+                break;
+            }
+            let mut followup = crate::step::RuntimeStepOutput::default();
+            assert!(executor.step_next_child(
+                &mut followup,
+                backend,
+                &mut RuntimeStepInput::default(),
+                &mut Vec::new(),
+            ));
+            assert!(followup.requests.host_calls.is_empty());
+        }
         assert!(executor.child_fibers.is_empty());
         let transaction = executor
             .dialogues
             .begin_transaction(activation)
             .expect("completed child activation transaction");
         assert_eq!(transaction.line().deferred_inflight(), None);
+        executor
+            .dialogues
+            .restore_transaction(transaction)
+            .expect("completed child inspection restores its activation");
     }
 
     let (progressed, inflight) = prepare_next(&mut executor, &activation);
@@ -1233,15 +1342,29 @@ fn line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls() {
     assert_eq!(inflight.map(|(_, site)| site.index()), Some(0));
     run_deferred_host_call(&mut executor, &activation, &mut backend, "first");
 
-    let (progressed, inflight) = prepare_next(&mut executor, &activation);
-    assert!(!progressed);
-    assert_eq!(inflight, None);
+    assert!(executor.child_fibers.is_empty());
     let transaction = executor
         .dialogues
         .begin_transaction(&activation)
-        .expect("drained activation transaction");
+        .expect("all line-root defer children leave the activation available");
     assert!(transaction.line().deferred_registrations().is_empty());
     assert_eq!(transaction.line().deferred_inflight(), None);
+    let ProductDialoguePhase::Activating { fiber, .. } = &transaction.frame().phase else {
+        panic!("the unstepped activation return remains in its running phase");
+    };
+    assert_eq!(
+        fiber.cursor,
+        crate::awbc::fiber::FiberCursor {
+            function: AwbcFunctionId(1),
+            block: AwbcBlockId(1),
+            instruction_offset: 6,
+        },
+        "line-root defers finish before the activation return instruction"
+    );
+    executor
+        .dialogues
+        .restore_transaction(transaction)
+        .expect("final defer inspection restores the activation owner");
 }
 
 #[test]
@@ -1273,7 +1396,7 @@ fn product_dialogue_failure_commits_abandoned_before_trapping_parent() {
             captures: Box::new([]),
             task_inputs: Box::new([]),
             values: Box::new([]),
-            effect_callbacks: Box::new([]),
+            effect_callbacks: BTreeMap::new(),
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
             result: crate::awbc::schema::AwbcDialogueResultTarget {
                 ty: AwbcTypeId(0),
@@ -1281,7 +1404,7 @@ fn product_dialogue_failure_commits_abandoned_before_trapping_parent() {
                 destination: AwbcRegisterId(0),
             },
             phase: ProductDialoguePhase::Activating {
-                fiber: executor.fiber.clone(),
+                fiber: copyable_fixture_fiber(&executor),
                 pending: None,
             },
             elapsed_nanos: 0,
@@ -1399,7 +1522,7 @@ fn product_dialogue_failure_cancels_joined_child_before_abandoning() {
             captures: Box::new([]),
             task_inputs: Box::new([]),
             values: Box::new([]),
-            effect_callbacks: Box::new([]),
+            effect_callbacks: BTreeMap::new(),
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
             result: crate::awbc::schema::AwbcDialogueResultTarget {
                 ty: AwbcTypeId(0),
@@ -1421,7 +1544,7 @@ fn product_dialogue_failure_cancels_joined_child_before_abandoning() {
             policy,
             phase: ProductLineTaskFiberPhase::Active,
         },
-        fiber: executor.fiber.clone(),
+        fiber: copyable_fixture_fiber(&executor),
         runtime_generation: executor.runtime_generation,
         pending_host_call: None,
     });
@@ -1454,10 +1577,10 @@ fn save_snapshot_preserves_queued_progress_publications() {
         kind: TaskEventKind::Progress(Progress::new(0.25).expect("fixture Progress is valid")),
     };
     let mut output = crate::step::RuntimeStepOutput::default();
-    executor.latch_task_events(std::slice::from_ref(&event), &mut output);
+    executor.latch_task_events(vec![event.clone()], &mut output);
     assert!(output.diagnostics.is_empty());
 
-    let saved = AwbcProductExecutorSaveSnapshot::from_live(&executor.snapshot())
+    let saved = AwbcProductExecutorSaveSnapshot::from_live(&product_snapshot(&executor))
         .expect("queued Progress snapshots");
     let restored = saved
         .into_live_for_program(&crate::task::RuntimeProgramOwner::Awbc(
@@ -1480,7 +1603,7 @@ fn snapshot_restore_and_hot_swap_require_exact_semantic_flow_identity() {
             .expect("replacement Flow identity is valid");
     let mut executor = AwbcProductStepExecutor::for_entry(program.clone(), AwbcEntryId(0), 64)
         .expect("product executor starts");
-    let snapshot = executor.snapshot();
+    let snapshot = product_snapshot(&executor);
 
     let mut replacement_program = program;
     replacement_program.flow_bindings[0].flow = replacement.clone();
@@ -1552,7 +1675,7 @@ fn snapshot_restore_rejects_same_label_choice_target_substitution() {
         options: vec![option],
         option_indices: vec![0],
     });
-    let mut snapshot = executor.snapshot();
+    let mut snapshot = product_snapshot(&executor);
     snapshot
         .live_flow_bindings
         .push(executor.program.flow_bindings[1].clone());
@@ -1583,6 +1706,927 @@ fn return_program() -> AwbcProgram {
     let mut program = trap_program(AwbcTrapCode::InternalInvariant, "unused");
     program.blocks[0].terminator = AwbcTerminator::Return { value: None };
     program
+}
+
+fn actor_look_program() -> AwbcProgram {
+    use crate::awbc::schema::{
+        AwbcLineHandleSite, AwbcLineOperation, AwbcLineTaskGroup, AwbcLineTaskNode,
+    };
+    use crate::pattern::{RuntimeCheckedType, RuntimeOpaqueTypeAdmission};
+    use crate::value::RuntimeEntityReference;
+
+    let character = arcweft_character::id::CharacterId::try_new("character.alice")
+        .expect("fixture character identity");
+    let mut program = return_program();
+    program.strings = vec![
+        "entry.main".to_owned(),
+        "std.line.stage_actor_handle".to_owned(),
+        "std.line.cue_handle".to_owned(),
+        "std.character_dialogue".to_owned(),
+        "content.actor_look".to_owned(),
+    ];
+    program.runtime_types = vec![
+        AwbcRuntimeType::unit(),
+        AwbcRuntimeType::new(
+            RuntimeSemanticTypeId::from_bytes([0x31; 32]),
+            AwbcRuntimeTypeShape::Opaque {
+                producer: AwbcStringId(1),
+                admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+                value_class: crate::value::RuntimeOpaqueValueClass::AffineHandle(
+                    crate::value::RuntimeHandleKind::StageActor,
+                ),
+                persistence: crate::value::RuntimeOpaquePersistence::SnapshotOnly,
+                arguments: Vec::new(),
+            },
+        ),
+        AwbcRuntimeType::new(
+            RuntimeSemanticTypeId::from_bytes([0x32; 32]),
+            AwbcRuntimeTypeShape::Opaque {
+                producer: AwbcStringId(2),
+                admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+                value_class: crate::value::RuntimeOpaqueValueClass::AffineHandle(
+                    crate::value::RuntimeHandleKind::Cue,
+                ),
+                persistence: crate::value::RuntimeOpaquePersistence::SnapshotOnly,
+                arguments: Vec::new(),
+            },
+        ),
+        AwbcRuntimeType::new(
+            RuntimeCheckedType::EntityReference.semantic_identity_digest(),
+            AwbcRuntimeTypeShape::EntityRef,
+        ),
+        AwbcRuntimeType::new(
+            RuntimeCheckedType::Duration.semantic_identity_digest(),
+            AwbcRuntimeTypeShape::Duration,
+        ),
+        AwbcRuntimeType::new(
+            RuntimeSemanticTypeId::from_bytes([0x35; 32]),
+            AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(1), AwbcTypeId(2), AwbcTypeId(2)]),
+        ),
+        AwbcRuntimeType::new(
+            RuntimeSemanticTypeId::from_bytes([0x24; 32]),
+            AwbcRuntimeTypeShape::Opaque {
+                producer: AwbcStringId(3),
+                admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+                value_class: crate::value::RuntimeOpaqueValueClass::Plain,
+                persistence: crate::value::RuntimeOpaquePersistence::ConstantAndSnapshot,
+                arguments: Vec::new(),
+            },
+        ),
+    ];
+    program.signatures = vec![AwbcSignature {
+        params: Vec::new(),
+        result: None,
+        effects: AwbcEffectSetId(0),
+    }];
+    program.constants = vec![
+        AwbcConstant::EntityRef(RuntimeEntityReference::CharacterLook {
+            character: character.clone(),
+            look: arcweft_character::id::CharacterLookId::try_new("normal")
+                .expect("normal look identity"),
+        }),
+        AwbcConstant::DurationNanos(0),
+        AwbcConstant::EntityRef(RuntimeEntityReference::CharacterLook {
+            character: character.clone(),
+            look: arcweft_character::id::CharacterLookId::try_new("bright")
+                .expect("bright look identity"),
+        }),
+        AwbcConstant::DurationNanos(120_000_000),
+    ];
+    program.frame_layouts = vec![
+        AwbcFrameLayout {
+            scopes: Vec::new(),
+            slots: vec![AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(5),
+                role: AwbcFrameSlotRole::Temporary,
+                scope_depth: 0,
+            }],
+            max_scope_depth: 0,
+        },
+        AwbcFrameLayout {
+            scopes: Vec::new(),
+            slots: [
+                AwbcTypeId(1),
+                AwbcTypeId(3),
+                AwbcTypeId(4),
+                AwbcTypeId(2),
+                AwbcTypeId(3),
+                AwbcTypeId(4),
+                AwbcTypeId(2),
+                AwbcTypeId(5),
+            ]
+            .into_iter()
+            .map(|ty| AwbcFrameSlot {
+                name: None,
+                ty,
+                role: AwbcFrameSlotRole::Temporary,
+                scope_depth: 0,
+            })
+            .collect(),
+            max_scope_depth: 0,
+        },
+    ];
+    program.instructions = vec![
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(1),
+            constant: AwbcConstantId(0),
+        },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(2),
+            constant: AwbcConstantId(1),
+        },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(4),
+            constant: AwbcConstantId(2),
+        },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(5),
+            constant: AwbcConstantId(3),
+        },
+        AwbcInstruction::ExecuteLineOperation {
+            dst: AwbcRegisterId(0),
+            operation: crate::awbc::schema::AwbcLineOperationId(0),
+            args: Vec::new(),
+        },
+        AwbcInstruction::ExecuteLineOperation {
+            dst: AwbcRegisterId(3),
+            operation: crate::awbc::schema::AwbcLineOperationId(1),
+            args: vec![AwbcRegisterId(0), AwbcRegisterId(1), AwbcRegisterId(2)],
+        },
+        AwbcInstruction::ExecuteLineOperation {
+            dst: AwbcRegisterId(6),
+            operation: crate::awbc::schema::AwbcLineOperationId(2),
+            args: vec![AwbcRegisterId(0), AwbcRegisterId(4), AwbcRegisterId(5)],
+        },
+        AwbcInstruction::MakeTuple {
+            dst: AwbcRegisterId(7),
+            items: vec![AwbcRegisterId(0), AwbcRegisterId(3), AwbcRegisterId(6)],
+        },
+        AwbcInstruction::CommitDialogueResult {
+            source: AwbcRegisterId(7),
+        },
+    ];
+    program.blocks = vec![
+        AwbcBlock {
+            owner: AwbcFunctionId(0),
+            instructions: AwbcTableRange::new(0, 0),
+            terminator: AwbcTerminator::Return { value: None },
+            safe_point: AwbcSafePointKind::FlowEntry,
+            source_map: None,
+        },
+        AwbcBlock {
+            owner: AwbcFunctionId(1),
+            instructions: AwbcTableRange::new(0, 9),
+            terminator: AwbcTerminator::Return { value: None },
+            safe_point: AwbcSafePointKind::CallableBoundary,
+            source_map: None,
+        },
+    ];
+    program.functions[0].blocks = AwbcTableRange::new(0, 1);
+    program.functions[0].entry_block = AwbcBlockId(0);
+    program.functions.push(AwbcFunction {
+        public_id: None,
+        kind: AwbcFunctionKind::LineActivation,
+        signature: AwbcSignatureId(0),
+        input_ownership: Vec::new(),
+        frame_layout: AwbcFrameLayoutId(1),
+        blocks: AwbcTableRange::new(1, 1),
+        entry_block: AwbcBlockId(1),
+        flags: AwbcFunctionFlags::default(),
+    });
+    program.line_operations = vec![
+        AwbcLineOperation::AcquireActor {
+            group: crate::awbc::schema::AwbcLineTaskGroupId(0),
+            site: crate::awbc::schema::AwbcLineHandleSiteId(0),
+            character: character.clone(),
+            scope: crate::line_task::RuntimeLineHandleScope::Line,
+            result_type: AwbcTypeId(1),
+        },
+        AwbcLineOperation::ActorLook {
+            group: crate::awbc::schema::AwbcLineTaskGroupId(0),
+            site: crate::awbc::schema::AwbcLineHandleSiteId(1),
+            character: character.clone(),
+            actor_type: AwbcTypeId(1),
+            look_type: AwbcTypeId(3),
+            result_type: AwbcTypeId(2),
+        },
+        AwbcLineOperation::ActorLook {
+            group: crate::awbc::schema::AwbcLineTaskGroupId(0),
+            site: crate::awbc::schema::AwbcLineHandleSiteId(2),
+            character: character.clone(),
+            actor_type: AwbcTypeId(1),
+            look_type: AwbcTypeId(3),
+            result_type: AwbcTypeId(2),
+        },
+    ];
+    let template = crate::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
+        .expect("actor look template identity");
+    program.content_templates = vec![AwbcDialogueContentTemplate {
+        id: template,
+        digest: crate::entry::RuntimeDialogueContentTemplateDigest::ZERO,
+        slots: Vec::new(),
+        effects: Vec::new(),
+    }];
+    program.content_units = vec![AwbcContentUnit {
+        public_id: AwbcStringId(4),
+        template,
+        marks: Vec::new(),
+        effect_site_count: 0,
+        line_task_group: Some(crate::awbc::schema::AwbcLineTaskGroupId(0)),
+        display: None,
+        source: None,
+        resources: Vec::new(),
+    }];
+    program.line_task_nodes = vec![AwbcLineTaskNode::Sequence(Vec::new())];
+    program.line_task_groups = vec![AwbcLineTaskGroup {
+        captures: Vec::new(),
+        activation_exports: Vec::new(),
+        activation: AwbcFunctionId(1),
+        result_type: AwbcTypeId(5),
+        handle_sites: vec![
+            AwbcLineHandleSite {
+                source_ordinal: 0,
+                kind: crate::value::RuntimeHandleKind::StageActor,
+                result_type: AwbcTypeId(1),
+                character: Some(character.clone()),
+                scheduled_child: None,
+            },
+            AwbcLineHandleSite {
+                source_ordinal: 1,
+                kind: crate::value::RuntimeHandleKind::Cue,
+                result_type: AwbcTypeId(2),
+                character: Some(character.clone()),
+                scheduled_child: None,
+            },
+            AwbcLineHandleSite {
+                source_ordinal: 2,
+                kind: crate::value::RuntimeHandleKind::Cue,
+                result_type: AwbcTypeId(2),
+                character: Some(character),
+                scheduled_child: None,
+            },
+        ],
+        root: crate::awbc::schema::AwbcLineTaskNodeId(0),
+        nodes: AwbcTableRange::new(0, 1),
+        cancel_handlers: Vec::new(),
+        cleanup_completed: None,
+        cleanup_cancelled: None,
+        cleanup_failed: None,
+        cleanup: crate::awbc::schema::AwbcLineCleanupPolicy {
+            child_tasks: crate::awbc::schema::AwbcChildCleanup::Finish,
+            presentation: crate::awbc::schema::AwbcPresentationCleanup::KeepRegistered,
+            audio: crate::awbc::schema::AwbcAudioCleanup::KeepRegistered,
+        },
+    }];
+    program.patterns = vec![AwbcPattern::Bind {
+        target: AwbcRegisterId(0),
+        mutable: false,
+        expected: Some(AwbcTypeId(5)),
+    }];
+    program.canonicalize_string_table();
+    program
+        .verify(Default::default(), Default::default())
+        .expect("two-look/out-return AWBC program verifies");
+    program
+}
+
+fn scheduled_actor_look_program() -> AwbcProgram {
+    let mut program = actor_look_program();
+    program.line_operations[2] = crate::awbc::schema::AwbcLineOperation::Schedule {
+        group: crate::awbc::schema::AwbcLineTaskGroupId(0),
+        site: crate::awbc::schema::AwbcLineHandleSiteId(2),
+        child: crate::awbc::schema::AwbcLineTaskNodeId(1),
+        captures: vec![
+            crate::awbc::schema::AwbcLineScheduledCapture {
+                local: crate::runtime_id::RuntimeLocalDeclarationId::from_accepted_ordinal(
+                    std::num::NonZeroU32::new(1).expect("first capture local"),
+                ),
+                ty: AwbcTypeId(1),
+            },
+            crate::awbc::schema::AwbcLineScheduledCapture {
+                local: crate::runtime_id::RuntimeLocalDeclarationId::from_accepted_ordinal(
+                    std::num::NonZeroU32::new(2).expect("second capture local"),
+                ),
+                ty: AwbcTypeId(2),
+            },
+        ],
+        result_type: AwbcTypeId(2),
+    };
+    program.instructions[6] = AwbcInstruction::ExecuteLineOperation {
+        dst: AwbcRegisterId(6),
+        operation: crate::awbc::schema::AwbcLineOperationId(2),
+        args: vec![AwbcRegisterId(5), AwbcRegisterId(0), AwbcRegisterId(3)],
+    };
+    program.instructions.truncate(7);
+    program.blocks[1].instructions = AwbcTableRange::new(0, 7);
+    program.line_task_nodes = vec![
+        crate::awbc::schema::AwbcLineTaskNode::Sequence(vec![
+            crate::awbc::schema::AwbcLineTaskNodeId(1),
+        ]),
+        crate::awbc::schema::AwbcLineTaskNode::Child {
+            trigger: crate::awbc::schema::AwbcLineTaskTrigger::Scheduled(
+                crate::awbc::schema::AwbcLineHandleSiteId(2),
+            ),
+            join: crate::awbc::schema::AwbcChildJoinPolicy::Join,
+            cancel: crate::awbc::schema::AwbcChildCancelPolicy::CancelAndJoin,
+            scope: crate::awbc::schema::AwbcLineTaskNodeId(2),
+        },
+        crate::awbc::schema::AwbcLineTaskNode::Action(AwbcFunctionId(2)),
+    ];
+    let group = &mut program.line_task_groups[0];
+    group.nodes = AwbcTableRange::new(0, 3);
+    group.root = crate::awbc::schema::AwbcLineTaskNodeId(0);
+    group.handle_sites[2].scheduled_child = Some(crate::awbc::schema::AwbcLineTaskNodeId(1));
+    group.handle_sites[2].character = None;
+
+    program.signatures.push(AwbcSignature {
+        params: vec![AwbcTypeId(1), AwbcTypeId(2)],
+        result: None,
+        effects: AwbcEffectSetId(0),
+    });
+    program.frame_layouts.push(AwbcFrameLayout {
+        scopes: Vec::new(),
+        slots: [AwbcTypeId(1), AwbcTypeId(2)]
+            .into_iter()
+            .map(|ty| AwbcFrameSlot {
+                name: None,
+                ty,
+                role: AwbcFrameSlotRole::Parameter,
+                scope_depth: 0,
+            })
+            .collect(),
+        max_scope_depth: 0,
+    });
+    program.functions.push(AwbcFunction {
+        public_id: None,
+        kind: AwbcFunctionKind::LineTask,
+        signature: AwbcSignatureId(1),
+        input_ownership: vec![AwbcFunctionInputOwnership::default(); 2],
+        frame_layout: AwbcFrameLayoutId(2),
+        blocks: AwbcTableRange::new(2, 1),
+        entry_block: AwbcBlockId(2),
+        flags: AwbcFunctionFlags::default(),
+    });
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(2),
+        instructions: AwbcTableRange::new(7, 0),
+        terminator: AwbcTerminator::Return { value: None },
+        safe_point: AwbcSafePointKind::CallableBoundary,
+        source_map: None,
+    });
+    program
+        .verify(Default::default(), Default::default())
+        .expect("valid scheduled-capture program verifies before runtime corruption");
+    program
+}
+
+fn actor_effect_program() -> AwbcProgram {
+    let mut program = actor_look_program();
+    let level = constant_string(&mut program, "info");
+    let fallback_message = constant_string(&mut program, "actor handle observed");
+    program.signatures.push(AwbcSignature {
+        params: vec![AwbcTypeId(1)],
+        result: None,
+        effects: AwbcEffectSetId(0),
+    });
+    program.effect_plans = vec![AwbcEffectPlan {
+        kind: AwbcEffectKind::Log,
+        signature: AwbcSignatureId(1),
+        capability: None,
+        audio: None,
+        static_args: vec![level, fallback_message],
+        resources: Vec::new(),
+    }];
+    program.instructions.truncate(6);
+    program.instructions[5] = AwbcInstruction::EmitEffect {
+        effect: AwbcEffectPlanId(0),
+        args: vec![AwbcRegisterId(0)],
+    };
+    program.blocks[1].instructions = AwbcTableRange::new(0, 6);
+    program.canonicalize_string_table();
+    program
+        .verify(Default::default(), Default::default())
+        .expect("affine dynamic-effect program verifies");
+    program
+}
+
+fn begin_actor_look_dialogue(
+    executor: &mut AwbcProductStepExecutor,
+) -> crate::runtime_id::DialogueActivationId {
+    let activation = crate::runtime_id::DialogueActivationId::new(
+        executor.artifact_fingerprint,
+        executor.facade_fiber.persistent_id,
+        crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
+            std::num::NonZeroU32::MIN,
+        ),
+        0,
+    );
+    let target_owner = executor
+        .program
+        .opaque_owner(AwbcTypeId(6))
+        .expect("fixture dialogue target type resolves")
+        .expect("fixture dialogue target is opaque");
+    executor
+        .dialogues
+        .begin(ActiveDialogue {
+            activation: activation.clone(),
+            content: AwbcContentUnitId(0),
+            target: crate::value::RuntimeOpaqueValue::new_exact(&target_owner, RuntimeValue::Unit),
+            target_type: AwbcTypeId(6),
+            line: crate::plan::RuntimeLineId::from_runtime_line_value("line.actor.look")
+                .expect("fixture line identity"),
+            captures: Box::new([]),
+            task_inputs: Box::new([]),
+            values: Box::new([]),
+            effect_callbacks: BTreeMap::new(),
+            voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
+            result: crate::awbc::schema::AwbcDialogueResultTarget {
+                ty: AwbcTypeId(5),
+                pattern: AwbcPatternId(0),
+                destination: AwbcRegisterId(0),
+            },
+            phase: ProductDialoguePhase::Activating {
+                fiber: FiberState::for_function(
+                    &executor.program,
+                    AwbcEntryId(0),
+                    AwbcFunctionId(1),
+                    1,
+                    64,
+                )
+                .expect("line activation fiber starts"),
+                pending: None,
+            },
+            elapsed_nanos: 0,
+            pending_content_events: Vec::new(),
+            pending_advance: false,
+            pending_line_outcomes: Vec::new(),
+            pending_activation_host_call: None,
+        })
+        .expect("fixture dialogue activation begins");
+    activation
+}
+
+fn publish_actor_stage_outcome(
+    executor: &mut AwbcProductStepExecutor,
+    activation: &crate::runtime_id::DialogueActivationId,
+    outcome: crate::presentation::RuntimeStageCommandOutcome,
+) {
+    let mut transaction = executor
+        .dialogues
+        .begin_transaction(activation)
+        .expect("outcome transaction remains registered");
+    transaction
+        .frame_mut()
+        .pending_line_outcomes
+        .push(crate::presentation::RuntimeLineHostOutcome::Stage(outcome));
+    commit_test_dialogue_transaction(executor, transaction);
+}
+
+fn step_actor_activation_output(
+    executor: &mut AwbcProductStepExecutor,
+    activation: &crate::runtime_id::DialogueActivationId,
+    backend: &mut impl crate::pure::RuntimeCallBackend,
+) -> Result<crate::step::RuntimeStepOutput, ProductStepError> {
+    let mut transaction = executor
+        .dialogues
+        .begin_transaction(activation)
+        .expect("activation transaction remains registered");
+    let mut progress = executor.step_dialogue_activation(&mut transaction, backend)?;
+    let receipt = commit_test_dialogue_transaction(executor, transaction);
+    let mut output = crate::step::RuntimeStepOutput::default();
+    if let Some(batch) = progress.execution.take() {
+        executor.commit_line_task_commands(batch, &mut output);
+    }
+    output
+        .requests
+        .line_commands
+        .extend(receipt.into_line().into_commands());
+    Ok(output)
+}
+
+#[test]
+fn invalid_schedule_capture_restores_observation_before_failure_close() {
+    let mut executor =
+        AwbcProductStepExecutor::for_entry(scheduled_actor_look_program(), AwbcEntryId(0), 64)
+            .expect("valid scheduled-capture Product executor starts");
+    // This simulates corrupted runtime schema after admission: verifier rejects
+    // duplicate capture destinations, while Product must still preserve every
+    // yielded affine operand if defensive preflight finds one.
+    let operation = match &mut std::sync::Arc::make_mut(&mut executor.program).line_operations[2] {
+        crate::awbc::schema::AwbcLineOperation::Schedule { captures, .. } => captures,
+        _ => unreachable!("fixture schedule operation remains present"),
+    };
+    operation[1].local = operation[0].local;
+
+    let activation = begin_actor_look_dialogue(&mut executor);
+    let mut backend = crate::pure::VmRuntimePureCallBackend::default();
+    let mut actor_token = None;
+    let mut cue_token = None;
+    let mut staged_error = None;
+    for _ in 0..12 {
+        let mut transaction = executor
+            .dialogues
+            .begin_transaction(&activation)
+            .expect("activation transaction remains registered");
+        match executor.step_dialogue_activation(&mut transaction, &mut backend) {
+            Ok(mut progress) => {
+                let receipt = commit_test_dialogue_transaction(&mut executor, transaction);
+                let mut output = crate::step::RuntimeStepOutput::default();
+                if let Some(batch) = progress.execution.take() {
+                    executor.commit_line_task_commands(batch, &mut output);
+                }
+                output
+                    .requests
+                    .line_commands
+                    .extend(receipt.into_line().into_commands());
+                for command in output.requests.line_commands {
+                    match command {
+                        crate::presentation::RuntimeLineHostCommand::Stage(
+                            crate::presentation::RuntimeStageCommand::AcquireActor {
+                                command,
+                                actor,
+                                ..
+                            },
+                        ) => {
+                            actor_token = Some(actor.clone());
+                            publish_actor_stage_outcome(
+                                &mut executor,
+                                &activation,
+                                crate::presentation::RuntimeStageCommandOutcome::Acquired {
+                                    command,
+                                    actor,
+                                },
+                            );
+                        }
+                        crate::presentation::RuntimeLineHostCommand::Stage(
+                            crate::presentation::RuntimeStageCommand::SetCharacterLook {
+                                command,
+                                cue,
+                                ..
+                            },
+                        ) => {
+                            cue_token = Some(cue.clone());
+                            publish_actor_stage_outcome(
+                                &mut executor,
+                                &activation,
+                                crate::presentation::RuntimeStageCommandOutcome::Accepted {
+                                    command,
+                                    cue,
+                                },
+                            );
+                        }
+                        other => panic!("unexpected schedule fixture command: {other:?}"),
+                    }
+                }
+            }
+            Err(error) => {
+                staged_error = Some((transaction, error));
+                break;
+            }
+        }
+    }
+
+    let (transaction, error) = staged_error.expect("duplicate schedule local is rejected");
+    assert!(matches!(
+        &error,
+        ProductStepError::Line(
+            crate::line_task::LineRuntimeError::InvalidScheduledCaptureTransition
+        )
+    ));
+    let ProductDialoguePhase::Activating {
+        fiber,
+        pending: None,
+    } = &transaction.frame().phase
+    else {
+        panic!("failed Schedule returns to the live activation phase");
+    };
+    let frame = fiber.active_frame().expect("activation frame remains live");
+    for register in [AwbcRegisterId(0), AwbcRegisterId(3), AwbcRegisterId(5)] {
+        assert!(
+            frame.registers[register.index()].is_some(),
+            "Schedule source register {} is restored",
+            register.0
+        );
+    }
+    let line = transaction.line();
+    assert!(line.scheduled().is_empty());
+    for (register, token) in [
+        (
+            AwbcRegisterId(0),
+            actor_token.expect("acquired actor token"),
+        ),
+        (AwbcRegisterId(3), cue_token.expect("first look cue token")),
+    ] {
+        let owner = crate::value::ownership::RuntimeOwnedSlotId::AwbcRegister {
+            execution: executor.facade_fiber.execution,
+            fiber: fiber.instance,
+            frame: frame.instance,
+            register,
+        };
+        assert_eq!(
+            line.ledger()
+                .lease(&token)
+                .expect("restored capture lease remains present")
+                .owner(),
+            &crate::line_task::RuntimeHandleOwnerSlot::ActivationLocal(owner)
+        );
+    }
+    assert!(line.ledger().leases().values().all(|lease| !matches!(
+        lease.owner(),
+        crate::line_task::RuntimeHandleOwnerSlot::ActivationLocal(
+            crate::value::ownership::RuntimeOwnedSlotId::AwbcLineObservationArg { .. }
+        )
+    )));
+
+    let mut output = crate::step::RuntimeStepOutput::default();
+    let _terminal = executor.begin_product_dialogue_failure(transaction, error, &mut output);
+    let closing = executor
+        .dialogues
+        .begin_transaction(&activation)
+        .expect("failure-close activation remains registered");
+    let _terminal = executor.resume_product_dialogue_failure_close(closing, &mut output);
+    assert!(!output.requests.line_commands.is_empty());
+    assert!(!output.diagnostics.is_empty());
+}
+
+#[test]
+fn activation_effect_moves_affine_handle_through_effect_observation_and_default_drop() {
+    let mut executor =
+        AwbcProductStepExecutor::for_entry(actor_effect_program(), AwbcEntryId(0), 64)
+            .expect("affine-effect Product executor starts");
+    let activation = begin_actor_look_dialogue(&mut executor);
+    let mut backend = crate::pure::VmRuntimePureCallBackend::default();
+    let mut actor = None;
+
+    for _ in 0..5 {
+        let output = step_actor_activation_output(&mut executor, &activation, &mut backend)
+            .expect("actor acquisition prefix progresses");
+        for command in output.requests.line_commands {
+            let crate::presentation::RuntimeLineHostCommand::Stage(
+                crate::presentation::RuntimeStageCommand::AcquireActor {
+                    command,
+                    actor: token,
+                    ..
+                },
+            ) = command
+            else {
+                panic!("unexpected affine-effect prefix command: {command:?}");
+            };
+            actor = Some(token.clone());
+            publish_actor_stage_outcome(
+                &mut executor,
+                &activation,
+                crate::presentation::RuntimeStageCommandOutcome::Acquired {
+                    command,
+                    actor: token,
+                },
+            );
+        }
+    }
+    let actor = actor.expect("AcquireActor produced the affine source value");
+    step_actor_activation_output(&mut executor, &activation, &mut backend)
+        .expect("activation accepts the actor acquisition outcome");
+    let output = step_actor_activation_output(&mut executor, &activation, &mut backend)
+        .expect("affine dynamic effect commits with its drop reconciliation");
+
+    assert!(matches!(
+        output.effects.line.as_slice(),
+        [crate::effect::LineEffectRequest::Log(_)]
+    ));
+    assert!(output.requests.line_commands.iter().any(|command| matches!(
+        command,
+        crate::presentation::RuntimeLineHostCommand::Stage(
+            crate::presentation::RuntimeStageCommand::ReleaseActor { actor: released, .. }
+        ) if released == &actor
+    )));
+    let transaction = executor
+        .dialogues
+        .begin_transaction(&activation)
+        .expect("effect step leaves a valid activation transaction");
+    let ProductDialoguePhase::Activating { fiber, .. } = &transaction.frame().phase else {
+        panic!("effect step remains in activation");
+    };
+    assert!(
+        fiber
+            .active_frame()
+            .expect("activation frame remains live")
+            .registers[0]
+            .is_none()
+    );
+    let lease = transaction
+        .line()
+        .ledger()
+        .lease(&actor)
+        .expect("effect-drop lease remains until host release outcome");
+    assert_eq!(
+        lease.state(),
+        crate::line_task::RuntimeHandleLeaseState::Cancelling
+    );
+    assert!(matches!(
+        lease.owner(),
+        crate::line_task::RuntimeHandleOwnerSlot::ActivationLocal(
+            crate::value::ownership::RuntimeOwnedSlotId::AwbcEffectObservationArg { .. }
+        )
+    ));
+    commit_test_dialogue_transaction(&mut executor, transaction);
+    executor
+        .snapshot_for_save()
+        .expect("pending effect-triggered release is snapshot-safe");
+}
+
+#[test]
+fn actor_look_borrows_one_stage_actor_across_two_looks_and_out_return() {
+    let mut executor = AwbcProductStepExecutor::for_entry(actor_look_program(), AwbcEntryId(0), 64)
+        .expect("two-look Product executor starts");
+    let activation = crate::runtime_id::DialogueActivationId::new(
+        executor.artifact_fingerprint,
+        executor.facade_fiber.persistent_id,
+        crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
+            std::num::NonZeroU32::MIN,
+        ),
+        0,
+    );
+    let target_owner = executor
+        .program
+        .opaque_owner(AwbcTypeId(6))
+        .expect("fixture dialogue target type resolves")
+        .expect("fixture dialogue target is opaque");
+    executor
+        .dialogues
+        .begin(ActiveDialogue {
+            activation: activation.clone(),
+            content: AwbcContentUnitId(0),
+            target: crate::value::RuntimeOpaqueValue::new_exact(&target_owner, RuntimeValue::Unit),
+            target_type: AwbcTypeId(6),
+            line: crate::plan::RuntimeLineId::from_runtime_line_value("line.actor.look")
+                .expect("fixture line identity"),
+            captures: Box::new([]),
+            task_inputs: Box::new([]),
+            values: Box::new([]),
+            effect_callbacks: BTreeMap::new(),
+            voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
+            result: crate::awbc::schema::AwbcDialogueResultTarget {
+                ty: AwbcTypeId(5),
+                pattern: AwbcPatternId(0),
+                destination: AwbcRegisterId(0),
+            },
+            phase: ProductDialoguePhase::Activating {
+                fiber: FiberState::for_function(
+                    &executor.program,
+                    AwbcEntryId(0),
+                    AwbcFunctionId(1),
+                    1,
+                    64,
+                )
+                .expect("line activation fiber starts"),
+                pending: None,
+            },
+            elapsed_nanos: 0,
+            pending_content_events: Vec::new(),
+            pending_advance: false,
+            pending_line_outcomes: Vec::new(),
+            pending_activation_host_call: None,
+        })
+        .expect("two-look dialogue activation begins");
+
+    fn activation_step(
+        executor: &mut AwbcProductStepExecutor,
+        activation: &crate::runtime_id::DialogueActivationId,
+    ) -> Vec<crate::presentation::RuntimeLineHostCommand> {
+        let mut transaction = executor
+            .dialogues
+            .begin_transaction(activation)
+            .expect("activation transaction remains registered");
+        let mut backend = crate::pure::VmRuntimePureCallBackend::default();
+        let mut progress = executor
+            .step_dialogue_activation(&mut transaction, &mut backend)
+            .expect("one activation instruction progresses");
+        let receipt = commit_test_dialogue_transaction(executor, transaction);
+        let mut output = crate::step::RuntimeStepOutput::default();
+        if let Some(batch) = progress.execution.take() {
+            executor.commit_line_task_commands(batch, &mut output);
+        }
+        output
+            .requests
+            .line_commands
+            .extend(receipt.into_line().into_commands());
+        output.requests.line_commands
+    }
+
+    fn publish_stage_outcome(
+        executor: &mut AwbcProductStepExecutor,
+        activation: &crate::runtime_id::DialogueActivationId,
+        outcome: crate::presentation::RuntimeStageCommandOutcome,
+    ) {
+        let mut transaction = executor
+            .dialogues
+            .begin_transaction(activation)
+            .expect("outcome transaction remains registered");
+        transaction
+            .frame_mut()
+            .pending_line_outcomes
+            .push(crate::presentation::RuntimeLineHostOutcome::Stage(outcome));
+        commit_test_dialogue_transaction(executor, transaction);
+    }
+
+    let mut stage_actor = None;
+    let mut look_rows = Vec::new();
+    let mut committed = false;
+    for _ in 0..24 {
+        for command in activation_step(&mut executor, &activation) {
+            match command {
+                crate::presentation::RuntimeLineHostCommand::Stage(
+                    crate::presentation::RuntimeStageCommand::AcquireActor {
+                        command, actor, ..
+                    },
+                ) => {
+                    assert!(stage_actor.replace(actor.clone()).is_none());
+                    publish_stage_outcome(
+                        &mut executor,
+                        &activation,
+                        crate::presentation::RuntimeStageCommandOutcome::Acquired {
+                            command,
+                            actor,
+                        },
+                    );
+                }
+                crate::presentation::RuntimeLineHostCommand::Stage(
+                    crate::presentation::RuntimeStageCommand::SetCharacterLook {
+                        command,
+                        cue,
+                        actor,
+                        look,
+                        crossfade,
+                        ..
+                    },
+                ) => {
+                    assert_eq!(Some(&actor), stage_actor.as_ref());
+                    look_rows.push((actor, cue.clone(), look, crossfade));
+                    publish_stage_outcome(
+                        &mut executor,
+                        &activation,
+                        crate::presentation::RuntimeStageCommandOutcome::Accepted { command, cue },
+                    );
+                }
+                other => panic!("unexpected two-look command: {other:?}"),
+            }
+        }
+        let line = executor
+            .dialogues
+            .active_line()
+            .expect("activation line remains registered");
+        if matches!(
+            line.result(),
+            crate::line_task::RuntimeDialogueResultState::Committed { .. }
+        ) {
+            committed = true;
+            break;
+        }
+    }
+    assert!(committed, "activation commits its typed out value");
+    assert_eq!(look_rows.len(), 2);
+    assert_eq!(look_rows[0].0, look_rows[1].0);
+    assert_ne!(look_rows[0].1, look_rows[1].1);
+    assert_eq!(look_rows[0].2.as_str(), "normal");
+    assert_eq!(look_rows[1].2.as_str(), "bright");
+    assert_eq!(look_rows[0].3, crate::time::LogicalDuration::default());
+    assert_eq!(
+        look_rows[1].3,
+        crate::time::LogicalDuration::from_nanos(120_000_000)
+    );
+
+    let line = executor
+        .dialogues
+        .active_line()
+        .expect("committed out value remains registered");
+    let crate::line_task::RuntimeDialogueResultState::Committed { ty, value } = line.result()
+    else {
+        panic!("two-look activation must commit its out value");
+    };
+    assert_eq!(*ty, AwbcTypeId(5));
+    let RuntimeValue::Tuple(values) = value else {
+        panic!("out value contains actor and both look handles");
+    };
+    assert_eq!(values.len(), 3);
+    let actor_token = crate::line_task::RuntimeLineHandleLedger::token_from_value(&values[0])
+        .expect("out actor handle token");
+    let first_cue = crate::line_task::RuntimeLineHandleLedger::token_from_value(&values[1])
+        .expect("first out cue token");
+    let second_cue = crate::line_task::RuntimeLineHandleLedger::token_from_value(&values[2])
+        .expect("second out cue token");
+    assert_eq!(Some(&actor_token), stage_actor.as_ref());
+    assert_eq!(first_cue, look_rows[0].1);
+    assert_eq!(second_cue, look_rows[1].1);
+    for token in [&actor_token, &first_cue, &second_cue] {
+        assert!(matches!(
+            line.ledger()
+                .lease(token)
+                .expect("out handle remains in the activation ledger")
+                .owner(),
+            crate::line_task::RuntimeHandleOwnerSlot::DialogueResult(_)
+        ));
+    }
 }
 
 fn mark_selector_program(
@@ -1639,6 +2683,10 @@ fn mark_selector_program(
             public_id: None,
             kind: AwbcFunctionKind::LineActivation,
             signature: AwbcSignatureId(0),
+            input_ownership: vec![
+                AwbcFunctionInputOwnership::default();
+                program.signatures[AwbcSignatureId(0).index()].params.len()
+            ],
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(1, 1),
             entry_block: AwbcBlockId(1),
@@ -1648,6 +2696,10 @@ fn mark_selector_program(
             public_id: None,
             kind: AwbcFunctionKind::LineTask,
             signature: AwbcSignatureId(0),
+            input_ownership: vec![
+                AwbcFunctionInputOwnership::default();
+                program.signatures[AwbcSignatureId(0).index()].params.len()
+            ],
             frame_layout: AwbcFrameLayoutId(1),
             blocks: AwbcTableRange::new(2, 1),
             entry_block: AwbcBlockId(2),
@@ -1657,6 +2709,10 @@ fn mark_selector_program(
             public_id: None,
             kind: AwbcFunctionKind::LineCancellationHandler,
             signature: AwbcSignatureId(0),
+            input_ownership: vec![
+                AwbcFunctionInputOwnership::default();
+                program.signatures[AwbcSignatureId(0).index()].params.len()
+            ],
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(3, 1),
             entry_block: AwbcBlockId(3),
@@ -1806,6 +2862,11 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
             effects: AwbcEffectSetId(0),
         },
     ]);
+    program.signatures.push(AwbcSignature {
+        params: vec![AwbcTypeId(1)],
+        result: None,
+        effects: AwbcEffectSetId(0),
+    });
     program.constants = vec![AwbcConstant::Unit];
     let log_level = constant_string(&mut program, "info");
     let log_fallback_message = constant_string(&mut program, "fallback message");
@@ -1834,14 +2895,14 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
                 AwbcFrameSlot {
                     name: None,
                     ty: AwbcTypeId(1),
-                    role: AwbcFrameSlotRole::Temporary,
-                    scope_depth: 1,
+                    role: AwbcFrameSlotRole::Parameter,
+                    scope_depth: 0,
                 },
                 AwbcFrameSlot {
                     name: None,
-                    ty: AwbcTypeId(0),
+                    ty: AwbcTypeId(1),
                     role: AwbcFrameSlotRole::Temporary,
-                    scope_depth: 1,
+                    scope_depth: 0,
                 },
                 AwbcFrameSlot {
                     name: None,
@@ -1877,6 +2938,24 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
             max_scope_depth: 0,
         },
     ]);
+    program.frame_layouts[1].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: AwbcTypeId(1),
+        role: AwbcFrameSlotRole::Temporary,
+        scope_depth: 1,
+    });
+    program.frame_layouts[1].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: AwbcTypeId(1),
+        role: AwbcFrameSlotRole::Temporary,
+        scope_depth: 1,
+    });
+    program.frame_layouts[1].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: AwbcTypeId(0),
+        role: AwbcFrameSlotRole::Temporary,
+        scope_depth: 1,
+    });
     program.host_calls = vec![AwbcHostCall {
         public_id: AwbcStringId(1),
         capability: AwbcStringId(2),
@@ -1899,7 +2978,7 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
         },
         AwbcInstruction::EmitEffect {
             effect: AwbcEffectPlanId(0),
-            args: vec![AwbcRegisterId(0), AwbcRegisterId(0)],
+            args: vec![AwbcRegisterId(3), AwbcRegisterId(4)],
         },
         AwbcInstruction::ExecuteLineOperation {
             dst: AwbcRegisterId(2),
@@ -1911,14 +2990,14 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
                 .expect("first defer site"),
             outcome: crate::line_task::RuntimeDeferOutcomeFilter::Always,
             owner: crate::awbc::schema::AwbcDeferOwner::CurrentScope,
-            captures: vec![AwbcRegisterId(0), AwbcRegisterId(2)],
+            captures: vec![AwbcRegisterId(1), AwbcRegisterId(2)],
         },
         AwbcInstruction::LoadConst {
-            dst: AwbcRegisterId(1),
+            dst: AwbcRegisterId(5),
             constant: AwbcConstantId(0),
         },
         AwbcInstruction::CommitDialogueResult {
-            source: AwbcRegisterId(1),
+            source: AwbcRegisterId(5),
         },
         AwbcInstruction::Nop,
         AwbcInstruction::LoadConst {
@@ -1926,6 +3005,20 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
             constant: AwbcConstantId(0),
         },
     ];
+    program.instructions.insert(
+        1,
+        AwbcInstruction::CopyValue {
+            dst: AwbcRegisterId(3),
+            src: AwbcRegisterId(1),
+        },
+    );
+    program.instructions.insert(
+        2,
+        AwbcInstruction::CopyValue {
+            dst: AwbcRegisterId(4),
+            src: AwbcRegisterId(1),
+        },
+    );
     program.line_operations = vec![crate::awbc::schema::AwbcLineOperation::VoiceHandle {
         group: crate::awbc::schema::AwbcLineTaskGroupId(0),
         site: crate::awbc::schema::AwbcLineHandleSiteId(0),
@@ -1935,7 +3028,11 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
         AwbcFunction {
             public_id: None,
             kind: AwbcFunctionKind::LineActivation,
-            signature: AwbcSignatureId(0),
+            signature: AwbcSignatureId(4),
+            input_ownership: vec![
+                AwbcFunctionInputOwnership::default();
+                program.signatures[AwbcSignatureId(4).index()].params.len()
+            ],
             frame_layout: AwbcFrameLayoutId(1),
             blocks: AwbcTableRange::new(1, 2),
             entry_block: AwbcBlockId(1),
@@ -1945,6 +3042,10 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(2),
+            input_ownership: vec![
+                AwbcFunctionInputOwnership::default();
+                program.signatures[AwbcSignatureId(2).index()].params.len()
+            ],
             frame_layout: AwbcFrameLayoutId(2),
             blocks: AwbcTableRange::new(3, 1),
             entry_block: AwbcBlockId(3),
@@ -1958,7 +3059,7 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
             terminator: AwbcTerminator::HostCall {
                 call: AwbcHostCallId(0),
                 args: Vec::new(),
-                dst: Some(AwbcRegisterId(0)),
+                dst: Some(AwbcRegisterId(1)),
                 resume: AwbcResumePointId(0),
             },
             safe_point: AwbcSafePointKind::CallableBoundary,
@@ -1966,7 +3067,7 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
         },
         AwbcBlock {
             owner: AwbcFunctionId(1),
-            instructions: AwbcTableRange::new(0, 7),
+            instructions: AwbcTableRange::new(0, 9),
             terminator: AwbcTerminator::Trap {
                 code: AwbcTrapCode::InternalInvariant,
                 message: Some(AwbcStringId(4)),
@@ -1976,7 +3077,7 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
         },
         AwbcBlock {
             owner: AwbcFunctionId(2),
-            instructions: AwbcTableRange::new(7, 2),
+            instructions: AwbcTableRange::new(9, 2),
             terminator: AwbcTerminator::Return {
                 value: Some(AwbcRegisterId(2)),
             },
@@ -1985,7 +3086,7 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
         },
     ]);
     program.defer_sites = vec![AwbcFunctionId(2)];
-    program.instructions[7] = AwbcInstruction::Drop {
+    program.instructions[9] = AwbcInstruction::Drop {
         register: AwbcRegisterId(1),
         policy: crate::awbc::schema::AwbcDropPolicy::Default,
     };
@@ -2013,7 +3114,11 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
     }];
     program.line_task_nodes = vec![crate::awbc::schema::AwbcLineTaskNode::Sequence(Vec::new())];
     program.line_task_groups = vec![crate::awbc::schema::AwbcLineTaskGroup {
-        captures: Vec::new(),
+        captures: vec![
+            crate::runtime_id::RuntimeLocalDeclarationId::from_accepted_ordinal(
+                std::num::NonZeroU32::MIN,
+            ),
+        ],
         activation_exports: Vec::new(),
         activation: AwbcFunctionId(1),
         result_type: AwbcTypeId(0),
@@ -2193,6 +3298,10 @@ fn defer_host_call_program() -> AwbcProgram {
             public_id: None,
             kind: AwbcFunctionKind::LineActivation,
             signature: AwbcSignatureId(1),
+            input_ownership: vec![
+                AwbcFunctionInputOwnership::default();
+                program.signatures[AwbcSignatureId(1).index()].params.len()
+            ],
             frame_layout: AwbcFrameLayoutId(1),
             blocks: AwbcTableRange::new(1, 1),
             entry_block: AwbcBlockId(1),
@@ -2202,6 +3311,10 @@ fn defer_host_call_program() -> AwbcProgram {
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(2),
+            input_ownership: vec![
+                AwbcFunctionInputOwnership::default();
+                program.signatures[AwbcSignatureId(2).index()].params.len()
+            ],
             frame_layout: AwbcFrameLayoutId(2),
             blocks: AwbcTableRange::new(2, 2),
             entry_block: AwbcBlockId(2),
@@ -2391,7 +3504,11 @@ fn ready_direct_need_returns_its_payload_unchanged_in_the_same_step() {
 
     assert_eq!(
         executor.fiber.terminal,
-        Some(FiberTerminalValue::Returned(Some(expected)))
+        Some(FiberTerminalValue::Returned(None))
+    );
+    assert_eq!(
+        executor.fiber.return_summary.as_deref(),
+        Some(crate::value::runtime_value_label(&expected).as_str())
     );
     assert_eq!(result.stop_reason, RuntimeStepStopReason::Done);
     assert_eq!(result.stats.need_states_in, 1);
@@ -2448,7 +3565,11 @@ fn ready_result_error_payload_is_resumed_without_trapping() {
 
     assert_eq!(
         executor.fiber.terminal,
-        Some(FiberTerminalValue::Returned(Some(expected)))
+        Some(FiberTerminalValue::Returned(None))
+    );
+    assert_eq!(
+        executor.fiber.return_summary.as_deref(),
+        Some(crate::value::runtime_value_label(&expected).as_str())
     );
     assert_eq!(result.stop_reason, RuntimeStepStopReason::Done);
     assert!(result.output.diagnostics.is_empty());
@@ -2488,27 +3609,28 @@ fn need_await_snapshot_retains_and_validates_selected_item_type() {
     let result = executor.step(input, direct_need_step_options());
     assert_eq!(result.stop_reason, RuntimeStepStopReason::Output);
 
-    let snapshot = executor.snapshot();
+    let mut tampered = product_snapshot(&executor);
     assert!(matches!(
-        snapshot
+        tampered
             .fiber
             .suspension
             .as_ref()
             .map(|suspension| &suspension.reason),
-        Some(crate::awbc::fiber::FiberSuspensionReason::Await {
-            target: crate::awbc::fiber::FiberAwaitTarget::Need {
-                item_type: AwbcTypeId(2),
+        Some(
+            crate::awbc::fiber::AwbcFiberSuspensionReasonSnapshot::Await {
+                target: crate::awbc::fiber::AwbcFiberAwaitTargetSnapshot::Need {
+                    item_type: AwbcTypeId(2),
+                    ..
+                },
                 ..
-            },
-            ..
-        })
+            }
+        )
     ));
 
-    let mut tampered = snapshot.clone();
-    let Some(crate::awbc::fiber::FiberSuspension {
+    let Some(crate::awbc::fiber::AwbcFiberSuspensionSnapshot {
         reason:
-            crate::awbc::fiber::FiberSuspensionReason::Await {
-                target: crate::awbc::fiber::FiberAwaitTarget::Need { item_type, .. },
+            crate::awbc::fiber::AwbcFiberSuspensionReasonSnapshot::Await {
+                target: crate::awbc::fiber::AwbcFiberAwaitTargetSnapshot::Need { item_type, .. },
                 ..
             },
         ..
@@ -2519,6 +3641,7 @@ fn need_await_snapshot_retains_and_validates_selected_item_type() {
     *item_type = AwbcTypeId(1);
     assert!(executor.restore_snapshot(tampered).is_err());
 
+    let snapshot = product_snapshot(&executor);
     let saved =
         AwbcProductExecutorSaveSnapshot::from_live(&snapshot).expect("typed Need suspension saves");
     let encoded = serde_json::to_string(&saved).expect("typed Need suspension serializes");
@@ -2598,7 +3721,11 @@ fn direct_need_uses_the_first_terminal_sequence() {
 
     assert_eq!(
         executor.fiber.terminal,
-        Some(FiberTerminalValue::Returned(Some(expected)))
+        Some(FiberTerminalValue::Returned(None))
+    );
+    assert_eq!(
+        executor.fiber.return_summary.as_deref(),
+        Some(crate::value::runtime_value_label(&expected).as_str())
     );
     assert_eq!(result.stats.need_states_in, 3);
     assert!(result.output.requests.tasks.is_empty());
@@ -2657,7 +3784,9 @@ fn restartable_need_save_restore_reensures_exact_launch_and_accepts_next_revisio
     let live = executor
         .snapshot_for_save()
         .expect("Restartable in-flight Need can be saved");
-    let mut future_observation = live.clone();
+    let saved = AwbcProductExecutorSaveSnapshot::from_live(&live)
+        .expect("Restartable Need snapshot serializes");
+    let mut future_observation = live;
     let observation_key = future_observation
         .need_publications
         .keys()
@@ -2702,8 +3831,6 @@ fn restartable_need_save_restore_reensures_exact_launch_and_accepts_next_revisio
                 }) if publication_revision.get() == 2
             )
     }));
-    let saved = AwbcProductExecutorSaveSnapshot::from_live(&live)
-        .expect("Restartable Need snapshot serializes");
     let encoded = serde_json::to_string(&saved).expect("save snapshot serializes");
     let decoded: AwbcProductExecutorSaveSnapshot =
         serde_json::from_str(&encoded).expect("save snapshot decodes");
@@ -2761,7 +3888,10 @@ fn restartable_need_save_restore_reensures_exact_launch_and_accepts_next_revisio
     assert!(completed.output.flow_events.iter().any(|event| matches!(
         event,
         crate::plan::FlowEvent::AwaitReady { need: observed, value }
-            if observed == &need && value.value() == &RuntimeValue::String("ready".to_owned())
+            if observed == &need
+                && value.as_ref().is_some_and(|payload| {
+                    payload.value() == &RuntimeValue::String("ready".to_owned())
+                })
     )));
     let finished = restored.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
     assert_eq!(finished.stop_reason, RuntimeStepStopReason::Done);
@@ -2845,7 +3975,10 @@ fn ready_need_producer_payload_is_checked_before_publication_and_on_restore() {
         .launches()
         .next()
         .expect("invalid Ready does not remove the producer");
-    assert_eq!(launch.state(), &Need::NotStarted);
+    assert_eq!(
+        launch.state(),
+        &crate::task::RuntimeNeedProducerState::NotStarted
+    );
     assert!(launch.publication().is_none());
     assert!(!launch.task_terminal());
 
@@ -2880,8 +4013,9 @@ fn ready_need_producer_payload_is_checked_before_publication_and_on_restore() {
             ..RuntimeStepOptions::default()
         },
     );
-    let mut forged = accepted.snapshot();
-    forged.need_producers.launches[0].state = Need::Ready(RuntimePayload(RuntimeValue::Bool(true)));
+    let mut forged = product_snapshot(&accepted);
+    forged.need_producers.launches[0].state =
+        crate::task::RuntimeNeedProducerState::Ready(RuntimePayload(RuntimeValue::Bool(true)));
     let error = accepted
         .restore_snapshot(forged)
         .expect_err("restored Ready payload must match its selected Need<T>");
@@ -2971,7 +4105,15 @@ fn await_many_partial_fanout_survives_restore_when_task_quota_is_exhausted() {
             ..RuntimeStepOptions::default()
         },
     );
-    assert_eq!(first.output.requests.tasks.len(), 1);
+    assert_eq!(
+        first.output.requests.tasks.len(),
+        1,
+        "stop={:?}, status={:?}, diagnostics={:?}, suspension={:?}",
+        first.stop_reason,
+        first.fiber_status,
+        first.output.diagnostics,
+        executor.fiber.suspension
+    );
     assert!(first.output.diagnostics.is_empty());
     assert_ne!(first.stop_reason, RuntimeStepStopReason::Failed);
     let first_task = first.output.requests.tasks[0].clone();
@@ -3390,6 +4532,7 @@ fn trap_program(code: AwbcTrapCode, message: &str) -> AwbcProgram {
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
+            input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 1),
             entry_block: AwbcBlockId(0),
@@ -3459,6 +4602,7 @@ fn content_ensure_program() -> AwbcProgram {
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
+            input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 1),
             entry_block: AwbcBlockId(0),
@@ -3557,6 +4701,7 @@ fn host_call_program() -> AwbcProgram {
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
+            input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 2),
             entry_block: AwbcBlockId(0),
@@ -3711,6 +4856,7 @@ fn direct_need_program() -> AwbcProgram {
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
+            input_ownership: vec![AwbcFunctionInputOwnership::default()],
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 2),
             entry_block: AwbcBlockId(0),
@@ -3874,6 +5020,7 @@ fn need_producer_program(restart: AwbcTaskRestartPolicy) -> AwbcProgram {
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
+            input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 2),
             entry_block: AwbcBlockId(0),
@@ -4047,6 +5194,7 @@ fn await_many_product_program() -> AwbcProgram {
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
+            input_ownership: vec![AwbcFunctionInputOwnership::default()],
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 2),
             entry_block: AwbcBlockId(0),

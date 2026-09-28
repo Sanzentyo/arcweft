@@ -1678,12 +1678,12 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
     fn call_values(
         &mut self,
         helper: RuntimePureHelperRef<'_>,
-        args: &[RuntimeValue],
+        args: Vec<RuntimeValue>,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         self.stats.pure_calls += 1;
         self.stats.vm_calls += 1;
         self.stats.fallbacks += 1;
-        self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(args.as_slice());
         self.vm_scratch
             .evaluate_values(helper.plan(), helper.id(), args)
     }

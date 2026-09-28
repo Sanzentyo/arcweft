@@ -6,6 +6,19 @@ use super::{
     RuntimeInt, RuntimeIntrinsic, RuntimeLocalBinding, RuntimeLocalDeclarationId, RuntimeUnaryOp,
     RuntimeValue, SmallIntKind, SmallIntLiteral, Value, default_libcall_names, settings, types,
 };
+use arcweft_core::value::{RuntimeLocalRead, RuntimeLocalReadMode};
+
+fn copy_local_id(
+    read: RuntimeLocalRead,
+) -> Result<RuntimeLocalDeclarationId, CraneliftCodegenError> {
+    match read.mode() {
+        RuntimeLocalReadMode::Copy => Ok(read.local()),
+        RuntimeLocalReadMode::Move => Err(CraneliftCodegenError::UnsupportedExpr(format!(
+            "move local read `{}` is outside the scalar JIT subset",
+            read.local()
+        ))),
+    }
+}
 
 pub(super) fn lower_input_value(
     builder: &mut FunctionBuilder<'_>,
@@ -286,13 +299,18 @@ pub(super) fn lower_expr(
         RuntimeExprKind::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "literal {value:?} is not an i64-compatible integer"
         ))),
-        RuntimeExprKind::Local(name) => match bindings.get(name) {
-            Some(LoweredIntBinding::Const(value)) => Ok(builder.ins().iconst(types::I64, *value)),
-            Some(LoweredIntBinding::Value(value)) => Ok(*value),
-            None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-                "unknown integer binding `{name}`"
-            ))),
-        },
+        RuntimeExprKind::Local(read) => {
+            let name = copy_local_id(*read)?;
+            match bindings.get(&name) {
+                Some(LoweredIntBinding::Const(value)) => {
+                    Ok(builder.ins().iconst(types::I64, *value))
+                }
+                Some(LoweredIntBinding::Value(value)) => Ok(*value),
+                None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
+                    "unknown integer binding `{name}`"
+                ))),
+            }
+        }
         RuntimeExprKind::Let {
             binding,
             expr,
@@ -371,13 +389,18 @@ pub(super) fn lower_i32_expr(
         RuntimeExprKind::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "literal {value:?} is not an i32 integer"
         ))),
-        RuntimeExprKind::Local(name) => match bindings.get(name) {
-            Some(LoweredIntBinding::Const(value)) => Ok(builder.ins().iconst(types::I32, *value)),
-            Some(LoweredIntBinding::Value(value)) => Ok(*value),
-            None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-                "unknown i32 binding `{name}`"
-            ))),
-        },
+        RuntimeExprKind::Local(read) => {
+            let name = copy_local_id(*read)?;
+            match bindings.get(&name) {
+                Some(LoweredIntBinding::Const(value)) => {
+                    Ok(builder.ins().iconst(types::I32, *value))
+                }
+                Some(LoweredIntBinding::Value(value)) => Ok(*value),
+                None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
+                    "unknown i32 binding `{name}`"
+                ))),
+            }
+        }
         RuntimeExprKind::Let {
             binding,
             expr,
@@ -463,16 +486,19 @@ pub(super) fn lower_small_int_expr(
                     kind.label()
                 ))
             }),
-        RuntimeExprKind::Local(name) => match bindings.get(name) {
-            Some(LoweredSmallIntBinding::Const(value)) => {
-                Ok(small_int_const(builder, kind, *value))
+        RuntimeExprKind::Local(read) => {
+            let name = copy_local_id(*read)?;
+            match bindings.get(&name) {
+                Some(LoweredSmallIntBinding::Const(value)) => {
+                    Ok(small_int_const(builder, kind, *value))
+                }
+                Some(LoweredSmallIntBinding::Value(value)) => Ok(*value),
+                None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
+                    "unknown {} binding `{name}`",
+                    kind.label()
+                ))),
             }
-            Some(LoweredSmallIntBinding::Value(value)) => Ok(*value),
-            None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-                "unknown {} binding `{name}`",
-                kind.label()
-            ))),
-        },
+        }
         RuntimeExprKind::Let {
             binding,
             expr,
@@ -598,13 +624,18 @@ pub(super) fn lower_u32_expr(
         RuntimeExprKind::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "literal {value:?} is not an u32 integer"
         ))),
-        RuntimeExprKind::Local(name) => match bindings.get(name) {
-            Some(LoweredIntBinding::Const(value)) => Ok(builder.ins().iconst(types::I32, *value)),
-            Some(LoweredIntBinding::Value(value)) => Ok(*value),
-            None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-                "unknown u32 binding `{name}`"
-            ))),
-        },
+        RuntimeExprKind::Local(read) => {
+            let name = copy_local_id(*read)?;
+            match bindings.get(&name) {
+                Some(LoweredIntBinding::Const(value)) => {
+                    Ok(builder.ins().iconst(types::I32, *value))
+                }
+                Some(LoweredIntBinding::Value(value)) => Ok(*value),
+                None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
+                    "unknown u32 binding `{name}`"
+                ))),
+            }
+        }
         RuntimeExprKind::Let {
             binding,
             expr,
@@ -681,13 +712,18 @@ pub(super) fn lower_u64_expr(
         RuntimeExprKind::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "literal {value:?} is not an u64-compatible integer"
         ))),
-        RuntimeExprKind::Local(name) => match bindings.get(name) {
-            Some(LoweredIntBinding::Const(value)) => Ok(builder.ins().iconst(types::I64, *value)),
-            Some(LoweredIntBinding::Value(value)) => Ok(*value),
-            None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-                "unknown u64 binding `{name}`"
-            ))),
-        },
+        RuntimeExprKind::Local(read) => {
+            let name = copy_local_id(*read)?;
+            match bindings.get(&name) {
+                Some(LoweredIntBinding::Const(value)) => {
+                    Ok(builder.ins().iconst(types::I64, *value))
+                }
+                Some(LoweredIntBinding::Value(value)) => Ok(*value),
+                None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
+                    "unknown u64 binding `{name}`"
+                ))),
+            }
+        }
         RuntimeExprKind::Let {
             binding,
             expr,
@@ -759,13 +795,16 @@ pub(super) fn lower_f32_expr(
         RuntimeExprKind::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "literal {value:?} is not an f32 value"
         ))),
-        RuntimeExprKind::Local(name) => match bindings.get(name) {
-            Some(LoweredF32Binding::Const(value)) => Ok(builder.ins().f32const(*value)),
-            Some(LoweredF32Binding::Value(value)) => Ok(*value),
-            None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-                "unknown f32 binding `{name}`"
-            ))),
-        },
+        RuntimeExprKind::Local(read) => {
+            let name = copy_local_id(*read)?;
+            match bindings.get(&name) {
+                Some(LoweredF32Binding::Const(value)) => Ok(builder.ins().f32const(*value)),
+                Some(LoweredF32Binding::Value(value)) => Ok(*value),
+                None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
+                    "unknown f32 binding `{name}`"
+                ))),
+            }
+        }
         RuntimeExprKind::Let {
             binding,
             expr,
@@ -841,13 +880,16 @@ pub(super) fn lower_f64_expr(
         RuntimeExprKind::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "literal {value:?} is not an f64 value"
         ))),
-        RuntimeExprKind::Local(name) => match bindings.get(name) {
-            Some(LoweredF64Binding::Const(value)) => Ok(builder.ins().f64const(*value)),
-            Some(LoweredF64Binding::Value(value)) => Ok(*value),
-            None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-                "unknown f64 binding `{name}`"
-            ))),
-        },
+        RuntimeExprKind::Local(read) => {
+            let name = copy_local_id(*read)?;
+            match bindings.get(&name) {
+                Some(LoweredF64Binding::Const(value)) => Ok(builder.ins().f64const(*value)),
+                Some(LoweredF64Binding::Value(value)) => Ok(*value),
+                None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
+                    "unknown f64 binding `{name}`"
+                ))),
+            }
+        }
         RuntimeExprKind::Let {
             binding,
             expr,

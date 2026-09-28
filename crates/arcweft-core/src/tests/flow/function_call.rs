@@ -28,6 +28,8 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
                 RuntimeLocalDeclarationSeed::new(string),
                 RuntimeLocalDeclarationSeed::new(need_string),
                 RuntimeLocalDeclarationSeed::new(need_string),
+                RuntimeLocalDeclarationSeed::new(string),
+                RuntimeLocalDeclarationSeed::new(need_string),
             ],
         )
         .expect("callback ABI admits");
@@ -39,14 +41,30 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
         .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
             inputs: Box::new([
                 RuntimeFunctionInputBindingSeed {
+                    ownership: Default::default(),
+                    unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Capture { position: 0 },
-                    input_local: capture.clone(),
-                    pattern: RuntimePatternSeed::new(string, RuntimePatternSeedKind::Discard),
+                    input_local: admission.local_ids()[4].clone(),
+                    pattern: RuntimePatternSeed::new(
+                        string,
+                        RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: capture.clone(),
+                        },
+                    ),
                 },
                 RuntimeFunctionInputBindingSeed {
+                    ownership: Default::default(),
+                    unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Capture { position: 1 },
-                    input_local: need_capture.clone(),
-                    pattern: RuntimePatternSeed::new(need_string, RuntimePatternSeedKind::Discard),
+                    input_local: admission.local_ids()[5].clone(),
+                    pattern: RuntimePatternSeed::new(
+                        need_string,
+                        RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: need_capture.clone(),
+                        },
+                    ),
                 },
             ]),
             result: string,
@@ -65,14 +83,20 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
                         target: RuntimeAwaitTargetSeed {
                             source: RuntimeExprSeed::new(
                                 need_string,
-                                RuntimeExprSeedKind::Local(need_capture),
+                                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                    need_capture,
+                                    RuntimeLocalReadMode::Move,
+                                )),
                             ),
                         },
                         observers: Vec::new(),
                     },
                     RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
                         string,
-                        RuntimeExprSeedKind::Local(capture),
+                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                            capture,
+                            RuntimeLocalReadMode::Copy,
+                        )),
                     )),
                 ]),
             }),
@@ -104,7 +128,10 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
                                 string_value("captured"),
                                 RuntimeExprSeed::new(
                                     need_string,
-                                    RuntimeExprSeedKind::Local(need_argument),
+                                    RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                        need_argument,
+                                        RuntimeLocalReadMode::Move,
+                                    )),
                                 ),
                             ]),
                         },
@@ -120,7 +147,10 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
                 },
                 RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
                     string,
-                    RuntimeExprSeedKind::Local(result),
+                    RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                        result,
+                        RuntimeLocalReadMode::Copy,
+                    )),
                 )),
             ],
         ))

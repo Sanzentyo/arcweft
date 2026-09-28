@@ -160,13 +160,13 @@ flow main() -> i64 {
         panic!("typed producer operation follows source-order materialization");
     };
     assert_eq!(*operation, CharacterDialogueOperation::Factory);
-    assert!(matches!(target.kind(), RuntimeExprKind::Local(local) if *local == bindings[0]));
+    assert!(matches!(target.kind(), RuntimeExprKind::Local(local) if local.local() == bindings[0]));
     let [locale, view] = fields.as_slice() else {
         panic!("both patch contributions remain")
     };
     assert!(
         matches!(&locale.operation, CharacterDialoguePatchOperation::Set(value)
-        if matches!(value.kind(), RuntimeExprKind::Local(local) if *local == bindings[1]))
+        if matches!(value.kind(), RuntimeExprKind::Local(local) if local.local() == bindings[1]))
     );
     assert_eq!(view.operation, CharacterDialoguePatchOperation::Clear);
 }
@@ -368,6 +368,41 @@ flow main() -> String {
             _ => None,
         })
         .collect::<Vec<_>>();
+    let borrowed_actors = group
+        .activation_ops()
+        .iter()
+        .filter_map(|op| match op {
+            FlowOp::LineOperation {
+                operation: RuntimeLineOperation::ActorLook { actor, .. },
+                ..
+            } => Some(actor.local()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(borrowed_actors.len(), 2);
+    assert_eq!(borrowed_actors[0], borrowed_actors[1]);
+    let lowerer = arcweft_runtime_plan::awbc_lower::AwbcLowerer::new(
+        &compiled.runtime_plan().plan,
+        &compiled.runtime_plan().dialogue_content_catalog,
+        "actor_look_borrow.arcw",
+    );
+    lowerer.lower().unwrap_or_else(|error| {
+        let unverified = lowerer
+            .with_options(arcweft_runtime_plan::awbc_lower::AwbcLowerOptions {
+                verify: false,
+                ..Default::default()
+            })
+            .lower()
+            .expect("ActorLook program lowers before verification")
+            .program;
+        let block = &unverified.blocks[0];
+        let start = block.instructions.start as usize;
+        let end = start + block.instructions.len as usize;
+        panic!(
+            "two looks sharing a borrowed actor must verify: {error}; entry block {block:?}; instructions {:?}",
+            &unverified.instructions[start..end]
+        );
+    });
     assert_eq!(
         fades,
         [

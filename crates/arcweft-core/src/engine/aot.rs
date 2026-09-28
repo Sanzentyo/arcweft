@@ -17,11 +17,11 @@ impl Engine {
         let mut aot_fast_path_ops = 0;
         let pure_stats_before = pure_backend.stats();
         let pending_ops_before = self.fiber.pending_ops.len();
-        let runtime_input = RuntimeStepInput::default();
+        let mut runtime_input = RuntimeStepInput::default();
 
         while executed_ops < options.budget.max_ops && self.can_attempt_runtime_op() {
             if !self.fiber.pending_ops.is_empty() {
-                self.step_runtime_op(&runtime_input, &[], &mut output, pure_backend);
+                self.step_runtime_op(&mut runtime_input, &[], &mut output, pure_backend);
                 executed_ops += 1;
                 if self.should_return_to_host(options.mode, &output, executed_ops) {
                     break;
@@ -47,7 +47,7 @@ impl Engine {
                 if cursor.op_index >= flow.ops {
                     self.finish(&mut output, pure_backend);
                 } else {
-                    self.step_runtime_op(&runtime_input, &[], &mut output, pure_backend);
+                    self.step_runtime_op(&mut runtime_input, &[], &mut output, pure_backend);
                 }
                 executed_ops += 1;
                 if self.should_return_to_host(options.mode, &output, executed_ops) {
@@ -185,7 +185,7 @@ impl Engine {
                 match self.evaluate_expr_with_backend(expr, pure_backend) {
                     Ok(value) => {
                         self.pop_scope_frame(output, pure_backend);
-                        self.bind_value(pattern, &value, output);
+                        self.bind_value(pattern, value, output);
                         self.advance_aot_linear_cursor(next_op_index);
                     }
                     Err(error) => self.fail_eval(error, output),

@@ -678,6 +678,20 @@ impl BundleViewInstancePathSegment {
 }
 
 impl BundleViewRuntime {
+    /// Spawns a clean evaluator from an admitted product definition. Live
+    /// root bindings, mounts, and event tokens are never copied into a new
+    /// entry, even if the source evaluator has since run.
+    pub(crate) fn fresh_for_entry(&self) -> Self {
+        let product = self.product.clone();
+        let text = self.text.clone();
+        match &self.handler_runtime {
+            ViewHandlerRuntimeAuthority::HandlerFree => Self::try_new(product, text),
+            ViewHandlerRuntimeAuthority::Awbc(program) => {
+                Self::try_new_with_awbc(product, text, Arc::clone(program))
+            }
+        }
+        .expect("an admitted View product reconstructs its fresh evaluator")
+    }
     /// Builds an evaluator only from a complete validated View product.
     pub fn try_new(
         product: ValidatedViewProduct,
@@ -1109,6 +1123,7 @@ impl BundleViewRuntime {
     }
 
     pub fn snapshot(&self) -> Result<BundleViewRuntimeSnapshot, ViewSaveError> {
+        self.ensure_unrestricted_runtime_bindings()?;
         let mounts = self
             .mounts
             .iter()
@@ -1169,6 +1184,30 @@ impl BundleViewRuntime {
         Ok(())
     }
 
+    /// Duplicate View state only after proving every retained runtime value
+    /// may be copied. The evaluator reuses root bindings across mounted Views,
+    /// so an affine value cannot be admitted to these maps.
+    pub(crate) fn try_duplicate_unrestricted(&self) -> Result<Self, ViewSaveError> {
+        self.ensure_unrestricted_runtime_bindings()?;
+        Ok(self.clone())
+    }
+
+    fn ensure_unrestricted_runtime_bindings(&self) -> Result<(), ViewSaveError> {
+        if self
+            .view_root_bindings
+            .values()
+            .chain(
+                self.mounts
+                    .values()
+                    .flat_map(|mount| mount.runtime_parameters.values()),
+            )
+            .any(|value| !value.ownership().permits_copy())
+        {
+            return Err(ViewSaveError::AffineRuntimeBinding);
+        }
+        Ok(())
+    }
+
     /// Restores an exact mount table atomically after validating every identity and slot.
     #[expect(
         clippy::too_many_lines,
@@ -1179,6 +1218,22 @@ impl BundleViewRuntime {
         snapshot: &BundleViewRuntimeSnapshot,
         reconciled_root_handles: &[PresentationHandleRecord],
     ) -> Result<(), BundleViewRuntimeError> {
+        if snapshot
+            .view_root_bindings
+            .iter()
+            .map(|binding| &binding.value)
+            .chain(snapshot.mounts.iter().flat_map(|mount| {
+                mount
+                    .runtime_parameters
+                    .iter()
+                    .map(|binding| &binding.value)
+            }))
+            .any(|value| !value.ownership().permits_copy())
+        {
+            return Err(BundleViewRuntimeError::Save(
+                ViewSaveError::AffineRuntimeBinding,
+            ));
+        }
         let expected_program = self
             .catalog
             .as_ref()

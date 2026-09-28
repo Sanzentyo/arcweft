@@ -1,7 +1,7 @@
 use crate::aot::AotProgram;
 use crate::awbc::product_step::{
-    AwbcProductExecutorSnapshot, AwbcProductSaveError, AwbcProductStepBuildError,
-    AwbcProductStepExecutor,
+    AwbcProductExecutorRollbackImage, AwbcProductExecutorSaveSnapshot, AwbcProductSaveError,
+    AwbcProductStepBuildError, AwbcProductStepExecutor,
 };
 use crate::awbc::schema::{AwbcEntryId, AwbcFunctionId, AwbcProgram};
 use crate::engine::{Engine, EngineStartError, FlowFiber};
@@ -28,7 +28,7 @@ pub trait RuntimeExecutor {
 }
 
 /// Runtime executor backed by the built-in Arcweft VM.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct VmExecutor {
     engine: Engine,
 }
@@ -38,7 +38,7 @@ pub(crate) struct VmExecutor {
 /// The current backend runs through the VM-compatible state machine after AOT
 /// shape analysis. Generated dispatch can replace that backend without changing
 /// host-facing executor selection.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct AotExecutor {
     program: AotProgram,
     vm: VmExecutor,
@@ -46,7 +46,7 @@ pub(crate) struct AotExecutor {
 }
 
 /// Runtime executor backed by canonical product AWBC.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct AwbcProductExecutor {
     vm: AwbcProductStepExecutor,
 }
@@ -81,7 +81,20 @@ impl ArcweftExecutionTier {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ArcweftRuntimeExecutorSnapshot {
-    AwbcProduct(AwbcProductExecutorSnapshot),
+    AwbcProduct(AwbcProductExecutorSaveSnapshot),
+}
+
+#[derive(Debug, Error)]
+#[error("{reason}")]
+pub struct ArcweftRuntimeExecutorOwnedRestoreError {
+    owner: ArcweftRuntimeExecutor,
+    reason: ArcweftRuntimeExecutorSnapshotError,
+}
+
+impl ArcweftRuntimeExecutorOwnedRestoreError {
+    pub fn into_parts(self) -> (ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshotError) {
+        (self.owner, self.reason)
+    }
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -118,16 +131,19 @@ pub enum ArcweftRuntimeExecutorGenerationError {
 /// The facade owns concrete executor construction so runtime hosts, CLI paths,
 /// native players, and development runners do not wire concrete engines
 /// directly.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct ArcweftRuntimeExecutor {
     inner: ArcweftRuntimeExecutorInner,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 enum ArcweftRuntimeExecutorInner {
     RuntimePlanVm(VmExecutor),
     StructuredAot(AotExecutor),
     AwbcProduct(Box<AwbcProductExecutor>),
+    /// Exists only while an owning restore transaction has moved its sole
+    /// executor out of the facade. It is never exposed as a runnable tier.
+    Vacant,
 }
 
 impl VmExecutor {
@@ -245,19 +261,31 @@ impl AotExecutor {
 impl AwbcProductExecutor {
     pub(crate) fn snapshot_for_save(
         &self,
-    ) -> Result<AwbcProductExecutorSnapshot, AwbcProductSaveError> {
-        self.vm.snapshot_for_save()
-    }
-
-    pub(crate) fn restore_snapshot(
-        &mut self,
-        snapshot: AwbcProductExecutorSnapshot,
-    ) -> Result<(), AwbcProductStepBuildError> {
-        self.vm.restore_snapshot(snapshot)
+    ) -> Result<AwbcProductExecutorSaveSnapshot, AwbcProductSaveError> {
+        let needs = self.vm.quiescence_blocking_needs();
+        if !needs.is_empty() {
+            return Err(AwbcProductSaveError::NeedsQuiescence { needs });
+        }
+        self.vm.inert_rollback_image().map(|image| image.product)
     }
 }
 
 impl ArcweftRuntimeExecutor {
+    /// Moves the sole Product executor into a restore transaction, leaving a
+    /// non-runnable slot that must be filled before the session is observed.
+    pub fn take_product_for_restore(&mut self) -> Option<Self> {
+        if !matches!(self.inner, ArcweftRuntimeExecutorInner::AwbcProduct(_)) {
+            return None;
+        }
+        Some(Self {
+            inner: std::mem::replace(&mut self.inner, ArcweftRuntimeExecutorInner::Vacant),
+        })
+    }
+
+    pub fn install_after_restore(&mut self, restored: Self) {
+        assert!(matches!(self.inner, ArcweftRuntimeExecutorInner::Vacant));
+        self.inner = restored.inner;
+    }
     /// Selects the ambient locale for subsequent native or Product AWBC
     /// formatter attempts. In-flight AWBC attempts retain their start locale.
     pub fn set_format_context(&mut self, context: crate::value::RuntimeFormatContext) {
@@ -271,6 +299,7 @@ impl ArcweftRuntimeExecutor {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
                 executor.vm.set_format_context(context);
             }
+            ArcweftRuntimeExecutorInner::Vacant => unreachable!("restore slot is not runnable"),
         }
     }
 
@@ -284,6 +313,7 @@ impl ArcweftRuntimeExecutor {
                 executor.vm.engine.format_context()
             }
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor.vm.format_context(),
+            ArcweftRuntimeExecutorInner::Vacant => unreachable!("restore slot is not runnable"),
         }
     }
 
@@ -438,11 +468,12 @@ impl ArcweftRuntimeExecutor {
         )))
     }
 
-    pub const fn tier(&self) -> ArcweftExecutionTier {
+    pub fn tier(&self) -> ArcweftExecutionTier {
         match &self.inner {
             ArcweftRuntimeExecutorInner::RuntimePlanVm(_) => ArcweftExecutionTier::RuntimePlanVm,
             ArcweftRuntimeExecutorInner::StructuredAot(_) => ArcweftExecutionTier::StructuredAot,
             ArcweftRuntimeExecutorInner::AwbcProduct(_) => ArcweftExecutionTier::AwbcProduct,
+            ArcweftRuntimeExecutorInner::Vacant => unreachable!("restore slot is not runnable"),
         }
     }
 
@@ -452,6 +483,7 @@ impl ArcweftRuntimeExecutor {
             ArcweftRuntimeExecutorInner::RuntimePlanVm(executor) => executor.engine.generation(),
             ArcweftRuntimeExecutorInner::StructuredAot(executor) => executor.vm.engine.generation(),
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor.vm.runtime_generation(),
+            ArcweftRuntimeExecutorInner::Vacant => unreachable!("restore slot is not runnable"),
         }
     }
 
@@ -481,6 +513,7 @@ impl ArcweftRuntimeExecutor {
                     needs_reensure: dispatch.needs_reensure,
                 })
                 .collect(),
+            ArcweftRuntimeExecutorInner::Vacant => unreachable!("restore slot is not runnable"),
         }
     }
 
@@ -496,6 +529,7 @@ impl ArcweftRuntimeExecutor {
                 executor.vm.engine.need_producer_generation_for_task(task)
             }
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor.vm.task_generation(task),
+            ArcweftRuntimeExecutorInner::Vacant => unreachable!("restore slot is not runnable"),
         }
     }
 
@@ -514,6 +548,7 @@ impl ArcweftRuntimeExecutor {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
                 executor.vm.quiescence_blocking_needs()
             }
+            ArcweftRuntimeExecutorInner::Vacant => unreachable!("restore slot is not runnable"),
         }
     }
 
@@ -549,6 +584,7 @@ impl ArcweftRuntimeExecutor {
                 .map_err(|error| ArcweftRuntimeExecutorGenerationError::ProductAwbc {
                     message: error.to_string(),
                 }),
+            ArcweftRuntimeExecutorInner::Vacant => unreachable!("restore slot is not runnable"),
         }
     }
 
@@ -564,6 +600,7 @@ impl ArcweftRuntimeExecutor {
                     entry: entry.canonical_label(),
                 })
             }
+            ArcweftRuntimeExecutorInner::Vacant => unreachable!("restore slot is not runnable"),
         }
     }
 
@@ -572,7 +609,51 @@ impl ArcweftRuntimeExecutor {
         match &self.inner {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => Some(executor.vm.program()),
             ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
-            | ArcweftRuntimeExecutorInner::StructuredAot(_) => None,
+            | ArcweftRuntimeExecutorInner::StructuredAot(_)
+            | ArcweftRuntimeExecutorInner::Vacant => None,
+        }
+    }
+
+    /// Borrows every live Product value for external catalog validation.
+    /// The caller must have selected the Product tier.
+    pub fn visit_product_live_runtime_values<E>(
+        &self,
+        visitor: impl FnMut(&crate::value::RuntimeValue) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match &self.inner {
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
+                executor.vm.visit_live_runtime_values(visitor)
+            }
+            _ => unreachable!("Product live-value visitor requires Product executor"),
+        }
+    }
+
+    pub fn product_inert_rollback_image(
+        &self,
+    ) -> Result<AwbcProductExecutorRollbackImage, ArcweftRuntimeExecutorSnapshotError> {
+        match &self.inner {
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor
+                .vm
+                .inert_rollback_image()
+                .map_err(|error| ArcweftRuntimeExecutorSnapshotError::ProductAwbc {
+                    message: error.to_string(),
+                }),
+            _ => unreachable!("Product rollback image requires Product executor"),
+        }
+    }
+
+    pub fn restore_product_rollback_image(
+        &mut self,
+        image: AwbcProductExecutorRollbackImage,
+    ) -> Result<(), ArcweftRuntimeExecutorSnapshotError> {
+        match &mut self.inner {
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor
+                .vm
+                .restore_rollback_image(image)
+                .map_err(|error| ArcweftRuntimeExecutorSnapshotError::ProductAwbc {
+                    message: error.to_string(),
+                }),
+            _ => unreachable!("Product rollback restore requires Product executor"),
         }
     }
 
@@ -588,6 +669,7 @@ impl ArcweftRuntimeExecutor {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
                 crate::task::RuntimeProgramOwner::Awbc(executor.vm.program_arc())
             }
+            ArcweftRuntimeExecutorInner::Vacant => unreachable!("restore slot is not runnable"),
         }
     }
 
@@ -610,7 +692,8 @@ impl ArcweftRuntimeExecutor {
                 executor.vm.replace_program_preserving_state_arc(program)
             }
             ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
-            | ArcweftRuntimeExecutorInner::StructuredAot(_) => {
+            | ArcweftRuntimeExecutorInner::StructuredAot(_)
+            | ArcweftRuntimeExecutorInner::Vacant => {
                 Err(AwbcProductStepBuildError::RestoreSnapshot {
                     message: "code-compatible Product AWBC replacement requires Product AWBC tier"
                         .to_owned(),
@@ -631,7 +714,8 @@ impl ArcweftRuntimeExecutor {
                 .vm
                 .replace_program_preserving_state_arc_with_plain_text_context_proof(program, proof),
             ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
-            | ArcweftRuntimeExecutorInner::StructuredAot(_) => {
+            | ArcweftRuntimeExecutorInner::StructuredAot(_)
+            | ArcweftRuntimeExecutorInner::Vacant => {
                 Err(AwbcProductStepBuildError::RestoreSnapshot {
                     message: "code-compatible Product AWBC replacement requires Product AWBC tier"
                         .to_owned(),
@@ -640,11 +724,12 @@ impl ArcweftRuntimeExecutor {
         }
     }
 
-    pub const fn fast_path_ops(&self) -> usize {
+    pub fn fast_path_ops(&self) -> usize {
         match &self.inner {
             ArcweftRuntimeExecutorInner::StructuredAot(executor) => executor.fast_path_ops(),
             ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
             | ArcweftRuntimeExecutorInner::AwbcProduct(_) => 0,
+            ArcweftRuntimeExecutorInner::Vacant => unreachable!("restore slot is not runnable"),
         }
     }
 
@@ -664,7 +749,8 @@ impl ArcweftRuntimeExecutor {
                 }
             }
             ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
-            | ArcweftRuntimeExecutorInner::StructuredAot(_) => {
+            | ArcweftRuntimeExecutorInner::StructuredAot(_)
+            | ArcweftRuntimeExecutorInner::Vacant => {
                 Err(ArcweftRuntimeExecutorSnapshotError::UnsupportedTier {
                     tier: self.tier().as_str(),
                 })
@@ -673,22 +759,34 @@ impl ArcweftRuntimeExecutor {
     }
 
     pub fn restore_snapshot(
-        &mut self,
+        self,
         snapshot: ArcweftRuntimeExecutorSnapshot,
-    ) -> Result<(), ArcweftRuntimeExecutorSnapshotError> {
-        match (&mut self.inner, snapshot) {
+    ) -> Result<Self, ArcweftRuntimeExecutorOwnedRestoreError> {
+        match (self.inner, snapshot) {
             (
                 ArcweftRuntimeExecutorInner::AwbcProduct(executor),
                 ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot),
-            ) => executor.restore_snapshot(snapshot).map_err(|error| {
-                ArcweftRuntimeExecutorSnapshotError::ProductAwbc {
-                    message: error.to_string(),
-                }
-            }),
-            (_, ArcweftRuntimeExecutorSnapshot::AwbcProduct(_)) => {
-                Err(ArcweftRuntimeExecutorSnapshotError::TierMismatch {
-                    snapshot: ArcweftExecutionTier::AwbcProduct.as_str(),
-                    actual: self.tier().as_str(),
+            ) => match executor.vm.restore_inert_snapshot_owned(snapshot) {
+                Ok(vm) => Ok(Self::from_inner(ArcweftRuntimeExecutorInner::AwbcProduct(
+                    Box::new(AwbcProductExecutor { vm }),
+                ))),
+                Err((vm, error)) => Err(ArcweftRuntimeExecutorOwnedRestoreError {
+                    owner: Self::from_inner(ArcweftRuntimeExecutorInner::AwbcProduct(Box::new(
+                        AwbcProductExecutor { vm },
+                    ))),
+                    reason: ArcweftRuntimeExecutorSnapshotError::ProductAwbc {
+                        message: error.to_string(),
+                    },
+                }),
+            },
+            (inner, ArcweftRuntimeExecutorSnapshot::AwbcProduct(_)) => {
+                let owner = Self::from_inner(inner);
+                Err(ArcweftRuntimeExecutorOwnedRestoreError {
+                    reason: ArcweftRuntimeExecutorSnapshotError::TierMismatch {
+                        snapshot: ArcweftExecutionTier::AwbcProduct.as_str(),
+                        actual: owner.tier().as_str(),
+                    },
+                    owner,
                 })
             }
         }
@@ -710,6 +808,7 @@ impl ArcweftRuntimeExecutor {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
                 executor.vm.acknowledge_root_commands(accepted)
             }
+            ArcweftRuntimeExecutorInner::Vacant => unreachable!("restore slot is not runnable"),
         }
     }
 
@@ -721,7 +820,8 @@ impl ArcweftRuntimeExecutor {
                 executor.vm.active_entry_snapshot_identity().map(Some)
             }
             ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
-            | ArcweftRuntimeExecutorInner::StructuredAot(_) => Ok(None),
+            | ArcweftRuntimeExecutorInner::StructuredAot(_)
+            | ArcweftRuntimeExecutorInner::Vacant => Ok(None),
         }
     }
 
@@ -730,7 +830,8 @@ impl ArcweftRuntimeExecutor {
         match &self.inner {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor.vm.root_state_snapshot(),
             ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
-            | ArcweftRuntimeExecutorInner::StructuredAot(_) => None,
+            | ArcweftRuntimeExecutorInner::StructuredAot(_)
+            | ArcweftRuntimeExecutorInner::Vacant => None,
         }
     }
 
@@ -739,7 +840,8 @@ impl ArcweftRuntimeExecutor {
         match &self.inner {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor.vm.root_save_blockers(),
             ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
-            | ArcweftRuntimeExecutorInner::StructuredAot(_) => None,
+            | ArcweftRuntimeExecutorInner::StructuredAot(_)
+            | ArcweftRuntimeExecutorInner::Vacant => None,
         }
     }
 
@@ -753,7 +855,8 @@ impl ArcweftRuntimeExecutor {
                 executor.vm.restore_root_snapshot(active, snapshot)
             }
             ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
-            | ArcweftRuntimeExecutorInner::StructuredAot(_) => {
+            | ArcweftRuntimeExecutorInner::StructuredAot(_)
+            | ArcweftRuntimeExecutorInner::Vacant => {
                 Err(RootRuntimeError::SnapshotRoleMismatch("executor tier"))
             }
         }
@@ -775,6 +878,7 @@ impl ArcweftRuntimeExecutor {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor
                 .vm
                 .step_with_pure_backend(input, options, pure_backend),
+            ArcweftRuntimeExecutorInner::Vacant => unreachable!("restore slot is not runnable"),
         }
     }
 
@@ -827,6 +931,7 @@ impl RuntimeExecutor for ArcweftRuntimeExecutor {
             ArcweftRuntimeExecutorInner::RuntimePlanVm(executor) => executor.step(input, options),
             ArcweftRuntimeExecutorInner::StructuredAot(executor) => executor.step(input, options),
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor.vm.step(input, options),
+            ArcweftRuntimeExecutorInner::Vacant => unreachable!("restore slot is not runnable"),
         }
     }
 
@@ -835,6 +940,7 @@ impl RuntimeExecutor for ArcweftRuntimeExecutor {
             ArcweftRuntimeExecutorInner::RuntimePlanVm(executor) => executor.fiber(),
             ArcweftRuntimeExecutorInner::StructuredAot(executor) => executor.fiber(),
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor.vm.fiber(),
+            ArcweftRuntimeExecutorInner::Vacant => unreachable!("restore slot is not runnable"),
         }
     }
 }

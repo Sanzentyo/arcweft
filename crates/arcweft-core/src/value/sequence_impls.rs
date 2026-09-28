@@ -1,11 +1,12 @@
 use super::{
     DenseSeq, DenseSeqKind, DenseSeqStorage, RuntimeEntityReference, RuntimeEvalError,
-    RuntimeExactInteger, RuntimeExactIntegerSlice, RuntimeExactIntegerSliceMut, RuntimeISizeValue,
-    RuntimeInt, RuntimeRecordFieldId, RuntimeRecordValue, RuntimeSeq, RuntimeSeqError, RuntimeUInt,
-    RuntimeUSizeValue, RuntimeValue, materialize_i64_sequence, runtime_sequence_dense_i8,
-    runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i128,
-    runtime_sequence_dense_u8, runtime_sequence_dense_u16, runtime_sequence_dense_u32,
-    runtime_sequence_dense_u64, runtime_sequence_dense_u128, runtime_value_label,
+    RuntimeExactInteger, RuntimeExactIntegerSlice, RuntimeExactIntegerSliceMut, RuntimeFieldValue,
+    RuntimeISizeValue, RuntimeInt, RuntimeRecordFieldId, RuntimeRecordValue, RuntimeSeq,
+    RuntimeSeqError, RuntimeUInt, RuntimeUSizeValue, RuntimeValue, materialize_i64_sequence,
+    runtime_sequence_dense_i8, runtime_sequence_dense_i16, runtime_sequence_dense_i32,
+    runtime_sequence_dense_i128, runtime_sequence_dense_u8, runtime_sequence_dense_u16,
+    runtime_sequence_dense_u32, runtime_sequence_dense_u64, runtime_sequence_dense_u128,
+    runtime_value_label,
 };
 use crate::plan::{RuntimePureInputType, RuntimePureOutputType};
 use crate::time::LogicalDuration;
@@ -65,14 +66,17 @@ impl TupleSeq {
     }
 
     fn into_values(self) -> Vec<RuntimeValue> {
-        let row_count = self.len;
-        let columns = self.columns;
-        (0..row_count)
-            .map(|row| {
+        let mut columns = self
+            .columns
+            .into_iter()
+            .map(|column| column.into_values().into_iter())
+            .collect::<Vec<_>>();
+        (0..self.len)
+            .map(|_| {
                 RuntimeValue::Tuple(
                     columns
-                        .iter()
-                        .map(|column| column.value_at(row))
+                        .iter_mut()
+                        .map(|column| column.next().expect("admitted tuple column row"))
                         .collect::<Vec<_>>(),
                 )
             })
@@ -160,8 +164,34 @@ impl RecordSeq {
     }
 
     fn into_values(self) -> Vec<RuntimeValue> {
+        let mut fields = self
+            .fields
+            .into_iter()
+            .map(|field| {
+                (
+                    field.field,
+                    field.name,
+                    field.values.into_values().into_iter(),
+                )
+            })
+            .collect::<Vec<_>>();
         (0..self.len)
-            .map(|row| RuntimeValue::Record(RuntimeRecordValue::from_sequence_row(&self, row)))
+            .map(|_| {
+                let row = fields
+                    .iter_mut()
+                    .map(|(field, name, values)| {
+                        RuntimeFieldValue::new_accepted(
+                            *field,
+                            name.clone(),
+                            values.next().expect("admitted record column row"),
+                        )
+                    })
+                    .collect();
+                RuntimeValue::Record(
+                    RuntimeRecordValue::try_from_fields(row)
+                        .expect("admitted record column layout"),
+                )
+            })
             .collect()
     }
 

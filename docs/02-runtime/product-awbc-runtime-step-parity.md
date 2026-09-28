@@ -26,6 +26,11 @@ work and return typed results in a later step.
 `arcweft-bundle` remains a data/codec crate. It neither lowers source nor drives
 execution.
 
+Callback owners and scheduled capture packets have one live owner. The product
+adapter checks the complete callback invocation and line-command batch before
+moving either owner into a child. A failed preflight leaves the source packet
+and callback in place and publishes no partial child or callback activation.
+
 ## Entry and Flow invocation ABI
 
 The selected `AwbcEntry` owns an exact checked target. A direct Entry target is

@@ -827,10 +827,14 @@ fn compile_aot_i64_expr(
             helper_name,
             format!("literal {value:?} is not an i64 integer"),
         )),
-        RuntimeExprKind::Local(local) => ctx
-            .local_slot(*local)
-            .map(AotI64Expr::Local)
-            .ok_or(RuntimeEvalError::UnknownLocal(*local)),
+        RuntimeExprKind::Local(read) => {
+            if read.mode() == crate::value::RuntimeLocalReadMode::Move {
+                return Err(unsupported_aot(helper_name, "consuming local read"));
+            }
+            ctx.local_slot(read.local())
+                .map(AotI64Expr::Local)
+                .ok_or(RuntimeEvalError::UnknownLocal(read.local()))
+        }
         RuntimeExprKind::Scope { identity, body } => Ok(AotI64Expr::Scope {
             identity: identity.clone(),
             body: Box::new(compile_aot_i64_expr(helper_name, body, ctx)?),
@@ -947,10 +951,14 @@ fn compile_aot_scalar_expr(
                     format!("literal {value:?} is not a scalar value"),
                 )
             }),
-        RuntimeExprKind::Local(local) => ctx
-            .local_slot(*local)
-            .map(AotScalarExpr::Local)
-            .ok_or(RuntimeEvalError::UnknownLocal(*local)),
+        RuntimeExprKind::Local(read) => {
+            if read.mode() == crate::value::RuntimeLocalReadMode::Move {
+                return Err(unsupported_aot(helper_name, "consuming local read"));
+            }
+            ctx.local_slot(read.local())
+                .map(AotScalarExpr::Local)
+                .ok_or(RuntimeEvalError::UnknownLocal(read.local()))
+        }
         RuntimeExprKind::Scope { identity, body } => Ok(AotScalarExpr::Scope {
             identity: identity.clone(),
             body: Box::new(compile_aot_scalar_expr(helper_name, body, ctx)?),

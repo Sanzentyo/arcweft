@@ -1,5 +1,8 @@
 use crate::{
-    awbc::{fiber::FiberCursor, schema::AwbcRegisterId},
+    awbc::{
+        fiber::FiberCursor,
+        schema::{AwbcRegisterId, AwbcScopeId, AwbcTaskPlanId},
+    },
     runtime_id::{
         ExecutionInstanceId, RuntimeCaptureSlotId, RuntimeChildInstanceId, RuntimeChildPacketId,
         RuntimeCleanupScopeId, RuntimeCleanupSlotId, RuntimeClosureInstanceId,
@@ -43,6 +46,49 @@ pub enum RuntimeOwnedSlotId {
         frame: RuntimeFrameInstanceId,
         site: FiberCursor,
         ordinal: u32,
+    },
+    AwbcCleanupArg {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        scope: Option<AwbcScopeId>,
+        cleanup_ordinal: u32,
+        arg_ordinal: u32,
+    },
+    AwbcAwaitManyResult {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        plan: AwbcTaskPlanId,
+        index: u32,
+    },
+    AwbcAwaitManyItem {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        plan: AwbcTaskPlanId,
+        index: u32,
+    },
+    AwbcLineObservationArg {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        site: FiberCursor,
+        ordinal: u32,
+    },
+    AwbcDialogueResultObservation {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        site: FiberCursor,
+    },
+    AwbcEffectObservationArg {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        site: FiberCursor,
+        effect_ordinal: u32,
+        arg_ordinal: u32,
     },
     NativeFormatOperand {
         execution: ExecutionInstanceId,
@@ -98,6 +144,12 @@ impl RuntimeOwnedSlotId {
             Self::CleanupSlot { .. } => 7,
             Self::AwbcFormatOperand { .. } => 8,
             Self::NativeFormatOperand { .. } => 9,
+            Self::AwbcCleanupArg { .. } => 10,
+            Self::AwbcAwaitManyResult { .. } => 11,
+            Self::AwbcAwaitManyItem { .. } => 12,
+            Self::AwbcLineObservationArg { .. } => 13,
+            Self::AwbcDialogueResultObservation { .. } => 14,
+            Self::AwbcEffectObservationArg { .. } => 15,
         }
     }
 
@@ -109,6 +161,12 @@ impl RuntimeOwnedSlotId {
             | Self::AwbcRegister { execution, .. }
             | Self::AwbcFrameLocal { execution, .. }
             | Self::AwbcFormatOperand { execution, .. }
+            | Self::AwbcCleanupArg { execution, .. }
+            | Self::AwbcAwaitManyResult { execution, .. }
+            | Self::AwbcAwaitManyItem { execution, .. }
+            | Self::AwbcLineObservationArg { execution, .. }
+            | Self::AwbcDialogueResultObservation { execution, .. }
+            | Self::AwbcEffectObservationArg { execution, .. }
             | Self::NativeFormatOperand { execution, .. }
             | Self::MailboxLane { execution, .. }
             | Self::ChildPacket { execution, .. }
@@ -167,6 +225,89 @@ impl RuntimeOwnedSlotId {
                 site.block.0,
                 site.instruction_offset,
                 ordinal
+            ),
+            Self::AwbcCleanupArg {
+                fiber,
+                frame,
+                scope,
+                cleanup_ordinal,
+                arg_ordinal,
+                ..
+            } => match scope {
+                Some(scope) => format!(
+                    "exec/{execution}/awbc/fiber/{}/frame/{}/cleanup/scope/{}/entry/{cleanup_ordinal}/arg/{arg_ordinal}",
+                    fiber.get(),
+                    frame.get(),
+                    scope.0,
+                ),
+                None => format!(
+                    "exec/{execution}/awbc/fiber/{}/frame/{}/cleanup/root/entry/{cleanup_ordinal}/arg/{arg_ordinal}",
+                    fiber.get(),
+                    frame.get(),
+                ),
+            },
+            Self::AwbcAwaitManyResult {
+                fiber,
+                frame,
+                plan,
+                index,
+                ..
+            } => format!(
+                "exec/{execution}/awbc/fiber/{}/frame/{}/await-many/{}/result/{index}",
+                fiber.get(),
+                frame.get(),
+                plan.0,
+            ),
+            Self::AwbcAwaitManyItem {
+                fiber,
+                frame,
+                plan,
+                index,
+                ..
+            } => format!(
+                "exec/{execution}/awbc/fiber/{}/frame/{}/await-many/{}/item/{index}",
+                fiber.get(),
+                frame.get(),
+                plan.0,
+            ),
+            Self::AwbcLineObservationArg {
+                fiber,
+                frame,
+                site,
+                ordinal,
+                ..
+            } => format!(
+                "exec/{execution}/awbc/fiber/{}/frame/{}/line-observation/{}/{}/{}/arg/{ordinal}",
+                fiber.get(),
+                frame.get(),
+                site.function.0,
+                site.block.0,
+                site.instruction_offset,
+            ),
+            Self::AwbcDialogueResultObservation {
+                fiber, frame, site, ..
+            } => format!(
+                "exec/{execution}/awbc/fiber/{}/frame/{}/dialogue-result-observation/{}/{}/{}",
+                fiber.get(),
+                frame.get(),
+                site.function.0,
+                site.block.0,
+                site.instruction_offset,
+            ),
+            Self::AwbcEffectObservationArg {
+                fiber,
+                frame,
+                site,
+                effect_ordinal,
+                arg_ordinal,
+                ..
+            } => format!(
+                "exec/{execution}/awbc/fiber/{}/frame/{}/effect-observation/{}/{}/{}/effect/{effect_ordinal}/arg/{arg_ordinal}",
+                fiber.get(),
+                frame.get(),
+                site.function.0,
+                site.block.0,
+                site.instruction_offset,
             ),
             Self::NativeFormatOperand {
                 fiber,
@@ -230,6 +371,11 @@ impl Ord for RuntimeOwnedSlotId {
             7 => cmp_cleanup_slot(*self, *other),
             8 => cmp_awbc_format_operand(*self, *other),
             9 => cmp_native_format_operand(*self, *other),
+            10 => cmp_awbc_cleanup_arg(*self, *other),
+            11 | 12 => cmp_awbc_await_many_slot(*self, *other),
+            13 => cmp_awbc_line_observation_arg(*self, *other),
+            14 => cmp_awbc_dialogue_result_observation(*self, *other),
+            15 => cmp_awbc_effect_observation_arg(*self, *other),
             _ => unreachable!("canonical owned-slot tags are exhaustive"),
         }
     }
@@ -409,6 +555,179 @@ fn cmp_native_format_operand(left: RuntimeOwnedSlotId, right: RuntimeOwnedSlotId
         ))
 }
 
+fn cmp_awbc_cleanup_arg(left: RuntimeOwnedSlotId, right: RuntimeOwnedSlotId) -> Ordering {
+    let RuntimeOwnedSlotId::AwbcCleanupArg {
+        execution: left_execution,
+        fiber: left_fiber,
+        frame: left_frame,
+        scope: left_scope,
+        cleanup_ordinal: left_cleanup,
+        arg_ordinal: left_arg,
+    } = left
+    else {
+        unreachable!("equal canonical tags select the same variant")
+    };
+    let RuntimeOwnedSlotId::AwbcCleanupArg {
+        execution: right_execution,
+        fiber: right_fiber,
+        frame: right_frame,
+        scope: right_scope,
+        cleanup_ordinal: right_cleanup,
+        arg_ordinal: right_arg,
+    } = right
+    else {
+        unreachable!("equal canonical tags select the same variant")
+    };
+    (
+        left_execution,
+        left_fiber,
+        left_frame,
+        left_scope,
+        left_cleanup,
+        left_arg,
+    )
+        .cmp(&(
+            right_execution,
+            right_fiber,
+            right_frame,
+            right_scope,
+            right_cleanup,
+            right_arg,
+        ))
+}
+
+fn cmp_awbc_await_many_slot(left: RuntimeOwnedSlotId, right: RuntimeOwnedSlotId) -> Ordering {
+    let key = |slot| match slot {
+        RuntimeOwnedSlotId::AwbcAwaitManyItem {
+            execution,
+            fiber,
+            frame,
+            plan,
+            index,
+        }
+        | RuntimeOwnedSlotId::AwbcAwaitManyResult {
+            execution,
+            fiber,
+            frame,
+            plan,
+            index,
+        } => (execution, fiber, frame, plan, index),
+        _ => unreachable!("equal canonical tags select an AwaitMany slot"),
+    };
+    key(left).cmp(&key(right))
+}
+
+fn cmp_awbc_line_observation_arg(left: RuntimeOwnedSlotId, right: RuntimeOwnedSlotId) -> Ordering {
+    let RuntimeOwnedSlotId::AwbcLineObservationArg {
+        execution: left_execution,
+        fiber: left_fiber,
+        frame: left_frame,
+        site: left_site,
+        ordinal: left_ordinal,
+    } = left
+    else {
+        unreachable!("equal canonical tags select the same variant")
+    };
+    let RuntimeOwnedSlotId::AwbcLineObservationArg {
+        execution: right_execution,
+        fiber: right_fiber,
+        frame: right_frame,
+        site: right_site,
+        ordinal: right_ordinal,
+    } = right
+    else {
+        unreachable!("equal canonical tags select the same variant")
+    };
+    (
+        left_execution,
+        left_fiber,
+        left_frame,
+        left_site.function,
+        left_site.block,
+        left_site.instruction_offset,
+        left_ordinal,
+    )
+        .cmp(&(
+            right_execution,
+            right_fiber,
+            right_frame,
+            right_site.function,
+            right_site.block,
+            right_site.instruction_offset,
+            right_ordinal,
+        ))
+}
+
+fn cmp_awbc_dialogue_result_observation(
+    left: RuntimeOwnedSlotId,
+    right: RuntimeOwnedSlotId,
+) -> Ordering {
+    let RuntimeOwnedSlotId::AwbcDialogueResultObservation {
+        execution: left_execution,
+        fiber: left_fiber,
+        frame: left_frame,
+        site: left_site,
+    } = left
+    else {
+        unreachable!("equal canonical tags select the same variant")
+    };
+    let RuntimeOwnedSlotId::AwbcDialogueResultObservation {
+        execution: right_execution,
+        fiber: right_fiber,
+        frame: right_frame,
+        site: right_site,
+    } = right
+    else {
+        unreachable!("equal canonical tags select the same variant")
+    };
+    (
+        left_execution,
+        left_fiber,
+        left_frame,
+        left_site.function,
+        left_site.block,
+        left_site.instruction_offset,
+    )
+        .cmp(&(
+            right_execution,
+            right_fiber,
+            right_frame,
+            right_site.function,
+            right_site.block,
+            right_site.instruction_offset,
+        ))
+}
+
+fn cmp_awbc_effect_observation_arg(
+    left: RuntimeOwnedSlotId,
+    right: RuntimeOwnedSlotId,
+) -> Ordering {
+    let key = |slot| {
+        let RuntimeOwnedSlotId::AwbcEffectObservationArg {
+            execution,
+            fiber,
+            frame,
+            site,
+            effect_ordinal,
+            arg_ordinal,
+        } = slot
+        else {
+            unreachable!("equal canonical tags select the same variant")
+        };
+        (
+            execution,
+            fiber,
+            frame,
+            site.function,
+            site.block,
+            site.instruction_offset,
+            effect_ordinal,
+            arg_ordinal,
+        )
+    };
+    key(left).cmp(&key(right))
+}
+
 fn cmp_mailbox_lane(left: RuntimeOwnedSlotId, right: RuntimeOwnedSlotId) -> Ordering {
     let RuntimeOwnedSlotId::MailboxLane {
         execution: left_execution,
@@ -530,6 +849,49 @@ enum HumanOwnedSlot {
         site: FiberCursor,
         ordinal: u32,
     },
+    AwbcCleanupArg {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        scope: Option<AwbcScopeId>,
+        cleanup_ordinal: u32,
+        arg_ordinal: u32,
+    },
+    AwbcAwaitManyResult {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        plan: AwbcTaskPlanId,
+        index: u32,
+    },
+    AwbcAwaitManyItem {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        plan: AwbcTaskPlanId,
+        index: u32,
+    },
+    AwbcLineObservationArg {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        site: FiberCursor,
+        ordinal: u32,
+    },
+    AwbcDialogueResultObservation {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        site: FiberCursor,
+    },
+    AwbcEffectObservationArg {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        site: FiberCursor,
+        effect_ordinal: u32,
+        arg_ordinal: u32,
+    },
     NativeFormatOperand {
         execution: ExecutionInstanceId,
         fiber: RuntimePersistentFiberId,
@@ -589,6 +951,49 @@ enum HumanOwnedSlotInput {
         frame: RuntimeFrameInstanceId,
         site: FiberCursor,
         ordinal: u32,
+    },
+    AwbcCleanupArg {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        scope: Option<AwbcScopeId>,
+        cleanup_ordinal: u32,
+        arg_ordinal: u32,
+    },
+    AwbcAwaitManyResult {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        plan: AwbcTaskPlanId,
+        index: u32,
+    },
+    AwbcAwaitManyItem {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        plan: AwbcTaskPlanId,
+        index: u32,
+    },
+    AwbcLineObservationArg {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        site: FiberCursor,
+        ordinal: u32,
+    },
+    AwbcDialogueResultObservation {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        site: FiberCursor,
+    },
+    AwbcEffectObservationArg {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        site: FiberCursor,
+        effect_ordinal: u32,
+        arg_ordinal: u32,
     },
     NativeFormatOperand {
         execution: ExecutionInstanceId,
@@ -668,6 +1073,86 @@ impl From<RuntimeOwnedSlotId> for HumanOwnedSlot {
                 frame,
                 site,
                 ordinal,
+            },
+            RuntimeOwnedSlotId::AwbcCleanupArg {
+                execution,
+                fiber,
+                frame,
+                scope,
+                cleanup_ordinal,
+                arg_ordinal,
+            } => Self::AwbcCleanupArg {
+                execution,
+                fiber,
+                frame,
+                scope,
+                cleanup_ordinal,
+                arg_ordinal,
+            },
+            RuntimeOwnedSlotId::AwbcAwaitManyResult {
+                execution,
+                fiber,
+                frame,
+                plan,
+                index,
+            } => Self::AwbcAwaitManyResult {
+                execution,
+                fiber,
+                frame,
+                plan,
+                index,
+            },
+            RuntimeOwnedSlotId::AwbcAwaitManyItem {
+                execution,
+                fiber,
+                frame,
+                plan,
+                index,
+            } => Self::AwbcAwaitManyItem {
+                execution,
+                fiber,
+                frame,
+                plan,
+                index,
+            },
+            RuntimeOwnedSlotId::AwbcLineObservationArg {
+                execution,
+                fiber,
+                frame,
+                site,
+                ordinal,
+            } => Self::AwbcLineObservationArg {
+                execution,
+                fiber,
+                frame,
+                site,
+                ordinal,
+            },
+            RuntimeOwnedSlotId::AwbcDialogueResultObservation {
+                execution,
+                fiber,
+                frame,
+                site,
+            } => Self::AwbcDialogueResultObservation {
+                execution,
+                fiber,
+                frame,
+                site,
+            },
+            RuntimeOwnedSlotId::AwbcEffectObservationArg {
+                execution,
+                fiber,
+                frame,
+                site,
+                effect_ordinal,
+                arg_ordinal,
+            } => Self::AwbcEffectObservationArg {
+                execution,
+                fiber,
+                frame,
+                site,
+                effect_ordinal,
+                arg_ordinal,
             },
             RuntimeOwnedSlotId::NativeFormatOperand {
                 execution,
@@ -771,6 +1256,86 @@ impl From<HumanOwnedSlotInput> for RuntimeOwnedSlotId {
                 frame,
                 site,
                 ordinal,
+            },
+            HumanOwnedSlotInput::AwbcCleanupArg {
+                execution,
+                fiber,
+                frame,
+                scope,
+                cleanup_ordinal,
+                arg_ordinal,
+            } => Self::AwbcCleanupArg {
+                execution,
+                fiber,
+                frame,
+                scope,
+                cleanup_ordinal,
+                arg_ordinal,
+            },
+            HumanOwnedSlotInput::AwbcAwaitManyResult {
+                execution,
+                fiber,
+                frame,
+                plan,
+                index,
+            } => Self::AwbcAwaitManyResult {
+                execution,
+                fiber,
+                frame,
+                plan,
+                index,
+            },
+            HumanOwnedSlotInput::AwbcAwaitManyItem {
+                execution,
+                fiber,
+                frame,
+                plan,
+                index,
+            } => Self::AwbcAwaitManyItem {
+                execution,
+                fiber,
+                frame,
+                plan,
+                index,
+            },
+            HumanOwnedSlotInput::AwbcLineObservationArg {
+                execution,
+                fiber,
+                frame,
+                site,
+                ordinal,
+            } => Self::AwbcLineObservationArg {
+                execution,
+                fiber,
+                frame,
+                site,
+                ordinal,
+            },
+            HumanOwnedSlotInput::AwbcDialogueResultObservation {
+                execution,
+                fiber,
+                frame,
+                site,
+            } => Self::AwbcDialogueResultObservation {
+                execution,
+                fiber,
+                frame,
+                site,
+            },
+            HumanOwnedSlotInput::AwbcEffectObservationArg {
+                execution,
+                fiber,
+                frame,
+                site,
+                effect_ordinal,
+                arg_ordinal,
+            } => Self::AwbcEffectObservationArg {
+                execution,
+                fiber,
+                frame,
+                site,
+                effect_ordinal,
+                arg_ordinal,
             },
             HumanOwnedSlotInput::NativeFormatOperand {
                 execution,
@@ -897,11 +1462,26 @@ mod tests {
             from_json(
                 r#"{"kind":"native_format_operand","execution":"1","fiber":2,"frame":3,"attempt":4,"ordinal":5}"#,
             ),
+            from_json(
+                r#"{"kind":"awbc_cleanup_arg","execution":"1","fiber":"2","frame":"3","scope":null,"cleanup_ordinal":4,"arg_ordinal":5}"#,
+            ),
+            from_json(
+                r#"{"kind":"awbc_await_many_result","execution":"1","fiber":"2","frame":"3","plan":4,"index":5}"#,
+            ),
+            from_json(
+                r#"{"kind":"awbc_await_many_item","execution":"1","fiber":"2","frame":"3","plan":4,"index":5}"#,
+            ),
+            from_json(
+                r#"{"kind":"awbc_line_observation_arg","execution":"1","fiber":"2","frame":"3","site":{"function":4,"block":5,"instruction_offset":6},"ordinal":7}"#,
+            ),
+            from_json(
+                r#"{"kind":"awbc_dialogue_result_observation","execution":"1","fiber":"2","frame":"3","site":{"function":4,"block":5,"instruction_offset":6}}"#,
+            ),
         ];
         assert!(slots.windows(2).all(|pair| pair[0] < pair[1]));
         assert_eq!(
             slots.map(RuntimeOwnedSlotId::canonical_tag),
-            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
         );
     }
 
@@ -919,6 +1499,21 @@ mod tests {
             r#"{"kind":"awbc_format_operand","execution":"1","fiber":"2","frame":"3","site":{"function":4,"block":5,"instruction_offset":6},"ordinal":7}"#
         );
 
+        let observation: RuntimeOwnedSlotId = from_json(
+            r#"{"kind":"awbc_line_observation_arg","execution":"1","fiber":"2","frame":"3","site":{"function":4,"block":5,"instruction_offset":6},"ordinal":7}"#,
+        );
+        assert_eq!(
+            observation.render_canonical(),
+            "exec/1/awbc/fiber/2/frame/3/line-observation/4/5/6/arg/7"
+        );
+        let result: RuntimeOwnedSlotId = from_json(
+            r#"{"kind":"awbc_dialogue_result_observation","execution":"1","fiber":"2","frame":"3","site":{"function":4,"block":5,"instruction_offset":6}}"#,
+        );
+        assert_eq!(
+            result.render_canonical(),
+            "exec/1/awbc/fiber/2/frame/3/dialogue-result-observation/4/5/6"
+        );
+
         let native: RuntimeOwnedSlotId = from_json(
             r#"{"kind":"native_format_operand","execution":"1","fiber":2,"frame":3,"attempt":4,"ordinal":5}"#,
         );
@@ -934,5 +1529,28 @@ mod tests {
             r#"{"kind":"native_format_operand","execution":"1","fiber":2,"frame":3,"attempt":0,"ordinal":5}"#
         )
         .is_err());
+    }
+
+    #[test]
+    fn awbc_cleanup_argument_slots_distinguish_root_and_lexical_custody() {
+        let root: RuntimeOwnedSlotId = from_json(
+            r#"{"kind":"awbc_cleanup_arg","execution":"1","fiber":"2","frame":"3","scope":null,"cleanup_ordinal":4,"arg_ordinal":5}"#,
+        );
+        let lexical: RuntimeOwnedSlotId = from_json(
+            r#"{"kind":"awbc_cleanup_arg","execution":"1","fiber":"2","frame":"3","scope":6,"cleanup_ordinal":4,"arg_ordinal":5}"#,
+        );
+        assert_eq!(
+            root.render_canonical(),
+            "exec/1/awbc/fiber/2/frame/3/cleanup/root/entry/4/arg/5"
+        );
+        assert_eq!(
+            lexical.render_canonical(),
+            "exec/1/awbc/fiber/2/frame/3/cleanup/scope/6/entry/4/arg/5"
+        );
+        assert_ne!(root, lexical);
+        assert_eq!(
+            serde_json::to_string(&root).unwrap(),
+            r#"{"kind":"awbc_cleanup_arg","execution":"1","fiber":"2","frame":"3","scope":null,"cleanup_ordinal":4,"arg_ordinal":5}"#
+        );
     }
 }

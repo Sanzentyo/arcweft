@@ -422,6 +422,12 @@ pub enum RuntimeNeedPublication {
         state: Need<RuntimePayload>,
         cursor: TaskPublicationCursor,
     },
+    /// Local producer publication carries only cursor metadata. The Ready
+    /// payload stays in its registry until the Await consumer takes it.
+    Producer {
+        need: NeedId,
+        cursor: TaskPublicationCursor,
+    },
     Failed {
         need: NeedId,
         cursor: TaskPublicationCursor,
@@ -429,18 +435,131 @@ pub enum RuntimeNeedPublication {
     },
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum RuntimeNeedPublicationRollbackImage {
+    State {
+        need: NeedId,
+        state: RuntimeNeedStateRollbackImage,
+        cursor: TaskPublicationCursor,
+    },
+    Producer {
+        need: NeedId,
+        cursor: TaskPublicationCursor,
+    },
+    Failed {
+        need: NeedId,
+        cursor: TaskPublicationCursor,
+        message: String,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum RuntimeNeedStateRollbackImage {
+    NotStarted,
+    Pending(Progress),
+    Ready(crate::value::AwbcRuntimeValueSnapshot),
+    Cancelled,
+}
+
+impl RuntimeNeedPublication {
+    pub(crate) fn inert_rollback_image(
+        &self,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<RuntimeNeedPublicationRollbackImage, String> {
+        Ok(match self {
+            Self::State {
+                need,
+                state,
+                cursor,
+            } => RuntimeNeedPublicationRollbackImage::State {
+                need: need.clone(),
+                state: match state {
+                    Need::NotStarted => RuntimeNeedStateRollbackImage::NotStarted,
+                    Need::Pending(progress) => {
+                        RuntimeNeedStateRollbackImage::Pending(progress.clone())
+                    }
+                    Need::Ready(value) => RuntimeNeedStateRollbackImage::Ready(
+                        crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                            value.value(),
+                            owner,
+                        )
+                        .map_err(|error| error.to_string())?,
+                    ),
+                    Need::Cancelled => RuntimeNeedStateRollbackImage::Cancelled,
+                },
+                cursor: *cursor,
+            },
+            Self::Producer { need, cursor } => RuntimeNeedPublicationRollbackImage::Producer {
+                need: need.clone(),
+                cursor: *cursor,
+            },
+            Self::Failed {
+                need,
+                cursor,
+                message,
+            } => RuntimeNeedPublicationRollbackImage::Failed {
+                need: need.clone(),
+                cursor: *cursor,
+                message: message.clone(),
+            },
+        })
+    }
+
+    pub(crate) fn from_rollback_image(
+        image: RuntimeNeedPublicationRollbackImage,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<Self, String> {
+        Ok(match image {
+            RuntimeNeedPublicationRollbackImage::State {
+                need,
+                state,
+                cursor,
+            } => Self::State {
+                need,
+                state: match state {
+                    RuntimeNeedStateRollbackImage::NotStarted => Need::NotStarted,
+                    RuntimeNeedStateRollbackImage::Pending(progress) => Need::Pending(progress),
+                    RuntimeNeedStateRollbackImage::Ready(saved) => Need::Ready(RuntimePayload(
+                        saved
+                            .into_runtime_value_for_program(owner)
+                            .map_err(|error| error.to_string())?,
+                    )),
+                    RuntimeNeedStateRollbackImage::Cancelled => Need::Cancelled,
+                },
+                cursor,
+            },
+            RuntimeNeedPublicationRollbackImage::Producer { need, cursor } => {
+                Self::Producer { need, cursor }
+            }
+            RuntimeNeedPublicationRollbackImage::Failed {
+                need,
+                cursor,
+                message,
+            } => Self::Failed {
+                need,
+                cursor,
+                message,
+            },
+        })
+    }
+}
+
 impl RuntimeNeedPublication {
     #[must_use]
     pub const fn need(&self) -> &NeedId {
         match self {
-            Self::State { need, .. } | Self::Failed { need, .. } => need,
+            Self::State { need, .. } | Self::Producer { need, .. } | Self::Failed { need, .. } => {
+                need
+            }
         }
     }
 
     #[must_use]
     pub const fn cursor(&self) -> TaskPublicationCursor {
         match self {
-            Self::State { cursor, .. } | Self::Failed { cursor, .. } => *cursor,
+            Self::State { cursor, .. }
+            | Self::Producer { cursor, .. }
+            | Self::Failed { cursor, .. } => *cursor,
         }
     }
 }
@@ -570,6 +689,17 @@ impl RuntimeNeedState {
 
     pub const fn state(&self) -> &Need<RuntimePayload> {
         &self.state
+    }
+
+    pub fn into_parts(self) -> (LogicalEpoch, NeedId, TaskSequence, Need<RuntimePayload>) {
+        (self.logical_epoch, self.need, self.sequence, self.state)
+    }
+
+    pub fn inspect_host_ready_ownership(&self) -> Result<(), RuntimeHostPayloadOwnershipError> {
+        match &self.state {
+            Need::Ready(value) => inspect_host_payload_ownership(value),
+            _ => Ok(()),
+        }
     }
 }
 
@@ -1363,6 +1493,96 @@ impl TaskEvent {
             sequence: self.sequence,
             task_id: self.task_id.clone(),
         }
+    }
+
+    /// Host task completion may introduce a new affine value, but it cannot
+    /// claim a dialogue line lease: those tokens are issued and transferred
+    /// only by the runtime line ledger, and host requests cannot carry them.
+    pub fn inspect_host_ready_ownership(&self) -> Result<(), RuntimeHostPayloadOwnershipError> {
+        let TaskEventKind::Ready(value) = &self.kind else {
+            return Ok(());
+        };
+        inspect_host_payload_ownership(value)
+    }
+}
+
+pub(crate) fn inspect_host_payload_ownership(
+    value: &RuntimePayload,
+) -> Result<(), RuntimeHostPayloadOwnershipError> {
+    let handles = value.value().affine_line_handles().map_err(|error| {
+        RuntimeHostPayloadOwnershipError::InvalidValueGraph {
+            message: error.to_string(),
+        }
+    })?;
+    if let Some(handle) = handles.first() {
+        return Err(RuntimeHostPayloadOwnershipError::ForeignLineHandle {
+            token: handle.token().clone(),
+        });
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum RuntimeHostPayloadOwnershipError {
+    #[error("host result contains a dialogue line handle not issued to the host: {token:?}")]
+    ForeignLineHandle {
+        token: crate::runtime_id::RuntimeLineHandleToken,
+    },
+    #[error("host result has an invalid affine value graph: {message}")]
+    InvalidValueGraph { message: String },
+}
+
+#[cfg(test)]
+mod host_ready_ownership_tests {
+    use super::*;
+    use crate::pattern::{
+        RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
+    };
+    use crate::runtime_id::{
+        DialogueActivationId, RuntimeDialogueContentPlanId, RuntimeLineHandleSiteId,
+        RuntimeLineHandleToken,
+    };
+    use crate::value::{RuntimeHandleKind, RuntimeOpaquePersistence, RuntimeOpaqueValueClass};
+
+    fn ready(value: RuntimeValue) -> TaskEvent {
+        TaskEvent {
+            generation: GenerationId::new(0),
+            logical_epoch: LogicalEpoch(0),
+            task_id: TaskId("task.ready".to_owned()),
+            sequence: TaskSequence(0),
+            publication_revision: TaskPublicationRevision::FIRST,
+            kind: TaskEventKind::Ready(RuntimePayload(value)),
+        }
+    }
+
+    #[test]
+    fn host_ready_rejects_nested_line_lease_but_accepts_other_affine_payload() {
+        let token = RuntimeLineHandleToken::new(
+            DialogueActivationId::new(
+                crate::effect::RuntimeArtifactFingerprint::try_from_bytes([7; 32]).unwrap(),
+                RuntimePersistentFiberId::from_allocated(11),
+                RuntimeDialogueContentPlanId::from_accepted_ordinal(NonZeroU32::new(3).unwrap()),
+                17,
+            ),
+            RuntimeLineHandleSiteId::from_zero_based(3),
+            23,
+        );
+        let kind = RuntimeHandleKind::Voice;
+        let owner = RuntimeOpaqueTypeOwner::exact_with(
+            RuntimeOpaqueTypeProducerId::try_new("std.line.voice_handle").unwrap(),
+            RuntimeSemanticTypeId::from_bytes([9; 32]),
+            RuntimeOpaqueValueClass::AffineHandle(kind),
+            RuntimeOpaquePersistence::SnapshotOnly,
+        );
+        let handle = owner.try_wrap(token.encode_payload()).unwrap();
+        let event = ready(RuntimeValue::Tuple(vec![RuntimeValue::Unit, handle]));
+        assert_eq!(
+            event.inspect_host_ready_ownership(),
+            Err(RuntimeHostPayloadOwnershipError::ForeignLineHandle { token })
+        );
+
+        let other_affine = ready(RuntimeValue::Need(NeedId("need.ready".to_owned())));
+        assert!(other_affine.inspect_host_ready_ownership().is_ok());
     }
 }
 

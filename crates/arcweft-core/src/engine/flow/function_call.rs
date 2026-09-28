@@ -8,9 +8,10 @@ use std::sync::Arc;
 use crate::engine::{
     Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowCursor, FlowFiberStatus,
     FunctionCallFrame, FunctionReturnContinuation, RuntimeCallBackend, RuntimeEvalError,
-    RuntimeStepOutput, match_runtime_pattern, runtime_value_label,
+    RuntimeStepOutput, runtime_value_label,
 };
 use crate::pattern::RuntimePattern;
+use crate::pattern::match_runtime_pattern_owned;
 use crate::plan::{RuntimeFunctionInputSource, RuntimeFunctionSiteBody};
 use crate::value::{RuntimeFunctionApplyError, RuntimeValue};
 
@@ -30,7 +31,7 @@ impl Engine {
         let body = declaration.body().clone();
         let inputs = declaration.inputs().to_vec();
         if let RuntimeFunctionSiteBody::Expression(_) = &body {
-            let value = self.evaluate_function_site(site, &captures, &args, pure_backend)?;
+            let value = self.evaluate_function_site(site, captures, args, pure_backend)?;
             frame.caller_pending_ops = std::mem::take(&mut self.fiber.pending_ops);
             self.complete_function_call_return(frame, value, output, pure_backend);
             return Ok(());
@@ -38,29 +39,35 @@ impl Engine {
         let RuntimeFunctionSiteBody::Executable(executable) = body else {
             unreachable!("function-site body match is exhaustive")
         };
-        self.fiber.env.push_scope_with_capacity(inputs.len());
+        let mut captures = captures.into_iter().map(Some).collect::<Vec<_>>();
+        let mut args = args.into_iter().map(Some).collect::<Vec<_>>();
         let setup = (|| {
+            let mut staged = Vec::new();
             for input in &inputs {
                 let (values, position) = match input.source() {
-                    RuntimeFunctionInputSource::Capture { position } => (&captures, position),
-                    RuntimeFunctionInputSource::Parameter { position } => (&args, position),
+                    RuntimeFunctionInputSource::Capture { position } => (&mut captures, position),
+                    RuntimeFunctionInputSource::Parameter { position } => (&mut args, position),
                 };
                 let value = values
-                    .get(usize::try_from(position).map_err(|_| {
+                    .get_mut(usize::try_from(position).map_err(|_| {
                         RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site }
                     })?)
+                    .and_then(Option::take)
                     .ok_or(RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site })?;
-                self.fiber.env.set_ref(input.input_local(), value);
-                let bindings = match_runtime_pattern(&self.plan, input.pattern(), value)?
-                    .ok_or_else(|| RuntimeEvalError::PatternMismatch(runtime_value_label(value)))?;
-                self.fiber.env.bind_all(bindings);
+                let bindings = match_runtime_pattern_owned(&self.plan, input.pattern(), value)?
+                    .ok_or_else(|| {
+                        RuntimeEvalError::PatternMismatch(format!(
+                            "function site {site} input {:?}",
+                            input.source()
+                        ))
+                    })?;
+                staged.extend(bindings);
             }
-            Ok::<(), RuntimeEvalError>(())
+            Ok::<Vec<crate::value::RuntimeLocalBinding>, RuntimeEvalError>(staged)
         })();
-        if let Err(error) = setup {
-            self.fiber.env.pop_scope();
-            return Err(error);
-        }
+        let staged = setup?;
+        self.fiber.env.push_scope_with_capacity(staged.len());
+        self.fiber.env.bind_all(staged);
         frame.function_scope = true;
         frame.caller_pending_ops = std::mem::take(&mut self.fiber.pending_ops);
         self.fiber.control_stack.push(FlowControlStackEntry {
@@ -105,14 +112,9 @@ impl Engine {
         }
         self.fiber.pending_ops = frame.caller_pending_ops;
         match frame.continuation {
-            FunctionReturnContinuation::CallableDefault {
-                callable,
-                arguments,
-                result,
-            } => {
+            FunctionReturnContinuation::CallableDefault { pending, result } => {
                 if let Err(error) = self.finish_callable_group_default(
-                    callable,
-                    arguments,
+                    pending,
                     value,
                     result,
                     frame.resume,
@@ -135,12 +137,12 @@ impl Engine {
         value: RuntimeValue,
         output: &mut RuntimeStepOutput,
     ) {
-        match self.try_bind_pattern(result, &value) {
-            Ok(true) => {
+        match self.try_bind_pattern_owned(result, value) {
+            Ok(None) => {
                 self.fiber.cursor = resume;
                 self.fiber.status = FlowFiberStatus::Running;
             }
-            Ok(false) => self.fail_eval(
+            Ok(Some(value)) => self.fail_eval(
                 RuntimeEvalError::PatternMismatch(runtime_value_label(&value)),
                 output,
             ),

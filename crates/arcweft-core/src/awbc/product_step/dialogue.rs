@@ -1,21 +1,23 @@
 use super::{ActiveDialogue, ProductStepError};
 use crate::awbc::schema::AwbcTypeId;
 use crate::line_task::{
-    LineRuntimeError, RuntimeDialogueActivationRegistry, RuntimeDialogueActivationTransaction,
-    RuntimeDialogueRegistryCommitReceipt,
+    LineRuntimeError, PreparedRuntimeParentFiberReconciliation,
+    RuntimeDialogueAbandonedCommitProof, RuntimeDialogueActivationRegistry,
+    RuntimeDialogueActivationTransaction, RuntimeDialogueCommitProof,
+    RuntimeDialoguePublishedCommitProof, RuntimeDialogueRegistryCommitReceipt,
 };
 use crate::runtime_id::DialogueActivationId;
 use crate::step::RuntimeDialogueContentEvent;
 use crate::task::RuntimeProgramOwner;
 use crate::time::LogicalDuration;
 use crate::value::{RuntimeValue, ownership::RuntimeOwnedSlotId};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Product adapter over the executor-neutral dialogue registry. Product owns
 /// only ingress readiness and its AWBC frame payload; Active/PublishedHandles,
 /// revisions, ledger/command transactions, publication, and parent drops are
 /// shared with structured execution.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub(super) struct ProductDialogueStore {
     registry: RuntimeDialogueActivationRegistry<ActiveDialogue, AwbcTypeId>,
 }
@@ -25,7 +27,7 @@ pub(super) type ProductDialogueTransaction =
 
 impl ProductDialogueStore {
     pub(super) fn begin(&mut self, frame: ActiveDialogue) -> Result<(), LineRuntimeError> {
-        if !self.registry.active_ids().is_empty() {
+        if self.registry.has_active_or_inflight() {
             return Err(LineRuntimeError::DuplicateActivationLedger);
         }
         self.registry.begin(frame.activation.clone(), frame)
@@ -60,8 +62,8 @@ impl ProductDialogueStore {
             for binding in frame.values.iter() {
                 visit_value_graph(&binding.value, &mut visitor)?;
             }
-            for effect in frame.effect_callbacks.iter() {
-                visit_value_slice(effect.callback().retained(), &mut visitor)?;
+            for callback in frame.effect_callbacks.values() {
+                visit_value_slice(callback.retained(), &mut visitor)?;
             }
             match &frame.phase {
                 super::ProductDialoguePhase::Activating { fiber, pending } => {
@@ -70,6 +72,9 @@ impl ProductDialogueStore {
                 }
                 super::ProductDialoguePhase::Reducing { .. }
                 | super::ProductDialoguePhase::Publishing { .. } => {}
+                super::ProductDialoguePhase::Transitioning => {
+                    unreachable!("transient dialogue phase cannot be inspected")
+                }
                 super::ProductDialoguePhase::Closing(closing) => match &closing.state {
                     super::ProductDialogueClosingState::Activation { fiber, pending } => {
                         fiber.visit_runtime_values(&mut visitor)?;
@@ -86,7 +91,7 @@ impl ProductDialogueStore {
     }
 
     pub(super) fn begin_active_transaction(
-        &self,
+        &mut self,
     ) -> Result<ProductDialogueTransaction, LineRuntimeError> {
         let activation = self
             .active_activation()
@@ -95,31 +100,62 @@ impl ProductDialogueStore {
     }
 
     pub(super) fn begin_transaction(
-        &self,
+        &mut self,
         activation: &DialogueActivationId,
     ) -> Result<ProductDialogueTransaction, LineRuntimeError> {
         self.registry.begin_transaction(activation)
     }
 
-    pub(super) fn commit(
+    pub(super) fn restore_transaction(
         &mut self,
         transaction: ProductDialogueTransaction,
-    ) -> Result<RuntimeDialogueRegistryCommitReceipt, LineRuntimeError> {
-        self.registry.commit(transaction)
+    ) -> Result<(), LineRuntimeError> {
+        self.registry.restore_transaction(transaction)
     }
 
-    pub(super) fn commit_published(
-        &mut self,
-        transaction: ProductDialogueTransaction,
-    ) -> Result<RuntimeDialogueRegistryCommitReceipt, LineRuntimeError> {
-        self.registry.commit_published(transaction)
+    pub(super) fn inspect_commit(
+        &self,
+        transaction: &ProductDialogueTransaction,
+    ) -> Result<RuntimeDialogueCommitProof, LineRuntimeError> {
+        self.registry.inspect_commit(transaction)
     }
 
-    pub(super) fn commit_abandoned(
+    pub(super) fn commit_prepared(
         &mut self,
         transaction: ProductDialogueTransaction,
-    ) -> Result<RuntimeDialogueRegistryCommitReceipt, LineRuntimeError> {
-        self.registry.commit_abandoned(transaction)
+        proof: RuntimeDialogueCommitProof,
+    ) -> RuntimeDialogueRegistryCommitReceipt {
+        self.registry.commit_prepared(transaction, proof)
+    }
+
+    pub(super) fn inspect_published(
+        &self,
+        transaction: &ProductDialogueTransaction,
+    ) -> Result<RuntimeDialoguePublishedCommitProof, LineRuntimeError> {
+        self.registry.inspect_published(transaction)
+    }
+
+    pub(super) fn commit_published_prepared(
+        &mut self,
+        transaction: ProductDialogueTransaction,
+        proof: RuntimeDialoguePublishedCommitProof,
+    ) -> RuntimeDialogueRegistryCommitReceipt {
+        self.registry.commit_published_prepared(transaction, proof)
+    }
+
+    pub(super) fn inspect_abandoned(
+        &self,
+        transaction: &ProductDialogueTransaction,
+    ) -> Result<RuntimeDialogueAbandonedCommitProof, LineRuntimeError> {
+        self.registry.inspect_abandoned(transaction)
+    }
+
+    pub(super) fn commit_abandoned_prepared(
+        &mut self,
+        transaction: ProductDialogueTransaction,
+        proof: RuntimeDialogueAbandonedCommitProof,
+    ) -> RuntimeDialogueRegistryCommitReceipt {
+        self.registry.commit_abandoned_prepared(transaction, proof)
     }
 
     pub(super) fn latch_step_input(
@@ -129,74 +165,140 @@ impl ProductDialogueStore {
         advances: &[DialogueActivationId],
         line_outcomes: &[crate::presentation::RuntimeLineHostOutcome],
     ) -> Result<Vec<LineRuntimeError>, ProductStepError> {
-        let mut next = self.clone();
-        if let Some(activation) = next.active_activation() {
-            let mut transaction = next.registry.begin_transaction(&activation)?;
-            if transaction.frame().is_ingress_ready() {
-                transaction.frame_mut().elapsed_nanos = transaction
-                    .frame()
-                    .elapsed_nanos
-                    .checked_add(dt.as_nanos())
-                    .ok_or(LineRuntimeError::DialogueElapsedOverflow)?;
-            }
-            next.registry.commit(transaction)?;
+        // Validate the complete ingress before taking the sole active frame.
+        // Published ledgers are copyable metadata and are staged separately.
+        let published = self.registry.stage_published_outcomes(line_outcomes)?;
+        let active = self.active_activation();
+        if let Some(frame) = self.active_frame()
+            && frame.is_ingress_ready()
+        {
+            frame
+                .elapsed_nanos
+                .checked_add(dt.as_nanos())
+                .ok_or(LineRuntimeError::DialogueElapsedOverflow)?;
         }
+        let mut seen_content = BTreeSet::new();
         for event in content_events {
-            let mut transaction = next.ready_transaction(event.activation())?;
+            let frame = self
+                .registry
+                .active_frame(event.activation())
+                .ok_or_else(|| {
+                    if self.registry.is_published(event.activation()) {
+                        LineRuntimeError::ActivationFrameReleased
+                    } else {
+                        LineRuntimeError::UnknownActivationLedger
+                    }
+                })?;
+            if !frame.is_ingress_ready() {
+                return Err(LineRuntimeError::DialogueIngressNotReady {
+                    activation: event.activation().clone(),
+                }
+                .into());
+            }
             let kind = event.kind();
-            if transaction.frame().pending_content_events.contains(&kind) {
+            if frame.pending_content_events.contains(&kind)
+                || !seen_content.insert((event.activation().clone(), kind))
+            {
                 return Err(LineRuntimeError::DuplicateContentEvent { event: kind }.into());
             }
-            transaction.frame_mut().pending_content_events.push(kind);
-            next.registry.commit(transaction)?;
         }
+        let mut seen_advances = BTreeSet::new();
         for activation in advances {
-            let mut transaction = next.ready_transaction(activation)?;
-            if transaction.frame().pending_advance {
+            let frame = self.registry.active_frame(activation).ok_or_else(|| {
+                if self.registry.is_published(activation) {
+                    LineRuntimeError::ActivationFrameReleased
+                } else {
+                    LineRuntimeError::UnknownActivationLedger
+                }
+            })?;
+            if !frame.is_ingress_ready() {
+                return Err(LineRuntimeError::DialogueIngressNotReady {
+                    activation: activation.clone(),
+                }
+                .into());
+            }
+            if frame.pending_advance || !seen_advances.insert(activation.clone()) {
                 return Err(LineRuntimeError::DuplicateDialogueAdvance {
                     activation: activation.clone(),
                 }
                 .into());
             }
-            transaction.frame_mut().pending_advance = true;
-            next.registry.commit(transaction)?;
         }
-        let mut diagnostics = Vec::new();
+        let mut seen_outcomes = BTreeSet::new();
         for outcome in line_outcomes {
             let activation = outcome.command().activation();
-            if next.registry.is_published(activation) {
-                if let Some(diagnostic) = next.registry.accept_published_outcome(outcome)? {
-                    diagnostics.push(diagnostic);
-                }
+            if self.registry.is_published(activation) {
                 continue;
             }
-            let mut transaction = next.registry.begin_transaction(activation)?;
-            if transaction
-                .frame()
+            let frame = self
+                .registry
+                .active_frame(activation)
+                .ok_or(LineRuntimeError::UnknownActivationLedger)?;
+            if frame
                 .pending_line_outcomes
                 .iter()
                 .any(|pending| pending.command() == outcome.command())
+                || !seen_outcomes.insert(outcome.command().clone())
             {
                 return Err(LineRuntimeError::DuplicateCommandOutcome.into());
             }
+        }
+        if let Some(activation) = active.as_ref() {
+            let commits = 1_usize
+                .checked_add(content_events.len())
+                .and_then(|count| count.checked_add(advances.len()))
+                .and_then(|count| count.checked_add(seen_outcomes.len()))
+                .ok_or(LineRuntimeError::ActivationTransactionRevisionOverflow)?;
+            let commits = u64::try_from(commits)
+                .map_err(|_| LineRuntimeError::ActivationTransactionRevisionOverflow)?;
+            self.registry
+                .active_revision(activation)
+                .and_then(|revision| revision.checked_add(commits))
+                .ok_or(LineRuntimeError::ActivationTransactionRevisionOverflow)?;
+
+            let mut transaction = self.registry.begin_transaction(activation)?;
+            if transaction.frame().is_ingress_ready() {
+                transaction.frame_mut().elapsed_nanos += dt.as_nanos();
+            }
+            self.registry.commit(transaction)?;
+        }
+        for event in content_events {
+            let mut transaction = self.ready_transaction(event.activation())?;
+            transaction
+                .frame_mut()
+                .pending_content_events
+                .push(event.kind());
+            self.registry.commit(transaction)?;
+        }
+        for activation in advances {
+            let mut transaction = self.ready_transaction(activation)?;
+            transaction.frame_mut().pending_advance = true;
+            self.registry.commit(transaction)?;
+        }
+        for outcome in line_outcomes {
+            let activation = outcome.command().activation();
+            if self.registry.is_published(activation) {
+                continue;
+            }
+            let mut transaction = self.registry.begin_transaction(activation)?;
             transaction
                 .frame_mut()
                 .pending_line_outcomes
                 .push(outcome.clone());
-            next.registry.commit(transaction)?;
+            self.registry.commit(transaction)?;
         }
-        *self = next;
-        Ok(diagnostics)
+        Ok(self.registry.commit_published_outcomes(published))
     }
 
     fn ready_transaction(
-        &self,
+        &mut self,
         activation: &DialogueActivationId,
     ) -> Result<ProductDialogueTransaction, LineRuntimeError> {
         let transaction = self.registry.begin_transaction(activation)?;
         if transaction.frame().is_ingress_ready() {
             Ok(transaction)
         } else {
+            self.registry.restore_transaction(transaction)?;
             Err(LineRuntimeError::DialogueIngressNotReady {
                 activation: activation.clone(),
             })
@@ -212,6 +314,24 @@ impl ProductDialogueStore {
     ) -> Result<crate::line_task::RuntimeHandleDropReceipt, LineRuntimeError> {
         self.registry
             .reconcile_parent_fiber(execution, before, after, drop_policy)
+    }
+
+    pub(super) fn inspect_parent_fiber_reconciliation(
+        &self,
+        execution: crate::runtime_id::ExecutionInstanceId,
+        before: &BTreeMap<crate::runtime_id::RuntimeLineHandleToken, RuntimeOwnedSlotId>,
+        after: &BTreeMap<crate::runtime_id::RuntimeLineHandleToken, RuntimeOwnedSlotId>,
+        drop_policy: Option<crate::effect::RuntimeDropPolicy>,
+    ) -> Result<PreparedRuntimeParentFiberReconciliation, LineRuntimeError> {
+        self.registry
+            .inspect_parent_fiber_reconciliation(execution, before, after, drop_policy)
+    }
+
+    pub(super) fn commit_parent_fiber_reconciliation(
+        &mut self,
+        prepared: PreparedRuntimeParentFiberReconciliation,
+    ) -> crate::line_task::RuntimeHandleDropReceipt {
+        self.registry.commit_parent_fiber_reconciliation(prepared)
     }
 
     pub(super) fn to_save_snapshot<S>(

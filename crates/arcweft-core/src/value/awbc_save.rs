@@ -17,6 +17,7 @@ use crate::pattern::{RuntimeOpaqueTypeOwner, RuntimeSemanticTypeId};
 use crate::runtime_id::RuntimeCallableStateId;
 use crate::task::RuntimeProgramOwner;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::collections::VecDeque;
 use thiserror::Error;
 
 #[cfg(test)]
@@ -88,7 +89,6 @@ pub enum AwbcRuntimeValueSnapshot {
 pub enum AwbcRuntimeIteratorSnapshot {
     Values {
         items: Vec<AwbcRuntimeValueSnapshot>,
-        index: u64,
     },
     Range(super::RuntimeRangeIterator),
     Witness {
@@ -219,7 +219,81 @@ pub struct AwbcRuntimeCallableSnapshot {
 }
 
 impl AwbcRuntimeValueSnapshot {
+    /// Captures a borrowed callable without constructing a second live
+    /// `RuntimeValue::Callable` carrier.
+    pub(crate) fn from_callable(
+        value: &RuntimeCallableValue,
+    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
+        Self::callable_from_live(value, None).map(Self::Callable)
+    }
+
+    pub(crate) fn from_callable_for_program(
+        value: &RuntimeCallableValue,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
+        Self::callable_from_live(value, Some(owner)).map(Self::Callable)
+    }
+
+    /// Derives the complete line-handle token inventory from the typed save
+    /// representation without activating a second live `RuntimeValue` graph.
+    pub(crate) fn affine_line_handle_tokens(
+        &self,
+    ) -> Result<Vec<crate::runtime_id::RuntimeLineHandleToken>, AwbcRuntimeValueSnapshotError> {
+        let mut tokens = Vec::new();
+        collect_snapshot_line_handle_tokens(self, 0, &mut tokens)?;
+        Ok(tokens)
+    }
+
+    pub(crate) fn from_opaque(
+        value: &RuntimeOpaqueValue,
+    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
+        Self::opaque_from_live(value, None).map(Self::Opaque)
+    }
+
+    pub(crate) fn from_opaque_for_program(
+        value: &RuntimeOpaqueValue,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
+        Self::opaque_from_live(value, Some(owner)).map(Self::Opaque)
+    }
+
     pub fn from_runtime_value(value: &RuntimeValue) -> Result<Self, AwbcRuntimeValueSnapshotError> {
+        Self::from_live_with_owner(value, None)
+    }
+
+    /// Captures a native rollback value under the exact immutable Plan lease.
+    /// AWBC save callers use `from_runtime_value`, which still rejects a
+    /// foreign Plan callable anywhere in the graph.
+    pub(crate) fn from_runtime_value_for_program(
+        value: &RuntimeValue,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
+        Self::from_live_with_owner(value, Some(owner))
+    }
+
+    pub(crate) fn from_runtime_iterator_for_program(
+        value: &RuntimeIterator,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
+        Self::iterator_from_live(value, Some(owner)).map(Self::Iterator)
+    }
+
+    pub(crate) fn into_runtime_iterator_for_program(
+        self,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<RuntimeIterator, AwbcRuntimeValueSnapshotError> {
+        let Self::Iterator(iterator) = self else {
+            return Err(AwbcRuntimeValueSnapshotError::new(
+                "rollback image does not contain an iterator",
+            ));
+        };
+        Self::iterator_into_live(iterator, owner)
+    }
+
+    fn from_live_with_owner(
+        value: &RuntimeValue,
+        owner: Option<&RuntimeProgramOwner>,
+    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
         Ok(match value {
             RuntimeValue::Unit => Self::Unit,
             RuntimeValue::Bool(value) => Self::Bool(*value),
@@ -248,15 +322,17 @@ impl AwbcRuntimeValueSnapshot {
                 label: value.label().map(str::to_owned),
             },
             RuntimeValue::Range(value) => Self::Range(value.clone()),
-            RuntimeValue::Iterator(value) => Self::Iterator(Self::iterator_from_live(value)?),
+            RuntimeValue::Iterator(value) => {
+                Self::Iterator(Self::iterator_from_live(value, owner)?)
+            }
             RuntimeValue::EntityRef(value) => Self::EntityRef(value.clone()),
             RuntimeValue::Tuple(values) => Self::Tuple(
                 values
                     .iter()
-                    .map(Self::from_runtime_value)
+                    .map(|value| Self::from_live_with_owner(value, owner))
                     .collect::<Result<_, _>>()?,
             ),
-            RuntimeValue::Seq(value) => Self::Seq(Self::sequence_from_live(value)?),
+            RuntimeValue::Seq(value) => Self::Seq(Self::sequence_from_live(value, owner)?),
             RuntimeValue::Record(fields) => Self::Record(
                 fields
                     .iter()
@@ -264,30 +340,34 @@ impl AwbcRuntimeValueSnapshot {
                         Ok(AwbcRuntimeFieldSnapshot {
                             field: field.field(),
                             name: field.name().to_owned(),
-                            value: Self::from_runtime_value(field.value())?,
+                            value: Self::from_live_with_owner(field.value(), owner)?,
                         })
                     })
                     .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?,
             ),
             RuntimeValue::NominalRecord(value) => {
-                Self::NominalRecord(Self::nominal_from_live(value)?)
+                Self::NominalRecord(Self::nominal_from_live(value, owner)?)
             }
-            RuntimeValue::Opaque(value) => Self::Opaque(Self::opaque_from_live(value)?),
-            RuntimeValue::Reduction(value) => Self::Reduction(Self::reduction_from_live(value)?),
-            RuntimeValue::Agent(value) => Self::Agent(Self::agent_from_live(value)?),
-            RuntimeValue::Callable(value) => Self::Callable(Self::callable_from_live(value)?),
+            RuntimeValue::Opaque(value) => Self::Opaque(Self::opaque_from_live(value, owner)?),
+            RuntimeValue::Reduction(value) => {
+                Self::Reduction(Self::reduction_from_live(value, owner)?)
+            }
+            RuntimeValue::Agent(value) => Self::Agent(Self::agent_from_live(value, owner)?),
+            RuntimeValue::Callable(value) => {
+                Self::Callable(Self::callable_from_live(value, owner)?)
+            }
             RuntimeValue::Variant {
-                owner,
+                owner: variant_owner,
                 ordinal,
                 name,
                 payload,
             } => Self::Variant {
-                owner: owner.clone(),
+                owner: variant_owner.clone(),
                 ordinal: *ordinal,
                 name: name.clone(),
                 payload: payload
                     .as_deref()
-                    .map(Self::from_runtime_value)
+                    .map(|value| Self::from_live_with_owner(value, owner))
                     .transpose()?
                     .map(Box::new),
             },
@@ -415,22 +495,18 @@ impl AwbcRuntimeValueSnapshot {
 
     fn iterator_from_live(
         value: &RuntimeIterator,
+        owner: Option<&RuntimeProgramOwner>,
     ) -> Result<AwbcRuntimeIteratorSnapshot, AwbcRuntimeValueSnapshotError> {
         Ok(match value {
-            RuntimeIterator::Values { items, index } => AwbcRuntimeIteratorSnapshot::Values {
+            RuntimeIterator::Values { items } => AwbcRuntimeIteratorSnapshot::Values {
                 items: items
                     .iter()
-                    .map(Self::from_runtime_value)
+                    .map(|value| Self::from_live_with_owner(value, owner))
                     .collect::<Result<_, _>>()?,
-                index: u64::try_from(*index).map_err(|_| {
-                    AwbcRuntimeValueSnapshotError::new(
-                        "runtime iterator index does not fit the AWBC save field",
-                    )
-                })?,
             },
             RuntimeIterator::Range(value) => AwbcRuntimeIteratorSnapshot::Range(value.clone()),
             RuntimeIterator::Witness { state, next } => AwbcRuntimeIteratorSnapshot::Witness {
-                state: Box::new(Self::from_runtime_value(state)?),
+                state: Box::new(Self::from_live_with_owner(state, owner)?),
                 next: *next,
             },
         })
@@ -441,16 +517,11 @@ impl AwbcRuntimeValueSnapshot {
         program_owner: &RuntimeProgramOwner,
     ) -> Result<RuntimeIterator, AwbcRuntimeValueSnapshotError> {
         Ok(match value {
-            AwbcRuntimeIteratorSnapshot::Values { items, index } => RuntimeIterator::Values {
+            AwbcRuntimeIteratorSnapshot::Values { items } => RuntimeIterator::Values {
                 items: items
                     .into_iter()
                     .map(|value| value.into_runtime_value_for_program(program_owner))
-                    .collect::<Result<_, _>>()?,
-                index: usize::try_from(index).map_err(|_| {
-                    AwbcRuntimeValueSnapshotError::new(
-                        "AWBC iterator index does not fit this platform",
-                    )
-                })?,
+                    .collect::<Result<VecDeque<_>, _>>()?,
             },
             AwbcRuntimeIteratorSnapshot::Range(value) => RuntimeIterator::Range(value),
             AwbcRuntimeIteratorSnapshot::Witness { state, next } => RuntimeIterator::Witness {
@@ -462,12 +533,13 @@ impl AwbcRuntimeValueSnapshot {
 
     fn sequence_from_live(
         value: &RuntimeSeq,
+        owner: Option<&RuntimeProgramOwner>,
     ) -> Result<AwbcRuntimeSeqSnapshot, AwbcRuntimeValueSnapshotError> {
         Ok(match value {
             RuntimeSeq::Values(values) => AwbcRuntimeSeqSnapshot::Values(
                 values
                     .iter()
-                    .map(Self::from_runtime_value)
+                    .map(|value| Self::from_live_with_owner(value, owner))
                     .collect::<Result<_, _>>()?,
             ),
             RuntimeSeq::Dense(value) => AwbcRuntimeSeqSnapshot::Dense(value.clone()),
@@ -480,7 +552,7 @@ impl AwbcRuntimeValueSnapshot {
                 columns: value
                     .columns()
                     .iter()
-                    .map(Self::sequence_from_live)
+                    .map(|value| Self::sequence_from_live(value, owner))
                     .collect::<Result<_, _>>()?,
             },
             RuntimeSeq::RecordColumns(value) => AwbcRuntimeSeqSnapshot::RecordColumns {
@@ -496,7 +568,7 @@ impl AwbcRuntimeValueSnapshot {
                         Ok(AwbcRuntimeRecordSeqFieldSnapshot {
                             field: field.field(),
                             name: field.name().to_owned(),
-                            values: Self::sequence_from_live(field.values())?,
+                            values: Self::sequence_from_live(field.values(), owner)?,
                         })
                     })
                     .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?,
@@ -555,6 +627,7 @@ impl AwbcRuntimeValueSnapshot {
 
     fn nominal_from_live(
         value: &RuntimeNominalRecordValue,
+        owner: Option<&RuntimeProgramOwner>,
     ) -> Result<AwbcRuntimeNominalRecordSnapshot, AwbcRuntimeValueSnapshotError> {
         Ok(AwbcRuntimeNominalRecordSnapshot {
             type_id: value.type_id().clone(),
@@ -563,7 +636,7 @@ impl AwbcRuntimeValueSnapshot {
             fields: value
                 .fields()
                 .iter()
-                .map(Self::from_runtime_value)
+                .map(|value| Self::from_live_with_owner(value, owner))
                 .collect::<Result<_, _>>()?,
         })
     }
@@ -599,13 +672,14 @@ impl AwbcRuntimeValueSnapshot {
 
     fn opaque_from_live(
         value: &RuntimeOpaqueValue,
+        owner: Option<&RuntimeProgramOwner>,
     ) -> Result<AwbcRuntimeOpaqueSnapshot, AwbcRuntimeValueSnapshotError> {
         Ok(AwbcRuntimeOpaqueSnapshot {
             producer: value.producer().clone(),
             semantic_identity: value.semantic_identity(),
             value_class: value.value_class(),
             persistence: value.persistence(),
-            payload: Box::new(Self::from_runtime_value(value.payload())?),
+            payload: Box::new(Self::from_live_with_owner(value.payload(), owner)?),
         })
     }
 
@@ -626,10 +700,11 @@ impl AwbcRuntimeValueSnapshot {
 
     fn reduction_from_live(
         value: &RuntimeReductionValue,
+        owner: Option<&RuntimeProgramOwner>,
     ) -> Result<AwbcRuntimeReductionSnapshot, AwbcRuntimeValueSnapshotError> {
         Ok(AwbcRuntimeReductionSnapshot {
             owner: value.owner().clone(),
-            state: Box::new(Self::from_runtime_value(value.state())?),
+            state: Box::new(Self::from_live_with_owner(value.state(), owner)?),
             commands: value
                 .commands()
                 .iter()
@@ -637,7 +712,10 @@ impl AwbcRuntimeValueSnapshot {
                     Ok(AwbcRuntimeCommandSnapshot {
                         constructor: command.constructor().clone(),
                         target: command.target().clone(),
-                        payload: Box::new(Self::from_runtime_value(command.payload().value())?),
+                        payload: Box::new(Self::from_live_with_owner(
+                            command.payload().value(),
+                            owner,
+                        )?),
                     })
                 })
                 .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?,
@@ -671,6 +749,7 @@ impl AwbcRuntimeValueSnapshot {
 
     fn agent_from_live(
         value: &RuntimeAgentValue,
+        owner: Option<&RuntimeProgramOwner>,
     ) -> Result<AwbcRuntimeAgentSnapshot, AwbcRuntimeValueSnapshotError> {
         Ok(match value {
             RuntimeAgentValue::ActionTarget(value) => {
@@ -688,7 +767,7 @@ impl AwbcRuntimeValueSnapshot {
             RuntimeAgentValue::Probe(value) => AwbcRuntimeAgentSnapshot::Probe(value.clone()),
             RuntimeAgentValue::Diagnostics => AwbcRuntimeAgentSnapshot::Diagnostics,
             RuntimeAgentValue::Predicate(value) => {
-                AwbcRuntimeAgentSnapshot::Predicate(Self::predicate_from_live(value)?)
+                AwbcRuntimeAgentSnapshot::Predicate(Self::predicate_from_live(value, owner)?)
             }
             RuntimeAgentValue::ViewportPoint { x, y } => {
                 AwbcRuntimeAgentSnapshot::ViewportPoint { x: *x, y: *y }
@@ -743,13 +822,14 @@ impl AwbcRuntimeValueSnapshot {
 
     fn predicate_from_live(
         value: &RuntimeAgentPredicate,
+        owner: Option<&RuntimeProgramOwner>,
     ) -> Result<AwbcRuntimeAgentPredicateSnapshot, AwbcRuntimeValueSnapshotError> {
         Ok(match value {
             RuntimeAgentPredicate::Compare { probe, op, value } => {
                 AwbcRuntimeAgentPredicateSnapshot::Compare {
                     probe: probe.clone(),
                     op: *op,
-                    value: Box::new(Self::from_runtime_value(value)?),
+                    value: Box::new(Self::from_live_with_owner(value, owner)?),
                 }
             }
             RuntimeAgentPredicate::Exists { probe } => AwbcRuntimeAgentPredicateSnapshot::Exists {
@@ -767,7 +847,7 @@ impl AwbcRuntimeValueSnapshot {
                 predicates: AgentPredicateOperands::try_from(
                     predicates
                         .iter()
-                        .map(Self::predicate_from_live)
+                        .map(|value| Self::predicate_from_live(value, owner))
                         .collect::<Result<Vec<_>, _>>()?,
                 )
                 .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?,
@@ -776,13 +856,13 @@ impl AwbcRuntimeValueSnapshot {
                 predicates: AgentPredicateOperands::try_from(
                     predicates
                         .iter()
-                        .map(Self::predicate_from_live)
+                        .map(|value| Self::predicate_from_live(value, owner))
                         .collect::<Result<Vec<_>, _>>()?,
                 )
                 .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?,
             },
             RuntimeAgentPredicate::Not { predicate } => AwbcRuntimeAgentPredicateSnapshot::Not {
-                predicate: Box::new(Self::predicate_from_live(predicate)?),
+                predicate: Box::new(Self::predicate_from_live(predicate, owner)?),
             },
         })
     }
@@ -832,18 +912,27 @@ impl AwbcRuntimeValueSnapshot {
 
     fn callable_from_live(
         value: &RuntimeCallableValue,
+        owner: Option<&RuntimeProgramOwner>,
     ) -> Result<AwbcRuntimeCallableSnapshot, AwbcRuntimeValueSnapshotError> {
-        if !matches!(value.owner(), RuntimeProgramOwner::Awbc(_)) {
-            return Err(AwbcRuntimeValueSnapshotError::new(
-                "plan-owned callable values cannot cross the AWBC session-save boundary",
-            ));
+        match owner {
+            None if !matches!(value.owner(), RuntimeProgramOwner::Awbc(_)) => {
+                return Err(AwbcRuntimeValueSnapshotError::new(
+                    "plan-owned callable values cannot cross the AWBC session-save boundary",
+                ));
+            }
+            Some(owner) if !value.owner().same_program(owner) => {
+                return Err(AwbcRuntimeValueSnapshotError::new(
+                    "callable rollback image belongs to another program",
+                ));
+            }
+            None | Some(_) => {}
         }
         Ok(AwbcRuntimeCallableSnapshot {
             state: value.state(),
             retained: value
                 .retained()
                 .iter()
-                .map(Self::from_runtime_value)
+                .map(|value| Self::from_live_with_owner(value, owner))
                 .collect::<Result<_, _>>()?,
         })
     }
@@ -852,11 +941,6 @@ impl AwbcRuntimeValueSnapshot {
         value: AwbcRuntimeCallableSnapshot,
         program_owner: &RuntimeProgramOwner,
     ) -> Result<RuntimeCallableValue, AwbcRuntimeValueSnapshotError> {
-        if !matches!(program_owner, RuntimeProgramOwner::Awbc(_)) {
-            return Err(AwbcRuntimeValueSnapshotError::new(
-                "an AWBC callable snapshot requires an AWBC program lease",
-            ));
-        }
         let retained = value
             .retained
             .into_iter()
@@ -864,6 +948,212 @@ impl AwbcRuntimeValueSnapshot {
             .collect::<Result<Vec<_>, _>>()?;
         RuntimeCallableValue::try_new(program_owner.clone(), value.state, retained)
             .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))
+    }
+}
+
+fn collect_snapshot_line_handle_tokens(
+    value: &AwbcRuntimeValueSnapshot,
+    depth: usize,
+    tokens: &mut Vec<crate::runtime_id::RuntimeLineHandleToken>,
+) -> Result<(), AwbcRuntimeValueSnapshotError> {
+    if depth > 64 {
+        return Err(AwbcRuntimeValueSnapshotError::new(
+            "line-handle snapshot traversal exceeds the value nesting limit",
+        ));
+    }
+    let next = |value: &AwbcRuntimeValueSnapshot,
+                tokens: &mut Vec<crate::runtime_id::RuntimeLineHandleToken>| {
+        collect_snapshot_line_handle_tokens(value, depth + 1, tokens)
+    };
+    match value {
+        AwbcRuntimeValueSnapshot::Tuple(items) => {
+            for item in items {
+                next(item, tokens)?;
+            }
+        }
+        AwbcRuntimeValueSnapshot::Record(fields) => {
+            for field in fields {
+                next(&field.value, tokens)?;
+            }
+        }
+        AwbcRuntimeValueSnapshot::Seq(sequence) => match sequence {
+            _ => collect_snapshot_sequence_line_handles(sequence, depth + 1, tokens)?,
+        },
+        AwbcRuntimeValueSnapshot::NominalRecord(record) => {
+            for value in &record.fields {
+                next(value, tokens)?;
+            }
+        }
+        AwbcRuntimeValueSnapshot::Opaque(opaque) => {
+            if matches!(
+                opaque.value_class,
+                super::RuntimeOpaqueValueClass::AffineHandle(_)
+            ) {
+                tokens.push(snapshot_line_handle_token(&opaque.payload)?);
+            } else {
+                next(&opaque.payload, tokens)?;
+            }
+        }
+        AwbcRuntimeValueSnapshot::Reduction(reduction) => {
+            next(&reduction.state, tokens)?;
+            for command in &reduction.commands {
+                next(&command.payload, tokens)?;
+            }
+        }
+        AwbcRuntimeValueSnapshot::Iterator(iterator) => match iterator {
+            AwbcRuntimeIteratorSnapshot::Values { items } => {
+                for value in items {
+                    next(value, tokens)?;
+                }
+            }
+            AwbcRuntimeIteratorSnapshot::Witness { state, .. } => next(state, tokens)?,
+            AwbcRuntimeIteratorSnapshot::Range(_) => {}
+        },
+        AwbcRuntimeValueSnapshot::Agent(agent) => match agent {
+            AwbcRuntimeAgentSnapshot::Predicate(predicate) => {
+                collect_snapshot_agent_predicate_line_handles(predicate, depth + 1, tokens)?;
+            }
+            _ => {}
+        },
+        AwbcRuntimeValueSnapshot::Callable(callable) => {
+            for value in &callable.retained {
+                next(value, tokens)?;
+            }
+        }
+        AwbcRuntimeValueSnapshot::Variant { payload, .. } => {
+            if let Some(payload) = payload {
+                next(payload, tokens)?;
+            }
+        }
+        AwbcRuntimeValueSnapshot::Unit
+        | AwbcRuntimeValueSnapshot::Bool(_)
+        | AwbcRuntimeValueSnapshot::Int(_)
+        | AwbcRuntimeValueSnapshot::UInt(_)
+        | AwbcRuntimeValueSnapshot::F32(_)
+        | AwbcRuntimeValueSnapshot::F64(_)
+        | AwbcRuntimeValueSnapshot::MatrixF32(_)
+        | AwbcRuntimeValueSnapshot::MatrixF64(_)
+        | AwbcRuntimeValueSnapshot::TensorF32(_)
+        | AwbcRuntimeValueSnapshot::TensorF64(_)
+        | AwbcRuntimeValueSnapshot::String(_)
+        | AwbcRuntimeValueSnapshot::Color(_)
+        | AwbcRuntimeValueSnapshot::Need(_)
+        | AwbcRuntimeValueSnapshot::Char(_)
+        | AwbcRuntimeValueSnapshot::Duration(_)
+        | AwbcRuntimeValueSnapshot::Progress { .. }
+        | AwbcRuntimeValueSnapshot::Range(_)
+        | AwbcRuntimeValueSnapshot::EntityRef(_) => {}
+    }
+    Ok(())
+}
+
+fn collect_snapshot_sequence_line_handles(
+    sequence: &AwbcRuntimeSeqSnapshot,
+    depth: usize,
+    tokens: &mut Vec<crate::runtime_id::RuntimeLineHandleToken>,
+) -> Result<(), AwbcRuntimeValueSnapshotError> {
+    match sequence {
+        AwbcRuntimeSeqSnapshot::Values(values) => {
+            for value in values {
+                collect_snapshot_line_handle_tokens(value, depth + 1, tokens)?;
+            }
+        }
+        AwbcRuntimeSeqSnapshot::TupleColumns { columns, .. } => {
+            for column in columns {
+                collect_snapshot_sequence_line_handles(column, depth + 1, tokens)?;
+            }
+        }
+        AwbcRuntimeSeqSnapshot::RecordColumns { fields, .. } => {
+            for field in fields {
+                collect_snapshot_sequence_line_handles(&field.values, depth + 1, tokens)?;
+            }
+        }
+        AwbcRuntimeSeqSnapshot::Dense(_) => {}
+    }
+    Ok(())
+}
+
+fn collect_snapshot_agent_predicate_line_handles(
+    predicate: &AwbcRuntimeAgentPredicateSnapshot,
+    depth: usize,
+    tokens: &mut Vec<crate::runtime_id::RuntimeLineHandleToken>,
+) -> Result<(), AwbcRuntimeValueSnapshotError> {
+    match predicate {
+        AwbcRuntimeAgentPredicateSnapshot::Compare { value, .. } => {
+            collect_snapshot_line_handle_tokens(value, depth, tokens)?;
+        }
+        AwbcRuntimeAgentPredicateSnapshot::All { predicates }
+        | AwbcRuntimeAgentPredicateSnapshot::Any { predicates } => {
+            for nested in predicates.iter() {
+                collect_snapshot_agent_predicate_line_handles(nested, depth + 1, tokens)?;
+            }
+        }
+        AwbcRuntimeAgentPredicateSnapshot::Not { predicate } => {
+            collect_snapshot_agent_predicate_line_handles(predicate, depth + 1, tokens)?;
+        }
+        AwbcRuntimeAgentPredicateSnapshot::Exists { .. }
+        | AwbcRuntimeAgentPredicateSnapshot::ActionEnabled { .. }
+        | AwbcRuntimeAgentPredicateSnapshot::DiagnosticsHasError => {}
+    }
+    Ok(())
+}
+
+fn snapshot_line_handle_token(
+    payload: &AwbcRuntimeValueSnapshot,
+) -> Result<crate::runtime_id::RuntimeLineHandleToken, AwbcRuntimeValueSnapshotError> {
+    let AwbcRuntimeValueSnapshot::Tuple(fields) = payload else {
+        return Err(AwbcRuntimeValueSnapshotError::new(
+            "affine handle snapshot payload is not the typed line-token tuple",
+        ));
+    };
+    let [artifact, owner, content, occurrence, site, issuance] = fields.as_slice() else {
+        return Err(AwbcRuntimeValueSnapshotError::new(
+            "affine handle snapshot payload has the wrong tuple arity",
+        ));
+    };
+    let AwbcRuntimeValueSnapshot::Seq(AwbcRuntimeSeqSnapshot::Dense(artifact)) = artifact else {
+        return Err(AwbcRuntimeValueSnapshotError::new(
+            "affine handle snapshot token has no dense artifact bytes",
+        ));
+    };
+    let artifact = artifact.as_bytes().ok_or_else(|| {
+        AwbcRuntimeValueSnapshotError::new("affine handle snapshot artifact is not a byte sequence")
+    })?;
+    let value = RuntimeValue::Tuple(vec![
+        RuntimeValue::Seq(RuntimeSeq::dense_bytes(artifact.to_vec())),
+        snapshot_u64(owner)?,
+        snapshot_u32(content)?,
+        snapshot_u64(occurrence)?,
+        snapshot_u32(site)?,
+        snapshot_u32(issuance)?,
+    ]);
+    crate::runtime_id::RuntimeLineHandleToken::try_decode_payload(&value)
+        .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))
+}
+
+fn snapshot_u64(
+    value: &AwbcRuntimeValueSnapshot,
+) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
+    match value {
+        AwbcRuntimeValueSnapshot::UInt(super::RuntimeUInt::U64(value)) => {
+            Ok(RuntimeValue::UInt(super::RuntimeUInt::U64(*value)))
+        }
+        _ => Err(AwbcRuntimeValueSnapshotError::new(
+            "affine handle snapshot token contains a non-U64 field",
+        )),
+    }
+}
+
+fn snapshot_u32(
+    value: &AwbcRuntimeValueSnapshot,
+) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
+    match value {
+        AwbcRuntimeValueSnapshot::UInt(super::RuntimeUInt::U32(value)) => {
+            Ok(RuntimeValue::UInt(super::RuntimeUInt::U32(*value)))
+        }
+        _ => Err(AwbcRuntimeValueSnapshotError::new(
+            "affine handle snapshot token contains a non-U32 field",
+        )),
     }
 }
 

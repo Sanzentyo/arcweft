@@ -24,7 +24,8 @@ use crate::plan::{
     RuntimeCallableDefault, RuntimeCallableInputSource, RuntimeCallableParameterCoordinate,
     RuntimeCallableParameterInput, RuntimeCallableParameterKind, RuntimeCallablePosition,
     RuntimeCallableRetainedInput, RuntimeCallableRetainedRole, RuntimeCallableStateDefinition,
-    RuntimeCallableTransition, RuntimeFlowTargetError, RuntimeFunctionTypeContract,
+    RuntimeCallableTransition, RuntimeFlowTargetError, RuntimeFunctionInputOwnershipRequirement,
+    RuntimeFunctionTypeContract,
 };
 use crate::runtime_id::RuntimeCallableStateId;
 use crate::task::RuntimeProgramOwner;
@@ -72,6 +73,7 @@ fn minimal_program() -> AwbcProgram {
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
+            input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 1),
             entry_block: AwbcBlockId(0),
@@ -209,6 +211,7 @@ fn format_content_program() -> AwbcProgram {
         public_id: None,
         kind: AwbcFunctionKind::Synthetic,
         signature: AwbcSignatureId(1),
+        input_ownership: vec![AwbcFunctionInputOwnership::default(); 1],
         frame_layout: AwbcFrameLayoutId(1),
         blocks: AwbcTableRange::new(1, 1),
         entry_block: AwbcBlockId(1),
@@ -289,6 +292,73 @@ fn binary_division_by_zero_traps_with_typed_code() {
     };
     assert_eq!(trap.code, AwbcTrapCode::DivisionByZero);
     assert_eq!(trap.message.as_deref(), Some("division by zero"));
+}
+
+#[test]
+fn binary_reuses_one_vacated_input_but_rejects_duplicate_by_value_reads() {
+    let mut program = minimal_program();
+    program.runtime_types = vec![runtime_type(
+        1,
+        AwbcRuntimeTypeShape::Int(AwbcSignedIntKind::I64),
+    )];
+    program.signatures[0].result = Some(AwbcTypeId(0));
+    program.frame_layouts[0].slots = (0..2)
+        .map(|_| AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(0),
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        })
+        .collect();
+    let int = |value: i64| {
+        let mut bits = [0; 16];
+        bits[..8].copy_from_slice(&value.to_le_bytes());
+        AwbcConstant::Int {
+            kind: AwbcSignedIntKind::I64,
+            bits,
+        }
+    };
+    program.constants = vec![int(7), int(10)];
+    program.instructions = vec![
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(0),
+            constant: AwbcConstantId(0),
+        },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(1),
+            constant: AwbcConstantId(1),
+        },
+        AwbcInstruction::Binary {
+            dst: AwbcRegisterId(0),
+            op: AwbcBinaryOp::Add,
+            lhs: AwbcRegisterId(0),
+            rhs: AwbcRegisterId(1),
+        },
+    ];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 3);
+    program.blocks[0].terminator = AwbcTerminator::Return {
+        value: Some(AwbcRegisterId(0)),
+    };
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("Binary may reuse its consumed lhs register");
+    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).unwrap();
+    let output =
+        super::vm::step(&program, &mut fiber, super::vm::VmStepOptions::default()).unwrap();
+    let super::vm::VmExit::Returned(Some(value)) = output.exit else {
+        panic!("in-place Binary returns its result");
+    };
+    assert_eq!(value.try_i64(), Some(17));
+
+    let AwbcInstruction::Binary { rhs, .. } = &mut program.instructions[2] else {
+        unreachable!("fixture Binary remains at instruction two")
+    };
+    *rhs = AwbcRegisterId(0);
+    assert!(matches!(
+        program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::InvalidInvariant { message, .. })
+            if message == "by-value operand registers are unique"
+    ));
 }
 
 #[test]
@@ -676,6 +746,10 @@ fn nominal_field_vec_push_pop_program() -> AwbcProgram {
             dst: AwbcRegisterId(4),
             place,
         },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(1),
+            constant: AwbcConstantId(1),
+        },
         AwbcInstruction::VecPush {
             place,
             value: AwbcRegisterId(1),
@@ -685,7 +759,7 @@ fn nominal_field_vec_push_pop_program() -> AwbcProgram {
             place,
         },
     ];
-    program.blocks[0].instructions = AwbcTableRange::new(0, 8);
+    program.blocks[0].instructions = AwbcTableRange::new(0, 9);
     program.blocks[0].terminator = AwbcTerminator::Return {
         value: Some(AwbcRegisterId(5)),
     };
@@ -845,7 +919,7 @@ fn vec_push_and_pop_roundtrip_verify_and_mutate_nominal_field_places() {
         &decoded,
         &mut fiber,
         super::vm::VmStepOptions {
-            max_instructions: 8,
+            max_instructions: 9,
         },
     )
     .expect("nominal field Vec push and pop execute");
@@ -961,6 +1035,163 @@ fn sequence_pop_front_roundtrips_verifies_moves_rows_and_survives_restore() {
         rest.exit,
         super::vm::VmExit::Returned(Some(RuntimeValue::option_none()))
     );
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "The affine source, both CFG edges, codec, verifier, and VM ownership checks share one typed AWBC fixture."
+)]
+fn sequence_next_moves_affine_item_and_initializes_only_nonempty_edge() {
+    let mut program = minimal_program();
+    let unit = AwbcTypeId(0);
+    let need = AwbcTypeId(1);
+    let sequence = AwbcTypeId(2);
+    program.runtime_types = vec![
+        runtime_type(71, AwbcRuntimeTypeShape::Unit),
+        runtime_type(72, AwbcRuntimeTypeShape::Need(unit)),
+        runtime_type(
+            73,
+            AwbcRuntimeTypeShape::Sequence {
+                kind: crate::plan::RuntimePlanSequenceKind::Seq,
+                item: need,
+            },
+        ),
+    ];
+    program.signatures[0].params = vec![sequence];
+    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::default()];
+    program.functions[0].blocks = AwbcTableRange::new(0, 3);
+    program.frame_layouts[0].slots = vec![
+        AwbcFrameSlot {
+            name: None,
+            ty: sequence,
+            role: AwbcFrameSlotRole::Parameter,
+            scope_depth: 0,
+        },
+        AwbcFrameSlot {
+            name: None,
+            ty: need,
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        },
+        AwbcFrameSlot {
+            name: None,
+            ty: need,
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        },
+    ];
+    program.instructions = vec![AwbcInstruction::Move {
+        dst: AwbcRegisterId(2),
+        src: AwbcRegisterId(1),
+    }];
+    program.blocks = vec![
+        AwbcBlock {
+            owner: AwbcFunctionId(0),
+            instructions: AwbcTableRange::new(0, 0),
+            terminator: AwbcTerminator::SequenceNext {
+                sequence: AwbcRegisterId(0),
+                item: AwbcRegisterId(1),
+                some_block: AwbcBlockId(1),
+                none_block: AwbcBlockId(2),
+            },
+            safe_point: AwbcSafePointKind::FlowEntry,
+            source_map: None,
+        },
+        AwbcBlock {
+            owner: AwbcFunctionId(0),
+            instructions: AwbcTableRange::new(0, 1),
+            terminator: AwbcTerminator::Return { value: None },
+            safe_point: AwbcSafePointKind::CallableBoundary,
+            source_map: None,
+        },
+        AwbcBlock {
+            owner: AwbcFunctionId(0),
+            instructions: AwbcTableRange::new(1, 0),
+            terminator: AwbcTerminator::Return { value: None },
+            safe_point: AwbcSafePointKind::CallableBoundary,
+            source_map: None,
+        },
+    ];
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("sequence next only gives an affine item to its nonempty edge");
+    let encoded = program.encode_canonical().expect("encode sequence next");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("decode sequence next");
+    assert_eq!(decoded, program);
+
+    let mut invalid = program.clone();
+    invalid.instructions.push(AwbcInstruction::Move {
+        dst: AwbcRegisterId(2),
+        src: AwbcRegisterId(1),
+    });
+    invalid.blocks[2].instructions = AwbcTableRange::new(1, 1);
+    let invalid_error = invalid
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect_err("empty edge cannot read the item");
+    assert!(
+        matches!(
+            invalid_error,
+            AwbcVerifyError::UninitializedRegister {
+                block: 2,
+                register: 1,
+                ..
+            }
+        ),
+        "{invalid_error:?}"
+    );
+
+    let first = RuntimeValue::Need(crate::task::NeedId("need.first".to_owned()));
+    let second = RuntimeValue::Need(crate::task::NeedId("need.second".to_owned()));
+    let mut fiber = FiberState::for_entry(&decoded, AwbcEntryId(0), 3, 64)
+        .expect("sequence next fiber initializes");
+    fiber
+        .bind_function_argument_values_owned(
+            &decoded,
+            vec![RuntimeValue::Seq(crate::value::RuntimeSeq::values(vec![
+                first.clone(),
+                second.clone(),
+            ]))],
+        )
+        .expect("bind owned affine sequence");
+    let output = super::vm::step(
+        &decoded,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 1,
+        },
+    )
+    .expect("sequence next moves first item");
+    assert_eq!(output.exit, super::vm::VmExit::Running);
+    assert_eq!(fiber.frames[0].registers[1], Some(first));
+    let Some(RuntimeValue::Seq(remainder)) = fiber.frames[0].registers[0].as_ref() else {
+        panic!("owned sequence stays in its register");
+    };
+    assert_eq!(remainder.len(), 1);
+    assert_eq!(remainder.value_at(0), second);
+
+    let mut empty = FiberState::for_entry(&decoded, AwbcEntryId(0), 4, 64)
+        .expect("empty sequence fiber initializes");
+    empty
+        .bind_function_argument_values_owned(
+            &decoded,
+            vec![RuntimeValue::Seq(crate::value::RuntimeSeq::values(
+                Vec::new(),
+            ))],
+        )
+        .expect("bind empty sequence");
+    let output = super::vm::step(
+        &decoded,
+        &mut empty,
+        super::vm::VmStepOptions {
+            max_instructions: 1,
+        },
+    )
+    .expect("sequence next follows empty edge");
+    assert_eq!(output.exit, super::vm::VmExit::Running);
+    assert_eq!(empty.cursor.block, AwbcBlockId(2));
+    assert_eq!(empty.frames[0].registers[1], None);
 }
 
 #[test]
@@ -1110,6 +1341,7 @@ fn explicit_dialogue_selector_roundtrips_executes_and_restores_distinctly() {
             public_id: None,
             kind: AwbcFunctionKind::LineActivation,
             signature: AwbcSignatureId(0),
+            input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(1, 1),
             entry_block: AwbcBlockId(1),
@@ -1119,6 +1351,7 @@ fn explicit_dialogue_selector_roundtrips_executes_and_restores_distinctly() {
             public_id: None,
             kind: AwbcFunctionKind::LineTask,
             signature: AwbcSignatureId(0),
+            input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId(1),
             blocks: AwbcTableRange::new(2, 1),
             entry_block: AwbcBlockId(2),
@@ -1235,9 +1468,8 @@ fn explicit_dialogue_selector_roundtrips_executes_and_restores_distinctly() {
         .expect("restored selector terminal validates");
     assert_eq!(
         restored.terminal,
-        Some(super::fiber::FiberTerminalValue::DialogueResultSelected(
-            RuntimeValue::String("selected-result".to_owned()),
-        ))
+        Some(super::fiber::FiberTerminalValue::Returned(None)),
+        "the selected value already crossed the VM exit boundary"
     );
 }
 
@@ -1306,23 +1538,24 @@ fn named_scope_layout_roundtrip_and_snapshot_admission_preserve_static_identity(
     let snapshot = AwbcFiberStateSnapshot::from_live(&fiber).unwrap();
     let serialized = serde_json::to_vec(&snapshot).unwrap();
     let snapshot: AwbcFiberStateSnapshot = serde_json::from_slice(&serialized).unwrap();
-    let restored = snapshot
-        .into_live_for_program(&crate::task::RuntimeProgramOwner::Awbc(
-            std::sync::Arc::new(decoded.clone()),
-        ))
-        .unwrap();
+    drop(fiber);
+    let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(decoded.clone()));
+    let mut restored = snapshot.clone().into_live_for_program(&owner).unwrap();
     restored.validate_for_program(&decoded).unwrap();
-    assert_eq!(restored, fiber);
+    assert_eq!(
+        AwbcFiberStateSnapshot::from_live(&restored).unwrap(),
+        snapshot
+    );
 
-    let mut wrong_sibling = restored.clone();
-    wrong_sibling.frames[0].scopes[1].id = AwbcScopeId(2);
-    assert!(wrong_sibling.validate_for_program(&decoded).is_err());
-    let mut wrong_depth = restored.clone();
-    wrong_depth.frames[0].scopes[1].depth = 0;
-    assert!(wrong_depth.validate_for_program(&decoded).is_err());
-    let mut unknown_scope = restored;
-    unknown_scope.frames[0].scopes[1].id = AwbcScopeId(99);
-    assert!(unknown_scope.validate_for_program(&decoded).is_err());
+    let checkpoint = restored.checkpoint().unwrap();
+    restored.frames[0].scopes[1].id = AwbcScopeId(2);
+    assert!(restored.validate_for_program(&decoded).is_err());
+    restored.restore(checkpoint.clone(), &owner).unwrap();
+    restored.frames[0].scopes[1].depth = 0;
+    assert!(restored.validate_for_program(&decoded).is_err());
+    restored.restore(checkpoint, &owner).unwrap();
+    restored.frames[0].scopes[1].id = AwbcScopeId(99);
+    assert!(restored.validate_for_program(&decoded).is_err());
 
     let mut wrong_parent = decoded;
     wrong_parent.frame_layouts[0].scopes[1].parent = Some(AwbcScopeId(2));
@@ -1497,6 +1730,7 @@ fn project_call_invoke_program() -> AwbcProgram {
         public_id: None,
         kind: AwbcFunctionKind::Ordinary,
         signature: AwbcSignatureId(1),
+        input_ownership: Vec::new(),
         frame_layout: AwbcFrameLayoutId(1),
         blocks: AwbcTableRange::new(2, 1),
         entry_block: AwbcBlockId(2),
@@ -1584,6 +1818,7 @@ fn ordinary_returning_call_program() -> AwbcProgram {
         public_id: None,
         kind: AwbcFunctionKind::Ordinary,
         signature: AwbcSignatureId(1),
+        input_ownership: Vec::new(),
         frame_layout: AwbcFrameLayoutId(1),
         blocks: AwbcTableRange::new(2, 1),
         entry_block: AwbcBlockId(2),
@@ -1868,6 +2103,7 @@ fn project_call_retained_program() -> AwbcProgram {
         public_id: None,
         kind: AwbcFunctionKind::Ordinary,
         signature: AwbcSignatureId(1),
+        input_ownership: vec![AwbcFunctionInputOwnership::default(); 2],
         frame_layout: AwbcFrameLayoutId(1),
         blocks: AwbcTableRange::new(4, 1),
         entry_block: AwbcBlockId(4),
@@ -1903,7 +2139,7 @@ fn project_call_retained_program() -> AwbcProgram {
     });
     program.blocks.push(AwbcBlock {
         owner: AwbcFunctionId(0),
-        instructions: AwbcTableRange::new(2, 0),
+        instructions: AwbcTableRange::new(2, 1),
         terminator: AwbcTerminator::ProjectCall {
             call: AwbcProjectCall {
                 callee: AwbcRegisterId(1),
@@ -1927,14 +2163,14 @@ fn project_call_retained_program() -> AwbcProgram {
     });
     program.blocks.push(AwbcBlock {
         owner: AwbcFunctionId(0),
-        instructions: AwbcTableRange::new(2, 0),
+        instructions: AwbcTableRange::new(3, 0),
         terminator: AwbcTerminator::Return { value: None },
         safe_point: AwbcSafePointKind::None,
         source_map: None,
     });
     program.blocks.push(AwbcBlock {
         owner: AwbcFunctionId(1),
-        instructions: AwbcTableRange::new(2, 1),
+        instructions: AwbcTableRange::new(3, 1),
         terminator: AwbcTerminator::Return {
             value: Some(AwbcRegisterId(2)),
         },
@@ -1946,6 +2182,10 @@ fn project_call_retained_program() -> AwbcProgram {
             dst: AwbcRegisterId(0),
             state: callable_state_id(0),
             captures: Vec::new(),
+        },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(2),
+            constant: AwbcConstantId(0),
         },
         AwbcInstruction::LoadConst {
             dst: AwbcRegisterId(2),
@@ -2037,6 +2277,55 @@ fn project_call_retained_program() -> AwbcProgram {
         },
     ];
     program
+}
+
+fn project_call_retained_copy_program() -> AwbcProgram {
+    let mut program = project_call_retained_program();
+    program.frame_layouts[0].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: AwbcTypeId(2),
+        role: AwbcFrameSlotRole::Temporary,
+        scope_depth: 0,
+    });
+    program.instructions.insert(
+        2,
+        AwbcInstruction::CopyValue {
+            dst: AwbcRegisterId(3),
+            src: AwbcRegisterId(1),
+        },
+    );
+    program.instructions.insert(
+        3,
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(2),
+            constant: AwbcConstantId(0),
+        },
+    );
+    program.instructions.remove(4);
+    program.blocks[1].instructions = AwbcTableRange::new(2, 1);
+    program.blocks[2].instructions = AwbcTableRange::new(3, 1);
+    program.blocks[3].instructions = AwbcTableRange::new(4, 0);
+    program.blocks[4].instructions = AwbcTableRange::new(4, 1);
+    program
+}
+
+fn make_retained_operand_affine_capable(program: &mut AwbcProgram) {
+    let unit = AwbcTypeId(u32::try_from(program.runtime_types.len()).unwrap());
+    program
+        .runtime_types
+        .push(runtime_type(4, AwbcRuntimeTypeShape::Unit));
+    let need = AwbcTypeId(u32::try_from(program.runtime_types.len()).unwrap());
+    program
+        .runtime_types
+        .push(runtime_type(5, AwbcRuntimeTypeShape::Need(unit)));
+    program.runtime_types[0] = runtime_type(
+        1,
+        AwbcRuntimeTypeShape::Sequence {
+            kind: crate::plan::RuntimePlanSequenceKind::Vec,
+            item: need,
+        },
+    );
+    program.constants[0] = AwbcConstant::Sequence(Vec::new());
 }
 
 fn project_call_default_program() -> AwbcProgram {
@@ -2135,6 +2424,7 @@ fn project_call_default_program() -> AwbcProgram {
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(1),
+            input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId(1),
             blocks: AwbcTableRange::new(2, 1),
             entry_block: AwbcBlockId(2),
@@ -2144,6 +2434,7 @@ fn project_call_default_program() -> AwbcProgram {
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(2),
+            input_ownership: vec![AwbcFunctionInputOwnership::default(); 1],
             frame_layout: AwbcFrameLayoutId(2),
             blocks: AwbcTableRange::new(3, 1),
             entry_block: AwbcBlockId(3),
@@ -2300,6 +2591,7 @@ fn goto_unwind_program(dynamic: bool) -> AwbcProgram {
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(0),
+            input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId(1),
             blocks: AwbcTableRange::new(1, 1),
             entry_block: AwbcBlockId(1),
@@ -2309,6 +2601,7 @@ fn goto_unwind_program(dynamic: bool) -> AwbcProgram {
             public_id: None,
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
+            input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId(2),
             blocks: AwbcTableRange::new(2, 1),
             entry_block: AwbcBlockId(2),
@@ -2384,6 +2677,7 @@ fn project_call_target_goto_program(dynamic: bool) -> AwbcProgram {
         public_id: None,
         kind: AwbcFunctionKind::Flow,
         signature: AwbcSignatureId(0),
+        input_ownership: Vec::new(),
         frame_layout: AwbcFrameLayoutId(0),
         blocks: AwbcTableRange::new(3, 1),
         entry_block: AwbcBlockId(3),
@@ -2413,6 +2707,7 @@ fn project_call_default_goto_program() -> AwbcProgram {
         public_id: None,
         kind: AwbcFunctionKind::Flow,
         signature: AwbcSignatureId(0),
+        input_ownership: Vec::new(),
         frame_layout: AwbcFrameLayoutId(0),
         blocks: AwbcTableRange::new(4, 1),
         entry_block: AwbcBlockId(4),
@@ -2502,6 +2797,7 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         (AwbcOpcode::AwaitMany, 0x8a, Terminator),
         (AwbcOpcode::BudgetYield, 0x8b, Terminator),
         (AwbcOpcode::SelectDialogueResult, 0x8c, Terminator),
+        (AwbcOpcode::SequenceNext, 0x8d, Terminator),
         (AwbcOpcode::Dialogue, 0x98, Terminator),
         (AwbcOpcode::Choice, 0x99, Terminator),
         (AwbcOpcode::Trap, 0xa0, Terminator),
@@ -2621,6 +2917,40 @@ fn project_call_callable_state_graph_verifies_and_roundtrips() {
     let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
         .expect("decode program-owned callable states");
     assert_eq!(decoded, program);
+}
+
+#[test]
+fn project_call_retained_copy_proof_follows_the_exact_operand() {
+    project_call_retained_copy_program()
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("a retained Unit prefix is producer-proven Copy");
+
+    let mut potentially_affine = project_call_retained_copy_program();
+    make_retained_operand_affine_capable(&mut potentially_affine);
+    expect_project_call_rejection(
+        potentially_affine,
+        "producer-proven unrestricted CopyValue source",
+    );
+}
+
+#[test]
+fn function_input_copy_proof_uses_only_its_checked_abi_requirement() {
+    let mut program = project_call_retained_copy_program();
+    make_retained_operand_affine_capable(&mut program);
+    program.instructions[2] = AwbcInstruction::Nop;
+    program.instructions[4] = AwbcInstruction::CopyValue {
+        dst: AwbcRegisterId(2),
+        src: AwbcRegisterId(0),
+    };
+    program.functions[1].input_ownership[0].requirement =
+        RuntimeFunctionInputOwnershipRequirement::Unrestricted;
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("the first ABI input is checked deeply before it enters the frame");
+
+    program.functions[1].input_ownership[0].requirement =
+        RuntimeFunctionInputOwnershipRequirement::Owned;
+    expect_project_call_rejection(program, "producer-proven unrestricted CopyValue source");
 }
 
 #[test]
@@ -4419,6 +4749,7 @@ fn verifier_rejects_duplicate_binding_targets_across_pattern_rest() {
         runtime_type(2, AwbcRuntimeTypeShape::Bool),
     ];
     program.signatures[0].params = vec![AwbcTypeId(0)];
+    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::default()];
     program.frame_layouts[0] = AwbcFrameLayout {
         scopes: Vec::new(),
         slots: vec![
@@ -4475,6 +4806,9 @@ fn verifier_tracks_dynamic_record_children_before_the_rest_binding() {
     let mut program = minimal_program();
     program.runtime_types = vec![runtime_type(1, AwbcRuntimeTypeShape::Dynamic)];
     program.signatures[0].params = vec![AwbcTypeId(0)];
+    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::default()];
+    program.functions[0].input_ownership[0].requirement =
+        RuntimeFunctionInputOwnershipRequirement::Unrestricted;
     program.frame_layouts[0] = AwbcFrameLayout {
         scopes: Vec::new(),
         slots: vec![
@@ -4556,6 +4890,7 @@ fn verifier_rejects_incorrect_agent_field_destination_type() {
         runtime_type(2, AwbcRuntimeTypeShape::String),
     ];
     program.signatures[0].params = vec![AwbcTypeId(0)];
+    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::default()];
     program.frame_layouts[0] = AwbcFrameLayout {
         scopes: Vec::new(),
         slots: vec![
@@ -4623,6 +4958,7 @@ fn optional_string_field_program(owner: AwbcRuntimeTypeShape, label: &str) -> Aw
         runtime_type(5, AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(1)])),
     ];
     program.signatures[0].params = vec![AwbcTypeId(0)];
+    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::default()];
     program.frame_layouts[0] = AwbcFrameLayout {
         scopes: Vec::new(),
         slots: vec![
@@ -4726,6 +5062,7 @@ fn verifier_rejects_agent_operands_that_can_only_fail_at_runtime() {
         ),
     ];
     viewport.signatures[0].params = vec![AwbcTypeId(0), AwbcTypeId(0)];
+    viewport.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::default(); 2];
     viewport.frame_layouts[0] = AwbcFrameLayout {
         scopes: Vec::new(),
         slots: vec![
@@ -4782,6 +5119,7 @@ fn verifier_rejects_agent_operands_that_can_only_fail_at_runtime() {
         ),
     ];
     all.signatures[0].params = vec![AwbcTypeId(1)];
+    all.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::default()];
     all.frame_layouts[0] = AwbcFrameLayout {
         scopes: Vec::new(),
         slots: vec![
@@ -4878,7 +5216,7 @@ fn vm_pretests_before_writes_and_binds_record_and_sequence_rests_last() {
         .unwrap();
 
     let mismatch = RuntimeValue::Tuple(vec![RuntimeValue::i64(1), RuntimeValue::Bool(false)]);
-    super::vm::bind_pattern(&program, &mut fiber, AwbcPatternId(2), &mismatch)
+    super::vm::bind_pattern_owned(&program, &mut fiber, AwbcPatternId(2), mismatch)
         .expect_err("a later literal mismatch rejects the complete pattern");
     assert_eq!(
         fiber
@@ -4890,22 +5228,25 @@ fn vm_pretests_before_writes_and_binds_record_and_sequence_rests_last() {
     );
 
     let sequence = runtime_sequence_values(vec![RuntimeValue::i64(1), RuntimeValue::i64(2)]);
-    super::vm::bind_pattern(&program, &mut fiber, AwbcPatternId(3), &sequence).unwrap();
-    assert_eq!(
-        fiber
-            .active_frame()
-            .unwrap()
-            .register(AwbcRegisterId(1))
-            .unwrap(),
-        &runtime_sequence_values(vec![RuntimeValue::i64(2)])
-    );
+    super::vm::bind_pattern_owned(&program, &mut fiber, AwbcPatternId(3), sequence.clone())
+        .unwrap();
+    let RuntimeValue::Seq(rest) = fiber
+        .active_frame()
+        .unwrap()
+        .register(AwbcRegisterId(1))
+        .unwrap()
+    else {
+        panic!("sequence rest binds a sequence")
+    };
+    assert_eq!(rest.len(), 1);
+    assert_eq!(rest.value_at(0), RuntimeValue::i64(2));
 
     let record = RuntimeValue::try_record(vec![
         ("first".to_owned(), RuntimeValue::i64(3)),
         ("second".to_owned(), RuntimeValue::i64(4)),
     ])
     .unwrap();
-    super::vm::bind_pattern(&program, &mut fiber, AwbcPatternId(4), &record).unwrap();
+    super::vm::bind_pattern_owned(&program, &mut fiber, AwbcPatternId(4), record.clone()).unwrap();
     assert_eq!(
         fiber
             .active_frame()
@@ -5090,6 +5431,7 @@ fn expression_apply_functions(synthetic_len: u32) -> Vec<AwbcFunction> {
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
+            input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 1),
             entry_block: AwbcBlockId(0),
@@ -5099,6 +5441,7 @@ fn expression_apply_functions(synthetic_len: u32) -> Vec<AwbcFunction> {
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
             signature: AwbcSignatureId(1),
+            input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId(1),
             blocks: AwbcTableRange::new(1, synthetic_len),
             entry_block: AwbcBlockId(1),
@@ -5788,6 +6131,7 @@ fn reduction_unchanged_materializes_one_reference_layer_without_widening_other_o
         public_id: None,
         kind: AwbcFunctionKind::Ordinary,
         signature: AwbcSignatureId(1),
+        input_ownership: vec![AwbcFunctionInputOwnership::default(); 1],
         frame_layout: AwbcFrameLayoutId(1),
         blocks: AwbcTableRange::new(1, 1),
         entry_block: AwbcBlockId(1),
@@ -5921,6 +6265,7 @@ fn stateful_entry_with_function_site_callables() -> AwbcProgram {
         ),
     ];
     program.signatures[0].params = vec![AwbcTypeId(0)];
+    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::default()];
     program.frame_layouts[0].slots.push(AwbcFrameSlot {
         name: None,
         ty: AwbcTypeId(0),
@@ -5973,6 +6318,7 @@ fn stateful_entry_with_function_site_callables() -> AwbcProgram {
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(1),
+            input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId(1),
             blocks: AwbcTableRange::new(1, 1),
             entry_block: AwbcBlockId(1),
@@ -5982,6 +6328,7 @@ fn stateful_entry_with_function_site_callables() -> AwbcProgram {
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(2),
+            input_ownership: vec![AwbcFunctionInputOwnership::default(); 2],
             frame_layout: AwbcFrameLayoutId(2),
             blocks: AwbcTableRange::new(2, 1),
             entry_block: AwbcBlockId(2),
@@ -6258,12 +6605,21 @@ fn fiber_snapshot_serde_preserves_opaque_owner_and_rejects_tampering() {
         .expect("active frame")
         .set_register(AwbcRegisterId(0), value)
         .expect("write opaque register");
-    let encoded = serde_json::to_vec(&fiber).expect("fiber snapshot serializes");
-    let mut restored: FiberState =
+    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber).expect("fiber snapshot projects");
+    let encoded = serde_json::to_vec(&snapshot).expect("fiber snapshot serializes");
+    drop(fiber);
+    let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
+    let decoded: AwbcFiberStateSnapshot =
         serde_json::from_slice(&encoded).expect("fiber snapshot deserializes");
+    let mut restored = decoded
+        .into_live_for_program(&owner)
+        .expect("restore fiber");
     restored
         .validate_for_program(&program)
         .expect("restored opaque register validates");
+    let checkpoint = restored
+        .checkpoint()
+        .expect("checkpoint valid opaque fiber");
 
     let foreign = RuntimeOpaqueTypeOwner::exact(
         RuntimeOpaqueTypeProducerId::try_new("producer.foreign").expect("valid producer"),
@@ -6283,8 +6639,9 @@ fn fiber_snapshot_serde_preserves_opaque_owner_and_rejects_tampering() {
         super::fiber::FiberStateError::InvalidRuntimeValue { .. }
     ));
 
-    let mut class_tampered: FiberState =
-        serde_json::from_slice(&encoded).expect("fiber snapshot deserializes again");
+    restored
+        .restore(checkpoint, &owner)
+        .expect("restore original opaque owner after rejected tampering");
     let affine = RuntimeOpaqueTypeOwner::exact_with(
         RuntimeOpaqueTypeProducerId::try_new("producer.dialogue").expect("valid producer"),
         RuntimeSemanticTypeId::from_bytes([41; 32]),
@@ -6293,13 +6650,13 @@ fn fiber_snapshot_serde_preserves_opaque_owner_and_rejects_tampering() {
     )
     .try_wrap(RuntimeValue::String("saved".to_owned()))
     .expect("tampered exact owner wraps");
-    class_tampered
+    restored
         .active_frame_mut()
         .expect("active frame")
         .set_register(AwbcRegisterId(0), affine)
         .expect("tamper opaque class");
     assert!(matches!(
-        class_tampered
+        restored
             .validate_for_program(&program)
             .expect_err("opaque class/persistence tamper must reject on restore validation"),
         super::fiber::FiberStateError::InvalidRuntimeValue { .. }
@@ -6424,14 +6781,13 @@ fn fiber_checkpoint_and_serde_preserve_cleanup_stacks() {
             args: vec![RuntimeValue::String("scope".to_owned())],
         });
 
-    let checkpoint = fiber.checkpoint();
+    let checkpoint = fiber
+        .checkpoint()
+        .expect("checkpoint captures a typed image");
     let encoded_checkpoint =
         serde_json::to_string(&checkpoint).expect("fiber checkpoint serializes");
     let decoded_checkpoint = serde_json::from_str(&encoded_checkpoint)
         .expect("fiber checkpoint deserializes without session identity");
-    let encoded = serde_json::to_string(&fiber).expect("fiber state serializes");
-    let decoded: FiberState = serde_json::from_str(&encoded).expect("fiber state deserializes");
-    assert_eq!(decoded, fiber);
 
     fiber
         .active_frame_mut()
@@ -6443,7 +6799,10 @@ fn fiber_checkpoint_and_serde_preserve_cleanup_stacks() {
         .expect("active frame")
         .scopes
         .clear();
-    fiber.restore(decoded_checkpoint);
+    let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
+    fiber
+        .restore(decoded_checkpoint, &owner)
+        .expect("checkpoint restores by replacing the current fiber");
 
     let frame = fiber.active_frame().expect("active frame restored");
     assert_eq!(frame.root_cleanups[0].key, "handle.root");
@@ -6772,6 +7131,7 @@ fn callable_instructions_capture_and_apply_program_owned_state() {
                 public_id: Some(AwbcStringId(1)),
                 kind: AwbcFunctionKind::Flow,
                 signature: AwbcSignatureId(0),
+                input_ownership: Vec::new(),
                 frame_layout: AwbcFrameLayoutId(0),
                 blocks: AwbcTableRange::new(0, 1),
                 entry_block: AwbcBlockId(0),
@@ -6781,6 +7141,7 @@ fn callable_instructions_capture_and_apply_program_owned_state() {
                 public_id: None,
                 kind: AwbcFunctionKind::Synthetic,
                 signature: AwbcSignatureId(1),
+                input_ownership: vec![AwbcFunctionInputOwnership::default(); 1],
                 frame_layout: AwbcFrameLayoutId(1),
                 blocks: AwbcTableRange::new(1, 1),
                 entry_block: AwbcBlockId(1),
@@ -6917,7 +7278,7 @@ fn expression_apply_preserves_dynamic_call_frame_across_suspension_and_resume() 
     assert_eq!(
         fiber.frames[1]
             .return_to
-            .clone()
+            .as_ref()
             .expect("dynamic call continuation")
             .cursor,
         super::fiber::FiberCursor {
@@ -6929,7 +7290,13 @@ fn expression_apply_preserves_dynamic_call_frame_across_suspension_and_resume() 
     fiber
         .validate_for_program(&program)
         .expect("suspended dynamic call snapshot validates");
-    let mut fiber = fiber.clone();
+    let checkpoint = fiber.checkpoint().expect("snapshot dynamic call fiber");
+    fiber
+        .restore(
+            checkpoint,
+            &RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+        )
+        .expect("restore dynamic call fiber after dropping its live state");
     fiber
         .validate_for_program(&program)
         .expect("restored dynamic call snapshot validates");
@@ -7190,6 +7557,7 @@ fn expression_apply_keeps_partial_application_as_a_value_operation() {
     ];
     program.signatures[0].result = Some(AwbcTypeId(3));
     program.signatures[1].params = vec![AwbcTypeId(0), AwbcTypeId(0)];
+    program.functions[1].input_ownership = vec![AwbcFunctionInputOwnership::default(); 2];
     program.frame_layouts[0].slots[0].ty = AwbcTypeId(2);
     program.frame_layouts[0].slots[1].ty = AwbcTypeId(3);
     program.frame_layouts[0].slots.push(AwbcFrameSlot {
@@ -7329,7 +7697,15 @@ fn budget_preemption_inside_dynamic_callee_resumes_at_the_exact_cursor() {
     fiber
         .validate_for_program(&program)
         .expect("preempted dynamic call snapshot validates");
-    let mut fiber = fiber.clone();
+    let checkpoint = fiber
+        .checkpoint()
+        .expect("snapshot budgeted dynamic call fiber");
+    fiber
+        .restore(
+            checkpoint,
+            &RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+        )
+        .expect("restore budgeted dynamic call fiber after dropping its live state");
     fiber
         .resume_budget_yield(&program)
         .expect("resume exact budget target");
@@ -7446,6 +7822,7 @@ fn nested_return_restores_caller_resume_and_destination() {
         public_id: None,
         kind: AwbcFunctionKind::Synthetic,
         signature: AwbcSignatureId(1),
+        input_ownership: Vec::new(),
         frame_layout: AwbcFrameLayoutId(1),
         blocks: AwbcTableRange::new(2, 1),
         entry_block: AwbcBlockId(2),

@@ -208,7 +208,23 @@ pub(super) fn assert_awbc_return(source: &str, expected: RuntimeValue) {
             VmExit::DialogueResultSelected(value) => {
                 panic!("ordinary callable selected a DialogueLine result: {value:?}")
             }
-            exit => panic!("AWBC callable execution stopped unexpectedly: {exit:?}"),
+            exit => {
+                let block = program.blocks.get(fiber.cursor.block.index());
+                let instruction = block
+                    .filter(|block| fiber.cursor.instruction_offset < block.instructions.len)
+                    .and_then(|block| {
+                        block
+                            .instructions
+                            .start
+                            .checked_add(fiber.cursor.instruction_offset)
+                    })
+                    .and_then(|index| program.instructions.get(index as usize));
+                panic!(
+                    "AWBC callable execution stopped unexpectedly: {exit:?} at cursor {:?}, frame {:?}, instruction {instruction:?}, block {block:?}",
+                    fiber.cursor,
+                    fiber.frames.last().map(|frame| frame.function),
+                )
+            }
         }
     }
     panic!("AWBC callable execution exceeded its deterministic step limit");

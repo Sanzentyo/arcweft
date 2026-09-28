@@ -79,6 +79,8 @@ pub(super) fn reserve_global_defer_sites(
                         RuntimePlanLowerError::new("defer capture position exceeds checked limits")
                     })?;
                     Ok(RuntimeFunctionInputBindingSeed {
+                        ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
+                        unrestricted_bindings: Box::new([]),
                         source: RuntimeFunctionInputSource::Capture { position },
                         input_local,
                         pattern: RuntimePatternSeed::new(

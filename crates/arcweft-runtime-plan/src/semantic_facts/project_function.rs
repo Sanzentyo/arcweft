@@ -6,7 +6,7 @@
 //! selects an instantiation from a callee value or from the first observed
 //! call.
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, sync::Arc};
 
 use arcweft_core::entry::RuntimeCallableId;
 use arcweft_id::{EffectId, runtime_program::RuntimeProjectContinuationLineageId};
@@ -20,6 +20,8 @@ use arcweft_lang_sema::callable::{
 use arcweft_lang_sema::final_analysis::{
     CheckedExecutableRuntimeExpressionFactFamily, CheckedExecutableRuntimeFactPartition,
     CheckedExecutableRuntimePatternFactFamily, CheckedExecutableRuntimeStatementFactFamily,
+    CheckedLocalUse, CheckedLocalUseCatalog, CheckedLocalUseInstanceCatalog, CheckedLocalUseSite,
+    CheckedSyntheticUse,
 };
 use thiserror::Error;
 
@@ -1419,17 +1421,95 @@ impl RuntimeClosureInstanceFact {
     }
 }
 
+/// Selected local-use authority for one executable body. Closed instances
+/// carry their own sealed rows; global bodies retain the accepted global seal.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeClosedLocalUseCatalog {
+    Global(Arc<CheckedLocalUseCatalog>),
+    Instance(Arc<CheckedLocalUseInstanceCatalog>),
+}
+
+impl RuntimeClosedLocalUseCatalog {
+    pub fn generation(&self) -> &Arc<arcweft_lang_hir::project::AcceptedHirProjectGeneration> {
+        match self {
+            Self::Global(catalog) => catalog.generation(),
+            Self::Instance(catalog) => catalog.generation(),
+        }
+    }
+
+    pub fn use_at(&self, site: CheckedLocalUseSite) -> Option<CheckedLocalUse> {
+        match self {
+            Self::Global(catalog) => catalog.use_at(site),
+            Self::Instance(catalog) => catalog.use_at(site),
+        }
+    }
+
+    pub fn guard_copy_locals(&self, guard: ExprId) -> Vec<LocalId> {
+        match self {
+            Self::Global(catalog) => catalog.guard_copy_locals(guard).collect(),
+            Self::Instance(catalog) => catalog.guard_copy_locals(guard).collect(),
+        }
+    }
+
+    pub fn synthetic_at(&self, expression: ExprId) -> Option<CheckedSyntheticUse> {
+        match self {
+            Self::Global(catalog) => catalog.synthetic_at(expression),
+            Self::Instance(catalog) => catalog.synthetic_at(expression),
+        }
+    }
+
+    pub fn copy_requirement(
+        &self,
+        local: LocalId,
+    ) -> Option<&arcweft_lang_sema::final_analysis::CheckedLocalCopyRequirement> {
+        match self {
+            Self::Global(catalog) => catalog.copy_requirement(local),
+            Self::Instance(catalog) => catalog.copy_requirement(local),
+        }
+    }
+
+    pub fn copy_requirements(
+        &self,
+    ) -> Vec<arcweft_lang_sema::final_analysis::CheckedLocalCopyRequirement> {
+        match self {
+            Self::Global(catalog) => catalog.copy_requirements().cloned().collect(),
+            Self::Instance(catalog) => catalog.copy_requirements().cloned().collect(),
+        }
+    }
+
+    pub fn synthetic_copy_requirement(
+        &self,
+        callable: arcweft_lang_sema::final_analysis::CheckedImplicitCallableIdentity,
+    ) -> Option<arcweft_lang_sema::final_analysis::CheckedSyntheticCopyRequirement> {
+        match self {
+            Self::Global(catalog) => catalog.synthetic_copy_requirement(callable),
+            Self::Instance(catalog) => catalog.synthetic_copy_requirement(callable),
+        }
+    }
+
+    pub fn captures_at(&self, owner: ExprId) -> Vec<CheckedLocalUse> {
+        match self {
+            Self::Global(catalog) => catalog.captures_at(owner).collect(),
+            Self::Instance(catalog) => catalog.captures_at(owner).collect(),
+        }
+    }
+
+    pub fn instance_identity(
+        &self,
+    ) -> Option<&arcweft_lang_sema::final_analysis::CheckedLocalUseInstanceIdentity> {
+        match self {
+            Self::Global(_) => None,
+            Self::Instance(catalog) => Some(catalog.identity()),
+        }
+    }
+}
+
 /// Complete closed semantic subcatalog for one exact project-function
-/// executable partition.
-///
-/// This is the sole runtime-fact authority while lowering the associated
-/// instance. It deliberately mirrors the global executable fact algebra but
-/// stores every expression, pattern, statement, capture, and normalized type
-/// under the instance's frozen substitution. Consumers must choose this
-/// catalog as a whole; per-family fallback to global open facts is invalid.
+/// executable partition. Its local-use authority is selected as a whole.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeProjectFunctionInstanceSemanticFacts {
     partition: CheckedExecutableRuntimeFactPartition,
+    local_uses: RuntimeClosedLocalUseCatalog,
     type_projection: Box<[RuntimeProjectFunctionTypeProjection]>,
     expressions: Box<[RuntimeProjectFunctionExpressionSemanticFact]>,
     patterns: Box<[RuntimeProjectFunctionPatternSemanticFact]>,
@@ -1440,6 +1520,7 @@ pub struct RuntimeProjectFunctionInstanceSemanticFacts {
 impl RuntimeProjectFunctionInstanceSemanticFacts {
     pub fn try_new(
         partition: CheckedExecutableRuntimeFactPartition,
+        local_uses: RuntimeClosedLocalUseCatalog,
         type_projection: Box<[RuntimeProjectFunctionTypeProjection]>,
         expressions: Box<[RuntimeProjectFunctionExpressionSemanticFact]>,
         patterns: Box<[RuntimeProjectFunctionPatternSemanticFact]>,
@@ -1583,12 +1664,17 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
 
         Ok(Self {
             partition,
+            local_uses,
             type_projection,
             expressions,
             patterns,
             statements,
             captures,
         })
+    }
+
+    pub const fn local_uses(&self) -> &RuntimeClosedLocalUseCatalog {
+        &self.local_uses
     }
 
     pub const fn partition(&self) -> &CheckedExecutableRuntimeFactPartition {
@@ -2172,6 +2258,34 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                 }
                 RuntimeProjectFunctionExpressionPayload::Closure(closure) => {
                     closure.semantics().visit_scoped_calls(
+                        RuntimeScopedExecutableSemanticFactView::closure(
+                            closure.key(),
+                            closure.semantics(),
+                        ),
+                        visitor,
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+
+    pub fn visit_scoped_implicit_callables<'facts>(
+        &'facts self,
+        scope: RuntimeScopedExecutableSemanticFactView<'facts>,
+        visitor: &mut impl FnMut(
+            RuntimeScopedExecutableSemanticFactView<'facts>,
+            ExprId,
+            &'facts RuntimeImplicitCallableFact,
+        ),
+    ) {
+        for expression in &self.expressions {
+            match expression.payload() {
+                RuntimeProjectFunctionExpressionPayload::ImplicitCallable { callable, .. } => {
+                    visitor(scope, expression.owner(), callable);
+                }
+                RuntimeProjectFunctionExpressionPayload::Closure(closure) => {
+                    closure.semantics().visit_scoped_implicit_callables(
                         RuntimeScopedExecutableSemanticFactView::closure(
                             closure.key(),
                             closure.semantics(),

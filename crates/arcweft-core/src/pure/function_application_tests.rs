@@ -18,7 +18,10 @@ fn surplus_arguments_do_not_enter_either_function_body() {
     .unwrap();
     let mut evaluator = PureEvaluator::new_ref(&plan, &[]);
     assert!(matches!(
-        evaluator.apply_runtime_function(&function, &[RuntimeValue::Unit]),
+        evaluator.apply_runtime_function(
+            function.try_duplicate_unrestricted().unwrap(),
+            vec![RuntimeValue::Unit],
+        ),
         Err(RuntimeEvalError::Callable(
             crate::value::RuntimeCallableValueError::ArgumentCount {
                 expected: 0,
@@ -28,13 +31,13 @@ fn surplus_arguments_do_not_enter_either_function_body() {
         ))
     ));
     assert_eq!(evaluator.stats.evaluated_exprs, 0);
-    let RuntimeValue::Callable(inner) = evaluator.apply_runtime_function(&function, &[]).unwrap()
+    let RuntimeValue::Callable(inner) = evaluator.apply_runtime_function(function, vec![]).unwrap()
     else {
         panic!("one group returns the remaining function");
     };
     assert_eq!(
         evaluator
-            .apply_runtime_function(&inner, &[RuntimeValue::Unit])
+            .apply_runtime_function(inner, vec![RuntimeValue::Unit])
             .unwrap(),
         RuntimeValue::Unit
     );

@@ -186,7 +186,36 @@ impl RuntimePlanBuilder {
         &self,
         seed: RuntimeExprSeed,
     ) -> Result<RuntimeExpr, RuntimePlanBuildError> {
-        let (semantic_ty, kind) = seed.into_parts();
+        self.lower_expression_with_guard_role(seed, false)
+    }
+
+    fn lower_guard_expression(
+        &self,
+        seed: RuntimeExprSeed,
+        pattern: &RuntimePattern,
+    ) -> Result<RuntimeExpr, RuntimePlanBuildError> {
+        let guard = self.lower_expression_with_guard_role(seed, true)?;
+        for &local in guard.guard_copy_locals() {
+            if !crate::pattern::runtime_pattern_contains_binding(pattern, local) {
+                return Err(RuntimePlanBuildError::InvalidGuardCopyBinding { local });
+            }
+        }
+        Ok(guard)
+    }
+
+    fn lower_expression_with_guard_role(
+        &self,
+        seed: RuntimeExprSeed,
+        is_pattern_guard: bool,
+    ) -> Result<RuntimeExpr, RuntimePlanBuildError> {
+        let (semantic_ty, kind, guard_copy_locals) = seed.into_parts();
+        if !is_pattern_guard && !guard_copy_locals.is_empty() {
+            return Err(RuntimePlanBuildError::GuardCopyRequirementOutsideGuard);
+        }
+        let guard_copy_locals = guard_copy_locals
+            .into_iter()
+            .map(|seed| self.resolve_local(&seed).map(|(local, _)| local))
+            .collect::<Result<Vec<_>, _>>()?;
         let ty = self.resolve_seed_type("expression", semantic_ty)?;
         let kind = match kind {
             RuntimeExprSeedKind::Value(value) => {
@@ -197,9 +226,12 @@ impl RuntimePlanBuilder {
                 RuntimeExprKind::Agent(self.lower_agent_expression(ty, agent)?)
             }
             RuntimeExprSeedKind::Local(local) => {
-                let (local, local_ty) = self.resolve_local(&local)?;
+                let (local_seed, mode) = local.into_parts();
+                let (local, local_ty) = self.resolve_local(&local_seed)?;
                 require_same("local expression", ty, local_ty)?;
-                RuntimeExprKind::Local(local)
+                RuntimeExprKind::Local(crate::value::RuntimeLocalRead::from_admitted_parts(
+                    local, mode,
+                ))
             }
             RuntimeExprSeedKind::SequencePopFront { place } => {
                 let (place, item) = self.lower_vec_place(place, "Vec.pop_front place")?;
@@ -1088,7 +1120,9 @@ impl RuntimePlanBuilder {
                 let pattern = self.lower_pattern_seed(pattern)?;
                 let expr = self.lower_expression(*expr)?;
                 require_same("if-let scrutinee", pattern.ty(), expr.ty())?;
-                let guard = self.lower_optional_expression(guard)?;
+                let guard = guard
+                    .map(|guard| self.lower_guard_expression(*guard, &pattern))
+                    .transpose()?;
                 if let Some(guard) = &guard {
                     self.require_bool("if-let guard", guard.ty())?;
                 }
@@ -1137,7 +1171,7 @@ impl RuntimePlanBuilder {
                 }
             }
         };
-        Ok(RuntimeExpr::from_admitted_parts(ty, kind))
+        Ok(RuntimeExpr::from_admitted_parts(ty, kind).with_guard_copy_locals(guard_copy_locals))
     }
 
     fn lower_optional_expression(
@@ -1197,7 +1231,7 @@ impl RuntimePlanBuilder {
         let pattern = self.lower_pattern_seed(pattern)?;
         require_same("match arm pattern", scrutinee_ty, pattern.ty())?;
         let guard = guard
-            .map(|guard| self.lower_expression(guard))
+            .map(|guard| self.lower_guard_expression(guard, &pattern))
             .transpose()?;
         if let Some(guard) = &guard {
             self.require_bool("match arm guard", guard.ty())?;
@@ -2666,9 +2700,9 @@ impl RuntimePlanBuilder {
                 }
                 Ok(())
             }
-            RuntimeExprKind::Local(local) => {
-                require_local_in_scope(*local, scope)?;
-                used.insert(*local);
+            RuntimeExprKind::Local(read) => {
+                require_local_in_scope(read.local(), scope)?;
+                used.insert(read.local());
                 Ok(())
             }
             RuntimeExprKind::SequencePopFront { place } => {
@@ -2984,7 +3018,7 @@ impl RuntimePlanBuilder {
         require_same("stream match pattern", scrutinee_ty, pattern.ty())?;
         let guard = arm
             .guard
-            .map(|guard| self.lower_expression(guard))
+            .map(|guard| self.lower_guard_expression(guard, &pattern))
             .transpose()?;
         if let Some(guard) = &guard {
             self.require_bool("stream match guard", guard.ty())?;
@@ -3147,7 +3181,7 @@ impl RuntimePlanBuilder {
                         let pattern = self.lower_pattern_seed(pattern)?;
                         require_same("flow match pattern", scrutinee.ty(), pattern.ty())?;
                         let guard = guard
-                            .map(|guard| self.lower_expression(guard))
+                            .map(|guard| self.lower_guard_expression(guard, &pattern))
                             .transpose()?;
                         if let Some(guard) = &guard {
                             self.require_bool("flow match guard", guard.ty())?;
@@ -3459,7 +3493,7 @@ impl RuntimePlanBuilder {
                 let expr = self.lower_expression(expr)?;
                 require_same("flow if-let pattern", pattern.ty(), expr.ty())?;
                 let guard = guard
-                    .map(|guard| self.lower_expression(guard))
+                    .map(|guard| self.lower_guard_expression(guard, &pattern))
                     .transpose()?;
                 if let Some(guard) = &guard {
                     self.require_bool("flow if-let guard", guard.ty())?;
@@ -3501,7 +3535,7 @@ impl RuntimePlanBuilder {
                 let expr = self.lower_expression(expr)?;
                 require_same("flow while-let pattern", pattern.ty(), expr.ty())?;
                 let guard = guard
-                    .map(|guard| self.lower_expression(guard))
+                    .map(|guard| self.lower_guard_expression(guard, &pattern))
                     .transpose()?;
                 if let Some(guard) = &guard {
                     self.require_bool("flow while-let guard", guard.ty())?;
@@ -4061,7 +4095,9 @@ impl RuntimePlanBuilder {
             } => RuntimeLineOperation::ActorLook {
                 site,
                 character,
-                actor: self.lower_expression(actor)?,
+                actor: super::super::RuntimeBorrowedLocal::new(
+                    self.resolve_local(actor.local())?.0,
+                ),
                 look: self.lower_expression(look)?,
                 crossfade: self.lower_expression(crossfade)?,
             },
@@ -4816,6 +4852,10 @@ impl RuntimePlanBuilder {
                     self.validate_expression_locals(value, scope, used)?;
                 }
                 FlowOp::LineOperation { binding, operation } => {
+                    if let RuntimeLineOperation::ActorLook { actor, .. } = operation {
+                        require_local_in_scope(actor.local(), scope)?;
+                        used.insert(actor.local());
+                    }
                     for expression in line_operation_expressions(operation) {
                         self.validate_expression_locals(expression, scope, used)?;
                     }
@@ -5195,11 +5235,8 @@ fn line_operation_expressions(operation: &RuntimeLineOperation) -> Vec<&RuntimeE
             )
             .collect(),
         RuntimeLineOperation::ActorLook {
-            actor,
-            look,
-            crossfade,
-            ..
-        } => vec![actor, look, crossfade],
+            look, crossfade, ..
+        } => vec![look, crossfade],
     }
 }
 
@@ -5308,7 +5345,9 @@ pub(super) fn function_input_scope(
 ) -> BTreeSet<RuntimeLocalDeclarationId> {
     let mut scope = BTreeSet::new();
     for input in inputs {
-        scope.insert(input.input_local());
+        // The input local names the ABI carrier. Only locals actually bound by
+        // its pattern are live in the function body; binding the carrier too
+        // would duplicate an affine destructured value.
         scope.extend(pattern_binding_locals(input.pattern()));
     }
     scope
@@ -5381,6 +5420,9 @@ impl RuntimePlanBuilder {
         }
         if value.contains_nonconstant_opaque() {
             return Err(RuntimePlanBuildError::NonConstantOpaqueValueInPlan { context });
+        }
+        if !value.ownership().permits_copy() {
+            return Err(RuntimePlanBuildError::AffineLiteralInPlan { context });
         }
         let authority = super::super::value_admission::PlanValueAuthority::Building {
             types: &self.types,
@@ -5481,7 +5523,10 @@ mod tests {
                 RuntimeExprSeedKind::Field {
                     target: Box::new(RuntimeExprSeed::new(
                         semantic_owner,
-                        RuntimeExprSeedKind::Local(admission.local_ids()[0].clone()),
+                        RuntimeExprSeedKind::Local(crate::plan::RuntimeLocalReadSeed::new(
+                            admission.local_ids()[0].clone(),
+                            crate::value::RuntimeLocalReadMode::Move,
+                        )),
                     )),
                     field: RuntimeFieldProjectionSeed::OpaqueRecord {
                         owner: semantic_owner,

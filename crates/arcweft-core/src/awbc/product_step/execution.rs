@@ -142,7 +142,7 @@ impl<B: RuntimeCallBackend> VmHost for ProductVmHost<'_, B> {
 pub(super) fn run_function(
     program: &Arc<AwbcProgram>,
     function: AwbcFunctionId,
-    args: &[RuntimeValue],
+    args: Vec<RuntimeValue>,
     backend: &mut impl RuntimeCallBackend,
     fallback_stats: &mut crate::step::RuntimePureCallStats,
 ) -> Result<RuntimeValue, VmError> {
@@ -158,14 +158,14 @@ pub(super) fn run_function(
 fn run_function_with_host(
     program: &AwbcProgram,
     function: AwbcFunctionId,
-    args: &[RuntimeValue],
+    args: Vec<RuntimeValue>,
     context: VmExecutionContext,
     host: &mut impl VmHost,
 ) -> Result<RuntimeValue, VmError> {
     let mut fiber = FiberState::for_function(program, AwbcEntryId(0), function, 0, 1_000_000)?;
     fiber
         .active_frame_mut()?
-        .bind_positional_arguments(program, args)?;
+        .bind_positional_arguments_owned(program, args)?;
     loop {
         let output = step_with_host_context(
             program,

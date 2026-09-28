@@ -7,7 +7,7 @@ use crate::runtime_id::{RuntimeCallableSpecializationId, RuntimeCallableStateId}
 use crate::task::RuntimeProgramOwner;
 use crate::value::{
     RuntimeCallableApplication, RuntimeCallableValue, RuntimeCallableValueError,
-    RuntimeSignedIntWidth, RuntimeValue,
+    RuntimeLocalReadMode, RuntimeSignedIntWidth, RuntimeValue,
 };
 
 fn id(marker: u8) -> RuntimeSemanticTypeId {
@@ -81,7 +81,7 @@ fn plan() -> RuntimePlan {
     let locals = builder
         .admit_type_batch(
             seeds,
-            [integer, boolean, string].map(RuntimeLocalDeclarationSeed::new),
+            [integer, boolean, string, integer].map(RuntimeLocalDeclarationSeed::new),
         )
         .unwrap();
     let source = builder.reserve_callable_state_seed().unwrap();
@@ -112,11 +112,21 @@ fn plan() -> RuntimePlan {
             .push_function_site_seed(
                 [
                     RuntimeFunctionInputBindingSeed {
+                        ownership: Default::default(),
+                        unrestricted_bindings: Box::new([]),
                         source: RuntimeFunctionInputSource::Capture { position: 0 },
-                        input_local: locals.local_ids()[0].clone(),
-                        pattern: RuntimePatternSeed::new(integer, RuntimePatternSeedKind::Discard),
+                        input_local: locals.local_ids()[3].clone(),
+                        pattern: RuntimePatternSeed::new(
+                            integer,
+                            RuntimePatternSeedKind::Bind {
+                                mutable: false,
+                                local: locals.local_ids()[0].clone(),
+                            },
+                        ),
                     },
                     RuntimeFunctionInputBindingSeed {
+                        ownership: Default::default(),
+                        unrestricted_bindings: Box::new([]),
                         source: RuntimeFunctionInputSource::Parameter { position: 0 },
                         input_local: locals.local_ids()[index + 1].clone(),
                         pattern: RuntimePatternSeed::new(argument, RuntimePatternSeedKind::Discard),
@@ -124,7 +134,10 @@ fn plan() -> RuntimePlan {
                 ],
                 RuntimeExprSeed::new(
                     integer,
-                    RuntimeExprSeedKind::Local(locals.local_ids()[0].clone()),
+                    RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                        locals.local_ids()[0].clone(),
+                        RuntimeLocalReadMode::Copy,
+                    )),
                 ),
             )
             .unwrap();
@@ -182,12 +195,18 @@ fn one_callable_can_be_specialized_repeatedly_without_replaying_its_captures() {
     .enumerate()
     {
         let specialization = RuntimeCallableSpecializationId::from_zero_based(index).unwrap();
-        let specialized = value.clone().specialize(&owner, specialization).unwrap();
+        let specialized = value
+            .try_duplicate_unrestricted()
+            .unwrap()
+            .specialize(&owner, specialization)
+            .unwrap();
         assert_eq!(value.state(), source);
         assert_eq!(specialized.retained(), value.retained());
         assert_eq!(specialized.function_type().unwrap(), id(index as u8 + 3));
         let RuntimeCallableApplication::Invoke(invocation) = specialized
-            .prepare_group(&[argument.clone()], None)
+            .try_duplicate_unrestricted()
+            .unwrap()
+            .prepare_group(vec![argument.clone()], None)
             .unwrap()
         else {
             panic!("specialized callable must select its admitted body");

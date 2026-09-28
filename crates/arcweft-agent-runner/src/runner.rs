@@ -682,10 +682,11 @@ where
                 report.responses.push(host_report.response);
                 report.events_emitted = host_report.events_emitted;
             }
-            report.final_status = Some(step.fiber_status.clone());
-
             match step.fiber_status {
-                FlowFiberStatus::Done(_) => return Ok(report),
+                status @ FlowFiberStatus::Done(_) => {
+                    report.final_status = Some(status);
+                    return Ok(report);
+                }
                 FlowFiberStatus::Failed(message) => {
                     return Err(AgentRunError::ControllerFailed(message));
                 }

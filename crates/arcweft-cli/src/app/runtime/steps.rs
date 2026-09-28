@@ -108,6 +108,7 @@ fn try_run_runtime_steps_with_executor(
     let mut task_events = Vec::new();
     let mut host_call_results = Vec::new();
     let mut summaries = Vec::new();
+    let mut final_status = FlowFiberStatus::Running;
     for step_index in 0..steps {
         if let Some(host) = host.as_mut() {
             host.pump_main_thread()?;
@@ -122,7 +123,7 @@ fn try_run_runtime_steps_with_executor(
             },
             step_options(mode, max_ops),
         );
-        let (summary, task_requests, host_call_requests) =
+        let (summary, task_requests, host_call_requests, step_status) =
             RuntimeStepRunSummary::from_result_and_task_requests(
                 step_index,
                 result,
@@ -130,9 +131,10 @@ fn try_run_runtime_steps_with_executor(
                 execution_diagnostics,
             )?;
         let done = matches!(
-            executor.fiber().status,
+            &step_status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
         );
+        final_status = step_status;
         summaries.push(summary);
         if done {
             break;
@@ -154,7 +156,7 @@ fn try_run_runtime_steps_with_executor(
     }
     Ok(RuntimeRunTrace {
         steps: summaries,
-        final_status: executor.fiber().status.clone(),
+        final_status,
         executor_stats: executor.executor_stats(),
         native_io: host
             .as_ref()

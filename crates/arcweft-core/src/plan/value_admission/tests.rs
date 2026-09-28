@@ -69,6 +69,28 @@ fn runtime_color_is_admitted_by_the_dedicated_plan_color_type() {
 }
 
 #[test]
+fn iterator_admission_validates_only_its_owned_remainder() {
+    let plan = plan([
+        seed(1, Type::Iterator(semantic(2))),
+        seed(2, Type::Signed(RuntimeSignedIntWidth::I16)),
+    ]);
+    let mut iterator = RuntimeIterator::values(vec![RuntimeValue::i16(1), RuntimeValue::i16(2)]);
+    assert_eq!(iterator.next(), Some(RuntimeValue::i16(1)));
+
+    let limits = RuntimeSchemaLimits::engine_default();
+    let ty = id(&plan, 1);
+    let mut validation =
+        PlanValueValidation::new(PlanValueAuthority::Sealed(&plan), ty, limits).unwrap();
+    let result = value_encoding::validate_live(
+        &RuntimeValue::Iterator(iterator),
+        limits,
+        &mut validation,
+        Expected::Type(ty),
+    );
+    assert!(result.is_ok(), "{result:?}");
+}
+
+#[test]
 fn program_value_admission_distinguishes_live_snapshot_and_canonical_opaque_rules() {
     use crate::{
         awbc::schema::{

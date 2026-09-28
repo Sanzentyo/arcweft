@@ -6,10 +6,11 @@ use crate::{
         schema::{
             AwbcBlock, AwbcBlockId, AwbcDialogueContentSlot, AwbcDialogueContentTemplate,
             AwbcDialogueValueRole, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot,
-            AwbcFrameSlotRole, AwbcFunction, AwbcFunctionId, AwbcFunctionKind, AwbcInstruction,
-            AwbcIntrinsic, AwbcIntrinsicId, AwbcProgram, AwbcRegisterId, AwbcRuntimeType,
-            AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId,
-            AwbcTableRange, AwbcTerminator, AwbcTypeId,
+            AwbcFrameSlotRole, AwbcFunction, AwbcFunctionId, AwbcFunctionInputOwnership,
+            AwbcFunctionKind, AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcProgram,
+            AwbcRegisterId, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSafePointKind,
+            AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
+            AwbcTypeId,
         },
         vm::{VmError, VmExecutionContext},
     },
@@ -73,7 +74,15 @@ fn context_program() -> AwbcContextFixture {
     .into_iter()
     .map(|intrinsic| AwbcIntrinsic {
         identity: RuntimeCallTarget::intrinsic(intrinsic),
-        signature: AwbcSignatureId(1),
+        signature: match intrinsic {
+            RuntimeIntrinsic::StdResultContext | RuntimeIntrinsic::StdOptionContext => {
+                AwbcSignatureId(1)
+            }
+            RuntimeIntrinsic::StdResultWithContext | RuntimeIntrinsic::StdOptionWithContext => {
+                AwbcSignatureId(2)
+            }
+            _ => unreachable!("only context intrinsics are listed above"),
+        },
         revision: 1,
     });
     let mut intrinsics = context_intrinsics.collect::<Vec<_>>();
@@ -128,6 +137,11 @@ fn context_program() -> AwbcContextFixture {
                 result: Some(AwbcTypeId(4)),
                 effects: crate::awbc::schema::AwbcEffectSetId(0),
             },
+            AwbcSignature {
+                params: vec![AwbcTypeId(4), CALLBACK],
+                result: Some(AwbcTypeId(4)),
+                effects: crate::awbc::schema::AwbcEffectSetId(0),
+            },
         ],
         frame_layouts: vec![
             AwbcFrameLayout {
@@ -151,6 +165,30 @@ fn context_program() -> AwbcContextFixture {
                     AwbcFrameSlot {
                         name: None,
                         ty: AwbcTypeId(4),
+                        role: AwbcFrameSlotRole::Parameter,
+                        scope_depth: 0,
+                    },
+                    AwbcFrameSlot {
+                        name: None,
+                        ty: AwbcTypeId(4),
+                        role: AwbcFrameSlotRole::ReturnValue,
+                        scope_depth: 0,
+                    },
+                ],
+                scopes: Vec::new(),
+                max_scope_depth: 0,
+            },
+            AwbcFrameLayout {
+                slots: vec![
+                    AwbcFrameSlot {
+                        name: None,
+                        ty: AwbcTypeId(4),
+                        role: AwbcFrameSlotRole::Parameter,
+                        scope_depth: 0,
+                    },
+                    AwbcFrameSlot {
+                        name: None,
+                        ty: CALLBACK,
                         role: AwbcFrameSlotRole::Parameter,
                         scope_depth: 0,
                     },
@@ -202,6 +240,7 @@ fn context_program() -> AwbcContextFixture {
                 public_id: Some(AwbcStringId(0)),
                 kind: AwbcFunctionKind::Ordinary,
                 signature: AwbcSignatureId(0),
+                input_ownership: Vec::new(),
                 frame_layout: AwbcFrameLayoutId(0),
                 blocks: AwbcTableRange::new(0, 1),
                 entry_block: AwbcBlockId(0),
@@ -211,6 +250,7 @@ fn context_program() -> AwbcContextFixture {
                 public_id: None,
                 kind: AwbcFunctionKind::Ordinary,
                 signature: AwbcSignatureId(1),
+                input_ownership: vec![AwbcFunctionInputOwnership::default(); 2],
                 frame_layout: AwbcFrameLayoutId(1),
                 blocks: AwbcTableRange::new(1, 1),
                 entry_block: AwbcBlockId(1),
@@ -249,6 +289,12 @@ fn context_program() -> AwbcContextFixture {
     };
     for index in 1..4 {
         let function = AwbcFunctionId(index + 1);
+        let signature = program.intrinsics[index as usize].signature;
+        let frame_layout = if signature == AwbcSignatureId(2) {
+            AwbcFrameLayoutId(2)
+        } else {
+            AwbcFrameLayoutId(1)
+        };
         program.instructions.push(AwbcInstruction::CallIntrinsic {
             dst: Some(AwbcRegisterId(2)),
             intrinsic: AwbcIntrinsicId(index),
@@ -266,8 +312,12 @@ fn context_program() -> AwbcContextFixture {
         program.functions.push(AwbcFunction {
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
-            signature: AwbcSignatureId(1),
-            frame_layout: AwbcFrameLayoutId(1),
+            signature,
+            input_ownership: vec![
+                AwbcFunctionInputOwnership::default();
+                program.signatures[signature.index()].params.len()
+            ],
+            frame_layout,
             blocks: AwbcTableRange::new(index + 1, 1),
             entry_block: AwbcBlockId(index + 1),
             flags: Default::default(),

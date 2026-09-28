@@ -24,15 +24,14 @@ use crate::step::{
 };
 use crate::stream::StreamRuntimeState;
 use crate::task::{
-    HostRestartPolicy, HostTaskRequest, NeedProducerInvocationFrontier,
-    NeedProducerInvocationToken, NeedProducerLaunchFrontier, NeedProducerLaunchRestore,
-    NeedProducerRegistry, NeedProducerRegistryRestore, NeedProducerRuntimeArgument,
-    NeedProducerSiteDigest, RuntimeNeedProducerLaunch, TaskEvent, TaskEventKind, TaskId,
-    TaskPlanSemanticDigest, TaskPublicationCursor,
+    HostRestartPolicy, NeedProducerInvocationFrontier, NeedProducerInvocationToken,
+    NeedProducerLaunchFrontier, NeedProducerLaunchRestore, NeedProducerRegistry,
+    NeedProducerRegistryRestore, NeedProducerRuntimeArgument, NeedProducerSiteDigest,
+    RuntimeNeedProducerLaunch, RuntimeNeedProducerState, TaskEvent, TaskId, TaskPlanSemanticDigest,
+    TaskPublicationCursor,
 };
 use crate::value::{AwbcRuntimeValueSnapshot, RuntimePayload, RuntimeValue};
 use arcweft_interaction_model::input::InputActionId;
-use arcweft_need::Need;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 pub use task_publication::{
@@ -122,6 +121,7 @@ fn validate_product_dialogue_phase(
                 | RuntimeDialogueResultState::Published
                 | RuntimeDialogueResultState::Abandoned,
             ) => false,
+            (super::ProductDialoguePhase::Transitioning, _) => false,
         };
     valid.then_some(()).ok_or_else(|| {
         crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
@@ -139,6 +139,7 @@ fn activation_fiber_in_phase(frame: &super::ActiveDialogue) -> Option<&FiberStat
         }) => Some(fiber),
         super::ProductDialoguePhase::Reducing { .. }
         | super::ProductDialoguePhase::Publishing { .. }
+        | super::ProductDialoguePhase::Transitioning
         | super::ProductDialoguePhase::Closing(super::ProductDialogueClosing {
             state: super::ProductDialogueClosingState::LineTask { .. },
             ..
@@ -517,10 +518,10 @@ impl ProductChildFiberOwner {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct AwbcProductExecutorSnapshot {
     pub runtime_generation: crate::task::GenerationId,
-    pub fiber: FiberState,
+    pub fiber: AwbcFiberStateSnapshot,
     pub child_fibers: Vec<AwbcProductChildFiberSnapshot>,
     pub dialogue_effect_callback_activations: BTreeSet<RuntimeDialogueEffectCallbackActivationId>,
     /// Exact semantic identities for every live Flow function and retained
@@ -545,110 +546,6 @@ pub struct AwbcProductExecutorSnapshot {
     pub next_audio_sequence: u64,
     pub compact_pure_stats: crate::step::RuntimePureCallStats,
     pub observations: RuntimeObservationState,
-}
-
-impl AwbcProductExecutorSnapshot {
-    /// Visits every runtime value retained by the complete Product snapshot.
-    ///
-    /// Restore owners call this on their fully admitted candidate executor,
-    /// before committing any enclosing session state. A saved dialogue DTO is
-    /// not a live snapshot and must first pass the owner-aware restore path.
-    pub fn visit_runtime_values(
-        &self,
-        mut visitor: impl FnMut(&RuntimeValue) -> Result<(), String>,
-    ) -> Result<(), AwbcProductStepBuildError> {
-        let result = (|| {
-            self.fiber.visit_runtime_values(&mut visitor)?;
-            for child in &self.child_fibers {
-                child.fiber.visit_runtime_values(&mut visitor)?;
-            }
-            match &self.dialogues {
-                AwbcProductDialogueSnapshotState::Live(dialogues) => {
-                    dialogues.visit_runtime_values(&mut visitor)?;
-                }
-                AwbcProductDialogueSnapshotState::Saved(_) => {
-                    return Err(
-                        "Product runtime-value traversal requires an admitted live dialogue registry"
-                            .to_owned(),
-                    );
-                }
-            }
-            for launch in &self.need_producers.launches {
-                for argument in &launch.arguments {
-                    visit_runtime_value_graph(&argument.value, &mut visitor)?;
-                }
-                if let arcweft_need::Need::Ready(payload) = &launch.state {
-                    visit_runtime_value_graph(&payload.0, &mut visitor)?;
-                }
-                visit_task_request_values(&launch.task_spec.request, &mut visitor)?;
-            }
-            for event in &self.queued_task_events {
-                if let TaskEventKind::Ready(payload) = &event.kind {
-                    visit_runtime_value_graph(&payload.0, &mut visitor)?;
-                }
-            }
-            Ok::<_, String>(())
-        })();
-        result.map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })
-    }
-}
-
-fn visit_runtime_value_graph(
-    value: &RuntimeValue,
-    visitor: &mut impl FnMut(&RuntimeValue) -> Result<(), String>,
-) -> Result<(), String> {
-    crate::value::visit_runtime_value_graph(value, |nested| visitor(nested))
-}
-
-fn visit_runtime_payload_values(
-    payload: &RuntimePayload,
-    visitor: &mut impl FnMut(&RuntimeValue) -> Result<(), String>,
-) -> Result<(), String> {
-    visit_runtime_value_graph(&payload.0, visitor)
-}
-
-fn visit_task_request_values(
-    request: &HostTaskRequest,
-    visitor: &mut impl FnMut(&RuntimeValue) -> Result<(), String>,
-) -> Result<(), String> {
-    match request {
-        HostTaskRequest::HttpFetch(request) => {
-            if let Some(body) = &request.body {
-                visit_runtime_payload_values(body, visitor)?;
-            }
-        }
-        HostTaskRequest::HttpRespond(request) => {
-            if let Some(body) = &request.body {
-                visit_runtime_payload_values(body, visitor)?;
-            }
-        }
-        HostTaskRequest::WasmCall(request) => {
-            for argument in &request.args {
-                visit_runtime_payload_values(argument, visitor)?;
-            }
-        }
-        HostTaskRequest::Custom {
-            args, named_args, ..
-        } => {
-            for argument in args {
-                visit_runtime_payload_values(argument, visitor)?;
-            }
-            for argument in named_args {
-                visit_runtime_payload_values(&argument.value, visitor)?;
-            }
-        }
-        HostTaskRequest::FileReadText(_)
-        | HostTaskRequest::FileReadBytes(_)
-        | HostTaskRequest::FileWriteText(_)
-        | HostTaskRequest::FileWriteBytes(_)
-        | HostTaskRequest::ProcessRun(_)
-        | HostTaskRequest::AssetLoad(_)
-        | HostTaskRequest::ShaderCompile(_)
-        | HostTaskRequest::AudioDecode(_)
-        | HostTaskRequest::TtsSynthesis(_)
-        | HostTaskRequest::SystemInfo(_) => {}
-    }
-    Ok(())
 }
 
 /// AWBC session-save projection of [`AwbcProductExecutorSnapshot`].
@@ -684,6 +581,14 @@ pub struct AwbcProductExecutorSaveSnapshot {
     pub next_audio_sequence: u64,
     pub compact_pure_stats: crate::step::RuntimePureCallStats,
     pub observations: RuntimeObservationState,
+}
+
+/// Inert rollback image of the complete AWBC Product owner, including the
+/// root transaction which is intentionally persisted by its separate schema.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AwbcProductExecutorRollbackImage {
+    pub product: AwbcProductExecutorSaveSnapshot,
+    pub root: Option<crate::root::RootRuntimeRollbackImage>,
 }
 
 /// One waiter-scoped Need publication cursor. This is a row instead of a
@@ -825,6 +730,7 @@ pub enum AwbcNeedStateSaveSnapshot {
     NotStarted,
     Pending { progress: arcweft_need::Progress },
     Ready { value: AwbcRuntimeValueSnapshot },
+    ReadyTransferred,
     Cancelled,
 }
 
@@ -841,30 +747,93 @@ fn restore_runtime_value(
         .map_err(|error| error.to_string())
 }
 
-fn save_need_state(state: &Need<RuntimePayload>) -> Result<AwbcNeedStateSaveSnapshot, String> {
+fn visit_runtime_value_graph<E>(
+    value: &RuntimeValue,
+    visitor: &mut impl FnMut(&RuntimeValue) -> Result<(), E>,
+) -> Result<(), E> {
+    crate::value::visit_runtime_value_graph(value, |nested| visitor(nested))
+}
+
+fn visit_runtime_payload<E>(
+    payload: &RuntimePayload,
+    visitor: &mut impl FnMut(&RuntimeValue) -> Result<(), E>,
+) -> Result<(), E> {
+    visit_runtime_value_graph(payload.value(), visitor)
+}
+
+fn visit_task_request_values<E>(
+    spec: &crate::task::TaskSpec,
+    visitor: &mut impl FnMut(&RuntimeValue) -> Result<(), E>,
+) -> Result<(), E> {
+    use crate::task::HostTaskRequest;
+
+    let mut visit_optional = |payload: Option<&RuntimePayload>| {
+        if let Some(payload) = payload {
+            visit_runtime_payload(payload, visitor)?;
+        }
+        Ok(())
+    };
+    match &spec.request {
+        HostTaskRequest::HttpFetch(request) => visit_optional(request.body.as_ref()),
+        HostTaskRequest::HttpRespond(request) => visit_optional(request.body.as_ref()),
+        HostTaskRequest::WasmCall(request) => {
+            for payload in &request.args {
+                visit_runtime_payload(payload, visitor)?;
+            }
+            Ok(())
+        }
+        HostTaskRequest::Custom {
+            args, named_args, ..
+        } => {
+            for payload in args {
+                visit_runtime_payload(payload, visitor)?;
+            }
+            for argument in named_args {
+                visit_runtime_payload(&argument.value, visitor)?;
+            }
+            Ok(())
+        }
+        HostTaskRequest::FileReadText(_)
+        | HostTaskRequest::FileReadBytes(_)
+        | HostTaskRequest::FileWriteText(_)
+        | HostTaskRequest::FileWriteBytes(_)
+        | HostTaskRequest::ProcessRun(_)
+        | HostTaskRequest::AssetLoad(_)
+        | HostTaskRequest::ShaderCompile(_)
+        | HostTaskRequest::AudioDecode(_)
+        | HostTaskRequest::TtsSynthesis(_)
+        | HostTaskRequest::SystemInfo(_) => Ok(()),
+    }
+}
+
+fn save_need_state(state: &RuntimeNeedProducerState) -> Result<AwbcNeedStateSaveSnapshot, String> {
     Ok(match state {
-        Need::NotStarted => AwbcNeedStateSaveSnapshot::NotStarted,
-        Need::Pending(progress) => AwbcNeedStateSaveSnapshot::Pending {
+        RuntimeNeedProducerState::NotStarted => AwbcNeedStateSaveSnapshot::NotStarted,
+        RuntimeNeedProducerState::Pending(progress) => AwbcNeedStateSaveSnapshot::Pending {
             progress: progress.clone(),
         },
-        Need::Ready(value) => AwbcNeedStateSaveSnapshot::Ready {
+        RuntimeNeedProducerState::Ready(value) => AwbcNeedStateSaveSnapshot::Ready {
             value: save_runtime_value(&value.0)?,
         },
-        Need::Cancelled => AwbcNeedStateSaveSnapshot::Cancelled,
+        RuntimeNeedProducerState::ReadyTransferred => AwbcNeedStateSaveSnapshot::ReadyTransferred,
+        RuntimeNeedProducerState::Cancelled => AwbcNeedStateSaveSnapshot::Cancelled,
     })
 }
 
 fn restore_need_state(
     state: AwbcNeedStateSaveSnapshot,
     owner: &crate::task::RuntimeProgramOwner,
-) -> Result<Need<RuntimePayload>, String> {
+) -> Result<RuntimeNeedProducerState, String> {
     Ok(match state {
-        AwbcNeedStateSaveSnapshot::NotStarted => Need::NotStarted,
-        AwbcNeedStateSaveSnapshot::Pending { progress } => Need::Pending(progress),
-        AwbcNeedStateSaveSnapshot::Ready { value } => {
-            Need::Ready(RuntimePayload(restore_runtime_value(value, owner)?))
+        AwbcNeedStateSaveSnapshot::NotStarted => RuntimeNeedProducerState::NotStarted,
+        AwbcNeedStateSaveSnapshot::Pending { progress } => {
+            RuntimeNeedProducerState::Pending(progress)
         }
-        AwbcNeedStateSaveSnapshot::Cancelled => Need::Cancelled,
+        AwbcNeedStateSaveSnapshot::Ready { value } => {
+            RuntimeNeedProducerState::Ready(RuntimePayload(restore_runtime_value(value, owner)?))
+        }
+        AwbcNeedStateSaveSnapshot::ReadyTransferred => RuntimeNeedProducerState::ReadyTransferred,
+        AwbcNeedStateSaveSnapshot::Cancelled => RuntimeNeedProducerState::Cancelled,
     })
 }
 
@@ -1025,6 +994,70 @@ fn save_need_producer_registry(
         launch_frontiers: registry
             .launch_frontiers
             .iter()
+            .map(|frontier| AwbcNeedProducerLaunchFrontierSaveSnapshot {
+                generation: frontier.generation,
+                instance_key: frontier.instance_key,
+                next_ordinal: frontier.next_ordinal,
+            })
+            .collect(),
+    })
+}
+
+fn save_live_need_producer_registry(
+    registry: &NeedProducerRegistry,
+) -> Result<AwbcNeedProducerRegistrySaveSnapshot, String> {
+    Ok(AwbcNeedProducerRegistrySaveSnapshot {
+        launches: registry
+            .launches()
+            .map(|launch| {
+                Ok(AwbcNeedProducerLaunchSaveSnapshot {
+                    invocation: launch.invocation(),
+                    producer_site: launch.plan().site(),
+                    plan_digest: launch.plan().semantic_digest(),
+                    arguments: launch
+                        .arguments()
+                        .iter()
+                        .map(|argument| {
+                            Ok(AwbcNeedProducerArgumentSaveSnapshot {
+                                name: argument.name.clone(),
+                                value: save_runtime_value(&argument.value)?,
+                            })
+                        })
+                        .collect::<Result<_, String>>()?,
+                    ordinal: launch.ordinal(),
+                    need: launch.need().clone(),
+                    task: launch.task().clone(),
+                    task_spec: save_need_producer_task_spec(launch.task_spec())?,
+                    state: save_need_state(launch.state())?,
+                    publication: launch.publication(),
+                    task_submitted: launch.task_submitted(),
+                    task_terminal: launch.task_terminal(),
+                    task_fault: launch.task_fault().map(str::to_owned),
+                })
+            })
+            .collect::<Result<_, String>>()?,
+        invocations: registry
+            .invocations()
+            .map(
+                |(invocation, launch)| AwbcNeedProducerInvocationSaveSnapshot {
+                    invocation,
+                    need: launch.need().clone(),
+                },
+            )
+            .collect(),
+        invocation_frontiers: registry
+            .invocation_frontiers()
+            .into_iter()
+            .map(|frontier| AwbcNeedProducerInvocationFrontierSaveSnapshot {
+                generation: frontier.generation,
+                fiber: frontier.fiber,
+                producer_site: frontier.producer_site,
+                next_sequence: frontier.next_sequence,
+            })
+            .collect(),
+        launch_frontiers: registry
+            .launch_frontiers()
+            .into_iter()
             .map(|frontier| AwbcNeedProducerLaunchFrontierSaveSnapshot {
                 generation: frontier.generation,
                 instance_key: frontier.instance_key,
@@ -1268,16 +1301,11 @@ pub enum AwbcProductPendingLineOperationSaveSnapshot {
     },
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub(super) enum AwbcProductDialogueSnapshotState {
-    Live(super::ProductDialogueStore),
-    Saved(
-        crate::line_task::RuntimeDialogueRegistrySaveSnapshot<
-            AwbcProductActiveDialogueSaveSnapshot,
-            AwbcTypeId,
-        >,
-    ),
-}
+pub(super) type AwbcProductDialogueSnapshotState =
+    crate::line_task::RuntimeDialogueRegistrySaveSnapshot<
+        AwbcProductActiveDialogueSaveSnapshot,
+        AwbcTypeId,
+    >;
 
 #[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
@@ -1286,50 +1314,6 @@ pub struct AwbcProductChildFiberSaveSnapshot {
     pub fiber: AwbcFiberStateSnapshot,
     pub runtime_generation: crate::task::GenerationId,
     pub pending_host_call: Option<AwbcProductPendingHostCallSnapshot>,
-}
-
-fn snapshot_pending_line_operation(
-    pending: &super::ProductPendingLineOperation,
-) -> AwbcProductPendingLineOperationSnapshot {
-    match pending {
-        super::ProductPendingLineOperation::AcquireActor {
-            cursor,
-            destination,
-            command,
-            value,
-            token,
-        } => AwbcProductPendingLineOperationSnapshot::AcquireActor {
-            cursor: *cursor,
-            destination: *destination,
-            command: command.clone(),
-            value: value.clone(),
-            token: token.clone(),
-        },
-        super::ProductPendingLineOperation::ActorLook {
-            cursor,
-            destination,
-            command,
-            value,
-            token,
-        } => AwbcProductPendingLineOperationSnapshot::ActorLook {
-            cursor: *cursor,
-            destination: *destination,
-            command: command.clone(),
-            value: value.clone(),
-            token: token.clone(),
-        },
-        super::ProductPendingLineOperation::StartVoice {
-            cursor,
-            destination,
-            command,
-            site,
-        } => AwbcProductPendingLineOperationSnapshot::StartVoice {
-            cursor: *cursor,
-            destination: *destination,
-            command: command.clone(),
-            site: *site,
-        },
-    }
 }
 
 fn restore_pending_line_operation(
@@ -1373,47 +1357,6 @@ fn restore_pending_line_operation(
             command,
             site,
         },
-    }
-}
-
-fn snapshot_dialogue_phase(
-    phase: &super::ProductDialoguePhase,
-) -> AwbcProductDialoguePhaseSnapshot {
-    match phase {
-        super::ProductDialoguePhase::Activating { fiber, pending } => {
-            AwbcProductDialoguePhaseSnapshot::Activating {
-                fiber: fiber.clone(),
-                pending: pending.as_ref().map(snapshot_pending_line_operation),
-            }
-        }
-        super::ProductDialoguePhase::Reducing { line_task } => {
-            AwbcProductDialoguePhaseSnapshot::Reducing {
-                line_task: snapshot_live_state(line_task),
-            }
-        }
-        super::ProductDialoguePhase::Publishing { line_task } => {
-            AwbcProductDialoguePhaseSnapshot::Publishing {
-                line_task: snapshot_live_state(line_task),
-            }
-        }
-        super::ProductDialoguePhase::Closing(closing) => {
-            AwbcProductDialoguePhaseSnapshot::Closing(AwbcProductDialogueClosingSnapshot {
-                failure: closing.failure.clone(),
-                state: match &closing.state {
-                    super::ProductDialogueClosingState::Activation { fiber, pending } => {
-                        AwbcProductDialogueClosingStateSnapshot::Activation {
-                            fiber: fiber.clone(),
-                            pending: pending.as_ref().map(snapshot_pending_line_operation),
-                        }
-                    }
-                    super::ProductDialogueClosingState::LineTask { line_task } => {
-                        AwbcProductDialogueClosingStateSnapshot::LineTask {
-                            line_task: snapshot_live_state(line_task),
-                        }
-                    }
-                },
-            })
-        }
     }
 }
 
@@ -1466,6 +1409,11 @@ fn snapshot_dialogue_phase_for_save(
     phase: &super::ProductDialoguePhase,
 ) -> Result<AwbcProductDialoguePhaseSaveSnapshot, crate::value::AwbcRuntimeValueSnapshotError> {
     Ok(match phase {
+        super::ProductDialoguePhase::Transitioning => {
+            return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                message: "cannot snapshot an in-flight dialogue phase transition".to_owned(),
+            });
+        }
         super::ProductDialoguePhase::Activating { fiber, pending } => {
             AwbcProductDialoguePhaseSaveSnapshot::Activating {
                 fiber: AwbcFiberStateSnapshot::from_live(fiber)?,
@@ -1611,9 +1559,7 @@ fn snapshot_active_dialogue(
     Ok(AwbcProductActiveDialogueSaveSnapshot {
         activation: active.activation.clone(),
         content: active.content,
-        target: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(
-            &crate::value::RuntimeValue::Opaque(active.target.clone()),
-        )?,
+        target: crate::value::AwbcRuntimeValueSnapshot::from_opaque(&active.target)?,
         target_type: active.target_type,
         line: active.line.clone(),
         result: active.result.clone(),
@@ -1643,12 +1589,10 @@ fn snapshot_active_dialogue(
         effects: active
             .effect_callbacks
             .iter()
-            .map(|binding| {
+            .map(|(site, callback)| {
                 Ok(AwbcProductDialogueEffectSaveSnapshot {
-                    site: binding.site(),
-                    callback: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(
-                        &crate::value::RuntimeValue::Callable(binding.callback().clone()),
-                    )?,
+                    site: *site,
+                    callback: crate::value::AwbcRuntimeValueSnapshot::from_callable(callback)?,
                 })
             })
             .collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?,
@@ -1684,40 +1628,25 @@ impl AwbcProductExecutorSaveSnapshot {
         if !needs.is_empty() {
             return Err(AwbcProductSaveError::NeedsQuiescence { needs });
         }
-        let dialogues = match &snapshot.dialogues {
-            AwbcProductDialogueSnapshotState::Live(dialogues) => dialogues
-                .to_save_snapshot(snapshot_active_dialogue)
-                .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
-                    message: error.to_string(),
-                })?,
-            AwbcProductDialogueSnapshotState::Saved(dialogues) => dialogues.clone(),
-        };
+        let dialogues = snapshot.dialogues.clone();
         Ok(Self {
             runtime_generation: snapshot.runtime_generation,
-            fiber: AwbcFiberStateSnapshot::from_live(&snapshot.fiber).map_err(|error| {
-                AwbcProductSaveError::InvalidSnapshot {
-                    message: error.to_string(),
-                }
-            })?,
+            fiber: snapshot.fiber.clone(),
             child_fibers: snapshot
                 .child_fibers
                 .iter()
-                .map(|child| {
-                    Ok(AwbcProductChildFiberSaveSnapshot {
-                        owner: child.owner.clone(),
-                        fiber: AwbcFiberStateSnapshot::from_live(&child.fiber)
-                            .map_err(|error| error.to_string())?,
-                        runtime_generation: child.runtime_generation,
-                        pending_host_call: child.pending_host_call.as_ref().map(|pending| {
-                            AwbcProductPendingHostCallSnapshot {
-                                call: pending.call,
-                                id: pending.id.clone(),
-                            }
-                        }),
-                    })
+                .map(|child| AwbcProductChildFiberSaveSnapshot {
+                    owner: child.owner.clone(),
+                    fiber: child.fiber.clone(),
+                    runtime_generation: child.runtime_generation,
+                    pending_host_call: child.pending_host_call.as_ref().map(|pending| {
+                        AwbcProductPendingHostCallSnapshot {
+                            call: pending.call,
+                            id: pending.id.clone(),
+                        }
+                    }),
                 })
-                .collect::<Result<_, String>>()
-                .map_err(|message| AwbcProductSaveError::InvalidSnapshot { message })?,
+                .collect(),
             dialogue_effect_callback_activations: snapshot
                 .dialogue_effect_callback_activations
                 .clone(),
@@ -1772,29 +1701,21 @@ impl AwbcProductExecutorSaveSnapshot {
         }
         Ok(AwbcProductExecutorSnapshot {
             runtime_generation: self.runtime_generation,
-            fiber: self
-                .fiber
-                .into_live_for_program(owner)
-                .map_err(|error| error.to_string())?,
+            fiber: self.fiber,
             child_fibers: self
                 .child_fibers
                 .into_iter()
-                .map(|child| {
-                    Ok(AwbcProductChildFiberSnapshot {
-                        owner: child.owner,
-                        fiber: child
-                            .fiber
-                            .into_live_for_program(owner)
-                            .map_err(|error| error.to_string())?,
-                        runtime_generation: child.runtime_generation,
-                        pending_host_call: child.pending_host_call,
-                    })
+                .map(|child| AwbcProductChildFiberSnapshot {
+                    owner: child.owner,
+                    fiber: child.fiber,
+                    runtime_generation: child.runtime_generation,
+                    pending_host_call: child.pending_host_call,
                 })
-                .collect::<Result<_, String>>()?,
+                .collect(),
             dialogue_effect_callback_activations: self.dialogue_effect_callback_activations,
             live_flow_bindings: self.live_flow_bindings,
             entry_bound: self.entry_bound,
-            dialogues: AwbcProductDialogueSnapshotState::Saved(self.dialogues),
+            dialogues: self.dialogues,
             active_choice: self.active_choice,
             pending_host_call: self.pending_host_call,
             started_tasks: self.started_tasks,
@@ -1819,7 +1740,7 @@ impl AwbcProductExecutorSaveSnapshot {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct AwbcProductActiveDialogueSnapshot {
     pub activation: DialogueActivationId,
     pub content: AwbcContentUnitId,
@@ -1830,7 +1751,10 @@ pub struct AwbcProductActiveDialogueSnapshot {
     pub captures: Vec<RuntimePayload>,
     pub task_inputs: Vec<RuntimePayload>,
     pub values: Vec<crate::plan::RuntimeDialogueValueBinding>,
-    pub effects: Vec<crate::value::RuntimeDialogueContentEffectBinding>,
+    pub effects: BTreeMap<
+        crate::runtime_id::RuntimeDialogueEffectSiteId,
+        crate::value::RuntimeCallableValue,
+    >,
     pub voice: crate::presentation::RuntimeDialogueVoiceState,
     pub phase: AwbcProductDialoguePhaseSnapshot,
     pub elapsed_nanos: u64,
@@ -1840,7 +1764,7 @@ pub struct AwbcProductActiveDialogueSnapshot {
     pub pending_activation_host_call: Option<AwbcProductPendingHostCallSnapshot>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum AwbcProductDialoguePhaseSnapshot {
     Activating {
         fiber: FiberState,
@@ -1855,13 +1779,13 @@ pub enum AwbcProductDialoguePhaseSnapshot {
     Closing(AwbcProductDialogueClosingSnapshot),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct AwbcProductDialogueClosingSnapshot {
     pub failure: crate::awbc::fiber::FiberTrap,
     pub state: AwbcProductDialogueClosingStateSnapshot,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum AwbcProductDialogueClosingStateSnapshot {
     Activation {
         fiber: FiberState,
@@ -1872,7 +1796,7 @@ pub enum AwbcProductDialogueClosingStateSnapshot {
     },
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum AwbcProductPendingLineOperationSnapshot {
     AcquireActor {
         cursor: crate::awbc::fiber::FiberCursor,
@@ -2054,7 +1978,7 @@ pub enum AwbcProductLineTaskFiberPhaseSnapshot {
 #[derive(Clone, Debug, PartialEq)]
 pub struct AwbcProductChildFiberSnapshot {
     pub owner: AwbcProductChildFiberOwnerSnapshot,
-    pub fiber: FiberState,
+    pub fiber: AwbcFiberStateSnapshot,
     pub runtime_generation: crate::task::GenerationId,
     pub pending_host_call: Option<AwbcProductPendingHostCallSnapshot>,
 }
@@ -2109,11 +2033,15 @@ fn validate_task_publications(
 
 fn validate_need_publication_cursors(
     snapshot: &AwbcProductExecutorSnapshot,
-    producers: &NeedProducerRegistry,
+    producers: &crate::task::NeedProducerRegistryRestore,
 ) -> Result<(), AwbcProductStepBuildError> {
     for ((_, need), observed) in &snapshot.need_publications {
-        if let Some(launch) = producers.launch_for_need(need) {
-            let accepted = launch.publication();
+        if let Some(launch) = producers
+            .launches
+            .iter()
+            .find(|launch| &launch.need == need)
+        {
+            let accepted = launch.publication;
             let same_local_generation = match (observed, accepted) {
                 (
                     TaskPublicationCursor::LocalTaskEvent {
@@ -2125,8 +2053,8 @@ fn validate_need_publication_cursors(
                         ..
                     }),
                 ) => {
-                    *observed_generation == launch.generation()
-                        && accepted_generation == launch.generation()
+                    *observed_generation == launch.invocation.generation()
+                        && accepted_generation == launch.invocation.generation()
                 }
                 _ => false,
             };
@@ -2192,18 +2120,38 @@ fn expected_deferred_children(
     Ok(expected)
 }
 
+fn validate_fiber_snapshot_for_program(
+    snapshot: &AwbcFiberStateSnapshot,
+    program: &std::sync::Arc<crate::awbc::schema::AwbcProgram>,
+) -> Result<(), String> {
+    let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(program));
+    let fiber = snapshot
+        .clone()
+        .into_live_for_program(&owner)
+        .map_err(|error| error.to_string())?;
+    fiber
+        .validate_for_program(program)
+        .map_err(|error| error.to_string())
+}
+
 impl AwbcProductStepExecutor {
-    #[must_use]
-    pub fn snapshot(&self) -> AwbcProductExecutorSnapshot {
-        AwbcProductExecutorSnapshot {
-            runtime_generation: self.runtime_generation,
-            fiber: self.fiber.clone(),
-            child_fibers: self
-                .child_fibers
-                .iter()
-                .map(|child| AwbcProductChildFiberSnapshot {
+    /// Captures a fully inert rollback image directly from the sole live
+    /// executor owner. Unlike `snapshot()`, this never clones live task-ready
+    /// values or Need producer payloads into a second runnable owner.
+    fn inert_product_snapshot(
+        &self,
+    ) -> Result<AwbcProductExecutorSaveSnapshot, AwbcProductSaveError> {
+        let invalid = |message: String| AwbcProductSaveError::InvalidSnapshot { message };
+        let fiber = AwbcFiberStateSnapshot::from_live(&self.fiber)
+            .map_err(|error| invalid(error.to_string()))?;
+        let child_fibers = self
+            .child_fibers
+            .iter()
+            .map(|child| {
+                Ok(AwbcProductChildFiberSaveSnapshot {
                     owner: child.owner.snapshot(),
-                    fiber: child.fiber.clone(),
+                    fiber: AwbcFiberStateSnapshot::from_live(&child.fiber)
+                        .map_err(|error| error.to_string())?,
                     runtime_generation: child.runtime_generation,
                     pending_host_call: child.pending_host_call.as_ref().map(|pending| {
                         AwbcProductPendingHostCallSnapshot {
@@ -2212,11 +2160,268 @@ impl AwbcProductStepExecutor {
                         }
                     }),
                 })
-                .collect(),
+            })
+            .collect::<Result<_, String>>()
+            .map_err(invalid)?;
+        let dialogues = self
+            .dialogues
+            .to_save_snapshot(snapshot_active_dialogue)
+            .map_err(|error| invalid(error.to_string()))?;
+        let need_producers =
+            save_live_need_producer_registry(&self.need_producers).map_err(invalid)?;
+        let queued_task_events = self
+            .queued_task_events
+            .iter()
+            .map(AwbcProductTaskEventSaveSnapshot::from_live)
+            .collect::<Result<VecDeque<_>, _>>()
+            .map_err(invalid)?;
+        Ok(AwbcProductExecutorSaveSnapshot {
+            runtime_generation: self.runtime_generation,
+            fiber,
+            child_fibers,
             dialogue_effect_callback_activations: self.dialogue_effect_callback_activations.clone(),
             live_flow_bindings: self.live_flow_bindings(),
             entry_bound: self.entry_bound,
-            dialogues: AwbcProductDialogueSnapshotState::Live(self.dialogues.clone()),
+            dialogues,
+            active_choice: self.active_choice.as_ref().map(|active| {
+                AwbcProductActiveChoiceSnapshot {
+                    choice: active.choice,
+                    public_id: active.public_id.clone(),
+                    option_indices: active.option_indices.clone(),
+                }
+            }),
+            pending_host_call: self.pending_host_call.as_ref().map(|pending| {
+                AwbcProductPendingHostCallSnapshot {
+                    call: pending.call,
+                    id: pending.id.0.clone(),
+                }
+            }),
+            started_tasks: self.started_tasks.clone(),
+            task_publications: self.task_publications.clone(),
+            need_publications: self
+                .need_publications
+                .iter()
+                .map(|((waiter, need), cursor)| AwbcNeedPublicationSaveSnapshot {
+                    waiter: *waiter,
+                    need: need.clone(),
+                    cursor: *cursor,
+                })
+                .collect(),
+            need_producers,
+            queued_task_events,
+            emitted_content: self.emitted_content.clone(),
+            stream_sequences: self.stream_sequences.clone(),
+            next_generation: self.next_generation,
+            next_fiber_instance: self.next_fiber_instance,
+            dialogue_occurrences: self
+                .dialogue_occurrences
+                .iter()
+                .map(
+                    |(&(owner, content), &next)| AwbcProductDialogueOccurrenceSnapshot {
+                        owner,
+                        content,
+                        next,
+                    },
+                )
+                .collect(),
+            next_host_call_sequence: self.next_host_call_sequence,
+            next_audio_sequence: self.next_audio_sequence,
+            compact_pure_stats: self.compact_pure_stats,
+            observations: self.facade_fiber.observations.clone(),
+        })
+    }
+
+    pub fn inert_rollback_image(
+        &self,
+    ) -> Result<AwbcProductExecutorRollbackImage, AwbcProductSaveError> {
+        let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&self.program));
+        let root = self
+            .root
+            .as_ref()
+            .map(|root| {
+                root.inert_rollback_image(&owner)
+                    .map_err(|message| AwbcProductSaveError::InvalidSnapshot { message })
+            })
+            .transpose()?;
+        Ok(AwbcProductExecutorRollbackImage {
+            product: self.inert_product_snapshot()?,
+            root,
+        })
+    }
+
+    /// Consumes an inert rollback image into an executor after its previous
+    /// live owner has been dropped by the caller.
+    pub fn restore_rollback_image(
+        &mut self,
+        image: AwbcProductExecutorRollbackImage,
+    ) -> Result<(), AwbcProductStepBuildError> {
+        let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&self.program));
+        // A fresh executor shell may already contain its startup root. Drop
+        // that live owner before materializing the inert root rollback image.
+        self.root = None;
+        let root = image
+            .root
+            .map(|image| crate::root::RootRuntime::from_rollback_image(image, &owner))
+            .transpose()
+            .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
+        let product = image
+            .product
+            .into_live_for_program(&owner)
+            .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
+        self.restore_snapshot(product)?;
+        self.root = root;
+        Ok(())
+    }
+
+    /// Replaces this runnable executor from an inert save snapshot without
+    /// ever keeping old and restored affine owners live at the same time.
+    /// On a target restore failure, the captured inert rollback image rebuilds
+    /// the original executor and is returned with the error.
+    pub fn restore_inert_snapshot_owned(
+        self,
+        saved: AwbcProductExecutorSaveSnapshot,
+    ) -> Result<Self, (Self, super::AwbcProductStepBuildError)> {
+        let rollback = match self.inert_rollback_image() {
+            Ok(image) => image,
+            Err(error) => {
+                return Err((
+                    self,
+                    super::AwbcProductStepBuildError::RestoreSnapshot {
+                        message: error.to_string(),
+                    },
+                ));
+            }
+        };
+        let program = std::sync::Arc::clone(&self.program);
+        let entry = self.fiber.entry;
+        let budget_quantum = self.fiber.budget.quantum;
+        let original_generation = self.runtime_generation;
+        let format_context = self.format_context.clone();
+        let plain_text_context_template_proof = self.plain_text_context_template_proof;
+        let target_generation = saved.runtime_generation;
+        let old_root = rollback.root.clone();
+        drop(self);
+
+        let build = |generation| {
+            let mut executor = super::AwbcProductStepExecutor::for_entry_arc_with_context_proof(
+                std::sync::Arc::clone(&program),
+                entry,
+                budget_quantum,
+                generation,
+                plain_text_context_template_proof,
+            )?;
+            executor.format_context = format_context.clone();
+            Ok::<_, super::AwbcProductStepBuildError>(executor)
+        };
+        let restored = (|| {
+            let mut executor = build(target_generation)?;
+            let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program));
+            let live = saved
+                .into_live_for_program(&owner)
+                .map_err(|message| super::AwbcProductStepBuildError::RestoreSnapshot { message })?;
+            executor.restore_snapshot(live)?;
+            // `restore_snapshot` historically leaves root state untouched.
+            // Rebuild that same root from the inert image after dropping the
+            // fresh shell's startup root.
+            executor.root = None;
+            executor.root = old_root
+                .map(|image| crate::root::RootRuntime::from_rollback_image(image, &owner))
+                .transpose()
+                .map_err(|message| super::AwbcProductStepBuildError::RestoreSnapshot { message })?;
+            Ok::<_, super::AwbcProductStepBuildError>(executor)
+        })();
+        match restored {
+            Ok(executor) => Ok(executor),
+            Err(error) => {
+                let mut original = build(original_generation)
+                    .expect("the captured executor configuration remains constructible");
+                original
+                    .restore_rollback_image(rollback)
+                    .expect("an inert image captured from this executor restores to its program");
+                Err((original, error))
+            }
+        }
+    }
+
+    /// Visits values in the one live executor graph without materializing a
+    /// snapshot or duplicating affine payloads.
+    pub fn visit_live_runtime_values<E>(
+        &self,
+        mut visitor: impl FnMut(&RuntimeValue) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.fiber.visit_runtime_values(&mut visitor)?;
+        for child in &self.child_fibers {
+            child.fiber.visit_runtime_values(&mut visitor)?;
+        }
+        self.dialogues.visit_runtime_values(&mut visitor)?;
+        for launch in self.need_producers.launches() {
+            for argument in launch.arguments() {
+                visit_runtime_value_graph(&argument.value, &mut visitor)?;
+            }
+            visit_task_request_values(launch.task_spec(), &mut visitor)?;
+            if let RuntimeNeedProducerState::Ready(value) = launch.state() {
+                visit_runtime_value_graph(value.value(), &mut visitor)?;
+            }
+        }
+        for event in &self.queued_task_events {
+            if let crate::task::TaskEventKind::Ready(value) = &event.kind {
+                visit_runtime_value_graph(value.value(), &mut visitor)?;
+            }
+        }
+        if let Some(root) = &self.root {
+            let mut first_error = None;
+            root.visit_runtime_values(&mut |value: &RuntimeValue| {
+                if first_error.is_none() {
+                    first_error = visitor(value).err();
+                }
+            });
+            if let Some(error) = first_error {
+                return Err(error);
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn snapshot(&self) -> Result<AwbcProductExecutorSnapshot, AwbcProductSaveError> {
+        let fiber = AwbcFiberStateSnapshot::from_live(&self.fiber).map_err(|error| {
+            AwbcProductSaveError::InvalidSnapshot {
+                message: error.to_string(),
+            }
+        })?;
+        let child_fibers = self
+            .child_fibers
+            .iter()
+            .map(|child| {
+                Ok(AwbcProductChildFiberSnapshot {
+                    owner: child.owner.snapshot(),
+                    fiber: AwbcFiberStateSnapshot::from_live(&child.fiber)
+                        .map_err(|error| error.to_string())?,
+                    runtime_generation: child.runtime_generation,
+                    pending_host_call: child.pending_host_call.as_ref().map(|pending| {
+                        AwbcProductPendingHostCallSnapshot {
+                            call: pending.call,
+                            id: pending.id.0.clone(),
+                        }
+                    }),
+                })
+            })
+            .collect::<Result<_, String>>()
+            .map_err(|message| AwbcProductSaveError::InvalidSnapshot { message })?;
+        let dialogues = self
+            .dialogues
+            .to_save_snapshot(snapshot_active_dialogue)
+            .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
+                message: error.to_string(),
+            })?;
+        Ok(AwbcProductExecutorSnapshot {
+            runtime_generation: self.runtime_generation,
+            fiber,
+            child_fibers,
+            dialogue_effect_callback_activations: self.dialogue_effect_callback_activations.clone(),
+            live_flow_bindings: self.live_flow_bindings(),
+            entry_bound: self.entry_bound,
+            dialogues,
             active_choice: self.active_choice.as_ref().map(|active| {
                 AwbcProductActiveChoiceSnapshot {
                     choice: active.choice,
@@ -2254,7 +2459,7 @@ impl AwbcProductStepExecutor {
             next_audio_sequence: self.next_audio_sequence,
             compact_pure_stats: self.compact_pure_stats,
             observations: self.facade_fiber.observations.clone(),
-        }
+        })
     }
 
     pub fn restore_snapshot(
@@ -2263,22 +2468,37 @@ impl AwbcProductStepExecutor {
     ) -> Result<(), AwbcProductStepBuildError> {
         self.validate_snapshot(&snapshot)?;
         let deferred_children = expected_deferred_children(&snapshot)?;
-        self.fiber = snapshot.fiber;
+        let program_owner =
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&self.program));
+        self.fiber
+            .replace_from_snapshot(snapshot.fiber, &program_owner)
+            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                message: format!("invalid root fiber snapshot: {error}"),
+            })?;
+        drop(std::mem::take(&mut self.child_fibers));
         self.child_fibers = snapshot
             .child_fibers
             .into_iter()
-            .map(|child| ProductChildFiber {
-                owner: ProductChildFiberOwner::restore(&child.owner),
-                fiber: child.fiber,
-                runtime_generation: child.runtime_generation,
-                pending_host_call: child.pending_host_call.map(|pending| PendingHostCall {
-                    call: pending.call,
-                    id: RuntimeHostCallId(pending.id),
-                }),
+            .map(|child| {
+                Ok(ProductChildFiber {
+                    owner: ProductChildFiberOwner::restore(&child.owner),
+                    fiber: child
+                        .fiber
+                        .into_live_for_program(&program_owner)
+                        .map_err(|error| error.to_string())?,
+                    runtime_generation: child.runtime_generation,
+                    pending_host_call: child.pending_host_call.map(|pending| PendingHostCall {
+                        call: pending.call,
+                        id: RuntimeHostCallId(pending.id),
+                    }),
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>, String>>()
+            .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?
+            .into();
         self.dialogue_effect_callback_activations = snapshot.dialogue_effect_callback_activations;
         self.entry_bound = snapshot.entry_bound;
+        drop(std::mem::take(&mut self.dialogues));
         self.dialogues = self.restore_dialogue_store(snapshot.dialogues, &deferred_children)?;
         self.active_choice = snapshot
             .active_choice
@@ -2334,10 +2554,19 @@ impl AwbcProductStepExecutor {
                 message: "active dialogue snapshot content has no line-task group".to_owned(),
             });
         }
-        if !crate::awbc::fiber::dialogue_target_matches_program(
+        if active
+            .task_inputs
+            .iter()
+            .any(|input| !input.value().ownership().permits_copy())
+        {
+            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                message: crate::line_task::LineRuntimeError::AffineGroupCapture.to_string(),
+            });
+        }
+        if !crate::awbc::fiber::dialogue_target_opaque_matches_program(
             &self.program,
             active.target_type,
-            &crate::value::RuntimeValue::Opaque(active.target.clone()),
+            &active.target,
         ) {
             return Err(AwbcProductStepBuildError::RestoreSnapshot {
                 message: "active dialogue target is not admitted by its AWBC executable".to_owned(),
@@ -2424,7 +2653,7 @@ impl AwbcProductStepExecutor {
                 .map(RuntimePayload::into_value)
                 .collect(),
             values: active.values.into_boxed_slice(),
-            effect_callbacks: active.effects.into_boxed_slice(),
+            effect_callbacks: active.effects,
             voice: active.voice,
             phase,
             elapsed_nanos: active.elapsed_nanos,
@@ -2453,14 +2682,39 @@ impl AwbcProductStepExecutor {
     ) -> Result<super::ProductDialogueStore, AwbcProductStepBuildError> {
         let program_owner =
             crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&self.program));
-        match snapshot {
-            AwbcProductDialogueSnapshotState::Live(dialogues) => Ok(dialogues),
-            AwbcProductDialogueSnapshotState::Saved(dialogues) => {
-                super::ProductDialogueStore::from_save_snapshot(
-                    dialogues,
+        super::ProductDialogueStore::from_save_snapshot(
+                    snapshot,
                     &program_owner,
                     expected_deferred_children,
                     |activation, active, line| {
+                    let effects = active.effects.into_iter().try_fold(
+                        BTreeMap::new(),
+                        |mut callbacks, binding| {
+                            let value = binding
+                                .callback
+                                .into_runtime_value_for_program(&program_owner)
+                                .map_err(|error| {
+                                    crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                                        message: error.to_string(),
+                                    }
+                                })?;
+                            let crate::value::RuntimeValue::Callable(callback) = value else {
+                                return Err(
+                                    crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                                        message: "dialogue effect snapshot is not a callable".to_owned(),
+                                    },
+                                );
+                            };
+                            if callbacks.insert(binding.site, callback).is_some() {
+                                return Err(
+                                    crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                                        message: "dialogue effect snapshot repeats a site".to_owned(),
+                                    },
+                                );
+                            }
+                            Ok(callbacks)
+                        },
+                    )?;
                     let active = AwbcProductActiveDialogueSnapshot {
                         activation: active.activation,
                         content: active.content,
@@ -2530,30 +2784,7 @@ impl AwbcProductStepExecutor {
                                 })
                             })
                             .collect::<Result<_, _>>()?,
-                        effects: active
-                            .effects
-                            .into_iter()
-                            .map(|binding| {
-                                let value = binding.callback.into_runtime_value_for_program(&program_owner).map_err(
-                                    |error| {
-                                        crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                                            message: error.to_string(),
-                                        }
-                                    },
-                                )?;
-                                let crate::value::RuntimeValue::Callable(callback) = value else {
-                                    return Err(
-                                        crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                                            message: "dialogue effect snapshot is not a callable".to_owned(),
-                                        },
-                                    );
-                                };
-                                Ok(crate::value::RuntimeDialogueContentEffectBinding::new(
-                                    binding.site,
-                                    callback,
-                                ))
-                            })
-                            .collect::<Result<_, _>>()?,
+                        effects,
                         voice: active.voice,
                         phase: restore_dialogue_phase_from_save(active.phase, &program_owner).map_err(
                             |message| {
@@ -2580,19 +2811,17 @@ impl AwbcProductStepExecutor {
                 .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                     message: error.to_string(),
                 })
-            }
-        }
     }
 
     pub(super) fn validate_snapshot(
         &self,
         snapshot: &AwbcProductExecutorSnapshot,
     ) -> Result<(), AwbcProductStepBuildError> {
-        let has_invalid_await_many_identity = |fiber: &crate::awbc::fiber::FiberState| {
+        let has_invalid_await_many_identity = |fiber: &AwbcFiberStateSnapshot| {
             fiber.suspension.as_ref().is_some_and(|suspension| {
                 matches!(
                     &suspension.reason,
-                    crate::awbc::fiber::FiberSuspensionReason::AwaitMany(state)
+                    crate::awbc::fiber::AwbcFiberSuspensionReasonSnapshot::AwaitMany(state)
                         if state.invocation.is_none_or(|identity| {
                             identity.generation() > snapshot.runtime_generation
                         })
@@ -2617,13 +2846,12 @@ impl AwbcProductStepExecutor {
                         .to_owned(),
             });
         }
-        let mut need_producers = NeedProducerRegistry::default();
-        need_producers
-            .restore_registry(snapshot.need_producers.clone())
-            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+        NeedProducerRegistry::validate_restore(&snapshot.need_producers).map_err(|error| {
+            AwbcProductStepBuildError::RestoreSnapshot {
                 message: format!("invalid Need producer registry snapshot: {error}"),
-            })?;
-        validate_need_publication_cursors(snapshot, &need_producers)?;
+            }
+        })?;
+        validate_need_publication_cursors(snapshot, &snapshot.need_producers)?;
         for launch in &snapshot.need_producers.launches {
             let projected = restore_need_producer_plan(
                 &self.program,
@@ -2643,7 +2871,7 @@ impl AwbcProductStepExecutor {
                     message: "Need producer payload type is absent or ambiguous in the AWBC runtime type table"
                         .to_owned(),
                 })?;
-            if let Need::Ready(value) = &launch.state
+            if let RuntimeNeedProducerState::Ready(value) = &launch.state
                 && !crate::awbc::fiber::runtime_value_matches_type(
                     &self.program,
                     value.value(),
@@ -2657,19 +2885,11 @@ impl AwbcProductStepExecutor {
                 });
             }
         }
-        snapshot
-            .fiber
-            .validate_for_program(&self.program)
-            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
-                message: error.to_string(),
-            })?;
+        validate_fiber_snapshot_for_program(&snapshot.fiber, &self.program)
+            .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
         for child in &snapshot.child_fibers {
-            child
-                .fiber
-                .validate_for_program(&self.program)
-                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
-                    message: error.to_string(),
-                })?;
+            validate_fiber_snapshot_for_program(&child.fiber, &self.program)
+                .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
             self.validate_child_owner(&child.owner)?;
             let host_call =
                 child
@@ -2677,9 +2897,10 @@ impl AwbcProductStepExecutor {
                     .suspension
                     .as_ref()
                     .and_then(|suspension| match &suspension.reason {
-                        crate::awbc::fiber::FiberSuspensionReason::HostCall { call, .. } => {
-                            Some(*call)
-                        }
+                        crate::awbc::fiber::AwbcFiberSuspensionReasonSnapshot::HostCall {
+                            call,
+                            ..
+                        } => Some(*call),
                         _ => None,
                     });
             match (&child.owner, &child.pending_host_call, host_call) {
@@ -2808,42 +3029,6 @@ impl AwbcProductStepExecutor {
                     message: crate::line_task::LineRuntimeError::AffineGroupCapture.to_string(),
                 });
             }
-            let projection = AwbcProductActiveDialogueSnapshot {
-                activation: active.activation.clone(),
-                content: active.content,
-                target: active.target.clone(),
-                target_type: active.target_type,
-                line: active.line.clone(),
-                result: active.result.clone(),
-                captures: active
-                    .captures
-                    .iter()
-                    .cloned()
-                    .map(RuntimePayload::from)
-                    .collect(),
-                task_inputs: active
-                    .task_inputs
-                    .iter()
-                    .cloned()
-                    .map(RuntimePayload::from)
-                    .collect(),
-                values: active.values.to_vec(),
-                effects: active.effect_callbacks.to_vec(),
-                voice: active.voice.clone(),
-                phase: snapshot_dialogue_phase(&active.phase),
-                elapsed_nanos: active.elapsed_nanos,
-                pending_content_events: active.pending_content_events.clone(),
-                pending_advance: active.pending_advance,
-                pending_line_outcomes: active.pending_line_outcomes.clone(),
-                pending_activation_host_call: active.pending_activation_host_call.as_ref().map(
-                    |pending| AwbcProductPendingHostCallSnapshot {
-                        call: pending.call,
-                        id: pending.id.0.clone(),
-                    },
-                ),
-            };
-            self.restore_active_dialogue(projection)?;
-
             let shared_line = dialogues.active_line().ok_or_else(|| {
                 AwbcProductStepBuildError::RestoreSnapshot {
                     message: "active dialogue snapshot is missing its command authority".to_owned(),
@@ -2889,6 +3074,11 @@ impl AwbcProductStepExecutor {
                     state: super::ProductDialogueClosingState::LineTask { .. },
                     ..
                 }) => None,
+                super::ProductDialoguePhase::Transitioning => {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "cannot validate a transient dialogue transition".to_owned(),
+                    });
+                }
             };
             if let Some(pending) = pending {
                 let command = shared_line
@@ -3033,24 +3223,21 @@ impl AwbcProductStepExecutor {
                         message: "joined line-task work has more than one child fiber".to_owned(),
                     });
                 }
-                let tokens = super::line::product_fiber_handle_tokens(
-                    self.facade_fiber.execution,
-                    &child.fiber,
-                )
-                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
-                    message: error.to_string(),
-                })?
-                .into_iter()
-                .map(|token| {
-                    if !all_child_tokens.insert(token.clone()) {
-                        return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                            message: "affine line handle occurs in more than one child fiber"
-                                .to_owned(),
-                        });
-                    }
-                    Ok(token)
-                })
-                .collect::<Result<BTreeSet<_>, _>>()?;
+                let tokens = child
+                    .fiber
+                    .affine_line_handle_tokens()
+                    .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?
+                    .into_iter()
+                    .map(|token| {
+                        if !all_child_tokens.insert(token.clone()) {
+                            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                                message: "affine line handle occurs in more than one child fiber"
+                                    .to_owned(),
+                            });
+                        }
+                        Ok(token)
+                    })
+                    .collect::<Result<BTreeSet<_>, _>>()?;
                 actual_child_tokens.insert(tag, tokens);
             }
             if actual_joined != expected_joined {
@@ -3095,24 +3282,21 @@ impl AwbcProductStepExecutor {
                     active.activation.clone(),
                     LineTaskWork::Defer(*registration),
                 );
-                let tokens = super::line::product_fiber_handle_tokens(
-                    self.facade_fiber.execution,
-                    &child.fiber,
-                )
-                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
-                    message: error.to_string(),
-                })?
-                .into_iter()
-                .map(|token| {
-                    if !all_child_tokens.insert(token.clone()) {
-                        return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                            message: "affine line handle occurs in more than one child fiber"
-                                .to_owned(),
-                        });
-                    }
-                    Ok(token)
-                })
-                .collect::<Result<BTreeSet<_>, _>>()?;
+                let tokens = child
+                    .fiber
+                    .affine_line_handle_tokens()
+                    .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?
+                    .into_iter()
+                    .map(|token| {
+                        if !all_child_tokens.insert(token.clone()) {
+                            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                                message: "affine line handle occurs in more than one child fiber"
+                                    .to_owned(),
+                            });
+                        }
+                        Ok(token)
+                    })
+                    .collect::<Result<BTreeSet<_>, _>>()?;
                 if actual_child_tokens.insert(tag, tokens).is_some() {
                     return Err(AwbcProductStepBuildError::RestoreSnapshot {
                         message: "deferred child duplicates another line child work tag".to_owned(),
@@ -3170,24 +3354,21 @@ impl AwbcProductStepExecutor {
                     active.activation.clone(),
                     LineTaskWork::Defer(*registration),
                 );
-                let tokens = super::line::product_fiber_handle_tokens(
-                    self.facade_fiber.execution,
-                    &child.fiber,
-                )
-                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
-                    message: error.to_string(),
-                })?
-                .into_iter()
-                .map(|token| {
-                    if !all_child_tokens.insert(token.clone()) {
-                        return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                            message: "affine line handle occurs in more than one child fiber"
-                                .to_owned(),
-                        });
-                    }
-                    Ok(token)
-                })
-                .collect::<Result<BTreeSet<_>, _>>()?;
+                let tokens = child
+                    .fiber
+                    .affine_line_handle_tokens()
+                    .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?
+                    .into_iter()
+                    .map(|token| {
+                        if !all_child_tokens.insert(token.clone()) {
+                            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                                message: "affine line handle occurs in more than one child fiber"
+                                    .to_owned(),
+                            });
+                        }
+                        Ok(token)
+                    })
+                    .collect::<Result<BTreeSet<_>, _>>()?;
                 if actual_child_tokens.insert(tag, tokens).is_some() {
                     return Err(AwbcProductStepBuildError::RestoreSnapshot {
                         message: "scoped defer duplicates another child work tag".to_owned(),
@@ -3699,6 +3880,7 @@ mod tests {
                     status: FiberStatus::Running,
                     suspension: None,
                     terminal: None,
+                    return_summary: None,
                     budget: FiberBudget {
                         remaining: 1,
                         quantum: 1,
@@ -3772,7 +3954,7 @@ mod tests {
             captures: Box::new([]),
             task_inputs: Box::new([]),
             values: Box::new([]),
-            effect_callbacks: Box::new([]),
+            effect_callbacks: std::collections::BTreeMap::new(),
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
             result: crate::awbc::schema::AwbcDialogueResultTarget {
                 ty: AwbcTypeId(0),

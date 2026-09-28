@@ -16,19 +16,24 @@ mod handle;
 #[cfg(test)]
 mod result_selection_tests;
 
-pub(crate) use defer::RuntimeDeferUnwindStep;
 pub use defer::{RuntimeDeferOutcomeFilter, RuntimeLineDeferredRegistration};
+pub(crate) use defer::{RuntimeDeferUnwindStep, RuntimeScopedDeferDecision};
 
 pub(crate) use activation::{
+    PreparedRuntimeParentFiberReconciliation, RuntimeDialogueAbandonedCommitProof,
     RuntimeDialogueActivationRegistry, RuntimeDialogueActivationTransaction,
+    RuntimeDialogueCommitProof, RuntimeDialoguePublishedCommitProof,
     RuntimeDialogueRegistryCommitReceipt, RuntimeDialogueRegistrySaveSnapshot,
     RuntimeDialogueRegistrySnapshotError,
 };
+pub(crate) use defer::AwbcRuntimeDeferredRegistrationSnapshot;
 
 pub(crate) use handle::{
     AwbcRuntimeDialogueActivationSnapshot, AwbcRuntimePublishedDialogueHandlesSnapshot,
     RuntimeDialogueCommitReceipt, RuntimeDialogueTerminalKind, RuntimeHandleDropReceipt,
-    RuntimePublishedDialogueHandles,
+    RuntimePreparedLineCommands, RuntimePreparedScheduledPacketTake,
+    RuntimePublishedDialogueHandles, RuntimeScheduledChildAdmissionProof,
+    RuntimeScheduledCompletionStage,
 };
 
 pub use handle::{

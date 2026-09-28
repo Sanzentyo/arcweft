@@ -161,16 +161,16 @@ use arcweft_lang_sema::{
         CheckedExecutableRuntimeExpressionFactFamily, CheckedExecutableRuntimePatternFactFamily,
         CheckedExecutableRuntimeStatementFactFamily, CheckedExplicitDropPolicy,
         CheckedExpressionEdgeError, CheckedExpressionExecution, CheckedExpressionResolution,
-        CheckedItemRole, CheckedIteration, CheckedIteratorFamily, CheckedNominalFieldPlace,
-        CheckedOrdinaryFunctionEmission, CheckedPatternResolution, CheckedProjectItemOwner,
-        CheckedProjectNominal, CheckedRecordPattern, CheckedRecordPatternOwner,
-        CheckedRecordPatternRest, CheckedRecordPatternSourceRef, CheckedRecordValueSource,
-        CheckedSelectResolution, CheckedStatementPayload, CheckedTraitConformance,
-        CheckedTraitIdentity, CheckedTriggerView, CheckedTryCarrier, CheckedValueResolution,
-        CheckedVariantOwner, CheckedVariantOwnerKind, CheckedVariantResolution,
-        FinalAnalysisImplicitCallableBody, FinalAnalysisTryView, FinalSemanticAnalysis,
-        FinalSemanticAnalysisError, NominalSchemaPath, NominalSchemaProjectionError,
-        RuntimeProjectNominalKind,
+        CheckedItemRole, CheckedIteration, CheckedIteratorFamily, CheckedLocalUseInstantiation,
+        CheckedNominalFieldPlace, CheckedOrdinaryFunctionEmission, CheckedPatternResolution,
+        CheckedProjectItemOwner, CheckedProjectNominal, CheckedRecordPattern,
+        CheckedRecordPatternOwner, CheckedRecordPatternRest, CheckedRecordPatternSourceRef,
+        CheckedRecordValueSource, CheckedSelectResolution, CheckedStatementPayload,
+        CheckedTraitConformance, CheckedTraitIdentity, CheckedTriggerView, CheckedTryCarrier,
+        CheckedValueResolution, CheckedVariantOwner, CheckedVariantOwnerKind,
+        CheckedVariantResolution, FinalAnalysisImplicitCallableBody, FinalAnalysisTryView,
+        FinalSemanticAnalysis, FinalSemanticAnalysisError, NominalSchemaPath,
+        NominalSchemaProjectionError, RuntimeProjectNominalKind,
     },
     registration::RegisteredSemanticWorld,
     types::{
@@ -196,19 +196,20 @@ use arcweft_runtime_plan::{
         RuntimeCallableAttachedContentAbi, RuntimeCallableAttachedContentDefault,
         RuntimeCallableValueSpecialization, RuntimeCheckedCapture,
         RuntimeCheckedTypeProjectionError, RuntimeChoiceFact, RuntimeChoiceGotoFact,
-        RuntimeClosureCaptureFact, RuntimeClosureInstanceFact, RuntimeClosureInstanceKey,
-        RuntimeClosureLexicalOwner, RuntimeClosureParameterFact, RuntimeContentFragmentFact,
-        RuntimeDeferFact, RuntimeDialogueApplication, RuntimeDialogueEffectOperationFact,
-        RuntimeDialogueEffectProgramFact, RuntimeDialogueEffectTrigger, RuntimeDialogueMarkFact,
-        RuntimeDialogueMarkKey, RuntimeDialogueValueExpression, RuntimeDropFadeFact,
-        RuntimeDropPolicyFact, RuntimeEffectFieldFact, RuntimeEvaluatedEffect,
-        RuntimeEvaluatedEffectFact, RuntimeEvaluatedEffectOperandFact,
-        RuntimeExecutableCaptureFact, RuntimeExecutableSemanticScope, RuntimeFormatExecutableScope,
-        RuntimeFormatTemplateFact, RuntimeFormatTemplateKey, RuntimeImplicitCallableFact,
-        RuntimeIteratorFact, RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact,
-        RuntimeLineCallable, RuntimeLogLevel, RuntimeMapKind, RuntimeNominalRecordFactError,
-        RuntimeNormalizedType, RuntimeNormalizedVariantCase, RuntimePipeFact,
-        RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts, RuntimePositionedAttachedContent,
+        RuntimeClosedLocalUseCatalog, RuntimeClosureCaptureFact, RuntimeClosureInstanceFact,
+        RuntimeClosureInstanceKey, RuntimeClosureLexicalOwner, RuntimeClosureParameterFact,
+        RuntimeContentFragmentFact, RuntimeDeferFact, RuntimeDialogueApplication,
+        RuntimeDialogueEffectOperationFact, RuntimeDialogueEffectProgramFact,
+        RuntimeDialogueEffectTrigger, RuntimeDialogueMarkFact, RuntimeDialogueMarkKey,
+        RuntimeDialogueValueExpression, RuntimeDropFadeFact, RuntimeDropPolicyFact,
+        RuntimeEffectFieldFact, RuntimeEvaluatedEffect, RuntimeEvaluatedEffectFact,
+        RuntimeEvaluatedEffectOperandFact, RuntimeExecutableCaptureFact,
+        RuntimeExecutableSemanticScope, RuntimeFormatExecutableScope, RuntimeFormatTemplateFact,
+        RuntimeFormatTemplateKey, RuntimeImplicitCallableFact, RuntimeIteratorFact,
+        RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact, RuntimeLineCallable,
+        RuntimeLogLevel, RuntimeMapKind, RuntimeNominalRecordFactError, RuntimeNormalizedType,
+        RuntimeNormalizedVariantCase, RuntimePipeFact, RuntimePlanSemanticFactInput,
+        RuntimePlanSemanticFacts, RuntimePositionedAttachedContent,
         RuntimeProjectAttachedDefaultCapture, RuntimeProjectAttachedDefaultFunctionFact,
         RuntimeProjectCallable, RuntimeProjectCallableValueTarget, RuntimeProjectContinuationAbi,
         RuntimeProjectFunctionBody, RuntimeProjectFunctionCallInput,
@@ -763,6 +764,7 @@ fn project_runtime_semantic_fact_inventories(
         runtime_expression_type_owners.extend(view_value_owners.selected_expression_type_owners()?);
     }
     let mut input = RuntimePlanSemanticFactInput::new();
+    input.attach_checked_local_uses(Arc::new(analysis.checked_local_uses().clone()));
     for template in format_templates {
         input.push_format_template(template);
     }
@@ -1107,6 +1109,7 @@ fn project_runtime_semantic_fact_inventories(
                 input.push_implicit_callable(
                     owner,
                     RuntimeImplicitCallableFact::new(
+                        callable_view.identity(),
                         runtime_type(callable_view.parameter(), symbols, world, analysis)?,
                         runtime_type(callable_view.result(), symbols, world, analysis)?,
                         placeholders,
@@ -1122,6 +1125,7 @@ fn project_runtime_semantic_fact_inventories(
                         input.push_pipe(
                             owner,
                             RuntimePipeFact::new(
+                                pipe.binding_identity(),
                                 pipe.left(),
                                 pipe.right(),
                                 pipe.placeholders().collect(),
@@ -1135,6 +1139,7 @@ fn project_runtime_semantic_fact_inventories(
                 input.push_pipe(
                     owner,
                     RuntimePipeFact::new(
+                        pipe_view.binding_identity(),
                         pipe_view.left(),
                         pipe_view.right(),
                         pipe_view.placeholders().collect(),
@@ -7735,6 +7740,7 @@ fn runtime_project_function_instance_semantic_facts(
                 let pipe = if matches!(hir.kind(), HirExprKind::Pipe(_)) {
                     let pipe = execution.pipe(owner)?;
                     Some(RuntimePipeFact::new(
+                        pipe.binding_identity(),
                         pipe.left(),
                         pipe.right(),
                         pipe.placeholders().collect(),
@@ -7812,6 +7818,7 @@ fn runtime_project_function_instance_semantic_facts(
             CheckedExecutableRuntimeExpressionFactFamily::ImplicitCallable => {
                 let view = execution.implicit_callable(owner)?;
                 let callable = RuntimeImplicitCallableFact::new(
+                    view.identity(),
                     runtime_type_under(
                         view.parameter(),
                         lexical.types(),
@@ -7839,6 +7846,7 @@ fn runtime_project_function_instance_semantic_facts(
                     FinalAnalysisImplicitCallableBody::Pipe(pipe) => (
                         None,
                         Some(RuntimePipeFact::new(
+                            pipe.binding_identity(),
                             pipe.left(),
                             pipe.right(),
                             pipe.placeholders().collect(),
@@ -7854,6 +7862,7 @@ fn runtime_project_function_instance_semantic_facts(
             CheckedExecutableRuntimeExpressionFactFamily::Pipe => {
                 let pipe = execution.pipe(owner)?;
                 RuntimeProjectFunctionExpressionPayload::Pipe(RuntimePipeFact::new(
+                    pipe.binding_identity(),
                     pipe.left(),
                     pipe.right(),
                     pipe.placeholders().collect(),
@@ -8140,8 +8149,38 @@ fn runtime_project_function_instance_semantic_facts(
         })
         .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
 
+    let local_uses = match lexical {
+        RuntimeExecutableInstantiation::Global => {
+            RuntimeClosedLocalUseCatalog::Global(Arc::new(analysis.checked_local_uses().clone()))
+        }
+        RuntimeExecutableInstantiation::Project { solution, .. } => {
+            let checked = analysis
+                .checked_local_uses_for_instance(
+                    project,
+                    symbols,
+                    CheckedLocalUseInstantiation::ProjectFunction(
+                        solution.function_solution().ok_or_else(|| {
+                            origin.error("project instance has no frozen function solution")
+                        })?,
+                    ),
+                )
+                .map_err(|error| origin.error(error.to_string()))?;
+            RuntimeClosedLocalUseCatalog::Instance(Arc::new(checked))
+        }
+        RuntimeExecutableInstantiation::Display { conformance, .. } => {
+            let checked = analysis
+                .checked_local_uses_for_instance(
+                    project,
+                    symbols,
+                    CheckedLocalUseInstantiation::DisplayText(conformance),
+                )
+                .map_err(|error| origin.error(error.to_string()))?;
+            RuntimeClosedLocalUseCatalog::Instance(Arc::new(checked))
+        }
+    };
     RuntimeProjectFunctionInstanceSemanticFacts::try_new(
         partition,
+        local_uses,
         type_projection,
         expressions.into_boxed_slice(),
         patterns.into_boxed_slice(),

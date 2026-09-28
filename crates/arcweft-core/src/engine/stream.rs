@@ -1,10 +1,10 @@
 use super::{
     Engine, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr, RuntimePattern, RuntimePayload,
     RuntimeStepOutput, RuntimeStreamEvent, RuntimeValue, StreamMatchArm, StreamOp, StreamRuntimeId,
-    StreamRuntimeState, match_runtime_pattern, runtime_value_label,
+    StreamRuntimeState, runtime_value_label,
 };
 use crate::pure::RuntimeCallBackend;
-use crate::stream::StreamEventKind;
+use crate::stream::{RuntimeStreamYieldCopyProof, StreamEventKind};
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct StreamForNext<'a> {
@@ -116,9 +116,9 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
         match self.evaluate_expr_with_backend(expr, pure_backend) {
-            Ok(value) => match self.try_bind_pattern(pattern, &value) {
-                Ok(true) => true,
-                Ok(false) => {
+            Ok(value) => match self.try_bind_pattern_owned(pattern, value) {
+                Ok(None) => true,
+                Ok(Some(value)) => {
                     output.diagnostics.push(RuntimeDiagnostic::new(format!(
                         "stream pattern did not match {}",
                         runtime_value_label(&value)
@@ -149,7 +149,11 @@ impl Engine {
             return true;
         };
         while let Some(item) = self.pop_queue_item(&source_key) {
-            match match_runtime_pattern(&self.plan, args.pattern, item.value()) {
+            match crate::pattern::match_runtime_pattern_owned(
+                &self.plan,
+                args.pattern,
+                item.into_value(),
+            ) {
                 Ok(Some(bindings)) => {
                     let should_continue = self.with_temp_bindings(bindings, |this| {
                         this.execute_stream_ops(
@@ -185,17 +189,23 @@ impl Engine {
     ) -> bool {
         match self.evaluate_expr_with_backend(expr, pure_backend) {
             Ok(value) => {
-                let item: RuntimePayload = value.into();
+                let observed = match RuntimeStreamYieldCopyProof::inspect(&value) {
+                    Ok(proof) => RuntimePayload::from(proof.copy()),
+                    Err(error) => {
+                        Self::diagnose_runtime_error(error, output);
+                        return true;
+                    }
+                };
                 let state = self
                     .fiber
                     .stream_states
                     .entry(stream.clone())
                     .or_insert_with(|| StreamRuntimeState::new(stream.clone()));
-                let sequence = state.push_item(item.clone());
+                let sequence = state.push_item(RuntimePayload::from(value));
                 output.effects.stream_events.push(RuntimeStreamEvent {
                     stream: stream.clone(),
                     sequence,
-                    kind: StreamEventKind::Item(item),
+                    kind: StreamEventKind::Item(observed),
                 });
             }
             Err(error) => Self::diagnose_runtime_error(error, output),
@@ -220,17 +230,35 @@ impl Engine {
             }
         };
         for arm in arms {
-            let Ok(Some(bindings)) = match_runtime_pattern(&self.plan, &arm.pattern, &value) else {
+            let Ok(true) =
+                crate::pattern::inspect_runtime_pattern_owned(&self.plan, &arm.pattern, &value)
+            else {
                 continue;
             };
             let guard_matches = if let Some(guard) = arm.guard.as_ref() {
-                self.with_temp_bindings_ref(&bindings, |this| {
+                let projected = match crate::pattern::prepare_runtime_pattern_guard_bindings(
+                    &self.plan,
+                    &arm.pattern,
+                    &value,
+                    guard,
+                ) {
+                    Ok(projected) => projected,
+                    Err(error) => {
+                        Self::diagnose_runtime_error(error, output);
+                        return true;
+                    }
+                };
+                self.with_temp_bindings(projected, |this| {
                     this.evaluate_bool_with_backend(guard, pure_backend)
                 })
             } else {
                 Ok(true)
             };
             if matches!(guard_matches, Ok(true)) {
+                let bindings =
+                    crate::pattern::match_runtime_pattern_owned(&self.plan, &arm.pattern, value)
+                        .expect("checked stream match remains valid")
+                        .expect("checked stream match remains selected");
                 return self.with_temp_bindings(bindings, |this| {
                     this.execute_stream_ops(stream, &arm.ops, budget, output, pure_backend)
                 });

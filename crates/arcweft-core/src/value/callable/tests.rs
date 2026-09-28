@@ -8,14 +8,15 @@ use crate::plan::{
     RuntimeCallableRetainedRole, RuntimeCallableStateDefinition, RuntimeCallableTransition,
     RuntimeEffectSet, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFunctionInputBindingSeed,
     RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteBodySeed,
-    RuntimeFunctionSiteDeclarationSeed, RuntimeLocalDeclarationSeed, RuntimePatternSeed,
-    RuntimePatternSeedKind, RuntimePlan, RuntimePlanBuilder, RuntimePlanTypeProjection,
-    RuntimePlanTypeSeed,
+    RuntimeFunctionSiteDeclarationSeed, RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed,
+    RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan, RuntimePlanBuilder,
+    RuntimePlanTypeProjection, RuntimePlanTypeSeed,
 };
 use crate::runtime_id::RuntimeCallableStateId;
 use crate::task::RuntimeProgramOwner;
 use crate::value::{
-    RuntimeCallableApplication, RuntimeCallableValue, RuntimeCallableValueError, RuntimeValue,
+    RuntimeCallableApplication, RuntimeCallableValue, RuntimeCallableValueError,
+    RuntimeLocalReadMode, RuntimeValue,
 };
 
 fn captured_identity_plan() -> RuntimePlan {
@@ -42,6 +43,7 @@ fn captured_identity_plan() -> RuntimePlan {
             [
                 RuntimeLocalDeclarationSeed::new(integer),
                 RuntimeLocalDeclarationSeed::new(integer),
+                RuntimeLocalDeclarationSeed::new(integer),
             ],
         )
         .unwrap();
@@ -49,11 +51,21 @@ fn captured_identity_plan() -> RuntimePlan {
         .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
             inputs: Box::new([
                 RuntimeFunctionInputBindingSeed {
+                    ownership: Default::default(),
+                    unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Capture { position: 0 },
-                    input_local: inputs.local_ids()[0].clone(),
-                    pattern: RuntimePatternSeed::new(integer, RuntimePatternSeedKind::Discard),
+                    input_local: inputs.local_ids()[2].clone(),
+                    pattern: RuntimePatternSeed::new(
+                        integer,
+                        RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: inputs.local_ids()[0].clone(),
+                        },
+                    ),
                 },
                 RuntimeFunctionInputBindingSeed {
+                    ownership: Default::default(),
+                    unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Parameter { position: 0 },
                     input_local: inputs.local_ids()[1].clone(),
                     pattern: RuntimePatternSeed::new(integer, RuntimePatternSeedKind::Discard),
@@ -69,7 +81,10 @@ fn captured_identity_plan() -> RuntimePlan {
             &site,
             RuntimeFunctionSiteBodySeed::Expression(RuntimeExprSeed::new(
                 integer,
-                RuntimeExprSeedKind::Local(inputs.local_ids()[0].clone()),
+                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                    inputs.local_ids()[0].clone(),
+                    RuntimeLocalReadMode::Copy,
+                )),
             )),
         )
         .unwrap();
@@ -132,7 +147,9 @@ fn callable_admission_requires_the_complete_retained_layout_and_exact_owner() {
     ));
     for argument in [1, 2] {
         let RuntimeCallableApplication::Invoke(invocation) = callable
-            .prepare_group(&[RuntimeValue::i64(argument)], None)
+            .try_duplicate_unrestricted()
+            .unwrap()
+            .prepare_group(vec![RuntimeValue::i64(argument)], None)
             .unwrap()
         else {
             panic!("terminal state must invoke");
@@ -142,8 +159,8 @@ fn callable_admission_requires_the_complete_retained_layout_and_exact_owner() {
     }
     assert_eq!(callable.retained(), [RuntimeValue::i64(42)]);
     assert!(matches!(
-        callable.prepare_group(&[RuntimeValue::Unit], None),
-        Err(RuntimeCallableValueError::ArgumentType { position: 0, .. })
+        callable.prepare_group(vec![RuntimeValue::Unit], None),
+        Err(error) if matches!(error.reason(), RuntimeCallableValueError::ArgumentType { position: 0, .. })
     ));
 }
 
@@ -196,6 +213,7 @@ fn checked_partial_application_seals_retained_parameter_coordinates() {
             [
                 RuntimeLocalDeclarationSeed::new(integer),
                 RuntimeLocalDeclarationSeed::new(boolean),
+                RuntimeLocalDeclarationSeed::new(integer),
             ],
         )
         .unwrap();
@@ -205,15 +223,31 @@ fn checked_partial_application_seals_retained_parameter_coordinates() {
                 .into_iter()
                 .enumerate()
                 .map(|(position, ty)| RuntimeFunctionInputBindingSeed {
+                    ownership: Default::default(),
+                    unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Parameter {
                         position: position as u32,
                     },
-                    input_local: admission.local_ids()[position].clone(),
-                    pattern: RuntimePatternSeed::new(ty, RuntimePatternSeedKind::Discard),
+                    input_local: admission.local_ids()[if position == 0 { 2 } else { position }]
+                        .clone(),
+                    pattern: RuntimePatternSeed::new(
+                        ty,
+                        if position == 0 {
+                            RuntimePatternSeedKind::Bind {
+                                mutable: false,
+                                local: admission.local_ids()[0].clone(),
+                            }
+                        } else {
+                            RuntimePatternSeedKind::Discard
+                        },
+                    ),
                 }),
             RuntimeExprSeed::new(
                 integer,
-                RuntimeExprSeedKind::Local(admission.local_ids()[0].clone()),
+                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                    admission.local_ids()[0].clone(),
+                    RuntimeLocalReadMode::Copy,
+                )),
             ),
         )
         .unwrap();
@@ -258,11 +292,13 @@ fn checked_partial_application_seals_retained_parameter_coordinates() {
     );
     let callable =
         RuntimeCallableValue::try_new(RuntimeProgramOwner::Plan(plan), initial, []).unwrap();
-    let partial = callable.try_bind_prefix(&[RuntimeValue::i64(42)]).unwrap();
+    let partial = callable
+        .try_bind_prefix(vec![RuntimeValue::i64(42)])
+        .unwrap();
     assert_eq!(partial.function_type().unwrap(), partial_type);
     assert_eq!(partial.retained(), [RuntimeValue::i64(42)]);
     let RuntimeCallableApplication::Invoke(invocation) = partial
-        .prepare_group(&[RuntimeValue::Bool(false)], None)
+        .prepare_group(vec![RuntimeValue::Bool(false)], None)
         .unwrap()
     else {
         panic!("the remaining current-group parameter must invoke the original body");
@@ -322,6 +358,8 @@ fn rest_partial_plan(
                 .into_iter()
                 .enumerate()
                 .map(|(position, ty)| RuntimeFunctionInputBindingSeed {
+                    ownership: Default::default(),
+                    unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Parameter {
                         position: position as u32,
                     },
@@ -451,31 +489,40 @@ fn partial_rest_binding_retains_a_pack_and_keeps_attached_content_separate() {
     .unwrap();
     assert_eq!(callable.remaining_arity().unwrap(), 2);
     assert!(matches!(
-        callable.try_bind_prefix(&[RuntimeValue::Bool(true)]),
-        Err(RuntimeCallableValueError::ArgumentType { position: 0, .. })
+        callable
+            .try_duplicate_unrestricted()
+            .unwrap()
+            .try_bind_prefix(vec![RuntimeValue::Bool(true)]),
+        Err(error) if matches!(error.reason(), RuntimeCallableValueError::ArgumentType { position: 0, .. })
     ));
-    let prefix = callable.try_bind_prefix(&[RuntimeValue::Unit]).unwrap();
+    assert!(callable.retained().is_empty());
+    let prefix = callable.try_bind_prefix(vec![RuntimeValue::Unit]).unwrap();
     let pack = crate::value::runtime_sequence_values(vec![RuntimeValue::Unit]);
     assert_eq!(prefix.retained(), [pack.clone()]);
-    assert!(callable.retained().is_empty());
     assert_eq!(prefix.remaining_arity().unwrap(), 1);
     let ordinary = prefix
-        .materialize_arrow_arguments(&[RuntimeValue::Bool(false)])
+        .materialize_arrow_arguments(vec![RuntimeValue::Bool(false)])
         .unwrap();
     assert!(matches!(
-        prefix.prepare_group(&ordinary, None),
-        Err(RuntimeCallableValueError::RequiredAttached { .. })
+        prefix
+            .try_duplicate_unrestricted()
+            .unwrap()
+            .prepare_group(ordinary, None),
+        Err(error) if matches!(error.reason(), RuntimeCallableValueError::RequiredAttached { .. })
     ));
     assert!(matches!(
-        prefix.materialize_arrow_arguments(&[RuntimeValue::Bool(false), RuntimeValue::Bool(true)]),
-        Err(RuntimeCallableValueError::ArgumentCount {
+        prefix.materialize_arrow_arguments(vec![RuntimeValue::Bool(false), RuntimeValue::Bool(true)]),
+        Err(error) if matches!(error.reason(), RuntimeCallableValueError::ArgumentCount {
             expected: 1,
             actual: 2,
             ..
         })
     ));
+    let ordinary = prefix
+        .materialize_arrow_arguments(vec![RuntimeValue::Bool(false)])
+        .unwrap();
     let RuntimeCallableApplication::Invoke(invocation) = prefix
-        .prepare_group(&ordinary, Some(RuntimeValue::Bool(true)))
+        .prepare_group(ordinary, Some(RuntimeValue::Bool(true)))
         .unwrap()
     else {
         panic!("the completed attached group must invoke");
@@ -507,7 +554,10 @@ fn defaulted_attached_plan_builder(flatten_attached_into_arrow: bool) -> Runtime
                     },
                 ),
             ],
-            [RuntimeLocalDeclarationSeed::new(boolean)],
+            [
+                RuntimeLocalDeclarationSeed::new(boolean),
+                RuntimeLocalDeclarationSeed::new(boolean),
+            ],
         )
         .unwrap();
     let input = admission.local_ids()[0].clone();
@@ -523,11 +573,25 @@ fn defaulted_attached_plan_builder(flatten_attached_into_arrow: bool) -> Runtime
     let target = builder
         .push_function_site_seed(
             [RuntimeFunctionInputBindingSeed {
+                ownership: Default::default(),
+                unrestricted_bindings: Box::new([]),
                 source: RuntimeFunctionInputSource::Parameter { position: 0 },
-                input_local: input.clone(),
-                pattern: RuntimePatternSeed::new(boolean, RuntimePatternSeedKind::Discard),
+                input_local: admission.local_ids()[1].clone(),
+                pattern: RuntimePatternSeed::new(
+                    boolean,
+                    RuntimePatternSeedKind::Bind {
+                        mutable: false,
+                        local: input.clone(),
+                    },
+                ),
             }],
-            RuntimeExprSeed::new(boolean, RuntimeExprSeedKind::Local(input)),
+            RuntimeExprSeed::new(
+                boolean,
+                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                    input,
+                    RuntimeLocalReadMode::Copy,
+                )),
+            ),
         )
         .unwrap();
     let state = builder.reserve_callable_state_seed().unwrap();
@@ -572,28 +636,37 @@ fn ordinary_arrow_omission_selects_the_default_and_supplied_attached_bypasses_it
     )
     .unwrap();
     assert_eq!(callable.remaining_arity().unwrap(), 0);
-    let arguments = callable.materialize_arrow_arguments(&[]).unwrap();
-    assert!(matches!(
-        callable.prepare_group(&arguments, None).unwrap(),
-        RuntimeCallableApplication::AttachedDefault(_)
-    ));
-    let RuntimeCallableApplication::Invoke(defaulted) = callable
-        .complete_group_default(&arguments, RuntimeValue::Bool(true))
+    let arguments = callable.materialize_arrow_arguments(vec![]).unwrap();
+    let RuntimeCallableApplication::AttachedDefault {
+        invocation: default_invocation,
+        pending,
+    } = callable
+        .try_duplicate_unrestricted()
         .unwrap()
+        .prepare_group(arguments, None)
+        .unwrap()
+    else {
+        panic!("ordinary omission must select the attached default")
+    };
+    assert!(default_invocation.arguments.is_empty());
+    let RuntimeCallableApplication::Invoke(defaulted) =
+        pending.complete_default(RuntimeValue::Bool(true)).unwrap()
     else {
         panic!("a completed default must enter the target rather than select another default")
     };
     assert_eq!(defaulted.arguments, [RuntimeValue::Bool(true)]);
     let RuntimeCallableApplication::Invoke(supplied) = callable
-        .prepare_group(&arguments, Some(RuntimeValue::Bool(false)))
+        .try_duplicate_unrestricted()
+        .unwrap()
+        .prepare_group(vec![], Some(RuntimeValue::Bool(false)))
         .unwrap()
     else {
         panic!("supplied attached content must bypass the default")
     };
     assert_eq!(supplied.arguments, [RuntimeValue::Bool(false)]);
     assert!(matches!(
-        callable.materialize_arrow_arguments(&[RuntimeValue::Bool(false)]),
-        Err(RuntimeCallableValueError::ArgumentCount {
+        callable.materialize_arrow_arguments(vec![RuntimeValue::Bool(false)]),
+        Err(error) if matches!(error.reason(), RuntimeCallableValueError::ArgumentCount {
             expected: 0,
             actual: 1,
             ..

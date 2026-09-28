@@ -132,6 +132,7 @@ fn context_fixture(receiver: ContextReceiver, defaulted: bool) -> ContextFixture
         result: Some(target_result),
         effects: AwbcEffectSetId(0),
     };
+    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::default(); 2];
     program.frame_layouts[0].slots = vec![
         AwbcFrameSlot {
             name: None,
@@ -205,6 +206,10 @@ fn context_fixture(receiver: ContextReceiver, defaulted: bool) -> ContextFixture
         public_id: None,
         kind: AwbcFunctionKind::Ordinary,
         signature: AwbcSignatureId(1),
+        input_ownership: vec![
+            AwbcFunctionInputOwnership::default();
+            program.signatures[AwbcSignatureId(1).index()].params.len()
+        ],
         frame_layout: AwbcFrameLayoutId(1),
         blocks: AwbcTableRange::new(1, 1),
         entry_block: AwbcBlockId(1),
@@ -239,6 +244,7 @@ fn context_fixture(receiver: ContextReceiver, defaulted: bool) -> ContextFixture
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(2),
+            input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId(2),
             blocks: AwbcTableRange::new(2, 1),
             entry_block: AwbcBlockId(2),
@@ -555,9 +561,11 @@ fn verified_defaulted_context_callback_restores_both_stages_and_writes_result_on
     assert!(matches!(
         restored.frames[1].return_to.as_ref().unwrap().continuation,
         FiberReturnContinuation::ContextCallbackInvoke {
-            attached_default: Some(RuntimeValue::String(ref message)),
+            pending: crate::value::RuntimeArcErrorContextPending::ResultErr(
+                RuntimeValue::String(ref cause)
+            ),
             ..
-        } if message == "lazy context"
+        } if cause == "cause"
     ));
 
     restored.budget.remaining = 0;
@@ -842,6 +850,10 @@ fn formatter_context_fixture() -> ContextFixture {
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
             signature: AwbcSignatureId(2),
+            input_ownership: vec![
+                AwbcFunctionInputOwnership::default();
+                program.signatures[AwbcSignatureId(2).index()].params.len()
+            ],
             frame_layout: AwbcFrameLayoutId(2),
             blocks: AwbcTableRange::new(2, 1),
             entry_block: AwbcBlockId(2),
@@ -851,6 +863,10 @@ fn formatter_context_fixture() -> ContextFixture {
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
             signature: AwbcSignatureId(3),
+            input_ownership: vec![
+                AwbcFunctionInputOwnership::default();
+                program.signatures[AwbcSignatureId(3).index()].params.len()
+            ],
             frame_layout: AwbcFrameLayoutId(3),
             blocks: AwbcTableRange::new(3, 1),
             entry_block: AwbcBlockId(3),

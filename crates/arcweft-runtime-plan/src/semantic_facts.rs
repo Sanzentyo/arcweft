@@ -126,20 +126,21 @@ pub use evaluated_effect::{
 };
 pub use flow::RuntimeFlowFact;
 pub use project_function::{
-    RuntimeClosureCaptureFact, RuntimeClosureInstanceFact, RuntimeClosureInstanceKey,
-    RuntimeClosureLexicalOwner, RuntimeClosureParameterFact, RuntimeProjectAttachedDefaultCapture,
-    RuntimeProjectAttachedDefaultFunctionFact, RuntimeProjectContinuationAbi,
-    RuntimeProjectFunctionBody, RuntimeProjectFunctionCallInput, RuntimeProjectFunctionCallOutcome,
-    RuntimeProjectFunctionCallPlan, RuntimeProjectFunctionCallSpecialization,
-    RuntimeProjectFunctionExecution, RuntimeProjectFunctionExpressionPayload,
-    RuntimeProjectFunctionExpressionSemanticFact, RuntimeProjectFunctionFactError,
-    RuntimeProjectFunctionInstanceFact, RuntimeProjectFunctionInstanceKey,
-    RuntimeProjectFunctionInstanceSemanticFacts, RuntimeProjectFunctionParameterAbi,
-    RuntimeProjectFunctionParameterMaterialization, RuntimeProjectFunctionParameterSource,
-    RuntimeProjectFunctionPatternPayload, RuntimeProjectFunctionPatternSemanticFact,
-    RuntimeProjectFunctionRootFact, RuntimeProjectFunctionRootRole,
-    RuntimeProjectFunctionStatementPayload, RuntimeProjectFunctionStatementSemanticFact,
-    RuntimeProjectFunctionTypeOwner, RuntimeProjectFunctionTypeProjection, RuntimeResidualValue,
+    RuntimeClosedLocalUseCatalog, RuntimeClosureCaptureFact, RuntimeClosureInstanceFact,
+    RuntimeClosureInstanceKey, RuntimeClosureLexicalOwner, RuntimeClosureParameterFact,
+    RuntimeProjectAttachedDefaultCapture, RuntimeProjectAttachedDefaultFunctionFact,
+    RuntimeProjectContinuationAbi, RuntimeProjectFunctionBody, RuntimeProjectFunctionCallInput,
+    RuntimeProjectFunctionCallOutcome, RuntimeProjectFunctionCallPlan,
+    RuntimeProjectFunctionCallSpecialization, RuntimeProjectFunctionExecution,
+    RuntimeProjectFunctionExpressionPayload, RuntimeProjectFunctionExpressionSemanticFact,
+    RuntimeProjectFunctionFactError, RuntimeProjectFunctionInstanceFact,
+    RuntimeProjectFunctionInstanceKey, RuntimeProjectFunctionInstanceSemanticFacts,
+    RuntimeProjectFunctionParameterAbi, RuntimeProjectFunctionParameterMaterialization,
+    RuntimeProjectFunctionParameterSource, RuntimeProjectFunctionPatternPayload,
+    RuntimeProjectFunctionPatternSemanticFact, RuntimeProjectFunctionRootFact,
+    RuntimeProjectFunctionRootRole, RuntimeProjectFunctionStatementPayload,
+    RuntimeProjectFunctionStatementSemanticFact, RuntimeProjectFunctionTypeOwner,
+    RuntimeProjectFunctionTypeProjection, RuntimeResidualValue,
 };
 
 /// Stable semantic identity for a registered callable or value that is not
@@ -1739,6 +1740,7 @@ pub struct RuntimeTryFact {
 /// Generation-bound implicit callable projection for one `_` abstraction.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeImplicitCallableFact {
+    identity: arcweft_lang_sema::final_analysis::CheckedImplicitCallableIdentity,
     parameter: RuntimeNormalizedType,
     result: RuntimeNormalizedType,
     placeholders: Box<[ExprId]>,
@@ -1747,17 +1749,25 @@ pub struct RuntimeImplicitCallableFact {
 
 impl RuntimeImplicitCallableFact {
     pub const fn new(
+        identity: arcweft_lang_sema::final_analysis::CheckedImplicitCallableIdentity,
         parameter: RuntimeNormalizedType,
         result: RuntimeNormalizedType,
         placeholders: Box<[ExprId]>,
         captures: Box<[LocalId]>,
     ) -> Self {
         Self {
+            identity,
             parameter,
             result,
             placeholders,
             captures,
         }
+    }
+
+    pub const fn identity(
+        &self,
+    ) -> arcweft_lang_sema::final_analysis::CheckedImplicitCallableIdentity {
+        self.identity
     }
 
     pub const fn parameter(&self) -> &RuntimeNormalizedType {
@@ -1780,18 +1790,31 @@ impl RuntimeImplicitCallableFact {
 /// Generation-bound once-only pipeline and its checked `^` uses.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimePipeFact {
+    binding_identity: arcweft_lang_sema::final_analysis::CheckedPipeBindingIdentity,
     left: ExprId,
     right: ExprId,
     placeholders: Box<[ExprId]>,
 }
 
 impl RuntimePipeFact {
-    pub const fn new(left: ExprId, right: ExprId, placeholders: Box<[ExprId]>) -> Self {
+    pub const fn new(
+        binding_identity: arcweft_lang_sema::final_analysis::CheckedPipeBindingIdentity,
+        left: ExprId,
+        right: ExprId,
+        placeholders: Box<[ExprId]>,
+    ) -> Self {
         Self {
+            binding_identity,
             left,
             right,
             placeholders,
         }
+    }
+
+    pub const fn binding_identity(
+        &self,
+    ) -> arcweft_lang_sema::final_analysis::CheckedPipeBindingIdentity {
+        self.binding_identity
     }
 
     pub const fn left(&self) -> ExprId {
@@ -4978,6 +5001,7 @@ pub struct RuntimePlanSemanticFactInput {
     pattern_literals: Vec<(PatternId, RuntimeValue)>,
     pattern_items: Vec<(PatternId, RuntimeProjectItem)>,
     values: Vec<(ExprId, RuntimeResolvedValue)>,
+    checked_local_uses: Option<Arc<arcweft_lang_sema::final_analysis::CheckedLocalUseCatalog>>,
     selects: Vec<(ExprId, RuntimeResolvedSelect)>,
     nominal_records: Vec<(ExprId, RuntimeRecordExpressionFact)>,
     pattern_nominal_records: Vec<(PatternId, RuntimeRecordPatternFact)>,
@@ -5031,6 +5055,7 @@ impl RuntimePlanSemanticFactInput {
             pattern_literals: Vec::new(),
             pattern_items: Vec::new(),
             values: Vec::new(),
+            checked_local_uses: None,
             selects: Vec::new(),
             nominal_records: Vec::new(),
             pattern_nominal_records: Vec::new(),
@@ -5138,6 +5163,15 @@ impl RuntimePlanSemanticFactInput {
 
     pub fn push_value(&mut self, owner: ExprId, value: RuntimeResolvedValue) {
         self.values.push((owner, value));
+    }
+
+    /// Stages the complete checked local-use authority with its accepted HIR
+    /// generation lease; individual rows cannot be spliced across analyses.
+    pub fn attach_checked_local_uses(
+        &mut self,
+        catalog: Arc<arcweft_lang_sema::final_analysis::CheckedLocalUseCatalog>,
+    ) {
+        self.checked_local_uses = Some(catalog);
     }
 
     pub fn push_select(&mut self, owner: ExprId, select: RuntimeResolvedSelect) {
@@ -5386,6 +5420,7 @@ pub struct RuntimePlanSemanticFacts {
     pattern_literals: BTreeMap<PatternId, RuntimeValue>,
     pattern_items: BTreeMap<PatternId, RuntimeProjectItem>,
     values: BTreeMap<ExprId, RuntimeResolvedValue>,
+    checked_local_uses: Option<Arc<arcweft_lang_sema::final_analysis::CheckedLocalUseCatalog>>,
     selects: BTreeMap<ExprId, RuntimeResolvedSelect>,
     nominal_records: BTreeMap<ExprId, RuntimeRecordExpressionFact>,
     pattern_nominal_records: BTreeMap<PatternId, RuntimeRecordPatternFact>,
@@ -5445,6 +5480,41 @@ pub enum RuntimeExecutableSemanticScope<'facts> {
     ProjectFunction(&'facts RuntimeProjectFunctionInstanceKey),
     Closure(&'facts RuntimeClosureInstanceKey),
     TraitMethod(&'facts RuntimeTraitMethodInstanceKey),
+}
+
+/// One `_` abstraction in its exact closed executable. Expression identity
+/// alone is shared by monomorphized bodies and cannot identify a function
+/// site or its synthetic parameter owner.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct RuntimeImplicitCallableSiteKey {
+    scope: RuntimeImplicitCallableSiteScope,
+    expression: ExprId,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum RuntimeImplicitCallableSiteScope {
+    Global,
+    ProjectFunction(RuntimeProjectFunctionInstanceKey),
+    Closure(RuntimeClosureInstanceKey),
+    TraitMethod(RuntimeTraitMethodInstanceKey),
+}
+
+impl RuntimeImplicitCallableSiteKey {
+    pub(crate) fn new(scope: RuntimeExecutableSemanticScope<'_>, expression: ExprId) -> Self {
+        let scope = match scope {
+            RuntimeExecutableSemanticScope::Global => RuntimeImplicitCallableSiteScope::Global,
+            RuntimeExecutableSemanticScope::ProjectFunction(key) => {
+                RuntimeImplicitCallableSiteScope::ProjectFunction(key.clone())
+            }
+            RuntimeExecutableSemanticScope::Closure(key) => {
+                RuntimeImplicitCallableSiteScope::Closure(key.clone())
+            }
+            RuntimeExecutableSemanticScope::TraitMethod(key) => {
+                RuntimeImplicitCallableSiteScope::TraitMethod(key.clone())
+            }
+        };
+        Self { scope, expression }
+    }
 }
 
 /// One lexical scope and the only semantic catalog valid while lowering it.
@@ -5613,6 +5683,45 @@ impl<'facts> RuntimeScopedExecutableSemanticFactView<'facts> {
         self.facts.local_type(owner)
     }
 
+    pub fn checked_local_use(
+        self,
+        site: arcweft_lang_sema::final_analysis::CheckedLocalUseSite,
+    ) -> Option<arcweft_lang_sema::final_analysis::CheckedLocalUse> {
+        self.facts.checked_local_use(site)
+    }
+
+    pub fn checked_guard_copy_locals(self, guard: ExprId) -> Vec<LocalId> {
+        self.facts.checked_guard_copy_locals(guard)
+    }
+
+    pub fn checked_synthetic_use(
+        self,
+        expression: ExprId,
+    ) -> Option<arcweft_lang_sema::final_analysis::CheckedSyntheticUse> {
+        self.facts.checked_synthetic_use(expression)
+    }
+
+    pub fn checked_captures_at(
+        self,
+        owner: ExprId,
+    ) -> Vec<arcweft_lang_sema::final_analysis::CheckedLocalUse> {
+        self.facts.checked_captures_at(owner)
+    }
+
+    pub fn checked_copy_requirement(
+        self,
+        local: LocalId,
+    ) -> Option<&'facts arcweft_lang_sema::final_analysis::CheckedLocalCopyRequirement> {
+        self.facts.checked_copy_requirement(local)
+    }
+
+    pub fn checked_synthetic_copy_requirement(
+        self,
+        callable: arcweft_lang_sema::final_analysis::CheckedImplicitCallableIdentity,
+    ) -> Option<arcweft_lang_sema::final_analysis::CheckedSyntheticCopyRequirement> {
+        self.facts.checked_synthetic_copy_requirement(callable)
+    }
+
     pub fn dialogue_application(self, owner: ExprId) -> Option<&'facts RuntimeDialogueApplication> {
         self.facts.dialogue_application(owner)
     }
@@ -5630,6 +5739,63 @@ impl<'facts> RuntimeScopedExecutableSemanticFactView<'facts> {
 }
 
 impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
+    pub fn checked_local_use(
+        self,
+        site: arcweft_lang_sema::final_analysis::CheckedLocalUseSite,
+    ) -> Option<arcweft_lang_sema::final_analysis::CheckedLocalUse> {
+        match self {
+            Self::Global(facts) => facts.checked_local_use(site),
+            Self::ProjectInstance(facts) => facts.local_uses().use_at(site),
+        }
+    }
+
+    pub fn checked_guard_copy_locals(self, guard: ExprId) -> Vec<LocalId> {
+        match self {
+            Self::Global(facts) => facts.checked_guard_copy_locals(guard),
+            Self::ProjectInstance(facts) => facts.local_uses().guard_copy_locals(guard),
+        }
+    }
+
+    pub fn checked_synthetic_use(
+        self,
+        expression: ExprId,
+    ) -> Option<arcweft_lang_sema::final_analysis::CheckedSyntheticUse> {
+        match self {
+            Self::Global(facts) => facts.checked_synthetic_use(expression),
+            Self::ProjectInstance(facts) => facts.local_uses().synthetic_at(expression),
+        }
+    }
+
+    pub fn checked_captures_at(
+        self,
+        owner: ExprId,
+    ) -> Vec<arcweft_lang_sema::final_analysis::CheckedLocalUse> {
+        match self {
+            Self::Global(facts) => facts.checked_captures_at(owner).collect(),
+            Self::ProjectInstance(facts) => facts.local_uses().captures_at(owner),
+        }
+    }
+
+    pub fn checked_copy_requirement(
+        self,
+        local: LocalId,
+    ) -> Option<&'facts arcweft_lang_sema::final_analysis::CheckedLocalCopyRequirement> {
+        match self {
+            Self::Global(facts) => facts.checked_copy_requirement(local),
+            Self::ProjectInstance(facts) => facts.local_uses().copy_requirement(local),
+        }
+    }
+
+    pub fn checked_synthetic_copy_requirement(
+        self,
+        callable: arcweft_lang_sema::final_analysis::CheckedImplicitCallableIdentity,
+    ) -> Option<arcweft_lang_sema::final_analysis::CheckedSyntheticCopyRequirement> {
+        match self {
+            Self::Global(facts) => facts.checked_synthetic_copy_requirement(callable),
+            Self::ProjectInstance(facts) => facts.local_uses().synthetic_copy_requirement(callable),
+        }
+    }
+
     pub(crate) fn visit_scope_continuations(
         self,
         visitor: &mut impl FnMut(RuntimeScopeOwner, &'facts RuntimeScopeContinuation),
@@ -6338,6 +6504,26 @@ impl RuntimePlanSemanticFacts {
             RuntimeSemanticFactFamily::ProjectFunctionInstance,
         )?;
         for instance in project_function_instances.values() {
+            let catalog = instance.semantics().local_uses();
+            if catalog
+                .generation()
+                .validate_analysis_lease(project)
+                .is_err()
+                || catalog.generation().symbol_world()
+                    != runtime_owners.runtime.identity().symbol_world()
+                || catalog.generation().symbol_revision()
+                    != runtime_owners.runtime.identity().symbol_revision()
+                || !matches!(
+                    catalog.instance_identity(),
+                    Some(arcweft_lang_sema::final_analysis::CheckedLocalUseInstanceIdentity::ProjectFunction {
+                        declaration,
+                        instantiation,
+                    }) if declaration == instance.callable().declaration()
+                        && *instantiation == instance.key().instantiation()
+                )
+            {
+                return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+            }
             validate_project_function_instance(&modules, runtime_owners, instance)?;
         }
         let root_closures = collect_unique(
@@ -6695,6 +6881,71 @@ impl RuntimePlanSemanticFacts {
             validate_project_item(&modules, item)?;
         }
 
+        if let Some(catalog) = input.checked_local_uses.as_ref() {
+            let generation = catalog.generation();
+            if generation.validate_analysis_lease(project).is_err()
+                || generation.symbol_world() != runtime_owners.runtime.identity().symbol_world()
+                || generation.symbol_revision()
+                    != runtime_owners.runtime.identity().symbol_revision()
+            {
+                return Err(RuntimeSemanticFactsError::WrongProjectGeneration);
+            }
+        }
+        let local_uses: BTreeMap<
+            arcweft_lang_sema::final_analysis::CheckedLocalUseSite,
+            arcweft_lang_sema::final_analysis::CheckedLocalUse,
+        > = collect_unique(
+            input
+                .checked_local_uses
+                .as_ref()
+                .into_iter()
+                .flat_map(|catalog| catalog.rows()),
+            RuntimeSemanticFactFamily::LocalUse,
+        )?;
+        for (&site, &row) in &local_uses {
+            use arcweft_lang_sema::final_analysis::CheckedLocalUseSite;
+            let valid = match site {
+                CheckedLocalUseSite::Expression(owner)
+                | CheckedLocalUseSite::RecordField { owner, .. }
+                | CheckedLocalUseSite::Capture { owner, .. } => modules
+                    .get(&owner.module())
+                    .is_some_and(|module| {
+                        module.resolve_expr(owner).is_ok()
+                            && row.local().module() == owner.module()
+                            && module.resolve_local(row.local()).is_ok()
+                            && !matches!(site, CheckedLocalUseSite::Capture { local, .. } if local != row.local())
+                    }),
+                CheckedLocalUseSite::StatementCapture { owner, local } => modules
+                    .get(&owner.module())
+                    .is_some_and(|module| {
+                        module.resolve_stmt(owner).is_ok()
+                            && local == row.local()
+                            && module.resolve_local(local).is_ok()
+                    }),
+            };
+            if !valid {
+                return Err(RuntimeSemanticFactsError::InvalidLocalUse { site });
+            }
+        }
+        let synthetic_uses: BTreeMap<
+            ExprId,
+            arcweft_lang_sema::final_analysis::CheckedSyntheticUse,
+        > = collect_unique(
+            input
+                .checked_local_uses
+                .as_ref()
+                .into_iter()
+                .flat_map(|catalog| catalog.synthetic_rows()),
+            RuntimeSemanticFactFamily::SyntheticUse,
+        )?;
+        for &expression in synthetic_uses.keys() {
+            if modules
+                .get(&expression.module())
+                .is_none_or(|module| module.resolve_expr(expression).is_err())
+            {
+                return Err(RuntimeSemanticFactsError::InvalidSyntheticUse { expression });
+            }
+        }
         let values = collect_unique(input.values, RuntimeSemanticFactFamily::Value)?;
         for (expression, value) in &values {
             require_expr_family(
@@ -7252,6 +7503,12 @@ impl RuntimePlanSemanticFacts {
                     HirExprKind::Placeholder(HirPlaceholderKind::PartialApplication)
                 ) || (*placeholder != *expression
                     && expression_types.get(placeholder) != Some(fact.parameter()))
+                    || synthetic_uses.get(placeholder).is_none_or(|row| {
+                        row.owner()
+                            != arcweft_lang_sema::final_analysis::CheckedSyntheticUseOwner::ImplicitParameter(
+                                fact.identity(),
+                            )
+                    })
                 {
                     return Err(RuntimeSemanticFactsError::InvalidImplicitCallableFact {
                         expression: *expression,
@@ -7297,6 +7554,12 @@ impl RuntimePlanSemanticFacts {
                     resolve_expr(&modules, *placeholder)?,
                     HirExprKind::Placeholder(HirPlaceholderKind::PipeLeft)
                 ) || expression_types.get(placeholder) != Some(left_type)
+                    || synthetic_uses.get(placeholder).is_none_or(|row| {
+                        row.owner()
+                            != arcweft_lang_sema::final_analysis::CheckedSyntheticUseOwner::Pipe(
+                                fact.binding_identity(),
+                            )
+                    })
                 {
                     return Err(RuntimeSemanticFactsError::InvalidPipeFact {
                         expression: *expression,
@@ -7529,6 +7792,27 @@ impl RuntimePlanSemanticFacts {
                 return Err(RuntimeSemanticFactsError::InvalidTraitMethodIdentity);
             }
             if let Some(semantics) = method.closed_semantics() {
+                let catalog = semantics.local_uses();
+                if catalog
+                    .generation()
+                    .validate_analysis_lease(project)
+                    .is_err()
+                    || catalog.generation().symbol_world()
+                        != runtime_owners.runtime.identity().symbol_world()
+                    || catalog.generation().symbol_revision()
+                        != runtime_owners.runtime.identity().symbol_revision()
+                    || !matches!(
+                        catalog.instance_identity(),
+                        Some(arcweft_lang_sema::final_analysis::CheckedLocalUseInstanceIdentity::DisplayText {
+                            declaration,
+                            self_type,
+                        }) if declaration == &arcweft_lang_hir::symbol::CallableDeclarationKey::ImplMethod(
+                            method.declaration().clone(),
+                        ) && self_type.as_bytes() == method.key().self_type().as_bytes()
+                    )
+                {
+                    return Err(RuntimeSemanticFactsError::InvalidTraitMethodIdentity);
+                }
                 if semantics.partition().executable() != &owner
                     || semantics.partition().reachability() != runtime_owners.runtime.identity()
                 {
@@ -8004,6 +8288,7 @@ impl RuntimePlanSemanticFacts {
             pattern_literals,
             pattern_items,
             values,
+            checked_local_uses: input.checked_local_uses,
             selects,
             nominal_records,
             pattern_nominal_records,
@@ -8619,6 +8904,52 @@ impl RuntimePlanSemanticFacts {
         self.values.get(&expression)
     }
 
+    pub fn checked_local_use(
+        &self,
+        site: arcweft_lang_sema::final_analysis::CheckedLocalUseSite,
+    ) -> Option<arcweft_lang_sema::final_analysis::CheckedLocalUse> {
+        self.checked_local_uses.as_ref()?.use_at(site)
+    }
+
+    pub fn checked_guard_copy_locals(&self, guard: ExprId) -> Vec<LocalId> {
+        self.checked_local_uses
+            .as_ref()
+            .map(|catalog| catalog.guard_copy_locals(guard).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn checked_captures_at(
+        &self,
+        owner: ExprId,
+    ) -> impl Iterator<Item = arcweft_lang_sema::final_analysis::CheckedLocalUse> + '_ {
+        self.checked_local_uses
+            .iter()
+            .flat_map(move |catalog| catalog.captures_at(owner))
+    }
+
+    pub fn checked_synthetic_use(
+        &self,
+        expression: ExprId,
+    ) -> Option<arcweft_lang_sema::final_analysis::CheckedSyntheticUse> {
+        self.checked_local_uses.as_ref()?.synthetic_at(expression)
+    }
+
+    pub fn checked_copy_requirement(
+        &self,
+        local: LocalId,
+    ) -> Option<&arcweft_lang_sema::final_analysis::CheckedLocalCopyRequirement> {
+        self.checked_local_uses.as_ref()?.copy_requirement(local)
+    }
+
+    pub fn checked_synthetic_copy_requirement(
+        &self,
+        callable: arcweft_lang_sema::final_analysis::CheckedImplicitCallableIdentity,
+    ) -> Option<arcweft_lang_sema::final_analysis::CheckedSyntheticCopyRequirement> {
+        self.checked_local_uses
+            .as_ref()?
+            .synthetic_copy_requirement(callable)
+    }
+
     pub fn select(&self, expression: ExprId) -> Option<&RuntimeResolvedSelect> {
         self.selects.get(&expression)
     }
@@ -8927,6 +9258,30 @@ impl RuntimePlanSemanticFacts {
         }
     }
 
+    /// Visits implicit callables under the exact executable catalog that
+    /// sealed each abstraction. The same HIR expression may occur in several
+    /// closed generic instances and therefore is not a site identity alone.
+    pub fn visit_scoped_implicit_callables<'facts>(
+        &'facts self,
+        visitor: &mut impl FnMut(
+            RuntimeScopedExecutableSemanticFactView<'facts>,
+            ExprId,
+            &'facts RuntimeImplicitCallableFact,
+        ),
+    ) {
+        let global = RuntimeScopedExecutableSemanticFactView::global(self);
+        for (owner, callable) in &self.implicit_callables {
+            visitor(global, *owner, callable);
+        }
+        for (scope, semantics) in instance_semantic_roots(
+            self.project_function_instances.values(),
+            self.root_closures.values(),
+            self.trait_methods.values(),
+        ) {
+            semantics.visit_scoped_implicit_callables(scope, visitor);
+        }
+    }
+
     pub fn dialogue_content_fragment(
         &self,
         template: arcweft_core::runtime_id::RuntimeDialogueContentTemplateId,
@@ -9064,6 +9419,14 @@ fn validate_pure_programs(
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeSemanticFactsError {
+    #[error("checked local use at {site:?} does not belong to the accepted HIR generation")]
+    InvalidLocalUse {
+        site: arcweft_lang_sema::final_analysis::CheckedLocalUseSite,
+    },
+    #[error(
+        "checked synthetic use at {expression:?} does not belong to the accepted HIR generation"
+    )]
+    InvalidSyntheticUse { expression: ExprId },
     #[error(transparent)]
     CallableSpecialization(#[from] RuntimeCallableSpecializationFactError),
     #[error("CharacterDialogue generation inputs are invalid: {reason}")]
@@ -9306,6 +9669,8 @@ pub enum RuntimeSemanticFactsError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RuntimeSemanticFactFamily {
     LocalDeclaration,
+    LocalUse,
+    SyntheticUse,
     FlowIdentity,
     ExpressionScope,
     StatementScope,
@@ -12217,6 +12582,21 @@ fn validate_closure_instance(
     if world != runtime_owners.runtime.identity().symbol_world()
         || *revision != runtime_owners.runtime.identity().symbol_revision()
     {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    }
+    let same_local_use_authority = match outer {
+        RuntimeExecutableSemanticFactView::Global(facts) => {
+            matches!(
+                closure.semantics().local_uses(),
+                RuntimeClosedLocalUseCatalog::Global(catalog)
+                    if facts.checked_local_uses.as_ref() == Some(catalog)
+            )
+        }
+        RuntimeExecutableSemanticFactView::ProjectInstance(facts) => {
+            facts.local_uses() == closure.semantics().local_uses()
+        }
+    };
+    if !same_local_use_authority {
         return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
     }
     let HirExprKind::Closure(hir) = resolve_expr(modules, owner)? else {

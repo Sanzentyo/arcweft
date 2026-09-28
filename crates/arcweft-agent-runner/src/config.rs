@@ -31,7 +31,7 @@ pub struct AgentHostCallReport {
 }
 
 /// Summary returned after running one Agent Product AWBC controller.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct AgentControllerRunReport {
     pub steps: usize,
     pub host_calls: usize,

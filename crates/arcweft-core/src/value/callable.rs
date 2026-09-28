@@ -21,8 +21,39 @@ mod specialization;
 #[cfg(test)]
 mod tests;
 pub(crate) use application::{
-    RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableInvocation,
+    RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableGroupInspection,
+    RuntimeCallableInvocation, RuntimeCallableMaterializedArgument, RuntimeCallablePendingGroup,
+    RuntimeCallablePendingGroupParts, RuntimeCallablePendingRollbackImage,
+    RuntimeCallableZeroArgInvocationProof,
 };
+
+/// A rejected application retains every evaluated input for the caller's
+/// failure/cleanup transaction. It is deliberately not Clone.
+#[derive(Debug)]
+pub(crate) struct RuntimeCallableOwnedInputError<T> {
+    reason: RuntimeCallableValueError,
+    owned: T,
+}
+
+impl<T> RuntimeCallableOwnedInputError<T> {
+    pub(crate) const fn new(reason: RuntimeCallableValueError, owned: T) -> Self {
+        Self { reason, owned }
+    }
+
+    pub(crate) const fn reason(&self) -> &RuntimeCallableValueError {
+        &self.reason
+    }
+
+    pub(crate) fn into_parts(self) -> (RuntimeCallableValueError, T) {
+        (self.reason, self.owned)
+    }
+}
+
+impl<T> std::fmt::Display for RuntimeCallableOwnedInputError<T> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.reason.fmt(formatter)
+    }
+}
 
 /// A callable retains values, never a second copy of its ABI or code contract.
 #[derive(Clone)]
@@ -84,6 +115,13 @@ pub enum RuntimeCallableValueError {
     RequiredAttached { state: RuntimeCallableStateId },
     #[error("callable state {state} has an invalid input projection")]
     InputProjection { state: RuntimeCallableStateId },
+    #[error("callable state {state} would duplicate an affine input {input:?}")]
+    AffineInputProjection {
+        state: RuntimeCallableStateId,
+        input: RuntimeCallableInputSource,
+    },
+    #[error("callable state {state} retains an affine value and cannot be copied")]
+    AffineCallableCopy { state: RuntimeCallableStateId },
     #[error("callable state {state} cannot be evaluated by a pure-expression consumer")]
     RequiresControlTransfer { state: RuntimeCallableStateId },
     #[error("callable state {state} has no admitted partial application for {arguments} arguments")]
@@ -124,6 +162,15 @@ impl RuntimeCallableValue {
         &self.retained
     }
 
+    /// Duplicates a callable only after its complete retained graph is proven
+    /// unrestricted. Repeated callback consumers use this explicit boundary.
+    pub(crate) fn try_duplicate_unrestricted(&self) -> Result<Self, RuntimeCallableValueError> {
+        if !self.ownership().permits_copy() {
+            return Err(RuntimeCallableValueError::AffineCallableCopy { state: self.state });
+        }
+        Ok(self.clone())
+    }
+
     /// Lexical captures are distinguished from parameters already retained by
     /// earlier applications. Content effect admission uses this exact layout.
     pub(crate) fn capture_count(&self) -> usize {
@@ -159,64 +206,6 @@ impl RuntimeCallableValue {
     /// synthesized at runtime; every retained coordinate was admitted with the
     /// program. Named applications use their checked formal projection before
     /// reaching this positional callable-arrow operation.
-    pub(crate) fn try_bind_prefix(
-        &self,
-        arguments: &[RuntimeValue],
-    ) -> Result<Self, RuntimeCallableValueError> {
-        if arguments.is_empty() {
-            return Ok(self.clone());
-        }
-        let absent = || RuntimeCallableValueError::MissingState { state: self.state };
-        let missing = || RuntimeCallableValueError::MissingPartial {
-            state: self.state,
-            arguments: arguments.len(),
-        };
-        let (target, sources) = match &self.owner {
-            RuntimeProgramOwner::Plan(plan) => {
-                let state = plan.callable_states().get(self.state).ok_or_else(absent)?;
-                let partial = state
-                    .partials
-                    .iter()
-                    .find(|row| {
-                        row.parameters.iter().copied().eq(state
-                            .parameters
-                            .iter()
-                            .take(arguments.len())
-                            .map(|input| input.coordinate))
-                            && row.parameters.len() == arguments.len()
-                    })
-                    .ok_or_else(missing)?;
-                (partial.state, partial.values.as_ref())
-            }
-            RuntimeProgramOwner::Awbc(program) => {
-                let state = program
-                    .callable_states
-                    .get(self.state.index())
-                    .ok_or_else(absent)?;
-                let partial = state
-                    .partials
-                    .iter()
-                    .find(|row| {
-                        row.parameters.iter().copied().eq(state
-                            .parameters
-                            .iter()
-                            .take(arguments.len())
-                            .map(|input| input.coordinate))
-                            && row.parameters.len() == arguments.len()
-                    })
-                    .ok_or_else(missing)?;
-                (partial.state, partial.values.as_ref())
-            }
-        };
-        let inputs = self.ordinary_abi_inputs()?;
-        let arguments = self.materialize_ordinary_inputs(&inputs, arguments)?;
-        Self::try_new(
-            self.owner.clone(),
-            target,
-            self.project_inputs(sources, &arguments, None)?,
-        )
-    }
-
     pub fn function_type(&self) -> Result<RuntimeSemanticTypeId, RuntimeCallableValueError> {
         let absent = || RuntimeCallableValueError::MissingState { state: self.state };
         let missing_type = || RuntimeCallableValueError::MissingType { state: self.state };
@@ -275,30 +264,74 @@ impl RuntimeCallableValue {
     /// Attached content is not an arrow input; ordinary application omits it.
     pub(crate) fn materialize_arrow_arguments(
         &self,
-        values: &[RuntimeValue],
-    ) -> Result<Vec<RuntimeValue>, RuntimeCallableValueError> {
-        let inputs = self.ordinary_abi_inputs()?;
+        values: Vec<RuntimeValue>,
+    ) -> Result<Vec<RuntimeValue>, RuntimeCallableOwnedInputError<Vec<RuntimeValue>>> {
+        let inputs = match self.ordinary_abi_inputs() {
+            Ok(inputs) => inputs,
+            Err(error) => return Err(RuntimeCallableOwnedInputError::new(error, values)),
+        };
         let arity = inputs.len();
         if values.len() != arity {
+            return Err(RuntimeCallableOwnedInputError::new(
+                RuntimeCallableValueError::ArgumentCount {
+                    state: self.state,
+                    expected: arity,
+                    actual: values.len(),
+                },
+                values,
+            ));
+        }
+        if let Err(error) = self.validate_ordinary_inputs(&inputs, &values) {
+            return Err(RuntimeCallableOwnedInputError::new(error, values));
+        }
+        Ok(Self::materialize_ordinary_inputs_owned(&inputs, values))
+    }
+
+    /// Preflights a raw positional arrow before its register owners are taken.
+    /// A rest input's eventual one-element pack has its source's ownership.
+    pub(crate) fn inspect_arrow_arguments(
+        &self,
+        values: &[&RuntimeValue],
+    ) -> Result<(), RuntimeCallableValueError> {
+        let inputs = self.ordinary_abi_inputs()?;
+        if values.len() > inputs.len() {
             return Err(RuntimeCallableValueError::ArgumentCount {
                 state: self.state,
-                expected: arity,
+                expected: inputs.len(),
                 actual: values.len(),
             });
         }
-        self.materialize_ordinary_inputs(&inputs, values)
+        for (position, ((_, ty), value)) in inputs.iter().zip(values).enumerate() {
+            self.owner
+                .types()
+                .validate_live_value(*ty, value, RuntimeSchemaLimits::engine_default())
+                .map_err(|error| RuntimeCallableValueError::ArgumentType {
+                    state: self.state,
+                    position,
+                    error: Box::new(error),
+                })?;
+        }
+        self.inspect_arrow_projection_ownership(values)
     }
 
     fn ordinary_abi_inputs(
         &self,
     ) -> Result<Vec<(RuntimeCallableParameterKind, RuntimeSemanticTypeId)>, RuntimeCallableValueError>
     {
-        let absent = || RuntimeCallableValueError::MissingState { state: self.state };
-        let missing = || RuntimeCallableValueError::MissingType { state: self.state };
-        match &self.owner {
+        Self::ordinary_abi_inputs_for(&self.owner, self.state)
+    }
+
+    fn ordinary_abi_inputs_for(
+        owner: &RuntimeProgramOwner,
+        state_id: RuntimeCallableStateId,
+    ) -> Result<Vec<(RuntimeCallableParameterKind, RuntimeSemanticTypeId)>, RuntimeCallableValueError>
+    {
+        let absent = || RuntimeCallableValueError::MissingState { state: state_id };
+        let missing = || RuntimeCallableValueError::MissingType { state: state_id };
+        match owner {
             RuntimeProgramOwner::Plan(plan) => plan
                 .callable_states()
-                .get(self.state)
+                .get(state_id)
                 .ok_or_else(absent)?
                 .parameters
                 .iter()
@@ -314,7 +347,7 @@ impl RuntimeCallableValue {
                 .collect(),
             RuntimeProgramOwner::Awbc(program) => program
                 .callable_states
-                .get(self.state.index())
+                .get(state_id.index())
                 .ok_or_else(absent)?
                 .parameters
                 .iter()
@@ -333,11 +366,11 @@ impl RuntimeCallableValue {
     }
 
     /// Prefix and complete applications retain the same logical binding ABI.
-    fn materialize_ordinary_inputs(
+    fn validate_ordinary_inputs(
         &self,
         inputs: &[(RuntimeCallableParameterKind, RuntimeSemanticTypeId)],
         values: &[RuntimeValue],
-    ) -> Result<Vec<RuntimeValue>, RuntimeCallableValueError> {
+    ) -> Result<(), RuntimeCallableValueError> {
         if values.len() > inputs.len() {
             return Err(RuntimeCallableValueError::ArgumentCount {
                 state: self.state,
@@ -349,7 +382,7 @@ impl RuntimeCallableValue {
             .iter()
             .zip(values)
             .enumerate()
-            .map(|(position, ((kind, ty), value))| {
+            .try_for_each(|(position, ((_, ty), value))| {
                 self.owner
                     .types()
                     .validate_live_value(*ty, value, RuntimeSchemaLimits::engine_default())
@@ -358,12 +391,20 @@ impl RuntimeCallableValue {
                         position,
                         error: Box::new(error),
                     })?;
-                Ok(match kind {
-                    RuntimeCallableParameterKind::Fixed => value.clone(),
-                    RuntimeCallableParameterKind::Rest => {
-                        super::runtime_sequence_values(vec![value.clone()])
-                    }
-                })
+                Ok(())
+            })
+    }
+
+    fn materialize_ordinary_inputs_owned(
+        inputs: &[(RuntimeCallableParameterKind, RuntimeSemanticTypeId)],
+        values: Vec<RuntimeValue>,
+    ) -> Vec<RuntimeValue> {
+        inputs
+            .iter()
+            .zip(values)
+            .map(|((kind, _), value)| match kind {
+                RuntimeCallableParameterKind::Fixed => value,
+                RuntimeCallableParameterKind::Rest => super::runtime_sequence_values(vec![value]),
             })
             .collect()
     }
@@ -418,31 +459,6 @@ impl RuntimeCallableValue {
                 })?;
         }
         Ok(())
-    }
-
-    /// Applies an admitted formal projection to already evaluated input values.
-    pub(crate) fn project_inputs(
-        &self,
-        sources: &[RuntimeCallableInputSource],
-        arguments: &[RuntimeValue],
-        attached: Option<&RuntimeValue>,
-    ) -> Result<Vec<RuntimeValue>, RuntimeCallableValueError> {
-        sources
-            .iter()
-            .map(|source| {
-                match source {
-                    RuntimeCallableInputSource::Retained { position } => {
-                        self.retained.get(*position as usize)
-                    }
-                    RuntimeCallableInputSource::Argument { position } => {
-                        arguments.get(*position as usize)
-                    }
-                    RuntimeCallableInputSource::Attached => attached,
-                }
-                .cloned()
-                .ok_or(RuntimeCallableValueError::InputProjection { state: self.state })
-            })
-            .collect()
     }
 
     #[must_use]

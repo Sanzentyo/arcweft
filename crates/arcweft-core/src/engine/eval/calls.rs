@@ -70,7 +70,7 @@ impl Engine {
                     .map_err(|_| RuntimeEvalError::InvalidStandardMapSource { family })?;
                 match (case, payload) {
                     (RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(value)) => self
-                        .apply_runtime_function(&mapping, &[value], pure_backend)
+                        .apply_runtime_function(mapping, vec![value], pure_backend)
                         .map(RuntimeValue::option_some),
                     (RuntimeBuiltinVariantCaseIdentity::OptionNone, None) => {
                         Ok(RuntimeValue::option_none())
@@ -84,7 +84,7 @@ impl Engine {
                     .map_err(|_| RuntimeEvalError::InvalidStandardMapSource { family })?;
                 match (case, payload) {
                     (RuntimeBuiltinVariantCaseIdentity::ResultOk, Some(value)) => self
-                        .apply_runtime_function(&mapping, &[value], pure_backend)
+                        .apply_runtime_function(mapping, vec![value], pure_backend)
                         .map(RuntimeValue::result_ok),
                     (RuntimeBuiltinVariantCaseIdentity::ResultErr, Some(error)) => {
                         Ok(RuntimeValue::result_err(error))
@@ -105,7 +105,8 @@ impl Engine {
             .map_err(|value| RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(&value)))?;
         let mut mapped = Vec::new();
         for item in iterator {
-            mapped.push(self.apply_runtime_function(mapping, &[item], pure_backend)?);
+            let use_value = mapping.try_duplicate_unrestricted()?;
+            mapped.push(self.apply_runtime_function(use_value, vec![item], pure_backend)?);
         }
         Ok(runtime_sequence_from_literal_values(mapped))
     }
@@ -173,7 +174,7 @@ impl Engine {
             let message = if callback {
                 match message {
                     RuntimeValue::Callable(function) => {
-                        self.apply_runtime_function(&function, &[], pure_backend)?
+                        self.apply_runtime_function(function, Vec::new(), pure_backend)?
                     }
                     value => {
                         return Err(RuntimeEvalError::ExpectedFunction(runtime_value_label(
@@ -363,7 +364,7 @@ impl Engine {
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let args = self.evaluate_call_args(args, pure_backend)?;
         let helper = crate::pure::RuntimePureHelperRef::resolve(&self.plan, helper_id)?;
-        pure_backend.call_values(helper, &args)
+        pure_backend.call_values(helper, args)
     }
 
     pub(crate) fn evaluate_trait_method_call(

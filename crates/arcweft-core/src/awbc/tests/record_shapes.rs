@@ -63,27 +63,33 @@ fn record_program(shape: Shape, count: usize) -> (AwbcProgram, RuntimeNominalSch
             fields: vec![AwbcConstantId(0); count],
         },
     ];
-    program.frame_layouts[0].slots = [AwbcTypeId(0), AwbcTypeId(1)]
-        .into_iter()
-        .map(|ty| AwbcFrameSlot {
+    program.frame_layouts[0].slots = (0..count)
+        .map(|_| AwbcFrameSlot {
             name: None,
-            ty,
+            ty: AwbcTypeId(0),
             role: AwbcFrameSlotRole::Temporary,
             scope_depth: 0,
         })
-        .collect();
-    program.instructions = vec![
-        AwbcInstruction::LoadConst {
-            dst: AwbcRegisterId(0),
-            constant: AwbcConstantId(0),
-        },
-        AwbcInstruction::MakeRecord {
-            dst: AwbcRegisterId(1),
+        .chain(std::iter::once(AwbcFrameSlot {
+            name: None,
             ty: AwbcTypeId(1),
-            fields: vec![AwbcRegisterId(0); count],
-        },
-    ];
-    program.blocks[0].instructions = AwbcTableRange::new(0, 2);
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        }))
+        .collect();
+    let record = AwbcRegisterId(u32::try_from(count).unwrap());
+    program.instructions = (0..record.0)
+        .map(|ordinal| AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(ordinal),
+            constant: AwbcConstantId(0),
+        })
+        .chain(std::iter::once(AwbcInstruction::MakeRecord {
+            dst: record,
+            ty: AwbcTypeId(1),
+            fields: (0..record.0).map(AwbcRegisterId).collect(),
+        }))
+        .collect();
+    program.blocks[0].instructions = AwbcTableRange::new(0, record.0 + 1);
     program.canonicalize_string_table();
     (program, graph)
 }
@@ -139,7 +145,7 @@ fn all_record_shapes_survive_wire_layout_constant_and_vm_construction() {
             &decoded,
             &mut fiber,
             crate::awbc::vm::VmStepOptions {
-                max_instructions: 2,
+                max_instructions: u64::try_from(count + 1).unwrap(),
             },
         )
         .unwrap();
@@ -148,7 +154,7 @@ fn all_record_shapes_survive_wire_layout_constant_and_vm_construction() {
             fiber
                 .active_frame()
                 .unwrap()
-                .register(AwbcRegisterId(1))
+                .register(AwbcRegisterId(u32::try_from(count).unwrap()))
                 .unwrap(),
             &value
         );

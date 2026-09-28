@@ -99,12 +99,10 @@ impl Engine {
             } => {
                 match self
                     .evaluate_expr_with_backend(&expr, pure_backend)
-                    .and_then(|value| {
-                        self.try_bind_pattern(&pattern, &value)
-                            .map(|matched| (matched, value))
-                    }) {
-                    Ok((true, _)) => self.advance_if_needed(next_op_index),
-                    Ok((false, value)) => {
+                    .and_then(|value| self.try_bind_pattern_owned(&pattern, value))
+                {
+                    Ok(None) => self.advance_if_needed(next_op_index),
+                    Ok(Some(value)) => {
                         self.advance_if_needed(next_op_index);
                         self.push_ops(else_ops);
                         output.diagnostics.push(RuntimeDiagnostic::new(format!(
@@ -292,14 +290,19 @@ impl Engine {
                 };
                 self.advance_if_needed(next_op_index);
                 let mut locals = RuntimeEnv::default();
-                locals.bind_all_ref(&captures);
+                let capture_locals = captures
+                    .iter()
+                    .map(|capture| capture.local)
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice();
+                locals.bind_all(captures.into_vec());
                 let dialogue = DialogueActivationFrame {
                     line,
                     content,
-                    target: target_value,
+                    target: Some(target_value),
                     task_group,
                     resume: self.fiber.cursor,
-                    captures,
+                    captures: capture_locals,
                     task_inputs: Box::new([]),
                     locals,
                     line_task: DialogueLineTaskState::NotStarted,
@@ -651,9 +654,10 @@ impl Engine {
                     },
                     None => RuntimeValue::Unit,
                 };
-                let mut handled = self.break_nearest_loop(&value, output, pure_backend);
+                let mut value = Some(value);
+                let mut handled = self.break_nearest_loop(&mut value, output, pure_backend);
                 while !handled && self.abandon_format_attempt_for_transfer() {
-                    handled = self.break_nearest_loop(&value, output, pure_backend);
+                    handled = self.break_nearest_loop(&mut value, output, pure_backend);
                 }
                 if handled {
                     self.advance_if_needed(next_op_index);
@@ -692,13 +696,9 @@ impl Engine {
                 } else {
                     match self.evaluate_expr_with_backend(&expr, pure_backend) {
                         Ok(value) => {
-                            if !self.return_function_call_value(value.clone(), output, pure_backend)
-                            {
-                                self.return_value(
-                                    runtime_value_label(&value),
-                                    output,
-                                    pure_backend,
-                                );
+                            let label = runtime_value_label(&value);
+                            if !self.return_function_call_value(value, output, pure_backend) {
+                                self.return_value(label, output, pure_backend);
                             }
                         }
                         Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
@@ -776,7 +776,7 @@ impl Engine {
                     }
                 };
                 self.pop_scope_frame(output, pure_backend);
-                self.bind_value(&pattern, &value, output);
+                self.bind_value(&pattern, value, output);
                 self.advance_if_needed(next_op_index);
             }
             FlowOp::Noop => {
@@ -823,8 +823,8 @@ impl Engine {
                 .into());
             }
             let operands = self.evaluate_project_call_operands(plan, pure_backend)?;
-            let arguments = self.materialize_project_call_ordinary(plan, &operands)?;
-            let attached = self.materialize_project_call_attached(plan, &operands)?;
+            self.inspect_project_call_materialization(plan, &operands)?;
+            let (arguments, attached) = self.materialize_project_call_owned(plan, operands);
             Ok::<_, RuntimeEvalError>((callable, arguments, attached))
         })();
         let (callable, arguments, attached) = match prepared {
@@ -868,71 +868,109 @@ impl Engine {
             .collect()
     }
 
-    fn materialize_project_call_ordinary(
+    fn inspect_project_call_materialization(
         &self,
         plan: &crate::plan::RuntimeProjectCallPlan,
         operands: &[Vec<RuntimeValue>],
-    ) -> Result<Vec<RuntimeValue>, RuntimeEvalError> {
-        let mut values = Vec::with_capacity(plan.ordinary().len());
+    ) -> Result<(), RuntimeEvalError> {
+        let source = |index: u32| {
+            usize::try_from(index)
+                .ok()
+                .and_then(|index| operands.get(index))
+                .map(Vec::as_slice)
+                .ok_or_else(|| {
+                    RuntimeEvalError::InvalidSpread("project-call source is absent".to_owned())
+                })
+        };
+        let mut seen = std::collections::BTreeSet::new();
         for row in plan.ordinary() {
             match row {
                 RuntimeProjectCallOrdinaryMaterialization::Fixed(row) => {
-                    let value = self.project_call_source_value(operands, row.source_index())?;
-                    self.require_project_call_value(row.binding_ty(), &value)?;
-                    values.push(value);
+                    let values = source(row.source_index())?;
+                    if !seen.insert(row.source_index()) || values.len() != 1 {
+                        return Err(RuntimeEvalError::InvalidSpread(
+                            "fixed project-call source must be unique and singular".to_owned(),
+                        ));
+                    }
+                    self.require_project_call_value(row.binding_ty(), &values[0])?;
+                }
+                RuntimeProjectCallOrdinaryMaterialization::Rest(row) => {
+                    for &index in row.source_indices() {
+                        if !seen.insert(index) {
+                            return Err(RuntimeEvalError::InvalidSpread(
+                                "project-call source is referenced twice".to_owned(),
+                            ));
+                        }
+                        for value in source(index)? {
+                            self.require_project_call_value(row.abi_ty(), value)?;
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(index) = plan.attached().and_then(|row| row.source_index()) {
+            let values = source(index)?;
+            if !seen.insert(index) || values.len() != 1 {
+                return Err(RuntimeEvalError::InvalidSpread(
+                    "attached project-call source must be unique and singular".to_owned(),
+                ));
+            }
+            let expected = plan
+                .operands()
+                .get(index as usize)
+                .expect("sealed attached source index names an operand")
+                .value()
+                .ty();
+            self.require_project_call_value(expected, &values[0])?;
+        }
+        if seen.len() != operands.len() {
+            return Err(RuntimeEvalError::InvalidSpread(
+                "project-call operand has no owned destination".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn materialize_project_call_owned(
+        &self,
+        plan: &crate::plan::RuntimeProjectCallPlan,
+        operands: Vec<Vec<RuntimeValue>>,
+    ) -> (Vec<RuntimeValue>, Option<RuntimeValue>) {
+        let mut sources = operands.into_iter().map(Some).collect::<Vec<_>>();
+        let mut take = |index: u32| {
+            sources
+                .get_mut(index as usize)
+                .and_then(Option::take)
+                .expect("borrowed project-call proof sealed one source destination")
+        };
+        let mut arguments = Vec::with_capacity(plan.ordinary().len());
+        for row in plan.ordinary() {
+            match row {
+                RuntimeProjectCallOrdinaryMaterialization::Fixed(row) => {
+                    let value = take(row.source_index())
+                        .pop()
+                        .expect("fixed project-call source was singular");
+                    arguments.push(value);
                 }
                 RuntimeProjectCallOrdinaryMaterialization::Rest(row) => {
                     let mut elements = Vec::new();
                     for &index in row.source_indices() {
-                        let source = operands
-                            .get(usize::try_from(index).map_err(|_| {
-                                RuntimeEvalError::InvalidExpressionType(row.binding_ty())
-                            })?)
-                            .ok_or(RuntimeEvalError::InvalidExpressionType(row.binding_ty()))?;
-                        for value in source {
-                            self.require_project_call_value(row.abi_ty(), value)?;
-                            elements.push(value.clone());
-                        }
+                        elements.extend(take(index));
                     }
-                    let value = crate::value::runtime_sequence_values(elements);
-                    self.require_project_call_value(row.binding_ty(), &value)?;
-                    values.push(value);
+                    arguments.push(crate::value::runtime_sequence_values(elements));
                 }
             }
         }
-        Ok(values)
-    }
-
-    fn materialize_project_call_attached(
-        &self,
-        plan: &crate::plan::RuntimeProjectCallPlan,
-        operands: &[Vec<RuntimeValue>],
-    ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
-        plan.attached()
+        let attached = plan
+            .attached()
             .and_then(|row| row.source_index())
-            .map(|index| self.project_call_source_value(operands, index))
-            .transpose()
-    }
-    fn project_call_source_value(
-        &self,
-        operands: &[Vec<RuntimeValue>],
-        index: u32,
-    ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let source = operands
-            .get(usize::try_from(index).map_err(|_| {
-                RuntimeEvalError::InvalidSpread(
-                    "project-call source index exceeds platform limits".to_owned(),
-                )
-            })?)
-            .ok_or_else(|| {
-                RuntimeEvalError::InvalidSpread("project-call source is absent".to_owned())
-            })?;
-        if source.len() != 1 {
-            return Err(RuntimeEvalError::InvalidSpread(
-                "fixed project-call source expanded more than one ABI value".to_owned(),
-            ));
-        }
-        Ok(source[0].clone())
+            .map(|index| {
+                take(index)
+                    .pop()
+                    .expect("attached project-call source was singular")
+            });
+        assert!(sources.iter().all(Option::is_none));
+        (arguments, attached)
     }
 
     fn require_project_call_value(
@@ -991,13 +1029,13 @@ impl Engine {
     pub(super) fn bind_value(
         &mut self,
         pattern: &RuntimePattern,
-        value: &RuntimeValue,
+        value: RuntimeValue,
         output: &mut RuntimeStepOutput,
     ) {
-        match self.try_bind_pattern(pattern, value) {
-            Ok(true) => {}
-            Ok(false) => self.fail_eval(
-                RuntimeEvalError::PatternMismatch(runtime_value_label(value)),
+        match self.try_bind_pattern_owned(pattern, value) {
+            Ok(None) => {}
+            Ok(Some(value)) => self.fail_eval(
+                RuntimeEvalError::PatternMismatch(runtime_value_label(&value)),
                 output,
             ),
             Err(error) => self.fail_eval(error, output),
@@ -1172,7 +1210,7 @@ impl Engine {
                 return;
             }
         };
-        self.push_for_item(pattern, iterator, evidence, body, &item, output);
+        self.push_for_item(pattern, iterator, evidence, body, item, output);
     }
 
     fn push_for_item(
@@ -1181,7 +1219,7 @@ impl Engine {
         iterator: RuntimeIterator,
         evidence: RuntimeIteratorEvidence,
         body: &Arc<[FlowOp]>,
-        item: &RuntimeValue,
+        item: RuntimeValue,
         output: &mut RuntimeStepOutput,
     ) {
         self.fiber
@@ -1192,11 +1230,11 @@ impl Engine {
                 cleanups: Vec::new(),
             },
         });
-        match self.try_bind_pattern(&pattern, item) {
-            Ok(true) => {}
-            Ok(false) => {
+        match self.try_bind_pattern_owned(&pattern, item) {
+            Ok(None) => {}
+            Ok(Some(item)) => {
                 self.fail_eval(
-                    RuntimeEvalError::PatternMismatch(runtime_value_label(item)),
+                    RuntimeEvalError::PatternMismatch(runtime_value_label(&item)),
                     output,
                 );
                 return;
@@ -1412,7 +1450,7 @@ impl Engine {
 
     pub(super) fn break_nearest_loop(
         &mut self,
-        value: &RuntimeValue,
+        value: &mut Option<RuntimeValue>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
@@ -1425,11 +1463,15 @@ impl Engine {
             FlowControlStackEntryKind::Loop {
                 result: Some(pattern),
                 ..
-            } => self.bind_value(&pattern, value, output),
+            } => self.bind_value(
+                &pattern,
+                value.take().expect("selected break value remains owned"),
+                output,
+            ),
             FlowControlStackEntryKind::Loop { result: None, .. } => {}
             FlowControlStackEntryKind::While { .. }
             | FlowControlStackEntryKind::WhileLet { .. } => {
-                if *value != RuntimeValue::Unit {
+                if value.as_ref() != Some(&RuntimeValue::Unit) {
                     self.fail_eval(RuntimeEvalError::BreakValueOutsideValueLoop, output);
                 }
             }
@@ -1505,6 +1547,105 @@ impl Engine {
         while let Some(cleanup) = cleanups.pop() {
             self.emit_line_effect(cleanup.effect, output, pure_backend);
         }
+    }
+}
+
+#[cfg(test)]
+mod ownership_tests {
+    use super::Engine;
+    use crate::pattern::RuntimeSemanticTypeId;
+    use crate::plan::{
+        RuntimePlanBuilder, RuntimePlanSequenceKind, RuntimePlanTypeProjection,
+        RuntimePlanTypeSeed, RuntimeProjectCallOperand, RuntimeProjectCallOrdinaryMaterialization,
+        RuntimeProjectCallPlan, RuntimeProjectCallRestMaterialization,
+    };
+    use crate::runtime_id::{RuntimeCallableStateId, RuntimeLocalDeclarationId};
+    use crate::task::NeedId;
+    use crate::value::{
+        RuntimeCallArgumentMode, RuntimeExpr, RuntimeExprKind, RuntimeLocalRead,
+        RuntimeLocalReadMode, RuntimeValue, runtime_value_into_sequence_values,
+    };
+    use std::num::NonZeroU32;
+
+    #[test]
+    fn project_call_rest_materialization_moves_two_affine_sources_once() {
+        let unit = RuntimeSemanticTypeId::from_bytes([0x81; 32]);
+        let need = RuntimeSemanticTypeId::from_bytes([0x82; 32]);
+        let sequence = RuntimeSemanticTypeId::from_bytes([0x83; 32]);
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [
+                    RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+                    RuntimePlanTypeSeed::new(need, RuntimePlanTypeProjection::Need(unit)),
+                    RuntimePlanTypeSeed::new(
+                        sequence,
+                        RuntimePlanTypeProjection::Sequence {
+                            kind: RuntimePlanSequenceKind::Vec,
+                            item: need,
+                        },
+                    ),
+                ],
+                [],
+            )
+            .expect("affine rest types");
+        let plan = builder.finish().expect("closed type table");
+        let unit_ty = plan.type_table().id_for_semantic(unit).expect("unit");
+        let need_ty = plan.type_table().id_for_semantic(need).expect("Need");
+        let sequence_ty = plan
+            .type_table()
+            .id_for_semantic(sequence)
+            .expect("Vec<Need>");
+        let local = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
+        let operand = || {
+            RuntimeProjectCallOperand::from_admitted_parts(
+                RuntimeExpr::from_admitted_parts(
+                    need_ty,
+                    RuntimeExprKind::Local(RuntimeLocalRead::from_admitted_parts(
+                        local,
+                        RuntimeLocalReadMode::Move,
+                    )),
+                ),
+                RuntimeCallArgumentMode::Value,
+            )
+        };
+        let call = RuntimeProjectCallPlan::try_from_admitted_parts(
+            RuntimeExpr::from_admitted_parts(unit_ty, RuntimeExprKind::Value(RuntimeValue::Unit)),
+            RuntimeCallableStateId::from_zero_based(0).expect("state id"),
+            0,
+            vec![operand(), operand()].into_boxed_slice(),
+            vec![RuntimeProjectCallOrdinaryMaterialization::Rest(
+                RuntimeProjectCallRestMaterialization::from_admitted_parts(
+                    0,
+                    need_ty,
+                    sequence_ty,
+                    Box::new([0, 1]),
+                ),
+            )]
+            .into_boxed_slice(),
+            None,
+        )
+        .expect("each physical source has one destination");
+        let engine = Engine::new(plan);
+        let first = NeedId("need.project.rest.first".to_owned());
+        let second = NeedId("need.project.rest.second".to_owned());
+        let operands = vec![
+            vec![RuntimeValue::Need(first.clone())],
+            vec![RuntimeValue::Need(second.clone())],
+        ];
+        engine
+            .inspect_project_call_materialization(&call, &operands)
+            .expect("borrowed affine source preflight");
+        let (arguments, attached) = engine.materialize_project_call_owned(&call, operands);
+        assert!(attached.is_none());
+        let mut arguments = arguments.into_iter();
+        let sequence = arguments.next().expect("one logical rest argument");
+        assert!(arguments.next().is_none());
+        let values = runtime_value_into_sequence_values(sequence).expect("owned rest pack");
+        assert_eq!(
+            values,
+            vec![RuntimeValue::Need(first), RuntimeValue::Need(second)]
+        );
     }
 }
 

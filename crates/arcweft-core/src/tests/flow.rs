@@ -17,7 +17,7 @@ use crate::{
         RuntimeFieldProjectionSeed, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSchema,
         RuntimeFlowSeed, RuntimeFunctionInputBindingSeed, RuntimeFunctionInputSource,
         RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteBodySeed,
-        RuntimeFunctionSiteDeclarationSeed, RuntimeLocalDeclarationSeed,
+        RuntimeFunctionSiteDeclarationSeed, RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed,
         RuntimeNominalRecordDomainFieldSeed, RuntimeNominalRecordDomainSeed,
         RuntimeNominalRecordFieldSeed, RuntimePatternSeed, RuntimePatternSeedKind,
         RuntimePlanBuilder, RuntimePlanSequenceKind, RuntimePlanTypeProjection,
@@ -28,7 +28,10 @@ use crate::{
     },
     step::{RuntimeStepInput, RuntimeStepOptions},
     task::{LogicalEpoch, NeedId, RuntimeNeedState, TaskSequence},
-    value::{RuntimeBinaryOp, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue},
+    value::{
+        RuntimeBinaryOp, RuntimeLocalReadMode, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth,
+        RuntimeValue,
+    },
 };
 use arcweft_id::DeclarationName;
 use arcweft_need::Progress;
@@ -287,7 +290,10 @@ fn named_flow_scope_binds_its_result_in_the_parent_and_keeps_aot_identity() {
                 },
                 RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
                     string,
-                    RuntimeExprSeedKind::Local(result),
+                    RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                        result,
+                        RuntimeLocalReadMode::Copy,
+                    )),
                 )),
             ],
         ))
@@ -549,6 +555,8 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
     let target_site = builder
         .push_function_site_seed(
             [RuntimeFunctionInputBindingSeed {
+                ownership: Default::default(),
+                unrestricted_bindings: Box::new([]),
                 source: RuntimeFunctionInputSource::Parameter { position: 0 },
                 input_local: target_input,
                 pattern: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
@@ -680,6 +688,8 @@ fn native_project_call_rest_materialization_accepts_empty_and_source_ordered_val
         let target_site = builder
             .push_function_site_seed(
                 [RuntimeFunctionInputBindingSeed {
+                    ownership: Default::default(),
+                    unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Parameter { position: 0 },
                     input_local: target_input,
                     pattern: RuntimePatternSeed::new(sequence, RuntimePatternSeedKind::Discard),
@@ -847,6 +857,8 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
     let target_site = builder
         .push_function_site_seed(
             [RuntimeFunctionInputBindingSeed {
+                ownership: Default::default(),
+                unrestricted_bindings: Box::new([]),
                 source: RuntimeFunctionInputSource::Parameter { position: 0 },
                 input_local: target_input,
                 pattern: RuntimePatternSeed::new(sequence, RuntimePatternSeedKind::Discard),
@@ -863,7 +875,15 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
         target_site,
     );
 
-    let local_state = |local| RuntimeExprSeed::new(state_ty, RuntimeExprSeedKind::Local(local));
+    let local_state = |local| {
+        RuntimeExprSeed::new(
+            state_ty,
+            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                local,
+                RuntimeLocalReadMode::Copy,
+            )),
+        )
+    };
     let state_value = |local| {
         RuntimeExprSeed::new(
             u32_ty,
@@ -1747,7 +1767,10 @@ fn native_vec_push_returns_unit_and_pop_back_moves_the_last_item() {
                     )],
                     else_ops: vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
                         item_type,
-                        RuntimeExprSeedKind::Local(popped_item),
+                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                            popped_item,
+                            RuntimeLocalReadMode::Copy,
+                        )),
                     ))],
                 },
             ],
@@ -1821,7 +1844,10 @@ fn await_progress_runs_only_the_first_matching_observer() {
                 target: RuntimeAwaitTargetSeed {
                     source: RuntimeExprSeed::new(
                         need_string_type,
-                        RuntimeExprSeedKind::Local(need_local),
+                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                            need_local,
+                            RuntimeLocalReadMode::Move,
+                        )),
                     ),
                 },
                 observers: vec![

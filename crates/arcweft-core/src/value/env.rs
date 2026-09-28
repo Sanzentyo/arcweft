@@ -1,9 +1,24 @@
 use super::{
-    RuntimeEnv, RuntimeEvalError, RuntimeLocalBinding, RuntimeMutablePlace, RuntimeRecordFieldId,
-    RuntimeScope, RuntimeValue, runtime_value_label,
+    RuntimeEnv, RuntimeEvalError, RuntimeLocalBinding, RuntimeLocalRead, RuntimeLocalReadMode,
+    RuntimeMutablePlace, RuntimeRecordFieldId, RuntimeScope, RuntimeValue, runtime_value_label,
 };
 use crate::runtime_id::RuntimeLocalDeclarationId;
 use crate::scope::RuntimeScopeIdentity;
+use crate::task::RuntimeProgramOwner;
+
+/// Non-runnable rollback image of one native lexical environment. Values are
+/// encoded under the exact immutable program lease; spare allocation scopes
+/// are omitted because they contain no bindings and carry no semantics.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct RuntimeEnvRollbackImage {
+    scopes: Vec<RuntimeScopeRollbackImage>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct RuntimeScopeRollbackImage {
+    identity: RuntimeScopeIdentity,
+    bindings: Vec<(RuntimeLocalDeclarationId, super::AwbcRuntimeValueSnapshot)>,
+}
 
 impl Default for RuntimeEnv {
     fn default() -> Self {
@@ -30,6 +45,75 @@ impl PartialEq for RuntimeEnv {
 }
 
 impl RuntimeEnv {
+    pub(crate) fn inert_rollback_image(
+        &self,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<RuntimeEnvRollbackImage, String> {
+        Ok(RuntimeEnvRollbackImage {
+            scopes: self
+                .scopes
+                .iter()
+                .map(|scope| {
+                    Ok(RuntimeScopeRollbackImage {
+                        identity: scope.identity.clone(),
+                        bindings: scope
+                            .bindings
+                            .iter()
+                            .map(|binding| {
+                                Ok((
+                                    binding.local,
+                                    super::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                                        &binding.value,
+                                        owner,
+                                    )
+                                    .map_err(|error| error.to_string())?,
+                                ))
+                            })
+                            .collect::<Result<_, String>>()?,
+                    })
+                })
+                .collect::<Result<_, String>>()?,
+        })
+    }
+
+    pub(crate) fn from_rollback_image(
+        image: RuntimeEnvRollbackImage,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            scopes: image
+                .scopes
+                .into_iter()
+                .map(|scope| {
+                    Ok(RuntimeScope {
+                        identity: scope.identity,
+                        bindings: scope
+                            .bindings
+                            .into_iter()
+                            .map(|(local, value)| {
+                                Ok(RuntimeLocalBinding {
+                                    local,
+                                    value: value
+                                        .into_runtime_value_for_program(owner)
+                                        .map_err(|error| error.to_string())?,
+                                })
+                            })
+                            .collect::<Result<_, String>>()?,
+                    })
+                })
+                .collect::<Result<_, String>>()?,
+            spare_scopes: Vec::new(),
+        })
+    }
+    pub(crate) fn try_duplicate_unrestricted(&self) -> Result<Self, RuntimeEvalError> {
+        for binding in self.bindings() {
+            if !binding.value.ownership().permits_copy() {
+                return Err(RuntimeEvalError::AffineLocalCopy(binding.local));
+            }
+        }
+        Ok(self.clone())
+    }
+
     pub fn push_scope(&mut self) {
         self.push_scope_with_capacity(0);
     }
@@ -120,6 +204,28 @@ impl RuntimeEnv {
             .iter_mut()
             .rev()
             .find_map(|scope| scope.take(local))
+    }
+
+    /// Executes the already-selected local-use transfer and checks live value
+    /// ownership before any copy. A moved binding is absent for later reads.
+    pub(crate) fn read(
+        &mut self,
+        read: RuntimeLocalRead,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        match read.mode() {
+            RuntimeLocalReadMode::Copy => {
+                let value = self
+                    .get(read.local())
+                    .ok_or(RuntimeEvalError::UnknownLocal(read.local()))?;
+                if !value.ownership().permits_copy() {
+                    return Err(RuntimeEvalError::AffineLocalCopy(read.local()));
+                }
+                Ok(value.clone())
+            }
+            RuntimeLocalReadMode::Move => self
+                .take(read.local())
+                .ok_or(RuntimeEvalError::UnknownLocal(read.local())),
+        }
     }
 
     /// Pops from the nearest binding without moving or cloning the sequence
@@ -373,6 +479,34 @@ mod tests {
 
     fn local(ordinal: u32) -> RuntimeLocalDeclarationId {
         RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::new(ordinal).unwrap())
+    }
+
+    #[test]
+    fn checked_local_reads_copy_only_unrestricted_values_and_transfer_moves_once() {
+        let affine = local(1);
+        let scalar = local(2);
+        let mut env = RuntimeEnv::default();
+        let need = RuntimeValue::Need(crate::task::NeedId("need.local-read".to_owned()));
+        env.set(affine, need.clone());
+        env.set(scalar, RuntimeValue::Bool(true));
+
+        let copy_affine = RuntimeLocalRead::from_admitted_parts(affine, RuntimeLocalReadMode::Copy);
+        assert_eq!(
+            env.read(copy_affine),
+            Err(RuntimeEvalError::AffineLocalCopy(affine))
+        );
+        assert_eq!(env.get(affine), Some(&need));
+
+        let copy_scalar = RuntimeLocalRead::from_admitted_parts(scalar, RuntimeLocalReadMode::Copy);
+        assert_eq!(env.read(copy_scalar), Ok(RuntimeValue::Bool(true)));
+        assert_eq!(env.read(copy_scalar), Ok(RuntimeValue::Bool(true)));
+
+        let move_affine = RuntimeLocalRead::from_admitted_parts(affine, RuntimeLocalReadMode::Move);
+        assert_eq!(env.read(move_affine), Ok(need));
+        assert_eq!(
+            env.read(move_affine),
+            Err(RuntimeEvalError::UnknownLocal(affine))
+        );
     }
 
     #[test]

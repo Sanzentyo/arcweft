@@ -39,12 +39,13 @@ impl Engine {
     ) -> Result<RuntimeEvaluatedEffectOutcome, RuntimeEffectExecutionError> {
         if let RuntimeEffectExpr::Drop { target, policy } = effect {
             let local = match target.kind() {
-                crate::value::RuntimeExprKind::Local(local) => {
+                crate::value::RuntimeExprKind::Local(read) => {
+                    let local = read.local();
                     self.fiber
                         .env
-                        .get(*local)
-                        .ok_or(RuntimeEvalError::UnknownLocal(*local))?;
-                    Some(*local)
+                        .get(local)
+                        .ok_or(RuntimeEvalError::UnknownLocal(local))?;
+                    Some(local)
                 }
                 _ => None,
             };

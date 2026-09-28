@@ -134,7 +134,7 @@ fn format_program(value_thunk: ValueThunk) -> AwbcProgram {
                 AwbcFormatOperand {
                     parameter: crate::value::RuntimeFmtParameterId::Style,
                     function: AwbcFunctionId(2),
-                    captures: vec![AwbcRegisterId(1)],
+                    captures: Vec::new(),
                 },
             ],
         },
@@ -164,7 +164,7 @@ fn format_program(value_thunk: ValueThunk) -> AwbcProgram {
             effects: AwbcEffectSetId(0),
         },
         AwbcSignature {
-            params: vec![int_type],
+            params: Vec::new(),
             result: Some(string_type),
             effects: AwbcEffectSetId(0),
         },
@@ -199,7 +199,7 @@ fn format_program(value_thunk: ValueThunk) -> AwbcProgram {
                 AwbcFrameSlot {
                     name: None,
                     ty: int_type,
-                    role: AwbcFrameSlotRole::Parameter,
+                    role: AwbcFrameSlotRole::Temporary,
                     scope_depth: 0,
                 },
                 AwbcFrameSlot {
@@ -218,6 +218,7 @@ fn format_program(value_thunk: ValueThunk) -> AwbcProgram {
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
             signature: AwbcSignatureId(1),
+            input_ownership: vec![AwbcFunctionInputOwnership::default()],
             frame_layout: AwbcFrameLayoutId(1),
             blocks: AwbcTableRange::new(1, 1),
             entry_block: AwbcBlockId(1),
@@ -227,6 +228,7 @@ fn format_program(value_thunk: ValueThunk) -> AwbcProgram {
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
             signature: AwbcSignatureId(2),
+            input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId(2),
             blocks: AwbcTableRange::new(2, 1),
             entry_block: AwbcBlockId(2),
@@ -268,6 +270,9 @@ fn flow_format_attempt_program(outcome: FlowAttemptHelperOutcome) -> AwbcProgram
     let mut program = format_program(ValueThunk::Succeeds);
     let int_type = AwbcTypeId(1);
     let string_type = AwbcTypeId(2);
+    program.signatures[2].params = vec![int_type];
+    program.functions[2].input_ownership = vec![AwbcFunctionInputOwnership::default()];
+    program.frame_layouts[2].slots[0].role = AwbcFrameSlotRole::Parameter;
     let attempt = crate::runtime_id::RuntimeFormatAttemptId::from_zero_based(0)
         .expect("format attempt identity");
     let style = AwbcStringId(
@@ -796,6 +801,7 @@ fn project_display_program(project_success: bool) -> AwbcProgram {
         public_id: None,
         kind: AwbcFunctionKind::TraitMethod,
         signature: method_entry,
+        input_ownership: vec![AwbcFunctionInputOwnership::default(); 2],
         frame_layout: method_layout,
         blocks: AwbcTableRange::new(method_block.0, 1),
         entry_block: method_block,
@@ -857,6 +863,7 @@ fn project_display_program(project_success: bool) -> AwbcProgram {
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
             signature: value_signature,
+            input_ownership: vec![AwbcFunctionInputOwnership::default()],
             frame_layout: value_layout,
             blocks: AwbcTableRange::new(value_block.0, 1),
             entry_block: value_block,
@@ -1030,7 +1037,7 @@ fn project_display_option_none_program() -> AwbcProgram {
         AwbcFrameLayoutId(u32::try_from(program.frame_layouts.len()).expect("frame identity"));
     let none_instruction = u32::try_from(program.instructions.len()).expect("instruction index");
     program.signatures.push(AwbcSignature {
-        params: vec![AwbcTypeId(1)],
+        params: Vec::new(),
         result: Some(AwbcTypeId(2)),
         effects: AwbcEffectSetId(0),
     });
@@ -1039,7 +1046,7 @@ fn project_display_option_none_program() -> AwbcProgram {
             AwbcFrameSlot {
                 name: None,
                 ty: AwbcTypeId(1),
-                role: AwbcFrameSlotRole::Parameter,
+                role: AwbcFrameSlotRole::Temporary,
                 scope_depth: 0,
             },
             AwbcFrameSlot {
@@ -1069,6 +1076,7 @@ fn project_display_option_none_program() -> AwbcProgram {
         public_id: None,
         kind: AwbcFunctionKind::Synthetic,
         signature: none_signature,
+        input_ownership: Vec::new(),
         frame_layout: none_layout,
         blocks: AwbcTableRange::new(none_block.0, 1),
         entry_block: none_block,
@@ -1087,7 +1095,7 @@ fn project_display_option_none_program() -> AwbcProgram {
     operands.push(AwbcFormatOperand {
         parameter: crate::value::RuntimeFmtParameterId::NoneValue,
         function: none_function,
-        captures: vec![AwbcRegisterId(1)],
+        captures: Vec::new(),
     });
     program.constants[2] = AwbcConstant::String(string("not_a_locale"));
     program
@@ -1141,6 +1149,7 @@ fn nested_format_program(call: NestedValueCall, value_thunk: ValueThunk) -> Awbc
             NestedValueCall::TraitMethod => AwbcFunctionKind::TraitMethod,
         },
         signature: AwbcSignatureId(1),
+        input_ownership: vec![AwbcFunctionInputOwnership::default()],
         frame_layout: AwbcFrameLayoutId(3),
         blocks: AwbcTableRange::new(3, 1),
         entry_block: AwbcBlockId(3),

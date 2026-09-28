@@ -1,20 +1,20 @@
 use arcweft_core::{
     awbc::{
         fiber::{
-            FiberAwaitTarget, FiberCursor, FiberResumeTarget, FiberScope, FiberScopeCleanup,
-            FiberState, FiberStateError, FiberStatus, FiberSuspension, FiberSuspensionReason,
-            FiberTerminalValue,
+            AwbcFiberStateSnapshot, FiberAwaitTarget, FiberCursor, FiberResumeTarget, FiberScope,
+            FiberScopeCleanup, FiberState, FiberStateError, FiberStatus, FiberSuspension,
+            FiberSuspensionReason, FiberTerminalValue,
         },
         schema::{
             AwbcBlock, AwbcBlockId, AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
             AwbcEffectPlanId, AwbcEffectSetId, AwbcEntry, AwbcEntryId, AwbcEntryKind,
             AwbcEntryTarget, AwbcFlowBinding, AwbcFlowExecutable, AwbcFrameLayout,
             AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlag,
-            AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcInstruction, AwbcProgram,
-            AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcRuntimeType,
-            AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeDefinition, AwbcScopeId,
-            AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
-            AwbcTrapCode, AwbcTypeId,
+            AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionInputOwnership, AwbcFunctionKind,
+            AwbcInstruction, AwbcProgram, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
+            AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeDefinition,
+            AwbcScopeId, AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange,
+            AwbcTerminator, AwbcTrapCode, AwbcTypeId,
         },
         verify::{AwbcVerifyBudget, AwbcVerifyContext},
         vm::{self, VmExit, VmObservation, VmStepOptions},
@@ -23,9 +23,10 @@ use arcweft_core::{
     pattern::RuntimeSemanticTypeId,
     plan::{EntryRuntimeId, FlowRuntimeId},
     scope::RuntimeScopeIdentity,
-    task::NeedId,
+    task::{NeedId, RuntimeProgramOwner},
     value::RuntimeValue,
 };
+use std::sync::Arc;
 
 const CALLER: AwbcFunctionId = AwbcFunctionId(0);
 const CALLEE: AwbcFunctionId = AwbcFunctionId(1);
@@ -102,7 +103,7 @@ fn direct_call_reaches_need_await_on_the_same_fiber() {
 
 #[test]
 fn nested_direct_await_snapshot_round_trips_and_resumes_exactly() {
-    let program = direct_suspension_program();
+    let program = Arc::new(direct_suspension_program());
     let mut fiber = direct_suspension_fiber(&program);
     vm::step(
         &program,
@@ -116,9 +117,14 @@ fn nested_direct_await_snapshot_round_trips_and_resumes_exactly() {
         .validate_for_program(&program)
         .expect("nested suspended stack validates");
 
-    let encoded = serde_json::to_string(&fiber).expect("nested suspended stack serializes");
-    let mut restored: FiberState =
-        serde_json::from_str(&encoded).expect("nested suspended stack restores");
+    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber)
+        .expect("nested suspended stack has a typed save representation");
+    let encoded = serde_json::to_string(&snapshot).expect("nested suspended stack serializes");
+    let decoded: AwbcFiberStateSnapshot =
+        serde_json::from_str(&encoded).expect("nested suspended stack decodes");
+    let mut restored = decoded
+        .into_live_for_program(&RuntimeProgramOwner::Awbc(Arc::clone(&program)))
+        .expect("nested suspended stack restores for its exact program");
     assert_eq!(restored, fiber);
     restored
         .validate_for_program(&program)
@@ -250,7 +256,7 @@ fn suspended_snapshot_rejects_resume_point_owned_by_the_caller() {
 
 #[test]
 fn cancellation_unwinds_nested_frames_and_scopes_once_in_lifo_order() {
-    let program = scoped_nested_suspension_program();
+    let program = Arc::new(scoped_nested_suspension_program());
     let mut fiber = suspended_three_frame_fiber(&program);
     install_nested_cleanups(&mut fiber);
     // The synthetic stack is positioned just after the innermost EnterScope.
@@ -276,8 +282,14 @@ fn cancellation_unwinds_nested_frames_and_scopes_once_in_lifo_order() {
         .validate_for_program(&program)
         .expect("cancelled stack remains a valid terminal snapshot");
 
-    let encoded = serde_json::to_string(&fiber).expect("cancelled stack serializes");
-    let restored: FiberState = serde_json::from_str(&encoded).expect("cancelled stack restores");
+    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber)
+        .expect("cancelled stack has a typed save representation");
+    let encoded = serde_json::to_string(&snapshot).expect("cancelled stack serializes");
+    let decoded: AwbcFiberStateSnapshot =
+        serde_json::from_str(&encoded).expect("cancelled stack decodes");
+    let restored = decoded
+        .into_live_for_program(&RuntimeProgramOwner::Awbc(Arc::clone(&program)))
+        .expect("cancelled stack restores for its exact program");
     assert_eq!(restored, fiber);
     restored
         .validate_for_program(&program)
@@ -431,13 +443,30 @@ fn direct_suspension_fiber(program: &AwbcProgram) -> FiberState {
 
 fn suspended_three_frame_fiber(program: &AwbcProgram) -> FiberState {
     let mut fiber = direct_suspension_fiber(program);
-    let need = [RuntimeValue::Need(NeedId("need.profile".to_owned()))];
+    let need = fiber
+        .active_frame_mut()
+        .expect("caller frame")
+        .take_register(NEED_REGISTER)
+        .expect("caller transfers its sole Need owner");
     fiber
-        .push_call_frame_with_args(program, CALLEE, CALL_RETURN, None, &need)
+        .push_call_frame_with_owned_args(program, CALLEE, CALL_RETURN, None, vec![need])
         .expect("caller enters first callee");
+    let need = fiber
+        .active_frame_mut()
+        .expect("middle frame")
+        .take_register(NEED_REGISTER)
+        .expect("middle frame transfers its sole Need owner");
     fiber
-        .push_call_frame_with_args(program, CALLEE, AWAIT_RESUME, None, &need)
+        .push_call_frame_with_owned_args(program, CALLEE, AWAIT_RESUME, None, vec![need])
         .expect("callee recursively enters innermost callee");
+    assert_eq!(
+        fiber
+            .active_frame_mut()
+            .expect("innermost callee")
+            .take_register(NEED_REGISTER)
+            .expect("await consumes the sole Need handle"),
+        RuntimeValue::Need(NeedId("need.profile".to_owned()))
+    );
     fiber
         .suspend(FiberSuspension {
             resume: FiberResumeTarget::Declared(AWAIT_RESUME),
@@ -566,13 +595,13 @@ fn cleanup_cancellation_program() -> AwbcProgram {
     program.instructions = vec![
         AwbcInstruction::RegisterCleanup {
             key: keep,
-            effect: CLEANUP_EFFECT,
-            args: vec![NEED_REGISTER],
+            effect: CLOSE_CLEANUP_EFFECT,
+            args: Vec::new(),
         },
         AwbcInstruction::RegisterCleanup {
             key: removed,
-            effect: CLEANUP_EFFECT,
-            args: vec![NEED_REGISTER],
+            effect: CLOSE_CLEANUP_EFFECT,
+            args: Vec::new(),
         },
         AwbcInstruction::CancelCleanup { key: removed },
     ];
@@ -686,6 +715,7 @@ fn direct_suspension_functions() -> Vec<AwbcFunction> {
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
+            input_ownership: vec![AwbcFunctionInputOwnership::default(); 1],
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 2),
             entry_block: AwbcBlockId(0),
@@ -695,6 +725,7 @@ fn direct_suspension_functions() -> Vec<AwbcFunction> {
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
             signature: AwbcSignatureId(1),
+            input_ownership: vec![AwbcFunctionInputOwnership::default(); 1],
             frame_layout: AwbcFrameLayoutId(1),
             blocks: AwbcTableRange::new(2, 2),
             entry_block: AwbcBlockId(2),

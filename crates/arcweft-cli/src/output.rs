@@ -2,7 +2,7 @@ use crate::app::project::{CheckedModule, verify_compiled_project};
 use arcweft_core::aot::AotProgramStats;
 use arcweft_core::awbc::schema::AwbcProgram;
 use arcweft_core::effect::{LineEffectRequest, RuntimeAssertionFailure};
-use arcweft_core::engine::{FlowFiber, FlowStatusLabelStyle};
+use arcweft_core::engine::{FlowFiber, FlowFiberStatus, FlowStatusLabelStyle};
 use arcweft_core::line_task::{LineTaskGroup, LineTaskNode, LineTaskTrigger, ScopeExit};
 use arcweft_core::plan::FlowEvent;
 use arcweft_core::step::{RuntimePureCallStats, RuntimeStepResult, RuntimeStepStats};
@@ -973,6 +973,7 @@ impl RuntimeStepRunSummary {
             Self,
             Vec<TaskSpec>,
             Vec<arcweft_core::step::RuntimeHostCallRequest>,
+            FlowFiberStatus,
         ),
         arcweft_runtime_plan::assertion_identity::RuntimeAssertionProjectionError,
     > {
@@ -1071,7 +1072,7 @@ impl RuntimeStepRunSummary {
                 })
                 .collect(),
         };
-        Ok((summary, task_requests, host_call_requests))
+        Ok((summary, task_requests, host_call_requests, fiber_status))
     }
 }
 
@@ -1140,7 +1141,13 @@ fn flow_event_label(event: &FlowEvent) -> String {
             task.as_ref().map_or("-", |task| task.0.as_str())
         ),
         FlowEvent::AwaitReady { need, value } => {
-            format!("await_ready {} {}", need.0, value.label())
+            format!(
+                "await_ready {} {}",
+                need.0,
+                value
+                    .as_ref()
+                    .map_or_else(|| "-".to_owned(), |value| value.label())
+            )
         }
         FlowEvent::AwaitProgress { need, progress } => {
             format!(

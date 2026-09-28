@@ -211,6 +211,10 @@ through the selected native or AWBC program's type rows. The Entry nominal
 schema digest is distinct from the executable layout digest and must preserve
 binding identity across implementation-only callable changes. Source-generation
 provenance must not turn such a change into a changed data contract.
+Root state must be deeply Copy because startup, reducer commit, and restore
+retain it for later transitions. Incoming events are owned live values: their
+nominal shape is checked against the same program, but an affine descendant may
+move once into the reducer without requiring persistent-value admission.
 Project nominal type identity commits the declaration's world, module, owner
 path, kind, name and instantiated arguments. The source-set revision belongs
 to generation admission, not that identity. Definition changes still change
@@ -430,7 +434,9 @@ string opcode”.
 |  | `89` | `Await { need, binding?, resume }` | await unary Need |
 |  | `8a` | `AwaitMany { plan, source, binding?, resume }` | bounded task fan-out |
 |  | `8b` | `BudgetYield { resume }` | cooperative preemption |
-|  | `8c..8f` | unassigned | reject |
+|  | `8c` | `SelectDialogueResult { value }` | commit a selected dialogue result |
+| CFG | `8d` | `SequenceNext { sequence, item, some_block, none_block }` | move the front item from an owned Vec, Seq, or Slice into a vacant slot on the nonempty edge; preserve the sequence in place |
+|  | `8e..8f` | unassigned | reject |
 | Stream | `90` | `NextStream { ... }` | consume next Stream item |
 |  | `91` | `YieldStream { ... }` | generator safe-point yield |
 |  | `92..97` | unassigned | reject |
@@ -446,6 +452,10 @@ Loops are CFG, not one-off opcodes. A loop header is a block entry marked
 `continue` lower to jumps selected from an explicit lowering-time loop stack.
 Match, scoped bindings, dynamic targets, return, traps, and budget yielding are
 therefore covered without embedding structured AST nodes into instructions.
+For standard Vec, Seq, and Slice map helpers, `SequenceNext` moves each item into
+the callback and branches to the result only when the source is empty. Array map
+helpers destructure the fixed-length source once. Each call duplicates the
+callback only when its value has unrestricted copy proof.
 
 `NeedTimeout` constructs a derived unary Need and never suspends by itself.
 The later `Await` observes that Need through the ordinary single Await
@@ -737,7 +747,7 @@ player. It uses four deterministic passes:
 | `LetLoop` | value-producing loop with dedicated result slot and break join |
 | `While` / `WhileNext` | header condition + `Branch`; body backedge; exit block |
 | `WhileLet` / `WhileLetNext` | expression + pattern/guard blocks at header; binding scope per iteration |
-| `For` / `ForNext` | sequence/index slots; header `SequenceLen`/comparison; `SequenceGet`; pattern bind; increment; backedge |
+| `For` / `ForNext` | own the built-in or witness-backed iterator; header calls `next` and retains its returned iterator; borrow-test `Option::Some`, move its item into the pattern, then backedge; `None` exits |
 | `Thread` | synthetic flow function + `SpawnFiber`; optional name becomes public/debug ID, not semantics |
 | `Scope` | `EnterScope`; body; all normal/control exits route through cleanup block and `ExitScope` |
 | `LetScope` | scope plus result slot; expression/bind on successful cleanup exit |

@@ -4,8 +4,6 @@
 //! operations, callback nodes, and handle sites before the core builder seals
 //! their dense runtime identities. It is not retained in `RuntimePlan`.
 
-use std::collections::BTreeSet;
-
 use crate::assertion_identity::RuntimeAssertionSite;
 use crate::errors::RuntimePlanLowerError;
 use crate::semantic_facts::{
@@ -17,10 +15,10 @@ use arcweft_core::line_task::{
     RuntimeLineHandleSiteKind,
 };
 use arcweft_core::plan::{
-    RuntimeDialogueContentPlanSeedId, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed,
-    RuntimeLineHandleSiteSeed, RuntimeLineOperationSeed, RuntimeLineTaskCancelRuleSeed,
-    RuntimeLineTaskGroupSeed, RuntimeLineTaskNodeSeed, RuntimeLineTaskNodeSeedId,
-    RuntimeLineTaskTriggerSeed, RuntimeLocalSeedId, RuntimePatternSeed,
+    RuntimeBorrowedLocalSeed, RuntimeDialogueContentPlanSeedId, RuntimeExprSeed,
+    RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeLineHandleSiteSeed, RuntimeLineOperationSeed,
+    RuntimeLineTaskCancelRuleSeed, RuntimeLineTaskGroupSeed, RuntimeLineTaskNodeSeed,
+    RuntimeLineTaskNodeSeedId, RuntimeLineTaskTriggerSeed, RuntimePatternSeed,
     RuntimeScheduledCaptureSeed,
 };
 use arcweft_core::runtime_id::RuntimeLineHandleSiteId;
@@ -65,7 +63,7 @@ enum LineOperationDraft {
     ActorLook {
         site: SiteDraftId,
         character: arcweft_character::id::CharacterId,
-        actor: RuntimeExprSeed,
+        actor: RuntimeBorrowedLocalSeed,
         look: RuntimeExprSeed,
         crossfade: RuntimeExprSeed,
     },
@@ -802,11 +800,7 @@ impl LinePlanLowerer<'_, '_> {
                 look,
                 crossfade,
             } => {
-                let actor = self
-                    .flow
-                    .expr_lowerer()
-                    .lower(actor)
-                    .map_err(RuntimePlanLowerError::new)?;
+                let actor = self.borrowed_actor_local(actor)?;
                 let look = self
                     .flow
                     .expr_lowerer()
@@ -869,7 +863,7 @@ impl LinePlanLowerer<'_, '_> {
                     )));
                 }
                 let actions = self.lower_callback(callback)?;
-                let captures = self.callback_captures(callback, &actions)?;
+                let captures = self.callback_captures(callback)?;
                 self.schedule_operation(&result, delay, actions, captures)?
             }
         };
@@ -983,63 +977,53 @@ impl LinePlanLowerer<'_, '_> {
     fn callback_captures(
         &self,
         callback: ExprId,
-        actions: &[FlowDraft],
     ) -> Result<Box<[RuntimeScheduledCaptureSeed]>, RuntimePlanLowerError> {
-        if let Some(closure) = self.flow.semantic_facts.closure_instance(callback) {
-            return closure
-                .captures()
-                .iter()
-                .map(|capture| self.scheduled_capture(capture.source()))
-                .collect::<Result<Vec<_>, _>>()
-                .map(Vec::into_boxed_slice);
-        }
-        let mut locals = Vec::new();
-        if let Some(callable) = self.flow.semantic_facts.implicit_callable(callback) {
-            locals.extend_from_slice(callable.captures());
-        } else {
-            return self.flow_captures(actions);
-        }
-        let mut seen = BTreeSet::new();
-        locals
+        self.flow
+            .semantic_facts
+            .checked_captures_at(callback)
             .into_iter()
-            .filter(|local| seen.insert(*local))
-            .map(|local| self.scheduled_capture(local))
+            .map(|capture| self.scheduled_capture(callback, capture.local()))
             .collect::<Result<Vec<_>, _>>()
             .map(Vec::into_boxed_slice)
     }
 
-    fn flow_captures(
+    fn borrowed_actor_local(
         &self,
-        actions: &[FlowDraft],
-    ) -> Result<Box<[RuntimeScheduledCaptureSeed]>, RuntimePlanLowerError> {
-        let mut seeds = Vec::<RuntimeLocalSeedId>::new();
-        for action in actions {
-            action.collect_free_locals(&mut seeds);
+        receiver: ExprId,
+    ) -> Result<RuntimeBorrowedLocalSeed, RuntimePlanLowerError> {
+        use arcweft_lang_sema::final_analysis::{CheckedLocalReadMode, CheckedLocalUseSite};
+
+        let checked = self
+            .flow
+            .semantic_facts
+            .checked_local_use(CheckedLocalUseSite::Expression(receiver))
+            .ok_or_else(|| {
+                RuntimePlanLowerError::new(format!(
+                    "actor.look receiver {receiver:?} has no selected local-use row"
+                ))
+            })?;
+        if checked.mode() != CheckedLocalReadMode::Borrow {
+            return Err(RuntimePlanLowerError::new(format!(
+                "actor.look receiver {receiver:?} is not a selected local borrow"
+            )));
         }
-        let mut seen = BTreeSet::new();
-        seeds
-            .into_iter()
-            .map(|seed| {
-                self.flow
-                    .locals
-                    .iter()
-                    .find_map(|(local, candidate)| (candidate == &seed).then_some(*local))
-                    .ok_or_else(|| {
-                        RuntimePlanLowerError::new(
-                            "scheduled action capture has no accepted HIR local owner",
-                        )
-                    })
-            })
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .filter(|local| seen.insert(*local))
-            .map(|local| self.scheduled_capture(local))
-            .collect::<Result<Vec<_>, _>>()
-            .map(Vec::into_boxed_slice)
+        let local = self
+            .flow
+            .locals
+            .get(&checked.local())
+            .cloned()
+            .ok_or_else(|| {
+                RuntimePlanLowerError::new(format!(
+                    "actor.look receiver {:?} has no admitted runtime local",
+                    checked.local()
+                ))
+            })?;
+        Ok(RuntimeBorrowedLocalSeed::new(local))
     }
 
     fn scheduled_capture(
         &self,
+        callback: ExprId,
         local: LocalId,
     ) -> Result<RuntimeScheduledCaptureSeed, RuntimePlanLowerError> {
         let seed = self.flow.locals.get(&local).cloned().ok_or_else(|| {
@@ -1052,9 +1036,29 @@ impl LinePlanLowerer<'_, '_> {
                 "scheduled callback capture {local:?} has no accepted type"
             ))
         })?;
+        let site = arcweft_lang_sema::final_analysis::CheckedLocalUseSite::Capture {
+            owner: callback,
+            local,
+        };
+        let checked = self.flow.semantic_facts.checked_local_use(site).ok_or_else(|| {
+            RuntimePlanLowerError::new(format!(
+                "scheduled callback capture {local:?} has no checked local-use row at {callback:?}"
+            ))
+        })?;
+        if checked.local() != local {
+            return Err(RuntimePlanLowerError::new(
+                "scheduled callback capture local-use row targets another binding",
+            ));
+        }
         Ok(RuntimeScheduledCaptureSeed {
             local: seed.clone(),
-            value: RuntimeExprSeed::new(ty.identity(), RuntimeExprSeedKind::Local(seed)),
+            value: RuntimeExprSeed::new(
+                ty.identity(),
+                RuntimeExprSeedKind::Local(arcweft_core::plan::RuntimeLocalReadSeed::new(
+                    seed,
+                    crate::final_expr::runtime_local_read_mode(checked.mode()),
+                )),
+            ),
         })
     }
 
@@ -1198,43 +1202,6 @@ impl LinePlanLowerer<'_, '_> {
             cleanup_policy: LineCleanupPolicy::default(),
         };
         Ok((group, self.flow.into_assertion_sites()))
-    }
-}
-
-impl FlowDraft {
-    fn collect_free_locals(&self, locals: &mut Vec<RuntimeLocalSeedId>) {
-        let expressions: Vec<&RuntimeExprSeed> = match self {
-            Self::Flow(flow) => {
-                for local in flow.free_locals() {
-                    if !locals.contains(&local) {
-                        locals.push(local);
-                    }
-                }
-                Vec::new()
-            }
-            Self::LineOperation { operation, .. } => match operation {
-                LineOperationDraft::AcquireActor { .. }
-                | LineOperationDraft::VoiceHandle { .. } => Vec::new(),
-                LineOperationDraft::Schedule {
-                    delay, captures, ..
-                } => std::iter::once(delay)
-                    .chain(captures.iter().map(|capture| &capture.value))
-                    .collect(),
-                LineOperationDraft::ActorLook {
-                    actor,
-                    look,
-                    crossfade,
-                    ..
-                } => vec![actor, look, crossfade],
-            },
-        };
-        for expression in expressions {
-            for local in expression.free_locals() {
-                if !locals.contains(&local) {
-                    locals.push(local);
-                }
-            }
-        }
     }
 }
 

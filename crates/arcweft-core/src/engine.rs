@@ -3,7 +3,7 @@ use crate::effect::LineEffectRequest;
 use crate::entry::{RuntimeCallableExecutableCode, RuntimeCallableRole};
 use crate::line_task::{ChildCancelPolicy, ChildJoinPolicy, LineTaskGroup, LineTaskWorkTag};
 use crate::observation::RuntimeObservationState;
-use crate::pattern::{RuntimePattern, match_runtime_pattern};
+use crate::pattern::RuntimePattern;
 use crate::plan::{
     ChoiceRuntimeOption, EntryRuntimeId, FlowEvent, FlowOp, FlowRuntimeId, RuntimeEntryTarget,
     RuntimeFlow, RuntimeFunctionInputSource, RuntimeFunctionSiteBody, RuntimeMatchArm,
@@ -26,14 +26,15 @@ use crate::stream::{
 };
 use crate::task::{
     AwaitManyInvocationIdentity, AwaitManyTarget, CancelScopeId, GenerationId, NeedId,
-    NeedProducerRegistry, RuntimeNeedPublication, TaskEvent, TaskEventKind, TaskId, TaskKey,
-    TaskPolicy, TaskPriority, TaskPublicationCursor, TaskSpec, normalize_runtime_need_states,
-    normalize_task_events,
+    NeedProducerOwnedTaskEventDisposition, NeedProducerRegistry, RuntimeNeedPublication, TaskEvent,
+    TaskEventKind, TaskId, TaskKey, TaskPolicy, TaskPriority, TaskPublicationCursor, TaskSpec,
+    normalize_runtime_need_states, normalize_task_events,
 };
 use crate::value::{
-    RuntimeCallableValue, RuntimeDialogueContentEffectBinding, RuntimeEnv, RuntimeEvalError,
-    RuntimeExpr, RuntimeExprMatchArm, RuntimeFlowParameterBinding, RuntimeIterator,
-    RuntimeLocalBinding, RuntimePayload, RuntimeSeq, RuntimeValue, evaluate_binary, evaluate_unary,
+    RuntimeCallableValue, RuntimeCallableZeroArgInvocationProof,
+    RuntimeDialogueContentEffectBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr,
+    RuntimeExprMatchArm, RuntimeFlowParameterBinding, RuntimeIterator, RuntimeLocalBinding,
+    RuntimePayload, RuntimeSeq, RuntimeValue, evaluate_binary, evaluate_unary,
     runtime_sequence_dense_i64, runtime_sequence_from_literal_values,
     runtime_sequence_repeat_value, runtime_sequence_values, runtime_value_into_sequence_values,
     runtime_value_label, sum_i64_sequence_ref,
@@ -51,7 +52,7 @@ pub mod line;
 pub mod stream;
 pub mod suspend;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Engine {
     plan: Arc<RuntimePlan>,
     format_context: crate::value::RuntimeFormatContext,
@@ -59,7 +60,7 @@ pub struct Engine {
     need_producers: NeedProducerRegistry,
     task_request_quota_remaining: usize,
     need_publications: BTreeMap<NeedId, VecDeque<RuntimeNeedPublication>>,
-    latest_need_publications: BTreeMap<NeedId, RuntimeNeedPublication>,
+    latest_need_publications: BTreeMap<NeedId, crate::task::RuntimeNeedPublicationRollbackImage>,
     need_publication_frontiers: BTreeMap<NeedId, TaskPublicationCursor>,
     await_many_invocations: BTreeMap<(GenerationId, RuntimePersistentFiberId), u64>,
     flow_positions: BTreeMap<FlowRuntimeId, usize>,
@@ -87,16 +88,89 @@ pub struct Engine {
     next_host_call_sequence: u64,
 }
 
+/// Inert, in-memory rollback of every mutable native Engine owner. Runtime
+/// values enter the image through the sealed value snapshot authority; the
+/// image may coexist with a live Engine because it carries no live values.
+#[derive(Clone, Debug, PartialEq)]
+struct NativeEngineRollbackImage {
+    plan: Arc<RuntimePlan>,
+    format_context: crate::value::RuntimeFormatContext,
+    generation: GenerationId,
+    need_producers: crate::task::NeedProducerRegistryRollbackImage,
+    task_request_quota_remaining: usize,
+    need_publications: BTreeMap<NeedId, VecDeque<crate::task::RuntimeNeedPublicationRollbackImage>>,
+    latest_need_publications: BTreeMap<NeedId, crate::task::RuntimeNeedPublicationRollbackImage>,
+    need_publication_frontiers: BTreeMap<NeedId, TaskPublicationCursor>,
+    await_many_invocations: BTreeMap<(GenerationId, RuntimePersistentFiberId), u64>,
+    flow_positions: BTreeMap<FlowRuntimeId, usize>,
+    main_started: bool,
+    root: Option<crate::root::RootRuntimeRollbackImage>,
+    fiber: FlowFiberRollbackImage,
+    child_fibers: VecDeque<FlowFiberRollbackImage>,
+    next_fiber_id: u64,
+    dialogue_occurrences: BTreeMap<
+        (
+            RuntimePersistentFiberId,
+            crate::runtime_id::RuntimeDialogueContentPlanId,
+        ),
+        u64,
+    >,
+    dialogue_activations: dialogue::DialogueActivationStoreRollbackImage,
+    expected_deferred_children: BTreeMap<
+        DialogueActivationId,
+        (
+            crate::runtime_id::RuntimeDeferRegistrationId,
+            crate::runtime_id::RuntimeDeferSiteId,
+        ),
+    >,
+    dialogue_effect_callback_activations:
+        BTreeSet<crate::runtime_id::RuntimeDialogueEffectCallbackActivationId>,
+    run_child_next: bool,
+    pure_i64_batch_inputs: Vec<i64>,
+    pure_i64_batch_outputs: Vec<i64>,
+    pure_helper_i64_call_shapes: Vec<bool>,
+    audio_epoch: u64,
+    next_audio_sequence: u64,
+    next_host_call_sequence: u64,
+}
+
 pub(super) struct NativeLineTaskExecutionBatch {
+    /// New children staged for commit; already-runnable children stay in Engine.
     child_fibers: VecDeque<FlowFiber>,
+    closing_existing: BTreeSet<FlowFiberId>,
     next_fiber_id: u64,
     run_child_next: bool,
     dialogue_effect_callback_activations:
         BTreeSet<crate::runtime_id::RuntimeDialogueEffectCallbackActivationId>,
 }
 
+struct NativePreparedLineTaskCommands {
+    scheduled: crate::line_task::RuntimeScheduledCompletionStage,
+    packets: BTreeMap<
+        crate::runtime_id::RuntimeLineHandleToken,
+        crate::line_task::RuntimePreparedScheduledPacketTake,
+    >,
+    next_fiber_id: u64,
+}
+
+struct NativePreparedDeferredLineChild {
+    site_id: crate::runtime_id::RuntimeFunctionSiteId,
+    capture_tokens: BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
+    ordinal: u64,
+    allocated: std::num::NonZeroU64,
+    next_fiber_id: u64,
+}
+
+pub(super) struct NativePreparedDialogueEffectCallback {
+    key: crate::runtime_id::RuntimeDialogueEffectCallbackActivationId,
+    ordinal: u64,
+    allocated: std::num::NonZeroU64,
+    site: crate::runtime_id::RuntimeFunctionSiteId,
+    invocation: RuntimeCallableZeroArgInvocationProof,
+}
+
 /// Current flow execution cursor.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct FlowFiber {
     pub line_cursor: usize,
     pub cursor: Option<FlowCursor>,
@@ -114,6 +188,266 @@ pub struct FlowFiber {
     pub execution: crate::runtime_id::ExecutionInstanceId,
     pub(crate) owner: FlowFiberOwner,
     pub status: FlowFiberStatus,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct FlowFiberRollbackImage {
+    line_cursor: usize,
+    cursor: Option<FlowCursor>,
+    pending_ops: VecDeque<FlowOpRollbackImage>,
+    control_stack: Vec<FlowControlStackEntryRollbackImage>,
+    await_observer: Option<Box<AwaitStateRollbackImage>>,
+    root_cleanups: Vec<FlowScopeCleanup>,
+    env: crate::value::RuntimeEnvRollbackImage,
+    observations: RuntimeObservationState,
+    stream_states: BTreeMap<StreamRuntimeId, StreamRuntimeStateRollbackImage>,
+    selected_dialogue_result: Option<crate::value::AwbcRuntimeValueSnapshot>,
+    id: FlowFiberId,
+    persistent_id: RuntimePersistentFiberId,
+    execution: crate::runtime_id::ExecutionInstanceId,
+    owner: FlowFiberOwner,
+    status: FlowFiberStatusRollbackImage,
+}
+
+impl FlowFiber {
+    fn inert_rollback_image(
+        &self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<FlowFiberRollbackImage, String> {
+        Ok(FlowFiberRollbackImage {
+            line_cursor: self.line_cursor,
+            cursor: self.cursor,
+            pending_ops: self
+                .pending_ops
+                .iter()
+                .map(|op| FlowOpRollbackImage::from_live(op, owner))
+                .collect::<Result<_, String>>()?,
+            control_stack: self
+                .control_stack
+                .iter()
+                .map(|entry| entry.inert_rollback_image(owner))
+                .collect::<Result<_, String>>()?,
+            await_observer: self
+                .await_observer
+                .as_ref()
+                .map(|state| state.inert_rollback_image(owner).map(Box::new))
+                .transpose()?,
+            root_cleanups: self.root_cleanups.clone(),
+            env: self.env.inert_rollback_image(owner)?,
+            observations: self.observations.clone(),
+            stream_states: self
+                .stream_states
+                .iter()
+                .map(|(id, state)| Ok((id.clone(), state.inert_rollback_image(owner)?)))
+                .collect::<Result<_, String>>()?,
+            selected_dialogue_result: self
+                .selected_dialogue_result
+                .as_ref()
+                .map(|value| {
+                    crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                        value, owner,
+                    )
+                    .map_err(|error| error.to_string())
+                })
+                .transpose()?,
+            id: self.id,
+            persistent_id: self.persistent_id,
+            execution: self.execution,
+            owner: self.owner.clone(),
+            status: self.status.inert_rollback_image(owner)?,
+        })
+    }
+
+    fn from_rollback_image(
+        image: FlowFiberRollbackImage,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            line_cursor: image.line_cursor,
+            cursor: image.cursor,
+            pending_ops: image
+                .pending_ops
+                .into_iter()
+                .map(|op| op.into_live(owner))
+                .collect::<Result<_, String>>()?,
+            control_stack: image
+                .control_stack
+                .into_iter()
+                .map(|entry| FlowControlStackEntry::from_rollback_image(entry, owner))
+                .collect::<Result<_, String>>()?,
+            await_observer: image
+                .await_observer
+                .map(|state| AwaitState::from_rollback_image(*state, owner).map(Box::new))
+                .transpose()?,
+            root_cleanups: image.root_cleanups,
+            env: RuntimeEnv::from_rollback_image(image.env, owner)?,
+            observations: image.observations,
+            stream_states: image
+                .stream_states
+                .into_iter()
+                .map(|(id, state)| Ok((id, StreamRuntimeState::from_rollback_image(state, owner)?)))
+                .collect::<Result<_, String>>()?,
+            selected_dialogue_result: image
+                .selected_dialogue_result
+                .map(|saved| {
+                    saved
+                        .into_runtime_value_for_program(owner)
+                        .map_err(|error| error.to_string())
+                })
+                .transpose()?,
+            id: image.id,
+            persistent_id: image.persistent_id,
+            execution: image.execution,
+            owner: image.owner,
+            status: FlowFiberStatus::from_rollback_image(image.status, owner)?,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum FlowOpRollbackImage {
+    Bind(
+        Vec<(
+            crate::runtime_id::RuntimeLocalDeclarationId,
+            crate::value::AwbcRuntimeValueSnapshot,
+        )>,
+    ),
+    ForNext {
+        pattern: RuntimePattern,
+        iterator: crate::value::AwbcRuntimeValueSnapshot,
+        evidence: crate::plan::RuntimeIteratorEvidence,
+        body: Arc<[FlowOp]>,
+    },
+    CompleteFormatOperand {
+        attempt: RuntimeFormatAttemptId,
+        parameter: crate::value::RuntimeFmtParameterId,
+        ty: RuntimePlanTypeId,
+        value: crate::value::AwbcRuntimeValueSnapshot,
+    },
+    UnevaluatedFormatOperand {
+        attempt: RuntimeFormatAttemptId,
+        parameter: crate::value::RuntimeFmtParameterId,
+        value: RuntimeExpr,
+    },
+    /// Authored operations are immutable plan rows. Plan admission proves
+    /// every embedded literal recursively unrestricted before an operation
+    /// can be copied into a native fiber's pending queue.
+    Static(FlowOp),
+}
+
+impl FlowOpRollbackImage {
+    fn from_live(op: &FlowOp, owner: &crate::task::RuntimeProgramOwner) -> Result<Self, String> {
+        let image = |value: &RuntimeValue| {
+            crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
+                .map_err(|error| error.to_string())
+        };
+        Ok(match op {
+            FlowOp::Bind(bindings) => Self::Bind(
+                bindings
+                    .iter()
+                    .map(|binding| Ok((binding.local, image(&binding.value)?)))
+                    .collect::<Result<_, String>>()?,
+            ),
+            FlowOp::ForNext {
+                pattern,
+                iterator,
+                evidence,
+                body,
+            } => Self::ForNext {
+                pattern: pattern.clone(),
+                iterator:
+                    crate::value::AwbcRuntimeValueSnapshot::from_runtime_iterator_for_program(
+                        iterator, owner,
+                    )
+                    .map_err(|error| error.to_string())?,
+                evidence: evidence.clone(),
+                body: Arc::clone(body),
+            },
+            FlowOp::CompleteFormatOperand {
+                attempt,
+                parameter,
+                value,
+            } => {
+                if let crate::value::RuntimeExprKind::Value(value_literal) = value.kind() {
+                    Self::CompleteFormatOperand {
+                        attempt: *attempt,
+                        parameter: *parameter,
+                        ty: value.ty(),
+                        value: image(value_literal)?,
+                    }
+                } else if value.literals_permit_copy() {
+                    Self::UnevaluatedFormatOperand {
+                        attempt: *attempt,
+                        parameter: *parameter,
+                        value: value.clone(),
+                    }
+                } else {
+                    return Err(
+                        "unevaluated formatter completion contains an affine literal".to_owned(),
+                    );
+                }
+            }
+            _ => Self::Static(op.clone()),
+        })
+    }
+
+    fn into_live(self, owner: &crate::task::RuntimeProgramOwner) -> Result<FlowOp, String> {
+        Ok(match self {
+            Self::Bind(bindings) => FlowOp::Bind(
+                bindings
+                    .into_iter()
+                    .map(|(local, saved)| {
+                        Ok(RuntimeLocalBinding {
+                            local,
+                            value: saved
+                                .into_runtime_value_for_program(owner)
+                                .map_err(|error| error.to_string())?,
+                        })
+                    })
+                    .collect::<Result<_, String>>()?,
+            ),
+            Self::ForNext {
+                pattern,
+                iterator,
+                evidence,
+                body,
+            } => FlowOp::ForNext {
+                pattern,
+                iterator: iterator
+                    .into_runtime_iterator_for_program(owner)
+                    .map_err(|error| error.to_string())?,
+                evidence,
+                body,
+            },
+            Self::CompleteFormatOperand {
+                attempt,
+                parameter,
+                ty,
+                value,
+            } => FlowOp::CompleteFormatOperand {
+                attempt,
+                parameter,
+                value: RuntimeExpr::from_admitted_parts(
+                    ty,
+                    crate::value::RuntimeExprKind::Value(
+                        value
+                            .into_runtime_value_for_program(owner)
+                            .map_err(|error| error.to_string())?,
+                    ),
+                ),
+            },
+            Self::UnevaluatedFormatOperand {
+                attempt,
+                parameter,
+                value,
+            } => FlowOp::CompleteFormatOperand {
+                attempt,
+                parameter,
+                value,
+            },
+            Self::Static(op) => op,
+        })
+    }
 }
 
 /// Stable executor-local identity. It is allocated independently from a
@@ -297,6 +631,108 @@ pub(crate) struct NativeFormatAttemptFrame {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+struct NativeFormatAttemptRollbackImage {
+    attempt: RuntimeFormatAttemptId,
+    context: crate::value::RuntimeFormatContext,
+    values: Vec<Option<crate::value::AwbcRuntimeValueSnapshot>>,
+    first_recoverable: Option<String>,
+    next_operand: usize,
+    active: Option<NativeFormatOperandRollbackImage>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct NativeFormatOperandRollbackImage {
+    ordinal: usize,
+    resume: Option<FlowCursor>,
+    caller_pending_ops: VecDeque<FlowOpRollbackImage>,
+}
+
+impl NativeFormatAttemptFrame {
+    fn inert_rollback_image(
+        &self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<NativeFormatAttemptRollbackImage, String> {
+        Ok(NativeFormatAttemptRollbackImage {
+            attempt: self.attempt,
+            context: self.context.clone(),
+            values: self
+                .values
+                .iter()
+                .map(|value| {
+                    value
+                        .as_ref()
+                        .map(|value| {
+                            crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                                value, owner,
+                            )
+                            .map_err(|error| error.to_string())
+                        })
+                        .transpose()
+                })
+                .collect::<Result<_, String>>()?,
+            first_recoverable: self.first_recoverable.clone(),
+            next_operand: self.next_operand,
+            active: self
+                .active
+                .as_ref()
+                .map(
+                    |active| -> Result<NativeFormatOperandRollbackImage, String> {
+                        Ok(NativeFormatOperandRollbackImage {
+                            ordinal: active.ordinal,
+                            resume: active.resume,
+                            caller_pending_ops: active
+                                .caller_pending_ops
+                                .iter()
+                                .map(|op| FlowOpRollbackImage::from_live(op, owner))
+                                .collect::<Result<_, String>>()?,
+                        })
+                    },
+                )
+                .transpose()?,
+        })
+    }
+
+    fn from_rollback_image(
+        image: NativeFormatAttemptRollbackImage,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            attempt: image.attempt,
+            context: image.context,
+            values: image
+                .values
+                .into_iter()
+                .map(|value| {
+                    value
+                        .map(|saved| {
+                            saved
+                                .into_runtime_value_for_program(owner)
+                                .map_err(|error| error.to_string())
+                        })
+                        .transpose()
+                })
+                .collect::<Result<_, String>>()?,
+            first_recoverable: image.first_recoverable,
+            next_operand: image.next_operand,
+            active: image
+                .active
+                .map(|active| -> Result<NativeFormatOperandFrame, String> {
+                    Ok(NativeFormatOperandFrame {
+                        ordinal: active.ordinal,
+                        resume: active.resume,
+                        caller_pending_ops: active
+                            .caller_pending_ops
+                            .into_iter()
+                            .map(|op| op.into_live(owner))
+                            .collect::<Result<_, String>>()?,
+                    })
+                })
+                .transpose()?,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct NativeFormatOperandFrame {
     pub(crate) ordinal: usize,
     pub(crate) resume: Option<FlowCursor>,
@@ -311,6 +747,79 @@ pub(crate) struct FunctionCallFrame {
     resume: Option<FlowCursor>,
     caller_pending_ops: VecDeque<FlowOp>,
     continuation: FunctionReturnContinuation,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum FlowControlStackEntryRollbackImage {
+    Static(FlowControlStackEntryKind),
+    FormatAttempt(NativeFormatAttemptRollbackImage),
+    FunctionCall {
+        site: crate::runtime_id::RuntimeFunctionSiteId,
+        function_scope: bool,
+        resume: Option<FlowCursor>,
+        caller_pending_ops: VecDeque<FlowOpRollbackImage>,
+        continuation: FunctionReturnContinuationRollbackImage,
+    },
+}
+
+impl FlowControlStackEntry {
+    fn inert_rollback_image(
+        &self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<FlowControlStackEntryRollbackImage, String> {
+        Ok(match &self.kind {
+            FlowControlStackEntryKind::FormatAttempt(frame) => {
+                FlowControlStackEntryRollbackImage::FormatAttempt(
+                    frame.inert_rollback_image(owner)?,
+                )
+            }
+            FlowControlStackEntryKind::FunctionCall(frame) => {
+                FlowControlStackEntryRollbackImage::FunctionCall {
+                    site: frame.site,
+                    function_scope: frame.function_scope,
+                    resume: frame.resume,
+                    caller_pending_ops: frame
+                        .caller_pending_ops
+                        .iter()
+                        .map(|op| FlowOpRollbackImage::from_live(op, owner))
+                        .collect::<Result<_, String>>()?,
+                    continuation: frame.continuation.inert_rollback_image(owner)?,
+                }
+            }
+            _ => FlowControlStackEntryRollbackImage::Static(self.kind.clone()),
+        })
+    }
+
+    fn from_rollback_image(
+        image: FlowControlStackEntryRollbackImage,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<Self, String> {
+        let kind = match image {
+            FlowControlStackEntryRollbackImage::Static(kind) => kind,
+            FlowControlStackEntryRollbackImage::FormatAttempt(frame) => {
+                FlowControlStackEntryKind::FormatAttempt(
+                    NativeFormatAttemptFrame::from_rollback_image(frame, owner)?,
+                )
+            }
+            FlowControlStackEntryRollbackImage::FunctionCall {
+                site,
+                function_scope,
+                resume,
+                caller_pending_ops,
+                continuation,
+            } => FlowControlStackEntryKind::FunctionCall(FunctionCallFrame {
+                site,
+                function_scope,
+                resume,
+                caller_pending_ops: caller_pending_ops
+                    .into_iter()
+                    .map(|op| op.into_live(owner))
+                    .collect::<Result<_, String>>()?,
+                continuation: FunctionReturnContinuation::from_rollback_image(continuation, owner)?,
+            }),
+        };
+        Ok(Self { kind })
+    }
 }
 
 impl FunctionCallFrame {
@@ -334,13 +843,59 @@ impl FunctionCallFrame {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum FunctionReturnContinuation {
     CallableDefault {
-        callable: RuntimeCallableValue,
-        arguments: Vec<RuntimeValue>,
+        pending: crate::value::RuntimeCallablePendingGroup,
         result: RuntimePattern,
     },
     Bind {
         result: RuntimePattern,
     },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum FunctionReturnContinuationRollbackImage {
+    CallableDefault {
+        pending: crate::value::RuntimeCallablePendingRollbackImage,
+        result: RuntimePattern,
+    },
+    Bind {
+        result: RuntimePattern,
+    },
+}
+
+impl FunctionReturnContinuation {
+    fn inert_rollback_image(
+        &self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<FunctionReturnContinuationRollbackImage, String> {
+        Ok(match self {
+            Self::CallableDefault { pending, result } => {
+                FunctionReturnContinuationRollbackImage::CallableDefault {
+                    pending: pending.inert_rollback_image(owner)?,
+                    result: result.clone(),
+                }
+            }
+            Self::Bind { result } => FunctionReturnContinuationRollbackImage::Bind {
+                result: result.clone(),
+            },
+        })
+    }
+
+    fn from_rollback_image(
+        image: FunctionReturnContinuationRollbackImage,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<Self, String> {
+        Ok(match image {
+            FunctionReturnContinuationRollbackImage::CallableDefault { pending, result } => {
+                Self::CallableDefault {
+                    pending: crate::value::RuntimeCallablePendingGroup::from_rollback_image(
+                        pending, owner,
+                    )?,
+                    result,
+                }
+            }
+            FunctionReturnContinuationRollbackImage::Bind { result } => Self::Bind { result },
+        })
+    }
 }
 
 /// Position in a lowered flow program.
@@ -385,7 +940,7 @@ impl RootCallableEvaluator for StructuredRootEvaluator<'_> {
     fn evaluate_root_callable(
         &mut self,
         callable: &RuntimeCallableRole,
-        args: &[RuntimeValue],
+        args: Vec<RuntimeValue>,
     ) -> Result<RuntimeValue, RootCallableEvaluationError> {
         let executable = self
             .plan
@@ -420,7 +975,7 @@ impl RootCallableEvaluator for StructuredRootEvaluator<'_> {
 }
 
 /// High-level flow status for the minimal runtime spine.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum FlowFiberStatus {
     Running,
     Dialogue(DialogueActivationId),
@@ -430,6 +985,126 @@ pub enum FlowFiberStatus {
     Choice(ChoiceState),
     Done(FlowExit),
     Failed(String),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum FlowFiberStatusRollbackImage {
+    Running,
+    Dialogue(DialogueActivationId),
+    NeedWaiting(Box<AwaitStateRollbackImage>),
+    WaitingManyNative(Box<AwaitManyStateRollbackImage>),
+    WaitingManyObserved(AwaitManyProgress),
+    HostCall(HostCallState),
+    Choice(ChoiceState),
+    Done(FlowExit),
+    Failed(String),
+}
+
+impl FlowFiberStatus {
+    fn inert_rollback_image(
+        &self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<FlowFiberStatusRollbackImage, String> {
+        Ok(match self {
+            Self::Running => FlowFiberStatusRollbackImage::Running,
+            Self::Dialogue(activation) => {
+                FlowFiberStatusRollbackImage::Dialogue(activation.clone())
+            }
+            Self::NeedWaiting(state) => FlowFiberStatusRollbackImage::NeedWaiting(Box::new(
+                state.inert_rollback_image(owner)?,
+            )),
+            Self::WaitingMany(WaitingManyStatus::Native(state)) => {
+                FlowFiberStatusRollbackImage::WaitingManyNative(Box::new(
+                    state.inert_rollback_image(owner)?,
+                ))
+            }
+            Self::WaitingMany(WaitingManyStatus::Observed(progress)) => {
+                FlowFiberStatusRollbackImage::WaitingManyObserved(progress.clone())
+            }
+            Self::HostCall(state) => FlowFiberStatusRollbackImage::HostCall(state.clone()),
+            Self::Choice(state) => FlowFiberStatusRollbackImage::Choice(state.clone()),
+            Self::Done(exit) => FlowFiberStatusRollbackImage::Done(exit.clone()),
+            Self::Failed(message) => FlowFiberStatusRollbackImage::Failed(message.clone()),
+        })
+    }
+
+    fn from_rollback_image(
+        image: FlowFiberStatusRollbackImage,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<Self, String> {
+        Ok(match image {
+            FlowFiberStatusRollbackImage::Running => Self::Running,
+            FlowFiberStatusRollbackImage::Dialogue(activation) => Self::Dialogue(activation),
+            FlowFiberStatusRollbackImage::NeedWaiting(state) => {
+                Self::NeedWaiting(Box::new(AwaitState::from_rollback_image(*state, owner)?))
+            }
+            FlowFiberStatusRollbackImage::WaitingManyNative(state) => {
+                Self::WaitingMany(WaitingManyStatus::Native(Box::new(
+                    AwaitManyState::from_rollback_image(*state, owner)?,
+                )))
+            }
+            FlowFiberStatusRollbackImage::WaitingManyObserved(progress) => {
+                Self::WaitingMany(WaitingManyStatus::Observed(progress))
+            }
+            FlowFiberStatusRollbackImage::HostCall(state) => Self::HostCall(state),
+            FlowFiberStatusRollbackImage::Choice(state) => Self::Choice(state),
+            FlowFiberStatusRollbackImage::Done(exit) => Self::Done(exit),
+            FlowFiberStatusRollbackImage::Failed(message) => Self::Failed(message),
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct StreamRuntimeStateRollbackImage {
+    id: StreamRuntimeId,
+    queue: VecDeque<crate::value::AwbcRuntimeValueSnapshot>,
+    closed: bool,
+    emitted_count: u64,
+}
+
+impl StreamRuntimeState {
+    fn inert_rollback_image(
+        &self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<StreamRuntimeStateRollbackImage, String> {
+        Ok(StreamRuntimeStateRollbackImage {
+            id: self.id.clone(),
+            queue: self
+                .queue
+                .iter()
+                .map(|value| {
+                    crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                        value.value(),
+                        owner,
+                    )
+                    .map_err(|error| error.to_string())
+                })
+                .collect::<Result<_, String>>()?,
+            closed: self.closed,
+            emitted_count: self.emitted_count,
+        })
+    }
+
+    fn from_rollback_image(
+        image: StreamRuntimeStateRollbackImage,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            id: image.id,
+            queue: image
+                .queue
+                .into_iter()
+                .map(|saved| {
+                    saved
+                        .into_runtime_value_for_program(owner)
+                        .map(RuntimePayload)
+                        .map_err(|error| error.to_string())
+                })
+                .collect::<Result<_, String>>()?,
+            closed: image.closed,
+            emitted_count: image.emitted_count,
+        })
+    }
 }
 
 /// String presentation style for high-level runtime flow status.
@@ -444,7 +1119,7 @@ pub enum FlowStatusLabelStyle {
 }
 
 /// Suspended `await ... with` state.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct AwaitState {
     pub binding: Option<RuntimePattern>,
     pub need: NeedId,
@@ -453,6 +1128,57 @@ pub struct AwaitState {
     pub resume: Option<FlowCursor>,
     pub observed_through: Option<TaskPublicationCursor>,
     pub queued: VecDeque<RuntimeNeedPublication>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct AwaitStateRollbackImage {
+    binding: Option<RuntimePattern>,
+    need: NeedId,
+    item_type: AwaitItemType,
+    observers: Vec<crate::plan::RuntimeAwaitPendingObserver>,
+    resume: Option<FlowCursor>,
+    observed_through: Option<TaskPublicationCursor>,
+    queued: VecDeque<crate::task::RuntimeNeedPublicationRollbackImage>,
+}
+
+impl AwaitState {
+    fn inert_rollback_image(
+        &self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<AwaitStateRollbackImage, String> {
+        Ok(AwaitStateRollbackImage {
+            binding: self.binding.clone(),
+            need: self.need.clone(),
+            item_type: self.item_type,
+            observers: self.observers.clone(),
+            resume: self.resume,
+            observed_through: self.observed_through,
+            queued: self
+                .queued
+                .iter()
+                .map(|publication| publication.inert_rollback_image(owner))
+                .collect::<Result<_, String>>()?,
+        })
+    }
+
+    fn from_rollback_image(
+        image: AwaitStateRollbackImage,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            binding: image.binding,
+            need: image.need,
+            item_type: image.item_type,
+            observers: image.observers,
+            resume: image.resume,
+            observed_through: image.observed_through,
+            queued: image
+                .queued
+                .into_iter()
+                .map(|publication| RuntimeNeedPublication::from_rollback_image(publication, owner))
+                .collect::<Result<_, String>>()?,
+        })
+    }
 }
 
 /// Typed Ready payload identity carried by a suspended Await across execution
@@ -464,7 +1190,7 @@ pub enum AwaitItemType {
 }
 
 /// Suspended bounded fanout await state.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct AwaitManyState {
     pub binding: Option<RuntimePattern>,
     pub target: AwaitManyTarget,
@@ -474,6 +1200,86 @@ pub struct AwaitManyState {
     pub next_index: usize,
     pub in_flight: Vec<AwaitManyInFlight>,
     pub results: Vec<Option<RuntimePayload>>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct AwaitManyStateRollbackImage {
+    binding: Option<RuntimePattern>,
+    target: AwaitManyTarget,
+    invocation: AwaitManyInvocationIdentity,
+    resume: Option<FlowCursor>,
+    items: Vec<crate::value::AwbcRuntimeValueSnapshot>,
+    next_index: usize,
+    in_flight: Vec<AwaitManyInFlight>,
+    results: Vec<Option<crate::value::AwbcRuntimeValueSnapshot>>,
+}
+
+impl AwaitManyState {
+    fn inert_rollback_image(
+        &self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<AwaitManyStateRollbackImage, String> {
+        let image = |value: &RuntimeValue| {
+            crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
+                .map_err(|error| error.to_string())
+        };
+        Ok(AwaitManyStateRollbackImage {
+            binding: self.binding.clone(),
+            target: self.target.clone(),
+            invocation: self.invocation,
+            resume: self.resume,
+            items: self
+                .items
+                .iter()
+                .map(image)
+                .collect::<Result<_, String>>()?,
+            next_index: self.next_index,
+            in_flight: self.in_flight.clone(),
+            results: self
+                .results
+                .iter()
+                .map(|result| {
+                    result
+                        .as_ref()
+                        .map(|value| image(value.value()))
+                        .transpose()
+                })
+                .collect::<Result<_, String>>()?,
+        })
+    }
+
+    fn from_rollback_image(
+        image: AwaitManyStateRollbackImage,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<Self, String> {
+        let value = |saved: crate::value::AwbcRuntimeValueSnapshot| {
+            saved
+                .into_runtime_value_for_program(owner)
+                .map_err(|error| error.to_string())
+        };
+        Ok(Self {
+            binding: image.binding,
+            target: image.target,
+            invocation: image.invocation,
+            resume: image.resume,
+            items: image
+                .items
+                .into_iter()
+                .map(value)
+                .collect::<Result<_, String>>()?,
+            next_index: image.next_index,
+            in_flight: image.in_flight,
+            results: image
+                .results
+                .into_iter()
+                .map(|result| {
+                    result
+                        .map(|saved| value(saved).map(RuntimePayload))
+                        .transpose()
+                })
+                .collect::<Result<_, String>>()?,
+        })
+    }
 }
 
 /// One in-flight child task inside a bounded fanout await.
@@ -487,7 +1293,7 @@ pub struct AwaitManyInFlight {
 /// Shared status projection for both native and Product AwaitMany execution.
 /// Native retains its complete continuation; Product reports a display-only
 /// summary while its verified AWBC fiber remains the continuation authority.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum WaitingManyStatus {
     Native(Box<AwaitManyState>),
     Observed(AwaitManyProgress),
@@ -653,6 +1459,143 @@ fn pure_helper_i64_call_shapes(plan: &RuntimePlan) -> Vec<bool> {
 }
 
 impl Engine {
+    fn inert_rollback_image(&self) -> Result<NativeEngineRollbackImage, String> {
+        let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&self.plan));
+        let mut expected_deferred_children = BTreeMap::new();
+        for child in &self.child_fibers {
+            let FlowFiberOwner::LineTask(child_owner) = &child.owner else {
+                continue;
+            };
+            let crate::line_task::LineTaskWork::Defer(id) = child_owner.tag.work() else {
+                continue;
+            };
+            let activation = child_owner.tag.activation_id();
+            let Some(line) = self.dialogue_activations.active_line(activation) else {
+                continue;
+            };
+            let Some((inflight_id, site)) = line.deferred_inflight() else {
+                // Scoped defers have a frame-owned in-flight marker instead.
+                continue;
+            };
+            if inflight_id != id
+                || expected_deferred_children
+                    .insert(activation.clone(), (id, site))
+                    .is_some()
+            {
+                return Err("native deferred child custody is inconsistent".to_owned());
+            }
+        }
+        let publication_image =
+            |publication: &RuntimeNeedPublication| publication.inert_rollback_image(&owner);
+        Ok(NativeEngineRollbackImage {
+            plan: Arc::clone(&self.plan),
+            format_context: self.format_context.clone(),
+            generation: self.generation,
+            need_producers: self.need_producers.inert_rollback_image(&owner)?,
+            task_request_quota_remaining: self.task_request_quota_remaining,
+            need_publications: self
+                .need_publications
+                .iter()
+                .map(|(need, queue)| {
+                    Ok((
+                        need.clone(),
+                        queue
+                            .iter()
+                            .map(publication_image)
+                            .collect::<Result<_, String>>()?,
+                    ))
+                })
+                .collect::<Result<_, String>>()?,
+            latest_need_publications: self.latest_need_publications.clone(),
+            need_publication_frontiers: self.need_publication_frontiers.clone(),
+            await_many_invocations: self.await_many_invocations.clone(),
+            flow_positions: self.flow_positions.clone(),
+            main_started: self.main_started,
+            root: self
+                .root
+                .as_ref()
+                .map(|root| root.inert_rollback_image(&owner))
+                .transpose()?,
+            fiber: self.fiber.inert_rollback_image(&owner)?,
+            child_fibers: self
+                .child_fibers
+                .iter()
+                .map(|child| child.inert_rollback_image(&owner))
+                .collect::<Result<_, String>>()?,
+            next_fiber_id: self.next_fiber_id,
+            dialogue_occurrences: self.dialogue_occurrences.clone(),
+            dialogue_activations: self.dialogue_activations.inert_rollback_image(&owner)?,
+            expected_deferred_children,
+            dialogue_effect_callback_activations: self.dialogue_effect_callback_activations.clone(),
+            run_child_next: self.run_child_next,
+            pure_i64_batch_inputs: self.pure_i64_batch_inputs.clone(),
+            pure_i64_batch_outputs: self.pure_i64_batch_outputs.clone(),
+            pure_helper_i64_call_shapes: self.pure_helper_i64_call_shapes.clone(),
+            audio_epoch: self.audio_epoch,
+            next_audio_sequence: self.next_audio_sequence,
+            next_host_call_sequence: self.next_host_call_sequence,
+        })
+    }
+
+    fn from_rollback_image(image: NativeEngineRollbackImage) -> Result<Self, String> {
+        let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&image.plan));
+        Ok(Self {
+            plan: image.plan,
+            format_context: image.format_context,
+            generation: image.generation,
+            need_producers: NeedProducerRegistry::from_rollback_image(
+                image.need_producers,
+                &owner,
+            )?,
+            task_request_quota_remaining: image.task_request_quota_remaining,
+            need_publications: image
+                .need_publications
+                .into_iter()
+                .map(|(need, queue)| {
+                    Ok((
+                        need,
+                        queue
+                            .into_iter()
+                            .map(|publication| {
+                                RuntimeNeedPublication::from_rollback_image(publication, &owner)
+                            })
+                            .collect::<Result<_, String>>()?,
+                    ))
+                })
+                .collect::<Result<_, String>>()?,
+            latest_need_publications: image.latest_need_publications,
+            need_publication_frontiers: image.need_publication_frontiers,
+            await_many_invocations: image.await_many_invocations,
+            flow_positions: image.flow_positions,
+            main_started: image.main_started,
+            root: image
+                .root
+                .map(|root| RootRuntime::from_rollback_image(root, &owner))
+                .transpose()?,
+            fiber: FlowFiber::from_rollback_image(image.fiber, &owner)?,
+            child_fibers: image
+                .child_fibers
+                .into_iter()
+                .map(|child| FlowFiber::from_rollback_image(child, &owner))
+                .collect::<Result<_, String>>()?,
+            next_fiber_id: image.next_fiber_id,
+            dialogue_occurrences: image.dialogue_occurrences,
+            dialogue_activations: dialogue::DialogueActivationStore::from_rollback_image(
+                image.dialogue_activations,
+                &owner,
+                &image.expected_deferred_children,
+            )?,
+            dialogue_effect_callback_activations: image.dialogue_effect_callback_activations,
+            run_child_next: image.run_child_next,
+            pure_i64_batch_inputs: image.pure_i64_batch_inputs,
+            pure_i64_batch_outputs: image.pure_i64_batch_outputs,
+            pure_helper_i64_call_shapes: image.pure_helper_i64_call_shapes,
+            audio_epoch: image.audio_epoch,
+            next_audio_sequence: image.next_audio_sequence,
+            next_host_call_sequence: image.next_host_call_sequence,
+        })
+    }
+
     #[must_use]
     pub const fn generation(&self) -> GenerationId {
         self.generation
@@ -714,7 +1657,10 @@ impl Engine {
     /// owners that can hot-swap plans must supply the active slot so stale
     /// task events cannot publish into a later generation.
     pub fn new_with_generation(plan: RuntimePlan, generation: GenerationId) -> Self {
-        let plan = Arc::new(plan);
+        Self::new_with_shared_plan(Arc::new(plan), generation)
+    }
+
+    fn new_with_shared_plan(plan: Arc<RuntimePlan>, generation: GenerationId) -> Self {
         let flow_positions: BTreeMap<_, _> = plan
             .flows
             .iter()
@@ -831,12 +1777,16 @@ impl Engine {
         let mut engine = Self::new_with_generation(plan, generation);
         engine.start_flow_cursor(&flow)?;
         let admitted = engine
-            .admit_current_flow_parameter_bindings(bindings.iter())
+            .validate_current_flow_parameter_bindings(bindings.iter())
             .map_err(|error| EngineStartError::InvalidFlowInvocation {
                 message: error.to_string(),
             })?
             .into_iter()
-            .map(|(_, binding)| binding);
+            .zip(bindings)
+            .map(|((_, local), binding)| RuntimeLocalBinding {
+                local,
+                value: binding.value,
+            });
         engine.fiber.env.bind_all_root(admitted);
         Ok(engine)
     }
@@ -952,12 +1902,12 @@ impl Engine {
                 op_index: 0,
             });
             self.fiber.status = FlowFiberStatus::Running;
-            let initial_state_binding = self
-                .admit_current_flow_parameter_bindings(std::iter::once(
+            let initial_state_local = self
+                .validate_current_flow_parameter_bindings(std::iter::once(
                     &startup.initial_state_binding,
                 ))
                 .and_then(|mut bindings| {
-                    bindings.pop().map(|(_, binding)| binding).ok_or_else(|| {
+                    bindings.pop().map(|(_, local)| local).ok_or_else(|| {
                         RuntimeEvalError::UnknownFlowBinding {
                             flow: startup.initial_flow.canonical_label(),
                             binding: format!(
@@ -971,9 +1921,20 @@ impl Engine {
                     entry: entry.canonical_label(),
                     message: error.to_string(),
                 })?;
+            if !startup
+                .initial_state_binding
+                .value
+                .ownership()
+                .permits_copy()
+            {
+                return Err(EngineStartError::InvalidRootStartup {
+                    entry: entry.canonical_label(),
+                    message: "root startup state must be unrestricted".to_owned(),
+                });
+            }
             self.fiber.env.set_root(
-                initial_state_binding.local,
-                initial_state_binding.value.clone(),
+                initial_state_local,
+                startup.initial_state_binding.value.clone(),
             );
             self.root = Some(startup.root);
             self.main_started = true;
@@ -1010,11 +1971,16 @@ impl Engine {
         self.flow_positions.get(flow).copied()
     }
 
-    fn admit_current_flow_parameter_bindings<'a>(
+    fn validate_current_flow_parameter_bindings<'a>(
         &self,
         bindings: impl IntoIterator<Item = &'a RuntimeFlowParameterBinding>,
-    ) -> Result<Vec<(crate::entry::FlowParameterCoordinate, RuntimeLocalBinding)>, RuntimeEvalError>
-    {
+    ) -> Result<
+        Vec<(
+            crate::entry::FlowParameterCoordinate,
+            crate::runtime_id::RuntimeLocalDeclarationId,
+        )>,
+        RuntimeEvalError,
+    > {
         let mut bindings = bindings.into_iter().peekable();
         let Some(first) = bindings.peek() else {
             return Ok(Vec::new());
@@ -1092,13 +2058,7 @@ impl Engine {
                     expected: declaration.ty(),
                 });
             }
-            admitted.push((
-                binding.parameter,
-                RuntimeLocalBinding {
-                    local,
-                    value: binding.value.clone(),
-                },
-            ));
+            admitted.push((binding.parameter, local));
         }
         Ok(admitted)
     }
@@ -1109,13 +2069,13 @@ impl Engine {
 
     fn latch_need_publications(
         &mut self,
-        states: &[crate::task::RuntimeNeedState],
-        events: &[TaskEvent],
+        states: Vec<crate::task::RuntimeNeedState>,
+        events: Vec<TaskEvent>,
         output: &mut RuntimeStepOutput,
-    ) {
+    ) -> Vec<TaskEvent> {
         for state in states {
             if self.need_producers.launch_for_need(state.need()).is_some() {
-                match self.need_producers.publish_need_state(state) {
+                match self.need_producers.publish_need_state(&state) {
                     Ok(true) => {}
                     Ok(false) => continue,
                     Err(error) => {
@@ -1125,42 +2085,52 @@ impl Engine {
                             RuntimeDiagnosticCategory::Host,
                             message,
                         ));
-                        return;
+                        return events;
                     }
                 }
             }
+            let cursor = TaskPublicationCursor::from_need_state(&state);
+            let (_, need, _, state) = state.into_parts();
             if !self.enqueue_need_publication(
                 RuntimeNeedPublication::State {
-                    need: state.need().clone(),
-                    state: state.state().clone(),
-                    cursor: TaskPublicationCursor::from_need_state(state),
+                    need,
+                    state,
+                    cursor,
                 },
                 output,
             ) {
-                return;
+                return events;
             }
         }
+        let mut remaining = Vec::new();
         for event in events {
-            let Some(publication) = self.need_producers.publication_for_task_event(event) else {
+            let Some(publication) = self.need_producers.publication_for_task_event(&event) else {
+                remaining.push(event);
                 continue;
             };
-            match self.need_producers.publish_task_event(event) {
-                Ok(true) => {}
-                Ok(false) => continue,
+            match self.need_producers.publish_task_event_owned(event) {
+                Ok(NeedProducerOwnedTaskEventDisposition::Published) => {}
+                Ok(NeedProducerOwnedTaskEventDisposition::Duplicate(_)) => continue,
+                Ok(NeedProducerOwnedTaskEventDisposition::NotLocal(event)) => {
+                    remaining.push(event);
+                    continue;
+                }
                 Err(error) => {
-                    let message = format!("invalid Need task publication: {error}");
+                    let (reason, _rejected_event) = error.into_parts();
+                    let message = format!("invalid Need task publication: {reason}");
                     self.fiber.status = FlowFiberStatus::Failed(message.clone());
                     output.diagnostics.push(RuntimeDiagnostic::categorized(
                         RuntimeDiagnosticCategory::Host,
                         message,
                     ));
-                    return;
+                    return remaining;
                 }
             }
             if !self.enqueue_need_publication(publication, output) {
-                return;
+                return remaining;
             }
         }
+        remaining
     }
 
     fn enqueue_need_publication(
@@ -1170,11 +2140,24 @@ impl Engine {
     ) -> bool {
         let need = publication.need().clone();
         let cursor = publication.cursor();
+        let image = match publication.inert_rollback_image(&crate::task::RuntimeProgramOwner::Plan(
+            Arc::clone(&self.plan),
+        )) {
+            Ok(image) => image,
+            Err(message) => {
+                self.fiber.status = FlowFiberStatus::Failed(message.clone());
+                output.diagnostics.push(RuntimeDiagnostic::categorized(
+                    RuntimeDiagnosticCategory::Host,
+                    message,
+                ));
+                return false;
+            }
+        };
         if let Some(previous) = self.need_publication_frontiers.get(&need).copied() {
             match previous.compare_same_source(cursor) {
                 Some(std::cmp::Ordering::Greater) => return true,
                 Some(std::cmp::Ordering::Equal) => {
-                    if self.latest_need_publications.get(&need) == Some(&publication) {
+                    if self.latest_need_publications.get(&need) == Some(&image) {
                         return true;
                     }
                     let message = format!(
@@ -1203,8 +2186,7 @@ impl Engine {
             }
         }
         self.need_publication_frontiers.insert(need.clone(), cursor);
-        self.latest_need_publications
-            .insert(need.clone(), publication.clone());
+        self.latest_need_publications.insert(need.clone(), image);
         self.need_publications
             .entry(need)
             .or_default()
@@ -1233,10 +2215,43 @@ impl Engine {
         let pure_stats_before = pure_backend.stats();
         let pending_ops_before = self.pending_ops_len();
         let root_events_in = input.root_events.len();
+        if let Some(error) = input
+            .task_events
+            .iter()
+            .find_map(|event| event.inspect_host_ready_ownership().err())
+            .or_else(|| {
+                input
+                    .need_states
+                    .iter()
+                    .find_map(|state| state.inspect_host_ready_ownership().err())
+            })
+            .or_else(|| {
+                input
+                    .host_call_results
+                    .iter()
+                    .find_map(|result| result.inspect_host_payload_ownership().err())
+            })
+        {
+            let message = error.to_string();
+            self.fiber.status = FlowFiberStatus::Failed(message.clone());
+            output.diagnostics.push(RuntimeDiagnostic::categorized(
+                RuntimeDiagnosticCategory::Host,
+                message,
+            ));
+            let stats = RuntimeStepStats {
+                pending_ops_before,
+                pending_ops_after: self.pending_ops_len(),
+                child_fibers: self.child_fibers.len(),
+                root_events_in,
+                task_events_in: input.task_events.len(),
+                diagnostics: output.diagnostics.len(),
+                ..RuntimeStepStats::default()
+            };
+            return self.step_result(output, options, stats);
+        }
         let deferred_root_events = std::mem::take(&mut input.deferred_root_events);
         let need_states = normalize_runtime_need_states(std::mem::take(&mut input.need_states));
         let need_states_in = need_states.len();
-        input.need_states = need_states.clone();
         output
             .requests
             .root_events_next_step
@@ -1319,11 +2334,11 @@ impl Engine {
                 event.task_id.0, event.sequence.0
             ))
         }));
-        self.latch_need_publications(&need_states, &events, &mut output);
+        let events = self.latch_need_publications(need_states, events, &mut output);
         self.step_stream_plans(&mut output, pure_backend);
 
         while executed_ops < options.budget.max_ops && self.can_attempt_runtime_op() {
-            self.step_runtime_op(&input, &events, &mut output, pure_backend);
+            self.step_runtime_op(&mut input, &events, &mut output, pure_backend);
             executed_ops += 1;
             if self.should_return_to_host(options.mode, &output, executed_ops) {
                 break;
@@ -1419,7 +2434,7 @@ impl Engine {
 
     fn step_runtime_op(
         &mut self,
-        input: &RuntimeStepInput,
+        input: &mut RuntimeStepInput,
         events: &[TaskEvent],
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
@@ -1459,13 +2474,26 @@ impl Engine {
                 return;
             }
         };
-        let mut candidate = self.clone();
+        let image = match self.inert_rollback_image() {
+            Ok(image) => image,
+            Err(error) => {
+                self.fail_eval(error, output);
+                return;
+            }
+        };
+        let mut candidate = std::mem::replace(
+            self,
+            Self::new_with_shared_plan(Arc::clone(&self.plan), self.generation),
+        );
         let mut staged_output = RuntimeStepOutput::default();
         let mut drop_policy = None;
         candidate.step_flow(&mut staged_output, pure_backend, &mut drop_policy);
         let after = match flow_fiber_line_handle_owners(&candidate.fiber) {
             Ok(owners) => owners,
             Err(error) => {
+                drop(candidate);
+                *self = Self::from_rollback_image(image)
+                    .expect("a native Engine rollback image reconstructs its admitted owner");
                 self.fail_eval(error, output);
                 return;
             }
@@ -1478,6 +2506,9 @@ impl Engine {
         ) {
             Ok(receipt) => receipt,
             Err(error) => {
+                drop(candidate);
+                *self = Self::from_rollback_image(image)
+                    .expect("a native Engine rollback image reconstructs its admitted owner");
                 self.fail_eval(error, output);
                 return;
             }
@@ -1568,7 +2599,8 @@ impl Engine {
     }
 
     pub(super) fn spawn_child_fiber(&mut self, body: Vec<FlowOp>) -> Result<(), RuntimeEvalError> {
-        self.spawn_child_fiber_with_env(body, self.fiber.env.clone())
+        let env = self.fiber.env.try_duplicate_unrestricted()?;
+        self.spawn_child_fiber_with_env(body, env)
     }
 
     fn spawn_child_fiber_with_env(
@@ -1608,13 +2640,13 @@ impl Engine {
         Ok(())
     }
 
-    fn prepare_dialogue_effect_callback(
+    fn inspect_dialogue_effect_callback(
         &self,
+        activation: &DialogueActivationId,
+        site: crate::runtime_id::RuntimeDialogueEffectSiteId,
         callback: &RuntimeCallableValue,
-        id: FlowFiberId,
-        persistent_id: RuntimePersistentFiberId,
-        execution: crate::runtime_id::ExecutionInstanceId,
-    ) -> Result<FlowFiber, RuntimeEvalError> {
+        ordinal: u64,
+    ) -> Result<NativePreparedDialogueEffectCallback, RuntimeEvalError> {
         callback.validate_for_owner(&crate::task::RuntimeProgramOwner::Plan(Arc::clone(
             &self.plan,
         )))?;
@@ -1625,58 +2657,98 @@ impl Engine {
                     .to_owned(),
             });
         }
-        let crate::value::RuntimeCallableApplication::Invoke(invocation) =
-            callback.prepare_group(&[], None)?
-        else {
-            return Err(crate::value::RuntimeCallableValueError::InputProjection {
-                state: callback.state(),
-            }
-            .into());
+        let (invocation, captures, arguments) = callback.inspect_zero_arg_plan_inputs()?;
+        let crate::value::RuntimeCallableBodyReference::Plan(function) = invocation.body() else {
+            unreachable!("borrowed native callback proof selected a plan body")
         };
-        let crate::value::RuntimeCallableBodyReference::Plan(site_id) = invocation.body else {
-            return Err(crate::value::RuntimeCallableValueError::ForeignProgram.into());
-        };
-        let site = self.plan.validate_function_site_inputs(
-            site_id,
-            &invocation.captures,
-            &invocation.arguments,
-        )?;
-        let RuntimeFunctionSiteBody::Executable(executable) = site.body() else {
+        let declaration = self
+            .plan
+            .validate_function_site_input_refs(function, &captures, &arguments)?;
+        if !matches!(declaration.body(), RuntimeFunctionSiteBody::Executable(_)) {
             return Err(
                 crate::value::RuntimeCallableValueError::RequiresControlTransfer {
                     state: callback.state(),
                 }
                 .into(),
             );
-        };
-        let mut env = RuntimeEnv::default();
-        for input in site.inputs() {
-            let RuntimeFunctionInputSource::Capture { position } = input.source() else {
-                continue;
-            };
-            let value = invocation
-                .captures
-                .get(usize::try_from(position).map_err(|_| {
-                    RuntimeEvalError::FunctionApply(
-                        crate::value::RuntimeFunctionApplyError::InvalidBoundArgumentPrefix {
-                            site: site_id,
-                        },
-                    )
-                })?)
-                .ok_or(RuntimeEvalError::FunctionApply(
-                    crate::value::RuntimeFunctionApplyError::InvalidBoundArgumentPrefix {
-                        site: site_id,
-                    },
-                ))?;
-            env.set_ref(input.input_local(), value);
-            let bindings = match match_runtime_pattern(&self.plan, input.pattern(), value)? {
-                Some(bindings) => bindings,
-                None => {
-                    return Err(RuntimeEvalError::PatternMismatch(runtime_value_label(
-                        value,
-                    )));
+        }
+        for input in declaration.inputs() {
+            let (values, position) = match input.source() {
+                RuntimeFunctionInputSource::Capture { position } => (&captures, position as usize),
+                RuntimeFunctionInputSource::Parameter { position } => {
+                    (&arguments, position as usize)
                 }
             };
+            let value = values.get(position).copied().ok_or(
+                crate::value::RuntimeFunctionApplyError::InvalidBoundArgumentPrefix {
+                    site: function,
+                },
+            )?;
+            if !crate::pattern::inspect_runtime_pattern_owned(&self.plan, input.pattern(), value)? {
+                return Err(RuntimeEvalError::PatternMismatch(format!(
+                    "function site {function} callback input {:?}",
+                    input.source()
+                )));
+            }
+        }
+        let allocated = ordinal
+            .checked_add(1)
+            .and_then(std::num::NonZeroU64::new)
+            .ok_or(RuntimeEvalError::FiberIdentityOverflow)?;
+        Ok(NativePreparedDialogueEffectCallback {
+            key: crate::runtime_id::RuntimeDialogueEffectCallbackActivationId::new(
+                activation.clone(),
+                site,
+            ),
+            ordinal,
+            allocated,
+            site: function,
+            invocation,
+        })
+    }
+
+    fn commit_dialogue_effect_callback(
+        &self,
+        callback: RuntimeCallableValue,
+        prepared: NativePreparedDialogueEffectCallback,
+    ) -> FlowFiber {
+        let invocation = callback.commit_zero_arg_invocation(prepared.invocation);
+        assert!(matches!(
+            invocation.body,
+            crate::value::RuntimeCallableBodyReference::Plan(site) if site == prepared.site
+        ));
+        let site = self
+            .plan
+            .function_sites()
+            .get(prepared.site)
+            .expect("prepared callback function site remains present");
+        let RuntimeFunctionSiteBody::Executable(executable) = site.body() else {
+            unreachable!("prepared callback selected executable body")
+        };
+        let mut env = RuntimeEnv::default();
+        let mut captures = invocation
+            .captures
+            .into_iter()
+            .map(Some)
+            .collect::<Vec<_>>();
+        let mut arguments = invocation
+            .arguments
+            .into_iter()
+            .map(Some)
+            .collect::<Vec<_>>();
+        for input in site.inputs() {
+            let (values, position) = match input.source() {
+                RuntimeFunctionInputSource::Capture { position } => (&mut captures, position),
+                RuntimeFunctionInputSource::Parameter { position } => (&mut arguments, position),
+            };
+            let value = values
+                .get_mut(position as usize)
+                .and_then(Option::take)
+                .expect("prepared callback capture source remains present");
+            let bindings =
+                crate::pattern::match_runtime_pattern_owned(&self.plan, input.pattern(), value)
+                    .expect("prepared callback pattern remains valid")
+                    .expect("prepared callback pattern remains matched");
             env.bind_all(bindings);
         }
         let mut pending_ops = VecDeque::with_capacity(executable.ops().len().saturating_add(2));
@@ -1685,7 +2757,7 @@ impl Engine {
         });
         pending_ops.extend(executable.ops().iter().cloned());
         pending_ops.push_back(FlowOp::ExitScope);
-        Ok(FlowFiber {
+        FlowFiber {
             line_cursor: 0,
             cursor: None,
             pending_ops,
@@ -1696,65 +2768,113 @@ impl Engine {
             observations: RuntimeObservationState::default(),
             stream_states: BTreeMap::new(),
             selected_dialogue_result: None,
-            id,
-            persistent_id,
-            execution,
+            id: FlowFiberId(prepared.ordinal),
+            persistent_id: RuntimePersistentFiberId::from_allocated(prepared.allocated.get()),
+            execution: crate::runtime_id::ExecutionInstanceId::from_allocated(prepared.allocated),
             owner: FlowFiberOwner::Executor,
             status: FlowFiberStatus::Running,
-        })
+        }
     }
 
-    fn dialogue_effect_callback(
-        callbacks: &[RuntimeDialogueContentEffectBinding],
-        site: crate::runtime_id::RuntimeDialogueEffectSiteId,
-    ) -> Option<RuntimeCallableValue> {
-        callbacks
-            .iter()
-            .find(|callback| callback.site() == site)
-            .map(|callback| callback.callback().clone())
-    }
-
-    pub(super) fn stage_dialogue_effect_callbacks(
-        &self,
-        batch: &mut NativeLineTaskExecutionBatch,
-        activation: &DialogueActivationId,
-        callbacks: &[(
+    fn take_dialogue_effect_callbacks(
+        callbacks: &mut Box<[RuntimeDialogueContentEffectBinding]>,
+        sites: &[crate::runtime_id::RuntimeDialogueEffectSiteId],
+    ) -> Result<
+        Vec<(
             crate::runtime_id::RuntimeDialogueEffectSiteId,
             RuntimeCallableValue,
-        )],
-    ) -> Result<(), RuntimeEvalError> {
-        for (site, callback) in callbacks {
-            let key = crate::runtime_id::RuntimeDialogueEffectCallbackActivationId::new(
-                activation.clone(),
-                *site,
-            );
-            if !batch
-                .dialogue_effect_callback_activations
-                .insert(key.clone())
-            {
+        )>,
+        RuntimeEvalError,
+    > {
+        let mut seen = std::collections::BTreeSet::new();
+        for site in sites {
+            if !seen.insert(*site) || !callbacks.iter().any(|callback| callback.site() == *site) {
                 return Err(RuntimeEvalError::Effect(format!(
-                    "dialogue effect callback activation was already reserved: {key:?}"
+                    "dialogue effect site {site} has no available stored callback"
                 )));
             }
-            let ordinal = batch.next_fiber_id;
-            let allocated = ordinal
-                .checked_add(1)
-                .and_then(std::num::NonZeroU64::new)
-                .ok_or(RuntimeEvalError::FiberIdentityOverflow)?;
-            batch.next_fiber_id = batch
-                .next_fiber_id
-                .checked_add(1)
-                .ok_or(RuntimeEvalError::FiberIdentityOverflow)?;
-            let child = self.prepare_dialogue_effect_callback(
-                callback,
-                FlowFiberId(ordinal),
-                RuntimePersistentFiberId::from_allocated(allocated.get()),
-                crate::runtime_id::ExecutionInstanceId::from_allocated(allocated),
+        }
+        let mut remaining = std::mem::take(callbacks).into_vec();
+        let selected = sites
+            .iter()
+            .map(|site| {
+                let index = remaining
+                    .iter()
+                    .position(|callback| callback.site() == *site)
+                    .expect("all effect callback sites were preflighted before taking owners");
+                remaining.remove(index).into_parts()
+            })
+            .collect();
+        *callbacks = remaining.into_boxed_slice();
+        Ok(selected)
+    }
+
+    pub(super) fn inspect_dialogue_effect_callbacks(
+        &self,
+        activation: &DialogueActivationId,
+        callbacks: &[RuntimeDialogueContentEffectBinding],
+        sites: &[crate::runtime_id::RuntimeDialogueEffectSiteId],
+        first_ordinal: u64,
+    ) -> Result<Vec<NativePreparedDialogueEffectCallback>, RuntimeEvalError> {
+        let mut selected = BTreeSet::new();
+        let mut keys = self.dialogue_effect_callback_activations.clone();
+        let mut ordinal = first_ordinal;
+        let mut prepared = Vec::with_capacity(sites.len());
+        for site in sites {
+            let callback = callbacks
+                .iter()
+                .find(|callback| callback.site() == *site)
+                .ok_or_else(|| {
+                    RuntimeEvalError::Effect(format!(
+                        "dialogue effect site {site} has no available stored callback"
+                    ))
+                })?;
+            if !selected.insert(*site) {
+                return Err(RuntimeEvalError::Effect(format!(
+                    "dialogue effect site {site} was selected twice"
+                )));
+            }
+            let proof = self.inspect_dialogue_effect_callback(
+                activation,
+                *site,
+                callback.callback(),
+                ordinal,
             )?;
+            if !keys.insert(proof.key.clone()) {
+                return Err(RuntimeEvalError::Effect(format!(
+                    "dialogue effect callback activation was already reserved: {:?}",
+                    proof.key
+                )));
+            }
+            ordinal = proof.allocated.get();
+            prepared.push(proof);
+        }
+        Ok(prepared)
+    }
+
+    pub(super) fn commit_dialogue_effect_callbacks(
+        &self,
+        batch: &mut NativeLineTaskExecutionBatch,
+        callbacks: Vec<(
+            crate::runtime_id::RuntimeDialogueEffectSiteId,
+            RuntimeCallableValue,
+        )>,
+        prepared: Vec<NativePreparedDialogueEffectCallback>,
+    ) {
+        assert_eq!(callbacks.len(), prepared.len());
+        for ((site, callback), proof) in callbacks.into_iter().zip(prepared) {
+            assert_eq!(batch.next_fiber_id, proof.ordinal);
+            assert_eq!(proof.key.site(), site);
+            assert!(
+                batch
+                    .dialogue_effect_callback_activations
+                    .insert(proof.key.clone())
+            );
+            batch.next_fiber_id = proof.allocated.get();
+            let child = self.commit_dialogue_effect_callback(callback, proof);
             batch.child_fibers.push_back(child);
             batch.run_child_next = true;
         }
-        Ok(())
     }
 
     pub(super) fn capture_line_task_locals(
@@ -1780,6 +2900,76 @@ impl Engine {
             .map(Vec::into_boxed_slice)
     }
 
+    fn inspect_line_task_commands(
+        &self,
+        transaction: &dialogue::DialogueActivationTransaction,
+        activation: &crate::line_task::LineTaskActivation,
+        captures: &[RuntimeLocalBinding],
+        request_cancellation: bool,
+    ) -> Result<NativePreparedLineTaskCommands, dialogue::DialogueExecutionError> {
+        let activation_id = transaction.activation();
+        let line = transaction.line();
+        let mut scheduled = line.begin_scheduled_completion_stage();
+        let mut completed = BTreeSet::new();
+        for completion in &activation.scheduled_completions {
+            line.stage_unstarted_scheduled_completion(&mut scheduled, completion)?;
+            completed.insert(completion.token().clone());
+        }
+        if request_cancellation
+            && self.child_fibers.iter().any(|child| {
+                matches!(&child.owner,
+                    FlowFiberOwner::LineTask(owner)
+                        if owner.tag.activation_id() == activation_id
+                            && owner.cancel_policy == ChildCancelPolicy::Detach)
+            })
+        {
+            return Err(crate::line_task::LineRuntimeError::InvalidActivationOperation.into());
+        }
+        let mut packets = BTreeMap::new();
+        let mut planned = Vec::new();
+        let mut next_fiber_id = self.next_fiber_id;
+        for command in &activation.commands {
+            match command {
+                crate::line_task::LineTaskCommand::Run { tag, policy } => {
+                    if let Some(token) = tag.scheduled_token() {
+                        if completed.contains(token) || packets.contains_key(token) {
+                            return Err(crate::line_task::LineRuntimeError::InvalidScheduledCaptureTransition.into());
+                        }
+                        packets.insert(token.clone(), line.inspect_scheduled_packet_take(token)?);
+                    } else if captures
+                        .iter()
+                        .any(|capture| !capture.value.ownership().permits_copy())
+                    {
+                        return Err(crate::line_task::LineRuntimeError::AffineGroupCapture.into());
+                    }
+                    next_fiber_id = next_fiber_id
+                        .checked_add(1)
+                        .ok_or(RuntimeEvalError::FiberIdentityOverflow)?;
+                    planned.push((tag, policy.cancel));
+                }
+                crate::line_task::LineTaskCommand::Cancel { tag } => {
+                    if self.child_fibers.iter().any(|child| {
+                        matches!(&child.owner,
+                            FlowFiberOwner::LineTask(owner)
+                                if owner.tag == *tag
+                                    && owner.cancel_policy == ChildCancelPolicy::Detach)
+                    }) || planned.iter().any(|(planned_tag, cancel)| {
+                        *planned_tag == tag && *cancel == ChildCancelPolicy::Detach
+                    }) {
+                        return Err(
+                            crate::line_task::LineRuntimeError::InvalidActivationOperation.into(),
+                        );
+                    }
+                }
+            }
+        }
+        Ok(NativePreparedLineTaskCommands {
+            scheduled,
+            packets,
+            next_fiber_id,
+        })
+    }
+
     pub(super) fn prepare_line_task_commands(
         &self,
         transaction: &mut dialogue::DialogueActivationTransaction,
@@ -1788,16 +2978,27 @@ impl Engine {
         captures: &[RuntimeLocalBinding],
         request_cancellation: bool,
     ) -> Result<NativeLineTaskExecutionBatch, dialogue::DialogueExecutionError> {
+        let NativePreparedLineTaskCommands {
+            scheduled,
+            mut packets,
+            next_fiber_id,
+        } = self.inspect_line_task_commands(
+            transaction,
+            &activation,
+            captures,
+            request_cancellation,
+        )?;
         let activation_id = transaction.activation().clone();
         let mut batch = NativeLineTaskExecutionBatch {
-            child_fibers: self.child_fibers.clone(),
+            child_fibers: VecDeque::new(),
+            closing_existing: BTreeSet::new(),
             next_fiber_id: self.next_fiber_id,
             run_child_next: self.run_child_next,
             dialogue_effect_callback_activations: self.dialogue_effect_callback_activations.clone(),
         };
         if request_cancellation {
-            for child in &mut batch.child_fibers {
-                let FlowFiberOwner::LineTask(owner) = &mut child.owner else {
+            for child in &self.child_fibers {
+                let FlowFiberOwner::LineTask(owner) = &child.owner else {
                     continue;
                 };
                 if owner.tag.activation_id() != &activation_id {
@@ -1805,20 +3006,16 @@ impl Engine {
                 }
                 match owner.cancel_policy {
                     ChildCancelPolicy::Finish => {}
-                    ChildCancelPolicy::CancelAndJoin => owner.closing = true,
-                    ChildCancelPolicy::Detach => {
-                        return Err(
-                            crate::line_task::LineRuntimeError::InvalidActivationOperation.into(),
-                        );
+                    ChildCancelPolicy::CancelAndJoin => {
+                        batch.closing_existing.insert(child.id);
                     }
+                    ChildCancelPolicy::Detach => unreachable!("cancel policy was preflighted"),
                 }
             }
         }
-        for completion in activation.scheduled_completions {
-            transaction
-                .line_mut()
-                .complete_unstarted_scheduled(&completion)?;
-        }
+        transaction
+            .line_mut()
+            .commit_scheduled_completion_stage(scheduled);
         for command in activation.commands {
             match command {
                 crate::line_task::LineTaskCommand::Run { tag, policy } => {
@@ -1832,19 +3029,14 @@ impl Engine {
                         identity: crate::scope::RuntimeScopeIdentity::Anonymous,
                     });
                     let selected_captures = if let Some(token) = tag.scheduled_token().cloned() {
+                        let proof = packets
+                            .remove(&token)
+                            .expect("scheduled packet was preflighted once");
                         transaction
                             .line_mut()
-                            .take_scheduled_capture_packet(&token)?
+                            .take_scheduled_capture_packet_prepared(proof)
                             .into_vec()
                     } else {
-                        if captures
-                            .iter()
-                            .any(|capture| !capture.value.ownership().permits_copy())
-                        {
-                            return Err(
-                                crate::line_task::LineRuntimeError::AffineGroupCapture.into()
-                            );
-                        }
                         captures.to_vec()
                     };
                     let mut env = RuntimeEnv::default();
@@ -1853,11 +3045,11 @@ impl Engine {
                     let allocated = ordinal
                         .checked_add(1)
                         .and_then(std::num::NonZeroU64::new)
-                        .ok_or(RuntimeEvalError::FiberIdentityOverflow)?;
+                        .expect("fiber identity headroom was preflighted");
                     batch.next_fiber_id = batch
                         .next_fiber_id
                         .checked_add(1)
-                        .ok_or(RuntimeEvalError::FiberIdentityOverflow)?;
+                        .expect("fiber identity headroom was preflighted");
                     batch.child_fibers.push_back(FlowFiber {
                         line_cursor: 0,
                         cursor: None,
@@ -1885,6 +3077,22 @@ impl Engine {
                     batch.run_child_next = true;
                 }
                 crate::line_task::LineTaskCommand::Cancel { tag } => {
+                    for child in &self.child_fibers {
+                        let FlowFiberOwner::LineTask(owner) = &child.owner else {
+                            continue;
+                        };
+                        if owner.tag == tag {
+                            match owner.cancel_policy {
+                                ChildCancelPolicy::Finish => {}
+                                ChildCancelPolicy::CancelAndJoin => {
+                                    batch.closing_existing.insert(child.id);
+                                }
+                                ChildCancelPolicy::Detach => {
+                                    unreachable!("existing child cancellation was preflighted")
+                                }
+                            }
+                        }
+                    }
                     for child in &mut batch.child_fibers {
                         let FlowFiberOwner::LineTask(owner) = &mut child.owner else {
                             continue;
@@ -1894,7 +3102,7 @@ impl Engine {
                                 ChildCancelPolicy::Finish => {}
                                 ChildCancelPolicy::CancelAndJoin => owner.closing = true,
                                 ChildCancelPolicy::Detach => {
-                                    return Err(crate::line_task::LineRuntimeError::InvalidActivationOperation.into());
+                                    unreachable!("planned child cancellation was preflighted")
                                 }
                             }
                         }
@@ -1902,37 +3110,45 @@ impl Engine {
                 }
             }
         }
+        assert_eq!(batch.next_fiber_id, next_fiber_id);
         Ok(batch)
     }
 
     pub(super) fn commit_line_task_execution_batch(&mut self, batch: NativeLineTaskExecutionBatch) {
-        self.child_fibers = batch.child_fibers;
+        for child in &mut self.child_fibers {
+            if batch.closing_existing.contains(&child.id)
+                && let FlowFiberOwner::LineTask(owner) = &mut child.owner
+            {
+                owner.closing = true;
+            }
+        }
+        self.child_fibers.extend(batch.child_fibers);
         self.next_fiber_id = batch.next_fiber_id;
         self.run_child_next = batch.run_child_next;
         self.dialogue_effect_callback_activations = batch.dialogue_effect_callback_activations;
     }
 
-    /// Builds one dialogue-owned defer child before the activation transaction
-    /// that transferred its capture packet is committed.
-    fn prepare_deferred_line_child(
+    /// Checks the complete child ABI and handle projection while the owning
+    /// registration is still in its activation or lexical defer stack.
+    fn inspect_deferred_line_child(
         &self,
-        activation: &DialogueActivationId,
-        registration: crate::line_task::RuntimeLineDeferredRegistration,
-    ) -> Result<NativeLineTaskExecutionBatch, dialogue::DialogueExecutionError> {
-        let (id, defer_site, _, captures) = registration.into_parts();
-        let site_id = self
-            .plan
-            .defer_function_site(defer_site)
-            .ok_or(RuntimeEvalError::UnknownDeferredSite { site: defer_site })?;
+        registration: &crate::line_task::RuntimeLineDeferredRegistration,
+    ) -> Result<NativePreparedDeferredLineChild, dialogue::DialogueExecutionError> {
+        let captures = registration.captures();
+        let site_id = self.plan.defer_function_site(registration.site()).ok_or(
+            RuntimeEvalError::UnknownDeferredSite {
+                site: registration.site(),
+            },
+        )?;
         let site = self
             .plan
-            .validate_function_site_inputs(site_id, &captures, &[])
+            .validate_function_site_inputs(site_id, captures, &[])
             .map_err(RuntimeEvalError::from)?;
-        let RuntimeFunctionSiteBody::Executable(body) = site.body() else {
+        if !matches!(site.body(), RuntimeFunctionSiteBody::Executable(_)) {
             return Err(crate::line_task::LineRuntimeError::InvalidActivationOperation.into());
-        };
+        }
         let mut capture_tokens = BTreeSet::new();
-        for capture in &captures {
+        for capture in captures {
             for handle in capture
                 .affine_line_handles()
                 .map_err(|_| crate::line_task::LineRuntimeError::InvalidDeferredTransition)?
@@ -1944,17 +3160,91 @@ impl Engine {
                 }
             }
         }
-        let mut env = RuntimeEnv::default();
+        let mut positions = BTreeSet::new();
         for input in site.inputs() {
             let RuntimeFunctionInputSource::Capture { position } = input.source() else {
                 return Err(crate::line_task::LineRuntimeError::InvalidActivationOperation.into());
             };
+            if !positions.insert(position) {
+                return Err(crate::line_task::LineRuntimeError::InvalidActivationOperation.into());
+            }
             let value = captures
                 .get(position as usize)
                 .ok_or(crate::line_task::LineRuntimeError::InvalidActivationOperation)?;
-            env.set_ref(input.input_local(), value);
-            let bindings = match_runtime_pattern(&self.plan, input.pattern(), value)?
-                .ok_or_else(|| RuntimeEvalError::PatternMismatch(runtime_value_label(value)))?;
+            if !crate::pattern::inspect_runtime_pattern_owned(&self.plan, input.pattern(), value)? {
+                return Err(RuntimeEvalError::PatternMismatch(format!(
+                    "function site {site_id} deferred capture {:?}",
+                    input.source()
+                ))
+                .into());
+            }
+            for handle in value
+                .affine_line_handles()
+                .map_err(|_| crate::line_task::LineRuntimeError::InvalidDeferredTransition)?
+            {
+                let destinations = crate::pattern::runtime_pattern_handle_destinations(
+                    input.pattern(),
+                    value,
+                    handle.token(),
+                )
+                .map_err(|_| crate::line_task::LineRuntimeError::InvalidDeferredTransition)?;
+                if destinations.len() != 1 {
+                    return Err(
+                        crate::line_task::LineRuntimeError::InvalidDeferredTransition.into(),
+                    );
+                }
+            }
+        }
+        if positions.len() != captures.len() {
+            return Err(crate::line_task::LineRuntimeError::InvalidActivationOperation.into());
+        }
+        let ordinal = self.next_fiber_id;
+        let next_fiber_id = ordinal
+            .checked_add(1)
+            .ok_or(RuntimeEvalError::FiberIdentityOverflow)?;
+        let allocated = std::num::NonZeroU64::new(next_fiber_id)
+            .ok_or(RuntimeEvalError::FiberIdentityOverflow)?;
+        Ok(NativePreparedDeferredLineChild {
+            site_id,
+            capture_tokens,
+            ordinal,
+            allocated,
+            next_fiber_id,
+        })
+    }
+
+    /// Moves the sole checked capture packet into one child. All fallible
+    /// lookup, pattern, token, and identity checks ran before the caller
+    /// removed that packet from its stack.
+    fn commit_prepared_deferred_line_child(
+        &self,
+        activation: &DialogueActivationId,
+        registration: crate::line_task::RuntimeLineDeferredRegistration,
+        prepared: NativePreparedDeferredLineChild,
+    ) -> NativeLineTaskExecutionBatch {
+        let (id, _, _, captures) = registration.into_parts();
+        let site = self
+            .plan
+            .function_sites()
+            .get(prepared.site_id)
+            .expect("checked deferred function site remains present");
+        let RuntimeFunctionSiteBody::Executable(body) = site.body() else {
+            unreachable!("checked deferred function body remains executable")
+        };
+        let mut env = RuntimeEnv::default();
+        let mut captures = captures.into_iter().map(Some).collect::<Vec<_>>();
+        for input in site.inputs() {
+            let RuntimeFunctionInputSource::Capture { position } = input.source() else {
+                unreachable!("checked deferred input remains a capture")
+            };
+            let value = captures
+                .get_mut(position as usize)
+                .and_then(Option::take)
+                .expect("checked deferred capture position remains unique");
+            let bindings =
+                crate::pattern::match_runtime_pattern_owned(&self.plan, input.pattern(), value)
+                    .expect("checked deferred pattern projection remains valid")
+                    .expect("checked deferred pattern remains matched");
             env.bind_all(bindings);
         }
         let mut pending_ops = VecDeque::with_capacity(body.ops().len().saturating_add(2));
@@ -1963,16 +3253,10 @@ impl Engine {
         });
         pending_ops.extend(body.ops().iter().cloned());
         pending_ops.push_back(FlowOp::ExitScope);
-        let ordinal = self.next_fiber_id;
-        let allocated = ordinal
-            .checked_add(1)
-            .and_then(std::num::NonZeroU64::new)
-            .ok_or(RuntimeEvalError::FiberIdentityOverflow)?;
         let mut batch = NativeLineTaskExecutionBatch {
-            child_fibers: self.child_fibers.clone(),
-            next_fiber_id: ordinal
-                .checked_add(1)
-                .ok_or(RuntimeEvalError::FiberIdentityOverflow)?,
+            child_fibers: VecDeque::new(),
+            closing_existing: BTreeSet::new(),
+            next_fiber_id: prepared.next_fiber_id,
             run_child_next: true,
             dialogue_effect_callback_activations: self.dialogue_effect_callback_activations.clone(),
         };
@@ -1987,9 +3271,9 @@ impl Engine {
             observations: RuntimeObservationState::default(),
             stream_states: BTreeMap::new(),
             selected_dialogue_result: None,
-            id: FlowFiberId(ordinal),
-            persistent_id: RuntimePersistentFiberId::from_allocated(allocated.get()),
-            execution: crate::runtime_id::ExecutionInstanceId::from_allocated(allocated),
+            id: FlowFiberId(prepared.ordinal),
+            persistent_id: RuntimePersistentFiberId::from_allocated(prepared.allocated.get()),
+            execution: crate::runtime_id::ExecutionInstanceId::from_allocated(prepared.allocated),
             owner: FlowFiberOwner::LineTask(LineTaskFiberOwner {
                 tag: LineTaskWorkTag::activation(
                     activation.clone(),
@@ -2001,21 +3285,33 @@ impl Engine {
             }),
             status: FlowFiberStatus::Running,
         };
-        if flow_fiber_line_handle_tokens(&child)? != capture_tokens {
-            return Err(crate::line_task::LineRuntimeError::InvalidDeferredTransition.into());
-        }
+        debug_assert_eq!(
+            flow_fiber_line_handle_tokens(&child)
+                .expect("checked deferred capture ownership remains unique"),
+            prepared.capture_tokens
+        );
         batch.child_fibers.push_back(child);
-        Ok(batch)
+        batch
     }
 
     fn step_next_child_fiber(
         &mut self,
-        input: &RuntimeStepInput,
+        input: &mut RuntimeStepInput,
         events: &[TaskEvent],
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
-        let mut candidate = self.clone();
+        let image = match self.inert_rollback_image() {
+            Ok(image) => image,
+            Err(error) => {
+                self.fail_eval(error, output);
+                return true;
+            }
+        };
+        let mut candidate = std::mem::replace(
+            self,
+            Self::new_with_shared_plan(Arc::clone(&self.plan), self.generation),
+        );
         let mut staged_output = RuntimeStepOutput::default();
         match candidate.step_next_child_fiber_candidate(
             input,
@@ -2029,6 +3325,9 @@ impl Engine {
                 progressed
             }
             Err(error) => {
+                drop(candidate);
+                *self = Self::from_rollback_image(image)
+                    .expect("a native Engine rollback image reconstructs its admitted owner");
                 self.fail_eval(error, output);
                 true
             }
@@ -2037,7 +3336,7 @@ impl Engine {
 
     fn step_next_child_fiber_candidate(
         &mut self,
-        input: &RuntimeStepInput,
+        input: &mut RuntimeStepInput,
         events: &[TaskEvent],
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
@@ -2226,6 +3525,13 @@ impl Engine {
             let dialogue::DialogueLineTaskState::Live(live) = &frame.line_task else {
                 return Err(crate::line_task::LineRuntimeError::InvalidScheduledWorkState.into());
             };
+            if frame
+                .task_inputs
+                .iter()
+                .any(|binding| !binding.value.ownership().permits_copy())
+            {
+                return Err(crate::line_task::LineRuntimeError::AffineGroupCapture.into());
+            }
             (frame.task_inputs.clone(), live.clone())
         };
         let mut selected_tokens = BTreeSet::new();
@@ -2325,7 +3631,7 @@ impl Engine {
 
     fn step_active_child_fiber(
         &mut self,
-        input: &RuntimeStepInput,
+        input: &mut RuntimeStepInput,
         events: &[TaskEvent],
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
@@ -2439,7 +3745,41 @@ impl Engine {
         {
             FlowFiberStatus::Running
         } else {
-            self.fiber.status.clone()
+            match &self.fiber.status {
+                FlowFiberStatus::Running => FlowFiberStatus::Running,
+                FlowFiberStatus::Dialogue(activation) => {
+                    FlowFiberStatus::Dialogue(activation.clone())
+                }
+                FlowFiberStatus::NeedWaiting(state) => {
+                    FlowFiberStatus::NeedWaiting(Box::new(AwaitState {
+                        binding: state.binding.clone(),
+                        need: state.need.clone(),
+                        item_type: state.item_type,
+                        observers: state.observers.clone(),
+                        resume: state.resume,
+                        observed_through: state.observed_through,
+                        queued: VecDeque::new(),
+                    }))
+                }
+                FlowFiberStatus::WaitingMany(WaitingManyStatus::Native(state)) => {
+                    FlowFiberStatus::WaitingMany(WaitingManyStatus::Observed(AwaitManyProgress {
+                        task: state.target.task.clone(),
+                        completed: state
+                            .results
+                            .iter()
+                            .filter(|result| result.is_some())
+                            .count(),
+                        total: state.results.len(),
+                    }))
+                }
+                FlowFiberStatus::WaitingMany(WaitingManyStatus::Observed(progress)) => {
+                    FlowFiberStatus::WaitingMany(WaitingManyStatus::Observed(progress.clone()))
+                }
+                FlowFiberStatus::HostCall(state) => FlowFiberStatus::HostCall(state.clone()),
+                FlowFiberStatus::Choice(state) => FlowFiberStatus::Choice(state.clone()),
+                FlowFiberStatus::Done(exit) => FlowFiberStatus::Done(exit.clone()),
+                FlowFiberStatus::Failed(message) => FlowFiberStatus::Failed(message.clone()),
+            }
         }
     }
 
@@ -2538,4 +3878,67 @@ fn line_effect_is_visible(effect: &LineEffectRequest) -> bool {
             | LineEffectRequest::MetricWrite(_)
             | LineEffectRequest::EmitEvent(_)
     )
+}
+
+#[cfg(test)]
+mod rollback_tests {
+    use super::*;
+    use crate::plan::RuntimePlanBuilder;
+    use crate::runtime_id::RuntimeLocalDeclarationId;
+    use crate::task::{LogicalEpoch, RuntimeNeedState, TaskSequence};
+    use arcweft_need::Need;
+    use std::num::NonZeroU32;
+
+    #[test]
+    fn native_rollback_round_trips_distinct_affine_env_and_ready_owners() {
+        let plan = RuntimePlanBuilder::new()
+            .finish()
+            .expect("empty owner plan");
+        let mut engine = Engine::new(plan);
+        let local = RuntimeLocalDeclarationId::from_accepted_ordinal(
+            NonZeroU32::new(1).expect("nonzero local"),
+        );
+        let local_need = NeedId("need.native.rollback.local".to_owned());
+        engine.fiber.env.bind_all_root([RuntimeLocalBinding {
+            local,
+            value: RuntimeValue::Need(local_need.clone()),
+        }]);
+        let ready_need = NeedId("need.native.rollback.ready".to_owned());
+        let ready_value = RuntimeValue::Need(NeedId("need.native.rollback.payload".to_owned()));
+        assert!(!ready_value.ownership().permits_copy());
+        let published = RuntimeNeedState::new(
+            LogicalEpoch(1),
+            ready_need.clone(),
+            TaskSequence(1),
+            Need::Ready(RuntimePayload(ready_value)),
+        );
+        let cursor = TaskPublicationCursor::from_need_state(&published);
+        let (_, need, _, state) = published.into_parts();
+        assert!(engine.enqueue_need_publication(
+            RuntimeNeedPublication::State {
+                need,
+                state,
+                cursor,
+            },
+            &mut RuntimeStepOutput::default(),
+        ));
+
+        let image = engine.inert_rollback_image().expect("complete inert image");
+        drop(engine);
+        let restored = Engine::from_rollback_image(image).expect("exact owner restore");
+        assert_eq!(
+            restored.fiber.env.get(local),
+            Some(&RuntimeValue::Need(local_need))
+        );
+        let queued = restored.need_publications.get(&ready_need).unwrap();
+        assert_eq!(queued.len(), 1);
+        assert!(matches!(
+            &queued[0],
+            RuntimeNeedPublication::State {
+                state: Need::Ready(value),
+                ..
+            } if value.value() == &RuntimeValue::Need(NeedId("need.native.rollback.payload".to_owned()))
+        ));
+        assert_eq!(restored.latest_need_publications.len(), 1);
+    }
 }

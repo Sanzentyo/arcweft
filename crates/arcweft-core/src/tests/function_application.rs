@@ -50,6 +50,8 @@ pub(crate) fn returning_function_plan(body_kind: RuntimeFunctionSiteBodyKind) ->
     let inner_site = builder
         .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
             inputs: Box::new([RuntimeFunctionInputBindingSeed {
+                ownership: Default::default(),
+                unrestricted_bindings: Box::new([]),
                 source: RuntimeFunctionInputSource::Parameter { position: 0 },
                 input_local: admission.local_ids()[0].clone(),
                 pattern: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),

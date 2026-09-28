@@ -142,10 +142,7 @@ fn literal_builder_uses_the_same_choice_rule_and_preserves_runtime_only_values()
     ));
     let mut builder = RuntimePlanBuilder::new();
     builder.admit_type_batch(types(), []).unwrap();
-    let iterator = RuntimeValue::Iterator(RuntimeIterator::Values {
-        items: vec![RuntimeValue::i16(1)],
-        index: 0,
-    });
+    let iterator = RuntimeValue::Iterator(RuntimeIterator::values(vec![RuntimeValue::i16(1)]));
     let range = RuntimeValue::Range(RuntimeRange::Int {
         start: Some(crate::value::RuntimeInt::I16(1)),
         end: Some(crate::value::RuntimeInt::I16(3)),

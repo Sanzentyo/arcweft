@@ -3,7 +3,10 @@ use crate::plan::FlowEvent;
 use crate::root::{RootEventInput, RootTransitionOutcome, RuntimeCommandEnvelope};
 use crate::runtime_id::{DialogueActivationId, RuntimeDialogueEffectSiteId, RuntimeDialogueMarkId};
 use crate::stream::RuntimeStreamEvent;
-use crate::task::{CancelScopeId, NamedHostArg, RuntimeNeedState, TaskEvent, TaskSpec};
+use crate::task::{
+    CancelScopeId, NamedHostArg, RuntimeHostPayloadOwnershipError, RuntimeNeedState, TaskEvent,
+    TaskSpec, inspect_host_payload_ownership,
+};
 use crate::time::{LogicalDuration, TickId};
 use crate::value::RuntimePayload;
 use arcweft_interaction_model::{
@@ -226,6 +229,15 @@ pub struct RuntimeHostCallResult {
     pub outcome: Result<RuntimePayload, RuntimeHostCallError>,
 }
 
+impl RuntimeHostCallResult {
+    pub fn inspect_host_payload_ownership(&self) -> Result<(), RuntimeHostPayloadOwnershipError> {
+        match &self.outcome {
+            Ok(value) => inspect_host_payload_ownership(value),
+            Err(_) => Ok(()),
+        }
+    }
+}
+
 /// Typed host-call failure preserved at the deterministic step boundary.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeHostCallError {
@@ -265,7 +277,7 @@ pub enum RuntimeContentResidency {
 }
 
 /// Result envelope returned by the runtime step boundary.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct RuntimeStepResult {
     pub output: RuntimeStepOutput,
     pub fiber_status: crate::engine::FlowFiberStatus,

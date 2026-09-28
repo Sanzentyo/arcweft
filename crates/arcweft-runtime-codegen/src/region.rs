@@ -9,6 +9,7 @@ use arcweft_core::awbc::schema::{
     AwbcRegisterId, AwbcResumePointId, AwbcSafePointKind, AwbcSourceMapId, AwbcTrapCode,
     AwbcTypeId,
 };
+use arcweft_core::task::RuntimeProgramOwner;
 use arcweft_core::value::RuntimeValue;
 use std::fmt;
 use std::sync::Arc;
@@ -188,21 +189,22 @@ pub fn execute_compiled_region<R: CompiledRegion + ?Sized>(
     validate_metadata(region.metadata(), identity, program.as_ref(), fiber)?;
     let available = instruction_budget.min(fiber.budget.remaining);
     let entry_budget = fiber.budget;
-    let checkpoint = fiber.checkpoint();
+    let owner = RuntimeProgramOwner::Awbc(Arc::clone(program));
+    let checkpoint = fiber.checkpoint()?;
     let result = region.step(CompiledRegionInput {
         program,
         fiber,
         instruction_budget: available,
     });
     if result.consumed > available {
-        fiber.restore(checkpoint);
+        fiber.restore(checkpoint, &owner)?;
         return Err(CompiledApplyError::BudgetContract {
             consumed: result.consumed,
             available,
         });
     }
     if matches!(result.exit, CompiledStepExit::FallbackToVm(_)) {
-        fiber.restore(checkpoint);
+        fiber.restore(checkpoint, &owner)?;
         if result.consumed != 0 {
             return Err(CompiledApplyError::FallbackConsumedBudget {
                 consumed: result.consumed,
@@ -211,13 +213,13 @@ pub fn execute_compiled_region<R: CompiledRegion + ?Sized>(
         return apply_exit(program.as_ref(), fiber, result.exit);
     }
     if matches!(result.exit, CompiledStepExit::Failed(_)) {
-        fiber.restore(checkpoint.clone());
+        fiber.restore(checkpoint.clone(), &owner)?;
     } else {
         // Budget accounting belongs to the dispatcher, not generated code.
         fiber.budget = entry_budget;
     }
     if !fiber.consume_budget(result.consumed) {
-        fiber.restore(checkpoint);
+        fiber.restore(checkpoint, &owner)?;
         return Err(CompiledApplyError::BudgetContract {
             consumed: result.consumed,
             available,

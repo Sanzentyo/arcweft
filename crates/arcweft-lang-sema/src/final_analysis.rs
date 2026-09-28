@@ -52,6 +52,7 @@ mod execution_plan;
 mod free_capture;
 mod fx_application;
 mod input;
+mod local_use;
 mod match_coverage;
 mod match_edges;
 mod match_transaction;
@@ -118,6 +119,13 @@ pub use fx_application::{
     CheckedViewValueProgramSealError, SealedFxEdgePlanError,
 };
 pub(crate) use input::FinalSemanticAnalysisInput;
+pub use local_use::{
+    CheckedIngressParameterCoordinate, CheckedLocalCopyEvidence, CheckedLocalCopyIngressOwner,
+    CheckedLocalCopyRequirement, CheckedLocalReadMode, CheckedLocalUse, CheckedLocalUseCatalog,
+    CheckedLocalUseError, CheckedLocalUseInstanceCatalog, CheckedLocalUseInstanceIdentity,
+    CheckedLocalUseInstantiation, CheckedLocalUseSite, CheckedSyntheticCopyRequirement,
+    CheckedSyntheticUse, CheckedSyntheticUseOwner,
+};
 pub use match_coverage::CheckedMatchLimits;
 pub use match_edges::{
     CheckedChildEdgeError, CheckedExpressionChildEdge, CheckedExpressionEdgeError,

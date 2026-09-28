@@ -5,8 +5,9 @@ use crate::awbc_lower::pattern::admitted_local_type;
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
     AwbcBlock, AwbcBlockId, AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionId,
-    AwbcFunctionKind, AwbcInstruction, AwbcRegisterId, AwbcSafePointKind, AwbcTableRange,
-    AwbcTerminator, AwbcTraitMethod, AwbcTraitMethodId, AwbcTraitReceiverMode,
+    AwbcFunctionInputOwnership, AwbcFunctionKind, AwbcInstruction, AwbcRegisterId,
+    AwbcSafePointKind, AwbcTableRange, AwbcTerminator, AwbcTraitMethod, AwbcTraitMethodId,
+    AwbcTraitReceiverMode,
 };
 use arcweft_core::plan::{RuntimePlan, RuntimeReceiverMode, RuntimeTraitMethod};
 use arcweft_core::value::RuntimeExpr;
@@ -71,6 +72,10 @@ impl<'a, 'plan> AwbcTraitMethodLowerer<'a, 'plan> {
                 public_id: Some(public_id),
                 kind: AwbcFunctionKind::TraitMethod,
                 signature,
+                input_ownership: vec![
+                    AwbcFunctionInputOwnership::default();
+                    method.input_locals.len()
+                ],
                 frame_layout: layout,
                 blocks: body.blocks,
                 entry_block: body.entry_block,

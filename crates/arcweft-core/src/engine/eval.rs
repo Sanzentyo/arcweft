@@ -1,10 +1,9 @@
 use super::{
     Engine, FlowFiberStatus, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr, RuntimeExprMatchArm,
     RuntimeMatchArm, RuntimeMatchSelection, RuntimePattern, RuntimeSeq, RuntimeStepOutput,
-    RuntimeValue, evaluate_binary, evaluate_unary, match_runtime_pattern,
-    runtime_sequence_dense_i64, runtime_sequence_from_literal_values,
-    runtime_sequence_repeat_value, runtime_sequence_values, runtime_value_into_sequence_values,
-    runtime_value_label, sum_i64_sequence_ref,
+    RuntimeValue, evaluate_binary, evaluate_unary, runtime_sequence_dense_i64,
+    runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_sequence_values,
+    runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
 };
 use crate::pattern::{RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner};
 use crate::plan::{
@@ -45,12 +44,10 @@ impl Engine {
     ) {
         match self
             .evaluate_expr_with_backend(expr, pure_backend)
-            .and_then(|value| {
-                self.try_bind_pattern(pattern, &value)
-                    .map(|matched| (matched, value))
-            }) {
-            Ok((true, _)) => {}
-            Ok((false, value)) => {
+            .and_then(|value| self.try_bind_pattern_owned(pattern, value))
+        {
+            Ok(None) => {}
+            Ok(Some(value)) => {
                 self.fail_eval(
                     RuntimeEvalError::PatternMismatch(runtime_value_label(&value)),
                     output,
@@ -68,17 +65,22 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<Vec<RuntimeLocalBinding>>, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
-        let Some(bindings) = match_runtime_pattern(&self.plan, pattern, &value)? else {
+        if !crate::pattern::inspect_runtime_pattern_owned(&self.plan, pattern, &value)? {
             return Ok(None);
-        };
+        }
         if let Some(guard) = guard {
-            let matched = self.with_temp_bindings_ref(&bindings, |this| {
+            let projected = crate::pattern::prepare_runtime_pattern_guard_bindings(
+                &self.plan, pattern, &value, guard,
+            )?;
+            let matched = self.with_temp_bindings(projected, |this| {
                 this.evaluate_bool_with_backend(guard, pure_backend)
             })?;
             if !matched {
                 return Ok(None);
             }
         }
+        let bindings = crate::pattern::match_runtime_pattern_owned(&self.plan, pattern, value)?
+            .expect("checked owned pattern remains matched");
         Ok(Some(bindings))
     }
 
@@ -90,16 +92,25 @@ impl Engine {
     ) -> Result<RuntimeMatchSelection, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(scrutinee, pure_backend)?;
         for arm in arms {
-            let Some(bindings) = match_runtime_pattern(&self.plan, &arm.pattern, &value)? else {
-                continue;
-            };
-            if let Some(guard) = arm.guard.as_ref()
-                && !self.with_temp_bindings_ref(&bindings, |this| {
-                    this.evaluate_bool_with_backend(guard, pure_backend)
-                })?
-            {
+            if !crate::pattern::inspect_runtime_pattern_owned(&self.plan, &arm.pattern, &value)? {
                 continue;
             }
+            if let Some(guard) = arm.guard.as_ref() {
+                let projected = crate::pattern::prepare_runtime_pattern_guard_bindings(
+                    &self.plan,
+                    &arm.pattern,
+                    &value,
+                    guard,
+                )?;
+                if !self.with_temp_bindings(projected, |this| {
+                    this.evaluate_bool_with_backend(guard, pure_backend)
+                })? {
+                    continue;
+                }
+            }
+            let bindings =
+                crate::pattern::match_runtime_pattern_owned(&self.plan, &arm.pattern, value)?
+                    .expect("checked owned pattern remains matched");
             return Ok(Some((bindings, arm.ops)));
         }
         Ok(None)
@@ -119,14 +130,13 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         match expr.kind() {
-            RuntimeExprKind::Value(value) => Ok(value.clone()),
+            RuntimeExprKind::Value(value) => value
+                .ownership()
+                .permits_copy()
+                .then(|| value.clone())
+                .ok_or(RuntimeEvalError::AffineLiteralCopy),
             RuntimeExprKind::Agent(agent) => self.evaluate_agent_expr(agent, pure_backend),
-            RuntimeExprKind::Local(local) => self
-                .fiber
-                .env
-                .get(*local)
-                .cloned()
-                .ok_or(RuntimeEvalError::UnknownLocal(*local)),
+            RuntimeExprKind::Local(read) => self.fiber.env.read(*read),
             RuntimeExprKind::SequencePopFront { place } => {
                 self.fiber.env.pop_sequence_front(*place).map(|value| {
                     value.map_or_else(RuntimeValue::option_none, RuntimeValue::option_some)
@@ -1176,17 +1186,22 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
-        let Some(bindings) = match_runtime_pattern(&self.plan, pattern, &value)? else {
+        if !crate::pattern::inspect_runtime_pattern_owned(&self.plan, pattern, &value)? {
             return self.evaluate_expr_with_backend(else_expr, pure_backend);
-        };
+        }
         let guard_matched = if let Some(guard) = guard {
-            self.with_temp_bindings_ref(&bindings, |this| {
+            let projected = crate::pattern::prepare_runtime_pattern_guard_bindings(
+                &self.plan, pattern, &value, guard,
+            )?;
+            self.with_temp_bindings(projected, |this| {
                 this.evaluate_bool_with_backend(guard, pure_backend)
             })?
         } else {
             true
         };
         if guard_matched {
+            let bindings = crate::pattern::match_runtime_pattern_owned(&self.plan, pattern, value)?
+                .expect("checked owned pattern remains matched");
             self.with_temp_bindings(bindings, |this| {
                 this.evaluate_expr_with_backend(then_expr, pure_backend)
             })
@@ -1203,16 +1218,25 @@ impl Engine {
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(scrutinee, pure_backend)?;
         for arm in arms {
-            let Some(bindings) = match_runtime_pattern(&self.plan, arm.pattern(), &value)? else {
-                continue;
-            };
-            if let Some(guard) = arm.guard()
-                && !self.with_temp_bindings_ref(&bindings, |this| {
-                    this.evaluate_bool_with_backend(guard, pure_backend)
-                })?
-            {
+            if !crate::pattern::inspect_runtime_pattern_owned(&self.plan, arm.pattern(), &value)? {
                 continue;
             }
+            if let Some(guard) = arm.guard() {
+                let projected = crate::pattern::prepare_runtime_pattern_guard_bindings(
+                    &self.plan,
+                    arm.pattern(),
+                    &value,
+                    guard,
+                )?;
+                if !self.with_temp_bindings(projected, |this| {
+                    this.evaluate_bool_with_backend(guard, pure_backend)
+                })? {
+                    continue;
+                }
+            }
+            let bindings =
+                crate::pattern::match_runtime_pattern_owned(&self.plan, arm.pattern(), value)?
+                    .expect("checked owned pattern remains matched");
             return self.with_temp_bindings(bindings, |this| {
                 this.evaluate_expr_with_backend(arm.value(), pure_backend)
             });
@@ -1245,18 +1269,6 @@ impl Engine {
         let bindings = bindings.into_iter();
         self.fiber.env.push_scope_with_capacity(bindings.len());
         self.fiber.env.bind_all(bindings);
-        let result = f(self);
-        self.fiber.env.pop_scope();
-        result
-    }
-
-    pub(super) fn with_temp_bindings_ref<T>(
-        &mut self,
-        bindings: &[RuntimeLocalBinding],
-        f: impl FnOnce(&mut Self) -> T,
-    ) -> T {
-        self.fiber.env.push_scope_with_capacity(bindings.len());
-        self.fiber.env.bind_all_ref(bindings);
         let result = f(self);
         self.fiber.env.pop_scope();
         result
@@ -1303,16 +1315,21 @@ impl Engine {
         }
     }
 
-    pub(super) fn try_bind_pattern(
+    pub(super) fn try_bind_pattern_owned(
         &mut self,
         pattern: &RuntimePattern,
-        value: &RuntimeValue,
-    ) -> Result<bool, RuntimeEvalError> {
-        let Some(bindings) = match_runtime_pattern(&self.plan, pattern, value)? else {
-            return Ok(false);
+        value: RuntimeValue,
+    ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        if !crate::pattern::inspect_runtime_pattern_owned(&self.plan, pattern, &value)? {
+            return Ok(Some(value));
+        }
+        let Some(bindings) =
+            crate::pattern::match_runtime_pattern_owned(&self.plan, pattern, value)?
+        else {
+            unreachable!("borrowed pattern preflight sealed the owning match")
         };
         self.fiber.env.bind_all(bindings);
-        Ok(true)
+        Ok(None)
     }
 
     pub(super) fn fail_eval(
@@ -1586,11 +1603,13 @@ mod opaque_record_projection_tests {
             engine.evaluate_expr(&exact).expect("exact opaque owner"),
             RuntimeValue::String("accepted".to_owned())
         );
-        for expression in tampered {
-            assert!(matches!(
-                engine.evaluate_expr(&expression),
-                Err(RuntimeEvalError::MissingField { .. })
-            ));
+        for (index, expression) in tampered.into_iter().enumerate() {
+            let result = engine.evaluate_expr(&expression);
+            if index == 1 {
+                assert!(matches!(result, Err(RuntimeEvalError::AffineLiteralCopy)));
+            } else {
+                assert!(matches!(result, Err(RuntimeEvalError::MissingField { .. })));
+            }
         }
     }
 }

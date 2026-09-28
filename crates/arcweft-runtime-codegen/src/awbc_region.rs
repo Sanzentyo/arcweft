@@ -203,6 +203,7 @@ fn opcode_eligible(opcode: AwbcOpcode, options: &AwbcRegionLowerOptions) -> bool
         | AwbcOpcode::RegisterDefer
         | AwbcOpcode::Jump
         | AwbcOpcode::Branch
+        | AwbcOpcode::SequenceNext
         | AwbcOpcode::Match
         | AwbcOpcode::CallFunction
         | AwbcOpcode::GotoStatic
@@ -233,6 +234,7 @@ fn terminator_eligible(terminator: &AwbcTerminator, options: &AwbcRegionLowerOpt
     match terminator {
         AwbcTerminator::Jump { .. }
         | AwbcTerminator::Branch { .. }
+        | AwbcTerminator::SequenceNext { .. }
         | AwbcTerminator::Match { .. }
         | AwbcTerminator::Return { .. }
         | AwbcTerminator::Trap { .. }

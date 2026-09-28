@@ -24,8 +24,8 @@ use arcweft_core::{
         FlowRuntimeId, RuntimeAgentTypeProjection, RuntimeCallArgumentSeed, RuntimeExprSeed,
         RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSchema, RuntimeFlowSeed,
         RuntimeFunctionInputBindingSeed, RuntimeFunctionInputSource, RuntimeLocalDeclarationSeed,
-        RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan,
-        RuntimePlanBuilder, RuntimePlanSequenceKind, RuntimePlanTypeProjection,
+        RuntimeLocalReadSeed, RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind,
+        RuntimePlan, RuntimePlanBuilder, RuntimePlanSequenceKind, RuntimePlanTypeProjection,
         RuntimePlanTypeSeed, RuntimePureHelperOrigin, RuntimePureHelperSeed,
     },
     program_types::RuntimeProgramTypes,
@@ -38,9 +38,9 @@ use arcweft_core::{
     entry::RuntimeCallableId,
     plan::RuntimePureHelperId,
     value::{
-        RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeCallTarget, RuntimeISizeValue, RuntimeSeq,
-        RuntimeSignedIntWidth, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
-        RuntimeUSizeValue, RuntimeUnsignedIntWidth,
+        RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeCallTarget, RuntimeISizeValue,
+        RuntimeLocalReadMode, RuntimeSeq, RuntimeSignedIntWidth, RuntimeStandardMapFamily,
+        RuntimeStandardMapOperandOrder, RuntimeUSizeValue, RuntimeUnsignedIntWidth,
     },
 };
 use arcweft_data::DataFormat;
@@ -287,8 +287,15 @@ fn admit_helper(
     AdmittedHelper::from_plan(Arc::clone(&plan), plan.pure_helpers()[0].id)
 }
 
-fn local_expr(ty: RuntimeSemanticTypeId, local: RuntimeLocalSeedId) -> RuntimeExprSeed {
-    RuntimeExprSeed::new(ty, RuntimeExprSeedKind::Local(local))
+fn local_expr(
+    ty: RuntimeSemanticTypeId,
+    local: RuntimeLocalSeedId,
+    mode: RuntimeLocalReadMode,
+) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        ty,
+        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(local, mode)),
+    )
 }
 
 fn value_expr(ty: RuntimeSemanticTypeId, value: RuntimeValue) -> RuntimeExprSeed {
@@ -328,11 +335,11 @@ fn mul_add_helper(
         move |inputs, output_ty| {
             binary_expr(
                 output_ty,
-                local_expr(ty, inputs[0].clone()),
+                local_expr(ty, inputs[0].clone(), RuntimeLocalReadMode::Copy),
                 RuntimeBinaryOp::Mul,
                 binary_expr(
                     output_ty,
-                    local_expr(ty, inputs[1].clone()),
+                    local_expr(ty, inputs[1].clone(), RuntimeLocalReadMode::Copy),
                     RuntimeBinaryOp::Add,
                     value_expr(output_ty, constant),
                 ),
@@ -396,9 +403,9 @@ fn admit_add_helpers(
                     output_abi: *output_type,
                     body: binary_expr(
                         helper_type_identity(output_input_abi(*output_type)),
-                        local_expr(input_ty, inputs[0].clone()),
+                        local_expr(input_ty, inputs[0].clone(), RuntimeLocalReadMode::Copy),
                         RuntimeBinaryOp::Add,
-                        local_expr(input_ty, inputs[1].clone()),
+                        local_expr(input_ty, inputs[1].clone(), RuntimeLocalReadMode::Copy),
                     ),
                     scalar_eval_supported: true,
                     origin: RuntimePureHelperOrigin::Annotated,
@@ -435,17 +442,17 @@ fn conditional_div_helper(
                 RuntimeExprSeedKind::If {
                     condition: Box::new(binary_expr(
                         bool_ty,
-                        local_expr(ty, inputs[0].clone()),
+                        local_expr(ty, inputs[0].clone(), RuntimeLocalReadMode::Copy),
                         RuntimeBinaryOp::Ge,
                         value_expr(ty, threshold),
                     )),
                     then_expr: Box::new(binary_expr(
                         output_ty,
-                        local_expr(ty, inputs[0].clone()),
+                        local_expr(ty, inputs[0].clone(), RuntimeLocalReadMode::Copy),
                         RuntimeBinaryOp::Div,
                         binary_expr(
                             output_ty,
-                            local_expr(ty, inputs[1].clone()),
+                            local_expr(ty, inputs[1].clone(), RuntimeLocalReadMode::Copy),
                             RuntimeBinaryOp::Add,
                             value_expr(output_ty, one),
                         ),
@@ -1651,11 +1658,11 @@ fn scalar_add_helper(
         move |inputs, output_ty| {
             binary_expr(
                 output_ty,
-                local_expr(ty, inputs[0].clone()),
+                local_expr(ty, inputs[0].clone(), RuntimeLocalReadMode::Copy),
                 RuntimeBinaryOp::Add,
                 binary_expr(
                     output_ty,
-                    local_expr(ty, inputs[1].clone()),
+                    local_expr(ty, inputs[1].clone(), RuntimeLocalReadMode::Copy),
                     RuntimeBinaryOp::Add,
                     value_expr(output_ty, one),
                 ),
@@ -1991,9 +1998,9 @@ fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
             output_abi: RuntimePureOutputType::U32,
             body: binary_expr(
                 u32_ty,
-                local_expr(u32_ty, locals[1].clone()),
+                local_expr(u32_ty, locals[1].clone(), RuntimeLocalReadMode::Copy),
                 RuntimeBinaryOp::Add,
-                local_expr(u32_ty, locals[2].clone()),
+                local_expr(u32_ty, locals[2].clone(), RuntimeLocalReadMode::Copy),
             ),
             scalar_eval_supported: true,
             origin: RuntimePureHelperOrigin::Annotated,
@@ -2011,6 +2018,8 @@ fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
                         local: locals[0].clone(),
                     },
                 ),
+                ownership: Default::default(),
+                unrestricted_bindings: Box::new([]),
             }],
             RuntimeExprSeed::new(
                 u32_ty,
@@ -2018,7 +2027,7 @@ fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
                     helper,
                     args: Box::new([
                         RuntimeCallArgumentSeed::new(
-                            local_expr(u32_ty, locals[0].clone()),
+                            local_expr(u32_ty, locals[0].clone(), RuntimeLocalReadMode::Copy),
                             RuntimeCallArgumentMode::Value,
                             0,
                         ),
@@ -2300,7 +2309,7 @@ fn value_fallback_reuses_vm_scratch_without_value_vec_allocation() {
         RuntimePureOutputType::Value,
         false,
         RuntimePureHelperOrigin::Annotated,
-        |inputs, output_ty| local_expr(output_ty, inputs[0].clone()),
+        |inputs, output_ty| local_expr(output_ty, inputs[0].clone(), RuntimeLocalReadMode::Copy),
     );
     let mut accelerator = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
@@ -2315,7 +2324,7 @@ fn value_fallback_reuses_vm_scratch_without_value_vec_allocation() {
     let value = accelerator
         .call_values(
             helper.helper_ref(),
-            &[RuntimeValue::String("ready".to_owned())],
+            vec![RuntimeValue::String("ready".to_owned())],
         )
         .expect("VM value fallback succeeds");
 

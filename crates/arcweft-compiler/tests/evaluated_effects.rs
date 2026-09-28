@@ -1809,7 +1809,7 @@ entry cli @entry.main { goto @flow.main }
             ),
             expected,
         );
-        let mut awbc = arcweft_core::executor::ArcweftRuntimeExecutor::from_awbc_product(
+        let awbc = arcweft_core::executor::ArcweftRuntimeExecutor::from_awbc_product(
             decoded.clone(),
             arcweft_core::awbc::schema::AwbcEntryId(0),
         )
@@ -1819,31 +1819,35 @@ entry cli @entry.main { goto @flow.main }
             .with_external_calls(
                 arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&awbc_schema),
             );
+        let mut awbc = Some(awbc);
         assert_eq!(
             execute_dialogue_result_with_action(
                 |input, options| {
-                    let result = awbc.step_with_pure_backend(input, options, &mut awbc_backend);
-                    let snapshot = awbc.snapshot().expect("AWBC cancellation step snapshots");
-                    let arcweft_core::executor::ArcweftRuntimeExecutorSnapshot::AwbcProduct(
-                        product,
-                    ) = snapshot;
-                    let saved = arcweft_core::awbc::product_step::AwbcProductExecutorSaveSnapshot::from_live(&product)
-                        .expect("AWBC cancellation state admits the save DTO");
+                    let current = awbc
+                        .as_mut()
+                        .expect("AWBC executor is present for one step");
+                    let result = current.step_with_pure_backend(input, options, &mut awbc_backend);
+                    let snapshot = current
+                        .snapshot()
+                        .expect("AWBC cancellation step snapshots");
+                    let arcweft_core::executor::ArcweftRuntimeExecutorSnapshot::AwbcProduct(saved) =
+                        snapshot;
                     let bytes = serde_json::to_vec(&saved).expect("encode cancellation save DTO");
                     let decoded = serde_json::from_slice::<
                         arcweft_core::awbc::product_step::AwbcProductExecutorSaveSnapshot,
                     >(&bytes)
                     .expect("decode cancellation save DTO");
                     assert_eq!(decoded, saved);
-                    let restored = decoded
-                        .into_live_for_program(&awbc.program_owner())
-                        .expect("AWBC cancellation value graph restores for its program");
-                    awbc.restore_snapshot(
-                        arcweft_core::executor::ArcweftRuntimeExecutorSnapshot::AwbcProduct(
-                            restored,
-                        ),
-                    )
-                    .expect("AWBC cancellation step restores with exact owner");
+                    awbc = Some(
+                        awbc.take()
+                            .expect("AWBC executor transfers to its restore")
+                            .restore_snapshot(
+                                arcweft_core::executor::ArcweftRuntimeExecutorSnapshot::AwbcProduct(
+                                    decoded,
+                                ),
+                            )
+                            .expect("AWBC cancellation step restores with exact owner"),
+                    );
                     result
                 },
                 cancelled,
@@ -2066,7 +2070,7 @@ fn execute_dialogue_result_with_mark(
                 mark_delivered = false;
             }
         }
-        last_status = Some(result.fiber_status.clone());
+        last_status = Some(format!("{:?}", result.fiber_status));
         match result.fiber_status {
             FlowFiberStatus::Running | FlowFiberStatus::Dialogue(_) => {}
             FlowFiberStatus::Done(exit) => {
@@ -2145,7 +2149,7 @@ fn execute_dialogue_result_with_action(
                 pending = Some(activation);
             }
         }
-        last_status = Some(result.fiber_status.clone());
+        last_status = Some(format!("{:?}", result.fiber_status));
         match result.fiber_status {
             FlowFiberStatus::Running | FlowFiberStatus::Dialogue(_) => {}
             FlowFiberStatus::Done(exit) => {

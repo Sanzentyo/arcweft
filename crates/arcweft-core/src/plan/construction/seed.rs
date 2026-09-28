@@ -27,7 +27,7 @@ use crate::task::{HostCapabilityId, NamedHostArg, NeedId, NeedProducerTaskPlan, 
 use crate::value::{
     RuntimeAgentCompareOp, RuntimeAgentField, RuntimeBinaryOp, RuntimeCallArgumentMode,
     RuntimeCallTarget, RuntimeEntityReference, RuntimeEntityReferenceField, RuntimeFmtParameterId,
-    RuntimeUnaryOp, RuntimeValue,
+    RuntimeLocalReadMode, RuntimeUnaryOp, RuntimeValue,
 };
 use arcweft_id::runtime_program::RuntimePureProgramId;
 
@@ -635,13 +635,31 @@ pub enum RuntimeLineOperationSeed {
     ActorLook {
         site: RuntimeLineHandleSiteId,
         character: arcweft_character::id::CharacterId,
-        actor: RuntimeExprSeed,
+        actor: RuntimeBorrowedLocalSeed,
         look: RuntimeExprSeed,
         crossfade: RuntimeExprSeed,
     },
     VoiceHandle {
         site: RuntimeLineHandleSiteId,
     },
+}
+
+/// Exact local receiver selected for a line-operation borrow. It never enters
+/// the general expression graph, where reads must transfer or prove Copy.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeBorrowedLocalSeed {
+    local: RuntimeLocalSeedId,
+}
+
+impl RuntimeBorrowedLocalSeed {
+    pub const fn new(local: RuntimeLocalSeedId) -> Self {
+        Self { local }
+    }
+
+    #[must_use]
+    pub const fn local(&self) -> &RuntimeLocalSeedId {
+        &self.local
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1009,7 +1027,7 @@ impl RuntimeLineOperationSeed {
                 crossfade,
                 ..
             } => {
-                actor.collect_free_locals(bound, locals);
+                push_free_local(actor.local(), bound, locals);
                 look.collect_free_locals(bound, locals);
                 crossfade.collect_free_locals(bound, locals);
             }
@@ -1856,6 +1874,8 @@ pub struct RuntimeFunctionInputBindingSeed {
     pub source: RuntimeFunctionInputSource,
     pub input_local: RuntimeLocalSeedId,
     pub pattern: RuntimePatternSeed,
+    pub ownership: crate::plan::RuntimeFunctionInputOwnershipRequirement,
+    pub unrestricted_bindings: Box<[RuntimeLocalSeedId]>,
 }
 
 /// Signature-only reservation for one plan-owned structured function site.
@@ -1916,12 +1936,63 @@ pub enum RuntimeFieldProjectionSeed {
 pub struct RuntimeExprSeed {
     ty: RuntimeSemanticTypeId,
     kind: RuntimeExprSeedKind,
+    guard_copy_locals: Vec<RuntimeLocalSeedId>,
+}
+
+/// A builder-issued local read with the checked transfer decision.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeLocalReadSeed {
+    local: RuntimeLocalSeedId,
+    mode: RuntimeLocalReadMode,
+}
+
+impl RuntimeLocalReadSeed {
+    #[must_use]
+    pub const fn new(local: RuntimeLocalSeedId, mode: RuntimeLocalReadMode) -> Self {
+        Self { local, mode }
+    }
+
+    #[must_use]
+    pub const fn local(&self) -> &RuntimeLocalSeedId {
+        &self.local
+    }
+
+    #[must_use]
+    pub const fn mode(&self) -> RuntimeLocalReadMode {
+        self.mode
+    }
+
+    pub(super) fn into_parts(self) -> (RuntimeLocalSeedId, RuntimeLocalReadMode) {
+        (self.local, self.mode)
+    }
 }
 
 impl RuntimeExprSeed {
     #[must_use]
     pub const fn new(ty: RuntimeSemanticTypeId, kind: RuntimeExprSeedKind) -> Self {
-        Self { ty, kind }
+        Self {
+            ty,
+            kind,
+            guard_copy_locals: Vec::new(),
+        }
+    }
+
+    /// Selected pattern-bound locals read by a guard while its original
+    /// scrutinee remains available for a later arm. The runtime proves deep
+    /// Copy for each projected binding leaf before evaluating that guard.
+    #[must_use]
+    pub fn with_guard_copy_locals(
+        mut self,
+        locals: impl IntoIterator<Item = RuntimeLocalSeedId>,
+    ) -> Self {
+        let mut unique = Vec::new();
+        for local in locals {
+            if !unique.contains(&local) {
+                unique.push(local);
+            }
+        }
+        self.guard_copy_locals = unique;
+        self
     }
 
     /// Constructs a content expression seed with value bindings and
@@ -1976,8 +2047,14 @@ impl RuntimeExprSeed {
         &self.kind
     }
 
-    pub(super) fn into_parts(self) -> (RuntimeSemanticTypeId, RuntimeExprSeedKind) {
-        (self.ty, self.kind)
+    pub(super) fn into_parts(
+        self,
+    ) -> (
+        RuntimeSemanticTypeId,
+        RuntimeExprSeedKind,
+        Vec<RuntimeLocalSeedId>,
+    ) {
+        (self.ty, self.kind, self.guard_copy_locals)
     }
 }
 
@@ -2027,7 +2104,7 @@ impl RuntimeFormatContentOperandSeed {
 pub enum RuntimeExprSeedKind {
     Value(RuntimeValue),
     Agent(RuntimeAgentExprSeed),
-    Local(RuntimeLocalSeedId),
+    Local(RuntimeLocalReadSeed),
     /// Removes the first item from an exact admitted Vec place and returns `Option<T>`.
     SequencePopFront {
         place: RuntimeMutablePlaceSeed,
@@ -2451,7 +2528,7 @@ impl RuntimeExprSeed {
                 collect_expr_free_locals(captures, bound, locals);
             }
             RuntimeExprSeedKind::Agent(agent) => agent.collect_free_locals(bound, locals),
-            RuntimeExprSeedKind::Local(local) => push_free_local(local, bound, locals),
+            RuntimeExprSeedKind::Local(read) => push_free_local(read.local(), bound, locals),
             RuntimeExprSeedKind::SequencePopFront { place } => match place {
                 RuntimeMutablePlaceSeed::Local(local) => push_free_local(local, bound, locals),
                 RuntimeMutablePlaceSeed::NominalField { base, .. } => {

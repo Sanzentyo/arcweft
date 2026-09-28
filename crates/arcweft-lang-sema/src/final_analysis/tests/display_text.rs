@@ -1,6 +1,9 @@
 use crate::{
     checked_rich_text::CheckedDisplayWitness,
-    final_analysis::{FinalSemanticAnalysisError, analyzer::display::DisplayConformanceRejection},
+    final_analysis::{
+        CheckedLocalReadMode, CheckedLocalUseError, FinalSemanticAnalysisError,
+        analyzer::display::DisplayConformanceRejection,
+    },
     types::TypeKind,
 };
 
@@ -254,5 +257,38 @@ fn speak(voice: VoiceHandle) {
         report
             .expressions()
             .any(|(_, expression)| matches!(expression.value_type(), Some(TypeKind::VoiceHandle)))
+    );
+    assert!(report.checked_local_uses().rows().any(|(_, row)| {
+        report
+            .local(row.local())
+            .is_some_and(|binding| binding.ty() == &TypeKind::VoiceHandle)
+            && row.mode() == CheckedLocalReadMode::Move
+    }));
+}
+
+#[test]
+fn affine_content_capture_cannot_be_used_again_after_formatter_construction() {
+    let fixture = fixture(
+        r##"
+pub character alice {}
+fn callback(voice: VoiceHandle) {}
+fn emphasis() -> Color { rgb("#a8b5ff") }
+fn format_body()[body: DialogueContent] -> DialogueContent { fmt(body, color=emphasis()) }
+fn speak(voice: VoiceHandle) {
+    alice[#format_body()[hello [call callback(voice)]]];
+    callback(voice);
+}
+"##,
+        None,
+    );
+    let actual = analyze(&fixture).err();
+    assert!(
+        matches!(
+            actual,
+            Some(FinalSemanticAnalysisError::LocalUse(
+                CheckedLocalUseError::Unavailable { .. }
+            ))
+        ),
+        "second affine use must be rejected: {actual:?}"
     );
 }
