@@ -132,7 +132,7 @@ expression_family_inventory!(ExprShapeFamily for HirExprKind, {
     HirExprKind::Unary(_) => Unary => Pending,
     HirExprKind::Block(_) => Block => Accepted,
     HirExprKind::ComputationBlock(_) => ComputationBlock => Pending,
-    HirExprKind::NamedBlock(_) => NamedBlock => Pending,
+    HirExprKind::NamedBlock(_) => NamedBlock => Accepted,
     HirExprKind::Loop(_) => Loop => Pending,
     HirExprKind::If(_) => If => Pending,
     HirExprKind::IfLet(_) => IfLet => Pending,
@@ -145,7 +145,7 @@ expression_family_inventory!(ExprShapeFamily for HirExprKind, {
 
 expression_family_inventory!(ExpressionResolutionFamily for CheckedExpressionResolution, {
     CheckedExpressionResolution::Structural => Structural => Accepted,
-    CheckedExpressionResolution::Scope(_) => Scope => Pending,
+    CheckedExpressionResolution::Scope(_) => Scope => Accepted,
     CheckedExpressionResolution::Literal(_) => Literal => Accepted,
     CheckedExpressionResolution::Value(_) => Value => Accepted,
     CheckedExpressionResolution::Select(_) => Select => Accepted,
@@ -206,6 +206,7 @@ struct MatchExpressionCorpusObservation {
     selects: BTreeSet<SelectResolutionFamily>,
     value_facts: Vec<(CheckedValueResolution, TypeKind)>,
     select_facts: Vec<(CheckedSelectResolution, TypeKind)>,
+    scope_facts: Vec<crate::final_analysis::CheckedScopeIdentity>,
     variant_facts: Vec<crate::final_analysis::CheckedVariantResolution>,
     match_type: Option<TypeKind>,
     semantic_digest: Option<[u8; 32]>,
@@ -230,6 +231,9 @@ impl MatchExpressionCorpusObservation {
         }
         if let CheckedExpressionResolution::Variant(variant) = resolution {
             self.variant_facts.push(variant.clone());
+        }
+        if let CheckedExpressionResolution::Scope(scope) = resolution {
+            self.scope_facts.push(scope.clone());
         }
         if let CheckedExpressionResolution::CompileTimeScalar(scalar) = resolution {
             self.record_resolution(scalar.original());
@@ -284,6 +288,7 @@ fn accepted_match_expression_corpus_observation_for_fixture(
         selects: BTreeSet::new(),
         value_facts: Vec::new(),
         select_facts: Vec::new(),
+        scope_facts: Vec::new(),
         variant_facts: Vec::new(),
         match_type: report
             .expression(*match_owner)
@@ -424,6 +429,15 @@ fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
             shapes: &[ExprShapeFamily::NumericBracketSequence],
             resolutions: &[ExpressionResolutionFamily::Structural],
             values: &[ValueResolutionFamily::Local],
+            selects: &[],
+        },
+        ExpressionCorpusRow {
+            name: "named scope expression",
+            source: bool_match_i64_source("scope local { 1i64 }"),
+            fixture: ExpressionCorpusFixture::Standard,
+            shapes: &[ExprShapeFamily::NamedBlock],
+            resolutions: &[ExpressionResolutionFamily::Scope],
+            values: &[],
             selects: &[],
         },
         ExpressionCorpusRow {
@@ -1010,6 +1024,40 @@ fn checked_match_transcript_reaches_pending_progress_field_facts() {
     }
     assert_ne!(TypeKind::F32, TypeKind::Option(Box::new(TypeKind::String)));
     assert_ne!(ratio.semantic_digest, label.semantic_digest);
+}
+
+#[test]
+fn checked_match_named_block_commits_checked_namespace_identity() {
+    let local = accepted_match_expression_corpus_observation(&bool_match_i64_source(
+        "scope local { 1i64 }",
+    ));
+    let scene = accepted_match_expression_corpus_observation(&bool_match_i64_source(
+        "scope scene { 1i64 }",
+    ));
+    let formatted = accepted_match_expression_corpus_observation(&bool_match_i64_source(
+        "scope local {  1i64 }",
+    ));
+
+    for observation in [&local, &scene, &formatted] {
+        assert!(observation.shapes.contains(&ExprShapeFamily::NamedBlock));
+        assert!(
+            observation
+                .resolutions
+                .contains(&ExpressionResolutionFamily::Scope)
+        );
+        assert_eq!(observation.scope_facts.len(), 1);
+    }
+    assert!(matches!(
+        local.scope_facts.as_slice(),
+        [crate::final_analysis::CheckedScopeIdentity::Named(name)] if name.as_str() == "local"
+    ));
+    assert!(matches!(
+        scene.scope_facts.as_slice(),
+        [crate::final_analysis::CheckedScopeIdentity::Named(name)] if name.as_str() == "scene"
+    ));
+    assert_eq!(local.scope_facts, formatted.scope_facts);
+    assert_ne!(local.semantic_digest, scene.semantic_digest);
+    assert_eq!(local.semantic_digest, formatted.semantic_digest);
 }
 
 #[test]

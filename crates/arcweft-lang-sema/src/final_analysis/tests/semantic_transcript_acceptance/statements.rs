@@ -61,7 +61,7 @@ statement_family_inventory!(StatementShapeFamily for HirStmtKind, {
     HirStmtKind::Close { .. } => Close => Pending,
     HirStmtKind::Select(_) => Select => Pending,
     HirStmtKind::SourceLocale(_) => SourceLocale => Accepted,
-    HirStmtKind::Scope(_) => Scope => Pending,
+    HirStmtKind::Scope(_) => Scope => Accepted,
     HirStmtKind::Include(_) => Include => Accepted,
     HirStmtKind::Break { .. } => Break => Pending,
     HirStmtKind::Continue { .. } => Continue => Pending,
@@ -82,7 +82,7 @@ statement_family_inventory!(StatementPayloadFamily for CheckedStatementPayload, 
     CheckedStatementPayload::UnsafeAudit(_) => UnsafeAudit => Pending,
     CheckedStatementPayload::Select(_) => Select => Pending,
     CheckedStatementPayload::SourceLocale(_) => SourceLocale => Accepted,
-    CheckedStatementPayload::Scope(_) => Scope => Pending,
+    CheckedStatementPayload::Scope(_) => Scope => Accepted,
     CheckedStatementPayload::Include(_) => Include => Accepted,
     CheckedStatementPayload::Suspension(_) => Suspension => Accepted,
     CheckedStatementPayload::Yield => Yield => Pending,
@@ -99,6 +99,7 @@ struct MatchStatementCorpusObservation {
     suspensions: Vec<CheckedSuspensionStatement>,
     triggers: Vec<super::super::super::CheckedTrigger>,
     source_locales: Vec<arcweft_id::LocaleTag>,
+    scopes: Vec<super::super::super::CheckedScopeIdentity>,
     includes: Vec<super::super::super::CheckedIncludeFlowTarget>,
     match_value_type: Option<crate::types::TypeKind>,
     semantic_digest: [u8; 32],
@@ -160,6 +161,7 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
     let mut suspensions = Vec::new();
     let mut triggers = Vec::new();
     let mut source_locales = Vec::new();
+    let mut scopes = Vec::new();
     let mut includes = Vec::new();
     for (owner, hir) in module.statements() {
         let Some(checked) = report.statement(owner) else {
@@ -222,6 +224,9 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
             (HirStmtKind::SourceLocale(_), CheckedStatementPayload::SourceLocale(locale)) => {
                 source_locales.push(locale.clone());
             }
+            (HirStmtKind::Scope(_), CheckedStatementPayload::Scope(scope)) => {
+                scopes.push(scope.clone());
+            }
             (HirStmtKind::Include(_), CheckedStatementPayload::Include(target)) => {
                 includes.push(*target);
             }
@@ -246,6 +251,9 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
             (HirStmtKind::SourceLocale(_), _) => {
                 panic!("accepted SourceLocale has its exact checked SourceLocale payload")
             }
+            (HirStmtKind::Scope(_), _) => {
+                panic!("accepted Scope has its exact checked Scope payload")
+            }
             (HirStmtKind::Include(_), _) => {
                 panic!("accepted Include has its exact checked Include payload")
             }
@@ -267,6 +275,7 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
         suspensions,
         triggers,
         source_locales,
+        scopes,
         includes,
         match_value_type,
         semantic_digest: *product.semantic_digest().as_bytes(),
@@ -534,6 +543,18 @@ fn checked_match_statement_corpus_tracks_accepted_root_families() {
             ],
             payloads: &[
                 StatementPayloadFamily::SourceLocale,
+                StatementPayloadFamily::Structural,
+            ],
+        },
+        Row {
+            name: "Scope in nested Thread arm block",
+            source: flow_match_thread_source("scope local {}"),
+            shapes: &[
+                StatementShapeFamily::Expression,
+                StatementShapeFamily::Scope,
+            ],
+            payloads: &[
+                StatementPayloadFamily::Scope,
                 StatementPayloadFamily::Structural,
             ],
         },
@@ -929,6 +950,45 @@ fn checked_match_thread_source_locale_reaches_exact_payload() {
     assert_eq!(japanese.source_locales.len(), 1);
     assert_ne!(english.source_locales, japanese.source_locales);
     assert_ne!(english.semantic_digest, japanese.semantic_digest);
+}
+
+#[test]
+fn checked_match_thread_scope_retains_accepted_name_and_format_invariance() {
+    let local =
+        accepted_match_statement_corpus_observation(&flow_match_thread_source("scope local {}"));
+    let scene =
+        accepted_match_statement_corpus_observation(&flow_match_thread_source("scope scene {}"));
+    let formatted =
+        accepted_match_statement_corpus_observation(&flow_match_thread_source("scope local { }"));
+    let anonymous = accepted_match_statement_corpus_observation(&flow_match_thread_source("{}"));
+    let expected = BTreeSet::from([
+        (
+            StatementShapeFamily::Expression,
+            StatementPayloadFamily::Structural,
+        ),
+        (StatementShapeFamily::Scope, StatementPayloadFamily::Scope),
+    ]);
+
+    for observation in [&local, &scene, &formatted, &anonymous] {
+        assert_eq!(observation.statement_families, expected);
+        assert_eq!(observation.scopes.len(), 1);
+    }
+    assert!(matches!(
+        local.scopes.as_slice(),
+        [super::super::super::CheckedScopeIdentity::Named(name)] if name.as_str() == "local"
+    ));
+    assert!(matches!(
+        scene.scopes.as_slice(),
+        [super::super::super::CheckedScopeIdentity::Named(name)] if name.as_str() == "scene"
+    ));
+    assert_eq!(local.scopes, formatted.scopes);
+    assert_eq!(
+        anonymous.scopes,
+        [super::super::super::CheckedScopeIdentity::Anonymous]
+    );
+    assert_ne!(local.semantic_digest, scene.semantic_digest);
+    assert_ne!(local.semantic_digest, anonymous.semantic_digest);
+    assert_eq!(local.semantic_digest, formatted.semantic_digest);
 }
 
 #[test]

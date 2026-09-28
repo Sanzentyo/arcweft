@@ -360,6 +360,14 @@ impl DeclarationName {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Returns the owner-issued bytes of this validated declaration name.
+    /// Semantic consumers use these bytes instead of rebuilding an identity
+    /// from source spelling.
+    #[must_use]
+    pub fn canonical_identity_bytes(&self) -> &[u8] {
+        self.0.as_bytes()
+    }
 }
 
 impl TextKey {

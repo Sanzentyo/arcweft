@@ -2246,13 +2246,13 @@ fn write_scope_identity(
     scope: &super::CheckedScopeIdentity,
     owner_coordinate: &[u8],
 ) -> Result<(), SemanticTranscriptError> {
-    transcript_update!(
-        hasher,
-        &[match scope {
-            super::CheckedScopeIdentity::Anonymous => 0,
-            super::CheckedScopeIdentity::Named(_) => 1,
-        }]
-    );
+    match scope {
+        super::CheckedScopeIdentity::Anonymous => transcript_update!(hasher, &[0]),
+        super::CheckedScopeIdentity::Named(name) => {
+            transcript_update!(hasher, &[1]);
+            write_bytes(hasher, name.canonical_identity_bytes())?;
+        }
+    }
     write_bytes(hasher, owner_coordinate)
 }
 
@@ -4981,13 +4981,13 @@ flow main(flag: bool) -> String {
     }
 
     #[test]
-    fn match_digest_ignores_named_scope_labels_in_statement_and_expression_scopes() {
+    fn match_digest_commits_named_scope_identities_in_statement_and_expression_scopes() {
         let statement_scope = |label: &str| {
             format!(
                 "fn root(flag: bool) -> bool {{\n    match flag {{\n        true => {{\n            scope {label} {{}}\n            true\n        }}\n        false => false\n    }}\n}}\n"
             )
         };
-        assert_eq!(
+        assert_ne!(
             checked_match_digest(&statement_scope("first")),
             checked_match_digest(&statement_scope("renamed")),
         );
@@ -4997,7 +4997,7 @@ flow main(flag: bool) -> String {
                 "fn root(flag: bool) -> bool {{\n    match flag {{\n        true => scope {label} {{ true }}\n        false => false\n    }}\n}}\n"
             )
         };
-        assert_eq!(
+        assert_ne!(
             checked_match_digest(&expression_scope("first")),
             checked_match_digest(&expression_scope("renamed")),
         );
