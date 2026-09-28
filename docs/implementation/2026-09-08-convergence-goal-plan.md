@@ -3063,3 +3063,21 @@ Clippy、`just test-workspace`、`just structure-audit-gate`（blocking 0）、f
 cached diff check は成功。workspace test 初回は旧期待テスト1件で失敗し、修正後の
 full rerun が成功した。既存 Clippy 警告と構造 review triggers 348件あり。
 T01/T06、View 以降と goal 全体は未完として継続する。
+
+## Match T01 Flow/control statement corpus — 2026-09-29
+
+確認した code commit は `76304e636aee797bcbdbc79fe3ee87cdf6ebd2c5`。
+main へ fast-forward push 後、working tree は clean。
+
+通常 Flow の Match arm 配下で Goto/Structural、Yield/Yield、Break と
+Continue/ControlTransfer を受理し、exact HIR/checked payload の組を T01 corpus
+Accepted へ移した。Goto target、同型 Bool の Yield operand、Break と Continue の
+操作差で Match digest が変わる。後二者は checked LoopExpression target family と
+同じ安定 body coordinate も確認した。loop expression 自身の
+Expression/Structural statement も同じ Match path に含まれる。
+
+focused bundle と family matrix、`cargo test -p arcweft-lang-sema` 全件、
+changed-crate Clippy（全 target/feature）、fmt、cached diff check は成功。
+既存警告あり。テストのみの cut なので workspace と構造 gate は再実行していない。
+Signal/LifetimeSet/statement-Match/Close/UnsafeLifetime 等と T01/T06、View 以降、
+goal 全体は未完として継続する。
