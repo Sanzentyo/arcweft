@@ -2905,3 +2905,19 @@ focused corpus 2/2、acceptance 40/40、Sema lib 1062/1062、changed-crate Clipp
 fmt、cached diff check は成功。既存警告あり。テスト専用の新子 module は直前の
 構造レビューに沿い、本番 API や依存は変えない。Assign、Assertion、Wait 等は
 Pending のまま。T01/T06 の残り、View 以降と goal 全体は未完として継続する。
+
+## Match T01 Assign/Assertion statement の受理差分 — 2026-09-28
+
+確認した code commit は `ed7142cf31abc021674bbf1c3371cef16a8cd7d3`。
+main へ fast-forward push 後、working tree は clean。
+
+受理済み expression Match arm block 内の Assign と Assertion を HIR shape と
+checked payload の両方で確認し、statement corpus の Accepted 行へ移した。
+Assign は同じ Bool 型の `Flags.left` / `Flags.right` を選ぶと checked field ID と
+宣言 ordinal が異なり、Match digest も変わる。Assertion は同じ
+`Runtime(AlwaysGuard)` disposition のまま別の Bool 条件を選ぶと digest が変わる。
+
+focused 60件、Sema lib 1064/1064、changed-crate Clippy、fmt、cached diff check
+は成功。既存警告あり。テストのみの cut なので workspace と構造 gate は再実行
+していない。Wait 以降の statement family、T01/T06 の残り、View 以降と goal
+全体は未完として継続する。
