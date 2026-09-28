@@ -2416,3 +2416,27 @@ Clippy とテストには既存の警告があるが失敗はない。`just stru
 
 Match C3 の T01/T06 全 resolution/body 差分 matrix はまだ完走していない。
 View、task-plan、scheduler/restore と goal 全体の受入も未完として継続する。
+
+## Match C3 statement-owned body transcript の修正 — 2026-09-28
+
+確認した code commit は `4693bffbd2f79bed87201efcf0181aaae3a18a3c`。
+main へ fast-forward push 後、working tree は clean。
+
+`statement_digest_at_with_state` は直接の `BodyItem` edge を順序 marker のまま保持し、
+`HirStmtKind::body_projections()` の各 body を既存の generation-bound body writer で
+転記する。accepted-rooted body 座標と digest を source order で statement digest に
+入れる。これまで `if` 等の statement 内の body が Match transcript に届かず、
+内部の意味変更でも外側の Match digest が同じになりえた。
+
+新規回帰は修正前に失敗し、修正後は内部 literal の変更、非空/空 body、statement
+順序の各差分で外側 Match digest が異なる。Sema lib 1023/1023、公開 Match query
+5/5、`cargo check --workspace --all-targets --all-features`、
+`cargo clippy --workspace --all-targets --all-features`、`just test-workspace`
+（308 件の test result 群、失敗 0）、fmt、cached diff check は終了コード 0。
+Clippy/test の警告はあるが失敗はない。新しい owner/API/依存方向はなく、既存
+transcript transaction の body writer を再利用した。構造 gate はこの 35 LOC の
+同一 owner 修正では再実行していない。
+
+C3 には expression の演算子・mode・数値などの HIR shape atom、pattern の
+sequence-rest atom、checked call passing、Choice の checked plan field 等の不足が
+残る。T01/T06 の完全受入、View 以降の工程と goal 全体は未完として継続する。
