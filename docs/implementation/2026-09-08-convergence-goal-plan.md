@@ -2532,3 +2532,44 @@ project callable value の空白・無関係な前置宣言不変テストと、
 
 C3 の compact Choice plan key/cancel trigger と T01/T06 全 live family/root matrix は
 まだ未完。View 以降の工程と goal 全体も継続する。
+
+## Match C3 compact Choice plan の seal — 2026-09-28
+
+Supersedes: 直前 checkpoint の compact Choice plan key/cancel trigger 未実装という記述。
+確認した code commit は `5534fed88d5ad1ab767924528951e0a0c8902a8d`。
+main へ fast-forward push 後、working tree は clean。
+
+`CheckedChoice` は plan の不在と空 plan を区別し、source 順の Assignment、Timeout、
+Cancel、OnSelect 行を保持する。assignment key は Window/Layout/DefaultFocus の
+閉じた enum とし、未知・recovered key を拒否する。Cancel は既存の typed
+`CheckedTrigger` を使い、Input/Event/Signal/Timeout/Select/Task/Scope/Expression の
+受理された family を seal する。Mark/recovery は拒否する。既存 option ID と goto
+target は引き続き同じ checked authority に置き、plan の値・pattern・body は HIR の
+typed child edge と body digest から転記する。validator は plan の有無、行数、順序、
+family、key、trigger を exact に照合する。
+
+Choice producer は plan assignment 値、timeout Duration、expression trigger Bool、
+signal target/payload を検査し、その expression effects を Choice effect row へ集約する。
+Event cancel pattern は Entry の checked event 型、Input/Task/Scope 等は既存 ingress
+型で seed する。Signal payload binding は cancel body 内から参照できる。
+Match transcript は closed plan 行と compact action の意味を記録する。
+
+focused transcript 11/11、ingress 6/6、statement contextual 22/22 が通過。
+plan 不在/空、同じ child 値の window/layout、trigger family、書式不変、未知 key、
+Duration/Bool/Signal 型不一致拒否、Entry event 型一致、`control.spawn` の Choice
+effect 伝播を確認した。Sema lib 1032/1032、
+`cargo check --workspace --all-targets --all-features`、
+`cargo clippy --workspace --all-targets --all-features`、`just test-workspace`
+（308 件の test result 群、失敗 0）、fmt、cached diff check は終了コード 0。
+`just structure-audit-gate` は 2658 files / 97 packages / 348 review triggers /
+blocking 0。既存警告はあるが失敗はない。
+
+production owner `final_analysis/analyzer/expressions.rs` は 4750 → 4941 physical LOC /
+214098 bytes、`final_analysis/model.rs` は 3057 → 3128 physical LOC / 103440 bytes。
+増分は既存 Choice producer とその checked fact に集中し、独立 plan catalog、逆向き
+依存、I/O を作っていない。大きい owner は一つの final-analysis transaction の責務を
+保っており、行数のみを理由に分割しない。
+
+full Option の label/text_key は現行 checker が受理していないため、この compact
+Choice cut の完了証拠には含めない。C3 の明示 Call 型引数と T01/T06 の全 live
+family/root matrix、View 以降、goal 全体は未完として継続する。
