@@ -26,11 +26,9 @@ use crate::value::{
     RuntimeLocalBinding, RuntimeLocalRead, RuntimeLocalReadMode, RuntimeNominalRecordExpr,
     RuntimeReductionValue, RuntimeSeq, RuntimeSignedIntWidth, RuntimeStandardMapFamily,
     RuntimeStandardMapOperandOrder, RuntimeUSizeValue, RuntimeUnaryOp, RuntimeUnsignedIntWidth,
-    RuntimeValue, evaluate_binary, evaluate_capacity_intrinsic,
-    evaluate_core_iter_collect_intrinsic, evaluate_core_iter_into_iter_intrinsic,
-    evaluate_core_iter_next_intrinsic, evaluate_core_option_is_some_intrinsic,
-    evaluate_core_option_unwrap_intrinsic, evaluate_core_range_intrinsic, evaluate_index_intrinsic,
-    evaluate_numeric_op, evaluate_std_float_intrinsic, evaluate_string_intrinsic, evaluate_unary,
+    RuntimeValue, evaluate_binary, evaluate_capacity_intrinsic, evaluate_core_iterator_intrinsic,
+    evaluate_core_range_intrinsic, evaluate_index_intrinsic, evaluate_numeric_op,
+    evaluate_std_float_intrinsic, evaluate_string_intrinsic, evaluate_unary,
     runtime_sequence_values, runtime_value_into_sequence_values, runtime_value_label,
     sum_i64_sequence_ref,
 };
@@ -3031,14 +3029,19 @@ impl<'a> PureEvaluator<'a> {
         {
             return Ok(value);
         }
-        Self::evaluate_pure_call(callee, &args)
+        Self::evaluate_pure_call(callee, args)
     }
 
     fn evaluate_pure_call(
         callee: &RuntimeCallTarget,
-        args: &[RuntimeValue],
+        mut args: Vec<RuntimeValue>,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        match (callee.as_intrinsic(), args) {
+        if let Some(intrinsic) = callee.as_intrinsic()
+            && let Some(result) = evaluate_core_iterator_intrinsic(intrinsic, &mut args)
+        {
+            return result;
+        }
+        match (callee.as_intrinsic(), args.as_slice()) {
             (Some(RuntimeIntrinsic::Add), [RuntimeValue::Int(lhs), RuntimeValue::Int(rhs)]) => {
                 evaluate_binary(
                     RuntimeValue::Int(*lhs),
@@ -3046,27 +3049,7 @@ impl<'a> PureEvaluator<'a> {
                     RuntimeValue::Int(*rhs),
                 )
             }
-            (Some(RuntimeIntrinsic::CoreRange), _) => evaluate_core_range_intrinsic(args),
-            (Some(RuntimeIntrinsic::CoreIterCollect), [value]) => {
-                evaluate_core_iter_collect_intrinsic(value.clone())
-            }
-            (Some(intrinsic), [value]) if intrinsic.builtin_iterator_family().is_some() => {
-                evaluate_core_iter_into_iter_intrinsic(
-                    value.clone(),
-                    intrinsic
-                        .builtin_iterator_family()
-                        .expect("guard retains a built-in iterator family"),
-                )
-            }
-            (Some(RuntimeIntrinsic::CoreIterNext), [value]) => {
-                evaluate_core_iter_next_intrinsic(value.clone())
-            }
-            (Some(RuntimeIntrinsic::CoreOptionIsSome), [value]) => {
-                evaluate_core_option_is_some_intrinsic(value)
-            }
-            (Some(RuntimeIntrinsic::CoreOptionUnwrap), [value]) => {
-                evaluate_core_option_unwrap_intrinsic(value.clone())
-            }
+            (Some(RuntimeIntrinsic::CoreRange), _) => evaluate_core_range_intrinsic(&args),
             (
                 Some(RuntimeIntrinsic::MathMatmulF32),
                 [RuntimeValue::MatrixF32(lhs), RuntimeValue::MatrixF32(rhs)],

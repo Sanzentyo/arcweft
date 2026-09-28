@@ -569,7 +569,7 @@ fn integer_division_by_zero_is_a_typed_failure_for_every_width() {
 fn runtime_call_keeps_intrinsic_failure_as_an_error() {
     let result = crate::engine::evaluate_runtime_call(
         &RuntimeCallTarget::intrinsic(RuntimeIntrinsic::CoreOptionUnwrap),
-        &[RuntimeValue::option_none()],
+        vec![RuntimeValue::option_none()],
         &RuntimeExternalCallContext::unbound(),
         &mut VmRuntimePureCallBackend::default(),
     );

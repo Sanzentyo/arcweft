@@ -74,6 +74,79 @@ fn pure_value_backend_moves_an_affine_need_argument_into_its_result() {
 }
 
 #[test]
+fn pure_collect_intrinsic_moves_affine_sequence_items() {
+    let unit = RuntimeCheckedType::Unit.semantic_identity_digest();
+    let need = RuntimeSemanticTypeId::from_bytes([0x92; 32]);
+    let vector = RuntimeSemanticTypeId::from_bytes([0x93; 32]);
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+                RuntimePlanTypeSeed::new(need, RuntimePlanTypeProjection::Need(unit)),
+                RuntimePlanTypeSeed::new(
+                    vector,
+                    RuntimePlanTypeProjection::Sequence {
+                        kind: RuntimePlanSequenceKind::Vec,
+                        item: need,
+                    },
+                ),
+            ],
+            [RuntimeLocalDeclarationSeed::new(vector)],
+        )
+        .expect("affine sequence input type");
+    let input = admission.local_ids()[0].clone();
+    builder
+        .push_pure_helper_seed(RuntimePureHelperSeed {
+            name: "collect_affine".to_owned(),
+            inputs: Box::new([input.clone()]),
+            input_abi: vec![RuntimePureInputType::Value],
+            output_abi: RuntimePureOutputType::Value,
+            body: RuntimeExprSeed::new(
+                vector,
+                RuntimeExprSeedKind::Call {
+                    callee: RuntimeCallTarget::intrinsic(
+                        crate::value::RuntimeIntrinsic::CoreIterCollect,
+                    ),
+                    args: Box::new([RuntimeCallArgumentSeed::new(
+                        RuntimeExprSeed::new(
+                            vector,
+                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                input,
+                                RuntimeLocalReadMode::Move,
+                            )),
+                        ),
+                        RuntimeCallArgumentMode::Value,
+                        0,
+                    )]),
+                },
+            ),
+            scalar_eval_supported: false,
+            origin: RuntimePureHelperOrigin::Annotated,
+        })
+        .expect("collect helper admits");
+    let plan = Arc::new(builder.finish().expect("collect helper seals"));
+    let helper = RuntimePureHelperRef::resolve(&plan, plan.pure_helpers()[0].id)
+        .expect("collect helper reference");
+    let item = RuntimeValue::Need(crate::task::NeedId("need.pure.collect".to_owned()));
+    let original = match &item {
+        RuntimeValue::Need(handle) => handle.0.as_ptr(),
+        _ => unreachable!(),
+    };
+    let input = RuntimeValue::Seq(RuntimeSeq::Values(vec![item]));
+    let result = VmRuntimePureCallBackend::default()
+        .call_values(helper, vec![input])
+        .expect("pure intrinsic consumes sequence");
+    let RuntimeValue::Seq(RuntimeSeq::Values(items)) = result else {
+        panic!("collect returns its affine sequence")
+    };
+    let [RuntimeValue::Need(item)] = items.as_slice() else {
+        panic!("collect retains one Need")
+    };
+    assert_eq!(item.0.as_ptr(), original);
+}
+
+#[test]
 fn pure_format_content_uses_selected_ambient_locale() {
     let int_type =
         RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I64).semantic_identity_digest();

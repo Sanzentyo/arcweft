@@ -461,7 +461,7 @@ pub trait VmHost {
         &mut self,
         program: &AwbcProgram,
         intrinsic: AwbcIntrinsicId,
-        args: &[RuntimeValue],
+        args: Vec<RuntimeValue>,
     ) -> Result<Option<RuntimeValue>, VmError>;
 
     /// Returns a backend result when one is available. The VM enters the
@@ -499,7 +499,7 @@ impl VmHost for RejectingVmHost {
         &mut self,
         _program: &AwbcProgram,
         intrinsic: AwbcIntrinsicId,
-        _args: &[RuntimeValue],
+        _args: Vec<RuntimeValue>,
     ) -> Result<Option<RuntimeValue>, VmError> {
         Err(VmError::MissingIntrinsic(intrinsic))
     }
@@ -1455,7 +1455,7 @@ fn execute_instruction(
                         }
                     }
                 }
-            } else if let Some(value) = host.call_intrinsic(program, *intrinsic, &args)?
+            } else if let Some(value) = host.call_intrinsic(program, *intrinsic, args)?
                 && let Some(dst) = dst
             {
                 fiber.active_frame_mut()?.set_register(*dst, value)?;

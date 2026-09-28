@@ -41,7 +41,7 @@ impl<B: RuntimeCallBackend> VmHost for ProductVmHost<'_, B> {
         &mut self,
         program: &AwbcProgram,
         intrinsic: crate::awbc::schema::AwbcIntrinsicId,
-        args: &[RuntimeValue],
+        args: Vec<RuntimeValue>,
     ) -> Result<Option<RuntimeValue>, VmError> {
         let record = program
             .intrinsics

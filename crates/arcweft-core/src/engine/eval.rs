@@ -17,15 +17,12 @@ use crate::runtime_id::RuntimeLocalDeclarationId;
 use crate::value::RuntimeBinaryOp;
 use crate::value::{
     RuntimeAgentExpr, RuntimeAgentValue, RuntimeCallArgumentMode, RuntimeCallTarget,
-    RuntimeExprKind, RuntimeFieldProjection, RuntimeIntrinsic,
-    evaluate_core_iter_into_iter_intrinsic, evaluate_core_iter_next_intrinsic,
-    evaluate_core_option_is_some_intrinsic, evaluate_core_option_unwrap_intrinsic,
+    RuntimeExprKind, RuntimeFieldProjection, RuntimeIntrinsic, evaluate_core_iterator_intrinsic,
 };
 use crate::value::{RuntimeLocalBinding, RuntimeNominalRecordExpr};
 use crate::value::{
-    RuntimeReductionValue, evaluate_capacity_intrinsic, evaluate_core_iter_collect_intrinsic,
-    evaluate_core_range_intrinsic, evaluate_index_intrinsic, evaluate_std_float_intrinsic,
-    evaluate_string_intrinsic,
+    RuntimeReductionValue, evaluate_capacity_intrinsic, evaluate_core_range_intrinsic,
+    evaluate_index_intrinsic, evaluate_std_float_intrinsic, evaluate_string_intrinsic,
 };
 use std::sync::Arc;
 
@@ -1358,67 +1355,38 @@ fn spread_runtime_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, Runti
     }
 }
 
-fn evaluate_core_iterator_intrinsic(
-    intrinsic: RuntimeIntrinsic,
-    args: &[RuntimeValue],
-) -> Option<Result<RuntimeValue, RuntimeEvalError>> {
-    match (intrinsic, args) {
-        (RuntimeIntrinsic::CoreIterCollect, [value]) => {
-            Some(evaluate_core_iter_collect_intrinsic(value.clone()))
-        }
-        (intrinsic, [value]) if intrinsic.builtin_iterator_family().is_some() => {
-            Some(evaluate_core_iter_into_iter_intrinsic(
-                value.clone(),
-                intrinsic
-                    .builtin_iterator_family()
-                    .expect("guard retains a built-in iterator family"),
-            ))
-        }
-        (RuntimeIntrinsic::CoreIterNext, [value]) => {
-            Some(evaluate_core_iter_next_intrinsic(value.clone()))
-        }
-        (RuntimeIntrinsic::CoreOptionIsSome, [value]) => {
-            Some(evaluate_core_option_is_some_intrinsic(value))
-        }
-        (RuntimeIntrinsic::CoreOptionUnwrap, [value]) => {
-            Some(evaluate_core_option_unwrap_intrinsic(value.clone()))
-        }
-        _ => None,
-    }
-}
-
 pub(crate) fn evaluate_runtime_call(
     callee: &RuntimeCallTarget,
-    args: &[RuntimeValue],
+    mut args: Vec<RuntimeValue>,
     external_context: &RuntimeExternalCallContext,
     pure_backend: &mut impl RuntimeCallBackend,
 ) -> Result<RuntimeValue, RuntimeEvalError> {
     if let Some(intrinsic) = callee.as_intrinsic()
-        && let Some(value) = evaluate_std_float_intrinsic(intrinsic, args)?
+        && let Some(value) = evaluate_std_float_intrinsic(intrinsic, &args)?
     {
         return Ok(value);
     }
     if let Some(intrinsic) = callee.as_intrinsic()
-        && let Some(value) = evaluate_string_intrinsic(intrinsic, args)?
+        && let Some(value) = evaluate_string_intrinsic(intrinsic, &args)?
     {
         return Ok(value);
     }
     if let Some(intrinsic) = callee.as_intrinsic()
-        && let Some(value) = evaluate_capacity_intrinsic(intrinsic, args)?
+        && let Some(value) = evaluate_capacity_intrinsic(intrinsic, &args)?
     {
         return Ok(value);
     }
     if let Some(intrinsic) = callee.as_intrinsic()
-        && let Some(value) = evaluate_index_intrinsic(intrinsic, args)?
+        && let Some(value) = evaluate_index_intrinsic(intrinsic, &args)?
     {
         return Ok(value);
     }
     if let Some(intrinsic) = callee.as_intrinsic()
-        && let Some(value) = evaluate_core_iterator_intrinsic(intrinsic, args)
+        && let Some(value) = evaluate_core_iterator_intrinsic(intrinsic, &mut args)
     {
         return value;
     }
-    evaluate_runtime_call_after_intrinsics(callee, args, external_context, pure_backend)
+    evaluate_runtime_call_after_intrinsics(callee, &args, external_context, pure_backend)
 }
 
 fn evaluate_runtime_call_after_intrinsics(

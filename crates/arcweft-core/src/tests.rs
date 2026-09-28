@@ -7,6 +7,7 @@ macro_rules! runtime_record {
 
 pub(crate) use runtime_record;
 
+mod affine_intrinsics;
 mod flow;
 pub(crate) mod function_application;
 mod line_task_reducer;

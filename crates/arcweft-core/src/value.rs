@@ -3244,6 +3244,35 @@ pub fn evaluate_core_iter_next_intrinsic(
     ]))
 }
 
+pub(crate) fn evaluate_core_iterator_intrinsic(
+    intrinsic: RuntimeIntrinsic,
+    args: &mut Vec<RuntimeValue>,
+) -> Option<Result<RuntimeValue, RuntimeEvalError>> {
+    match (intrinsic, args.as_slice()) {
+        (RuntimeIntrinsic::CoreIterCollect, [_]) => Some(evaluate_core_iter_collect_intrinsic(
+            args.pop().expect("one matched core iterator argument"),
+        )),
+        (intrinsic, [_]) if intrinsic.builtin_iterator_family().is_some() => {
+            Some(evaluate_core_iter_into_iter_intrinsic(
+                args.pop().expect("one matched core iterator argument"),
+                intrinsic
+                    .builtin_iterator_family()
+                    .expect("guard retains a built-in iterator family"),
+            ))
+        }
+        (RuntimeIntrinsic::CoreIterNext, [_]) => Some(evaluate_core_iter_next_intrinsic(
+            args.pop().expect("one matched core iterator argument"),
+        )),
+        (RuntimeIntrinsic::CoreOptionIsSome, [value]) => {
+            Some(evaluate_core_option_is_some_intrinsic(value))
+        }
+        (RuntimeIntrinsic::CoreOptionUnwrap, [_]) => Some(evaluate_core_option_unwrap_intrinsic(
+            args.pop().expect("one matched core iterator argument"),
+        )),
+        _ => None,
+    }
+}
+
 pub fn runtime_sequence_values(values: Vec<RuntimeValue>) -> RuntimeValue {
     RuntimeValue::Seq(RuntimeSeq::values(values))
 }

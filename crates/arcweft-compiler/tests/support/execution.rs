@@ -341,14 +341,14 @@ impl VmHost for CharacterDialogueVmHost<'_> {
         &mut self,
         program: &AwbcProgram,
         intrinsic: arcweft_core::awbc::schema::AwbcIntrinsicId,
-        args: &[RuntimeValue],
+        args: Vec<RuntimeValue>,
     ) -> Result<Option<RuntimeValue>, VmError> {
         if let Some(identity) = program
             .intrinsics
             .get(intrinsic.index())
             .and_then(|record| record.identity.as_intrinsic())
         {
-            if let Some(value) = evaluate_capacity_intrinsic(identity, args)
+            if let Some(value) = evaluate_capacity_intrinsic(identity, &args)
                 .map_err(|error| VmError::Runtime(error.to_string()))?
             {
                 return Ok(Some(value));
