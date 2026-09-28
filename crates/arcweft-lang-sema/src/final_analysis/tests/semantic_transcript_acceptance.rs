@@ -264,6 +264,12 @@ fn project_item_match_source(first: &str, second: &str) -> String {
     )
 }
 
+fn registered_value_match_source(binding: &str) -> String {
+    format!(
+        "fn root(flag: bool) -> i32 {{\n    match flag {{\n        true => {binding}\n        false => 0i32\n    }}\n}}\n"
+    )
+}
+
 struct MatchArmExpressionObservation {
     semantic_digest: [u8; 32],
     hir_kind: HirExprKind,
@@ -1733,7 +1739,7 @@ expression_family_inventory!(ValueResolutionFamily for CheckedValueResolution, {
     CheckedValueResolution::ProjectCallable(_) => ProjectCallable => Accepted,
     CheckedValueResolution::ProjectItem(_) => ProjectItem => Accepted,
     CheckedValueResolution::Entry(_) => Entry => Accepted,
-    CheckedValueResolution::Registered(_) => Registered => Pending,
+    CheckedValueResolution::Registered(_) => Registered => Accepted,
     CheckedValueResolution::Constant(_) => Constant => Pending,
 });
 
@@ -1880,6 +1886,7 @@ struct ExpressionCorpusRow {
 enum ExpressionCorpusFixture {
     Standard,
     ExternalCharacter,
+    RegisteredI32Pair,
 }
 
 impl ExpressionCorpusFixture {
@@ -1887,6 +1894,13 @@ impl ExpressionCorpusFixture {
         match self {
             Self::Standard => super::fixture(source, None),
             Self::ExternalCharacter => super::external_character_fixture(source),
+            Self::RegisteredI32Pair => super::fixture_with_base_environment(
+                source,
+                None,
+                TypeCheckEnv::standard()
+                    .with_symbol("registered_left", TypeKind::I32)
+                    .with_symbol("registered_right", TypeKind::I32),
+            ),
         }
     }
 }
@@ -2028,6 +2042,18 @@ fn checked_owner_expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
             shapes: &[ExprShapeFamily::Match, ExprShapeFamily::EntityReference],
             resolutions: &[ExpressionResolutionFamily::Structural],
             values: &[ValueResolutionFamily::ProjectItem],
+            selects: &[],
+        },
+        ExpressionCorpusRow {
+            name: "registered environment value",
+            source: registered_value_match_source("registered_left"),
+            fixture: ExpressionCorpusFixture::RegisteredI32Pair,
+            shapes: &[ExprShapeFamily::Match, ExprShapeFamily::Path],
+            resolutions: &[
+                ExpressionResolutionFamily::Structural,
+                ExpressionResolutionFamily::Value,
+            ],
+            values: &[ValueResolutionFamily::Registered],
             selects: &[],
         },
     ]
@@ -2205,6 +2231,61 @@ fn checked_match_transcript_commits_project_item_value_owner() {
         project_items.semantic_digest, same_project_item.semantic_digest,
         "changing one Match arm's checked ProjectItem owner changes its transcript",
     );
+}
+
+fn registered_value_fact(
+    observation: &MatchExpressionCorpusObservation,
+) -> (&RegisteredSemanticValueId, &TypeKind) {
+    observation
+        .value_facts
+        .iter()
+        .find_map(|(value, ty)| match value {
+            CheckedValueResolution::Registered(value) => Some((value, ty)),
+            _ => None,
+        })
+        .expect("Match descendant has a checked Registered value")
+}
+
+#[test]
+fn checked_match_transcript_commits_registered_environment_binding_identity() {
+    let left_world = ExpressionCorpusFixture::RegisteredI32Pair
+        .build(&registered_value_match_source("registered_left"));
+    let left = accepted_match_expression_corpus_observation_for_fixture(&left_world);
+    let (left_id, left_type) = registered_value_fact(&left);
+    assert_eq!(left_type, &TypeKind::I32);
+    assert_eq!(
+        left_id
+            .environment_binding()
+            .expect("Registered value retains its environment binding")
+            .as_str(),
+        "registered_left",
+    );
+
+    let right_world = ExpressionCorpusFixture::RegisteredI32Pair
+        .build(&registered_value_match_source("registered_right"));
+    let right = accepted_match_expression_corpus_observation_for_fixture(&right_world);
+    let (right_id, right_type) = registered_value_fact(&right);
+    assert_eq!(right_type, left_type);
+    assert_eq!(
+        right_id
+            .environment_binding()
+            .expect("Registered value retains its environment binding")
+            .as_str(),
+        "registered_right",
+    );
+    assert_ne!(left_id.as_bytes(), right_id.as_bytes());
+    assert_ne!(left.semantic_digest, right.semantic_digest);
+
+    let revised_source = format!(
+        "fn unrelated() -> i64 {{ 99i64 }}\n{}",
+        registered_value_match_source("registered_left"),
+    );
+    let revised_world = ExpressionCorpusFixture::RegisteredI32Pair.build(&revised_source);
+    let revised = accepted_match_expression_corpus_observation_for_fixture(&revised_world);
+    let (revised_id, revised_type) = registered_value_fact(&revised);
+    assert_eq!(revised_type, left_type);
+    assert_eq!(revised_id.as_bytes(), left_id.as_bytes());
+    assert_eq!(revised.semantic_digest, left.semantic_digest);
 }
 
 #[test]
