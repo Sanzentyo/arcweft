@@ -3123,3 +3123,32 @@ focused corpus、Sema lib 1084/1084 と UI/integration/doctest、changed-crate C
 fmt、cached diff check は成功。既存警告あり。テストのみの cut なので workspace と
 構造 gate は再実行していない。Effect resolution の declaration-only root 証拠は
 別の witness として Pending に残す。T01/T06、View 以降と goal 全体は未完として継続する。
+
+## Match T01 collection expression と Effect root の証拠 — 2026-09-29
+
+確認した code commit は `7e0f0bc03134f684b49c8a287bab4da41d8558e5`。
+main へ fast-forward push 後、working tree は clean。
+
+受理済み Match path 配下で Range、一般 BracketSequence、ArrayRepeat、Vec Index の
+HIR shape と checked resolution の完全な集合を確認し、同型の sequence 要素、repeat
+値、index 選択の変更が Match digest に届くことを確かめた。同一 Function に
+`effects { fs.read }` と body Match を置く witness は、checked Effect fact が
+DeclarationContract path にあり、Match の DeclarationBody path 配下には入らないことを
+確認した。Effect resolution は唯一の declaration effect-root producer と合わせ、
+T01 の Match 子孫では ProvenUnreachable とした。Record/RecordLiteral/ShortVariant/Nominal
+は本 cut に受理証拠がないため Pending のまま。
+
+focused corpus 11/11、`cargo test -p arcweft-lang-sema` 全件、changed-crate Clippy、
+fmt、cached diff check は成功。既存警告あり。テストのみの cut なので workspace と
+構造 gate は再実行していない。
+
+## Match T06 Choice scope の訂正 — 2026-09-29
+
+凍結 Match 設計の `CUTS_TESTS_AND_DELETION.md` C1/C3/T06 は HIR Choice body root の
+path/topology と、受理済み Match transcript の意味差を対象とする。同 C5 item 4 は
+runtime/wire/persistence/task-plan consumer の新設を明示的に除外する。従って現行
+Sema が拒否する非compact Choice 全体の native/AWBC 実行移行を、本工程の完了条件へ
+追加しない。非compact HIR role は C1 の構造証拠と現在の拒否境界で確認し、T06 の
+正例は受理済み compact Choice の Timeout/Cancel/OnSelect body・pattern root と
+source order を差分検証する。これらの正例は未検証であり、T06 は未完のまま。
+View parameter default も現行の別 producer/consumer gap として保持する。
