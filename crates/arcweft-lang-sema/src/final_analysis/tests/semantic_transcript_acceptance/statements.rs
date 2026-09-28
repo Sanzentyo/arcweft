@@ -40,7 +40,7 @@ statement_family_inventory!(StatementShapeFamily for HirStmtKind, {
     HirStmtKind::Let { .. } => Let => Accepted,
     HirStmtKind::Assign { .. } => Assign => Accepted,
     HirStmtKind::LetElse { .. } => LetElse => Pending,
-    HirStmtKind::Return { .. } => Return => Pending,
+    HirStmtKind::Return { .. } => Return => Accepted,
     HirStmtKind::Out { .. } => Out => Pending,
     HirStmtKind::Goto { .. } => Goto => Pending,
     HirStmtKind::Defer { .. } => Defer => Accepted,
@@ -53,7 +53,7 @@ statement_family_inventory!(StatementShapeFamily for HirStmtKind, {
     HirStmtKind::UnsafeLifetime { .. } => UnsafeLifetime => Pending,
     HirStmtKind::Choice { .. } => Choice => Pending,
     HirStmtKind::If(_) => If => Accepted,
-    HirStmtKind::IfLet(_) => IfLet => Pending,
+    HirStmtKind::IfLet(_) => IfLet => Accepted,
     HirStmtKind::Match(_) => Match => Pending,
     HirStmtKind::While(_) => While => Pending,
     HirStmtKind::WhileLet(_) => WhileLet => Pending,
@@ -91,6 +91,7 @@ statement_family_inventory!(StatementPayloadFamily for CheckedStatementPayload, 
 struct MatchStatementCorpusObservation {
     shapes: BTreeSet<StatementShapeFamily>,
     payloads: BTreeSet<StatementPayloadFamily>,
+    statement_families: BTreeSet<(StatementShapeFamily, StatementPayloadFamily)>,
     assignments: Vec<CheckedAssignmentCorpusFact>,
     assertion_dispositions: Vec<CheckedAssertionDisposition>,
     defers: Vec<CheckedDeferCorpusFact>,
@@ -142,6 +143,7 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
         .expect("accepted Match root path");
     let mut shapes = BTreeSet::new();
     let mut payloads = BTreeSet::new();
+    let mut statement_families = BTreeSet::new();
     let mut assignments = Vec::new();
     let mut assertion_dispositions = Vec::new();
     let mut defers = Vec::new();
@@ -156,8 +158,11 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
         if !coordinate.path().is_at_or_below(&match_path) {
             continue;
         }
-        shapes.insert(StatementShapeFamily::of(hir.kind()));
-        payloads.insert(StatementPayloadFamily::of(checked.payload()));
+        let shape = StatementShapeFamily::of(hir.kind());
+        let payload = StatementPayloadFamily::of(checked.payload());
+        shapes.insert(shape);
+        payloads.insert(payload);
+        statement_families.insert((shape, payload));
         match (hir.kind(), checked.payload()) {
             (HirStmtKind::Assign { .. }, CheckedStatementPayload::Assignment(assignment)) => {
                 let field_place = assignment
@@ -217,6 +222,7 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
     MatchStatementCorpusObservation {
         shapes,
         payloads,
+        statement_families,
         assignments,
         assertion_dispositions,
         defers,
@@ -251,6 +257,26 @@ fn match_arm_assertion_source(operand: &str) -> String {
                  false => 0i64\n\
              }}\n\
          }}\n"
+    )
+}
+
+fn function_match_statement_source(statement: &str) -> String {
+    let statement = statement
+        .lines()
+        .map(|line| format!("            {line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        r#"fn root(flag: bool, other: bool) -> i64 {{
+    match flag {{
+        true => {{
+{statement}
+            1i64
+        }}
+        false => 0i64
+    }}
+}}
+"#
     )
 }
 
@@ -323,6 +349,18 @@ fn checked_match_statement_corpus_tracks_accepted_root_families() {
             source: match_arm_assertion_source("flag"),
             shapes: &[StatementShapeFamily::Assertion],
             payloads: &[StatementPayloadFamily::Assertion],
+        },
+        Row {
+            name: "Return in arm block",
+            source: function_match_statement_source("return 1i64"),
+            shapes: &[StatementShapeFamily::Return],
+            payloads: &[StatementPayloadFamily::Structural],
+        },
+        Row {
+            name: "IfLet in arm block",
+            source: function_match_statement_source("if let value = other {}"),
+            shapes: &[StatementShapeFamily::IfLet],
+            payloads: &[StatementPayloadFamily::Structural],
         },
         Row {
             name: "Defer in Flow arm block",
@@ -478,6 +516,42 @@ fn checked_match_for_retains_builtin_iteration_and_iterable_meaning() {
         );
     }
     assert_ne!(ordered.semantic_digest, repeated.semantic_digest);
+}
+
+#[test]
+fn checked_match_return_retains_exact_shape_and_meaning() {
+    let return_one = accepted_match_statement_corpus_observation(&function_match_statement_source(
+        "return 1i64",
+    ));
+    let return_two = accepted_match_statement_corpus_observation(&function_match_statement_source(
+        "return 2i64",
+    ));
+
+    let expected = BTreeSet::from([(
+        StatementShapeFamily::Return,
+        StatementPayloadFamily::Structural,
+    )]);
+    assert_eq!(return_one.statement_families, expected);
+    assert_eq!(return_two.statement_families, expected);
+    assert_ne!(return_one.semantic_digest, return_two.semantic_digest);
+}
+
+#[test]
+fn checked_match_if_let_retains_exact_shape_and_input_meaning() {
+    let other = accepted_match_statement_corpus_observation(&function_match_statement_source(
+        "if let value = other {}",
+    ));
+    let flag = accepted_match_statement_corpus_observation(&function_match_statement_source(
+        "if let value = flag {}",
+    ));
+
+    let expected = BTreeSet::from([(
+        StatementShapeFamily::IfLet,
+        StatementPayloadFamily::Structural,
+    )]);
+    assert_eq!(other.statement_families, expected);
+    assert_eq!(flag.statement_families, expected);
+    assert_ne!(other.semantic_digest, flag.semantic_digest);
 }
 
 #[test]
