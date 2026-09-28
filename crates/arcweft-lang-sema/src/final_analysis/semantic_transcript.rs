@@ -1085,9 +1085,10 @@ fn expression_digest_at_with_state(
         }
         _ => None,
     };
+    let owner_coordinate = path.canonical_bytes()?;
     let mut hasher = TranscriptHasher::new(budget);
     transcript_update!(hasher, b"arcweft.lang.checked-expression-semantic.v1\0");
-    transcript_update!(hasher, &path.canonical_bytes()?);
+    transcript_update!(hasher, &owner_coordinate);
     transcript_update!(hasher, &hir.kind().semantic_transcript_tag().to_le_bytes());
     transcript_update!(hasher, &checked.resolution().semantic_tag().to_le_bytes());
     match checked.result() {
@@ -1123,6 +1124,7 @@ fn expression_digest_at_with_state(
     write_resolution_payload(
         &mut hasher,
         owner,
+        &owner_coordinate,
         checked.resolution(),
         checked.source_value_type(),
         coordinates,
@@ -1480,7 +1482,13 @@ fn statement_digest_at_with_state(
     write_bytes(&mut hasher, &coordinate)?;
     transcript_update!(hasher, &hir.kind().semantic_transcript_tag().to_le_bytes());
     transcript_update!(hasher, &[checked.payload().semantic_tag()]);
-    write_statement_payload(&mut hasher, checked.payload(), analysis, coordinates)?;
+    write_statement_payload(
+        &mut hasher,
+        checked.payload(),
+        &coordinate,
+        analysis,
+        coordinates,
+    )?;
     write_effects(&mut hasher, checked.effects())?;
     write_len(&mut hasher, children.len())?;
     for (role, child) in children {
@@ -1629,6 +1637,7 @@ fn body_digest_at_with_state(
 fn write_statement_payload(
     hasher: &mut MatchTranscriptHasher<'_>,
     payload: &super::CheckedStatementPayload,
+    owner_coordinate: &[u8],
     analysis: &FinalSemanticAnalysis,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
 ) -> Result<(), SemanticTranscriptError> {
@@ -1741,16 +1750,9 @@ fn write_statement_payload(
         CheckedStatementPayload::SourceLocale(locale) => {
             transcript_update!(hasher, locale.semantic_digest().as_bytes());
         }
-        CheckedStatementPayload::Scope(scope) => match scope {
-            super::CheckedScopeIdentity::Anonymous => {
-                transcript_update!(hasher, &[0]);
-            }
-            super::CheckedScopeIdentity::Named(name) => {
-                transcript_update!(hasher, &[1]);
-                write_len(hasher, name.as_str().len())?;
-                transcript_update!(hasher, name.as_str().as_bytes());
-            }
-        },
+        CheckedStatementPayload::Scope(scope) => {
+            write_scope_identity(hasher, scope, owner_coordinate)?;
+        }
         CheckedStatementPayload::Include(target) => {
             transcript_update!(hasher, target.declaration().as_bytes());
         }
@@ -1777,6 +1779,21 @@ fn write_field_selection(
     transcript_update!(hasher, selection.field_type().as_bytes());
     transcript_update!(hasher, &[u8::from(selection.runtime_field().is_some())]);
     Ok(())
+}
+
+fn write_scope_identity(
+    hasher: &mut MatchTranscriptHasher<'_>,
+    scope: &super::CheckedScopeIdentity,
+    owner_coordinate: &[u8],
+) -> Result<(), SemanticTranscriptError> {
+    transcript_update!(
+        hasher,
+        &[match scope {
+            super::CheckedScopeIdentity::Anonymous => 0,
+            super::CheckedScopeIdentity::Named(_) => 1,
+        }]
+    );
+    write_bytes(hasher, owner_coordinate)
 }
 
 fn write_iteration(
@@ -2981,6 +2998,7 @@ fn write_complete_resolution_payload(
     content_body_digest: Option<&CheckedRichTextSemanticDigest>,
     cycle_owner: Option<ExprId>,
 ) -> Result<(), SemanticTranscriptError> {
+    let owner_coordinate = coordinates.expression(owner)?.canonical_bytes()?;
     transcript_update!(hasher, &resolution.semantic_tag().to_le_bytes());
     if let CheckedExpressionResolution::Literal(literal) = resolution {
         write_literal(
@@ -2996,6 +3014,7 @@ fn write_complete_resolution_payload(
     write_resolution_payload(
         hasher,
         owner,
+        &owner_coordinate,
         resolution,
         ty,
         coordinates,
@@ -3011,6 +3030,7 @@ fn write_complete_resolution_payload(
 fn write_resolution_payload(
     hasher: &mut MatchTranscriptHasher<'_>,
     owner: ExprId,
+    owner_coordinate: &[u8],
     resolution: &CheckedExpressionResolution,
     ty: Option<&TypeKind>,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
@@ -3025,14 +3045,9 @@ fn write_resolution_payload(
         CheckedExpressionResolution::Structural
         | CheckedExpressionResolution::Literal(_)
         | CheckedExpressionResolution::Call => {}
-        CheckedExpressionResolution::Scope(scope) => match scope {
-            super::CheckedScopeIdentity::Anonymous => transcript_update!(hasher, &[0]),
-            super::CheckedScopeIdentity::Named(name) => {
-                transcript_update!(hasher, &[1]);
-                write_len(hasher, name.as_str().len())?;
-                transcript_update!(hasher, name.as_str().as_bytes());
-            }
-        },
+        CheckedExpressionResolution::Scope(scope) => {
+            write_scope_identity(hasher, scope, owner_coordinate)?;
+        }
         CheckedExpressionResolution::Value(value) => match value {
             CheckedValueResolution::Local(local) => {
                 let binding = coordinates.binding(*local)?;
@@ -3774,6 +3789,7 @@ fn write_compile_time_scalar(
     content_body_digest: Option<&CheckedRichTextSemanticDigest>,
     cycle_owner: Option<ExprId>,
 ) -> Result<(), SemanticTranscriptError> {
+    let owner_coordinate = coordinates.expression(owner)?.canonical_bytes()?;
     match scalar.value() {
         CheckedCompileTimeScalar::Bool(value) => {
             transcript_update!(hasher, &[0, u8::from(*value)]);
@@ -3846,6 +3862,7 @@ fn write_compile_time_scalar(
     write_resolution_payload(
         hasher,
         owner,
+        &owner_coordinate,
         scalar.original(),
         Some(ty),
         coordinates,
@@ -4112,6 +4129,34 @@ fn unreachable_tag(value: CheckedUnreachableReason) -> u8 {
 mod tests {
     use super::*;
 
+    fn checked_match_digest(source: &str) -> [u8; 32] {
+        let fixture = crate::final_analysis::tests::fixture(source, None);
+        let analysis = crate::final_analysis::tests::analyze(&fixture)
+            .expect("fixture has a checked exhaustive Match");
+        let project = fixture.project.analysis_view().expect("executable HIR");
+        let module = project
+            .module(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
+            .expect("root HIR module");
+        let owner = module
+            .expressions()
+            .find_map(|(owner, expression)| {
+                matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
+            })
+            .expect("Match expression");
+        let reference = analysis
+            .checked_match_ref(module, &fixture.symbols, owner)
+            .expect("Match reference belongs to the accepted HIR snapshot");
+        let product = analysis
+            .build_checked_match_for_ref(
+                project,
+                &fixture.symbols,
+                reference,
+                CheckedMatchLimits::PRODUCTION,
+            )
+            .expect("accepted Match transcript");
+        *product.semantic_digest().as_bytes()
+    }
+
     #[test]
     fn type_value_transcript_discriminates_its_closed_payload_family() {
         let fixture = crate::final_analysis::tests::fixture(
@@ -4204,5 +4249,103 @@ flow main(flag: bool) -> String {
             )
             .expect("ObjectSpan must contribute its owner digest to the Match transcript");
         assert!(product.coverage().exhaustive());
+    }
+
+    #[test]
+    fn match_digest_ignores_named_scope_labels_in_statement_and_expression_scopes() {
+        let statement_scope = |label: &str| {
+            format!(
+                "fn root(flag: bool) -> bool {{\n    match flag {{\n        true => {{\n            scope {label} {{}}\n            true\n        }}\n        false => false\n    }}\n}}\n"
+            )
+        };
+        assert_eq!(
+            checked_match_digest(&statement_scope("first")),
+            checked_match_digest(&statement_scope("renamed")),
+        );
+
+        let expression_scope = |label: &str| {
+            format!(
+                "fn root(flag: bool) -> bool {{\n    match flag {{\n        true => scope {label} {{ true }}\n        false => false\n    }}\n}}\n"
+            )
+        };
+        assert_eq!(
+            checked_match_digest(&expression_scope("first")),
+            checked_match_digest(&expression_scope("renamed")),
+        );
+    }
+
+    #[test]
+    fn match_digest_tracks_the_accepted_coordinate_of_a_named_scope() {
+        let statement_scope_in_true_arm = r#"
+fn root(flag: bool) -> bool {
+    match flag {
+        true => {
+            scope stable {}
+            true
+        }
+        false => false
+    }
+}
+"#;
+        let statement_scope_in_false_arm = r#"
+fn root(flag: bool) -> bool {
+    match flag {
+        true => true
+        false => {
+            scope stable {}
+            false
+        }
+    }
+}
+"#;
+        assert_ne!(
+            checked_match_digest(statement_scope_in_true_arm),
+            checked_match_digest(statement_scope_in_false_arm),
+        );
+
+        let expression_scope_in_true_arm = r#"
+fn root(flag: bool) -> bool {
+    match flag {
+        true => scope stable { true }
+        false => false
+    }
+}
+"#;
+        let expression_scope_in_false_arm = r#"
+fn root(flag: bool) -> bool {
+    match flag {
+        true => true
+        false => scope stable { false }
+    }
+}
+"#;
+        assert_ne!(
+            checked_match_digest(expression_scope_in_true_arm),
+            checked_match_digest(expression_scope_in_false_arm),
+        );
+    }
+
+    #[test]
+    fn match_digest_distinguishes_named_and_anonymous_scopes() {
+        let named_scope = r#"
+fn root(flag: bool) -> bool {
+    match flag {
+        true => scope stable { true }
+        false => false
+    }
+}
+"#;
+        let anonymous_scope = r#"
+fn root(flag: bool) -> bool {
+    match flag {
+        true => scope { true }
+        false => false
+    }
+}
+"#;
+        assert_ne!(
+            checked_match_digest(named_scope),
+            checked_match_digest(anonymous_scope),
+        );
     }
 }
