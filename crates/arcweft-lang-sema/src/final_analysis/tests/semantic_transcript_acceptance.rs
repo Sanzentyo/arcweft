@@ -1,4 +1,6 @@
 use super::*;
+use crate::final_analysis::CheckedRecordPatternOwner;
+use arcweft_lang_hir::pattern::{HirPatternChild, HirPatternKind, HirPatternSequenceRest};
 
 #[derive(Clone, Copy)]
 struct MatchObservation {
@@ -812,6 +814,25 @@ fn checked_match_transcript_commits_compact_choice_plan_rows() {
 }
 
 fn first_arm_pattern_digest(source: &str) -> [u8; 32] {
+    checked_match_pattern_observation(source, 0).arm_pattern_digest
+}
+
+struct CheckedMatchPatternFact {
+    hir_kind: HirPatternKind,
+    checked: CheckedPattern,
+}
+
+struct CheckedMatchPatternObservation {
+    semantic_digest: [u8; 32],
+    arm_pattern_digest: [u8; 32],
+    scrutinee_type: TypeKind,
+    facts: Vec<CheckedMatchPatternFact>,
+}
+
+fn checked_match_pattern_observation(
+    source: &str,
+    arm_ordinal: usize,
+) -> CheckedMatchPatternObservation {
     let world = super::fixture(source, None);
     let report = super::analyze(&world).expect("pattern transcript fixture should check");
     let project = world.project.analysis_view().expect("executable HIR");
@@ -824,8 +845,54 @@ fn first_arm_pattern_digest(source: &str) -> [u8; 32] {
             matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
         })
         .expect("Match expression");
+    let HirExprKind::Match(authored) = module.resolve_expr(owner).expect("Match owner").kind()
+    else {
+        panic!("selected expression is a Match");
+    };
+    let arm = authored
+        .arms()
+        .get(arm_ordinal)
+        .expect("selected Match arm");
     let product = super::checked_match_product(&report, project, module, &world.symbols, owner);
-    *product.arms()[0].pattern().as_bytes()
+    let arm_product = product
+        .arms()
+        .get(arm_ordinal)
+        .expect("checked Match arm product");
+    let mut pending = vec![arm.pattern()];
+    let mut visited = std::collections::BTreeSet::new();
+    let mut facts = Vec::new();
+    while let Some(pattern_owner) = pending.pop() {
+        if !visited.insert(pattern_owner) {
+            continue;
+        }
+        let hir = module
+            .resolve_pattern(pattern_owner)
+            .expect("accepted Match pattern owner");
+        let checked = report
+            .pattern(pattern_owner)
+            .expect("checked Match pattern fact");
+        pending.extend(hir.kind().child_edges().into_iter().filter_map(
+            |edge| match edge.child() {
+                HirPatternChild::Pattern(child) => Some(child),
+                HirPatternChild::Local(_) | HirPatternChild::Type(_) => None,
+            },
+        ));
+        facts.push(CheckedMatchPatternFact {
+            hir_kind: hir.kind().clone(),
+            checked: checked.clone(),
+        });
+    }
+
+    CheckedMatchPatternObservation {
+        semantic_digest: *product.semantic_digest().as_bytes(),
+        arm_pattern_digest: *arm_product.pattern().as_bytes(),
+        scrutinee_type: report
+            .expression(authored.scrutinee())
+            .and_then(CheckedExpression::value_type)
+            .expect("checked Match scrutinee type")
+            .clone(),
+        facts,
+    }
 }
 
 #[test]
@@ -871,4 +938,174 @@ fn checked_match_pattern_transcript_distinguishes_exact_and_rest_sequences() {
         first_arm_pattern_digest(&source("[]")),
         first_arm_pattern_digest(&source("[..]")),
     );
+}
+
+#[test]
+fn checked_match_pattern_transcript_carries_tuple_and_or_targets() {
+    let source = |pattern: &str| {
+        format!(
+            "fn root(pair: (bool, bool)) -> i64 {{\n    match pair {{\n        {pattern} => 1i64\n        _ => 0i64\n    }}\n}}\n"
+        )
+    };
+    let tuple_or = checked_match_pattern_observation(&source("(true | false, true)"), 0);
+    let changed = checked_match_pattern_observation(&source("(true | false, false)"), 0);
+
+    assert_ne!(
+        tuple_or.semantic_digest, changed.semantic_digest,
+        "a checked tuple element change reaches the Match digest",
+    );
+    assert!(matches!(
+        &tuple_or.scrutinee_type,
+        TypeKind::Tuple(elements)
+            if elements.as_slice() == [TypeKind::Bool, TypeKind::Bool]
+    ));
+    assert!(tuple_or.facts.iter().any(|fact| matches!(
+        &fact.hir_kind,
+        HirPatternKind::Tuple { .. }
+    ) && matches!(
+        fact.checked.resolution(),
+        CheckedPatternResolution::Structural
+    ) && matches!(fact.checked.ty(), TypeKind::Tuple(_))));
+    assert!(
+        tuple_or
+            .facts
+            .iter()
+            .any(|fact| matches!(&fact.hir_kind, HirPatternKind::Or { .. })
+                && matches!(
+                    fact.checked.resolution(),
+                    CheckedPatternResolution::Structural
+                )
+                && matches!(fact.checked.ty(), TypeKind::Bool))
+    );
+}
+
+#[test]
+fn checked_match_pattern_transcript_carries_result_and_choice_targets() {
+    let result_source = |ok_pattern: &str| {
+        format!(
+            "fn root(value: Result<bool, String>) -> i64 {{\n    match value {{\n        .Ok({ok_pattern}) => 1i64\n        .Err(error) => 2i64\n    }}\n}}\n"
+        )
+    };
+    let result = checked_match_pattern_observation(&result_source("value"), 0);
+    let error = checked_match_pattern_observation(&result_source("value"), 1);
+    let changed_result = checked_match_pattern_observation(&result_source("_"), 0);
+    assert_ne!(
+        result.semantic_digest, changed_result.semantic_digest,
+        "a Result payload binding change reaches the Match digest",
+    );
+    let selected_result_cases = result
+        .facts
+        .iter()
+        .chain(&error.facts)
+        .filter_map(|fact| match (&fact.hir_kind, fact.checked.resolution()) {
+            (HirPatternKind::Variant(_), CheckedPatternResolution::Variant(variant))
+                if matches!(
+                    variant.owner().kind(),
+                    CheckedVariantOwnerKind::Result { ok, error }
+                        if ok == &TypeKind::Bool && error == &TypeKind::String
+                ) =>
+            {
+                variant.selected().diagnostic_name().map(str::to_owned)
+            }
+            _ => None,
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        selected_result_cases,
+        ["Err".to_owned(), "Ok".to_owned()].into_iter().collect()
+    );
+
+    let choice_source = |first: &str, second: &str| {
+        format!(
+            "fn root(value: String | Bytes) -> i64 {{\n    match value {{\n        text: {first} => 1i64\n        bytes: {second} => 2i64\n    }}\n}}\n"
+        )
+    };
+    let choice = checked_match_pattern_observation(&choice_source("String", "Bytes"), 0);
+    let changed_choice = checked_match_pattern_observation(&choice_source("Bytes", "String"), 0);
+    assert_ne!(
+        choice.semantic_digest, changed_choice.semantic_digest,
+        "checked Choice alternative selection reaches the Match digest",
+    );
+    assert!(matches!(
+        &choice.scrutinee_type,
+        TypeKind::Choice(alternatives) if alternatives.len() == 2
+    ));
+    let typed_binding = choice
+        .facts
+        .iter()
+        .find_map(|fact| match (&fact.hir_kind, fact.checked.resolution()) {
+            (
+                HirPatternKind::TypedBinding { .. },
+                CheckedPatternResolution::TypedBinding(binding),
+            ) => Some(binding),
+            _ => None,
+        })
+        .expect("checked Choice typed binding reaches the Match arm");
+    assert_eq!(typed_binding.annotation(), &TypeKind::String);
+    assert_eq!(typed_binding.choice_alternatives().len(), 1);
+}
+
+#[test]
+fn checked_match_pattern_transcript_carries_sequence_target_and_rest_mode() {
+    let source = |first: &str| {
+        format!(
+            "fn root(items: Vec<bool>) -> i64 {{\n    match items {{\n        [{first}, ..] => 1i64\n        _ => 0i64\n    }}\n}}\n"
+        )
+    };
+    let sequence = checked_match_pattern_observation(&source("true"), 0);
+    let changed = checked_match_pattern_observation(&source("false"), 0);
+
+    assert_ne!(
+        sequence.semantic_digest, changed.semantic_digest,
+        "a checked sequence element change reaches the Match digest",
+    );
+    assert!(matches!(
+        &sequence.scrutinee_type,
+        TypeKind::Vec(item) if item.as_ref() == &TypeKind::Bool
+    ));
+    assert!(sequence.facts.iter().any(|fact| matches!(
+        &fact.hir_kind,
+        HirPatternKind::BracketSequence {
+            rest: HirPatternSequenceRest::Unbound,
+            ..
+        }
+    ) && matches!(
+        fact.checked.resolution(),
+        CheckedPatternResolution::Structural
+    ) && matches!(
+        fact.checked.ty(),
+        TypeKind::Vec(item) if item.as_ref() == &TypeKind::Bool
+    )));
+}
+
+#[test]
+fn checked_match_pattern_transcript_carries_project_record_variant_owner() {
+    let source = |field_type: &str| {
+        format!(
+            "enum Event {{\n    Start,\n    Empty {{}},\n    ChoiceSelected {{ id: {field_type} }},\n}}\nfn root(event: Event) -> i64 {{\n    match event {{\n        .Start => 0i64\n        .Empty {{}} => 1i64\n        .ChoiceSelected {{ id }} => 2i64\n    }}\n}}\n"
+        )
+    };
+    let record_variant = checked_match_pattern_observation(&source("i64"), 2);
+    let changed = checked_match_pattern_observation(&source("i32"), 2);
+
+    assert_ne!(
+        record_variant.semantic_digest, changed.semantic_digest,
+        "the project record-variant payload schema reaches the Match digest",
+    );
+    let carries_payload_type = |observation: &CheckedMatchPatternObservation,
+                                expected: &TypeKind| {
+        observation.facts.iter().any(|fact| {
+            matches!(
+                (&fact.hir_kind, fact.checked.resolution()),
+                (HirPatternKind::Record { .. }, CheckedPatternResolution::Record(record))
+                    if matches!(
+                        record.owner(),
+                        CheckedRecordPatternOwner::VariantPayload { .. }
+                    ) && record.fields().len() == 1
+                        && record.fields()[0].field_type() == expected
+            )
+        })
+    };
+    assert!(carries_payload_type(&record_variant, &TypeKind::I64));
+    assert!(carries_payload_type(&changed, &TypeKind::I32));
 }
