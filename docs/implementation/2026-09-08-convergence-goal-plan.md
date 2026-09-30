@@ -3253,3 +3253,38 @@ API/integration 24件）、changed-crate Clippy（all target/feature）、fmt、
 check は成功。Clippy 警告は残る。テストのみで責務・公開 API・依存は変わらず、
 workspace と構造 gate は再実行していない。次は通常式・nominal construction 等の
 expression corpus の残件を確認し、T06 View の producer/consumer 境界へ進む。
+
+## Match T01 通常の制御式・record・借用・合成式 corpus — 2026-10-01
+
+確認した base は `5f440fe93a68a6a68af7b3b86e4a396d010d655f`、working tree clean。
+code commit `95f55eef108cacbfb54133d21e631c796c76e870` を main へ
+fast-forward push し、push 後は working tree clean、HEAD/origin/main の差は 0/0。
+
+Match 配下の Unary、If、IfLet、Loop、ComputationBlock、Record、RecordLiteral、
+Borrow、Dereference、ForSynthetic の10 shape と checked Nominal resolution を
+9つの受理済み source で検証し、Accepted へ移した。各行は accepted path 全体の
+HIR shape/checked resolution 集合を厳密に比較する。同型の operand/branch/break/carrier
+tail/record field/borrowed value/iterable の変更が Match digest に届く。
+先行する無関係な宣言と整形変更は raw Match ExprId/span を変えるが、digest を保つ。
+
+最初の nominal 型比較は revision を含む raw TypeKind の不一致で失敗したため、
+owner API の `semantic_identity_digest` で同じ意味上の型を比較するよう修正した。
+Match arm 直下の `{ first = ... }` はブロックとして解析され、候補 source は
+RecoveredModule で失敗した。既存の式文法で括弧により record literal を明示した
+`({ first = ... })` は受理され、RecordLiteral shape と Nominal payload を保持する。
+文法や型契約を今回のテストに合わせて変更したものではない。
+
+expression corpus 12/12、`cargo test -p arcweft-lang-sema` 全件（lib 1091件、
+API/integration 24件）、changed-crate Clippy（all target/feature）、fmt、cached diff
+check は成功。Clippy 警告は残る。テストのみで責務・公開 API・依存は変わらず、
+workspace と構造 gate は再実行していない。
+
+現行 expression/value/select inventory は Accepted 65、Pending 17、
+ProvenUnreachable 1、RejectOnly 1。statement inventory は前 cut の
+Accepted 45、ProvenUnreachable 1、RejectOnly 1、Pending 0 を維持する。
+次は既存の受理例を持つ Await、implicit callable/parameter、dialogue coordinate と
+character factory/reconfigure、compile-time enum/style/type value、constant、AgentField、
+LifetimePath/ShortVariant の17残件を accepted Match path で確定する。
+T06 View parameter/default/body/value の完全な matrix と View default の移行、
+retained View、task-plan、nominal、scheduler/restore、最終検証は引き続き未完であり、
+goal は active のまま継続する。
