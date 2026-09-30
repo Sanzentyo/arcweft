@@ -3220,3 +3220,36 @@ goal API の取得結果は blocked になっていた。実装上の阻害条�
 blocked に変更したものではなく、goal を complete にもしていない。
 継続ターンでは上記検証・統合を完了したが、公開されている goal 更新ツールには
 active への再開操作がないため、自動継続の再開にはユーザーまたはシステム側の操作が必要。
+
+## Match T01 statement family の残件解消 — 2026-10-01
+
+確認した base は `974de216c5c0e89b1fa0c2fde4e9f67302a48120`、既存 main の
+working tree は clean だった。goal はユーザー/システムによる再開後に active を
+返しており、9月30日の容量エラーによる停止状態は解消している。
+
+code commit `d2325f46ea98e160907d964d60d6175a29a1cfde` を main へ
+fast-forward push 済み。push 後の working tree は clean。
+Match arm 下の Thread で Choice statement と Select operand/branch statement を
+受理し、EvaluatedEffect expression statement を含む exact HIR/checked payload の組を
+確認した。同型の Goto target、Select operand/branch source、log operand の変更は
+Match digest を変える。Select の Bind/Frame head と枝順も checked fact に保持され、
+枝順の変更が digest に届く。
+
+ProofCall を Match arm で受理する最初の候補は失敗した。parser の唯一の分類元は
+宣言 ProofBlock の文脈でのみ ProofCall を生成し、expression block の文法は
+FunctionItem 文脈なので、proof 内の Match arm の同じ call は普通の Expression になる。
+同じ proof に direct ProofCall と Match 内の call を置いた witness を受理し、direct
+ProofCall の checked path が Match path 外であることを確認した。direct call の
+選択先を変更しても Match digest は同じで、arm 内の選択先変更では変わる。
+この producer 境界と実行可能な witness に基づき ProofCall は ProvenUnreachable とした。
+
+現行 statement inventory は Accepted 45、ProvenUnreachable 1、RejectOnly 1、
+Pending 0。使わなくなった Pending disposition と dead-code lint 抑制を削除した。
+これは T01 statement 軸の証拠の閉包であり、expression/value/select と pattern 軸、
+T06 View default、および後続工程の完了を意味しない。
+
+focused statement 20/20、`cargo test -p arcweft-lang-sema` 全件（lib 1090件、
+API/integration 24件）、changed-crate Clippy（all target/feature）、fmt、cached diff
+check は成功。Clippy 警告は残る。テストのみで責務・公開 API・依存は変わらず、
+workspace と構造 gate は再実行していない。次は通常式・nominal construction 等の
+expression corpus の残件を確認し、T06 View の producer/consumer 境界へ進む。
