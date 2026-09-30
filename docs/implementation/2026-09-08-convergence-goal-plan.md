@@ -3210,3 +3210,13 @@ RejectOnly 1。family disposition の件数であり、実装全体の完成率�
 次は statement Choice/Select/ProofCall、EvaluatedEffect/Select payload の
 残件と expression/value/select 側の Pending を live owner/producer から確定し、
 View parameter/default/body/value の未完境界へ進む。
+
+上記の引き継ぎと検証済み statement corpus は
+`16dcf822dc72f68fa1e868764bca96864a0d33c7` で main へ fast-forward push 済み。
+push 後は working tree clean、HEAD/origin/main の差は 0/0。
+goal は作成時には active だったが、そのターンが
+`Selected model is at capacity. Please try a different model.` で失敗した後、
+goal API の取得結果は blocked になっていた。実装上の阻害条件を確認して
+blocked に変更したものではなく、goal を complete にもしていない。
+継続ターンでは上記検証・統合を完了したが、公開されている goal 更新ツールには
+active への再開操作がないため、自動継続の再開にはユーザーまたはシステム側の操作が必要。
