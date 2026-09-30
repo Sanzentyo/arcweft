@@ -45,20 +45,20 @@ statement_family_inventory!(StatementShapeFamily for HirStmtKind, {
     HirStmtKind::Goto { .. } => Goto => Accepted,
     HirStmtKind::Defer { .. } => Defer => Accepted,
     HirStmtKind::Yield { .. } => Yield => Accepted,
-    HirStmtKind::Signal { .. } => Signal => Pending,
-    HirStmtKind::LifetimeSet { .. } => LifetimeSet => Pending,
+    HirStmtKind::Signal { .. } => Signal => Accepted,
+    HirStmtKind::LifetimeSet { .. } => LifetimeSet => Accepted,
     HirStmtKind::Wait { .. } => Wait => Accepted,
     HirStmtKind::On { .. } => On => Accepted,
     HirStmtKind::CancelRule { .. } => CancelRule => Accepted,
-    HirStmtKind::UnsafeLifetime { .. } => UnsafeLifetime => Pending,
+    HirStmtKind::UnsafeLifetime { .. } => UnsafeLifetime => Accepted,
     HirStmtKind::Choice { .. } => Choice => Pending,
     HirStmtKind::If(_) => If => Accepted,
     HirStmtKind::IfLet(_) => IfLet => Accepted,
-    HirStmtKind::Match(_) => Match => Pending,
+    HirStmtKind::Match(_) => Match => Accepted,
     HirStmtKind::While(_) => While => Accepted,
     HirStmtKind::WhileLet(_) => WhileLet => Accepted,
     HirStmtKind::For(_) => For => Accepted,
-    HirStmtKind::Close { .. } => Close => Pending,
+    HirStmtKind::Close { .. } => Close => Accepted,
     HirStmtKind::Select(_) => Select => Pending,
     HirStmtKind::SourceLocale(_) => SourceLocale => Accepted,
     HirStmtKind::Scope(_) => Scope => Accepted,
@@ -79,7 +79,7 @@ statement_family_inventory!(StatementPayloadFamily for CheckedStatementPayload, 
     CheckedStatementPayload::Iteration(_) => Iteration => Accepted,
     CheckedStatementPayload::ControlTransfer(_) => ControlTransfer => Accepted,
     CheckedStatementPayload::Trigger(_) => Trigger => Accepted,
-    CheckedStatementPayload::UnsafeAudit(_) => UnsafeAudit => Pending,
+    CheckedStatementPayload::UnsafeAudit(_) => UnsafeAudit => Accepted,
     CheckedStatementPayload::Select(_) => Select => Pending,
     CheckedStatementPayload::SourceLocale(_) => SourceLocale => Accepted,
     CheckedStatementPayload::Scope(_) => Scope => Accepted,
@@ -102,6 +102,7 @@ struct MatchStatementCorpusObservation {
     scopes: Vec<super::super::super::CheckedScopeIdentity>,
     includes: Vec<super::super::super::CheckedIncludeFlowTarget>,
     loop_transfers: Vec<CheckedLoopTransferCorpusFact>,
+    unsafe_audits: Vec<CheckedUnsafeAuditCorpusFact>,
     match_value_type: Option<crate::types::TypeKind>,
     semantic_digest: [u8; 32],
 }
@@ -125,6 +126,12 @@ struct CheckedLoopTransferCorpusFact {
     kind: arcweft_lang_hir::project::HirControlTransferKind,
     family: arcweft_lang_hir::project::HirLoopTargetFamily,
     body: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CheckedUnsafeAuditCorpusFact {
+    semantic_id: [u8; 32],
+    has_safety_doc: bool,
 }
 
 /// Count only checked statements owned below this accepted Match expression.
@@ -172,6 +179,7 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
     let mut scopes = Vec::new();
     let mut includes = Vec::new();
     let mut loop_transfers = Vec::new();
+    let mut unsafe_audits = Vec::new();
     for (owner, hir) in module.statements() {
         let Some(checked) = report.statement(owner) else {
             continue;
@@ -239,6 +247,12 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
             (HirStmtKind::Include(_), CheckedStatementPayload::Include(target)) => {
                 includes.push(*target);
             }
+            (HirStmtKind::UnsafeLifetime { .. }, CheckedStatementPayload::UnsafeAudit(audit)) => {
+                unsafe_audits.push(CheckedUnsafeAuditCorpusFact {
+                    semantic_id: *audit.semantic_id().as_bytes(),
+                    has_safety_doc: audit.has_safety_doc(),
+                });
+            }
             (
                 HirStmtKind::Break { .. } | HirStmtKind::Continue { .. },
                 CheckedStatementPayload::ControlTransfer(_),
@@ -291,6 +305,9 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
             (HirStmtKind::Include(_), _) => {
                 panic!("accepted Include has its exact checked Include payload")
             }
+            (HirStmtKind::UnsafeLifetime { .. }, _) => {
+                panic!("accepted UnsafeLifetime has its exact checked UnsafeAudit payload")
+            }
             _ => {}
         }
     }
@@ -312,6 +329,7 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
         scopes,
         includes,
         loop_transfers,
+        unsafe_audits,
         match_value_type,
         semantic_digest: *product.semantic_digest().as_bytes(),
     }
@@ -405,6 +423,26 @@ fn flow_match_goto_source(target: &str) -> String {
         "flow done {{}}\nflow alternate {{}}\n{}",
         flow_match_statement_source(&format!("goto @flow.{target}")),
     )
+}
+
+fn flow_match_signal_source(value: &str) -> String {
+    flow_match_statement_source(&format!("signal true <- {value}"))
+}
+
+fn flow_match_lifetime_set_source(value: &str) -> String {
+    flow_match_statement_source(&format!("() <- {value}"))
+}
+
+fn flow_match_unsafe_lifetime_source(audit: &str) -> String {
+    flow_match_statement_source(&format!(
+        "unsafe lifetime {audit} {{ /// SAFETY: this fixture has an empty audited body.\n}}"
+    ))
+}
+
+fn function_match_statement_source_with_scrutinee(scrutinee: &str) -> String {
+    function_match_statement_source(&format!(
+        "match {scrutinee} {{\n    true => {{}}\n    false => {{}}\n}}"
+    ))
 }
 
 fn dialogue_match_wait_source(wait: &str) -> String {
@@ -636,6 +674,36 @@ fn checked_match_statement_corpus_tracks_accepted_root_families() {
                 StatementPayloadFamily::Structural,
             ],
         },
+        Row {
+            name: "Signal in Flow arm block",
+            source: flow_match_signal_source("true"),
+            shapes: &[StatementShapeFamily::Signal],
+            payloads: &[StatementPayloadFamily::Structural],
+        },
+        Row {
+            name: "LifetimeSet in Flow arm block",
+            source: flow_match_lifetime_set_source("true"),
+            shapes: &[StatementShapeFamily::LifetimeSet],
+            payloads: &[StatementPayloadFamily::Structural],
+        },
+        Row {
+            name: "UnsafeLifetime in Flow arm block",
+            source: flow_match_unsafe_lifetime_source("@unsafe.row"),
+            shapes: &[StatementShapeFamily::UnsafeLifetime],
+            payloads: &[StatementPayloadFamily::UnsafeAudit],
+        },
+        Row {
+            name: "Close in Flow arm block",
+            source: flow_match_statement_source("close ()"),
+            shapes: &[StatementShapeFamily::Close],
+            payloads: &[StatementPayloadFamily::Structural],
+        },
+        Row {
+            name: "statement-Match in function arm block",
+            source: function_match_statement_source_with_scrutinee("other"),
+            shapes: &[StatementShapeFamily::Match],
+            payloads: &[StatementPayloadFamily::Structural],
+        },
     ];
     let mut shapes = BTreeSet::new();
     let mut payloads = BTreeSet::new();
@@ -663,6 +731,131 @@ fn checked_match_statement_corpus_tracks_accepted_root_families() {
         "checked statement",
         &payloads,
         StatementPayloadFamily::INVENTORY,
+    );
+}
+
+#[test]
+fn checked_match_direct_statement_bundle_retains_exact_payloads_and_meaning() {
+    struct Row {
+        name: &'static str,
+        source: String,
+        expected: BTreeSet<(StatementShapeFamily, StatementPayloadFamily)>,
+    }
+
+    let rows = [
+        Row {
+            name: "Signal",
+            source: flow_match_signal_source("flag"),
+            expected: BTreeSet::from([(
+                StatementShapeFamily::Signal,
+                StatementPayloadFamily::Structural,
+            )]),
+        },
+        Row {
+            name: "alternate Signal value",
+            source: flow_match_signal_source("other"),
+            expected: BTreeSet::from([(
+                StatementShapeFamily::Signal,
+                StatementPayloadFamily::Structural,
+            )]),
+        },
+        Row {
+            name: "LifetimeSet",
+            source: flow_match_lifetime_set_source("flag"),
+            expected: BTreeSet::from([(
+                StatementShapeFamily::LifetimeSet,
+                StatementPayloadFamily::Structural,
+            )]),
+        },
+        Row {
+            name: "alternate LifetimeSet value",
+            source: flow_match_lifetime_set_source("other"),
+            expected: BTreeSet::from([(
+                StatementShapeFamily::LifetimeSet,
+                StatementPayloadFamily::Structural,
+            )]),
+        },
+        Row {
+            name: "UnsafeLifetime",
+            source: flow_match_unsafe_lifetime_source("@unsafe.row"),
+            expected: BTreeSet::from([(
+                StatementShapeFamily::UnsafeLifetime,
+                StatementPayloadFamily::UnsafeAudit,
+            )]),
+        },
+        Row {
+            name: "alternate UnsafeLifetime audit",
+            source: flow_match_unsafe_lifetime_source("@unsafe.alternate"),
+            expected: BTreeSet::from([(
+                StatementShapeFamily::UnsafeLifetime,
+                StatementPayloadFamily::UnsafeAudit,
+            )]),
+        },
+        Row {
+            name: "Close",
+            source: flow_match_statement_source("close ()"),
+            expected: BTreeSet::from([(
+                StatementShapeFamily::Close,
+                StatementPayloadFamily::Structural,
+            )]),
+        },
+        Row {
+            name: "statement-Match on other",
+            source: function_match_statement_source_with_scrutinee("other"),
+            expected: BTreeSet::from([(
+                StatementShapeFamily::Match,
+                StatementPayloadFamily::Structural,
+            )]),
+        },
+        Row {
+            name: "statement-Match on flag",
+            source: function_match_statement_source_with_scrutinee("flag"),
+            expected: BTreeSet::from([(
+                StatementShapeFamily::Match,
+                StatementPayloadFamily::Structural,
+            )]),
+        },
+    ];
+    let observations = rows
+        .iter()
+        .map(|row| {
+            let observation = accepted_match_statement_corpus_observation(&row.source);
+            assert_eq!(
+                observation.statement_families, row.expected,
+                "{} retains its exact HIR shape and checked payload",
+                row.name,
+            );
+            observation
+        })
+        .collect::<Vec<_>>();
+
+    assert_ne!(
+        observations[0].semantic_digest, observations[1].semantic_digest,
+        "the same-typed checked Signal value contributes to the Match digest",
+    );
+    assert_ne!(
+        observations[2].semantic_digest, observations[3].semantic_digest,
+        "the same-typed checked LifetimeSet value contributes to the Match digest",
+    );
+    for observation in [&observations[4], &observations[5]] {
+        assert_eq!(observation.unsafe_audits.len(), 1);
+        assert!(observation.unsafe_audits[0].has_safety_doc);
+    }
+    assert_ne!(
+        observations[4].unsafe_audits[0].semantic_id, observations[5].unsafe_audits[0].semantic_id,
+        "UnsafeLifetime retains distinct checked audit identities",
+    );
+    assert_ne!(
+        observations[4].semantic_digest, observations[5].semantic_digest,
+        "the checked audit identity contributes to the Match digest",
+    );
+    assert_eq!(
+        observations[6].statement_families, rows[6].expected,
+        "Close is pinned by its accepted HIR and checked payload",
+    );
+    assert_ne!(
+        observations[7].semantic_digest, observations[8].semantic_digest,
+        "the same-typed statement-Match scrutinee contributes to the outer Match digest",
     );
 }
 

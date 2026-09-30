@@ -3169,3 +3169,44 @@ focused test と Sema lib 1087/1087、changed-crate Clippy、fmt、cached diff c
 成功。既存警告あり。テストのみの cut なので workspace と構造 gate は再実行していない。
 T06 には View parameter/default/body/value の明示matrix、とりわけ現行非受理の
 View default が残る。T01、View 以降と goal 全体も未完として継続する。
+
+## チャット引き継ぎと実行 goal の再設定 — 2026-09-30
+
+前チャット `01a079db-bda6-7c73-8f3b-99a7747d54f3` の履歴と現在の Git を照合し、
+チャット `01a0f2b3-0f85-7bf1-b952-a20276132d1f` へ作業を引き継いだ。
+確認した HEAD は `6905cc99b59d24d53a6ab546a4d3021ffd18a63a`。既存 `main` で
+fetch 後の HEAD/origin/main の差は 0/0、index は空。working tree には
+`crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/statements.rs`
+だけ未コミット差分があり、Signal、LifetimeSet、UnsafeLifetime、Close、
+statement-Match の受理 corpus と exact payload/digest 差分検証を保持した。
+この時点では当該差分の検証を開始した段階であり、合格とは扱わない。
+
+新チャットには goal が存在しなかったため、上記「goal の完了条件」を維持する
+active goal を設定した。直近は Generic Match C3/C5、T01 の live family ごとの
+受理・到達不能・拒否証拠、および T06 の body-root path/digest を閉じる。
+その後は retained View .1.4、RuntimePlan/task-plan .1.3.1、構造的 nominal
+C1-C6、scheduler/restore A-F の依存順と最終検証を維持する。
+引き継ぎや個別テストの成功を全体 goal の完了に読み替えない。
+
+2026-09-30 のユーザー指示を後続チャットにも引き継ぐ。Sol を指定する場合は
+必ず `gpt-6.1-sol` を使用し、Sol Max はその reasoning effort `max` とする。
+Astra Max (`gpt-6-astra` / `max`) への助言依頼は、goal の区切り等で非常に難しい
+設計判断に不安がある場合に限り許可されている。その場合は履歴を引き継がない
+新しい context とし、必要な設計事実・契約・相談点だけを渡す。
+この例外を通常の実装委任や常時レビューへ拡張しない。
+
+保持した statement corpus は focused test 18/18、`cargo test -p arcweft-lang-sema`
+全件（lib 1088件、API/integration 24件）、
+`cargo clippy -p arcweft-lang-sema --all-targets --all-features`、
+`cargo fmt --all -- --check`、diff check を通過した。最初の fmt check は失敗し、
+当該テストファイルの整形後に再実行して成功した。Clippy は警告を残して成功しており、
+新しい table-driven test にも `too_many_lines` 警告がある。lint の抑制は追加していない。
+本 cut はテストと引き継ぎ記録だけなので workspace と構造 gate は再実行していない。
+検証対象のテストファイル blob は `0602f31badbc84441d2277d48334ddafa4e7814a`。
+
+現行 inventory は expression/value/select 側が Accepted 54、Pending 28、
+ProvenUnreachable 1、RejectOnly 1、statement 側が Accepted 41、Pending 5、
+RejectOnly 1。family disposition の件数であり、実装全体の完成率ではない。
+次は statement Choice/Select/ProofCall、EvaluatedEffect/Select payload の
+残件と expression/value/select 側の Pending を live owner/producer から確定し、
+View parameter/default/body/value の未完境界へ進む。
