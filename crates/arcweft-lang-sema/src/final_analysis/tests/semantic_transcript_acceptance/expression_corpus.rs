@@ -144,24 +144,24 @@ expression_family_inventory!(ExprShapeFamily for HirExprKind, {
     HirExprKind::Thread(_) => Thread => Accepted,
     HirExprKind::Choice(_) => Choice => Accepted,
     HirExprKind::Range(_) => Range => Accepted,
-    HirExprKind::Record(_) => Record => Pending,
-    HirExprKind::RecordLiteral(_) => RecordLiteral => Pending,
+    HirExprKind::Record(_) => Record => Accepted,
+    HirExprKind::RecordLiteral(_) => RecordLiteral => Accepted,
     HirExprKind::Binary(_) => Binary => Accepted,
-    HirExprKind::Borrow(_) => Borrow => Pending,
-    HirExprKind::Dereference(_) => Dereference => Pending,
+    HirExprKind::Borrow(_) => Borrow => Accepted,
+    HirExprKind::Dereference(_) => Dereference => Accepted,
     HirExprKind::Closure(_) => Closure => Accepted,
-    HirExprKind::Unary(_) => Unary => Pending,
+    HirExprKind::Unary(_) => Unary => Accepted,
     HirExprKind::Block(_) => Block => Accepted,
-    HirExprKind::ComputationBlock(_) => ComputationBlock => Pending,
+    HirExprKind::ComputationBlock(_) => ComputationBlock => Accepted,
     HirExprKind::NamedBlock(_) => NamedBlock => Accepted,
-    HirExprKind::Loop(_) => Loop => Pending,
-    HirExprKind::If(_) => If => Pending,
-    HirExprKind::IfLet(_) => IfLet => Pending,
+    HirExprKind::Loop(_) => Loop => Accepted,
+    HirExprKind::If(_) => If => Accepted,
+    HirExprKind::IfLet(_) => IfLet => Accepted,
     HirExprKind::Match(_) => Match => Accepted,
     HirExprKind::AttachedContentApplication(_) => AttachedContentApplication => Accepted,
     HirExprKind::PostfixBracket(_) => PostfixBracket => Accepted,
     HirExprKind::Error(_) => Error => RejectOnly,
-    HirExprKind::ForSynthetic(_) => ForSynthetic => Pending,
+    HirExprKind::ForSynthetic(_) => ForSynthetic => Accepted,
 });
 
 expression_family_inventory!(ExpressionResolutionFamily for CheckedExpressionResolution, {
@@ -170,7 +170,7 @@ expression_family_inventory!(ExpressionResolutionFamily for CheckedExpressionRes
     CheckedExpressionResolution::Literal(_) => Literal => Accepted,
     CheckedExpressionResolution::Value(_) => Value => Accepted,
     CheckedExpressionResolution::Select(_) => Select => Accepted,
-    CheckedExpressionResolution::Nominal(_) => Nominal => Pending,
+    CheckedExpressionResolution::Nominal(_) => Nominal => Accepted,
     CheckedExpressionResolution::Variant(_) => Variant => Accepted,
     CheckedExpressionResolution::CompileTimeEnum(_) => CompileTimeEnum => Pending,
     CheckedExpressionResolution::StageLook(_) => StageLook => Pending,
@@ -427,6 +427,221 @@ fn view_method_corpus_row() -> ExpressionCorpusRow {
     }
 }
 
+fn ordinary_expression_corpus_cases() -> Vec<(ExpressionCorpusRow, String)> {
+    use ExprShapeFamily::{
+        Block, Borrow, ComputationBlock, Dereference, ForSynthetic, If, IfLet, Literal, Loop,
+        Match, NumericBracketSequence, Path, Record, RecordLiteral, Unary, Unit,
+    };
+    const STRUCTURAL: &[ExpressionResolutionFamily] = &[
+        ExpressionResolutionFamily::Structural,
+        ExpressionResolutionFamily::Literal,
+        ExpressionResolutionFamily::Value,
+    ];
+    const CARRIER: &[ExpressionResolutionFamily] = &[
+        ExpressionResolutionFamily::Structural,
+        ExpressionResolutionFamily::Literal,
+        ExpressionResolutionFamily::Value,
+        ExpressionResolutionFamily::Variant,
+    ];
+    const NOMINAL: &[ExpressionResolutionFamily] = &[
+        ExpressionResolutionFamily::Structural,
+        ExpressionResolutionFamily::Literal,
+        ExpressionResolutionFamily::Value,
+        ExpressionResolutionFamily::Nominal,
+    ];
+    let nominal = |expression: &str| {
+        format!(
+            "struct Pair {{ first: i64, second: bool }}\n\
+         fn root(flag: bool) -> Pair {{\n\
+             match flag {{\n\
+                 true => {expression}\n\
+                 false => Pair {{ first = 0i64, second = false }}\n\
+             }}\n\
+         }}\n"
+        )
+    };
+    let carrier = |value: &str| {
+        format!(
+            "fn root(flag: bool) -> Option<i64> {{\n\
+             match flag {{\n\
+                 true => option {{ {value} }}\n\
+                 false => None\n\
+             }}\n\
+         }}\n"
+        )
+    };
+    let iteration = |values: &str| {
+        format!(
+            "flow root(flag: bool) {{\n\
+             let selected = match flag {{\n\
+                 true => {{ for value in [{values}] {{}}; 1i64 }}\n\
+                 false => 0i64\n\
+             }}\n\
+         }}\n"
+        )
+    };
+    let cases: Vec<(
+        &str,
+        String,
+        String,
+        &[ExprShapeFamily],
+        &[ExpressionResolutionFamily],
+    )> = vec![
+        (
+            "unary",
+            bool_match_i64_source("-1i64"),
+            bool_match_i64_source("-2i64"),
+            &[Literal, Path, Unary, Match],
+            STRUCTURAL,
+        ),
+        (
+            "If expression",
+            bool_match_i64_source("if flag { 1i64 } else { 2i64 }"),
+            bool_match_i64_source("if flag { 3i64 } else { 2i64 }"),
+            &[Literal, Path, Block, If, Match],
+            STRUCTURAL,
+        ),
+        (
+            "IfLet expression",
+            bool_match_i64_source("if let true = flag { 1i64 } else { 2i64 }"),
+            bool_match_i64_source("if let true = flag { 3i64 } else { 2i64 }"),
+            &[Literal, Path, Block, IfLet, Match],
+            STRUCTURAL,
+        ),
+        (
+            "Loop expression",
+            bool_match_i64_source("loop { break 1i64 }"),
+            bool_match_i64_source("loop { break 2i64 }"),
+            &[Unit, Literal, Path, Loop, Match],
+            STRUCTURAL,
+        ),
+        (
+            "carrier block",
+            carrier("1i64"),
+            carrier("2i64"),
+            &[Literal, Path, ComputationBlock, Match],
+            CARRIER,
+        ),
+        (
+            "named record",
+            nominal("Pair { first = 1i64, second = true }"),
+            nominal("Pair { first = 2i64, second = true }"),
+            &[Literal, Path, Record, Match],
+            NOMINAL,
+        ),
+        (
+            "contextual record",
+            nominal("({ first = 1i64, second = true })"),
+            nominal("({ first = 2i64, second = true })"),
+            &[Literal, Path, Record, RecordLiteral, Match],
+            NOMINAL,
+        ),
+        (
+            "borrow and dereference",
+            bool_match_i64_source("{ let borrowed = &1i64; *borrowed }"),
+            bool_match_i64_source("{ let borrowed = &2i64; *borrowed }"),
+            &[Literal, Path, Borrow, Dereference, Block, Match],
+            STRUCTURAL,
+        ),
+        (
+            "For synthetic chain",
+            iteration("1i64, 2i64"),
+            iteration("3i64, 2i64"),
+            &[
+                Literal,
+                Path,
+                NumericBracketSequence,
+                Block,
+                Match,
+                ForSynthetic,
+            ],
+            STRUCTURAL,
+        ),
+    ];
+    cases
+        .into_iter()
+        .map(|(name, source, changed, shapes, resolutions)| {
+            (
+                ExpressionCorpusRow {
+                    name,
+                    exact_path_families: true,
+                    source,
+                    fixture: ExpressionCorpusFixture::Standard,
+                    shapes,
+                    resolutions,
+                    values: &[],
+                    selects: &[],
+                },
+                changed,
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn checked_match_ordinary_expression_corpus_retains_families_and_meaning() {
+    for (row, changed) in ordinary_expression_corpus_cases() {
+        let first = accepted_match_expression_corpus_observation(&row.source);
+        let second = accepted_match_expression_corpus_observation(&changed);
+        assert_eq!(
+            first.shapes,
+            row.shapes.iter().copied().collect(),
+            "{} exact shapes",
+            row.name
+        );
+        assert_eq!(
+            first.resolutions,
+            row.resolutions.iter().copied().collect(),
+            "{} exact resolutions",
+            row.name
+        );
+        assert_eq!(first.shapes, second.shapes, "{} keeps shape", row.name);
+        assert_eq!(
+            first.resolutions, second.resolutions,
+            "{} keeps resolution",
+            row.name
+        );
+        assert_eq!(
+            first
+                .match_type
+                .as_ref()
+                .map(|ty| ty.semantic_identity_digest().expect("closed Match type")),
+            second
+                .match_type
+                .as_ref()
+                .map(|ty| ty.semantic_identity_digest().expect("closed Match type")),
+            "{} keeps value type",
+            row.name
+        );
+        assert_ne!(
+            first.semantic_digest, second.semantic_digest,
+            "{} retains meaning",
+            row.name
+        );
+        let revised = format!(
+            "fn unrelated() -> i64 {{ 99i64 }}\n{}",
+            row.source.replace("true =>", "true  =>  ")
+        );
+        let original_match = outermost(&match_observations(&row.source));
+        let revised_match = outermost(&match_observations(&revised));
+        assert_ne!(
+            original_match.owner, revised_match.owner,
+            "{} changes raw HIR ID",
+            row.name
+        );
+        assert_ne!(
+            original_match.source_start, revised_match.source_start,
+            "{} changes span",
+            row.name
+        );
+        assert_eq!(
+            original_match.digest, revised_match.digest,
+            "{} preserves meaning",
+            row.name
+        );
+    }
+}
+
 fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
     let mut rows = vec![
         ExpressionCorpusRow {
@@ -535,6 +750,11 @@ fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
         },
     ];
     rows.extend(checked_owner_expression_corpus_rows());
+    rows.extend(
+        ordinary_expression_corpus_cases()
+            .into_iter()
+            .map(|(row, _)| row),
+    );
     rows
 }
 
