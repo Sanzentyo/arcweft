@@ -3,12 +3,7 @@ use super::*;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum StatementCorpusDisposition {
     Accepted,
-    Pending,
     RejectOnly,
-    #[allow(
-        dead_code,
-        reason = "no live statement family has been proven unreachable"
-    )]
     ProvenUnreachable,
 }
 
@@ -51,7 +46,7 @@ statement_family_inventory!(StatementShapeFamily for HirStmtKind, {
     HirStmtKind::On { .. } => On => Accepted,
     HirStmtKind::CancelRule { .. } => CancelRule => Accepted,
     HirStmtKind::UnsafeLifetime { .. } => UnsafeLifetime => Accepted,
-    HirStmtKind::Choice { .. } => Choice => Pending,
+    HirStmtKind::Choice { .. } => Choice => Accepted,
     HirStmtKind::If(_) => If => Accepted,
     HirStmtKind::IfLet(_) => IfLet => Accepted,
     HirStmtKind::Match(_) => Match => Accepted,
@@ -59,14 +54,14 @@ statement_family_inventory!(StatementShapeFamily for HirStmtKind, {
     HirStmtKind::WhileLet(_) => WhileLet => Accepted,
     HirStmtKind::For(_) => For => Accepted,
     HirStmtKind::Close { .. } => Close => Accepted,
-    HirStmtKind::Select(_) => Select => Pending,
+    HirStmtKind::Select(_) => Select => Accepted,
     HirStmtKind::SourceLocale(_) => SourceLocale => Accepted,
     HirStmtKind::Scope(_) => Scope => Accepted,
     HirStmtKind::Include(_) => Include => Accepted,
     HirStmtKind::Break { .. } => Break => Accepted,
     HirStmtKind::Continue { .. } => Continue => Accepted,
     HirStmtKind::Expression { .. } => Expression => Accepted,
-    HirStmtKind::ProofCall { .. } => ProofCall => Pending,
+    HirStmtKind::ProofCall { .. } => ProofCall => ProvenUnreachable,
     HirStmtKind::Error => Error => RejectOnly,
 });
 
@@ -75,12 +70,12 @@ statement_family_inventory!(StatementPayloadFamily for CheckedStatementPayload, 
     CheckedStatementPayload::Assignment(_) => Assignment => Accepted,
     CheckedStatementPayload::Assertion(_) => Assertion => Accepted,
     CheckedStatementPayload::Defer(_) => Defer => Accepted,
-    CheckedStatementPayload::EvaluatedEffect(_) => EvaluatedEffect => Pending,
+    CheckedStatementPayload::EvaluatedEffect(_) => EvaluatedEffect => Accepted,
     CheckedStatementPayload::Iteration(_) => Iteration => Accepted,
     CheckedStatementPayload::ControlTransfer(_) => ControlTransfer => Accepted,
     CheckedStatementPayload::Trigger(_) => Trigger => Accepted,
     CheckedStatementPayload::UnsafeAudit(_) => UnsafeAudit => Accepted,
-    CheckedStatementPayload::Select(_) => Select => Pending,
+    CheckedStatementPayload::Select(_) => Select => Accepted,
     CheckedStatementPayload::SourceLocale(_) => SourceLocale => Accepted,
     CheckedStatementPayload::Scope(_) => Scope => Accepted,
     CheckedStatementPayload::Include(_) => Include => Accepted,
@@ -103,6 +98,7 @@ struct MatchStatementCorpusObservation {
     includes: Vec<super::super::super::CheckedIncludeFlowTarget>,
     loop_transfers: Vec<CheckedLoopTransferCorpusFact>,
     unsafe_audits: Vec<CheckedUnsafeAuditCorpusFact>,
+    selects: Vec<CheckedSelectCorpusFact>,
     match_value_type: Option<crate::types::TypeKind>,
     semantic_digest: [u8; 32],
 }
@@ -132,6 +128,12 @@ struct CheckedLoopTransferCorpusFact {
 struct CheckedUnsafeAuditCorpusFact {
     semantic_id: [u8; 32],
     has_safety_doc: bool,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum CheckedSelectCorpusFact {
+    Operand,
+    Branches(Vec<crate::final_analysis::CheckedSelectBranchHead>),
 }
 
 /// Count only checked statements owned below this accepted Match expression.
@@ -180,6 +182,7 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
     let mut includes = Vec::new();
     let mut loop_transfers = Vec::new();
     let mut unsafe_audits = Vec::new();
+    let mut selects = Vec::new();
     for (owner, hir) in module.statements() {
         let Some(checked) = report.statement(owner) else {
             continue;
@@ -253,6 +256,16 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
                     has_safety_doc: audit.has_safety_doc(),
                 });
             }
+            (HirStmtKind::Select(_), CheckedStatementPayload::Select(select)) => {
+                selects.push(match select.view() {
+                    crate::final_analysis::CheckedSelectStatementView::Operand => {
+                        CheckedSelectCorpusFact::Operand
+                    }
+                    crate::final_analysis::CheckedSelectStatementView::Branches(heads) => {
+                        CheckedSelectCorpusFact::Branches(heads.to_vec())
+                    }
+                });
+            }
             (
                 HirStmtKind::Break { .. } | HirStmtKind::Continue { .. },
                 CheckedStatementPayload::ControlTransfer(_),
@@ -308,6 +321,9 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
             (HirStmtKind::UnsafeLifetime { .. }, _) => {
                 panic!("accepted UnsafeLifetime has its exact checked UnsafeAudit payload")
             }
+            (HirStmtKind::Select(_), _) => {
+                panic!("accepted Select has its exact checked Select payload")
+            }
             _ => {}
         }
     }
@@ -330,6 +346,7 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
         includes,
         loop_transfers,
         unsafe_audits,
+        selects,
         match_value_type,
         semantic_digest: *product.semantic_digest().as_bytes(),
     }
@@ -443,6 +460,39 @@ fn function_match_statement_source_with_scrutinee(scrutinee: &str) -> String {
     function_match_statement_source(&format!(
         "match {scrutinee} {{\n    true => {{}}\n    false => {{}}\n}}"
     ))
+}
+
+fn flow_match_choice_statement_source(target: &str) -> String {
+    format!(
+        "flow done() {{}}\nflow alternate() {{}}\n{}",
+        flow_match_thread_source(&format!(
+            "choice @choice.main {{ @.go \"Go\" -> @flow.{target} }}"
+        )),
+    )
+}
+
+fn proof_match_call_source(direct: &str, nested: &str) -> String {
+    format!(
+        "proof helper() {{}}\nproof alternate() {{}}\n\
+         proof root(flag: bool) {{\n\
+             {direct}();\n\
+             match flag {{\n\
+             true => {{ {nested}(); () }}\n\
+             false => ()\n\
+             }}\n\
+         }}\n"
+    )
+}
+
+fn flow_match_select_branches_source(value: &str, reversed: bool) -> String {
+    let binding = format!("value = {value} => {{ let observed = value }}");
+    let frame = "frame frame_value => {}";
+    let branches = if reversed {
+        format!("{frame}\n{binding}")
+    } else {
+        format!("{binding}\n{frame}")
+    };
+    flow_match_thread_source(&format!("select {{\n{branches}\n}}"))
 }
 
 fn dialogue_match_wait_source(wait: &str) -> String {
@@ -704,6 +754,52 @@ fn checked_match_statement_corpus_tracks_accepted_root_families() {
             shapes: &[StatementShapeFamily::Match],
             payloads: &[StatementPayloadFamily::Structural],
         },
+        Row {
+            name: "Choice statement in Thread below Match",
+            source: flow_match_choice_statement_source("done"),
+            shapes: &[
+                StatementShapeFamily::Choice,
+                StatementShapeFamily::Expression,
+            ],
+            payloads: &[StatementPayloadFamily::Structural],
+        },
+        Row {
+            name: "ordinary call statement in proof Match arm",
+            source: proof_match_call_source("helper", "helper"),
+            shapes: &[StatementShapeFamily::Expression],
+            payloads: &[StatementPayloadFamily::Structural],
+        },
+        Row {
+            name: "Select operand in Thread below Match",
+            source: flow_match_thread_source("select flag"),
+            shapes: &[
+                StatementShapeFamily::Select,
+                StatementShapeFamily::Expression,
+            ],
+            payloads: &[
+                StatementPayloadFamily::Select,
+                StatementPayloadFamily::Structural,
+            ],
+        },
+        Row {
+            name: "Select branches in Thread below Match",
+            source: flow_match_select_branches_source("flag", false),
+            shapes: &[
+                StatementShapeFamily::Select,
+                StatementShapeFamily::Expression,
+                StatementShapeFamily::Let,
+            ],
+            payloads: &[
+                StatementPayloadFamily::Select,
+                StatementPayloadFamily::Structural,
+            ],
+        },
+        Row {
+            name: "EvaluatedEffect in Flow Match arm",
+            source: flow_match_statement_source("log.info(\"started\")"),
+            shapes: &[StatementShapeFamily::Expression],
+            payloads: &[StatementPayloadFamily::EvaluatedEffect],
+        },
     ];
     let mut shapes = BTreeSet::new();
     let mut payloads = BTreeSet::new();
@@ -857,6 +953,139 @@ fn checked_match_direct_statement_bundle_retains_exact_payloads_and_meaning() {
         observations[7].semantic_digest, observations[8].semantic_digest,
         "the same-typed statement-Match scrutinee contributes to the outer Match digest",
     );
+}
+
+#[test]
+fn checked_match_remaining_statement_families_retain_payloads_and_meaning() {
+    use StatementPayloadFamily::{EvaluatedEffect, Select, Structural};
+    use StatementShapeFamily::{Choice, Expression, Let, Select as SelectShape};
+    let rows = [
+        (
+            "Choice statement target",
+            flow_match_choice_statement_source("done"),
+            flow_match_choice_statement_source("alternate"),
+            BTreeSet::from([(Choice, Structural), (Expression, Structural)]),
+        ),
+        (
+            "Select operand",
+            flow_match_thread_source("select flag"),
+            flow_match_thread_source("select other"),
+            BTreeSet::from([(SelectShape, Select), (Expression, Structural)]),
+        ),
+        (
+            "Select branch source",
+            flow_match_select_branches_source("flag", false),
+            flow_match_select_branches_source("other", false),
+            BTreeSet::from([
+                (SelectShape, Select),
+                (Expression, Structural),
+                (Let, Structural),
+            ]),
+        ),
+        (
+            "EvaluatedEffect operand",
+            flow_match_statement_source("log.info(\"started\")"),
+            flow_match_statement_source("log.info(\"stopped\")"),
+            BTreeSet::from([(Expression, EvaluatedEffect)]),
+        ),
+    ];
+    for (name, original, changed, families) in rows {
+        let first = accepted_match_statement_corpus_observation(&original);
+        let second = accepted_match_statement_corpus_observation(&changed);
+        assert_eq!(first.statement_families, families, "{name}");
+        assert_eq!(second.statement_families, families, "{name}");
+        assert_eq!(first.match_value_type, second.match_value_type, "{name}");
+        assert_ne!(first.semantic_digest, second.semantic_digest, "{name}");
+        assert_eq!(first.selects, second.selects, "{name}");
+    }
+    let operand =
+        accepted_match_statement_corpus_observation(&flow_match_thread_source("select flag"));
+    assert_eq!(operand.selects, [CheckedSelectCorpusFact::Operand]);
+    let first = accepted_match_statement_corpus_observation(&flow_match_select_branches_source(
+        "flag", false,
+    ));
+    let reversed = accepted_match_statement_corpus_observation(&flow_match_select_branches_source(
+        "flag", true,
+    ));
+    use crate::final_analysis::CheckedSelectBranchHead::{Bind, Frame};
+    assert_eq!(
+        first.selects,
+        [CheckedSelectCorpusFact::Branches(vec![Bind, Frame])]
+    );
+    assert_eq!(
+        reversed.selects,
+        [CheckedSelectCorpusFact::Branches(vec![Frame, Bind])]
+    );
+    assert_ne!(first.semantic_digest, reversed.semantic_digest);
+}
+
+#[test]
+fn proof_call_statement_is_outside_its_proof_body_match_path() {
+    // The sole syntax producer classifies calls as ProofCall only in the
+    // declaration's ProofBlock. Expression blocks use the ordinary function
+    // statement grammar, including Match arms inside a proof declaration.
+    let source = proof_match_call_source("helper", "helper");
+    let world = super::fixture(&source, None);
+    let report = super::analyze(&world).expect("proof calls and Match body check");
+    let project = world.project.analysis_view().expect("executable HIR");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let match_owner = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
+        })
+        .expect("proof body Match");
+    let coordinates = SemanticCoordinateIndex::new(report.accepted_root_catalog(), &report);
+    let match_path = coordinates
+        .expression(match_owner)
+        .expect("checked Match path");
+    let proof_calls = module
+        .statements()
+        .filter_map(|(owner, statement)| {
+            matches!(statement.kind(), HirStmtKind::ProofCall { .. }).then_some(owner)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        proof_calls.len(),
+        1,
+        "declaration ProofBlock retains its dedicated call"
+    );
+    for owner in proof_calls {
+        assert!(matches!(
+            report
+                .statement(owner)
+                .expect("checked ProofCall")
+                .payload(),
+            CheckedStatementPayload::Structural
+        ));
+        assert!(
+            !coordinates
+                .statement(owner)
+                .expect("checked ProofCall path")
+                .path()
+                .is_at_or_below(&match_path)
+        );
+    }
+    let first = accepted_match_statement_corpus_observation(&source);
+    assert_eq!(
+        first.statement_families,
+        BTreeSet::from([(
+            StatementShapeFamily::Expression,
+            StatementPayloadFamily::Structural,
+        )])
+    );
+    let outside = accepted_match_statement_corpus_observation(&proof_match_call_source(
+        "alternate",
+        "helper",
+    ));
+    let inside = accepted_match_statement_corpus_observation(&proof_match_call_source(
+        "helper",
+        "alternate",
+    ));
+    assert_eq!(first.semantic_digest, outside.semantic_digest);
+    assert_ne!(first.semantic_digest, inside.semantic_digest);
 }
 
 #[test]
