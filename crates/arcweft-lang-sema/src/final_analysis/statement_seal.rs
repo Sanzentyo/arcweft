@@ -44,6 +44,10 @@ pub(crate) struct CheckedStatementSeal<'a, 'project, 'coordinate> {
 }
 
 impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> {
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the affine statement producer joins complete generation-bound inventories before folding latent bodies"
+    )]
     pub(crate) fn new(
         prepared: BTreeMap<StmtId, PreparedStatementPayload>,
         ingress: PreparedStatementIngressSeal,
@@ -52,9 +56,11 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
         coordinates: &'coordinate SemanticCoordinateIndex<'coordinate, 'coordinate>,
         structural_edges: &'coordinate super::match_edges::CheckedStructuralEdgeDraft,
         project: HirAnalysisProjectView<'project>,
-    ) -> Self {
+        expressions: &BTreeMap<ExprId, CheckedExpression>,
+        modules: &BTreeMap<arcweft_lang_hir::identity::HirModuleId, &HirModule>,
+    ) -> Result<Self, FinalSemanticAnalysisError> {
         let (includes, scrutinees) = ingress.into_parts();
-        Self {
+        let mut seal = Self {
             prepared,
             includes,
             scrutinees,
@@ -63,7 +69,27 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
             coordinates,
             structural_edges,
             project,
+        };
+        let owners = seal.prepared.keys().copied().collect::<Vec<_>>();
+        for owner in owners {
+            let module = modules
+                .get(&owner.module())
+                .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+            let statement = module
+                .resolve_stmt(owner)
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+            if let HirStmtKind::Return { value } = statement.kind() {
+                let CheckedStatementPayload::ControlTransfer(
+                    crate::semantic_coordinate::CheckedControlTransferTarget::Return(boundary),
+                ) = seal.return_statement(module, owner, *value, expressions)?
+                else {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                };
+                seal.prepared
+                    .insert(owner, PreparedStatementPayload::Return(boundary));
+            }
         }
+        Ok(seal)
     }
 
     fn take_prepared(
@@ -83,7 +109,8 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
     ) -> Result<CheckedStatementPayload, FinalSemanticAnalysisError> {
         match self.take_prepared(owner)? {
             PreparedStatementPayload::HirOwned => Ok(CheckedStatementPayload::Structural),
-            PreparedStatementPayload::Assignment(_)
+            PreparedStatementPayload::Return(_)
+            | PreparedStatementPayload::Assignment(_)
             | PreparedStatementPayload::Assertion(_)
             | PreparedStatementPayload::Iteration(_)
             | PreparedStatementPayload::Suspension(_)
@@ -104,6 +131,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
                 Ok(CheckedStatementPayload::Assertion(assertion))
             }
             PreparedStatementPayload::HirOwned
+            | PreparedStatementPayload::Return(_)
             | PreparedStatementPayload::Assignment(_)
             | PreparedStatementPayload::Iteration(_)
             | PreparedStatementPayload::Suspension(_)
@@ -124,6 +152,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
                 Ok(CheckedStatementPayload::Iteration(iteration))
             }
             PreparedStatementPayload::HirOwned
+            | PreparedStatementPayload::Return(_)
             | PreparedStatementPayload::Assignment(_)
             | PreparedStatementPayload::Assertion(_)
             | PreparedStatementPayload::Suspension(_)
@@ -144,6 +173,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
                 Ok(CheckedStatementPayload::Suspension(suspension))
             }
             PreparedStatementPayload::HirOwned
+            | PreparedStatementPayload::Return(_)
             | PreparedStatementPayload::Assignment(_)
             | PreparedStatementPayload::Assertion(_)
             | PreparedStatementPayload::Iteration(_)
@@ -162,6 +192,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
         match self.take_prepared(owner)? {
             PreparedStatementPayload::Yield => Ok(CheckedStatementPayload::Yield),
             PreparedStatementPayload::HirOwned
+            | PreparedStatementPayload::Return(_)
             | PreparedStatementPayload::Assignment(_)
             | PreparedStatementPayload::Assertion(_)
             | PreparedStatementPayload::Iteration(_)
@@ -225,6 +256,53 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
         }
         Ok(CheckedStatementPayload::ControlTransfer(
             evidence.into_target(),
+        ))
+    }
+
+    fn return_statement(
+        &mut self,
+        module: &HirModule,
+        owner: StmtId,
+        value: ExprId,
+        expressions: &BTreeMap<ExprId, CheckedExpression>,
+    ) -> Result<CheckedStatementPayload, FinalSemanticAnalysisError> {
+        if !matches!(
+            self.take_prepared(owner)?,
+            PreparedStatementPayload::HirOwned
+        ) {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        let (boundary, expected) = super::CheckedCallableBoundary::for_return(
+            module,
+            owner,
+            value,
+            expressions,
+            self.callables,
+            self.coordinates,
+        )?;
+        let expression = expressions
+            .get(&value)
+            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: value })?;
+        // Unavailable is a retained rejection, not fabricated value evidence.
+        // Its call diagnostic remains authoritative; closed roots reject it.
+        let actual = match expression.result() {
+            super::CheckedExpressionResult::Value(result) => Some(result.ty()),
+            super::CheckedExpressionResult::Unavailable => None,
+            super::CheckedExpressionResult::NonValue(_) => {
+                return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: value });
+            }
+        };
+        if let (Some(expected), Some(actual)) = (expected, actual)
+            && !expected.accepts(actual)
+        {
+            return Err(FinalSemanticAnalysisError::ReturnValueTypeMismatch {
+                owner,
+                expected: Box::new(expected),
+                actual: Box::new(actual.clone()),
+            });
+        }
+        Ok(CheckedStatementPayload::ControlTransfer(
+            crate::semantic_coordinate::CheckedControlTransferTarget::Return(boundary),
         ))
     }
 
@@ -457,7 +535,8 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
             PreparedStatementPayload::SealedEvaluatedEffectReference(reference) => {
                 Ok(CheckedStatementPayload::EvaluatedEffect(reference))
             }
-            PreparedStatementPayload::Assignment(_)
+            PreparedStatementPayload::Return(_)
+            | PreparedStatementPayload::Assignment(_)
             | PreparedStatementPayload::Assertion(_)
             | PreparedStatementPayload::Iteration(_)
             | PreparedStatementPayload::Suspension(_)
@@ -487,7 +566,14 @@ impl CheckedStatementPayloadSealer for CheckedStatementSeal<'_, '_, '_> {
             HirStmtKind::Let { .. } => self.structural(owner),
             HirStmtKind::Assign { .. } => self.assignment(owner, expressions),
             HirStmtKind::LetElse { .. } => self.structural(owner),
-            HirStmtKind::Return { .. } => self.structural(owner),
+            HirStmtKind::Return { .. } => {
+                let PreparedStatementPayload::Return(boundary) = self.take_prepared(owner)? else {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                };
+                Ok(CheckedStatementPayload::ControlTransfer(
+                    crate::semantic_coordinate::CheckedControlTransferTarget::Return(boundary),
+                ))
+            }
             HirStmtKind::Out { .. } => self.control_transfer(owner, HirControlTransferKind::Out),
             HirStmtKind::Goto { .. } => self.structural(owner),
             HirStmtKind::Defer {

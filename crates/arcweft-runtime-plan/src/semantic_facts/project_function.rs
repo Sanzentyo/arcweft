@@ -1311,7 +1311,10 @@ impl RuntimeClosureInstanceFact {
             || body.module() != owner.module()
             || semantics.partition().executable()
                 != &arcweft_lang_hir::project::HirRuntimeExecutableOwner::Closure(owner)
-            || semantics.expression_type(body) != Some(result.as_ref())
+            || semantics.expression_type(body).is_none_or(|body_type| {
+                body_type != result.as_ref()
+                    && !matches!(body_type.shape(), RuntimeTypeShape::Never)
+            })
         {
             return Err(RuntimeProjectFunctionFactError::InvalidClosureInstance);
         }

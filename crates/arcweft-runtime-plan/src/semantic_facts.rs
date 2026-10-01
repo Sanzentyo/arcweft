@@ -1759,6 +1759,7 @@ pub struct RuntimeTryFact {
 /// Generation-bound implicit callable projection for one `_` abstraction.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeImplicitCallableFact {
+    control: arcweft_lang_sema::final_analysis::CheckedExecutableControlRole,
     identity: arcweft_lang_sema::final_analysis::CheckedImplicitCallableIdentity,
     parameter: RuntimeNormalizedType,
     result: RuntimeNormalizedType,
@@ -1773,6 +1774,7 @@ impl RuntimeImplicitCallableFact {
         result: RuntimeNormalizedType,
         placeholders: Box<[ExprId]>,
         captures: Box<[LocalId]>,
+        control: arcweft_lang_sema::final_analysis::CheckedExecutableControlRole,
     ) -> Self {
         Self {
             identity,
@@ -1780,6 +1782,7 @@ impl RuntimeImplicitCallableFact {
             result,
             placeholders,
             captures,
+            control,
         }
     }
 
@@ -1787,6 +1790,10 @@ impl RuntimeImplicitCallableFact {
         &self,
     ) -> arcweft_lang_sema::final_analysis::CheckedImplicitCallableIdentity {
         self.identity
+    }
+
+    pub const fn control(&self) -> arcweft_lang_sema::final_analysis::CheckedExecutableControlRole {
+        self.control
     }
 
     pub const fn parameter(&self) -> &RuntimeNormalizedType {

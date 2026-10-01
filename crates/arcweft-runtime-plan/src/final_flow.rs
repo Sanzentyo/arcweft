@@ -333,6 +333,7 @@ pub struct RuntimePlanLowerStats {
 
 #[derive(Clone)]
 struct ReservedFunctionSiteDefinition<'facts> {
+    effects: RuntimeEffectSet,
     scope: RuntimeScopedExecutableSemanticFactView<'facts>,
     owner: ExprId,
     module: HirModuleId,
@@ -554,19 +555,19 @@ impl FinalLoweringContext<'_, '_> {
         module: &'a HirModule,
         scope: RuntimeScopedExecutableSemanticFactView<'a>,
     ) -> Result<FinalExprLowerer<'a>, RuntimePlanLowerError> {
-        let control = self.dialogue_control_locals(scope.scope())?;
+        let control = self.executable_control_locals(scope.scope())?;
         Ok(self
             .expr_lowerer(module)
-            .with_locals(self.dialogue_locals(scope.scope())?)
+            .with_locals(self.executable_locals(scope.scope())?)
             .with_control_locals(&control.pipes, &control.tries)
             .with_scope_locals(&control.scopes)
             .with_specialized_operand_locals(
-                self.dialogue_specialized_operand_locals(scope.scope())?,
+                self.executable_specialized_operand_locals(scope.scope())?,
             )
             .with_scoped_semantics(scope))
     }
 
-    fn dialogue_control_locals(
+    fn executable_control_locals(
         &self,
         scope: RuntimeExecutableSemanticScope<'_>,
     ) -> Result<&ControlLocals, RuntimePlanLowerError> {
@@ -596,7 +597,7 @@ impl FinalLoweringContext<'_, '_> {
         }
     }
 
-    fn dialogue_locals(
+    fn executable_locals(
         &self,
         scope: RuntimeExecutableSemanticScope<'_>,
     ) -> Result<&BTreeMap<LocalId, RuntimeLocalSeedId>, RuntimePlanLowerError> {
@@ -634,7 +635,7 @@ impl FinalLoweringContext<'_, '_> {
         }
     }
 
-    fn dialogue_specialized_operand_locals(
+    fn executable_specialized_operand_locals(
         &self,
         scope: RuntimeExecutableSemanticScope<'_>,
     ) -> Result<&BTreeMap<(ExprId, u32), RuntimeLocalSeedId>, RuntimePlanLowerError> {
@@ -2294,6 +2295,29 @@ fn reserve_implicit_function_sites<'facts>(
                 },
             ),
         };
+        let Some(RuntimeTypeShape::Function { contract, .. }) = scope
+            .expression_type(owner)
+            .map(RuntimeNormalizedType::shape)
+        else {
+            errors.push(RuntimePlanLowerError::new(
+                "implicit body has no closed function contract",
+            ));
+            continue;
+        };
+        if contract.invocation().variables().next().is_some() {
+            errors.push(RuntimePlanLowerError::new(
+                "implicit body has an open invocation effect row",
+            ));
+            continue;
+        }
+        let effects =
+            match RuntimeEffectSet::try_from_effects(contract.invocation().constant_effects()) {
+                Ok(effects) => effects,
+                Err(error) => {
+                    errors.push(RuntimePlanLowerError::new(error.to_string()));
+                    continue;
+                }
+            };
         let declaration = captures.map(|captures| RuntimeFunctionSiteDeclarationSeed {
             inputs: captures
                 .into_iter()
@@ -2301,8 +2325,11 @@ fn reserve_implicit_function_sites<'facts>(
                 .collect::<Vec<_>>()
                 .into_boxed_slice(),
             result: callable.result().identity(),
-            body_kind: RuntimeFunctionSiteBodyKind::Expression,
-            effects: RuntimeEffectSet::empty(),
+            body_kind: if callable.control() == arcweft_lang_sema::final_analysis::CheckedExecutableControlRole::ExpressionCompatible
+                && effects.is_empty() {
+                RuntimeFunctionSiteBodyKind::Expression
+            } else { RuntimeFunctionSiteBodyKind::Executable },
+            effects: effects.clone(),
         });
         let declaration = match declaration {
             Ok(declaration) => declaration,
@@ -2315,6 +2342,7 @@ fn reserve_implicit_function_sites<'facts>(
             Ok(site) => {
                 sites.insert(key, site.clone());
                 definitions.push(ReservedFunctionSiteDefinition {
+                    effects,
                     scope,
                     owner,
                     module: module.module_id(),
@@ -3051,7 +3079,26 @@ fn define_function_sites(
                         ))
                     })
                     .collect::<Result<BTreeMap<_, _>, String>>()?;
-            lowerer.lower_implicit_callable_body(definition.owner, overrides)
+            if callable.control() == arcweft_lang_sema::final_analysis::CheckedExecutableControlRole::ExpressionCompatible
+                && definition.effects.is_empty() {
+                lowerer.lower_implicit_callable_body(definition.owner, overrides)
+                    .map(RuntimeFunctionSiteBodySeed::Expression)
+            } else {
+                let mut flow = FinalFlowLowerer::new(
+                    module, context, RuntimeAssertionOwner::ImplicitCallable(callable.identity()),
+                ).with_executable_scope(
+                    definition.scope,
+                    context.executable_control_locals(definition.scope.scope()).map_err(|error| error.to_string())?,
+                    context.executable_locals(definition.scope.scope()).map_err(|error| error.to_string())?,
+                    context.executable_specialized_operand_locals(definition.scope.scope()).map_err(|error| error.to_string())?,
+                );
+                flow.expression_overrides = overrides;
+                flow.implicit_body_root = Some(definition.owner);
+                flow.lower_flow_value(definition.body, RuntimeFlowValueContinuation::Return)
+                    .map(|ops| RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                        effects: definition.effects.clone(), ops: ops.into_boxed_slice(),
+                    })).map_err(|error| error.to_string())
+            }
         })();
         match body.and_then(|body| {
             builder
@@ -3415,7 +3462,7 @@ fn collect_dialogue_effect_capture_specs(
     context
         .facts
         .visit_dialogue_content_fragments(&mut |scope, fragment| {
-            let locals = match context.dialogue_locals(scope.scope()) {
+            let locals = match context.executable_locals(scope.scope()) {
                 Ok(locals) => locals,
                 Err(error) => {
                     errors.push(error);
@@ -3746,7 +3793,7 @@ fn reserve_dialogue_effect_sites<'facts>(
         .facts
         .visit_dialogue_content_fragments(&mut |scope, fragment| {
         let source = fragment.source();
-        let locals = match context.dialogue_locals(scope.scope()) {
+        let locals = match context.executable_locals(scope.scope()) {
             Ok(locals) => locals,
             Err(error) => {
                 errors.push(error);
@@ -3933,14 +3980,14 @@ fn define_dialogue_effect_sites<'facts>(
                 application,
                 result,
             } => {
-                let control = match context.dialogue_control_locals(scope.scope()) {
+                let control = match context.executable_control_locals(scope.scope()) {
                     Ok(control) => control,
                     Err(error) => {
                         errors.push(error);
                         continue;
                     }
                 };
-                let locals = match context.dialogue_locals(scope.scope()) {
+                let locals = match context.executable_locals(scope.scope()) {
                     Ok(locals) => locals,
                     Err(error) => {
                         errors.push(error);
@@ -3948,7 +3995,7 @@ fn define_dialogue_effect_sites<'facts>(
                     }
                 };
                 let specialized_operand_locals =
-                    match context.dialogue_specialized_operand_locals(scope.scope()) {
+                    match context.executable_specialized_operand_locals(scope.scope()) {
                         Ok(locals) => locals,
                         Err(error) => {
                             errors.push(error);
@@ -3960,7 +4007,7 @@ fn define_dialogue_effect_sites<'facts>(
                     context,
                     RuntimeAssertionOwner::DialogueEffect(definition.key),
                 )
-                .with_dialogue_scope(
+                .with_executable_scope(
                     scope,
                     &control,
                     &locals,
@@ -4051,7 +4098,7 @@ fn lower_dialogue_application<'facts>(
         )));
         return None;
     }
-    let locals = match context.dialogue_locals(scope.scope()) {
+    let locals = match context.executable_locals(scope.scope()) {
         Ok(locals) => locals,
         Err(error) => {
             errors.push(error);
@@ -4729,6 +4776,7 @@ fn validate_unique_assertion_guards(
 }
 
 enum RuntimeAssertionOwner {
+    ImplicitCallable(arcweft_lang_sema::final_analysis::CheckedImplicitCallableIdentity),
     Callable(CallableDeclarationId),
     Closure(arcweft_lang_sema::callable::CheckedClosureId),
     DialogueEffect(RuntimeDialogueEffectProgramKey),
@@ -4740,6 +4788,7 @@ enum RuntimeAssertionOwner {
 impl RuntimeAssertionOwner {
     fn label(&self) -> String {
         match self {
+            Self::ImplicitCallable(identity) => format!("implicit-callable@{identity:?}"),
             Self::Callable(declaration) => declaration.qualified_name(),
             Self::Closure(closure) => format!(
                 "closure@{}:{}",
@@ -4757,6 +4806,8 @@ impl RuntimeAssertionOwner {
 }
 
 struct FinalFlowLowerer<'a> {
+    expression_overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+    implicit_body_root: Option<ExprId>,
     module: &'a HirModule,
     facts: &'a RuntimePlanSemanticFacts,
     semantic_facts: RuntimeScopedExecutableSemanticFactView<'a>,
@@ -5061,6 +5112,8 @@ impl<'a> FinalFlowLowerer<'a> {
     ) -> Self {
         Self {
             module,
+            expression_overrides: BTreeMap::new(),
+            implicit_body_root: None,
             facts: context.facts,
             semantic_facts: RuntimeScopedExecutableSemanticFactView::global(context.facts),
             package: context.project.package(),
@@ -5124,7 +5177,7 @@ impl<'a> FinalFlowLowerer<'a> {
         self
     }
 
-    fn with_dialogue_scope(
+    fn with_executable_scope(
         mut self,
         scope: RuntimeScopedExecutableSemanticFactView<'a>,
         control: &'a ControlLocals,
@@ -5155,7 +5208,10 @@ impl<'a> FinalFlowLowerer<'a> {
         .with_callable_specializations(self.callable_specializations)
         .with_scope_locals(&self.control.scopes)
         .with_specialized_operand_locals(self.specialized_operand_locals);
-        lowerer.with_scoped_semantics(self.semantic_facts)
+        lowerer
+            .with_scoped_semantics(self.semantic_facts)
+            .with_overrides(self.expression_overrides.clone())
+            .with_implicit_body_root(self.implicit_body_root)
     }
 
     fn pattern_lowerer(&self) -> FinalPatternLowerer<'_> {
@@ -5951,7 +6007,9 @@ impl<'a> FinalFlowLowerer<'a> {
             }
             return self.contains_flow_value_expression(selected);
         }
-        if self.implicit_callable(expression).is_some() {
+        if self.implicit_body_root != Some(expression)
+            && self.implicit_callable(expression).is_some()
+        {
             return Ok(false);
         }
         if self.evaluated_effect(expression).is_some() {
@@ -6185,7 +6243,9 @@ impl<'a> FinalFlowLowerer<'a> {
             }
             return self.lower_selected_callable_or_need_value(expression, continuation, overrides);
         }
-        if self.implicit_callable(expression).is_some() {
+        if self.implicit_body_root != Some(expression)
+            && self.implicit_callable(expression).is_some()
+        {
             let value = self
                 .expr_lowerer()
                 .lower_source(expression)
@@ -7824,6 +7884,16 @@ impl<'a> FinalFlowLowerer<'a> {
                     ))
                 })?;
             let guard = match &self.assertion_owner {
+                RuntimeAssertionOwner::ImplicitCallable(identity) => {
+                    crate::assertion_lower::derive_runtime_implicit_assertion_guard(
+                        self.package,
+                        self.module.key().path(),
+                        *identity,
+                        ordinal,
+                        condition_index,
+                        profile,
+                    )
+                }
                 RuntimeAssertionOwner::Callable(declaration) => {
                     crate::assertion_lower::derive_runtime_assertion_guard(
                         self.package,

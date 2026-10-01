@@ -68,7 +68,7 @@ pub use self::semantic_paths::{
     HirItemEvaluationEntryRole, HirItemEvaluationRoot, HirItemRecoveryRootOwner,
     HirLayerExpressionRootField, HirLocalBindingOrigin, HirLocalBindingOriginIndex,
     HirLocalBindingStatementRole, HirLocalValueOrigin, HirLoopTargetFamily, HirMemberBindingRole,
-    HirModuleEvaluationTopology, HirPipeLeftRegion, HirProjectEvaluationTopology,
+    HirModuleEvaluationTopology, HirPipeLeftRegion, HirProjectEvaluationTopology, HirReturnContext,
     HirSemanticBodyLocation, HirSemanticBodyLocator, HirSemanticBodyLookupError,
     HirSemanticBodyOwner, HirSemanticBodyOwnerError, HirSemanticBodyOwnerRole, HirSemanticBodyRow,
     HirSemanticOwnerPath, HirSemanticPathError, HirSemanticPathIndex, HirSemanticPathLocation,

@@ -288,7 +288,12 @@ impl<'hir> FinalExprLowerer<'hir> {
     }
 
     pub(crate) fn with_overrides(mut self, overrides: BTreeMap<ExprId, RuntimeExprSeed>) -> Self {
-        self.overrides = overrides;
+        self.overrides.extend(overrides);
+        self
+    }
+
+    pub(crate) fn with_implicit_body_root(mut self, owner: Option<ExprId>) -> Self {
+        self.implicit_body_root = owner;
         self
     }
 

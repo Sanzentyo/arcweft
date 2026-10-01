@@ -68,7 +68,7 @@ const MATRIX: &[MatrixRow] = &[
     MatrixRow {
         name: "Return",
         tag: 0x0704,
-        payload: ExpectedPayload::Structural,
+        payload: ExpectedPayload::ControlTransfer,
     },
     MatrixRow {
         name: "Out",
@@ -261,7 +261,7 @@ fn expected_payload_for_kind(kind: &HirStmtKind) -> ExpectedPayload {
         HirStmtKind::Let { .. } => ExpectedPayload::Structural,
         HirStmtKind::Assign { .. } => ExpectedPayload::Assignment,
         HirStmtKind::LetElse { .. } => ExpectedPayload::Structural,
-        HirStmtKind::Return { .. } => ExpectedPayload::Structural,
+        HirStmtKind::Return { .. } => ExpectedPayload::ControlTransfer,
         HirStmtKind::Out { .. } => ExpectedPayload::ControlTransfer,
         HirStmtKind::Goto { .. } => ExpectedPayload::Structural,
         HirStmtKind::Defer { .. } => ExpectedPayload::Defer,

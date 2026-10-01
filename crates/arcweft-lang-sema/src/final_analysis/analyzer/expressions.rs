@@ -12,22 +12,22 @@ use super::{
     CandidateSemanticProjection, CheckedAwait, CheckedAwaitPendingObserver, CheckedChoice,
     CheckedChoiceGoto, CheckedChoicePlan, CheckedChoicePlanItem, CheckedChoicePlanKey,
     CheckedClosure, CheckedDialogueEffectSiteOrdinal, CheckedDialogueEffectTrigger,
-    CheckedExpression, CheckedExpressionResolution, CheckedProjectItem, CheckedStageLook,
-    CheckedTrigger, CheckedTryBoundaryOwner, CheckedTryCarrier, CheckedTryFunctionSite,
-    CheckedTypeSelection, CheckedValueResolution, CheckedViewCall, EffectId, EffectSet, EntityKind,
-    ExprId, FinalSemanticAnalysisError, GenericParameterOwnerId, GenericTypeParameterId,
-    HirAwaitBranchKind, HirBinaryOp, HirBorrowKind, HirCallArgument, HirChoiceCompactAction,
-    HirChoiceItem, HirComputationBlockKind, HirExpr, HirExprKind, HirIdRef, HirIntegerLiteral,
-    HirItemKind, HirLiteral, HirModule, HirPathRoot, HirPathSegment, HirPostfixBracket,
-    HirPostfixBracketCandidates, HirRecordField, HirScopeKind, HirScopeOwner, HirSelectedMember,
-    HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtKind, HirTypeSourceRole, HirUnaryOp,
-    LocalLookup, PostfixBracketResolution, PreparedDialogueApplication, PreparedDialogueEffectPlan,
-    PreparedDialogueEffectSite, PreparedExpressionFact, PreparedExpressionShell,
-    PreparedImplicitCallableBody, PreparedOwnerBoundExpression, PreparedOwnerBoundResolution,
-    PreparedTryBoundary, ProjectHirSymbolLookupError, ProjectNominalBody,
-    ProjectNominalDeclaration, ProjectNominalType, ProjectSymbolResolutionError, ProjectTypeTarget,
-    ProjectValueLookup, RegisteredSemanticValueId, ResolvedProjectSymbol, ScopeId, SourceSpan,
-    TypeKind, TypeParameterSubstitutions,
+    CheckedExpression, CheckedExpressionResolution, CheckedFunctionSiteBoundary,
+    CheckedProjectItem, CheckedStageLook, CheckedTrigger, CheckedTryBoundaryOwner,
+    CheckedTryCarrier, CheckedTypeSelection, CheckedValueResolution, CheckedViewCall, EffectId,
+    EffectSet, EntityKind, ExprId, FinalSemanticAnalysisError, GenericParameterOwnerId,
+    GenericTypeParameterId, HirAwaitBranchKind, HirBinaryOp, HirBorrowKind, HirCallArgument,
+    HirChoiceCompactAction, HirChoiceItem, HirComputationBlockKind, HirExpr, HirExprKind, HirIdRef,
+    HirIntegerLiteral, HirItemKind, HirLiteral, HirModule, HirPathRoot, HirPathSegment,
+    HirPostfixBracket, HirPostfixBracketCandidates, HirRecordField, HirScopeKind, HirScopeOwner,
+    HirSelectedMember, HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtKind,
+    HirTypeSourceRole, HirUnaryOp, LocalLookup, PostfixBracketResolution,
+    PreparedDialogueApplication, PreparedDialogueEffectPlan, PreparedDialogueEffectSite,
+    PreparedExpressionFact, PreparedExpressionShell, PreparedImplicitCallableBody,
+    PreparedOwnerBoundExpression, PreparedOwnerBoundResolution, PreparedTryBoundary,
+    ProjectHirSymbolLookupError, ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalType,
+    ProjectSymbolResolutionError, ProjectTypeTarget, ProjectValueLookup, RegisteredSemanticValueId,
+    ResolvedProjectSymbol, ScopeId, SourceSpan, TypeKind, TypeParameterSubstitutions,
     calls::{checked_character_dialogue_target, checked_project_nominal, nominal_substitutions},
     expression_types::{
         common_type, expected_item, indexed_item, literal_type, value_resolution_type,
@@ -833,9 +833,9 @@ impl Analyzer<'_, '_, '_> {
                     CheckedExpressionResolution::Try(tried)
                         if matches!(
                             tried.boundary().owner(),
-                            CheckedTryBoundaryOwner::FunctionSite(
-                                CheckedTryFunctionSite::Implicit { .. }
-                            )
+                            CheckedTryBoundaryOwner::Callable(super::super::CheckedCallableBoundary::FunctionSite(
+                                CheckedFunctionSiteBoundary::Implicit { .. }
+                            ))
                         )
                 ),
                 BodySeed::OwnerBound(body) => matches!(
@@ -853,7 +853,7 @@ impl Analyzer<'_, '_, '_> {
                     .clone()
                     .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?
             } else {
-                body_type
+                self.callable_body_result(module, owner, body_type, context.result.as_ref())?
             };
             let effects = match &body {
                 BodySeed::Complete(body) => body.effects().clone(),
@@ -1950,6 +1950,45 @@ impl Analyzer<'_, '_, '_> {
             .collect()
     }
 
+    /// A callable whose body cannot fall through still has its declared or
+    /// contextual result contract. With no result hint, a terminal Return
+    /// supplies the result type; other divergent bodies retain Never.
+    fn callable_body_result(
+        &self,
+        module: &HirModule,
+        body: ExprId,
+        body_type: TypeKind,
+        expected: Option<&TypeKind>,
+    ) -> Result<TypeKind, AnalyzerExpressionError> {
+        if body_type != TypeKind::Never {
+            return Ok(body_type);
+        }
+        if let Some(expected) = expected {
+            return Ok(expected.clone());
+        }
+        let expression = module.resolve_expr(body).map_err(|_| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+        })?;
+        let HirExprKind::Block(block) = expression.kind() else {
+            return Ok(body_type);
+        };
+        let Some(statement) = block.statements().last() else {
+            return Ok(body_type);
+        };
+        let statement = module.resolve_stmt(*statement).map_err(|_| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+        })?;
+        let HirStmtKind::Return { value } = statement.kind() else {
+            return Ok(body_type);
+        };
+        self.facts
+            .expressions()
+            .get(value)
+            .and_then(PreparedExpressionFact::value_type)
+            .cloned()
+            .ok_or_else(|| AnalyzerExpressionError::rejected(body))
+    }
+
     fn check_control_expression_kind(
         &mut self,
         context: &AnalyzerExpressionContext<'_>,
@@ -1962,10 +2001,19 @@ impl Analyzer<'_, '_, '_> {
         match expression.kind() {
             HirExprKind::Block(block) => {
                 self.evaluate_block_statement_uses(context, module, block.statements())?;
+                let returns = block.statements().last().is_some_and(|statement| {
+                    module.resolve_stmt(*statement).is_ok_and(|statement| {
+                        matches!(statement.kind(), HirStmtKind::Return { .. })
+                    })
+                });
                 let tail = self.evaluate_expression_with_expectation(
                     context,
                     block.tail(),
-                    expectation.clone(),
+                    if returns {
+                        AnalyzerExpressionExpectation::Unconstrained
+                    } else {
+                        expectation.clone()
+                    },
                 )?;
                 let tail_type = tail.value_type().cloned().ok_or_else(|| {
                     AnalyzerExpressionError::fatal(
@@ -1981,7 +2029,10 @@ impl Analyzer<'_, '_, '_> {
                         },
                     )
                 })?;
-                Ok(structural_expression(tail_type, tail_selection))
+                Ok(structural_expression(
+                    if returns { TypeKind::Never } else { tail_type },
+                    tail_selection,
+                ))
             }
             HirExprKind::ComputationBlock(block) => {
                 self.evaluate_block_statement_uses(context, module, block.statements())?;
@@ -2706,9 +2757,9 @@ impl Analyzer<'_, '_, '_> {
                         CheckedExpressionResolution::Try(tried)
                             if matches!(
                                 tried.boundary().owner(),
-                                CheckedTryBoundaryOwner::FunctionSite(
-                                    CheckedTryFunctionSite::Explicit(site)
-                                ) if site.lookup_owner() == owner
+                                CheckedTryBoundaryOwner::Callable(super::super::CheckedCallableBoundary::FunctionSite(
+                                    CheckedFunctionSiteBoundary::Explicit(site)
+                                )) if site.lookup_owner() == owner
                             )
                     ),
                     PreparedExpressionFact::OwnerBound(body) => matches!(
@@ -2735,6 +2786,7 @@ impl Analyzer<'_, '_, '_> {
                         )
                     })?
                 };
+                let result = self.callable_body_result(module, closure.body(), result, body_expected)?;
                 let ty = TypeKind::function_with_effects(
                     parameters,
                     result,

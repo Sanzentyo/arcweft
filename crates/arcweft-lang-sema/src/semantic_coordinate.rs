@@ -1088,6 +1088,7 @@ impl CheckedLoopControlTarget {
     reason = "the control-transfer target is consumed by the subsequent checked statement cut"
 )]
 pub enum CheckedControlTransferTarget {
+    Return(crate::final_analysis::CheckedCallableBoundary),
     Output(CheckedOutputTarget),
     Loop(CheckedLoopControlTarget),
 }
@@ -1100,14 +1101,21 @@ impl CheckedControlTransferTarget {
     pub const fn output(&self) -> Option<&CheckedOutputTarget> {
         match self {
             Self::Output(target) => Some(target),
-            Self::Loop(_) => None,
+            Self::Return(_) | Self::Loop(_) => None,
         }
     }
 
     pub const fn loop_target(&self) -> Option<&CheckedLoopControlTarget> {
         match self {
-            Self::Output(_) => None,
+            Self::Return(_) | Self::Output(_) => None,
             Self::Loop(target) => Some(target),
+        }
+    }
+
+    pub const fn return_target(&self) -> Option<&crate::final_analysis::CheckedCallableBoundary> {
+        match self {
+            Self::Return(target) => Some(target),
+            Self::Output(_) | Self::Loop(_) => None,
         }
     }
 }

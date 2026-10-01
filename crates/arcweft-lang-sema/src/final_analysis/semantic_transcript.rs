@@ -2341,6 +2341,10 @@ fn write_control_transfer(
     target: &crate::semantic_coordinate::CheckedControlTransferTarget,
 ) -> Result<(), SemanticTranscriptError> {
     match target {
+        crate::semantic_coordinate::CheckedControlTransferTarget::Return(boundary) => {
+            transcript_update!(hasher, &[2]);
+            write_callable_boundary(hasher, boundary)?;
+        }
         crate::semantic_coordinate::CheckedControlTransferTarget::Output(output) => {
             transcript_update!(hasher, &[0]);
             write_bytes(hasher, &output.coordinate().canonical_bytes()?)?;
@@ -4251,22 +4255,35 @@ fn write_try_boundary(
             transcript_update!(hasher, &[1]);
             write_bytes(hasher, &boundary.coordinate().canonical_bytes()?)?;
         }
-        super::CheckedTryBoundaryOwner::FunctionSite(site) => {
+        super::CheckedTryBoundaryOwner::Callable(boundary) => {
             transcript_update!(hasher, &[2]);
+            write_callable_boundary(hasher, boundary)?;
+        }
+    }
+    Ok(())
+}
+
+fn write_callable_boundary(
+    hasher: &mut MatchTranscriptHasher<'_>,
+    boundary: &super::CheckedCallableBoundary,
+) -> Result<(), SemanticTranscriptError> {
+    match boundary {
+        super::CheckedCallableBoundary::FunctionSite(site) => {
+            transcript_update!(hasher, &[0]);
             match site {
-                super::CheckedTryFunctionSite::Explicit(boundary) => {
+                super::CheckedFunctionSiteBoundary::Explicit(boundary) => {
                     transcript_update!(hasher, &[0]);
                     write_bytes(hasher, &boundary.coordinate().canonical_bytes()?)?;
                 }
-                super::CheckedTryFunctionSite::Implicit { site, callable } => {
+                super::CheckedFunctionSiteBoundary::Implicit { site, callable } => {
                     transcript_update!(hasher, &[1]);
                     write_bytes(hasher, &site.coordinate().canonical_bytes()?)?;
                     transcript_update!(hasher, callable.as_bytes());
                 }
             }
         }
-        super::CheckedTryBoundaryOwner::Callable(boundary) => {
-            transcript_update!(hasher, &[3]);
+        super::CheckedCallableBoundary::Declaration(boundary) => {
+            transcript_update!(hasher, &[1]);
             transcript_update!(hasher, boundary.accepted().as_bytes());
         }
     }

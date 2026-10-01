@@ -12,6 +12,8 @@ mod expression_shapes;
 mod generation_invariance;
 #[path = "semantic_transcript_acceptance/patterns.rs"]
 mod patterns;
+#[path = "semantic_transcript_acceptance/return_boundaries.rs"]
+mod return_boundaries;
 #[path = "semantic_transcript_acceptance/statements.rs"]
 mod statements;
 #[path = "semantic_transcript_acceptance/view_calls.rs"]

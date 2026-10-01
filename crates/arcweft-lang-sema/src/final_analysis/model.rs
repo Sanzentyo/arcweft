@@ -24,8 +24,8 @@ use crate::checked_compile_time::CheckedCompileTimeScalar;
 use crate::checked_rich_text::CheckedContentApplicationId;
 use crate::checked_rich_text::Milli;
 use crate::semantic_coordinate::{
-    AcceptedDeclarationSemanticId, CheckedExpressionCoordinateEvidence, CheckedSemanticPath,
-    SemanticCoordinateIndex, StableCheckedValueCoordinate,
+    CheckedExpressionCoordinateEvidence, CheckedSemanticPath, SemanticCoordinateIndex,
+    StableCheckedValueCoordinate,
 };
 use crate::types::{CharacterField, EntityKind};
 use arcweft_core::value::RuntimeAgentField;
@@ -1389,103 +1389,26 @@ pub enum CheckedTryOperandAuthorityViolation {
     },
 }
 
-/// Generation-bound expression evidence paired with its accepted semantic
-/// coordinate. The raw owner is retained only for runtime/CPS validation.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CheckedTryExpressionBoundary {
-    lookup_owner: ExprId,
-    coordinate: CheckedSemanticPath,
-}
-
-impl CheckedTryExpressionBoundary {
-    pub(crate) fn from_evidence(evidence: CheckedExpressionCoordinateEvidence) -> Self {
-        Self {
-            lookup_owner: evidence.owner(),
-            coordinate: evidence.into_coordinate(),
-        }
-    }
-
-    pub const fn lookup_owner(&self) -> ExprId {
-        self.lookup_owner
-    }
-
-    pub const fn coordinate(&self) -> &CheckedSemanticPath {
-        &self.coordinate
-    }
-}
-
-/// Function-site Try boundary. Explicit closure sites carry only their
-/// accepted expression boundary; implicit sites additionally join the
-/// callable identity issued by the owner-bound seal.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CheckedTryFunctionSite {
-    Explicit(CheckedTryExpressionBoundary),
-    Implicit {
-        site: CheckedTryExpressionBoundary,
-        callable: CheckedImplicitCallableIdentity,
-    },
-}
-
-impl CheckedTryFunctionSite {
-    pub const fn site(&self) -> &CheckedTryExpressionBoundary {
-        match self {
-            Self::Explicit(site) => site,
-            Self::Implicit { site, .. } => site,
-        }
-    }
-
-    pub const fn callable(&self) -> Option<CheckedImplicitCallableIdentity> {
-        match self {
-            Self::Explicit(_) => None,
-            Self::Implicit { callable, .. } => Some(*callable),
-        }
-    }
-}
-
-/// Accepted callable declaration receiving one Try residual. The declaration
-/// key remains the typed catalog lookup; the accepted semantic ID is the
-/// stable root identity consumed by transcript/runtime authorities.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CheckedTryCallableBoundary {
-    declaration: CallableDeclarationKey,
-    accepted: AcceptedDeclarationSemanticId,
-}
-
-impl CheckedTryCallableBoundary {
-    pub(crate) fn new(
-        declaration: CallableDeclarationKey,
-        accepted: AcceptedDeclarationSemanticId,
-    ) -> Self {
-        Self {
-            declaration,
-            accepted,
-        }
-    }
-
-    pub const fn declaration(&self) -> &CallableDeclarationKey {
-        &self.declaration
-    }
-
-    pub const fn accepted(&self) -> AcceptedDeclarationSemanticId {
-        self.accepted
-    }
-}
+mod callable_boundary;
+pub use callable_boundary::{
+    CheckedCallableBoundary, CheckedCallableDeclarationBoundary, CheckedExpressionBoundary,
+    CheckedFunctionSiteBoundary,
+};
 
 /// Nearest typed lexical owner that receives one Try residual.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckedTryBoundaryOwner {
     Infallible,
-    CarrierBlock(CheckedTryExpressionBoundary),
-    FunctionSite(CheckedTryFunctionSite),
-    Callable(CheckedTryCallableBoundary),
+    CarrierBlock(CheckedExpressionBoundary),
+    Callable(CheckedCallableBoundary),
 }
 
 impl CheckedTryBoundaryOwner {
-    pub const fn expression_boundary(&self) -> Option<&CheckedTryExpressionBoundary> {
+    pub const fn expression_boundary(&self) -> Option<&CheckedExpressionBoundary> {
         match self {
             Self::CarrierBlock(boundary) => Some(boundary),
-            Self::FunctionSite(site) => Some(site.site()),
-            Self::Infallible | Self::Callable(_) => None,
+            Self::Callable(CheckedCallableBoundary::FunctionSite(site)) => Some(site.site()),
+            Self::Infallible | Self::Callable(CheckedCallableBoundary::Declaration(_)) => None,
         }
     }
 }

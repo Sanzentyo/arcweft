@@ -107,6 +107,50 @@ fn fixture() -> (std::sync::Arc<HirModule>, CallableDeclarationKey, ExprId) {
 }
 
 #[test]
+fn return_context_distinguishes_closure_and_item_and_skips_carrier_blocks() {
+    let module = lower_control_transfer_fixture(
+        "fn root() -> i64 { let callback = || -> i64 { return 3i64 }; let value = result { return 7i64; 0i64 }; return 9i64 }",
+    );
+    let builder = HirProjectEvaluationTopologyBuilder::new_for_module(&module);
+    let mut closures = 0;
+    let mut items = 0;
+    for (owner, statement) in module.statements() {
+        if !matches!(statement.kind(), HirStmtKind::Return { .. }) {
+            continue;
+        }
+        let Some((kind, target)) = builder
+            .resolve_control_transfer(owner, statement.kind())
+            .unwrap()
+        else {
+            panic!("Return has a structural row")
+        };
+        assert_eq!(kind, HirControlTransferKind::Return);
+        match target {
+            HirControlTransferTarget::Return {
+                context: HirReturnContext::FunctionSite(site),
+            } => {
+                assert!(matches!(
+                    module.resolve_expr(site).unwrap().kind(),
+                    HirExprKind::Closure(_)
+                ));
+                closures += 1;
+            }
+            HirControlTransferTarget::Return {
+                context: HirReturnContext::Item(item),
+            } => {
+                assert!(matches!(
+                    module.resolve_item(item).unwrap().kind(),
+                    HirItemKind::Function(_)
+                ));
+                items += 1;
+            }
+            _ => panic!("Return cannot target a carrier block or loop"),
+        }
+    }
+    assert_eq!((closures, items), (1, 2));
+}
+
+#[test]
 fn loop_control_transfers_resolve_the_nearest_loop_expression() {
     let module = lower_control_transfer_fixture(
         "fn accepted() {\n    let result = loop {\n        loop {\n            break\n        }\n        break\n    }\n}\n",

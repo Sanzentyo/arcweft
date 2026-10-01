@@ -21,6 +21,7 @@ use super::{
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckedExecutionOperation {
     Value(ExprId),
+    Body(ExprId),
     Place(ExprId),
     Statement(StmtId),
 }
@@ -37,6 +38,7 @@ impl From<HirBodyChild> for CheckedExecutionOperation {
 #[derive(Debug, Default)]
 pub(crate) struct PreparedExecutableSuspensionCatalog {
     expressions: BTreeMap<ExprId, PreparedExecutableSuspensionRow>,
+    bodies: BTreeMap<ExprId, PreparedExecutableSuspensionRow>,
     statements: BTreeMap<StmtId, Box<[CheckedExecutionOperation]>>,
 }
 
@@ -44,15 +46,17 @@ impl PreparedExecutableSuspensionCatalog {
     pub(crate) fn new(
         expressions: BTreeMap<ExprId, PreparedExecutableSuspensionRow>,
         statements: BTreeMap<StmtId, Box<[CheckedExecutionOperation]>>,
+        bodies: BTreeMap<ExprId, PreparedExecutableSuspensionRow>,
     ) -> Self {
         Self {
             expressions,
             statements,
+            bodies,
         }
     }
 
     pub(crate) fn is_empty(&self) -> bool {
-        self.expressions.is_empty() && self.statements.is_empty()
+        self.expressions.is_empty() && self.statements.is_empty() && self.bodies.is_empty()
     }
 
     pub(super) fn publish(
@@ -65,15 +69,28 @@ impl PreparedExecutableSuspensionCatalog {
         {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
+        let callable_owners = expressions.iter().filter_map(|(owner, expression)| {
+            matches!(
+                expression.resolution(),
+                super::CheckedExpressionResolution::ImplicitCallable(_)
+                    | super::CheckedExpressionResolution::Closure(_)
+            )
+            .then_some(owner)
+        });
+        if !self.bodies.keys().eq(callable_owners) {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
         for edges in self
             .expressions
             .values()
+            .chain(self.bodies.values())
             .map(PreparedExecutableSuspensionRow::children)
             .chain(self.statements.values().map(AsRef::as_ref))
         {
             if edges.windows(2).any(|pair| pair[0] >= pair[1])
                 || edges.iter().any(|edge| match edge {
                     CheckedExecutionOperation::Value(owner) => !expressions.contains_key(owner),
+                    CheckedExecutionOperation::Body(owner) => !self.bodies.contains_key(owner),
                     CheckedExecutionOperation::Place(owner) => expressions
                         .get(owner)
                         .and_then(CheckedExpression::mutable_place)
@@ -90,6 +107,12 @@ impl PreparedExecutableSuspensionCatalog {
             .copied()
             .map(CheckedExecutionOperation::Value)
             .chain(
+                self.bodies
+                    .keys()
+                    .copied()
+                    .map(CheckedExecutionOperation::Body),
+            )
+            .chain(
                 self.statements
                     .keys()
                     .copied()
@@ -100,6 +123,7 @@ impl PreparedExecutableSuspensionCatalog {
         for edges in self
             .expressions
             .values()
+            .chain(self.bodies.values())
             .map(PreparedExecutableSuspensionRow::children)
             .chain(self.statements.values().map(AsRef::as_ref))
         {
@@ -121,6 +145,7 @@ impl PreparedExecutableSuspensionCatalog {
             completed += 1;
             let children = match owner {
                 CheckedExecutionOperation::Value(owner) => self.expressions[&owner].children(),
+                CheckedExecutionOperation::Body(owner) => self.bodies[&owner].children(),
                 CheckedExecutionOperation::Place(_) => &[],
                 CheckedExecutionOperation::Statement(owner) => &self.statements[&owner],
             };
@@ -139,6 +164,7 @@ impl PreparedExecutableSuspensionCatalog {
         }
         Ok(CheckedExpressionExecutionCatalog {
             expressions: self.expressions,
+            bodies: self.bodies,
             statements: self.statements,
         })
     }
@@ -147,10 +173,14 @@ impl PreparedExecutableSuspensionCatalog {
 #[derive(Clone, Debug)]
 pub(super) struct CheckedExpressionExecutionCatalog {
     expressions: BTreeMap<ExprId, PreparedExecutableSuspensionRow>,
+    bodies: BTreeMap<ExprId, PreparedExecutableSuspensionRow>,
     statements: BTreeMap<StmtId, Box<[CheckedExecutionOperation]>>,
 }
 
 impl CheckedExpressionExecutionCatalog {
+    pub(super) fn body_row(&self, owner: ExprId) -> Option<&PreparedExecutableSuspensionRow> {
+        self.bodies.get(&owner)
+    }
     pub(super) fn region(&self, root: ExprId) -> Option<CheckedExpressionExecutionRegion> {
         let row = self.expressions.get(&root)?;
         let mut visited = BTreeSet::new();
@@ -166,6 +196,9 @@ impl CheckedExpressionExecutionCatalog {
                 CheckedExecutionOperation::Value(owner) => {
                     expressions.insert(owner);
                     pending.extend(self.expressions.get(&owner)?.children());
+                }
+                CheckedExecutionOperation::Body(owner) => {
+                    pending.extend(self.bodies.get(&owner)?.children());
                 }
                 CheckedExecutionOperation::Place(owner) => {
                     places.insert(owner);
@@ -265,7 +298,7 @@ mod tests {
                 })
                 .collect();
             assert!(matches!(
-                PreparedExecutableSuspensionCatalog::new(rows, BTreeMap::new())
+                PreparedExecutableSuspensionCatalog::new(rows, BTreeMap::new(), BTreeMap::new())
                     .publish(&expressions, &statements),
                 Err(FinalSemanticAnalysisError::WrongPayloadFamily)
             ));

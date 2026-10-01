@@ -57,6 +57,9 @@ impl PreparedAssignmentStatement {
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum PreparedStatementPayload {
     HirOwned,
+    /// Issued by the late statement producer before the effect fold enters
+    /// latent bodies, while the complete callable fact inventory is available.
+    Return(crate::final_analysis::CheckedCallableBoundary),
     Assignment(PreparedAssignmentStatement),
     Assertion(CheckedAssertionDisposition),
     Iteration(Box<CheckedIteration>),
@@ -75,6 +78,7 @@ impl PreparedStatementPayload {
             Self::Assignment(value) => value.visit_types(visitor),
             Self::Iteration(value) => value.visit_types(visitor),
             Self::HirOwned
+            | Self::Return(_)
             | Self::Assertion(_)
             | Self::Suspension(_)
             | Self::Yield

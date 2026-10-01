@@ -461,6 +461,7 @@ pub struct HirSemanticBodyRow {
 /// target remains a typed outcome only inside a retained interpretation.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirControlTransferKind {
+    Return,
     Out,
     Break,
     Continue,
@@ -469,12 +470,21 @@ pub enum HirControlTransferKind {
 impl HirControlTransferKind {
     pub const fn from_statement(statement: &HirStmtKind) -> Option<Self> {
         match statement {
+            HirStmtKind::Return { .. } => Some(Self::Return),
             HirStmtKind::Out { .. } => Some(Self::Out),
             HirStmtKind::Break { .. } => Some(Self::Break),
             HirStmtKind::Continue { .. } => Some(Self::Continue),
             _ => None,
         }
     }
+}
+
+/// Structural return context. Implicit callable selection belongs to sema;
+/// an item alone does not prove an admissible callable frame.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirReturnContext {
+    FunctionSite(ExprId),
+    Item(ItemId),
 }
 
 /// Lexical construct family that can receive a `break` or `continue`.
@@ -489,6 +499,9 @@ pub enum HirLoopTargetFamily {
 /// Typed target resolved for one accepted control-transfer statement.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirControlTransferTarget {
+    Return {
+        context: HirReturnContext,
+    },
     Output {
         application: ExprId,
     },
@@ -513,20 +526,20 @@ impl HirControlTransferTarget {
     pub const fn output_application(&self) -> Option<ExprId> {
         match self {
             Self::Output { application } => Some(*application),
-            Self::Loop { .. } => None,
+            Self::Return { .. } | Self::Loop { .. } => None,
         }
     }
 
     pub const fn loop_family(&self) -> Option<HirLoopTargetFamily> {
         match self {
-            Self::Output { .. } => None,
+            Self::Return { .. } | Self::Output { .. } => None,
             Self::Loop { family, .. } => Some(*family),
         }
     }
 
     pub const fn loop_body_owner(&self) -> Option<&HirSemanticBodyOwner> {
         match self {
-            Self::Output { .. } => None,
+            Self::Return { .. } | Self::Output { .. } => None,
             Self::Loop { body_owner, .. } => Some(body_owner),
         }
     }
@@ -1111,6 +1124,25 @@ impl HirSemanticPathIndex {
                 }
             };
             match (row.kind(), target) {
+                (HirControlTransferKind::Return, HirControlTransferTarget::Return { context }) => {
+                    let module = match context {
+                        HirReturnContext::FunctionSite(owner) => {
+                            if !self.expression(*owner).is_some_and(|path| {
+                                statement_path.steps().starts_with(path.steps())
+                                    && statement_path.steps().len() > path.steps().len()
+                            }) {
+                                return Err(HirSemanticPathError::InvalidControlTransferRow {
+                                    statement,
+                                });
+                            }
+                            owner.module()
+                        }
+                        HirReturnContext::Item(owner) => owner.module(),
+                    };
+                    if module != self.snapshot.module() {
+                        return Err(HirSemanticPathError::InvalidControlTransferRow { statement });
+                    }
+                }
                 (HirControlTransferKind::Out, HirControlTransferTarget::Output { application }) => {
                     if application.module() != self.snapshot.module() {
                         return Err(HirSemanticPathError::ControlTransferModuleMismatch {
@@ -1981,6 +2013,37 @@ impl HirPipeLeftRegion<'_> {
 }
 
 impl HirExpressionUseIndex {
+    /// Finds the nearest selected implicit frame enclosing evaluation of this
+    /// expression. The expression itself is excluded: returning a callable
+    /// value does not invoke that value. Selection is supplied by sema; the
+    /// parent chain and callable cuts remain this topology's authority.
+    pub fn enclosing_implicit_callable(
+        &self,
+        expression: ExprId,
+        mut is_selected: impl FnMut(ExprId) -> bool,
+    ) -> Result<Option<ExprId>, HirSemanticPathError> {
+        let mut parent = self
+            .row(expression)
+            .ok_or(HirSemanticPathError::UnresolvedOwner)?
+            .parent_expression();
+        for _ in 0..self.rows.len() {
+            let Some(owner) = parent else { return Ok(None) };
+            let row = self
+                .row(owner)
+                .ok_or(HirSemanticPathError::UnresolvedOwner)?;
+            if is_selected(owner) && self.region_contains(owner, expression) {
+                return Ok(Some(owner));
+            }
+            if row.cuts_implicit_callable_region() {
+                return Ok(None);
+            }
+            parent = row.parent_expression();
+        }
+        Err(HirSemanticPathError::CyclicPath {
+            owner: expression.into(),
+        })
+    }
+
     pub const fn snapshot(&self) -> HirSnapshotId {
         self.snapshot
     }
@@ -5564,6 +5627,12 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
     ) -> Result<Option<(HirControlTransferKind, HirControlTransferTarget)>, HirSemanticPathError>
     {
         let (kind, target) = match kind {
+            HirStmtKind::Return { .. } => (
+                HirControlTransferKind::Return,
+                HirControlTransferTarget::Return {
+                    context: self.return_context(statement)?,
+                },
+            ),
             HirStmtKind::Out { label, .. } => {
                 if label.is_some() {
                     return Err(HirControlTransferResolutionError::UnresolvedTarget {
@@ -5714,6 +5783,53 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
         Err(HirControlTransferResolutionError::UnresolvedTarget {
             statement: statement_id,
             kind,
+        }
+        .into())
+    }
+
+    fn return_context(
+        &self,
+        statement_id: StmtId,
+    ) -> Result<HirReturnContext, HirSemanticPathError> {
+        let statement = self
+            .module
+            .resolve_stmt(statement_id)
+            .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
+        let mut scope = Some(statement.scope());
+        let mut visited = BTreeSet::new();
+        while let Some(scope_id) = scope {
+            if !visited.insert(scope_id) {
+                return Err(HirControlTransferResolutionError::InvalidScopeChain {
+                    statement: statement_id,
+                }
+                .into());
+            }
+            let scope_value = self
+                .module
+                .resolve_scope(scope_id)
+                .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
+            match scope_value.owner() {
+                HirScopeOwner::Expr(owner) => {
+                    match self
+                        .module
+                        .resolve_expr(*owner)
+                        .map_err(|_| HirSemanticPathError::UnresolvedOwner)?
+                        .kind()
+                    {
+                        HirExprKind::Closure(_) => {
+                            return Ok(HirReturnContext::FunctionSite(*owner));
+                        }
+                        _ => {}
+                    }
+                }
+                HirScopeOwner::Item(owner) => return Ok(HirReturnContext::Item(*owner)),
+                HirScopeOwner::Module(_) | HirScopeOwner::Stmt(_) => {}
+            }
+            scope = scope_value.parent();
+        }
+        Err(HirControlTransferResolutionError::UnresolvedTarget {
+            statement: statement_id,
+            kind: HirControlTransferKind::Return,
         }
         .into())
     }

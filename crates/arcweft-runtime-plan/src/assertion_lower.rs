@@ -192,6 +192,29 @@ pub(crate) fn derive_runtime_closure_assertion_guard(
     finish_guard(hasher)
 }
 
+pub(crate) fn derive_runtime_implicit_assertion_guard(
+    package: &CallablePackageId,
+    module: &CanonicalModulePath,
+    callable: arcweft_lang_sema::final_analysis::CheckedImplicitCallableIdentity,
+    assertion_ordinal: u32,
+    condition: AssertionConditionIndex,
+    profile: RuntimeAssertionProfile,
+) -> RuntimeAssertionGuardId {
+    let mut hasher = blake3::Hasher::new_derive_key(RUNTIME_ASSERTION_GUARD_CONTEXT);
+    hasher.update(&RUNTIME_ASSERTION_GUARD_SCHEMA.to_le_bytes());
+    hash_text(&mut hasher, package.as_str());
+    hash_module(&mut hasher, module);
+    hash_text(&mut hasher, "implicit-callable");
+    hasher.update(callable.as_bytes());
+    hasher.update(&assertion_ordinal.to_le_bytes());
+    hasher.update(&[condition.get()]);
+    hasher.update(&[match profile {
+        RuntimeAssertionProfile::Always => 0,
+        RuntimeAssertionProfile::DebugOnly => 1,
+    }]);
+    finish_guard(hasher)
+}
+
 fn finish_guard(hasher: blake3::Hasher) -> RuntimeAssertionGuardId {
     let digest = hasher.finalize();
     let mut bytes = [0_u8; 16];

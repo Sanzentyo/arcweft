@@ -62,6 +62,7 @@ struct PreparedExecutionEffectRow {
     expressions: BTreeSet<ExprId>,
     statements: BTreeSet<StmtId>,
     direct_suspension: bool,
+    requires_flow: bool,
 }
 
 impl Default for PreparedExecutionEffectRow {
@@ -73,6 +74,7 @@ impl Default for PreparedExecutionEffectRow {
             expressions: BTreeSet::new(),
             statements: BTreeSet::new(),
             direct_suspension: false,
+            requires_flow: false,
         }
     }
 }
@@ -156,6 +158,7 @@ impl PreparedExecutionEffectRow {
         self.expressions.extend(other.expressions.iter().copied());
         self.statements.extend(other.statements.iter().copied());
         self.direct_suspension |= other.direct_suspension;
+        self.requires_flow |= other.requires_flow;
         Ok(())
     }
 }
@@ -186,6 +189,9 @@ pub(crate) struct PreparedClosureExecutionEffectRow {
 }
 
 impl PreparedClosureExecutionEffectRow {
+    pub(crate) const fn requires_flow(&self) -> bool {
+        self.row.requires_flow
+    }
     pub(crate) const fn owner(&self) -> ExprId {
         self.owner
     }
@@ -208,6 +214,7 @@ impl PreparedClosureExecutionEffectRow {
 /// the same roots from sealed calls and compares their complete rows.
 #[derive(Debug)]
 pub(crate) struct PreparedExecutionEffectCatalog {
+    bodies: BTreeMap<ExprId, PreparedExecutionEffectRow>,
     expression_rows: BTreeMap<ExprId, PreparedExecutionEffectRow>,
     statement_rows: BTreeMap<StmtId, PreparedExecutionEffectRow>,
     declarations: BTreeMap<CallableDeclarationKey, PreparedExecutionEffectRow>,
@@ -216,6 +223,11 @@ pub(crate) struct PreparedExecutionEffectCatalog {
 }
 
 impl PreparedExecutionEffectCatalog {
+    pub(crate) fn declaration_requires_flow(&self, declaration: &CallableDeclarationKey) -> bool {
+        self.declarations
+            .get(declaration)
+            .is_some_and(|row| row.requires_flow)
+    }
     pub(crate) fn expression_execution_rows(
         &self,
     ) -> impl Iterator<
@@ -224,6 +236,7 @@ impl PreparedExecutionEffectCatalog {
             bool,
             &BTreeSet<ExprId>,
             &BTreeSet<CheckedExecutionOperation>,
+            bool,
         ),
     > + '_ {
         self.expression_rows.iter().map(|(owner, row)| {
@@ -232,6 +245,29 @@ impl PreparedExecutionEffectCatalog {
                 row.direct_suspension,
                 &row.expressions,
                 &row.children,
+                row.requires_flow,
+            )
+        })
+    }
+
+    pub(crate) fn body_execution_rows(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            ExprId,
+            bool,
+            &BTreeSet<ExprId>,
+            &BTreeSet<CheckedExecutionOperation>,
+            bool,
+        ),
+    > + '_ {
+        self.bodies.iter().map(|(owner, row)| {
+            (
+                *owner,
+                row.direct_suspension,
+                &row.expressions,
+                &row.children,
+                row.requires_flow,
             )
         })
     }
@@ -411,6 +447,7 @@ impl PreparedEffectSelection<'_> {
 }
 
 struct PreparedExecutionEffectSealer<'a> {
+    bodies: BTreeMap<ExprId, PreparedExecutionEffectRow>,
     modules: &'a BTreeMap<HirModuleId, &'a HirModule>,
     topology: &'a HirProjectEvaluationTopology,
     selected: PreparedEffectSelection<'a>,
@@ -490,6 +527,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             expression_facts,
             statement_facts,
             expression_rows: BTreeMap::new(),
+            bodies: BTreeMap::new(),
             statement_rows: BTreeMap::new(),
             active_expressions: BTreeSet::new(),
             active_statements: BTreeSet::new(),
@@ -631,6 +669,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             rows.sort_by_key(PreparedClosureExecutionEffectRow::owner);
         }
         Ok(PreparedExecutionEffectCatalog {
+            bodies: self.bodies,
             expression_rows: self.expression_rows,
             statement_rows: self.statement_rows,
             declarations: self.declarations,
@@ -690,6 +729,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             expressions: BTreeSet::from([owner]),
             statements: BTreeSet::new(),
             direct_suspension: matches!(kind, HirExprKind::Await(_)),
+            requires_flow: false,
         };
         if let Some(call_effects) = self
             .call_effects
@@ -700,7 +740,18 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
         }
         let latent_callable =
             fact.creates_implicit_callable() || matches!(kind, HirExprKind::Closure(_));
+        let mut implicit_body = fact.creates_implicit_callable().then(|| {
+            let mut body = row.clone();
+            body.source = Some(CheckedExecutionOperation::Body(owner));
+            body
+        });
+        if latent_callable {
+            row.effects = EffectRow::closed(EffectSet::new());
+            row.direct_suspension = false;
+        }
         let direct_field_place = fact.reads_field_binding();
+        let accepted_closure = matches!(fact, PreparedExpressionFact::Complete(expression)
+            if matches!(expression.resolution(), super::CheckedExpressionResolution::Closure(_)));
         let independent_computation = matches!(
             kind,
             HirExprKind::ComputationBlock(expression)
@@ -709,8 +760,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                     HirComputationBlockKind::Seq | HirComputationBlockKind::Stream
                 )
         );
-        if !latent_callable
-            && !independent_computation
+        if !independent_computation
             && let Some(receiver) = self.call_effects.get(&owner).and_then(|row| row.receiver)
         {
             let receiver_row = match receiver {
@@ -727,7 +777,11 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                     self.seal_expression(receiver)?
                 }
             };
-            row.union_with(&receiver_row, self.control)?;
+            if let Some(body) = &mut implicit_body {
+                body.union_with(&receiver_row, self.control)?;
+            } else if !latent_callable {
+                row.union_with(&receiver_row, self.control)?;
+            }
         }
         for edge in self.selected.expression_edges(owner).to_vec() {
             let HirExpressionEvaluationEdge::Expression {
@@ -738,8 +792,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             else {
                 continue;
             };
-            let child_row = if !latent_callable
-                && matches!(self.call_effects.get(&owner).and_then(|row| row.receiver), Some(PreparedCallReceiverEvaluation::Place(receiver)) if receiver == child)
+            let child_row = if matches!(self.call_effects.get(&owner).and_then(|row| row.receiver), Some(PreparedCallReceiverEvaluation::Place(receiver)) if receiver == child)
                 && self
                     .expression_facts
                     .get(&child)
@@ -752,6 +805,14 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             if matches!(kind, HirExprKind::Closure(_))
                 && matches!(role, HirExpressionChildRole::ClosureBody)
             {
+                if accepted_closure {
+                    let mut body = PreparedExecutionEffectRow::default();
+                    body.source = Some(CheckedExecutionOperation::Body(owner));
+                    body.union_with(&child_row, self.control)?;
+                    if self.bodies.insert(owner, body).is_some() {
+                        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                    }
+                }
                 let declaration = self
                     .active_declaration
                     .clone()
@@ -770,6 +831,9 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
             }
+            if let Some(body) = &mut implicit_body {
+                body.union_with(&child_row, self.control)?;
+            }
             if !latent_callable
                 && !direct_field_place
                 && !independent_computation
@@ -783,6 +847,9 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             .map_err(|_| FinalSemanticAnalysisError::RecoveredOwner)?
         {
             let body_row = self.fold_body(&body)?;
+            if let Some(body) = &mut implicit_body {
+                body.union_with(&body_row, self.control)?;
+            }
             if !matches!(kind, HirExprKind::Thread(_))
                 && !latent_callable
                 && !independent_computation
@@ -804,8 +871,17 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                 },
             };
             if eager_owned_children {
-                row.union_with(&child, self.control)?;
+                if let Some(body) = &mut implicit_body {
+                    body.union_with(&child, self.control)?;
+                } else {
+                    row.union_with(&child, self.control)?;
+                }
             }
+        }
+        if let Some(body) = implicit_body
+            && self.bodies.insert(owner, body).is_some()
+        {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
         if !self.active_expressions.remove(&owner)
             || self.expression_rows.insert(owner, row.clone()).is_some()
@@ -842,6 +918,10 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             _ => None,
         };
         let mut row = PreparedExecutionEffectRow::default();
+        row.requires_flow = !matches!(
+            kind,
+            HirStmtKind::Let { .. } | HirStmtKind::Assign { .. } | HirStmtKind::Expression { .. }
+        );
         row.source = Some(CheckedExecutionOperation::Statement(owner));
         row.statements.insert(owner);
         for edge in kind
@@ -899,6 +979,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                 row.direct_suspension = true;
             }
             PreparedStatementPayload::HirOwned
+            | PreparedStatementPayload::Return(_)
             | PreparedStatementPayload::Assignment(_)
             | PreparedStatementPayload::Assertion(_)
             | PreparedStatementPayload::Iteration(_)

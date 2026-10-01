@@ -112,6 +112,32 @@ macro_rules! callable_case {
 }
 
 callable_case!(
+    closure_terminal_return_uses_its_own_frame,
+    r#"
+flow main() -> i64 {
+    let callback = || -> i64 { return 42i64 }
+    let value = callback()
+    return value
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    implicit_terminal_return_uses_its_own_frame,
+    r#"
+flow main() -> i64 {
+    let callback: (i64) -> i64 effects {} = { return _ + 1i64; 0i64 }
+    let value = callback(41i64)
+    return value
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
     direct_call,
     r#"
 fn increment(value: i64) -> i64 { value + 1i64 }

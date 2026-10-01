@@ -62,16 +62,16 @@ use super::{
     CheckedDropInvocation, CheckedEvaluatedEffectOperation, CheckedExecutableControlRole,
     CheckedExplicitDropPolicy, CheckedExpression, CheckedExpressionChildEdge,
     CheckedExpressionEdgeError, CheckedExpressionResolution, CheckedFunctionExecution,
-    CheckedImplicitCallableBody, CheckedItem, CheckedItemRole, CheckedIteration,
-    CheckedIteratorFamily, CheckedMatchLimits, CheckedOrdinaryFunctionEmission,
+    CheckedFunctionSiteBoundary, CheckedImplicitCallableBody, CheckedItem, CheckedItemRole,
+    CheckedIteration, CheckedIteratorFamily, CheckedMatchLimits, CheckedOrdinaryFunctionEmission,
     CheckedPatchOperation, CheckedPattern, CheckedPatternResolution, CheckedPipeLeftOccurrence,
     CheckedSelectResolution, CheckedStatementPayload, CheckedSuspensionRole,
-    CheckedSuspensionStatement, CheckedTryBoundaryOwner, CheckedTryCarrier, CheckedTryFunctionSite,
-    CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwnerKind, FinalCallSealLocation,
-    FinalSemanticAnalysis, FinalSemanticAnalysisControl, FinalSemanticAnalysisError,
-    FinalSemanticAnalysisInput, FinalSemanticCatalogs, PhysicalArgumentEvaluationKind,
-    PostfixBracketResolution, PreparedExecutableIngressSeal, PreparedStatementPayload,
-    RegisteredSemanticValueId, SemanticFactFamily, analyze_final_project,
+    CheckedSuspensionStatement, CheckedTryBoundaryOwner, CheckedTryCarrier, CheckedTypeSelection,
+    CheckedValueResolution, CheckedVariantOwnerKind, FinalCallSealLocation, FinalSemanticAnalysis,
+    FinalSemanticAnalysisControl, FinalSemanticAnalysisError, FinalSemanticAnalysisInput,
+    FinalSemanticCatalogs, PhysicalArgumentEvaluationKind, PostfixBracketResolution,
+    PreparedExecutableIngressSeal, PreparedStatementPayload, RegisteredSemanticValueId,
+    SemanticFactFamily, analyze_final_project,
 };
 #[path = "tests/accepted_rust_nominal.rs"]
 mod accepted_rust_nominal;
@@ -3650,7 +3650,7 @@ fn prefix_try_uses_the_checked_implicit_callable_as_its_propagation_boundary() {
         CheckedImplicitCallableBody::Try(tried)
             if matches!(
                 tried.boundary().owner(),
-                CheckedTryBoundaryOwner::FunctionSite(CheckedTryFunctionSite::Implicit { .. })
+                CheckedTryBoundaryOwner::Callable(super::CheckedCallableBoundary::FunctionSite(CheckedFunctionSiteBoundary::Implicit { .. }))
             )
     ));
 }

@@ -4,7 +4,16 @@ Arcweft separates five kinds of control transfer.
 
 ## `return`
 
-`return expr` leaves the nearest `fn`, `parser`, or `flow`.
+`return expr` leaves the nearest callable frame: `fn`, method, `parser`, `flow`,
+explicit closure, or selected implicit `_` callable. Ordinary blocks, Match
+arms, named scopes, and `result` / `option` carrier blocks do not receive it.
+Returning a callable value does not invoke that value or create a Return frame.
+
+The value must match the receiving callable's result type. A block ending in
+`return` has no normal completion (`Never`); an inserted `Unit` tail does not
+replace the callable's declared or inferred result type. Final semantic facts
+retain the selected callable boundary, including its accepted coordinate and
+implicit callable identity where applicable.
 
 ```arcw
 pub flow title(state: GameState) -> Result<FlowExit, FlowError> {

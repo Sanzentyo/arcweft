@@ -1183,7 +1183,9 @@ impl FinalSemanticAnalysisPostEntryDraft {
                 &coordinates,
                 &structural_edges,
                 project,
-            );
+                &expressions,
+                &modules,
+            )?;
             super::statement_effects::seal_statement_effects(
                 super::statement_effects::StatementEffectSealInput {
                     modules: &modules,
@@ -1561,6 +1563,16 @@ fn validate_checked_entry_references(
 }
 
 impl FinalSemanticAnalysis {
+    /// Emission role of the invoked callable body, distinct from evaluating
+    /// the expression that creates its value. Issued by the shared execution DAG.
+    pub fn callable_body_control(
+        &self,
+        owner: ExprId,
+    ) -> Option<super::CheckedExecutableControlRole> {
+        self.expression_execution_regions
+            .body_row(owner)
+            .map(|row| row.control())
+    }
     pub(super) fn expression_execution_region(
         &self,
         owner: ExprId,

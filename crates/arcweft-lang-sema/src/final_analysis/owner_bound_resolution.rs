@@ -20,12 +20,12 @@ use crate::semantic_coordinate::{CheckedSemanticPath, SemanticCoordinateIndex};
 
 use super::prepared::{PreparedImplicitCallable, PreparedTry, PreparedTryBoundary};
 use super::{
-    CheckedExpression, CheckedExpressionResolution, CheckedImplicitCallable,
+    CheckedCallableDeclarationBoundary, CheckedExpression, CheckedExpressionBoundary,
+    CheckedExpressionResolution, CheckedFunctionSiteBoundary, CheckedImplicitCallable,
     CheckedImplicitCallableBody, CheckedImplicitCallableIdentityEvidence, CheckedImplicitCapture,
     CheckedImplicitCaptureOccurrence, CheckedImplicitParameter, CheckedImplicitParameterOccurrence,
     CheckedPipe, CheckedPipeLeft, CheckedPipeLeftOccurrence, CheckedTry, CheckedTryBoundary,
-    CheckedTryBoundaryOwner, CheckedTryCallableBoundary, CheckedTryCarrier,
-    CheckedTryExpressionBoundary, CheckedTryFunctionSite, CheckedTryOperandAuthorityViolation,
+    CheckedTryBoundaryOwner, CheckedTryCarrier, CheckedTryOperandAuthorityViolation,
     FinalSemanticAnalysisError, PreparedExpressionFact, PreparedExpressionShell,
     PreparedImplicitCallableBody, PreparedOwnerBoundResolution, TypeKind,
 };
@@ -482,7 +482,7 @@ fn seal_try(
                 .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
             (
                 boundary_type,
-                CheckedTryBoundaryOwner::CarrierBlock(CheckedTryExpressionBoundary::from_evidence(
+                CheckedTryBoundaryOwner::CarrierBlock(CheckedExpressionBoundary::from_evidence(
                     evidence,
                 )),
             )
@@ -499,8 +499,10 @@ fn seal_try(
                 .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
             (
                 boundary_type.clone(),
-                CheckedTryBoundaryOwner::FunctionSite(CheckedTryFunctionSite::Explicit(
-                    CheckedTryExpressionBoundary::from_evidence(evidence),
+                CheckedTryBoundaryOwner::Callable(super::CheckedCallableBoundary::FunctionSite(
+                    CheckedFunctionSiteBoundary::Explicit(
+                        CheckedExpressionBoundary::from_evidence(evidence),
+                    ),
                 )),
             )
         }
@@ -520,10 +522,12 @@ fn seal_try(
                 .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
             (
                 boundary_type.clone(),
-                CheckedTryBoundaryOwner::FunctionSite(CheckedTryFunctionSite::Implicit {
-                    site: CheckedTryExpressionBoundary::from_evidence(evidence),
-                    callable,
-                }),
+                CheckedTryBoundaryOwner::Callable(super::CheckedCallableBoundary::FunctionSite(
+                    CheckedFunctionSiteBoundary::Implicit {
+                        site: CheckedExpressionBoundary::from_evidence(evidence),
+                        callable,
+                    },
+                )),
             )
         }
         PreparedTryBoundary::Callable {
@@ -543,9 +547,8 @@ fn seal_try(
                 .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
             (
                 boundary_type.clone(),
-                CheckedTryBoundaryOwner::Callable(CheckedTryCallableBoundary::new(
-                    declaration.clone(),
-                    accepted,
+                CheckedTryBoundaryOwner::Callable(super::CheckedCallableBoundary::Declaration(
+                    CheckedCallableDeclarationBoundary::new(declaration.clone(), accepted),
                 )),
             )
         }

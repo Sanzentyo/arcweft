@@ -916,6 +916,7 @@ impl Analyzer<'_, '_, '_> {
                 prepared_effects
                     .declaration_expressions(declaration)
                     .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?,
+                prepared_effects.declaration_requires_flow(declaration),
             );
             staged
                 .builder
@@ -944,7 +945,10 @@ impl Analyzer<'_, '_, '_> {
                 } else {
                     CheckedSuspensionRole::NonSuspending
                 };
-                let control_role = graph.selected_expressions_control_role(closure.expressions());
+                let control_role = graph.selected_expressions_control_role(
+                    closure.expressions(),
+                    closure.requires_flow(),
+                );
                 staged
                     .builder
                     .insert_closure_row(id, row, suspension, control_role)

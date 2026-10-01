@@ -341,6 +341,50 @@ impl<'catalog, 'edges> SemanticCoordinateIndex<'catalog, 'edges> {
         self.coordinate(owner.into())
     }
 
+    pub(crate) fn enclosing_implicit_callable(
+        &self,
+        owner: ExprId,
+        is_selected: impl FnMut(ExprId) -> bool,
+    ) -> Result<Option<ExprId>, SemanticCoordinateIndexError> {
+        self.catalog
+            .topology()
+            .module(owner.module())
+            .ok_or(SemanticCoordinateIndexError::InvalidRootPath)?
+            .expression_uses()
+            .enclosing_implicit_callable(owner, is_selected)
+            .map_err(|_| SemanticCoordinateIndexError::InvalidRootPath)
+    }
+
+    /// Structural Return context from the same accepted generation as the
+    /// statement coordinate. Final callable selection is performed by sema.
+    pub(crate) fn return_context(
+        &self,
+        owner: StmtId,
+    ) -> Result<
+        (
+            arcweft_lang_hir::project::HirReturnContext,
+            &HirSemanticPathRoot,
+        ),
+        SemanticCoordinateIndexError,
+    > {
+        let location = self
+            .catalog
+            .topology()
+            .control_transfer(owner)
+            .map_err(SemanticCoordinateIndexError::ControlTransferLookup)?;
+        self.statement_evidence(owner)?;
+        if location.statement() != owner || location.kind() != HirControlTransferKind::Return {
+            return Err(SemanticCoordinateIndexError::InvalidRootPath);
+        }
+        let HirControlTransferTarget::Return { context } = location
+            .target()
+            .map_err(|_| SemanticCoordinateIndexError::InvalidRootPath)?
+        else {
+            return Err(SemanticCoordinateIndexError::InvalidRootPath);
+        };
+        Ok((*context, location.root()))
+    }
+
     pub(crate) fn local_input(
         &self,
         site: crate::final_analysis::CheckedLocalUseSite,

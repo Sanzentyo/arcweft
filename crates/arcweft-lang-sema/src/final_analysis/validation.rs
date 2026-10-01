@@ -37,18 +37,18 @@ use super::{
     CheckedCallArgumentSlotSource, CheckedCallCalleeExecution, CheckedCallResult,
     CheckedCharacterDialoguePatch, CheckedCharacterDialogueTarget, CheckedChoice,
     CheckedChoicePlanItem, CheckedChoicePlanKey, CheckedEntryReference, CheckedExpression,
-    CheckedExpressionResolution, CheckedFunctionExecution, CheckedImplicitCallable,
-    CheckedImplicitCallableBody, CheckedItem, CheckedItemRole, CheckedIteration,
-    CheckedPatchOperation, CheckedPattern, CheckedPatternResolution, CheckedPipe, CheckedPipeLeft,
-    CheckedProjectCallable, CheckedProjectItem, CheckedProjectItemOwner, CheckedProjectNominal,
-    CheckedSelectResolution, CheckedStatement, CheckedStatementPayload, CheckedTraitConformance,
-    CheckedTriggerView, CheckedTry, CheckedTryBoundaryOwner, CheckedTryCarrier,
-    CheckedTryFunctionSite, CheckedValueResolution, CheckedVariantOwnerKind,
-    CheckedVariantResolution, DeclarationIdentityFamily, ExprId, FinalSemanticAnalysisError,
-    FinalSemanticAnalysisWork, HirExprKind, HirIdRef, HirItemKind, HirModule, HirModuleId,
-    HirPatternKind, ItemId, LocalId, PatternId, PhysicalCandidateArgumentEvaluation,
-    PostfixBracketResolution, ProjectNominalBody, ProjectSymbolTable, ResolvedCallable,
-    ResolvedCallableOrigin, SemanticFactFamily, StmtId, TypeId, TypeKind, TypeResolutionReport,
+    CheckedExpressionResolution, CheckedFunctionExecution, CheckedFunctionSiteBoundary,
+    CheckedImplicitCallable, CheckedImplicitCallableBody, CheckedItem, CheckedItemRole,
+    CheckedIteration, CheckedPatchOperation, CheckedPattern, CheckedPatternResolution, CheckedPipe,
+    CheckedPipeLeft, CheckedProjectCallable, CheckedProjectItem, CheckedProjectItemOwner,
+    CheckedProjectNominal, CheckedSelectResolution, CheckedStatement, CheckedStatementPayload,
+    CheckedTraitConformance, CheckedTriggerView, CheckedTry, CheckedTryBoundaryOwner,
+    CheckedTryCarrier, CheckedValueResolution, CheckedVariantOwnerKind, CheckedVariantResolution,
+    DeclarationIdentityFamily, ExprId, FinalSemanticAnalysisError, FinalSemanticAnalysisWork,
+    HirExprKind, HirIdRef, HirItemKind, HirModule, HirModuleId, HirPatternKind, ItemId, LocalId,
+    PatternId, PhysicalCandidateArgumentEvaluation, PostfixBracketResolution, ProjectNominalBody,
+    ProjectSymbolTable, ResolvedCallable, ResolvedCallableOrigin, SemanticFactFamily, StmtId,
+    TypeId, TypeKind, TypeResolutionReport,
 };
 
 use super::match_edges::CheckedStructuralEdgeDraft;
@@ -1478,16 +1478,16 @@ fn validate_checked_try(
                 .then_some(())
                 .ok_or_else(|| try_boundary_authority_failure(owner, tried, Some(boundary_fact)))
         }
-        CheckedTryBoundaryOwner::FunctionSite(site) => {
+        CheckedTryBoundaryOwner::Callable(super::CheckedCallableBoundary::FunctionSite(site)) => {
             let boundary = site.site();
             let expression = resolve_module(modules, boundary.lookup_owner().module())?
                 .resolve_expr(boundary.lookup_owner())
                 .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
             let valid_site = match site {
-                CheckedTryFunctionSite::Explicit(_) => {
+                CheckedFunctionSiteBoundary::Explicit(_) => {
                     matches!(expression.kind(), HirExprKind::Closure(_))
                 }
-                CheckedTryFunctionSite::Implicit { callable, .. } => {
+                CheckedFunctionSiteBoundary::Implicit { callable, .. } => {
                     matches!(
                         expressions.get(&boundary.lookup_owner())
                             .map(CheckedExpression::resolution),
@@ -1511,7 +1511,9 @@ fn validate_checked_try(
                     )
                 })
         }
-        CheckedTryBoundaryOwner::Callable(boundary) => {
+        CheckedTryBoundaryOwner::Callable(super::CheckedCallableBoundary::Declaration(
+            boundary,
+        )) => {
             let valid_declaration = symbols
                 .callable_symbols()
                 .any(|symbol| symbol.declaration() == boundary.declaration());

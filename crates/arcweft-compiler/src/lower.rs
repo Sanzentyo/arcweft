@@ -1114,6 +1114,11 @@ fn project_runtime_semantic_fact_inventories(
                         runtime_type(callable_view.result(), symbols, world, analysis)?,
                         placeholders,
                         captures,
+                        analysis.callable_body_control(owner).ok_or_else(|| {
+                            RuntimeSemanticProjectionError::Generation(Box::new(
+                                FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
+                            ))
+                        })?,
                     ),
                 );
                 match callable_view.body() {
@@ -1523,22 +1528,22 @@ fn runtime_try_fact(
         arcweft_lang_sema::final_analysis::CheckedTryBoundaryOwner::CarrierBlock(boundary) => {
             RuntimeTryBoundaryOwner::CarrierBlock(boundary.lookup_owner())
         }
-        arcweft_lang_sema::final_analysis::CheckedTryBoundaryOwner::FunctionSite(site) => {
-            match site {
-                arcweft_lang_sema::final_analysis::CheckedTryFunctionSite::Explicit(boundary) => {
-                    RuntimeTryBoundaryOwner::ExplicitFunctionSite(boundary.lookup_owner())
-                }
-                arcweft_lang_sema::final_analysis::CheckedTryFunctionSite::Implicit {
-                    site,
-                    ..
-                } => RuntimeTryBoundaryOwner::ImplicitFunctionSite(site.lookup_owner()),
+        arcweft_lang_sema::final_analysis::CheckedTryBoundaryOwner::Callable(
+            arcweft_lang_sema::final_analysis::CheckedCallableBoundary::FunctionSite(site),
+        ) => match site {
+            arcweft_lang_sema::final_analysis::CheckedFunctionSiteBoundary::Explicit(boundary) => {
+                RuntimeTryBoundaryOwner::ExplicitFunctionSite(boundary.lookup_owner())
             }
-        }
-        arcweft_lang_sema::final_analysis::CheckedTryBoundaryOwner::Callable(boundary) => {
-            RuntimeTryBoundaryOwner::Callable(RuntimeAcceptedDeclarationSemanticId::from_bytes(
-                *boundary.accepted().as_bytes(),
-            ))
-        }
+            arcweft_lang_sema::final_analysis::CheckedFunctionSiteBoundary::Implicit {
+                site,
+                ..
+            } => RuntimeTryBoundaryOwner::ImplicitFunctionSite(site.lookup_owner()),
+        },
+        arcweft_lang_sema::final_analysis::CheckedTryBoundaryOwner::Callable(
+            arcweft_lang_sema::final_analysis::CheckedCallableBoundary::Declaration(boundary),
+        ) => RuntimeTryBoundaryOwner::Callable(RuntimeAcceptedDeclarationSemanticId::from_bytes(
+            *boundary.accepted().as_bytes(),
+        )),
     };
     let close =
         |ty: &TypeKind| instance.map_or_else(|| Ok(ty.clone()), |row| row.instantiate_type(ty));
@@ -7834,6 +7839,11 @@ fn runtime_project_function_instance_semantic_facts(
                     runtime_type_under(view.result(), lexical.types(), symbols, world, analysis)?,
                     view.placeholders().collect(),
                     view.captures().collect(),
+                    analysis.callable_body_control(owner).ok_or_else(|| {
+                        RuntimeSemanticProjectionError::Generation(Box::new(
+                            FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
+                        ))
+                    })?,
                 );
                 let (tried, pipe) = match view.body() {
                     FinalAnalysisImplicitCallableBody::Plain(_) => (None, None),

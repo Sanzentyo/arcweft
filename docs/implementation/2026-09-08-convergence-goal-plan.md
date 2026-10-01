@@ -4027,3 +4027,142 @@ program ingress and execution, then retained View/UI and the remaining accepted
 runtime/nominal/scheduler rows. The preceding historical reinitialization proposal
 is superseded, and no unresolved failing required check remains for this delivered
 local-access/terminal-move cut.
+
+### 2026-10-02 — Shared callable boundaries and body emission
+
+Inspected base `c5a4d22a1c968689dd86893542b1fcdf0b5fdeda` on the existing
+main checkout; it was clean at continuation. This candidate changes source,
+contract tests and the maintained Return chapter. The delivered terminal-move
+contract remains authoritative: no Read/Borrow/Replace/Mutate after moving the
+same declaration; shadowing initializes a distinct declaration. No branch,
+worktree, dependency, feature, compatibility reader or contract version changed.
+
+Fresh-context Astra Max advice was read-only and limited to the uncertain
+closed execution-root/callable-boundary design. It informed the following
+producer decisions; the source and tests establish their actual behavior:
+
+- Return and Try use one checked callable-frame algebra for declarations,
+  explicit closures and selected implicit callables. Carrier blocks are separate
+  Try receivers and do not receive Return. Replaced Try-only frame type names
+  are deleted, with compiler, validation and transcript consumers migrated.
+- HIR issues structural Return context. The final statement producer combines
+  that context with accepted coordinates and selected callable facts before
+  recursively folding latent bodies. It consumes one affine prepared Return
+  proof, rather than looking up a parent closure while that parent is absent
+  from the recursive completion map. Rejected call values retain their tooling
+  diagnostics and supply no fabricated result-type evidence.
+- The canonical expression-use index supplies the nearest implicit region in
+  parent depth, excluding the expression whose value is being returned. A
+  returned callable value therefore does not invoke itself. Impl methods use
+  the accepted declaration root, without a first-source-item symbol search.
+- The existing execution DAG now owns distinct Body nodes. An implicit body
+  projects selected children without a Body-to-own-Value edge, so creation
+  does not repeat captured inputs and the graph remains acyclic. Statement
+  control requirements join the same execution fold; FlowRequired describes
+  emission needs independently of effects or suspension.
+- A block ending in Return has no normal completion (Never). Callable result
+  typing preserves a declared/contextual result or infers the terminal Return
+  value. Runtime closure validation accepts divergent bodies against their
+  closed result contract. Explicit and implicit bodies containing Return use
+  the existing executable function-site runner in native and AWBC. Implicit
+  sites carry their body control role and closed invocation effects; admitted
+  lexical frame and synthetic-parameter bindings are reused. Assertions in an
+  implicit frame derive identities from that callable's semantic identity.
+
+This is a callable/control substrate cut, not completion of general program
+admission or the UI audit. Still required: opaque EvaluateValue/InvokeBody root
+admission; exact closed generic-context authentication; canonical formal,
+synthetic and free-local input slots; boundary-relative Return/Loop/Try proof;
+owned RuntimeValue ingress and deterministic general-program execution; deletion
+of closure/capture/u16-only PureProgram assembly and helper forcing; retained
+View general values, patch/cache/resource/virtualization/clock/interaction-lease
+acceptance; and the remaining nominal/runtime-plan/scheduler rows above. Const
+phase-fence acceptance and full control-flow divergence inference are not claimed.
+The full goal is unfinished.
+
+Goal-tool observation: the saved goal currently reports blocked. Creating a
+replacement with the reconciled objective was rejected because an unfinished
+goal already exists; the exposed status tool cannot resume or edit its objective.
+The implementation continues against this durable plan. This metadata condition
+is not an implementation blocker and does not justify marking the full goal
+complete or resetting its history.
+
+Validation before delivery: native and decoded-AWBC terminal Return cases 4/0;
+sema all-feature library 1,138/0 after repairing the retained latent-closure-row
+regression; HIR all-feature library 936/0 with 8 ignored; workspace check and
+Clippy all-targets/all-features exit 0. The final workspace test receipt follows
+below once complete. The earlier owner/workspace failure for the missing latent
+closure row is retained in the 1001-return logs and is superseded for sema by the
+passing final source receipt. RUST_MIN_STACK=16777216 is used for tests.
+
+The final structural scan reports 97 packages, 351 ownership review triggers,
+zero blocking violations and 1,469,676 Rust physical lines. No Cargo graph change
+occurred: dependency-edge SHA-256 remains
+7ED2CD7BDA7DC6A879DD5684072D06357883E1B185C6A00343A7D7C27CB7AC42 and
+package fan-in/fan-out SHA-256 remains
+6242C34313F5C79FA7B8ADC1EE1732C9319F02BDDEBD5FB78054B0A8B6A0DFE7.
+Reports use %TEMP%/arcweft-1002-return-final-structure.
+
+Touched ownership remains HIR topology/context queries; sema callable-frame,
+statement, effect/control and execution-DAG authorities; compiler projection;
+and runtime-plan function-site admission/lowering. The new callable-boundary
+module owns the shared frame algebra and its generation-bound Return issuer.
+The new tests own Return-boundary acceptance. Existing large owners remain
+cohesive algorithm/transaction review triggers, with no new I/O, package split,
+public visibility introduced solely for file splitting, source reconstruction,
+or alternate runtime interpreter. Prepared closure-effect aggregates remain
+transaction-local diagnostics/inference inputs, while final Body edges belong
+to the one published execution DAG. No allocation or GPU benchmark is claimed.
+
+Exact current measurements (base physical LOC compared with the complete file):
+
+| Path / owner | Classification | Bytes | Base → current physical LOC | Embedded test LOC |
+| --- | --- | ---: | ---: | ---: |
+| crates/arcweft-compiler/src/lower.rs / arcweft-compiler | production | 404839 | 9524 → 9534 | 0 |
+| crates/arcweft-compiler/tests/callable_execution.rs / arcweft-compiler | test | 34466 | 1240 → 1266 | 0 |
+| crates/arcweft-lang-hir/src/final_project.rs / arcweft-lang-hir | production | 39498 | 1054 → 1054 | 0 |
+| crates/arcweft-lang-hir/src/final_project/semantic_paths.rs / arcweft-lang-hir | production | 245853 | 6469 → 6585 | 0 |
+| crates/arcweft-lang-hir/src/final_project/semantic_paths/tests.rs / arcweft-lang-hir | test | 37705 | 1006 → 1050 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis.rs / arcweft-lang-sema | production | 13804 | 253 → 253 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/analyzer.rs / arcweft-lang-sema | production | 42568 | 1062 → 1062 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/analyzer/callable_effect_graph.rs / arcweft-lang-sema | production | 24678 | 596 → 625 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs / arcweft-lang-sema | production | 216350 | 4945 → 4997 | 88 |
+| crates/arcweft-lang-sema/src/final_analysis/analyzer/items.rs / arcweft-lang-sema | production | 67248 | 1608 → 1612 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/error.rs / arcweft-lang-sema | production | 42602 | 1122 → 1132 | 64 |
+| crates/arcweft-lang-sema/src/final_analysis/execution_regions.rs / arcweft-lang-sema | production | 11511 | 274 → 307 | 51 |
+| crates/arcweft-lang-sema/src/final_analysis/model.rs / arcweft-lang-sema | production | 102425 | 3163 → 3086 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/owner_bound_resolution.rs / arcweft-lang-sema | production | 36369 | 884 → 887 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/prepared/statement.rs / arcweft-lang-sema | production | 7007 | 231 → 235 | 23 |
+| crates/arcweft-lang-sema/src/final_analysis/report.rs / arcweft-lang-sema | production | 97851 | 2411 → 2423 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs / arcweft-lang-sema | production | 201544 | 5093 → 5110 | 332 |
+| crates/arcweft-lang-sema/src/final_analysis/statement_effects.rs / arcweft-lang-sema | production | 61275 | 1484 → 1565 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/statement_seal.rs / arcweft-lang-sema | production | 30517 | 610 → 696 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/tests.rs / arcweft-lang-sema | test | 356022 | 10228 → 10228 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance.rs / arcweft-lang-sema | test | 5841 | 155 → 157 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/statements.rs / arcweft-lang-sema | test | 61618 | 1655 → 1655 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/tests/statement_producers.rs / arcweft-lang-sema | test | 22108 | 702 → 702 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/validation.rs / arcweft-lang-sema | production | 130342 | 3101 → 3103 | 0 |
+| crates/arcweft-lang-sema/src/project_index/final_projection.rs / arcweft-lang-sema | production | 30806 | 813 → 815 | 0 |
+| crates/arcweft-lang-sema/src/semantic_coordinate.rs / arcweft-lang-sema | production | 76733 | 2157 → 2165 | 73 |
+| crates/arcweft-lang-sema/src/semantic_coordinate/catalog.rs / arcweft-lang-sema | production | 54197 | 1274 → 1318 | 341 |
+| crates/arcweft-runtime-plan/src/assertion_lower.rs / arcweft-runtime-plan | production | 11243 | 273 → 296 | 42 |
+| crates/arcweft-runtime-plan/src/final_expr.rs / arcweft-runtime-plan | production | 135751 | 3332 → 3337 | 0 |
+| crates/arcweft-runtime-plan/src/final_flow.rs / arcweft-runtime-plan | production | 357885 | 8578 → 8648 | 398 |
+| crates/arcweft-runtime-plan/src/final_flow/line_plan.rs / arcweft-runtime-plan | production | 53697 | 1352 → 1353 | 0 |
+| crates/arcweft-runtime-plan/src/semantic_facts.rs / arcweft-runtime-plan | production | 517134 | 13332 → 13339 | 0 |
+| crates/arcweft-runtime-plan/src/semantic_facts/project_function.rs / arcweft-runtime-plan | production | 103928 | 2812 → 2815 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/model/callable_boundary.rs / arcweft-lang-sema | production | 8717 | 0 → 215 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/return_boundaries.rs / arcweft-lang-sema | test | 4805 | 0 → 133 | 0 |
+
+Final source receipt: `just test-workspace` exits 0 with 308 suites,
+7,198 passed, 0 failed and 24 ignored. Workspace check and Clippy on the final
+source, all-targets/all-features, both exit 0. Format and diff checks pass.
+The earlier complete workspace run failed only the retained latent-closure-row
+fixture; it is superseded by this final workspace receipt. Logs/exit receipts
+use %TEMP%/arcweft-1002-return-test-workspace-final,
+%TEMP%/arcweft-1001-return-workspace-final-{check,clippy}, and
+%TEMP%/arcweft-1002-return-fmt-check. Existing warning categories remain.
+This candidate is validated for the shared callable/Return/body-emission cut;
+explicit staged review and non-forced main delivery follow. Full convergence
+acceptance above remains unfinished, including general closed root admission,
+owned program execution and retained View/UI acceptance.

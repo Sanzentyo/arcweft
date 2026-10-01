@@ -586,7 +586,7 @@ fn checked_match_statement_corpus_tracks_accepted_root_families() {
             name: "Return in arm block",
             source: function_match_statement_source("return 1i64"),
             shapes: &[StatementShapeFamily::Return],
-            payloads: &[StatementPayloadFamily::Structural],
+            payloads: &[StatementPayloadFamily::ControlTransfer],
         },
         Row {
             name: "Goto in Flow Match arm block",
@@ -1335,7 +1335,7 @@ fn checked_match_return_retains_exact_shape_and_meaning() {
 
     let expected = BTreeSet::from([(
         StatementShapeFamily::Return,
-        StatementPayloadFamily::Structural,
+        StatementPayloadFamily::ControlTransfer,
     )]);
     assert_eq!(return_one.statement_families, expected);
     assert_eq!(return_two.statement_families, expected);
@@ -1375,7 +1375,7 @@ fn checked_match_let_else_retains_exact_shapes_and_initializer_meaning() {
         ),
         (
             StatementShapeFamily::Return,
-            StatementPayloadFamily::Structural,
+            StatementPayloadFamily::ControlTransfer,
         ),
     ]);
 

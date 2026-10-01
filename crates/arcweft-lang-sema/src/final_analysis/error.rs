@@ -253,6 +253,14 @@ pub enum CandidateFactTransactionViolation {
 /// Failure to publish final semantic facts.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum FinalSemanticAnalysisError {
+    #[error("return {owner:?} has no selected enclosing callable frame")]
+    ReturnBoundaryUnavailable { owner: StmtId },
+    #[error("return {owner:?} has type {actual:?}, but its callable frame returns {expected:?}")]
+    ReturnValueTypeMismatch {
+        owner: StmtId,
+        expected: Box<TypeKind>,
+        actual: Box<TypeKind>,
+    },
     #[error(transparent)]
     VariantOwner(#[from] super::CheckedVariantOwnerError),
     #[error(transparent)]
@@ -671,6 +679,8 @@ impl FinalSemanticAnalysisError {
     pub const fn diagnostic_code(&self) -> &'static str {
         match self {
             Self::AssertionModeNotAllowed { .. } => "sema.assert.context",
+            Self::ReturnBoundaryUnavailable { .. } => "sema.return.boundary",
+            Self::ReturnValueTypeMismatch { .. } => "sema.return.value_type",
             Self::AssertionConditionNotBool { .. } => "sema.assert.condition_not_bool",
             Self::AssertionConditionNotPure { .. } => "sema.assert.condition_not_pure",
             Self::RecursiveCallableContract { .. } => "sema.callable.recursive_contract",

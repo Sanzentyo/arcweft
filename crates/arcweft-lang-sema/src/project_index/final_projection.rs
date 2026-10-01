@@ -411,13 +411,13 @@ fn summarize_flow(
                 | HirStmtKind::LetElse { .. } => summary.record_branch(),
                 HirStmtKind::While(_) | HirStmtKind::WhileLet(_) => summary.record_loop(),
                 HirStmtKind::Let { .. }
-                | HirStmtKind::Return { .. }
                 | HirStmtKind::Signal { .. }
                 | HirStmtKind::LifetimeSet { .. }
                 | HirStmtKind::Close { .. }
                 | HirStmtKind::Expression { .. }
                 | HirStmtKind::ProofCall { .. } => {}
                 HirStmtKind::Assertion { .. }
+                | HirStmtKind::Return { .. }
                 | HirStmtKind::Assign { .. }
                 | HirStmtKind::Out { .. }
                 | HirStmtKind::Defer { .. }
@@ -447,13 +447,15 @@ fn summarize_flow(
                 if matches!(statement.kind(), HirStmtKind::Defer { .. }) => {}
             CheckedStatementPayload::EvaluatedEffect(_)
                 if matches!(statement.kind(), HirStmtKind::Expression { .. }) => {}
-            CheckedStatementPayload::ControlTransfer(_)
-                if matches!(
-                    statement.kind(),
-                    HirStmtKind::Out { .. }
-                        | HirStmtKind::Break { .. }
-                        | HirStmtKind::Continue { .. }
-                ) => {}
+            CheckedStatementPayload::ControlTransfer(target)
+                if match statement.kind() {
+                    HirStmtKind::Return { .. } => target.return_target().is_some(),
+                    HirStmtKind::Out { .. } => target.output().is_some(),
+                    HirStmtKind::Break { .. } | HirStmtKind::Continue { .. } => {
+                        target.loop_target().is_some()
+                    }
+                    _ => false,
+                } => {}
             CheckedStatementPayload::Trigger(_)
                 if matches!(
                     statement.kind(),

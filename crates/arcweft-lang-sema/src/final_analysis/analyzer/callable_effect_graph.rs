@@ -308,7 +308,10 @@ impl<'a> CallableEffectGraph<'a> {
         FinalSemanticAnalysisError,
     > {
         let mut closed = BTreeMap::new();
-        for (owner, direct, expressions, children) in execution.expression_execution_rows() {
+        let mut bodies = BTreeMap::new();
+        for (owner, direct, expressions, children, requires_flow) in
+            execution.expression_execution_rows()
+        {
             control.check()?;
             let suspension = if direct
                 || self.selected_expressions_may_suspend(expressions.iter().copied(), rows)
@@ -317,7 +320,8 @@ impl<'a> CallableEffectGraph<'a> {
             } else {
                 crate::final_analysis::CheckedSuspensionRole::NonSuspending
             };
-            let control_role = self.selected_expressions_control_role(expressions.iter().copied());
+            let control_role =
+                self.selected_expressions_control_role(expressions.iter().copied(), requires_flow);
             if closed
                 .insert(
                     owner,
@@ -336,10 +340,32 @@ impl<'a> CallableEffectGraph<'a> {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             }
         }
+        for (owner, direct, expressions, children, requires_flow) in execution.body_execution_rows()
+        {
+            control.check()?;
+            let suspension = if direct
+                || self.selected_expressions_may_suspend(expressions.iter().copied(), rows)
+            {
+                crate::final_analysis::CheckedSuspensionRole::MaySuspend
+            } else {
+                crate::final_analysis::CheckedSuspensionRole::NonSuspending
+            };
+            let control_role =
+                self.selected_expressions_control_role(expressions.iter().copied(), requires_flow);
+            bodies.insert(
+                owner,
+                crate::final_analysis::statement_effects::PreparedExecutableSuspensionRow::new(
+                    children.iter().copied().collect(),
+                    suspension,
+                    control_role,
+                ),
+            );
+        }
         Ok(
             crate::final_analysis::execution_regions::PreparedExecutableSuspensionCatalog::new(
                 closed,
                 execution.statement_execution_edges(),
+                bodies,
             ),
         )
     }
@@ -347,15 +373,18 @@ impl<'a> CallableEffectGraph<'a> {
     pub(super) fn selected_expressions_control_role(
         &self,
         expressions: impl IntoIterator<Item = ExprId>,
+        requires_flow: bool,
     ) -> crate::final_analysis::CheckedExecutableControlRole {
-        if expressions.into_iter().any(|expression| {
-            self.execution_by_expression
-                .get(&expression)
-                .is_some_and(|call| {
-                    call.control
-                        == crate::final_analysis::CheckedExecutableControlRole::FlowRequired
-                })
-        }) {
+        if requires_flow
+            || expressions.into_iter().any(|expression| {
+                self.execution_by_expression
+                    .get(&expression)
+                    .is_some_and(|call| {
+                        call.control
+                            == crate::final_analysis::CheckedExecutableControlRole::FlowRequired
+                    })
+            })
+        {
             crate::final_analysis::CheckedExecutableControlRole::FlowRequired
         } else {
             crate::final_analysis::CheckedExecutableControlRole::ExpressionCompatible
