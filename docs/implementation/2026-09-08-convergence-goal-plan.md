@@ -4015,3 +4015,15 @@ merge and qualifying equivalent test defaults. Existing warning categories remai
 no broad lint suppression is added. These source-neutral cleanup edits preserve the
 workspace Clippy receipt, while the current Core tests/check/Clippy validate their
 actual compiled form. Format and diff checks pass. The final just test-workspace receipt exits 0: 308 suites, 7188 passed, 0 failed, 24 ignored, with RUST_MIN_STACK=16777216. Logs and exit receipts use %TEMP%/arcweft-1001-place-terminal-*. Earlier fixture/compiler/expectation failures are retained in their logs and are superseded by these passing receipts. This candidate is fully validated for the local-access/terminal-move cut; explicit staged review and fast-forward delivery follow. The full convergence goal remains active, including closed root admission, owned general-program ingress and execution, retained View/UI audit, nominal/runtime-plan and scheduler/restore acceptance.
+
+Delivery receipt: implementation commit
+`3b06ff85dda1b9d6eba46c13c9b4d0d0abc7f179` (parent
+`2ef441c6791a2aba4ec8ab18c593eb0aea6cdf03`) was pushed non-forced to
+origin/main; the full remote SHA was observed to match, and the implementation
+checkout was clean afterward. Move is terminal for the same declaration;
+shadowing remains a distinct initialization. The full convergence goal remains
+active. Next continue closed EvaluateValue/InvokeBody admission, general owned
+program ingress and execution, then retained View/UI and the remaining accepted
+runtime/nominal/scheduler rows. The preceding historical reinitialization proposal
+is superseded, and no unresolved failing required check remains for this delivered
+local-access/terminal-move cut.
