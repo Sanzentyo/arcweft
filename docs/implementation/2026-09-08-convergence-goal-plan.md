@@ -3288,3 +3288,61 @@ LifetimePath/ShortVariant の17残件を accepted Match path で確定する。
 T06 View parameter/default/body/value の完全な matrix と View default の移行、
 retained View、task-plan、nominal、scheduler/restore、最終検証は引き続き未完であり、
 goal は active のまま継続する。
+
+## Match T01 contextual expression の閉包 — 2026-10-01
+
+確認した base は `da470eb3a224649c974343e90dcaeb6662c8188d`、既存 main の
+working tree は clean だった。code commit
+`be114b5284f2b54efcb1f3f5db63e91e39877fb0` を main へ fast-forward push 済み。
+push 後は working tree clean、HEAD/origin/main の差は 0/0。
+
+12の source/differential 行を shared expression corpus へ接続し、Await、implicit
+callable/parameter、ShortVariant、StageLook、dialogue の line/text-key coordinate・
+line reference・Character factory/reconfigure、Object の nominal TypeValue と public-ID
+Constant、builtin Fx の CompileTimeEnum、AgentField を Match 子孫で受理した。
+各行は accepted path 全体の HIR shape/checked resolution 集合を固定する。
+Need operand、implicit body、variant case、dialogue coordinate/reference/locale、Agent field、
+Object type/ID、Fx speed の同型差が digest を変え、整形・無関係な先行宣言で raw
+Match ExprId/span が変わっても digest は保たれる。StageLook 行の差分は locale を変え、
+登録済み `.normal` look 自身は同じである。
+
+Agent 候補の裸の Observation 型名は TypeResolutionFailed、tick/frame_id を同じ
+u64 結果として扱う候補は ExpressionTypeUnavailable で失敗した。実際の登録環境の
+Observation 値を使い、両方 String の state_hash/render_hash を比較する fixture に修正した。
+closed Fx enum の候補にも未受理の constructor/context や不適合な phase があり失敗した。
+受理証拠は既存の Content Fx producer と schema が定義する
+`#fx(wave(phase=.glyph_transform, speed=...))` で確定した。テストに合わせた本番変更や
+合成 checked fact の注入は行っていない。
+
+LifetimePath は Match の直接の child であることを HIR API で確認したうえで、唯一の
+値 checker による ExpressionTypeUnavailable と final report 非公開を確認し RejectOnly
+へ移した。StyleValue は Style declaration の直接の property root にのみ発行される。
+同じ project に Style Color property と function Match を置いた witness を受理し、
+StyleValue の checked path が Match path 外であることと、Match corpus に入らないことを
+確認した。この producer 境界に基づき ProvenUnreachable とした。
+
+expression/value/select 軸は Accepted 80、ProvenUnreachable 2、RejectOnly 2、
+Pending 0。使わなくなった Pending disposition を削除した。statement 軸は前 cut の
+Accepted 45、ProvenUnreachable 1、RejectOnly 1、Pending 0 を維持する。既存 pattern
+inventory の exhaustive `of` と受理 matrix も残しており、family disposition の未確定行はない。
+この閉包を Generic Match C3/C5 全体や T06、後続工程の完了とは扱わない。
+
+expression corpus 15/15、`cargo test -p arcweft-lang-sema` 全件（lib 1094件、
+API/integration 24件）、changed-crate Clippy（all target/feature）、fmt、cached diff
+check は成功。Clippy 警告は残る。テストのみで責務・公開 API・依存は変わらず、
+workspace と構造 gate は再実行していない。
+
+新しい `contextual_expressions.rs` は arcweft-lang-sema の test module、16,576 bytes、
+498 physical LOC（base 0）。300-LOC growth trigger に対する責務レビューでは、
+enclosing context が選択する checked family の source fixture と意味差/到達境界の証拠を
+一つの test owner に分けたと判断した。parent の inventory・座標 traversal・observation を
+再利用し、独自の registry、source resolver、fact sealer、production state は持たない。
+module fan-in は parent expression corpus のみで、fan-out は既存 fixture/analyzer/HIR/
+checked-coordinate API と既存 Character/Agent 型である。外部公開を増やさず、
+`pub(super)` の corpus-row 接続だけを追加した。Cargo dependency graph は未変更なので
+scanner による再計測は不要と判断した。
+
+次は T06 View parameter/default/body/value の全 matrix と、現行 builder/compiler が
+拒否する View default の producer/consumer 移行を進め、C3/C5 の残る受入条件を照合する。
+retained View .1.4、task-plan .1.3.1、nominal C1-C6、scheduler/restore A-F と
+全体検証は未完のまま保持し、goal は active で継続する。
