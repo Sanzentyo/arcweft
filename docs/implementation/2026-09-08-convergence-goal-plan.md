@@ -4267,3 +4267,16 @@ unchanged from the preceding cut (SHA256
 Explicit stage review and non-forced main delivery follow. General closed
 execution context/root and owned runner migration remain unfinished; no GPU
 or allocation-performance claim is made from these checks.
+
+Delivery receipt: source commit
+`756764a81ff186814d5758820d7d64065aeca01f` was committed after the explicit
+21-path staged review and pushed non-forced to origin/main. The remote full
+SHA matched that commit and the working tree was observed clean. The 7,204-pass
+workspace, check, Clippy, format and structure receipts above apply to its exact
+Rust bytes. This delivery receipt is documentation only and reuses those passes.
+The active source decision remains terminal Move for the same LocalId/generation,
+with new shadow declarations independent and active receiver loans protected.
+Full convergence remains unfinished. The app-side goal is still blocked, and the
+pending resume question concerns that external execution state, not permission
+for source work. Subsequent implementation continues at the general closed
+execution context/root, canonical invocation inputs and owned runner boundary.
