@@ -561,9 +561,22 @@ impl HirUnaryOp {
 /// One explicit, shorthand, or typed-invalid record field.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirRecordField {
-    Explicit { name: HirName, value: ExprId },
-    Shorthand { name: HirName, local: LocalId },
-    Invalid { issue: HirRecordFieldIssue },
+    Explicit {
+        name: HirName,
+        value: ExprId,
+    },
+    Shorthand {
+        name: HirName,
+        local: LocalId,
+    },
+    /// A well-formed field name with no visible lexical binding. Sema rejects
+    /// the input; lowering must not manufacture a local or an expression.
+    UnresolvedShorthand {
+        name: HirName,
+    },
+    Invalid {
+        issue: HirRecordFieldIssue,
+    },
 }
 
 impl HirRecordField {
@@ -581,7 +594,9 @@ impl HirRecordField {
 
     pub const fn name(&self) -> Option<&HirName> {
         match self {
-            Self::Explicit { name, .. } | Self::Shorthand { name, .. } => Some(name),
+            Self::Explicit { name, .. }
+            | Self::Shorthand { name, .. }
+            | Self::UnresolvedShorthand { name } => Some(name),
             Self::Invalid { .. } => None,
         }
     }
@@ -589,21 +604,25 @@ impl HirRecordField {
     pub const fn value(&self) -> Option<ExprId> {
         match self {
             Self::Explicit { value, .. } => Some(*value),
-            Self::Shorthand { .. } | Self::Invalid { .. } => None,
+            Self::Shorthand { .. } | Self::UnresolvedShorthand { .. } | Self::Invalid { .. } => {
+                None
+            }
         }
     }
 
     pub const fn local(&self) -> Option<LocalId> {
         match self {
             Self::Shorthand { local, .. } => Some(*local),
-            Self::Explicit { .. } | Self::Invalid { .. } => None,
+            Self::Explicit { .. } | Self::UnresolvedShorthand { .. } | Self::Invalid { .. } => None,
         }
     }
 
     pub const fn issue(&self) -> Option<HirRecordFieldIssue> {
         match self {
             Self::Invalid { issue } => Some(*issue),
-            Self::Explicit { .. } | Self::Shorthand { .. } => None,
+            Self::Explicit { .. } | Self::Shorthand { .. } | Self::UnresolvedShorthand { .. } => {
+                None
+            }
         }
     }
 }

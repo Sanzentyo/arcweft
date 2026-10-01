@@ -42,6 +42,7 @@ use super::{
 struct PreparedExecutionEffectRow {
     effects: EffectRow,
     expressions: BTreeSet<ExprId>,
+    statements: BTreeSet<StmtId>,
     direct_suspension: bool,
 }
 
@@ -50,6 +51,7 @@ impl Default for PreparedExecutionEffectRow {
         Self {
             effects: EffectRow::closed(EffectSet::new()),
             expressions: BTreeSet::new(),
+            statements: BTreeSet::new(),
             direct_suspension: false,
         }
     }
@@ -71,6 +73,7 @@ fn body_projection_has_selected_owner(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedExecutableSuspensionRow {
     expressions: Box<[ExprId]>,
+    statements: Box<[StmtId]>,
     suspension: super::CheckedSuspensionRole,
     control: super::CheckedExecutableControlRole,
 }
@@ -78,11 +81,13 @@ pub(crate) struct PreparedExecutableSuspensionRow {
 impl PreparedExecutableSuspensionRow {
     pub(crate) fn new(
         expressions: Box<[ExprId]>,
+        statements: Box<[StmtId]>,
         suspension: super::CheckedSuspensionRole,
         control: super::CheckedExecutableControlRole,
     ) -> Self {
         Self {
             expressions,
+            statements,
             suspension,
             control,
         }
@@ -90,6 +95,10 @@ impl PreparedExecutableSuspensionRow {
 
     pub(crate) fn expressions(&self) -> &[ExprId] {
         &self.expressions
+    }
+
+    pub(crate) fn statements(&self) -> &[StmtId] {
+        &self.statements
     }
 
     pub(crate) const fn suspension(&self) -> super::CheckedSuspensionRole {
@@ -109,6 +118,7 @@ impl PreparedExecutionEffectRow {
     ) -> Result<(), FinalSemanticAnalysisError> {
         self.effects = union_effect_rows(&self.effects, &other.effects, control)?;
         self.expressions.extend(other.expressions.iter().copied());
+        self.statements.extend(other.statements.iter().copied());
         self.direct_suspension |= other.direct_suspension;
         Ok(())
     }
@@ -171,10 +181,15 @@ pub(crate) struct PreparedExecutionEffectCatalog {
 impl PreparedExecutionEffectCatalog {
     pub(crate) fn expression_execution_rows(
         &self,
-    ) -> impl Iterator<Item = (ExprId, bool, &BTreeSet<ExprId>)> + '_ {
-        self.expression_rows
-            .iter()
-            .map(|(owner, row)| (*owner, row.direct_suspension, &row.expressions))
+    ) -> impl Iterator<Item = (ExprId, bool, &BTreeSet<ExprId>, &BTreeSet<StmtId>)> + '_ {
+        self.expression_rows.iter().map(|(owner, row)| {
+            (
+                *owner,
+                row.direct_suspension,
+                &row.expressions,
+                &row.statements,
+            )
+        })
     }
     pub(crate) fn declaration_effects(
         &self,
@@ -617,6 +632,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
         let mut row = PreparedExecutionEffectRow {
             effects: EffectRow::closed(fact.effects().clone()),
             expressions: BTreeSet::from([owner]),
+            statements: BTreeSet::new(),
             direct_suspension: matches!(kind, HirExprKind::Await(_)),
         };
         if let Some(call_effects) = self.call_effects.get(&owner) {
@@ -728,6 +744,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
         }
         let kind = statement.kind();
         let mut row = PreparedExecutionEffectRow::default();
+        row.statements.insert(owner);
         for edge in kind
             .try_child_edges()
             .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?

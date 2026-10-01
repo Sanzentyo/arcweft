@@ -87,7 +87,12 @@ impl CheckedImplicitCallableIdentity {
         append_len(&mut bytes, capture_occurrences.len())?;
         for occurrence in capture_occurrences {
             bytes.extend_from_slice(&occurrence.ordinal.to_le_bytes());
-            append_path(&mut bytes, &occurrence.coordinate)?;
+            let coordinate = occurrence
+                .coordinate
+                .canonical_bytes()
+                .map_err(|_| CheckedCaptureAuthorityViolation::IdentityCoordinateEncoding)?;
+            append_len(&mut bytes, coordinate.len())?;
+            bytes.extend_from_slice(&coordinate);
             append_binding(&mut bytes, &occurrence.origin)?;
             append_digest(&mut bytes, occurrence.value_type);
             bytes.push(capture_access_tag(occurrence.access));
@@ -251,9 +256,9 @@ impl CheckedImplicitParameterOccurrence {
 /// digest, access mode, and callable-local ordinal instead.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CheckedImplicitCaptureOccurrence {
-    lookup_expression: ExprId,
+    lookup_site: super::super::CheckedLocalUseSite,
     lookup_local: LocalId,
-    coordinate: CheckedSemanticPath,
+    coordinate: crate::semantic_coordinate::CheckedLocalInputCoordinate,
     origin: StableCheckedBindingCoordinate,
     value_type: SemanticTypeDigest,
     access: CaptureAccess,
@@ -261,17 +266,21 @@ pub struct CheckedImplicitCaptureOccurrence {
 }
 
 impl CheckedImplicitCaptureOccurrence {
+    #[cfg(test)]
+    pub(in crate::final_analysis) const fn lookup_site(&self) -> super::super::CheckedLocalUseSite {
+        self.lookup_site
+    }
     pub(crate) fn new(
-        lookup_expression: ExprId,
+        lookup_site: super::super::CheckedLocalUseSite,
         lookup_local: LocalId,
-        coordinate: CheckedSemanticPath,
+        coordinate: crate::semantic_coordinate::CheckedLocalInputCoordinate,
         origin: StableCheckedBindingCoordinate,
         value_type: SemanticTypeDigest,
         access: CaptureAccess,
         ordinal: u32,
     ) -> Self {
         Self {
-            lookup_expression,
+            lookup_site,
             lookup_local,
             coordinate: coordinate.clone(),
             origin,
@@ -281,7 +290,7 @@ impl CheckedImplicitCaptureOccurrence {
         }
     }
 
-    pub const fn coordinate(&self) -> &CheckedSemanticPath {
+    pub const fn coordinate(&self) -> &crate::semantic_coordinate::CheckedLocalInputCoordinate {
         &self.coordinate
     }
 
@@ -658,53 +667,64 @@ impl CheckedImplicitCallable {
     /// expression map. The map is the typed execution authority; HIR is used
     /// only for region membership and source order, never to rediscover local
     /// uses for runtime lowering.
-    pub(crate) fn validate_execution_uses(
+    pub(crate) fn validate_execution_uses<'fields>(
         &self,
         expressions: &BTreeMap<ExprId, CheckedExpression>,
+        coordinates: &crate::semantic_coordinate::SemanticCoordinateIndex<'_, '_>,
+        record_fields: impl Fn(ExprId) -> Option<&'fields [super::super::CheckedExpressionRecordField]>,
+        local_type: impl Fn(LocalId) -> Option<TypeKind>,
     ) -> Result<(), CheckedCaptureAuthorityViolation> {
-        let module = self.topology.module(self.lookup_owner.module()).ok_or(
-            CheckedCaptureAuthorityViolation::MissingProducer {
-                owner: self.lookup_owner,
+        let expected = super::super::free_capture::implicit_region_inputs(
+            &self.topology,
+            self.lookup_owner,
+            |expression, access| {
+                let fact = expressions.get(&expression).ok_or(
+                    crate::final_analysis::FinalSemanticAnalysisError::CaptureAuthority {
+                        violation: CheckedCaptureAuthorityViolation::MissingExpressionUse {
+                            expression,
+                        },
+                    },
+                )?;
+                let fields = record_fields(expression)
+                    .ok_or(crate::final_analysis::FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                super::super::free_capture::CheckedCaptureExpression::from_checked(
+                    expression,
+                    fact,
+                    fields,
+                    &local_type,
+                    access,
+                )
             },
-        )?;
-        let region = module
-            .expression_uses()
-            .implicit_callable_region(self.lookup_owner)
-            .map_err(|_| CheckedCaptureAuthorityViolation::MissingProducer {
-                owner: self.lookup_owner,
-            })?;
-        let expected = module
-            .expression_uses()
-            .rows()
-            .iter()
-            .filter(|row| region.contains_expression(row.expression()))
-            .map(|row| {
-                let expression = row.expression();
-                let fact = expressions
-                    .get(&expression)
-                    .ok_or(CheckedCaptureAuthorityViolation::MissingExpressionUse { expression })?;
-                let Some(local) = fact.execution_local_use() else {
-                    // Non-local execution facts, including compile-time
-                    // scalars, intentionally contribute no capture row.
-                    return Ok(None);
-                };
-                let binding = module
-                    .local_origins()
-                    .binding(local)
-                    .ok_or(CheckedCaptureAuthorityViolation::MissingLocalBinding { local })?;
-                Ok((!region.contains_binding(binding)).then_some((expression, local)))
-            })
-            .collect::<Result<Vec<_>, CheckedCaptureAuthorityViolation>>()?
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
-        let observed = self
-            .capture_occurrences
-            .iter()
-            .map(|occurrence| (occurrence.lookup_expression, occurrence.lookup_local))
-            .collect::<Vec<_>>();
-        if expected != observed {
+            |expression| {
+                record_fields(expression)
+                    .map(|fields| fields.iter().map(|field| field.slot().source()).collect())
+            },
+        )
+        .map_err(|error| match error {
+            crate::final_analysis::FinalSemanticAnalysisError::CaptureAuthority { violation } => {
+                violation
+            }
+            _ => CheckedCaptureAuthorityViolation::CaptureEvidenceMismatch,
+        })?;
+        if expected.len() != self.capture_occurrences.len() {
             return Err(CheckedCaptureAuthorityViolation::CaptureEvidenceMismatch);
+        }
+        for (input, occurrence) in expected.iter().zip(&self.capture_occurrences) {
+            let coordinate = coordinates
+                .local_input(input.site(), input.local())
+                .map_err(|_| CheckedCaptureAuthorityViolation::CaptureEvidenceMismatch)?;
+            let origin = coordinates
+                .binding(input.local())
+                .map_err(|_| CheckedCaptureAuthorityViolation::CaptureEvidenceMismatch)?;
+            if input.site() != occurrence.lookup_site
+                || input.local() != occurrence.lookup_local
+                || input.access() != occurrence.access
+                || input.value_type() != occurrence.value_type
+                || coordinate != occurrence.coordinate
+                || origin != occurrence.origin
+            {
+                return Err(CheckedCaptureAuthorityViolation::CaptureEvidenceMismatch);
+            }
         }
         validate_aggregate_captures(&self.capture_occurrences, &self.captures)
     }
@@ -781,33 +801,41 @@ fn validate_implicit_callable_evidence(
     if parameter_occurrences.is_empty() {
         return Err(CheckedCaptureAuthorityViolation::PlaceholderEvidenceMismatch);
     }
-    let mut previous_source_ordinal = None;
+    let mut sites = std::collections::BTreeSet::new();
     for occurrence in capture_occurrences {
-        if previous_source_ordinal.is_some_and(|previous| {
-            module
-                .expression_uses()
-                .row(occurrence.lookup_expression)
-                .is_none_or(|row| previous >= row.source_ordinal())
-        }) {
-            return Err(CheckedCaptureAuthorityViolation::CaptureEvidenceMismatch);
-        }
+        let expression = occurrence
+            .lookup_site
+            .expression_owner()
+            .ok_or(CheckedCaptureAuthorityViolation::CaptureEvidenceMismatch)?;
         let row = module
             .expression_uses()
-            .row(occurrence.lookup_expression)
-            .filter(|_| region.contains_expression(occurrence.lookup_expression))
-            .ok_or(CheckedCaptureAuthorityViolation::MissingExpressionUse {
-                expression: occurrence.lookup_expression,
-            })?;
+            .row(expression)
+            .filter(|_| region.contains_expression(expression))
+            .ok_or(CheckedCaptureAuthorityViolation::MissingExpressionUse { expression })?;
         let binding = module
             .local_origins()
             .binding(occurrence.lookup_local)
             .ok_or(CheckedCaptureAuthorityViolation::MissingLocalBinding {
                 local: occurrence.lookup_local,
             })?;
-        if region.contains_binding(binding) || row.capture_access() != occurrence.access {
+        let valid_access = match occurrence.lookup_site {
+            super::super::CheckedLocalUseSite::Expression(_) => {
+                row.capture_access() == occurrence.access
+            }
+            super::super::CheckedLocalUseSite::RecordField { .. } => {
+                occurrence.access == CaptureAccess::Read
+            }
+            super::super::CheckedLocalUseSite::Capture { local, .. } => {
+                local == occurrence.lookup_local
+            }
+            super::super::CheckedLocalUseSite::StatementCapture { .. } => false,
+        };
+        if !sites.insert(occurrence.lookup_site)
+            || region.contains_binding(binding)
+            || !valid_access
+        {
             return Err(CheckedCaptureAuthorityViolation::CaptureEvidenceMismatch);
         }
-        previous_source_ordinal = Some(row.source_ordinal());
     }
     if !capture_occurrences
         .iter()
@@ -1058,7 +1086,18 @@ mod tests {
         expressions.remove(&missing);
 
         assert_eq!(
-            callable.validate_execution_uses(&expressions),
+            callable.validate_execution_uses(
+                &expressions,
+                &crate::semantic_coordinate::SemanticCoordinateIndex::new(
+                    report.accepted_root_catalog(),
+                    &report
+                ),
+                |owner| report
+                    .checked_expression_edge_fact(owner)
+                    .ok()
+                    .map(|edges| edges.record_fields()),
+                |local| report.local(local).map(|binding| binding.ty().clone())
+            ),
             Err(CheckedCaptureAuthorityViolation::MissingExpressionUse {
                 expression: missing,
             }),
@@ -1126,7 +1165,18 @@ mod tests {
         );
 
         assert_eq!(
-            callable.validate_execution_uses(&expressions),
+            callable.validate_execution_uses(
+                &expressions,
+                &crate::semantic_coordinate::SemanticCoordinateIndex::new(
+                    report.accepted_root_catalog(),
+                    &report
+                ),
+                |owner| report
+                    .checked_expression_edge_fact(owner)
+                    .ok()
+                    .map(|edges| edges.record_fields()),
+                |local| report.local(local).map(|binding| binding.ty().clone())
+            ),
             Err(CheckedCaptureAuthorityViolation::MissingLocalBinding {
                 local: foreign_local,
             }),
@@ -1160,8 +1210,58 @@ mod tests {
             .collect::<BTreeMap<_, _>>();
 
         assert_eq!(
-            tampered.validate_execution_uses(&expressions),
+            tampered.validate_execution_uses(
+                &expressions,
+                &crate::semantic_coordinate::SemanticCoordinateIndex::new(
+                    report.accepted_root_catalog(),
+                    &report
+                ),
+                |owner| report
+                    .checked_expression_edge_fact(owner)
+                    .ok()
+                    .map(|edges| edges.record_fields()),
+                |local| report.local(local).map(|binding| binding.ty().clone())
+            ),
             Err(CheckedCaptureAuthorityViolation::CaptureEvidenceMismatch),
+        );
+    }
+
+    #[test]
+    fn execution_use_validation_rejects_a_record_input_coordinate_from_another_slot() {
+        let fixture = crate::final_analysis::tests::fixture(
+            "struct Pair { first: i64, second: i64 }\nfn make(first: i64, second: i64) -> (i64 -> (i64, Pair) effects {}) { (_, Pair { first, second }) }",
+            None,
+        );
+        let report = crate::final_analysis::tests::analyze(&fixture).expect("two shorthand inputs");
+        let callable = report
+            .expressions()
+            .find_map(|(_, expression)| match expression.resolution() {
+                CheckedExpressionResolution::ImplicitCallable(callable) => Some(callable),
+                _ => None,
+            })
+            .expect("implicit callable");
+        let mut tampered = callable.as_ref().clone();
+        assert_eq!(tampered.capture_occurrences.len(), 2);
+        tampered.capture_occurrences[0].coordinate =
+            tampered.capture_occurrences[1].coordinate.clone();
+        let expressions = report
+            .expressions()
+            .map(|(owner, expression)| (owner, expression.clone()))
+            .collect();
+        assert_eq!(
+            tampered.validate_execution_uses(
+                &expressions,
+                &crate::semantic_coordinate::SemanticCoordinateIndex::new(
+                    report.accepted_root_catalog(),
+                    &report
+                ),
+                |owner| report
+                    .checked_expression_edge_fact(owner)
+                    .ok()
+                    .map(|edges| edges.record_fields()),
+                |local| report.local(local).map(|binding| binding.ty().clone())
+            ),
+            Err(CheckedCaptureAuthorityViolation::CaptureEvidenceMismatch)
         );
     }
 }

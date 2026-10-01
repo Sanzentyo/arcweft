@@ -266,7 +266,7 @@ struct ActiveCandidateCheckpoint {
 /// captured local.  The key is deliberately private: callers may only create
 /// rows through [`SemanticFactState::record_implicit_capture_use`], so a
 /// candidate cannot manufacture an unjournaled fact key.
-pub(super) type ImplicitCaptureUseKey = (ExprId, ExprId);
+pub(super) type ImplicitCaptureUseKey = (ExprId, super::super::CheckedLocalUseSite);
 
 #[derive(Debug)]
 pub(super) struct CandidateProjectionApplyFailure {
@@ -305,7 +305,9 @@ pub(super) struct SemanticFactState {
     expression_stack: BTreeSet<ExprId>,
     iteration_facts: BTreeMap<ExprId, CheckedIteration>,
     implicit_capture_uses: BTreeMap<ImplicitCaptureUseKey, LocalId>,
-    implicit_capture_use_order: Vec<ImplicitCaptureUseKey>,
+    /// Rollback/extraction bookkeeping only. Selected input coordinates issue
+    /// semantic source order after inference; probe event order never does.
+    implicit_capture_journal_order: Vec<ImplicitCaptureUseKey>,
     prepared_calls: Option<AnalyzerPreparedCallGraph>,
     final_calls: BTreeMap<ExprId, CallTargetFacts>,
     physical_candidate_argument_evaluations: PhysicalCandidateEvaluationTranscript,
@@ -361,7 +363,7 @@ struct CandidateSemanticProjectionData {
     >,
     iterations: BTreeMap<ExprId, Option<CheckedIteration>>,
     implicit_capture_uses: BTreeMap<ImplicitCaptureUseKey, Option<LocalId>>,
-    implicit_capture_use_order: Box<[ImplicitCaptureUseKey]>,
+    implicit_capture_journal_order: Box<[ImplicitCaptureUseKey]>,
     physical_candidate_argument_evaluations: PhysicalCandidateEvaluationTranscript,
 }
 
@@ -598,9 +600,6 @@ impl CandidateSemanticProjection {
         if self.data.implicit_capture_uses != other.data.implicit_capture_uses {
             return Some(CandidateSemanticReplayMismatch::ImplicitCaptureUses);
         }
-        if self.data.implicit_capture_use_order != other.data.implicit_capture_use_order {
-            return Some(CandidateSemanticReplayMismatch::ImplicitCaptureUses);
-        }
         None
     }
 }
@@ -654,7 +653,7 @@ impl SemanticFactState {
             expression_stack: BTreeSet::new(),
             iteration_facts: BTreeMap::new(),
             implicit_capture_uses: BTreeMap::new(),
-            implicit_capture_use_order: Vec::new(),
+            implicit_capture_journal_order: Vec::new(),
             prepared_calls: Some(PreparedCallGraph::new()),
             final_calls: BTreeMap::new(),
             physical_candidate_argument_evaluations: PhysicalCandidateEvaluationTranscript::default(
@@ -1166,7 +1165,7 @@ impl SemanticFactState {
         expression: ExprId,
     ) -> Option<LocalId> {
         self.implicit_capture_uses
-            .get(&(callable, expression))
+            .get(&(callable, expression.into()))
             .copied()
     }
 
@@ -1177,29 +1176,32 @@ impl SemanticFactState {
     pub(super) fn take_implicit_capture_uses_for_owners(
         &mut self,
         owners: &BTreeSet<ExprId>,
-    ) -> Result<BTreeMap<ExprId, Box<[(ExprId, LocalId)]>>, CandidateFactTransactionViolation> {
+    ) -> Result<
+        BTreeMap<ExprId, Box<[(super::super::CheckedLocalUseSite, LocalId)]>>,
+        CandidateFactTransactionViolation,
+    > {
         self.ensure_healthy()?;
         if !self.candidate_checkpoints.is_empty() || !self.candidate_journal.is_empty() {
             return Err(CandidateFactTransactionViolation::UnrecoverableLedger);
         }
-        if self.implicit_capture_uses.len() != self.implicit_capture_use_order.len()
+        if self.implicit_capture_uses.len() != self.implicit_capture_journal_order.len()
             || self
                 .implicit_capture_uses
                 .keys()
                 .any(|key| !owners.contains(&key.0))
             || self
-                .implicit_capture_use_order
+                .implicit_capture_journal_order
                 .iter()
                 .enumerate()
                 .any(|(index, key)| {
                     self.implicit_capture_uses.get(key).is_none()
-                        || self.implicit_capture_use_order[..index].contains(key)
+                        || self.implicit_capture_journal_order[..index].contains(key)
                         || !owners.contains(&key.0)
                 })
         {
             return Err(CandidateFactTransactionViolation::UnrecoverableLedger);
         }
-        let ordered = std::mem::take(&mut self.implicit_capture_use_order);
+        let ordered = std::mem::take(&mut self.implicit_capture_journal_order);
         let mut values = std::mem::take(&mut self.implicit_capture_uses);
         let mut rows = owners
             .iter()
@@ -1563,15 +1565,15 @@ impl SemanticFactState {
             PhysicalCandidateEvaluationTranscript::default()
         };
         let owners = self.projection_owners(journal_start);
-        let implicit_capture_use_order = self
-            .implicit_capture_use_order
+        let implicit_capture_journal_order = self
+            .implicit_capture_journal_order
             .iter()
             .copied()
             .filter(|key| owners.implicit_capture_uses.contains(key))
             .collect::<Vec<_>>()
             .into_boxed_slice();
-        self.implicit_capture_use_order
-            .retain(|key| !implicit_capture_use_order.contains(key));
+        self.implicit_capture_journal_order
+            .retain(|key| !implicit_capture_journal_order.contains(key));
         let projection = CandidateSemanticProjection::from(CandidateSemanticProjectionData {
             authority: CandidateProjectionAuthority {
                 issuer: Arc::clone(&self.issuer),
@@ -1608,7 +1610,7 @@ impl SemanticFactState {
                 .into_iter()
                 .map(|key| (key, self.implicit_capture_uses.remove(&key)))
                 .collect(),
-            implicit_capture_use_order,
+            implicit_capture_journal_order,
             physical_candidate_argument_evaluations,
         });
         self.rollback_journal(journal_start);
@@ -1674,7 +1676,7 @@ impl SemanticFactState {
             checked_content,
             iterations,
             implicit_capture_uses,
-            implicit_capture_use_order,
+            implicit_capture_journal_order,
             physical_candidate_argument_evaluations,
         } = *projection.data;
         if let Some((key, existing, proposed)) =
@@ -1691,7 +1693,7 @@ impl SemanticFactState {
             return Err(CandidateProjectionApplyFailure {
                 violation: CandidateFactTransactionViolation::ImplicitCaptureUseConflict {
                     callable: key.0,
-                    expression: key.1,
+                    site: key.1,
                     existing,
                     proposed,
                 },
@@ -1704,7 +1706,7 @@ impl SemanticFactState {
                     checked_content,
                     iterations,
                     implicit_capture_uses,
-                    implicit_capture_use_order,
+                    implicit_capture_journal_order,
                     physical_candidate_argument_evaluations,
                 }),
             });
@@ -1732,7 +1734,7 @@ impl SemanticFactState {
                             checked_content,
                             iterations,
                             implicit_capture_uses,
-                            implicit_capture_use_order,
+                            implicit_capture_journal_order,
                             physical_candidate_argument_evaluations,
                         },
                     ),
@@ -1750,7 +1752,7 @@ impl SemanticFactState {
             checked_content,
             iterations,
             implicit_capture_uses,
-            implicit_capture_use_order,
+            implicit_capture_journal_order,
         );
         Ok(())
     }
@@ -1850,11 +1852,12 @@ impl SemanticFactState {
     pub(super) fn record_implicit_capture_use(
         &mut self,
         callable: ExprId,
-        expression: ExprId,
+        site: impl Into<super::super::CheckedLocalUseSite>,
         local: LocalId,
     ) -> Result<(), CandidateFactTransactionViolation> {
         self.ensure_healthy()?;
-        let key = (callable, expression);
+        let site = site.into();
+        let key = (callable, site);
         if let Some(existing) = self.implicit_capture_uses.get(&key) {
             if *existing == local {
                 return Ok(());
@@ -1862,7 +1865,7 @@ impl SemanticFactState {
             return Err(
                 CandidateFactTransactionViolation::ImplicitCaptureUseConflict {
                     callable,
-                    expression,
+                    site,
                     existing: *existing,
                     proposed: local,
                 },
@@ -1870,8 +1873,8 @@ impl SemanticFactState {
         }
         let previous = self.implicit_capture_uses.insert(key, local);
         debug_assert!(previous.is_none());
-        let order_index = self.implicit_capture_use_order.len();
-        self.implicit_capture_use_order.push(key);
+        let order_index = self.implicit_capture_journal_order.len();
+        self.implicit_capture_journal_order.push(key);
         if !self.candidate_checkpoints.is_empty() {
             self.candidate_journal
                 .push(SemanticFactMutation::ImplicitCaptureUse {
@@ -2141,14 +2144,14 @@ impl SemanticFactState {
         let previous = self.implicit_capture_uses.remove(&key);
         let order_index = if previous.is_some() {
             let Some(index) = self
-                .implicit_capture_use_order
+                .implicit_capture_journal_order
                 .iter()
                 .position(|existing| *existing == key)
             else {
                 self.poison = Some(CandidateFactTransactionViolation::UnrecoverableLedger);
                 return;
             };
-            self.implicit_capture_use_order.remove(index);
+            self.implicit_capture_journal_order.remove(index);
             Some(index)
         } else {
             None
@@ -2331,14 +2334,16 @@ impl SemanticFactState {
                 } => {
                     restore_map_entry(&mut self.implicit_capture_uses, key, previous);
                     if previous.is_some() {
-                        self.implicit_capture_use_order
-                            .insert(order_index.min(self.implicit_capture_use_order.len()), key);
+                        self.implicit_capture_journal_order.insert(
+                            order_index.min(self.implicit_capture_journal_order.len()),
+                            key,
+                        );
                     } else if self
-                        .implicit_capture_use_order
+                        .implicit_capture_journal_order
                         .get(order_index)
                         .is_some_and(|existing| *existing == key)
                     {
-                        self.implicit_capture_use_order.remove(order_index);
+                        self.implicit_capture_journal_order.remove(order_index);
                     }
                 }
             }
@@ -2356,7 +2361,7 @@ impl SemanticFactState {
         >,
         iterations: BTreeMap<ExprId, Option<CheckedIteration>>,
         implicit_capture_uses: BTreeMap<ImplicitCaptureUseKey, Option<LocalId>>,
-        implicit_capture_use_order: Box<[ImplicitCaptureUseKey]>,
+        implicit_capture_journal_order: Box<[ImplicitCaptureUseKey]>,
     ) {
         for (owner, value) in locals {
             self.apply_local(owner, value);
@@ -2374,7 +2379,7 @@ impl SemanticFactState {
             self.apply_iteration(owner, value);
         }
         let mut implicit_capture_uses = implicit_capture_uses;
-        for key in implicit_capture_use_order {
+        for key in implicit_capture_journal_order {
             if let Some(value) = implicit_capture_uses.remove(&key) {
                 self.apply_implicit_capture_use(key, value);
             }
@@ -2445,8 +2450,8 @@ impl SemanticFactState {
                 .is_some_and(|existing| *existing == value);
             if !already_present {
                 let previous = self.implicit_capture_uses.insert(key, value);
-                let order_index = self.implicit_capture_use_order.len();
-                self.implicit_capture_use_order.push(key);
+                let order_index = self.implicit_capture_journal_order.len();
+                self.implicit_capture_journal_order.push(key);
                 if !self.candidate_checkpoints.is_empty() {
                     self.candidate_journal
                         .push(SemanticFactMutation::ImplicitCaptureUse {
@@ -3047,7 +3052,7 @@ mod tests {
             conflict,
             CandidateFactTransactionViolation::ImplicitCaptureUseConflict {
                 callable,
-                expression,
+                site: expression.into(),
                 existing: local,
                 proposed: conflicting_local,
             }
@@ -3085,8 +3090,8 @@ mod tests {
             drained.get(&callable).map(Box::as_ref),
             Some(
                 &[
-                    (second_expression, second_local),
-                    (first_expression, first_local),
+                    (second_expression.into(), second_local),
+                    (first_expression.into(), first_local),
                 ][..]
             )
         );
@@ -3112,5 +3117,102 @@ mod tests {
             state.implicit_capture_use(foreign_callable, expression),
             Some(local)
         );
+    }
+
+    #[test]
+    fn record_input_sites_survive_candidate_extract_apply_and_rollback_together() {
+        use super::super::super::CheckedLocalUseSite;
+        let (callable, first_local, _) = call_identity();
+        let (_, second_local) = distinct_test_locals();
+        let owner = graph_sites()[0].expression();
+        let first = CheckedLocalUseSite::RecordField {
+            owner,
+            source_ordinal: 0,
+        };
+        let second = CheckedLocalUseSite::RecordField {
+            owner,
+            source_ordinal: 1,
+        };
+        let mut state = SemanticFactState::new();
+        let outer = state.begin_candidate_transaction().expect("outer");
+        let candidate = state.begin_candidate_transaction().expect("candidate");
+        state
+            .record_implicit_capture_use(callable, second, second_local)
+            .unwrap();
+        state
+            .record_implicit_capture_use(callable, first, first_local)
+            .unwrap();
+        let projection = state
+            .extract_and_rollback(candidate)
+            .unwrap_or_else(|_| panic!("exact candidate extraction"));
+        assert!(state.pending_implicit_capture_uses().is_empty());
+        let authority = state
+            .transaction_authority(&outer)
+            .expect("outer authority");
+        state
+            .apply_candidate_projection(&authority, projection)
+            .unwrap_or_else(|_| panic!("selected projection application"));
+        assert_eq!(
+            state.pending_implicit_capture_uses(),
+            &BTreeMap::from([
+                ((callable, first), first_local),
+                ((callable, second), second_local)
+            ])
+        );
+        drop(authority);
+        state
+            .rollback_candidate_transaction(outer)
+            .expect("complete outer rollback");
+        assert!(state.pending_implicit_capture_uses().is_empty());
+        assert!(state.implicit_capture_journal_order.is_empty());
+    }
+
+    #[test]
+    fn capture_replay_compares_selected_sites_instead_of_probe_event_order() {
+        use super::super::super::CheckedLocalUseSite;
+        let (callable, first_local, _) = call_identity();
+        let (_, second_local) = distinct_test_locals();
+        let owner = graph_sites()[0].expression();
+        let first = (
+            CheckedLocalUseSite::RecordField {
+                owner,
+                source_ordinal: 0,
+            },
+            first_local,
+        );
+        let second = (
+            CheckedLocalUseSite::RecordField {
+                owner,
+                source_ordinal: 1,
+            },
+            second_local,
+        );
+        let mut state = SemanticFactState::new();
+        let outer = state.begin_candidate_transaction().expect("outer");
+        let mut projections = Vec::new();
+        for rows in [[first, second], [second, first]] {
+            let candidate = state.begin_candidate_transaction().expect("probe");
+            for (site, local) in rows {
+                state
+                    .record_implicit_capture_use(callable, site, local)
+                    .unwrap();
+            }
+            projections.push(
+                state
+                    .extract_and_rollback(candidate)
+                    .unwrap_or_else(|_| panic!("probe extraction")),
+            );
+        }
+        assert_ne!(
+            projections[0].data.implicit_capture_journal_order,
+            projections[1].data.implicit_capture_journal_order
+        );
+        assert_eq!(
+            projections[0].semantic_replay_mismatch(&projections[1]),
+            None
+        );
+        state
+            .rollback_candidate_transaction(outer)
+            .expect("outer rollback");
     }
 }

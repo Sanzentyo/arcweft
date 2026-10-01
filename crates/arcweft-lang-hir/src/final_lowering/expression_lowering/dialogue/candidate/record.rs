@@ -191,9 +191,12 @@ impl StagedHirModuleTransaction<'_> {
                         .ok_or(HirInvariantFailure::InvalidSourceSpan)?
                         .source_span()
                         .clone();
-                    let local = self
-                        .visible_local(scope, &field_name, first_use.range().start())?
-                        .ok_or(HirInvariantFailure::InvalidLocalTimeline)?;
+                    let Some(local) =
+                        self.visible_local(scope, &field_name, first_use.range().start())?
+                    else {
+                        fields.push(HirRecordField::UnresolvedShorthand { name: field_name });
+                        continue;
+                    };
                     self.record_local_capture(
                         crate::scope::HirCaptureUseSite::RecordShorthand { owner, field },
                         scope,

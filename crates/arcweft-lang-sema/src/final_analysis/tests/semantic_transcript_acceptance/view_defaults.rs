@@ -1,6 +1,7 @@
 use super::*;
 use crate::{
     callable::{CallableParameterPresence, CheckedDeclarationDefault},
+    final_analysis::{CheckedImplicitCallable, CheckedLocalUseSite},
     semantic_coordinate::{CheckedSemanticPathStep, StableCheckedValueCoordinate},
 };
 
@@ -101,6 +102,203 @@ fn view_parameter_defaults_accept_general_checked_values_and_earlier_inputs() {
 }
 
 #[test]
+fn view_default_record_shorthand_preserves_its_parameter_dependency() {
+    for source in [
+        "struct Label { value: String }\nview Main(value: String, label: Label = Label { value }) { Text(\"value\") }",
+        "struct Label { value: String }\nview Main(value: String, label: Label = { let copy = value; Label { value = copy } }) { Text(\"value\") }",
+        "struct Label { value: String }\nview Main(value: String, callback: i64 -> Label = |unused: i64| Label { value }) { Text(\"value\") }",
+        "struct Label { value: String }\nview Main(label: Label, value: String = label.value) { Text(\"value\") }",
+    ] {
+        let (defaults, _) = view_defaults(source);
+        let [default] = defaults.as_slice() else {
+            panic!("one default");
+        };
+        assert_eq!(default.captures().len(), 1, "{source}");
+        assert_eq!(default.captures()[0].parameter().parameter().get(), 0);
+        assert_eq!(default.captures()[0].used_locals().len(), 1);
+    }
+    let (local, _) = view_defaults(
+        "struct Label { value: String }\nview Main(label: Label = { let value = \"inner\"; Label { value } }) { Text(\"value\") }",
+    );
+    assert!(local[0].captures().is_empty());
+}
+
+#[test]
+fn view_default_implicit_record_value_retains_its_input() {
+    for (argument, captures) in [
+        ("Label { value = \"fixed\" }", 0),
+        ("Label { value = value }", 1),
+        ("Label { value }", 1),
+    ] {
+        let source = format!(
+            "struct Label {{ value: String }}\nview Main(value: String, callback: i64 -> (i64, Label) = (_, {argument})) {{ Text(\"value\") }}"
+        );
+        let (defaults, _) = view_defaults(&source);
+        assert_eq!(defaults[0].captures().len(), captures, "{source}");
+        let world = super::fixture(&source, None);
+        let report = super::analyze(&world).unwrap();
+        let callable = report
+            .expressions()
+            .find_map(|(_, expression)| {
+                if let CheckedExpressionResolution::ImplicitCallable(callable) =
+                    expression.resolution()
+                {
+                    Some(callable)
+                } else {
+                    None
+                }
+            })
+            .expect("implicit callable");
+        assert_eq!(
+            callable.captures().len(),
+            captures,
+            "implicit capture packet: {source}"
+        );
+    }
+}
+
+#[test]
+fn implicit_record_inputs_preserve_mixed_source_order_and_stable_identity() {
+    fn callable(source: &str) -> (arcweft_lang_hir::identity::ExprId, CheckedImplicitCallable) {
+        let world = super::fixture(source, None);
+        let report = super::analyze(&world).unwrap_or_else(|error| panic!("{error:?}\n{source}"));
+        report
+            .expressions()
+            .find_map(|(owner, expression)| match expression.resolution() {
+                CheckedExpressionResolution::ImplicitCallable(callable) => {
+                    Some((owner, callable.as_ref().clone()))
+                }
+                _ => None,
+            })
+            .expect("implicit callable")
+    }
+    let source = r#"
+struct Pair { first: i64, middle: i64, last: i64 }
+view Main(first: i64, last: i64,
+    callback: i64 -> (i64, Pair) = (_, Pair { first, middle = first + last, last })) { Text("value") }
+"#;
+    let (owner, original) = callable(source);
+    let occurrences = original.capture_occurrences();
+    assert_eq!(occurrences.len(), 4);
+    assert_eq!(original.captures().len(), 2);
+    assert!(matches!(
+        occurrences[0].lookup_site(),
+        CheckedLocalUseSite::RecordField {
+            source_ordinal: 0,
+            ..
+        }
+    ));
+    assert!(matches!(
+        occurrences[1].lookup_site(),
+        CheckedLocalUseSite::Expression(_)
+    ));
+    assert!(matches!(
+        occurrences[2].lookup_site(),
+        CheckedLocalUseSite::Expression(_)
+    ));
+    assert!(matches!(
+        occurrences[3].lookup_site(),
+        CheckedLocalUseSite::RecordField {
+            source_ordinal: 2,
+            ..
+        }
+    ));
+    assert_eq!(occurrences[0].origin(), occurrences[1].origin());
+    assert_eq!(occurrences[2].origin(), occurrences[3].origin());
+    assert_ne!(occurrences[0].coordinate(), occurrences[1].coordinate());
+    let revised = format!(
+        "fn unrelated() -> i64 {{ 99i64 }}\n{}",
+        source.replace("first + last", "first  +  last")
+    );
+    let (revised_owner, revised) = callable(&revised);
+    assert_ne!(owner, revised_owner);
+    assert_eq!(original.identity(), revised.identity());
+    assert_eq!(
+        occurrences
+            .iter()
+            .map(|row| row.coordinate())
+            .collect::<Vec<_>>(),
+        revised
+            .capture_occurrences()
+            .iter()
+            .map(|row| row.coordinate())
+            .collect::<Vec<_>>()
+    );
+    let (_, reordered) = callable(&source.replace(
+        "first, middle = first + last, last",
+        "last, middle = first + last, first",
+    ));
+    assert_ne!(original.identity(), reordered.identity());
+    assert_eq!(
+        original.captures()[1].origin(),
+        reordered.captures()[0].origin()
+    );
+    assert_eq!(view_defaults(source).0[0].captures().len(), 2);
+}
+
+#[test]
+fn implicit_inputs_include_nested_creation_and_nominal_selection() {
+    for source in [
+        "struct Label { value: String }\nview Main(label: Label, callback: i64 -> (i64, String) = (_, label.value)) { Text(\"value\") }",
+        "view Main(first: i64, callback: i64 -> (i64, i64 -> i64) = (_, |value: i64| value + first)) { Text(\"value\") }",
+    ] {
+        let (defaults, _) = view_defaults(source);
+        assert_eq!(defaults[0].captures().len(), 1, "{source}");
+    }
+}
+
+#[test]
+fn implicit_record_input_preserves_an_open_generic_binding_type() {
+    let source = "struct Box<T> { value: T }\nfn make<T>(value: T) -> (i64 -> (i64, Box<T>) effects {}) { (_, Box { value }) }";
+    let world = super::fixture(source, None);
+    let report = super::analyze(&world)
+        .expect("generic record input seals before closed ownership admission");
+    let callable = report
+        .expressions()
+        .find_map(|(_, expression)| match expression.resolution() {
+            CheckedExpressionResolution::ImplicitCallable(callable) => Some(callable),
+            _ => None,
+        })
+        .expect("implicit callable");
+    let [capture] = callable.captures() else {
+        panic!("one generic input");
+    };
+    assert_eq!(
+        callable.capture_occurrences()[0].value_type(),
+        capture.value_type()
+    );
+    assert!(matches!(
+        callable.capture_occurrences()[0].lookup_site(),
+        CheckedLocalUseSite::RecordField {
+            source_ordinal: 0,
+            ..
+        }
+    ));
+    assert!(
+        report
+            .checked_local_uses()
+            .rows()
+            .all(|(site, _)| !matches!(site, CheckedLocalUseSite::RecordField { .. }))
+    );
+}
+
+#[test]
+fn deferred_record_shorthand_retains_its_creation_input() {
+    let source = "struct Label { value: i64 }\nflow main { let value = 1i64; defer { let label = Label { value }; () } }";
+    let world = super::fixture(source, None);
+    let report = super::analyze(&world).expect("deferred record input");
+    let defer = report
+        .statements()
+        .find_map(|(_, statement)| match statement.payload() {
+            crate::final_analysis::CheckedStatementPayload::Defer(defer) => Some(defer),
+            _ => None,
+        })
+        .expect("defer statement");
+    assert_eq!(defer.captures().len(), 1);
+    assert_eq!(defer.captures()[0].ty(), &TypeKind::I64);
+}
+
+#[test]
 fn view_default_match_has_a_parameter_root_and_stable_transcript() {
     let original = r#"
 view Main(first: i64, second: i64, chosen: i64 = match true {
@@ -149,6 +347,8 @@ fn view_parameter_defaults_reject_self_later_and_latent_forward_inputs() {
         r#"view Main(value: i64 = later, later: i64) { Text(value) }"#,
         r#"view Main(callback: i64 -> i64 = |value: i64| value + later, later: i64) { Text("value") }"#,
         r#"view Main(callback: i64 -> i64 = _ + later, later: i64) { Text("value") }"#,
+        "struct Label { value: String }\nview Main(label: Label = Label { value }, value: String) { Text(\"value\") }",
+        "struct Label { value: String }\nview Main(callback: i64 -> (i64, Label) = (_, Label { value }), value: String) { Text(\"value\") }",
     ] {
         let world = super::fixture(source, None);
         let error =

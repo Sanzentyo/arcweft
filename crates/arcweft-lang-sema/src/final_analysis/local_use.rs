@@ -50,20 +50,10 @@ use crate::checked_rich_text::{
 use crate::types::{SemanticTypeDigest, TypeInstantiationError, TypeKind, VariantPayloadShape};
 
 use super::{
-    CheckedExpressionResolution, CheckedImplicitCallableIdentity, CheckedPipeBindingIdentity,
-    CheckedRecordValueSource, CheckedSelectResolution, CheckedValueResolution,
-    FinalSemanticAnalysis,
+    CheckedExpressionResolution, CheckedImplicitCallableIdentity, CheckedLocalUseSite,
+    CheckedPipeBindingIdentity, CheckedRecordValueSource, CheckedSelectResolution,
+    CheckedValueResolution, FinalSemanticAnalysis,
 };
-
-/// One executable use, including HIR shorthand/capture positions without an
-/// independent expression node.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CheckedLocalUseSite {
-    Expression(ExprId),
-    RecordField { owner: ExprId, source_ordinal: u32 },
-    Capture { owner: ExprId, local: LocalId },
-    StatementCapture { owner: StmtId, local: LocalId },
-}
 
 /// A builder-issued runtime local with no HIR LocalId. The checked semantic
 /// identity prevents two placeholders with the same spelling from aliasing.
@@ -1655,25 +1645,30 @@ impl<'a> LocalUseChecker<'a> {
             return Ok(());
         }
         if self.borrowed_receivers.contains(&owner) {
-            let local = self
+            let inputs = self
                 .analysis
-                .expression(owner)
-                .and_then(super::CheckedExpression::execution_local_use)
+                .checked_capture_inputs(owner)
+                .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
+            let mut sources = inputs.sources();
+            let input = sources
+                .next()
                 .ok_or(CheckedLocalUseError::InvalidTopology)?;
-            return self.borrow_local(CheckedLocalUseSite::Expression(owner), local, state);
+            if sources.next().is_some() {
+                return Err(CheckedLocalUseError::InvalidTopology);
+            }
+            return self.borrow_local(input.site(), input.local(), state);
         }
-        if let Some(CheckedExpressionResolution::ImplicitCallable(callable)) = self
+        if let Some(CheckedExpressionResolution::ImplicitCallable(_)) = self
             .analysis
             .expression(owner)
             .map(super::CheckedExpression::resolution)
         {
-            let captures = callable
-                .captures()
-                .iter()
-                .map(|capture| capture.lookup_local())
-                .collect::<Vec<_>>();
-            for local in captures {
-                self.use_local(CheckedLocalUseSite::Capture { owner, local }, local, state)?;
+            let captures = self
+                .analysis
+                .checked_capture_inputs(owner)
+                .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
+            for input in captures.sources() {
+                self.use_local(input.site(), input.local(), state)?;
             }
             return self.expression_inner(owner, &mut Availability::root());
         }
@@ -1853,23 +1848,20 @@ impl<'a> LocalUseChecker<'a> {
                 })?;
             }
             HirExprKind::Closure(value) => {
-                let Some(CheckedExpressionResolution::Closure(closure)) = self
+                let Some(CheckedExpressionResolution::Closure(_)) = self
                     .analysis
                     .expression(owner)
                     .map(super::CheckedExpression::resolution)
                 else {
                     return Err(CheckedLocalUseError::InvalidTopology);
                 };
+                let captures = self
+                    .analysis
+                    .checked_capture_inputs(owner)
+                    .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
                 let mut body_state = Availability::root();
-                for capture in closure.captures() {
-                    self.use_local(
-                        CheckedLocalUseSite::Capture {
-                            owner,
-                            local: capture.local(),
-                        },
-                        capture.local(),
-                        state,
-                    )?;
+                for input in captures.sources() {
+                    self.use_local(input.site(), input.local(), state)?;
                 }
                 self.expression(value.body(), &mut body_state)?;
             }
@@ -1877,19 +1869,21 @@ impl<'a> LocalUseChecker<'a> {
                 let Ok(edges) = self.analysis.checked_expression_edge_fact(owner) else {
                     return Ok(());
                 };
+                let inputs = self
+                    .analysis
+                    .checked_capture_inputs(owner)
+                    .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
                 for field in edges.record_fields() {
                     match field.source() {
                         CheckedRecordValueSource::Expression(source) => {
                             self.expression(source.raw(), state)?
                         }
-                        CheckedRecordValueSource::Binding(source) => self.use_local(
-                            CheckedLocalUseSite::RecordField {
-                                owner,
-                                source_ordinal: field.source_ordinal(),
-                            },
-                            source.raw(),
-                            state,
-                        )?,
+                        CheckedRecordValueSource::Binding(_) => {
+                            let input = inputs
+                                .record_source_at(field.source_ordinal())
+                                .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                            self.use_local(input.site(), input.local(), state)?;
+                        }
                     }
                 }
             }
@@ -1903,17 +1897,25 @@ impl<'a> LocalUseChecker<'a> {
                     ))
                 ) =>
             {
-                if let Some(place) = self
+                if self
                     .analysis
                     .expression(owner)
                     .and_then(super::CheckedExpression::mutable_place)
                     .filter(|place| place.nominal_field().is_some())
+                    .is_some()
                 {
-                    self.use_local(
-                        CheckedLocalUseSite::Expression(owner),
-                        place.local_id(),
-                        state,
-                    )?;
+                    let inputs = self
+                        .analysis
+                        .checked_capture_inputs(owner)
+                        .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
+                    let mut sources = inputs.sources();
+                    let input = sources
+                        .next()
+                        .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                    if sources.next().is_some() {
+                        return Err(CheckedLocalUseError::InvalidTopology);
+                    }
+                    self.use_local(input.site(), input.local(), state)?;
                 }
             }
             HirExprKind::Placeholder(_) => {
@@ -2006,12 +2008,19 @@ impl<'a> LocalUseChecker<'a> {
                 }
             }
         }
-        if let Some(local) = self
+        if self
             .analysis
             .expression(owner)
             .and_then(super::CheckedExpression::execution_local_use)
+            .is_some()
         {
-            self.use_local(CheckedLocalUseSite::Expression(owner), local, state)?;
+            let inputs = self
+                .analysis
+                .checked_capture_inputs(owner)
+                .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
+            for input in inputs.sources() {
+                self.use_local(input.site(), input.local(), state)?;
+            }
         }
         Ok(())
     }
@@ -2066,15 +2075,11 @@ impl<'a> LocalUseChecker<'a> {
                 if defer.body() != body {
                     return Err(CheckedLocalUseError::InvalidTopology);
                 }
-                for capture in defer.captures() {
-                    self.use_local(
-                        CheckedLocalUseSite::StatementCapture {
-                            owner,
-                            local: capture.local(),
-                        },
-                        capture.local(),
-                        state,
-                    )?;
+                let captures =
+                    super::free_capture::CheckedCaptureExpression::from_statement(owner, fact)
+                        .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
+                for input in captures.sources() {
+                    self.use_local(input.site(), input.local(), state)?;
                 }
                 self.expression(body, &mut Availability::root())?;
             }

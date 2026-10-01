@@ -90,6 +90,9 @@ pub(crate) struct FinalExprLowerer<'hir> {
     callable_sources:
         Option<&'hir BTreeMap<RuntimeProjectCallableSourceKey, RuntimeCallableStateSeedId>>,
     overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+    /// The exact admitted callable being executed. All other implicit roots
+    /// remain values that create function sites in this lexical frame.
+    implicit_body_root: Option<ExprId>,
 }
 
 pub(crate) const fn runtime_local_read_mode(mode: CheckedLocalReadMode) -> RuntimeLocalReadMode {
@@ -219,6 +222,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             callable_specializations: None,
             callable_sources: None,
             overrides: BTreeMap::new(),
+            implicit_body_root: None,
         }
     }
 
@@ -456,6 +460,9 @@ impl<'hir> FinalExprLowerer<'hir> {
         if let Some(value) = self.overrides.get(&id) {
             return self.specialize_result(id, value.clone());
         }
+        if self.implicit_body_root == Some(id) {
+            return self.lower_body(id);
+        }
         let source = self.lower_source(id)?;
         self.specialize_result(id, source)
     }
@@ -464,7 +471,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         if let Some(value) = self.overrides.get(&id) {
             return Ok(value.clone());
         }
-        if self.implicit_callable(id).is_some() {
+        if self.implicit_body_root != Some(id) && self.implicit_callable(id).is_some() {
             let callable = self
                 .implicit_callable(id)
                 .ok_or_else(|| format!("implicit callable fact is missing for {id:?}"))?;
@@ -562,6 +569,18 @@ impl<'hir> FinalExprLowerer<'hir> {
         } else {
             lowerer.lower(body)
         }
+    }
+
+    pub(crate) fn lower_implicit_callable_body(
+        &self,
+        owner: ExprId,
+        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+    ) -> Result<RuntimeExprSeed, String> {
+        self.implicit_callable(owner)
+            .ok_or_else(|| format!("admitted implicit callable is missing for {owner:?}"))?;
+        let mut lowerer = self.clone_with_overrides(BTreeMap::new());
+        lowerer.implicit_body_root = Some(owner);
+        lowerer.lower_function_site_body(owner, owner, overrides)
     }
 
     #[allow(
@@ -847,6 +866,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             callable_sources: self.callable_sources,
             semantic_facts: self.semantic_facts,
             overrides: merged,
+            implicit_body_root: self.implicit_body_root,
         }
     }
 
@@ -998,7 +1018,7 @@ impl<'hir> FinalExprLowerer<'hir> {
     }
 
     fn contains_executable_try(&self, owner: ExprId) -> Result<bool, String> {
-        if self.implicit_callable(owner).is_some() {
+        if self.implicit_body_root != Some(owner) && self.implicit_callable(owner).is_some() {
             return Ok(false);
         }
         if self.tried(owner).is_some() {
@@ -3186,6 +3206,12 @@ impl<'hir> FinalExprLowerer<'hir> {
         &self,
         id: ExprId,
     ) -> Result<arcweft_core::pattern::RuntimeSemanticTypeId, String> {
+        if self.implicit_body_root == Some(id) {
+            return self
+                .implicit_callable(id)
+                .map(|callable| callable.result().identity())
+                .ok_or_else(|| format!("admitted implicit body result is missing for {id:?}"));
+        }
         self.semantic_facts
             .expression_type(id)
             .map(RuntimeNormalizedType::identity)
@@ -3196,6 +3222,12 @@ impl<'hir> FinalExprLowerer<'hir> {
         &self,
         id: ExprId,
     ) -> Result<arcweft_core::pattern::RuntimeSemanticTypeId, String> {
+        if self.implicit_body_root == Some(id) {
+            return self
+                .implicit_callable(id)
+                .map(|callable| callable.result().identity())
+                .ok_or_else(|| format!("admitted implicit body result is missing for {id:?}"));
+        }
         self.semantic_facts
             .expression_source_type(id)
             .map(RuntimeNormalizedType::identity)

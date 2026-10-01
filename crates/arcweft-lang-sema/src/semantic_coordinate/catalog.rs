@@ -285,6 +285,12 @@ fn write_u32_bytes(
 }
 
 pub(crate) trait CheckedExpressionEdgeAuthority {
+    fn checked_record_input_field(
+        &self,
+        owner: ExprId,
+        source_ordinal: u32,
+        local: LocalId,
+    ) -> Option<crate::record_field::CheckedRecordFieldSemanticId>;
     fn checked_expression_child_role(
         &self,
         parent: ExprId,
@@ -333,6 +339,61 @@ impl<'catalog, 'edges> SemanticCoordinateIndex<'catalog, 'edges> {
         owner: ExprId,
     ) -> Result<CheckedSemanticPath, SemanticCoordinateIndexError> {
         self.coordinate(owner.into())
+    }
+
+    pub(crate) fn local_input(
+        &self,
+        site: crate::final_analysis::CheckedLocalUseSite,
+        local: LocalId,
+    ) -> Result<super::CheckedLocalInputCoordinate, SemanticCoordinateIndexError> {
+        use crate::final_analysis::CheckedLocalUseSite;
+        let (owner, role) = match site {
+            CheckedLocalUseSite::Expression(owner) => (
+                self.expression(owner)?,
+                super::CheckedLocalInputRole::Expression,
+            ),
+            CheckedLocalUseSite::RecordField {
+                owner,
+                source_ordinal,
+            } => {
+                let accepted_field = self
+                    .edges
+                    .checked_record_input_field(owner, source_ordinal, local)
+                    .ok_or(SemanticCoordinateIndexError::MissingChildEdges)?;
+                (
+                    self.expression(owner)?,
+                    super::CheckedLocalInputRole::RecordField {
+                        source_ordinal,
+                        accepted_field,
+                    },
+                )
+            }
+            CheckedLocalUseSite::Capture {
+                owner,
+                local: expected,
+            } => {
+                if local != expected {
+                    return Err(SemanticCoordinateIndexError::InvalidBindingPath { owner: local });
+                }
+                (
+                    self.expression(owner)?,
+                    super::CheckedLocalInputRole::Capture(self.binding(local)?),
+                )
+            }
+            CheckedLocalUseSite::StatementCapture {
+                owner,
+                local: expected,
+            } => {
+                if local != expected {
+                    return Err(SemanticCoordinateIndexError::InvalidBindingPath { owner: local });
+                }
+                (
+                    self.statement(owner)?.path().clone(),
+                    super::CheckedLocalInputRole::StatementCapture(self.binding(local)?),
+                )
+            }
+        };
+        Ok(super::CheckedLocalInputCoordinate { owner, role })
     }
 
     pub(crate) fn expression_evidence(

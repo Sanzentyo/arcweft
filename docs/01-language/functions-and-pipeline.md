@@ -170,6 +170,20 @@ if state |> alice_ready { ... }
 environment を決定的な capture binding として保持し、後続の call / apply で
 引数 binding より先に復元する。
 
+free input は式の local 読取りだけでなく、record shorthand、nominal field の
+base binding、入れ子の closure や deferred callback の生成時 capture を含む。
+callable body 内で導入した binding は外側の capture に含めない。record の明示
+field と shorthand は記述順に入力 occurrence を持ち、同じ binding の複数の
+occurrence は一つの capture packet slot に集約する。shorthand の座標は accepted
+field と source ordinal、creation capture の座標は生成 owner と binding origin
+に属する。式の arena ID や candidate の探索順は semantic identity に含めない。
+shorthand はその記述位置から見える lexical binding を使う。未宣言の名前や
+後続の binding を参照する shorthand は型検査で拒否する。
+
+implicit callable の生成では lexical capture を保持し、適用時にはその callable
+に属する本体を実行する。関数の返り値や default が callable なら、その値を生成
+する。返り値であることを理由に callable 本体を実行してはならない。
+
 ```arcw
 let add_with_bonus = |score: i64| score + bonus
 let next = add_with_bonus(3i64)

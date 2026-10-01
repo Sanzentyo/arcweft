@@ -408,7 +408,8 @@ fn record_fields_projection_match(
             (
                 HirRecordField::Shorthand {
                     name: actual_name, ..
-                },
+                }
+                | HirRecordField::UnresolvedShorthand { name: actual_name },
                 SyntaxRecordField::Shorthand {
                     name: Ok(expected_name),
                 },
@@ -1017,6 +1018,24 @@ fn record_children_match(
                         Some(crate::scope::LocalLookup::Found(found)) if found == *local
                     )
             }
+            HirRecordField::UnresolvedShorthand { name } => {
+                let query = HirSourceQuery::Expr {
+                    owner: parent,
+                    role: HirExprSourceRole::RecordField {
+                        field,
+                        part: HirRecordFieldSourcePart::Name,
+                    },
+                };
+                let use_start = match index.components.get(&query) {
+                    Some(HirSourceSite::Span(span)) => span.range().start(),
+                    Some(HirSourceSite::Insertion(_)) | None => return false,
+                };
+                attached_child.is_none()
+                    && !matches!(
+                        local_resolver.lookup(parent_scope, name.as_str(), use_start),
+                        Some(crate::scope::LocalLookup::Found(_))
+                    )
+            }
             HirRecordField::Invalid {
                 issue: HirRecordFieldIssue::MissingValue,
             } => {
@@ -1168,7 +1187,7 @@ fn record_parent_recovery(
                     )));
                 }
             }
-            HirRecordField::Shorthand { .. } => {}
+            HirRecordField::Shorthand { .. } | HirRecordField::UnresolvedShorthand { .. } => {}
             HirRecordField::Invalid {
                 issue: HirRecordFieldIssue::MissingValue,
             } => return Ok(Some(HirRecoveryIssue::MissingOperand { role })),

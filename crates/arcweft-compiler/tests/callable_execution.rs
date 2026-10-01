@@ -122,6 +122,69 @@ flow main() -> i64 { return increment(41i64) }
 );
 
 callable_case!(
+    implicit_record_inputs_share_the_callable_frame,
+    r#"
+struct Pair { first: i64, middle: i64, last: i64 }
+fn make(first: i64, last: i64) -> (i64 -> (i64, Pair) effects {}) {
+    (_, Pair { first, middle = first + last, last })
+}
+flow main() -> i64 {
+    let callback = make(10i64, 20i64)
+    let (input, record) = callback(12i64)
+    return input + record.first + record.middle + record.last
+}
+"#,
+    RuntimeValue::i64(72),
+    "72"
+);
+
+callable_case!(
+    implicit_nominal_selection_captures_the_base_type,
+    r#"
+struct State { value: i64 }
+fn make(state: State) -> (i64 -> i64 effects {}) { _ + state.value }
+flow main() -> i64 {
+    let callback = make(State { value = 30i64 })
+    return callback(12i64)
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    implicit_record_shorthand_closes_generic_inputs,
+    r#"
+struct State { value: i64 }
+fn make<T>(sample: T, value: i64) -> (T -> (T, State) effects {}) { (_, State { value }) }
+flow main() -> i64 {
+    let callback = make(0i64, 30i64)
+    let (input, record) = callback(12i64)
+    let text = make("", 2i64)
+    let (_, ignored) = text("same site, another closed frame")
+    return input + record.value
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    implicit_generic_record_value_inputs_close_per_frame,
+    r#"
+struct Box<T> { value: T }
+fn make<T>(value: T) -> (i64 -> (i64, Box<T>) effects {}) { (_, Box { value }) }
+flow main() -> i64 {
+    let callback = make(30i64)
+    let (input, record) = callback(12i64)
+    return input + record.value
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
     callback_with_project_call_body,
     r#"
 fn increment(value: i64) -> i64 { value + 1i64 }

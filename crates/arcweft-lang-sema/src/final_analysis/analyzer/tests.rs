@@ -1508,7 +1508,7 @@ fn evaluator_records_implicit_and_explicit_capture_modes_on_terminal_facts() {
         let access = analyzer
             .topology
             .module(callable.module())
-            .and_then(|module| module.expression_uses().row(*expression))
+            .and_then(|module| module.expression_uses().row(expression.expression_owner()?))
             .expect("pending implicit capture topology row")
             .capture_access();
         implicit_by_callable

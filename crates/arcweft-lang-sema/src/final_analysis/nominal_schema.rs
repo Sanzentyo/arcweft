@@ -1352,6 +1352,7 @@ pub(super) fn seal_nominal_draft(
             &parts.locals,
             &seal,
             &coordinates,
+            &parts.structural_edges,
         )?
     };
     let mut record_fields = BTreeMap::new();
@@ -1485,6 +1486,7 @@ fn preseal_project_record_expressions(
     locals: &BTreeMap<arcweft_lang_hir::identity::LocalId, super::CheckedBinding>,
     context: &RuntimeNominalProjectionSeal,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
+    structural_edges: &super::match_edges::CheckedStructuralEdgeDraft,
 ) -> Result<
     BTreeMap<arcweft_lang_hir::identity::ExprId, SealedProjectRecordExpression>,
     FinalSemanticAnalysisError,
@@ -1496,15 +1498,25 @@ fn preseal_project_record_expressions(
                 return None;
             };
             Some((|| {
-                let projection = context.get_cached(prepared.nominal())?;
-                if projection.kind() != RuntimeProjectNominalKind::Record
-                    || projection.record_fields().len() != prepared.fields().len()
-                    || prepared
-                        .shell()
-                        .value_type()
-                        .map(TypeKind::semantic_identity_digest)
-                        .transpose()?
-                        != Some(prepared.nominal().identity())
+                let generics = crate::types::StableGenericReferenceUseCollector::collect_in_scope(
+                    &prepared.nominal().ty(),
+                    &crate::types::GenericScope::default(),
+                )
+                .map_err(NominalSchemaProjectionError::from)?;
+                let projection = if generics.types().is_empty() && generics.consts().is_empty() {
+                    Some(context.get_cached(prepared.nominal())?)
+                } else {
+                    None
+                };
+                if projection.is_some_and(|projection| {
+                    projection.kind() != RuntimeProjectNominalKind::Record
+                        || projection.record_fields().len() != prepared.fields().len()
+                }) || prepared
+                    .shell()
+                    .value_type()
+                    .map(TypeKind::semantic_identity_digest)
+                    .transpose()?
+                    != Some(prepared.nominal().identity())
                 {
                     return Err(FinalSemanticAnalysisError::InvalidNominalOwner);
                 }
@@ -1516,10 +1528,20 @@ fn preseal_project_record_expressions(
                         return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                     }
                     let field_type_digest = field.field_type().semantic_identity_digest()?;
-                    let projected = projection
-                        .record_field(field.declaration_ordinal())
-                        .filter(|projected| projected.field_type() == field_type_digest)
-                        .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
+                    let runtime_field = RuntimeRecordFieldId::try_from_zero_based_ordinal(
+                        usize::try_from(field.declaration_ordinal())
+                            .map_err(|_| FinalSemanticAnalysisError::InvalidNominalOwner)?,
+                    )
+                    .map_err(|_| FinalSemanticAnalysisError::InvalidNominalOwner)?;
+                    if let Some(projection) = projection {
+                        projection
+                            .record_field(field.declaration_ordinal())
+                            .filter(|projected| {
+                                projected.field_type() == field_type_digest
+                                    && projected.runtime_field() == runtime_field
+                            })
+                            .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
+                    }
                     let source = match field.source() {
                         PreparedRecordValueSource::Expression(source) => {
                             let source_type = expressions
@@ -1553,19 +1575,19 @@ fn preseal_project_record_expressions(
                             )
                         }
                     };
-                    let semantic_id = AcceptedRecordFieldSemanticId::issue(
-                        prepared.nominal().identity(),
-                        field.declaration_ordinal(),
-                        field_type_digest,
+                    let slot = structural_edges
+                        .record_slot(*owner, field.source_ordinal())
+                        .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                    if slot.declaration_ordinal() != field.declaration_ordinal()
+                        || slot.field_type() != field_type_digest
+                        || slot.source() != field.source()
+                    {
+                        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                    }
+                    fields.push(
+                        CheckedExpressionRecordField::try_new(slot.clone(), runtime_field, source)
+                            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
                     );
-                    fields.push(CheckedExpressionRecordField::new(
-                        field.source_ordinal(),
-                        field.declaration_ordinal(),
-                        projected.runtime_field(),
-                        CheckedRecordFieldSemanticId::Project(semantic_id),
-                        field_type_digest,
-                        source,
-                    ));
                 }
                 Ok((
                     *owner,

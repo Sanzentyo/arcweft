@@ -669,7 +669,7 @@ fn validate_record_fields(
             HirRecordField::Shorthand { local, .. } => {
                 validate_module(expected, local.module())?;
             }
-            HirRecordField::Invalid { .. } => {}
+            HirRecordField::UnresolvedShorthand { .. } | HirRecordField::Invalid { .. } => {}
         }
     }
     Ok(())

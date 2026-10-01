@@ -676,6 +676,9 @@ impl PreparedProjectFieldExpression {
     pub(crate) const fn nominal(&self) -> &CheckedProjectNominal {
         &self.nominal
     }
+    pub(crate) const fn mutable_base(&self) -> Option<LocalId> {
+        self.mutable_base
+    }
     pub(crate) const fn field_type(&self) -> &TypeKind {
         &self.field_type
     }

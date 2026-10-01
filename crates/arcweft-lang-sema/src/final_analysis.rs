@@ -51,6 +51,8 @@ mod declaration_defaults;
 mod error;
 mod execution_plan;
 mod free_capture;
+pub use free_capture::CheckedLocalUseSite;
+pub(crate) use model::CheckedRecordFieldSlot;
 mod fx_application;
 mod input;
 mod local_use;
@@ -124,8 +126,8 @@ pub use local_use::{
     CheckedIngressParameterCoordinate, CheckedLocalCopyEvidence, CheckedLocalCopyIngressOwner,
     CheckedLocalCopyRequirement, CheckedLocalReadMode, CheckedLocalUse, CheckedLocalUseCatalog,
     CheckedLocalUseError, CheckedLocalUseInstanceCatalog, CheckedLocalUseInstanceIdentity,
-    CheckedLocalUseInstantiation, CheckedLocalUseSite, CheckedSyntheticCopyRequirement,
-    CheckedSyntheticUse, CheckedSyntheticUseOwner,
+    CheckedLocalUseInstantiation, CheckedSyntheticCopyRequirement, CheckedSyntheticUse,
+    CheckedSyntheticUseOwner,
 };
 pub use match_coverage::{
     CheckedMatchCoverage, CheckedMatchLimitKind, CheckedMatchLimits, CheckedPatternCoordinateStep,

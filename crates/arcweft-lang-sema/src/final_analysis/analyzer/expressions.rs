@@ -939,9 +939,12 @@ impl Analyzer<'_, '_, '_> {
 
     fn record_implicit_capture(
         &mut self,
-        expression: ExprId,
+        site: super::super::CheckedLocalUseSite,
         local: super::LocalId,
     ) -> Result<(), FinalSemanticAnalysisError> {
+        let expression = site
+            .expression_owner()
+            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
         let topology = self
             .topology
             .module(expression.module())
@@ -968,7 +971,7 @@ impl Analyzer<'_, '_, '_> {
                 continue;
             }
             self.facts
-                .record_implicit_capture_use(callable, expression, local)?;
+                .record_implicit_capture_use(callable, site, local)?;
         }
         Ok(())
     }
@@ -978,10 +981,22 @@ impl Analyzer<'_, '_, '_> {
         expression: ExprId,
         fact: &super::PreparedExpressionFact,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        let Some(local) = fact.execution_local_use() else {
-            return Ok(());
-        };
-        self.record_implicit_capture(expression, local)
+        let access = self
+            .topology
+            .module(expression.module())
+            .and_then(|module| module.expression_uses().row(expression))
+            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?
+            .capture_access();
+        let inputs = super::super::free_capture::CheckedCaptureExpression::from_prepared(
+            expression,
+            fact,
+            |local| self.facts.locals().get(&local).cloned(),
+            access,
+        )?;
+        for input in inputs.sources() {
+            self.record_implicit_capture(input.site(), input.local())?;
+        }
+        Ok(())
     }
 
     /// Replays capture events hidden beneath a cached structural fact. The

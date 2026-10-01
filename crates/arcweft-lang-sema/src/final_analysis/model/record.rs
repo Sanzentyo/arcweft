@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 
 use crate::{
     env::nominal::{AcceptedEnvironmentRecord, AcceptedNominalId},
-    record_field::CheckedRecordFieldSemanticId,
+    record_field::{AcceptedRecordFieldSemanticId, CheckedRecordFieldSemanticId},
     semantic_coordinate::{
         CheckedBindingCoordinateEvidence, CheckedExpressionCoordinateEvidence, CheckedSemanticPath,
         StableCheckedBindingCoordinate, StablePatternCoordinate,
@@ -159,40 +159,93 @@ impl CheckedRecordValueSource {
 
 /// One field in the complete authored record-expression plan.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedExpressionRecordField {
+pub(crate) struct CheckedRecordFieldSlot {
     source_ordinal: u32,
     declaration_ordinal: u32,
-    runtime_field: RuntimeRecordFieldId,
     semantic_id: CheckedRecordFieldSemanticId,
     field_type: SemanticTypeDigest,
+    source: super::super::prepared::PreparedRecordValueSource,
+}
+
+impl CheckedRecordFieldSlot {
+    pub(crate) fn issue(
+        nominal: SemanticTypeDigest,
+        field: &super::super::prepared::PreparedProjectRecordExpressionField,
+    ) -> Result<Self, crate::types::GenericScopeError> {
+        let field_type = field.field_type().semantic_identity_digest()?;
+        Ok(Self {
+            source_ordinal: field.source_ordinal(),
+            declaration_ordinal: field.declaration_ordinal(),
+            semantic_id: CheckedRecordFieldSemanticId::Project(
+                AcceptedRecordFieldSemanticId::issue(
+                    nominal,
+                    field.declaration_ordinal(),
+                    field_type,
+                ),
+            ),
+            field_type,
+            source: field.source(),
+        })
+    }
+
+    pub(crate) const fn source_ordinal(&self) -> u32 {
+        self.source_ordinal
+    }
+    pub(crate) const fn declaration_ordinal(&self) -> u32 {
+        self.declaration_ordinal
+    }
+    pub(crate) const fn semantic_id(&self) -> CheckedRecordFieldSemanticId {
+        self.semantic_id
+    }
+    pub(crate) const fn field_type(&self) -> SemanticTypeDigest {
+        self.field_type
+    }
+    pub(crate) const fn source(&self) -> super::super::prepared::PreparedRecordValueSource {
+        self.source
+    }
+}
+
+/// C2 joins runtime placement and stable source evidence to the exact C1 slot.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedExpressionRecordField {
+    slot: CheckedRecordFieldSlot,
+    runtime_field: RuntimeRecordFieldId,
     source: CheckedRecordValueSource,
 }
 
 impl CheckedExpressionRecordField {
-    pub(crate) const fn new(
-        source_ordinal: u32,
-        declaration_ordinal: u32,
+    pub(crate) fn try_new(
+        slot: CheckedRecordFieldSlot,
         runtime_field: RuntimeRecordFieldId,
-        semantic_id: CheckedRecordFieldSemanticId,
-        field_type: SemanticTypeDigest,
         source: CheckedRecordValueSource,
-    ) -> Self {
-        Self {
-            source_ordinal,
-            declaration_ordinal,
-            runtime_field,
-            semantic_id,
-            field_type,
-            source,
+    ) -> Option<Self> {
+        let matches = match (slot.source(), &source) {
+            (
+                super::super::prepared::PreparedRecordValueSource::Expression(expected),
+                CheckedRecordValueSource::Expression(actual),
+            ) => expected == actual.raw(),
+            (
+                super::super::prepared::PreparedRecordValueSource::Local(expected),
+                CheckedRecordValueSource::Binding(actual),
+            ) => expected == actual.raw(),
+            _ => false,
+        };
+        if !matches || runtime_field.zero_based() != slot.declaration_ordinal() {
+            return None;
         }
+        Some(Self {
+            slot,
+            runtime_field,
+            source,
+        })
     }
 
     pub const fn source_ordinal(&self) -> u32 {
-        self.source_ordinal
+        self.slot.source_ordinal()
     }
 
     pub const fn declaration_ordinal(&self) -> u32 {
-        self.declaration_ordinal
+        self.slot.declaration_ordinal()
     }
 
     pub const fn runtime_field(&self) -> RuntimeRecordFieldId {
@@ -200,15 +253,19 @@ impl CheckedExpressionRecordField {
     }
 
     pub(crate) const fn semantic_id(&self) -> CheckedRecordFieldSemanticId {
-        self.semantic_id
+        self.slot.semantic_id()
     }
 
     pub const fn field_type(&self) -> SemanticTypeDigest {
-        self.field_type
+        self.slot.field_type()
     }
 
     pub const fn source(&self) -> &CheckedRecordValueSource {
         &self.source
+    }
+
+    pub(crate) const fn slot(&self) -> &CheckedRecordFieldSlot {
+        &self.slot
     }
 }
 

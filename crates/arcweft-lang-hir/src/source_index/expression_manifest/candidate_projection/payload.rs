@@ -335,6 +335,25 @@ pub(super) fn candidate_record_fields_match(
                 true
             }
             (
+                HirRecordField::UnresolvedShorthand { name },
+                SyntaxRecordField::Shorthand {
+                    name: Ok(expected_name),
+                },
+                false,
+                None,
+            ) => {
+                let Some(use_start) = node.expression_components().and_then(|mut components| {
+                    components.find(|component| component.role() == ExpressionComponentRole::RecordField {
+                        field, part: arcweft_lang_syntax::expressions::ExpressionRecordFieldPart::Name,
+                    }).map(|component| component.source_span().range().start())
+                }) else { return false; };
+                name.as_str() == expected_name.as_str()
+                    && !matches!(
+                        local_resolver.lookup(scope, name.as_str(), use_start),
+                        Some(crate::scope::LocalLookup::Found(_))
+                    )
+            }
+            (
                 HirRecordField::Invalid {
                     issue: HirRecordFieldIssue::MissingValue,
                 },

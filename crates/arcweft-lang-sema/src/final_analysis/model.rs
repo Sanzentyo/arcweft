@@ -705,6 +705,7 @@ mod stage_look;
 pub use stage_look::CheckedStageLook;
 #[path = "model/record.rs"]
 mod record;
+pub(crate) use record::CheckedRecordFieldSlot;
 pub use record::{
     CheckedExpressionRecordField, CheckedFieldSelection, CheckedRecordBindingSource,
     CheckedRecordExpressionSource, CheckedRecordPattern, CheckedRecordPatternField,

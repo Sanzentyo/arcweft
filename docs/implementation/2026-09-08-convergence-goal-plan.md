@@ -3630,3 +3630,104 @@ cache を保存して意味論差を隠す、instruction/source 位置から移�
 保証はしない。次は general expression/default の complete checked input authority と
 runtime reachability を接続する。runtime 実行、UI audit の未達、`.1.3.1`、nominal、
 scheduler/restore、最終全体検証が残るため goal は active のまま。
+
+### 2026-10-01 — checked executable local-input migration (in progress)
+
+Inspected base: `5acefacb629f5b286afc498340adceff109d883b`、main、着手時 clean。
+直前の goal turn は definition identity の修正・全検証・push を完了した progress。
+この cut は同じ checkout の in-scope dirty patch。まだ commit/push していない。
+
+baseline の View default `Label { value }` は、先行 parameter を読むにもかかわらず
+default capture 0 を返すことを実行再現した。共通 free-local collector と prepared/final
+record source の射影を接続した後、単純 default/block/local exclusion/explicit closure/
+field selection は合格し、その時点の sema lib は 1,106 passed。後続変更があるので
+最終 source の合格とは数えない。`(_, Label { value })` は default dependency 1 でも
+implicit callable 自身の capture packet が 0 であることを追加 assertion で実行再現。
+named Call root の `choose(_, ...)` は placeholder region の成立条件から外れる fixture
+だったため、新しい call-root placeholder 仕様を導入せず valid Tuple root で切り分けた。
+
+ユーザーの条件付き許可に従い、この大きい input-site/C1/transaction/runtime boundary
+だけ fresh-context `gpt-6-astra` / Max へ設計助言を求めた。助言 agent は読取のみ。
+採用する final model は既存 Expression/RecordField/Capture/StatementCapture site を
+共通 input projection の責任へ移し、site/source binding type/origin/access を保持する。
+open generic の Copy/Move は closed instance の local-use admission に残す。
+C1 structural owner の全 record slot を閉じ、C2 は runtime field と stable source を
+同じ slot に join する。expression-only implicit ledger/occurrence/expected-use を
+site に移行し、candidate journal/rollback/extract/apply/drain と最終検証も同時に揃える。
+semantic order は selected input traversal が持ち、candidate の発見順を正本にしない。
+runtime は同じ binding frame と site の ownership proof を読む。default 専用の別 collector、
+field と local iterator の位置合わせ、C1/C2 の独立 identity 再生成は削除する。
+
+現時点で migration は未完了。追加した implicit packet regression は失敗しており、
+C1 slot/phase と site projection の API 移行途中なので compile も再確認が必要。
+この状態を coherent cut として公開しない。残りの producer/consumer を完成させ、
+mixed fields、複数/重複 binding、generic、defer/callback、candidate atomicity、stable
+identity、runtime result の証拠を閉じてから必要な全体検証と commit/push を行う。
+
+### 2026-10-01 — accepted scope extension: canonical declaration identities
+
+User steering / reference: ChatGPT `6abdea2a-433c-83e9-8ea6-b4e32e3d7217`
+(`関数分離の理由比較`)。2 turns を read_thread で読み、提案を現在の local source と照合。
+Supersedes: `5acefacb629f5b286afc498340adceff109d883b` の View-only module identity
+policy を最終契約として保持する判断。他の既存 goal acceptance はすべて維持する。
+
+すべての authored declaration family の implicit PublicId を
+`<family>.<canonical-module-path>.<declaration-name>` に統一する。root module は空
+namespace。explicit PublicId はその値をそのまま保持し、移動に依存しない identity
+が必要な場合は作者が explicit ID を選ぶ。import / alias / re-export / symbol / sema /
+compiler / bundle / runtime は final HIR が一度確定した typed ID を参照し、名前から
+再生成しない。Flow の独立な name-only constructor も同じ module-aware authority
+へ移す。catalog-owned Asset は実際の owner/virtual path を保持し、架空の source
+module を足さない。old global implicit ID の dual reader/fallback は残さない。
+
+進行中の local-input/runtime callable cut を検証・保存した直後に、この移行を
+生成、参照、全 consumer、同名 cross-module/explicit ID/移動・source revision の
+tests、maintained specifications まで完了する。まだ実装完了の証拠ではない。
+goal は active、予算の追加や新しい goal への置換は行わない。
+
+### 2026-10-01 — local-input cut: final implementation and ownership review
+
+Base remains `5acefacb629f5b286afc498340adceff109d883b`, existing main; all current dirty changes belong to this cut. Supersedes the in-progress implementation status above; the final workspace recipe passes.
+
+The final projection carries `CheckedLocalUseSite`, binding type, stable origin when issued, and access. Defaults consume the complete eager expression/statement inventory; explicit closure, implicit callable, deferred body and local-use admission reuse the projection. C1 owns all authored record slots; C2 atomically joins runtime field placement and stable source to those same slots. The expression-only capture ledger and occurrence coordinate are replaced. `CheckedLocalInputCoordinate` distinguishes expression, record field and capture creation roles. Record shorthand and explicit fields interleave by selected source position; aggregate packets follow first semantic use. Candidate journal order remains rollback bookkeeping and is excluded from semantic replay equality.
+
+Runtime executes an admitted implicit body through a named execution context. Ordinary expression/default/return evaluation creates the callable; captured bindings use the existing lexical frame and exact `checked_local_read(site, local)` ownership admission. No capture ExprId overrides, source-name reconstruction, or parallel runtime binding frame were added.
+
+The first workspace recipe failed on two new acceptance cases: open generic record shorthand was rejected, and a later View parameter in shorthand caused HIR `InvalidLocalTimeline`. Repairs distinguish completely bound declaration parameters from runtime concrete types (`apply_bound` versus `apply_resolved`); an open record keeps its C1 schema until closed-instance runtime projection. `UnresolvedShorthand` retains the authored name/site, freeze proves that no visible binding exists, and sema rejects it. Both ordinary and dialogue candidate producers/freezers were migrated. A mutation replacing a visible local with unresolved input fails atomic HIR freeze. The second workspace recipe exposed the old C05 expectation of a lowering invariant failure; that test now proves the same no-fabricated-local rule through the typed unresolved site, and its focused rerun passes.
+
+Focused evidence after repairs: View defaults 10/0, HIR unresolved-input/freeze 1/0, native plus decoded AWBC input/frame cases 8/0. These include a returned `Box<T>` packet, mixed fields, field base type, and two closed generic frames. Earlier unknown-effect fixtures lacked an explicit closed callable effect row; the original generic-record probe was retained and repaired rather than excluded. Final workspace check/Clippy, format and diff checks pass; Clippy retains warnings. Final `just test-workspace` exits 0: 308 suites, 7,153 passed, 0 failed, 24 ignored, with `RUST_MIN_STACK=16777216`. The final structure gate passes: 97 packages, 350 review triggers, 0 blocking findings. Failed first and second recipe logs are retained in the local temporary receipt files; their repairs are described above. Tier 2 device/render/scheduler/protocol families are outside this compiler input cut; no native pixel or performance claim is made.
+
+Exact physical measurements at this dirty cut (bytes are current file bytes; embedded test LOC follows the canonical scanner convention). All listed production owners are handwritten; test rows contain handwritten test source. No generated, benchmark, example, tool or facade owner was introduced.
+
+| path / owning crate | classification | bytes | physical LOC (base → current) | embedded test LOC |
+|---|---|---:|---:|---:|
+| `crates/arcweft-compiler/tests/callable_execution.rs` | test | 33148 | 1139 → 1202 | 0 |
+| `crates/arcweft-lang-hir/src/final_lowering/expression_lowering.rs` | production | 104871 | 2419 → 2422 | 0 |
+| `crates/arcweft-lang-hir/src/final_lowering/expression_lowering/tests.rs` | test | 114534 | 3145 → 3207 | 0 |
+| `crates/arcweft-lang-hir/src/source_index/expression_manifest/projection.rs` | production | 50064 | 1262 → 1281 | 0 |
+| `crates/arcweft-lang-sema/src/final_analysis/analyzer/calls.rs` | production | 252581 | 5775 → 5803 | 156 |
+| `crates/arcweft-lang-sema/src/final_analysis/analyzer/evaluated_effects.rs` | production | 100761 | 2179 → 2190 | 0 |
+| `crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs` | production | 213473 | 4919 → 4934 | 0 |
+| `crates/arcweft-lang-sema/src/final_analysis/analyzer/state.rs` | production | 122289 | 3116 → 3218 | 600 |
+| `crates/arcweft-lang-sema/src/final_analysis/analyzer/tests.rs` | test | 65646 | 1748 → 1748 | 0 |
+| `crates/arcweft-lang-sema/src/final_analysis/free_capture.rs` | production | 24735 | 87 → 646 | 0 |
+| `crates/arcweft-lang-sema/src/final_analysis/local_use.rs` | production | 105304 | 2688 → 2693 | 0 |
+| `crates/arcweft-lang-sema/src/final_analysis/match_edges.rs` | production | 76020 | 1709 → 1827 | 0 |
+| `crates/arcweft-lang-sema/src/final_analysis/model.rs` | production | 104403 | 3153 → 3154 | 0 |
+| `crates/arcweft-lang-sema/src/final_analysis/model/capture.rs` | production | 47239 | 1167 → 1267 | 381 |
+| `crates/arcweft-lang-sema/src/final_analysis/nominal_schema.rs` | production | 93082 | 2247 → 2269 | 0 |
+| `crates/arcweft-lang-sema/src/final_analysis/prepared.rs` | production | 52882 | 1600 → 1603 | 0 |
+| `crates/arcweft-lang-sema/src/final_analysis/report.rs` | production | 97206 | 2403 → 2411 | 0 |
+| `crates/arcweft-lang-sema/src/final_analysis/statement_effects.rs` | production | 53563 | 1354 → 1371 | 0 |
+| `crates/arcweft-lang-sema/src/semantic_coordinate.rs` | production | 76327 | 2105 → 2155 | 73 |
+| `crates/arcweft-lang-sema/src/semantic_coordinate/catalog.rs` | production | 52426 | 1210 → 1271 | 341 |
+| `crates/arcweft-runtime-plan/src/final_expr.rs` | production | 134746 | 3286 → 3318 | 0 |
+| `crates/arcweft-runtime-plan/src/final_flow.rs` | production | 354240 | 8578 → 8578 | 398 |
+
+Ownership disposition: `free_capture.rs` grows 559 physical LOC (87 → 646) and stays one private local-input projection, ordering and root-bound capture collection boundary; its state is transaction-local and owns no I/O or persistent duplicate read index. The new coordinate role is a real semantic consumer boundary, not API widening for file splitting. `model/capture.rs` (1,267 LOC, 381 embedded test LOC) crosses SIZE001 and remains the terminal capture proof, identity encoder and validation owner; its tests mutate that exact boundary. HIR expression lowering and source projection retain typed lexical resolution/freeze, including ordinary/dialogue producer parity; their existing tests follow that owner.
+
+For the touched upper-trigger owners, retain cohesion explicitly: analyzer calls/evaluated_effects/expressions issue selected facts, state owns the candidate transaction, local_use owns closed Copy/Move/Borrow admission, match_edges owns selected C1 edges and record phase transition, nominal_schema owns C2 projection, prepared/model/report own their existing phase carriers/publication, statement_effects owns eager inventories, semantic_coordinate and catalog own byte grammar/issuance respectively, runtime final_expr/final_flow own admitted lowering/site definition. Each edit follows that existing responsibility; no unrelated state cluster, duplicate semantic authority, second AST walk, compatibility reader or I/O boundary was added. The record side maps, default-only collector, expression-only expected uses and positional local/field iterator join were deleted. Existing fixture and production owner boundaries suffice; arbitrary physical decomposition would widen APIs without changing an actual owner.
+
+Cargo metadata (`--no-deps --all-features`) direct workspace fan-in/out: `arcweft-lang-hir` 11/9, `arcweft-lang-sema` 11/18, `arcweft-runtime-plan` 10/14. Manifests, lockfile, features and dependency direction are unchanged. Syntax/HIR → sema → runtime-plan remains the direction; consumers do not issue semantic local identities.
+
+Remaining goal work: canonical implicit IDs for all declaration families are the next accepted priority; general checked expression/default root ABI and retained RuntimeValue/View execution, UI audit acceptance, .1.3.1, remaining nominal and scheduler/restore work continue afterward. This cut does not establish that the full goal is complete.

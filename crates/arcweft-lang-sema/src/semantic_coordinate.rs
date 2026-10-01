@@ -542,6 +542,56 @@ pub struct CheckedSemanticPath {
     steps: Box<[CheckedSemanticPathStep]>,
 }
 
+/// An accepted input occurrence. Field shorthand and capture creation have
+/// roles of their own and never masquerade as expression paths.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedLocalInputCoordinate {
+    owner: CheckedSemanticPath,
+    role: CheckedLocalInputRole,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum CheckedLocalInputRole {
+    Expression,
+    RecordField {
+        source_ordinal: u32,
+        accepted_field: CheckedRecordFieldSemanticId,
+    },
+    Capture(StableCheckedBindingCoordinate),
+    StatementCapture(StableCheckedBindingCoordinate),
+}
+
+impl CheckedLocalInputCoordinate {
+    pub const fn owner(&self) -> &CheckedSemanticPath {
+        &self.owner
+    }
+
+    pub(crate) fn canonical_bytes(&self) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
+        let mut bytes = self.owner.canonical_bytes()?;
+        match &self.role {
+            CheckedLocalInputRole::Expression => bytes.push(0),
+            CheckedLocalInputRole::RecordField {
+                source_ordinal,
+                accepted_field,
+            } => {
+                bytes.push(1);
+                bytes.extend_from_slice(&source_ordinal.to_le_bytes());
+                bytes.extend_from_slice(accepted_field.as_bytes());
+            }
+            CheckedLocalInputRole::Capture(origin)
+            | CheckedLocalInputRole::StatementCapture(origin) => {
+                bytes.push(if matches!(self.role, CheckedLocalInputRole::Capture(_)) {
+                    2
+                } else {
+                    3
+                });
+                bytes.extend_from_slice(&origin.canonical_bytes()?);
+            }
+        }
+        Ok(bytes)
+    }
+}
+
 impl CheckedSemanticPath {
     pub(crate) fn new(
         root: AcceptedSemanticRoot,

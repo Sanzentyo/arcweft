@@ -1695,10 +1695,21 @@ impl Analyzer<'_, '_, '_> {
             coordinates,
             structural_edges,
             |owner| {
-                self.facts
+                let checked = self
+                    .facts
                     .expressions()
                     .get(&owner)
-                    .map(super::super::free_capture::CheckedCaptureExpression::from_prepared)
+                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                super::super::free_capture::CheckedCaptureExpression::from_prepared(
+                    owner,
+                    checked,
+                    |local| self.facts.locals().get(&local).cloned(),
+                    self.topology
+                        .module(owner.module())
+                        .and_then(|module| module.expression_uses().row(owner))
+                        .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?
+                        .capture_access(),
+                )
             },
             |local| self.facts.locals().get(&local).cloned(),
         )

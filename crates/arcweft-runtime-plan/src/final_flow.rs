@@ -3051,7 +3051,7 @@ fn define_function_sites(
                         ))
                     })
                     .collect::<Result<BTreeMap<_, _>, String>>()?;
-            lowerer.lower_function_site_body(definition.owner, definition.body, overrides)
+            lowerer.lower_implicit_callable_body(definition.owner, overrides)
         })();
         match body.and_then(|body| {
             builder

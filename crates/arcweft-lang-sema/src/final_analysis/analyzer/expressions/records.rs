@@ -121,7 +121,7 @@ impl Analyzer<'_, '_, '_> {
                     owner: declared_field.ty(),
                 })
             })?;
-        let field_expected = substitutions.apply_resolved(&declared_ty);
+        let field_expected = substitutions.apply_bound(&declared_ty);
         let (source, actual) = match field {
             HirRecordField::Explicit { value, .. } => (
                 PreparedRecordValueSource::Expression(*value),
@@ -142,6 +142,9 @@ impl Analyzer<'_, '_, '_> {
                 })?;
                 (PreparedRecordValueSource::Local(*local), actual)
             }
+            HirRecordField::UnresolvedShorthand { .. } => {
+                return Err(AnalyzerExpressionError::rejected(owner));
+            }
             HirRecordField::Invalid { .. } => {
                 return Err(AnalyzerExpressionError::fatal(
                     FinalSemanticAnalysisError::RecoveredOwner,
@@ -152,7 +155,7 @@ impl Analyzer<'_, '_, '_> {
             return Err(AnalyzerExpressionError::rejected(owner));
         }
         let resolved_declared = substitutions
-            .apply_resolved(&declared_ty)
+            .apply_bound(&declared_ty)
             .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
         if !resolved_declared.accepts(&actual) {
             return Err(AnalyzerExpressionError::rejected(owner));

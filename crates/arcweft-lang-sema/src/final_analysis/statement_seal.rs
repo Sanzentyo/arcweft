@@ -528,9 +528,20 @@ impl CheckedStatementPayloadSealer for CheckedStatementSeal<'_, '_, '_> {
                     self.coordinates,
                     self.structural_edges,
                     |child| {
-                        expressions
+                        let checked = expressions
                             .get(&child)
-                            .map(super::free_capture::CheckedCaptureExpression::from_checked)
+                            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                        let fields = self
+                            .structural_edges
+                            .record_fields(child)
+                            .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                        super::free_capture::CheckedCaptureExpression::from_checked(
+                            child,
+                            checked,
+                            fields,
+                            |local| self.locals.get(&local).map(|binding| binding.ty().clone()),
+                            arcweft_lang_hir::scope::CaptureAccess::Read,
+                        )
                     },
                     |local| self.locals.get(&local).map(|binding| binding.ty().clone()),
                 )?;

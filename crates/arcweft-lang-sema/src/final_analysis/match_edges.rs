@@ -38,7 +38,7 @@ use crate::callable::{
     CheckedCallSite, CheckedCallableCatalog, CheckedCallableJoin, CheckedCallableJoinError,
     validate_selected_application,
 };
-use crate::record_field::{AcceptedRecordFieldSemanticId, CheckedRecordFieldSemanticId};
+use crate::record_field::CheckedRecordFieldSemanticId;
 use crate::semantic_coordinate::{
     CheckedExpressionChildRole, CheckedExpressionEdgeAuthority, CheckedNestedPathSegmentV1,
     CheckedNestedPathV1,
@@ -465,6 +465,25 @@ impl CheckedSelectedExpressionGraph {
 #[derive(Debug)]
 struct CheckedStructuralOwnerEdges {
     ordered: Box<[CheckedStructuralChildEdge]>,
+    record: Option<CheckedRecordFieldPlan>,
+}
+
+#[derive(Debug)]
+enum CheckedRecordFieldPlan {
+    Semantic(Box<[super::CheckedRecordFieldSlot]>),
+    Runtime(Box<[super::CheckedExpressionRecordField]>),
+}
+
+impl CheckedRecordFieldPlan {
+    fn slot(&self, ordinal: u32) -> Option<&super::CheckedRecordFieldSlot> {
+        let ordinal = usize::try_from(ordinal).ok()?;
+        match self {
+            Self::Semantic(slots) => slots.get(ordinal),
+            Self::Runtime(fields) => fields
+                .get(ordinal)
+                .map(super::CheckedExpressionRecordField::slot),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -493,11 +512,19 @@ impl CheckedStructuralChildEdge {
 pub(super) struct CheckedStructuralEdgeDraft {
     facts: BTreeMap<ExprId, Result<CheckedStructuralOwnerEdges, CheckedChildEdgeError>>,
     call_owners: BTreeSet<ExprId>,
-    record_owners: BTreeSet<ExprId>,
-    record_fields: Option<BTreeMap<ExprId, Box<[super::CheckedExpressionRecordField]>>>,
 }
 
 impl CheckedExpressionEdgeAuthority for CheckedStructuralEdgeDraft {
+    fn checked_record_input_field(
+        &self,
+        owner: ExprId,
+        source_ordinal: u32,
+        local: arcweft_lang_hir::identity::LocalId,
+    ) -> Option<crate::record_field::CheckedRecordFieldSemanticId> {
+        let slot = self.record_slot(owner, source_ordinal).ok()?;
+        (slot.source() == super::prepared::PreparedRecordValueSource::Local(local))
+            .then(|| slot.semantic_id())
+    }
     fn checked_expression_child_role(
         &self,
         parent: ExprId,
@@ -583,18 +610,90 @@ impl CheckedStructuralEdgeDraft {
 
     pub(super) fn attach_record_fields(
         &mut self,
-        fields: BTreeMap<ExprId, Box<[super::CheckedExpressionRecordField]>>,
+        mut fields: BTreeMap<ExprId, Box<[super::CheckedExpressionRecordField]>>,
     ) -> Result<(), CheckedChildEdgeError> {
-        if self.record_fields.is_some()
-            || !fields
-                .keys()
-                .copied()
-                .eq(self.record_owners.iter().copied())
-        {
+        let owners = self
+            .facts
+            .iter()
+            .filter_map(|(owner, row)| {
+                row.as_ref()
+                    .ok()
+                    .and_then(|row| row.record.as_ref())
+                    .map(|_| *owner)
+            })
+            .collect::<Vec<_>>();
+        if !fields.keys().copied().eq(owners.iter().copied()) {
             return Err(CheckedChildEdgeError::UnexpectedCheckedRecordField);
         }
-        self.record_fields = Some(fields);
+        for owner in &owners {
+            let row = self
+                .facts
+                .get(owner)
+                .and_then(|row| row.as_ref().ok())
+                .ok_or(CheckedChildEdgeError::MissingExpression)?;
+            let Some(CheckedRecordFieldPlan::Semantic(slots)) = &row.record else {
+                return Err(CheckedChildEdgeError::UnexpectedCheckedRecordField);
+            };
+            let actual = fields
+                .get(owner)
+                .ok_or(CheckedChildEdgeError::MissingCheckedRecordField)?;
+            if slots.len() != actual.len()
+                || slots
+                    .iter()
+                    .zip(actual)
+                    .any(|(slot, field)| slot != field.slot())
+            {
+                return Err(CheckedChildEdgeError::CheckedRecordFieldOrderMismatch);
+            }
+        }
+        for owner in owners {
+            let actual = fields
+                .remove(&owner)
+                .expect("validated complete record batch");
+            let row = self
+                .facts
+                .get_mut(&owner)
+                .expect("validated record owner")
+                .as_mut()
+                .expect("validated record fact");
+            row.record = Some(CheckedRecordFieldPlan::Runtime(actual));
+        }
         Ok(())
+    }
+
+    pub(super) fn record_fields(
+        &self,
+        owner: ExprId,
+    ) -> Result<&[super::CheckedExpressionRecordField], CheckedChildEdgeError> {
+        let row = self
+            .facts
+            .get(&owner)
+            .ok_or(CheckedChildEdgeError::MissingExpression)?
+            .as_ref()
+            .map_err(Clone::clone)?;
+        match &row.record {
+            None => Ok(&[]),
+            Some(CheckedRecordFieldPlan::Runtime(fields)) => Ok(fields),
+            Some(CheckedRecordFieldPlan::Semantic(_)) => {
+                Err(CheckedChildEdgeError::MissingCheckedRecordField)
+            }
+        }
+    }
+
+    pub(super) fn record_slot(
+        &self,
+        owner: ExprId,
+        ordinal: u32,
+    ) -> Result<&super::CheckedRecordFieldSlot, CheckedChildEdgeError> {
+        self.facts
+            .get(&owner)
+            .ok_or(CheckedChildEdgeError::MissingExpression)?
+            .as_ref()
+            .map_err(Clone::clone)?
+            .record
+            .as_ref()
+            .and_then(|record| record.slot(ordinal))
+            .ok_or(CheckedChildEdgeError::MissingCheckedRecordField)
     }
 
     fn call_callee(&self, owner: ExprId) -> Result<Option<ExprId>, CheckedCallableJoinError> {
@@ -622,7 +721,6 @@ impl CheckedStructuralEdgeDraft {
     ) -> Self {
         let mut facts = BTreeMap::new();
         let mut call_owners = BTreeSet::new();
-        let mut record_owners = BTreeSet::new();
         for owner in selected.owners() {
             let selected_edges = selected.expression_edges(owner);
             let edges = selected_edges
@@ -650,6 +748,7 @@ impl CheckedStructuralEdgeDraft {
             if checked_owner.checked_call_site(owner).is_some() {
                 call_owners.insert(owner);
             }
+            let mut record = None;
             match (
                 matches!(
                     owner_expression.kind(),
@@ -661,7 +760,46 @@ impl CheckedStructuralEdgeDraft {
                 ),
             ) {
                 (true, true) => {
-                    record_owners.insert(owner);
+                    let super::PreparedExpressionFact::ProjectRecord(prepared) = checked_owner
+                    else {
+                        unreachable!()
+                    };
+                    let slots = prepared
+                        .fields()
+                        .iter()
+                        .map(|field| {
+                            super::CheckedRecordFieldSlot::issue(
+                                prepared.nominal().identity(),
+                                field,
+                            )
+                        })
+                        .collect::<Result<Vec<_>, _>>();
+                    match slots {
+                        Ok(slots)
+                            if slots.iter().enumerate().all(|(ordinal, slot)| {
+                                u32::try_from(ordinal).ok() == Some(slot.source_ordinal())
+                            }) && slots
+                                .iter()
+                                .map(|slot| slot.declaration_ordinal())
+                                .collect::<BTreeSet<_>>()
+                                .len()
+                                == slots.len() =>
+                        {
+                            record =
+                                Some(CheckedRecordFieldPlan::Semantic(slots.into_boxed_slice()))
+                        }
+                        Err(error) => {
+                            facts.insert(owner, Err(CheckedChildEdgeError::GenericScope(error)));
+                            continue;
+                        }
+                        Ok(_) => {
+                            facts.insert(
+                                owner,
+                                Err(CheckedChildEdgeError::CheckedRecordFieldOrderMismatch),
+                            );
+                            continue;
+                        }
+                    }
                 }
                 (false, false) => {}
                 (true, false) => {
@@ -724,10 +862,19 @@ impl CheckedStructuralEdgeDraft {
                 }
                 let accepted_field = match role {
                     HirExpressionChildRole::RecordField { source_ordinal } => {
-                        match prepared_record_field(checked_owner, child, *source_ordinal) {
-                            Ok(field) => Some(field),
-                            Err(error) => {
-                                first_error = Some(error);
+                        match record
+                            .as_ref()
+                            .and_then(|record| record.slot(*source_ordinal))
+                        {
+                            Some(slot)
+                                if slot.source()
+                                    == super::PreparedRecordValueSource::Expression(child) =>
+                            {
+                                Some(slot.semantic_id())
+                            }
+                            _ => {
+                                first_error =
+                                    Some(CheckedChildEdgeError::MissingCheckedRecordField);
                                 break;
                             }
                         }
@@ -798,22 +945,18 @@ impl CheckedStructuralEdgeDraft {
                     || {
                         Ok(CheckedStructuralOwnerEdges {
                             ordered: ordered.into_boxed_slice(),
+                            record,
                         })
                     },
                     Err,
                 ),
             );
         }
-        Self {
-            facts,
-            call_owners,
-            record_owners,
-            record_fields: None,
-        }
+        Self { facts, call_owners }
     }
 
     pub(super) fn into_final_facts(
-        mut self,
+        self,
         modules: &BTreeMap<HirModuleId, &HirModule>,
         calls: &BTreeMap<ExprId, super::CallTargetFacts>,
         mut callable_joins: PreparedCallableJoins,
@@ -822,8 +965,6 @@ impl CheckedStructuralEdgeDraft {
         PreparedCallableJoins,
     ) {
         let mut final_facts = BTreeMap::new();
-        let record_fields_attached = self.record_fields.is_some();
-        let mut record_fields = self.record_fields.take().unwrap_or_default();
         for (owner, structural) in self.facts {
             let callable = if self.call_owners.contains(&owner) {
                 match callable_joins
@@ -839,36 +980,35 @@ impl CheckedStructuralEdgeDraft {
             } else {
                 None
             };
-            let mut edges = match structural {
-                Ok(edges) => edges
-                    .ordered
-                    .into_vec()
-                    .into_iter()
-                    .filter_map(|edge| match edge {
-                        CheckedStructuralChildEdge::Expression { child, role } => {
-                            Some((child, role))
-                        }
-                        CheckedStructuralChildEdge::Evaluation(_) => None,
-                    })
-                    .collect::<Vec<_>>(),
+            let structural = match structural {
+                Ok(edges) => edges,
                 Err(error) => {
                     final_facts.insert(owner, Err(CheckedExpressionEdgeError::Child(error)));
                     continue;
                 }
             };
-            let record_field_rows = record_fields.remove(&owner);
-            if self.record_owners.contains(&owner) != record_field_rows.is_some()
-                || (self.record_owners.contains(&owner) && !record_fields_attached)
-            {
-                final_facts.insert(
-                    owner,
-                    Err(CheckedExpressionEdgeError::Child(
-                        CheckedChildEdgeError::MissingCheckedRecordField,
-                    )),
-                );
-                continue;
-            }
-            let record_fields = record_field_rows.unwrap_or_default();
+            let record_fields = match structural.record {
+                None => Vec::new().into_boxed_slice(),
+                Some(CheckedRecordFieldPlan::Runtime(fields)) => fields,
+                Some(CheckedRecordFieldPlan::Semantic(_)) => {
+                    final_facts.insert(
+                        owner,
+                        Err(CheckedExpressionEdgeError::Child(
+                            CheckedChildEdgeError::MissingCheckedRecordField,
+                        )),
+                    );
+                    continue;
+                }
+            };
+            let mut edges = structural
+                .ordered
+                .into_vec()
+                .into_iter()
+                .filter_map(|edge| match edge {
+                    CheckedStructuralChildEdge::Expression { child, role } => Some((child, role)),
+                    CheckedStructuralChildEdge::Evaluation(_) => None,
+                })
+                .collect::<Vec<_>>();
             if self.call_owners.contains(&owner) {
                 let Some(call) = calls.get(&owner) else {
                     final_facts.insert(
@@ -905,14 +1045,6 @@ impl CheckedStructuralEdgeDraft {
                     final_facts.insert(owner, Err(CheckedExpressionEdgeError::Child(error)));
                 }
             }
-        }
-        for owner in record_fields.into_keys() {
-            final_facts.insert(
-                owner,
-                Err(CheckedExpressionEdgeError::Child(
-                    CheckedChildEdgeError::UnexpectedCheckedRecordField,
-                )),
-            );
         }
         (final_facts, callable_joins)
     }
@@ -1333,6 +1465,20 @@ impl FinalSemanticAnalysis {
 }
 
 impl CheckedExpressionEdgeAuthority for FinalSemanticAnalysis {
+    fn checked_record_input_field(
+        &self,
+        owner: ExprId,
+        source_ordinal: u32,
+        local: arcweft_lang_hir::identity::LocalId,
+    ) -> Option<crate::record_field::CheckedRecordFieldSemanticId> {
+        let field = self
+            .checked_expression_edge_fact(owner)
+            .ok()?
+            .record_fields()
+            .get(usize::try_from(source_ordinal).ok()?)?;
+        (field.slot().source() == super::prepared::PreparedRecordValueSource::Local(local))
+            .then(|| field.slot().semantic_id())
+    }
     fn checked_expression_child_role(
         &self,
         parent: ExprId,
@@ -1498,34 +1644,6 @@ fn refine_content_nominal_discriminator_edge(
     };
     edges[index].1 = CheckedExpressionChildRole::ContentNominalDiscriminator { ordinal };
     Ok(())
-}
-
-fn prepared_record_field(
-    checked: &super::PreparedExpressionFact,
-    child: ExprId,
-    source_ordinal: u32,
-) -> Result<CheckedRecordFieldSemanticId, CheckedChildEdgeError> {
-    let super::PreparedExpressionFact::ProjectRecord(record) = checked else {
-        return Err(CheckedChildEdgeError::MissingCheckedRecordField);
-    };
-    let field = record
-        .fields()
-        .iter()
-        .find(|field| field.source_ordinal() == source_ordinal)
-        .ok_or(CheckedChildEdgeError::MissingCheckedRecordField)?;
-    if field.source() != super::PreparedRecordValueSource::Expression(child) {
-        return Err(CheckedChildEdgeError::MissingCheckedRecordField);
-    }
-    Ok(CheckedRecordFieldSemanticId::Project(
-        AcceptedRecordFieldSemanticId::issue(
-            record.nominal().identity(),
-            field.declaration_ordinal(),
-            field
-                .field_type()
-                .semantic_identity_digest()
-                .map_err(CheckedChildEdgeError::GenericScope)?,
-        ),
-    ))
 }
 
 #[allow(

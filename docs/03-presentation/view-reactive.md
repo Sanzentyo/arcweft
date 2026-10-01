@@ -53,6 +53,9 @@ View の parameter default は宣言型を expected type として検査する�
 String、nominal、tuple、関数値を scalar へ縮約しない。default が読むことのできる
 parameter は宣言順で先行するものだけで、closure や implicit callable の capture
 にも同じ制約を適用する。自己参照と後続 parameter への参照は拒否する。
+record shorthand や nominal field の base、callback の生成時 capture も同じ
+checked free-input authority から依存として保持する。default 内の local binding
+は、その default の外部 parameter 依存には含めない。
 default の評価は外部効果を実行せず、中断しない。純粋な関数呼び出しと local な
 計算は通常の意味論に従う。
 

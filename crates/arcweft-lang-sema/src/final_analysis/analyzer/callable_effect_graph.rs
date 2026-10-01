@@ -303,7 +303,7 @@ impl<'a> CallableEffectGraph<'a> {
         FinalSemanticAnalysisError,
     > {
         let mut closed = BTreeMap::new();
-        for (owner, direct, expressions) in execution.expression_execution_rows() {
+        for (owner, direct, expressions, statements) in execution.expression_execution_rows() {
             control.check()?;
             let suspension = if direct
                 || self.selected_expressions_may_suspend(expressions.iter().copied(), rows)
@@ -323,6 +323,11 @@ impl<'a> CallableEffectGraph<'a> {
                     owner,
                     crate::final_analysis::statement_effects::PreparedExecutableSuspensionRow::new(
                         expressions,
+                        statements
+                            .iter()
+                            .copied()
+                            .collect::<Vec<_>>()
+                            .into_boxed_slice(),
                         suspension,
                         control_role,
                     ),

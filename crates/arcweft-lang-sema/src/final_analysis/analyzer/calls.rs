@@ -4418,7 +4418,7 @@ impl Analyzer<'_, '_, '_> {
         let mut by_owner = BTreeMap::<
             ExprId,
             Vec<(
-                u32,
+                (u32, u8, u32),
                 arcweft_lang_hir::identity::LocalId,
                 arcweft_lang_hir::scope::CaptureAccess,
             )>,
@@ -4435,18 +4435,46 @@ impl Analyzer<'_, '_, '_> {
                 by_owner.entry(*owner).or_default();
             }
         }
-        for ((owner, expression), local) in self.facts.pending_implicit_capture_uses() {
+        for ((owner, site), local) in self.facts.pending_implicit_capture_uses() {
+            let expression = site.expression_owner().ok_or_else(|| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+            })?;
             let module = self.topology.module(owner.module()).ok_or_else(|| {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
             })?;
-            let row = module.expression_uses().row(*expression).ok_or_else(|| {
+            let row = module.expression_uses().row(expression).ok_or_else(|| {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
             })?;
-            by_owner.entry(*owner).or_default().push((
-                row.source_ordinal(),
-                *local,
+            let fact = self.facts.expressions().get(&expression).ok_or_else(|| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+            })?;
+            let inputs = super::super::free_capture::CheckedCaptureExpression::from_prepared(
+                expression,
+                fact,
+                |local| self.facts.locals().get(&local).cloned(),
                 row.capture_access(),
-            ));
+            )
+            .map_err(AnalyzerExpressionError::fatal)?;
+            let input = inputs
+                .sources()
+                .find(|input| input.site() == *site && input.local() == *local)
+                .ok_or_else(|| {
+                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+                })?;
+            let order = input
+                .source_order(&self.topology, |owner| {
+                    match self.facts.expressions().get(&owner) {
+                        Some(super::PreparedExpressionFact::ProjectRecord(record)) => {
+                            Some(record.fields().iter().map(|field| field.source()).collect())
+                        }
+                        _ => None,
+                    }
+                })
+                .map_err(AnalyzerExpressionError::fatal)?;
+            by_owner
+                .entry(*owner)
+                .or_default()
+                .push((order, *local, input.access()));
         }
         let mut rows = BTreeMap::new();
         for (owner, mut uses) in by_owner {

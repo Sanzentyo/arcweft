@@ -603,7 +603,7 @@ fn validate_record_field(
                 | HirRecordFieldSourcePart::Colon
                 | HirRecordFieldSourcePart::Value
         ),
-        HirRecordField::Shorthand { .. } => matches!(
+        HirRecordField::Shorthand { .. } | HirRecordField::UnresolvedShorthand { .. } => matches!(
             part,
             HirRecordFieldSourcePart::Whole | HirRecordFieldSourcePart::Name
         ),

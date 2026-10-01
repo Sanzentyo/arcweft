@@ -1202,7 +1202,15 @@ impl FinalSemanticAnalysisPostEntryDraft {
                 expression.resolution()
             {
                 callable
-                    .validate_execution_uses(&expressions)
+                    .validate_execution_uses(
+                        &expressions,
+                        &crate::semantic_coordinate::SemanticCoordinateIndex::new(
+                            &accepted_roots,
+                            &structural_edges,
+                        ),
+                        |owner| structural_edges.record_fields(owner).ok(),
+                        |local| locals.get(&local).map(|binding| binding.ty().clone()),
+                    )
                     .map_err(|violation| FinalSemanticAnalysisError::CaptureAuthority {
                         violation,
                     })?;
@@ -1480,7 +1488,7 @@ fn seal_checked_callable_interfaces(
                             module,
                             symbol,
                             value,
-                            execution.expressions(),
+                            execution,
                             &coordinates,
                         )?;
                         Some(CheckedDeclarationDefault::new(

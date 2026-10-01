@@ -298,6 +298,71 @@ fn lower_and_publish(
     (module, owners, attached)
 }
 
+#[test]
+fn unresolved_record_shorthand_preserves_its_site_and_cannot_replace_a_visible_binding() {
+    let parsed = parsed_source("unresolved-record-input", &["Point { missing }".into()]);
+    let (module, roots, _) = lower_and_publish(&parsed);
+    let HirExprKind::Record(record) = expression(&module, roots[0]).kind() else {
+        panic!("record");
+    };
+    assert!(
+        matches!(record.fields(), [HirRecordField::UnresolvedShorthand { name }] if name.as_str() == "missing")
+    );
+    assert_eq!(module.status(), HirModuleStatus::Clean);
+    let site = module
+        .source_site(
+            parsed.document().identity(),
+            HirSourceQuery::Expr {
+                owner: roots[0],
+                role: HirExprSourceRole::RecordField {
+                    field: 0,
+                    part: HirRecordFieldSourcePart::Name,
+                },
+            },
+        )
+        .expect("exact input source site");
+    assert!(matches!(
+        site.presence(),
+        HirSourcePresence::Present(HirSourceSite::Span(_))
+    ));
+    assert_expression_freeze_rejects(
+        "forged-unresolved-record-input",
+        "{ let value = 1; Point { value } }",
+        |transaction, root| {
+            let (slots, arenas) = transaction.storage_mut();
+            let HirExprKind::Block(block) = arenas
+                .expressions()
+                .resolve_staged(slots, root)
+                .unwrap()
+                .kind()
+            else {
+                panic!("block");
+            };
+            let tail = block.tail();
+            let payload = arenas.expressions().resolve_staged(slots, tail).unwrap();
+            let HirExprKind::Record(record) = payload.kind() else {
+                panic!("record");
+            };
+            let path = record.path().clone();
+            let scope = payload.scope();
+            let name = record.fields()[0].name().unwrap().clone();
+            let replacement = HirExpr::try_new(
+                scope,
+                HirExprKind::Record(HirRecordExpr::new(
+                    path,
+                    vec![HirRecordField::UnresolvedShorthand { name }].into_boxed_slice(),
+                )),
+                HirPoisonState::Clean,
+            )
+            .unwrap();
+            arenas
+                .expressions()
+                .revise_finalized(slots, tail, replacement)
+                .unwrap();
+        },
+    );
+}
+
 fn expression(module: &HirModule, owner: ExprId) -> &HirExpr {
     module
         .arenas()
@@ -1228,17 +1293,14 @@ fn e20_invalid_fields_remain_typed_and_c05_never_guesses_a_local() {
     ));
 
     let shorthand = parsed_source("record-shorthand-timeline", &["Point { local }".into()]);
-    let attached = attached_expressions(&shorthand).pop().unwrap();
-    let database = HirDatabase::try_new().expect("HIR database");
-    let mut transaction = stage(&database, &shorthand);
-    let scope = allocate_module_scope(&mut transaction, &shorthand);
-    assert_eq!(
-        transaction.lower_attached_expression(&attached, scope),
-        Err(HirLowerFailure::Invariant(
-            HirInvariantFailure::InvalidLocalTimeline
-        ))
+    let (module, owners, _) = lower_and_publish(&shorthand);
+    let HirExprKind::Record(record) = expression(&module, owners[0]).kind() else {
+        panic!("record shorthand");
+    };
+    assert!(
+        matches!(record.fields(), [HirRecordField::UnresolvedShorthand { name }] if name.as_str() == "local")
     );
-    assert!(database.current(&module_key(&shorthand)).is_none());
+    assert!(record.fields()[0].local().is_none());
 }
 
 #[test]

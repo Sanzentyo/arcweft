@@ -39,7 +39,7 @@ pub(super) fn seal(
     topology: Arc<HirProjectEvaluationTopology>,
     expressions: &BTreeMap<ExprId, PreparedExpressionFact>,
     local_types: &BTreeMap<LocalId, TypeKind>,
-    pending_capture_uses: &BTreeMap<ExprId, Box<[(ExprId, LocalId)]>>,
+    pending_capture_uses: &BTreeMap<ExprId, Box<[(super::CheckedLocalUseSite, LocalId)]>>,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
     structural_edges: &super::match_edges::CheckedStructuralEdgeDraft,
     checked_callables: &crate::callable::CheckedCallableCatalog,
@@ -689,7 +689,7 @@ fn prepare_callable_seed(
     owner: ExprId,
     function_type: crate::types::SemanticTypeDigest,
     prepared: &PreparedImplicitCallable,
-    pending_uses: &[(ExprId, LocalId)],
+    pending_uses: &[(super::CheckedLocalUseSite, LocalId)],
     expressions: &BTreeMap<ExprId, PreparedExpressionFact>,
     local_types: &BTreeMap<LocalId, TypeKind>,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
@@ -722,13 +722,10 @@ fn prepare_callable_seed(
         return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
     }
 
-    let expected_uses = module
-        .expression_uses()
-        .rows()
-        .iter()
-        .filter(|row| region.contains_expression(row.expression()))
-        .map(|row| {
-            let expression = row.expression();
+    let uses = super::free_capture::implicit_region_inputs(
+        topology,
+        owner,
+        |expression, access| {
             let fact = expressions.get(&expression).ok_or(
                 FinalSemanticAnalysisError::CaptureAuthority {
                     violation: super::CheckedCaptureAuthorityViolation::MissingExpressionUse {
@@ -736,68 +733,53 @@ fn prepare_callable_seed(
                     },
                 },
             )?;
-            let Some(local) = fact.execution_local_use() else {
-                // Non-local execution facts, including compile-time scalars,
-                // intentionally contribute no capture ledger row.
-                return Ok(None);
-            };
-            let binding = module.local_origins().binding(local).ok_or(
-                FinalSemanticAnalysisError::CaptureAuthority {
-                    violation: super::CheckedCaptureAuthorityViolation::MissingLocalBinding {
-                        local,
-                    },
-                },
-            )?;
-            Ok((!region.contains_binding(binding)).then_some((expression, local)))
-        })
-        .collect::<Result<Vec<_>, FinalSemanticAnalysisError>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-    if pending_uses != expected_uses.as_slice() {
+            super::free_capture::CheckedCaptureExpression::from_prepared(
+                expression,
+                fact,
+                |local| local_types.get(&local).cloned(),
+                access,
+            )
+        },
+        |expression| match expressions.get(&expression) {
+            Some(PreparedExpressionFact::ProjectRecord(record)) => {
+                Some(record.fields().iter().map(|field| field.source()).collect())
+            }
+            _ => None,
+        },
+    )?;
+    let expected_uses = uses
+        .iter()
+        .map(|input| (input.site(), input.local()))
+        .collect::<BTreeMap<_, _>>();
+    let observed = pending_uses.iter().copied().collect::<BTreeMap<_, _>>();
+    if observed.len() != pending_uses.len() || observed != expected_uses {
         return Err(FinalSemanticAnalysisError::CaptureAuthority {
             violation: super::CheckedCaptureAuthorityViolation::CaptureEvidenceMismatch,
         });
     }
-
-    let uses = expected_uses
-        .iter()
-        .map(|(expression, local)| {
-            let row = module
-                .expression_uses()
-                .row(*expression)
-                .filter(|_| region.contains_expression(*expression))
-                .ok_or(FinalSemanticAnalysisError::CaptureAuthority {
-                    violation: super::CheckedCaptureAuthorityViolation::MissingExpressionUse {
-                        expression: *expression,
-                    },
-                })?;
-            Ok((
-                row.source_ordinal(),
-                *expression,
-                *local,
-                row.capture_access(),
-            ))
-        })
-        .collect::<Result<Vec<_>, FinalSemanticAnalysisError>>()?;
-
     let mut capture_occurrences = Vec::with_capacity(uses.len());
     let mut captures = Vec::new();
     let mut capture_indices = BTreeMap::<LocalId, usize>::new();
-    for (ordinal, (_, expression, local, access)) in uses.into_iter().enumerate() {
+    for (ordinal, input) in uses.into_iter().enumerate() {
+        let site = input.site();
+        let local = input.local();
+        let access = input.access();
         let ordinal =
             u32::try_from(ordinal).map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
         let value_type = local_types
             .get(&local)
             .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local })?;
         let coordinate = coordinates
-            .expression(expression)
+            .local_input(site, local)
             .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        if value_type.semantic_identity_digest()? != input.value_type() {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
         let origin = coordinates
             .binding(local)
             .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
         let occurrence = CheckedImplicitCaptureOccurrence::new(
-            expression,
+            site,
             local,
             coordinate,
             origin.clone(),

@@ -49,6 +49,14 @@ impl TypeParameterSubstitutions {
         let applied = self.apply(ty);
         (!contains_generic_parameter(&applied)).then_some(applied)
     }
+
+    /// Applies a declaration shape when all of its free parameters have
+    /// bindings. A binding may itself be a rigid parameter of the enclosing
+    /// declaration; that is a checked value type, not an inference hole.
+    pub(crate) fn apply_bound(&self, ty: &TypeKind) -> Option<TypeKind> {
+        (!contains_generic_parameter_where(ty, &|parameter| !self.bindings.contains_key(parameter)))
+            .then(|| self.apply(ty))
+    }
 }
 
 pub(crate) fn contains_generic_parameter(ty: &TypeKind) -> bool {
@@ -921,6 +929,32 @@ mod tests {
         assert_eq!(
             substitutions.apply_resolved(&declared),
             Some(TypeKind::Option(Box::new(TypeKind::I64)))
+        );
+    }
+
+    #[test]
+    fn bound_application_preserves_a_rigid_outer_parameter_without_admitting_a_hole() {
+        let inner = GenericTypeParameterId::new(
+            GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(14)),
+            0,
+        );
+        let outer = GenericTypeParameterId::new(
+            GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(15)),
+            0,
+        );
+        let declared = TypeKind::Option(Box::new(TypeKind::generic_parameter(inner.clone())));
+        let mut substitutions = TypeParameterSubstitutions::default();
+        assert_eq!(substitutions.apply_bound(&declared), None);
+        assert!(substitutions.observe(
+            &TypeKind::generic_parameter(inner),
+            &TypeKind::generic_parameter(outer.clone())
+        ));
+        assert_eq!(substitutions.apply_resolved(&declared), None);
+        assert_eq!(
+            substitutions.apply_bound(&declared),
+            Some(TypeKind::Option(Box::new(TypeKind::generic_parameter(
+                outer
+            ))))
         );
     }
 }

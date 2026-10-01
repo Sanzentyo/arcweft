@@ -230,11 +230,11 @@ pub enum CandidateFactTransactionViolation {
     #[error("candidate fact ledger could not recover to its oldest active frame")]
     UnrecoverableLedger,
     #[error(
-        "implicit capture use {callable:?}/{expression:?} resolved to conflicting locals {existing:?} and {proposed:?}"
+        "implicit capture use {callable:?}/{site:?} resolved to conflicting locals {existing:?} and {proposed:?}"
     )]
     ImplicitCaptureUseConflict {
         callable: ExprId,
-        expression: ExprId,
+        site: super::CheckedLocalUseSite,
         existing: LocalId,
         proposed: LocalId,
     },
