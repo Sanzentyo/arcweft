@@ -3426,3 +3426,9 @@ authority を消し、supplied/defaulted provenance と依存 revision から省
 Need の affine guard は弱めず、Cut-5 の handle/current-owner admission、observer と
 replacement/save transaction を `.1.3.1` と接続する。scalar Await、I32-count Repeat、
 name-based BindLocal は typed operation/slot の consumer が完成した切替で削除する。
+
+Delivery: code/evidence commit は `6b60aa38624ebea505aaa1859a939e00330ab120`。
+commit 後の `main` working tree は clean で、検証した source と一致した。この View の
+T06 semantic matrix を閉じ、T01 Pending 0 と合わせて C3/C5 の残る受入照合から `.1.4`
+の producer/value/runtime migration へ継続する。`.1.3.1`、nominal、scheduler/restore と
+最終全体検証も残り、goal は active のまま保持する。
