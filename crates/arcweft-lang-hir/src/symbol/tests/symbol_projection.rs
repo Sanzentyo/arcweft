@@ -72,6 +72,7 @@ fn view_has_one_retained_binding_and_one_nonbinding_callable_row() {
         HirCallableSourceOwner::ViewItem
     );
     assert_eq!(callables[0].source_item(), retained[0].owner());
+    assert_eq!(retained[0].callable(), Some(callables[0].declaration()));
 
     let bindings = table
         .scope_bindings()
@@ -86,16 +87,58 @@ fn view_has_one_retained_binding_and_one_nonbinding_callable_row() {
         .span(SourceRange::new(5, 9))
         .expect("View name source");
     assert!(matches!(
+        table.resolve_value_target(&CanonicalModulePath::crate_root(), &symbol_path("Main"), source.clone()),
+        Ok(ProjectValueLookup::Present(callable)) if callable.declaration() == callables[0].declaration()
+    ));
+    assert!(matches!(
         table.resolve_callable(
             &CanonicalModulePath::crate_root(),
             &symbol_path("Main"),
             &source,
         ),
-        Err(ProjectSymbolResolutionError::NotCallable {
-            actual: ProjectSymbolTargetId::Retained(_),
-            ..
-        })
+        Ok(callable) if callable.declaration() == callables[0].declaration()
     ));
+}
+
+#[test]
+fn retained_view_value_projection_preserves_import_visibility_and_entity_identity() {
+    let (documents, project) = project_modules(&[
+        ("", "use crate.child.Public as Imported\n"),
+        ("child", "pub view Public() {}\nview Private() {}\n"),
+    ]);
+    let table = ProjectSymbolTable::link(
+        project.view(),
+        &empty_declarations(&documents, "view-projection"),
+    )
+    .expect("View imports link")
+    .into_table();
+    let source = documents[0]
+        .span(SourceRange::new(0, 3))
+        .expect("lookup source");
+    let root = CanonicalModulePath::crate_root();
+    let ProjectValueLookup::Present(callable) = table
+        .resolve_value_target(&root, &symbol_path("Imported"), source.clone())
+        .expect("imported View value")
+    else {
+        panic!("callable projection");
+    };
+    let ResolvedProjectSymbol::Retained(retained) = table
+        .resolve(&root, &symbol_path("Imported"), &source)
+        .expect("entity projection")
+    else {
+        panic!("retained binding");
+    };
+    assert_eq!(retained.callable(), Some(callable.declaration()));
+    assert_eq!(retained.owner(), callable.source_item());
+    assert!(
+        matches!(table.resolve_entity_reference(&root, &absolute_entity_reference(retained.public_id().as_str()), source.clone()),
+        Ok(ResolvedProjectSymbol::Retained(entity)) if entity == retained)
+    );
+    assert!(
+        matches!(table.resolve_value_target(&root, &symbol_path("crate.child.Private"), source),
+        Err(ProjectValueLookupError::Inaccessible { candidates, .. })
+            if matches!(candidates.as_ref(), [ProjectSymbolTargetId::Callable(declaration)] if declaration.name() == "Private"))
+    );
 }
 
 #[test]

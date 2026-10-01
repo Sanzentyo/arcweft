@@ -78,6 +78,24 @@ impl Eq for CheckedCallableCatalogOrigin {}
 pub enum CheckedCallableExecution {
     Runtime(CheckedFunctionExecution),
     DispatchContract,
+    /// Builds a retained presentation fragment instead of a Core execution frame.
+    RetainedView,
+}
+
+impl CheckedCallableExecution {
+    fn validate_record(
+        &self,
+        record: &CallableRecord,
+    ) -> Result<(), CheckedCallableCatalogBuildError> {
+        let view = matches!(record.id(), CallableCandidateId::Project(declaration)
+            if declaration.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::View);
+        if view != matches!(self, Self::RetainedView)
+            || (view && record.schema().value_type() != Some(&TypeKind::ViewValue))
+        {
+            return Err(CheckedCallableCatalogBuildError::InvalidExecutionRole);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -861,7 +879,8 @@ impl CheckedCallableFacts {
                 visitor(error)
             }
             CheckedCallableExecution::Runtime(CheckedFunctionExecution::DirectFrame)
-            | CheckedCallableExecution::DispatchContract => Ok(()),
+            | CheckedCallableExecution::DispatchContract
+            | CheckedCallableExecution::RetainedView => Ok(()),
         }
     }
 }
@@ -2337,6 +2356,9 @@ fn validate_pending_roles(
     execution: Option<&CheckedCallableExecution>,
     contract: &PendingCallableEffectContract,
 ) -> Result<(), CheckedCallableCatalogBuildError> {
+    if let Some(execution) = execution {
+        execution.validate_record(record)?;
+    }
     if record
         .method_role()
         .is_some_and(super::CallableMethodRole::is_dispatch_contract)
@@ -2392,6 +2414,7 @@ fn validate_fact_roles(
     execution: &CheckedCallableExecution,
     effects: &CheckedCallableEffects,
 ) -> Result<(), CheckedCallableCatalogBuildError> {
+    execution.validate_record(record)?;
     if record
         .method_role()
         .is_some_and(super::CallableMethodRole::is_dispatch_contract)
@@ -2674,6 +2697,7 @@ fn interface_digest(
     });
     match execution {
         CheckedCallableExecution::DispatchContract => encoder.tag(0),
+        CheckedCallableExecution::RetainedView => encoder.tag(3),
         CheckedCallableExecution::Runtime(CheckedFunctionExecution::DirectFrame) => encoder.tag(1),
         CheckedCallableExecution::Runtime(CheckedFunctionExecution::StreamFactory {
             item,

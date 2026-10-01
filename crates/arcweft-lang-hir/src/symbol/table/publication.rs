@@ -13,7 +13,7 @@ use arcweft_source::SourceSpan;
 use crate::identity::ItemId;
 use crate::item::{
     HirCapabilityMember, HirFlowIdentity, HirImplMember, HirItem, HirItemKind, HirItemPrefix,
-    HirRetainedName, HirTraitMember, HirVisibility,
+    HirTraitMember, HirVisibility,
 };
 use crate::module::HirModuleStatus;
 use crate::project::HirProjectView;
@@ -180,17 +180,13 @@ impl ProjectSymbolTable {
         }
 
         if let HirItemKind::View(view) = item.kind()
-            && let HirRetainedName::Resolved(name) = view.header().name()
+            && let Some(public_id) = view.header().public_id().resolved()
+            && let Some(retained) = self.retained(public_id)
+            && retained.owner() == source_item
+            && retained.module() == module_path
+            && let Some(declaration) = retained.callable().cloned()
         {
             let source_owner = HirCallableSourceOwner::ViewItem;
-            let declaration = CallableDeclarationId::try_new(
-                self.world.package().clone(),
-                module_path.clone(),
-                CallableDeclarationOwner::View,
-                name.as_str(),
-            )
-            .map(CallableDeclarationKey::Existing)
-            .expect("resolved View names are valid semantic callable identities");
             if !self.insert_nonbinding_callable_symbol(
                 module_path,
                 module,

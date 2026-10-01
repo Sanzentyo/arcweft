@@ -19,15 +19,15 @@ use super::{
     HirAwaitBranchKind, HirBinaryOp, HirBorrowKind, HirCallArgument, HirChoiceCompactAction,
     HirChoiceItem, HirComputationBlockKind, HirExpr, HirExprKind, HirIdRef, HirIntegerLiteral,
     HirItemKind, HirLiteral, HirModule, HirPathRoot, HirPathSegment, HirPostfixBracket,
-    HirPostfixBracketCandidates, HirRecordField, HirRecoveredName, HirScopeKind, HirScopeOwner,
-    HirSelectedMember, HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtKind,
-    HirTypeSourceRole, HirUnaryOp, LocalLookup, PostfixBracketResolution,
-    PreparedDialogueApplication, PreparedDialogueEffectPlan, PreparedDialogueEffectSite,
-    PreparedExpressionFact, PreparedExpressionShell, PreparedImplicitCallableBody,
-    PreparedOwnerBoundExpression, PreparedOwnerBoundResolution, PreparedTryBoundary,
-    ProjectHirSymbolLookupError, ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalType,
-    ProjectSymbolResolutionError, ProjectTypeTarget, ProjectValueLookup, RegisteredSemanticValueId,
-    ResolvedProjectSymbol, ScopeId, SourceSpan, TypeKind, TypeParameterSubstitutions,
+    HirPostfixBracketCandidates, HirRecordField, HirScopeKind, HirScopeOwner, HirSelectedMember,
+    HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtKind, HirTypeSourceRole, HirUnaryOp,
+    LocalLookup, PostfixBracketResolution, PreparedDialogueApplication, PreparedDialogueEffectPlan,
+    PreparedDialogueEffectSite, PreparedExpressionFact, PreparedExpressionShell,
+    PreparedImplicitCallableBody, PreparedOwnerBoundExpression, PreparedOwnerBoundResolution,
+    PreparedTryBoundary, ProjectHirSymbolLookupError, ProjectNominalBody,
+    ProjectNominalDeclaration, ProjectNominalType, ProjectSymbolResolutionError, ProjectTypeTarget,
+    ProjectValueLookup, RegisteredSemanticValueId, ResolvedProjectSymbol, ScopeId, SourceSpan,
+    TypeKind, TypeParameterSubstitutions,
     calls::{checked_character_dialogue_target, checked_project_nominal, nominal_substitutions},
     expression_types::{
         common_type, expected_item, indexed_item, literal_type, value_resolution_type,
@@ -3839,22 +3839,7 @@ impl Analyzer<'_, '_, '_> {
 
         let classification = match call.callee() {
             super::HirCallCallee::Value { value } => {
-                let callee_expression = module.resolve_expr(*value).map_err(|_| {
-                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-                })?;
-                if let HirExprKind::Select(select) = callee_expression.kind() {
-                    let receiver = self.evaluate_expression(context, select.target(), None)?;
-                    if receiver.value_type() == Some(&TypeKind::ViewValue) {
-                        let HirSelectedMember::Name(_) = select.member() else {
-                            return Err(AnalyzerExpressionError::fatal(
-                                FinalSemanticAnalysisError::RecoveredOwner,
-                            ));
-                        };
-                        return Ok(None);
-                    }
-                    return Ok(None);
-                }
-                let Some(callee) = Self::view_direct_callee(module, *value)? else {
+                let Some(callee) = self.view_direct_callee(module, *value)? else {
                     return Ok(None);
                 };
                 self.facts
@@ -3884,23 +3869,8 @@ impl Analyzer<'_, '_, '_> {
                     crate::types::ViewCallableId::RichText => CheckedViewCall::RichText,
                 }
             }
-            super::HirCallCallee::UnresolvedDot {
-                value_receiver,
-                member,
-                ..
-            } => {
-                let receiver = self.evaluate_expression(context, *value_receiver, None)?;
-                if receiver.value_type() != Some(&TypeKind::ViewValue) {
-                    return Ok(None);
-                }
-                let HirRecoveredName::Valid(_) = member else {
-                    return Err(AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::RecoveredOwner,
-                    ));
-                };
-                return Ok(None);
-            }
-            super::HirCallCallee::Associated { .. } => return Ok(None),
+            super::HirCallCallee::UnresolvedDot { .. }
+            | super::HirCallCallee::Associated { .. } => return Ok(None),
         };
 
         let mut effects = EffectSet::new();
@@ -4009,6 +3979,7 @@ impl Analyzer<'_, '_, '_> {
     }
 
     fn view_direct_callee(
+        &self,
         module: &HirModule,
         owner: ExprId,
     ) -> Result<Option<crate::types::ViewCallableId>, AnalyzerExpressionError> {
@@ -4021,6 +3992,13 @@ impl Analyzer<'_, '_, '_> {
         let Some(path) = path.as_resolved() else {
             return Ok(None);
         };
+        if self
+            .resolve_path_value(module, owner, expression.scope(), path)
+            .map_err(AnalyzerExpressionError::fatal)?
+            .is_some()
+        {
+            return Ok(None);
+        }
         if path.root() != super::HirPathRoot::ImplicitCrate || path.segments().len() != 1 {
             return Ok(None);
         }

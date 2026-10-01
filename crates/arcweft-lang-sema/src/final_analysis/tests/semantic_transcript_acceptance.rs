@@ -12,6 +12,8 @@ mod generation_invariance;
 mod patterns;
 #[path = "semantic_transcript_acceptance/statements.rs"]
 mod statements;
+#[path = "semantic_transcript_acceptance/view_calls.rs"]
+mod view_calls;
 #[path = "semantic_transcript_acceptance/view_defaults.rs"]
 mod view_defaults;
 #[path = "semantic_transcript_acceptance/view_roots.rs"]

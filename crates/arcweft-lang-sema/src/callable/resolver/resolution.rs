@@ -40,6 +40,12 @@ pub(crate) fn resolve_call_target(mut request: CallResolverRequest<'_>) -> Resol
         return ResolveCallOutcome::Rejected(ResolveCallError::InvalidResolvedCallable);
     }
     match request.callee.clone() {
+        PreparedCallCallee::ProjectView { declaration } => {
+            match resolve_exact_project_callable(declaration, None, &mut request) {
+                Ok(target) => ResolveCallOutcome::Resolved(target),
+                Err(error) => ResolveCallOutcome::Rejected(error),
+            }
+        }
         PreparedCallCallee::Free {
             path,
             project,
@@ -579,7 +585,7 @@ fn resolve_free_call(
     // Falling through to the ordered language chain would discard HIR name
     // resolution and could silently call a different semantic producer.
     if let Some(declaration) = project {
-        return resolve_exact_project_callable(declaration, path, request).map(Some);
+        return resolve_exact_project_callable(declaration, Some(path), request).map(Some);
     }
     if scope == PreparedFreeCallScope::ExplicitProject {
         return Ok(None);
@@ -910,37 +916,41 @@ fn resolve_enum_constructor(
 
 fn resolve_exact_project_callable(
     declaration: &CallableDeclarationKey,
-    path: &CallablePath,
+    path: Option<&CallablePath>,
     request: &mut CallResolverRequest<'_>,
 ) -> Result<ResolvedCallTarget, ResolveCallError> {
     check_query_step(request)?;
     let (current_module, symbols, world) = request.authority.parts();
-    let project_path = ProjectCallablePath::new(
-        symbols.world().package().clone(),
-        current_module.clone(),
-        path.clone(),
-    );
+    let project_path = path.map(|path| {
+        ProjectCallablePath::new(
+            symbols.world().package().clone(),
+            current_module.clone(),
+            path.clone(),
+        )
+    });
     let record = world
         .environment()
         .callable_catalog()
         .project_record(declaration)
         .ok_or_else(|| {
-            corrupt(
-                CallableLookupKey::Free(path.clone()),
-                super::CorruptCallableCatalogReason::MissingRecord,
-            )
+            path.map_or(ResolveCallError::InvalidResolvedCallable, |path| {
+                corrupt(
+                    CallableLookupKey::Free(path.clone()),
+                    super::CorruptCallableCatalogReason::MissingRecord,
+                )
+            })
         })?
         .clone();
     if record.id() != &CallableCandidateId::Project(declaration.clone()) {
         return Err(corrupt(
-            CallableLookupKey::Free(path.clone()),
+            record.key().clone(),
             super::CorruptCallableCatalogReason::WrongAuthority,
         ));
     }
     let callable = resolve_catalog_record(
         &record,
         &[],
-        Some(&project_path),
+        project_path.as_ref(),
         CallableInstantiation::None,
         request,
     )?;

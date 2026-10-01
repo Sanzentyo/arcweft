@@ -46,6 +46,10 @@ impl Analyzer<'_, '_, '_> {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CheckedCallableCatalog)
             })?;
         let record = Arc::clone(pending.record());
+        if let Some(ty) = crate::types::CompileTimeCallableType::for_project(callable.declaration())
+        {
+            return Ok(crate::types::TypeKind::CompileTimeCallable(ty));
+        }
         let candidate = PreparedResolvedCallable::try_from_checked_record(
             pending.id().clone(),
             Arc::clone(&record),

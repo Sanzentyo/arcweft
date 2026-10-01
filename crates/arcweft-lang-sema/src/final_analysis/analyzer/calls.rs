@@ -4517,7 +4517,10 @@ impl Analyzer<'_, '_, '_> {
                 .cloned()
                 .map(Some)
                 .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: *local }),
-            CheckedValueResolution::ProjectCallable(_) => Ok(None),
+            CheckedValueResolution::ProjectCallable(callable) => Ok(
+                crate::types::CompileTimeCallableType::for_project(callable.declaration())
+                    .map(TypeKind::CompileTimeCallable),
+            ),
             _ => value_resolution_type(self.catalogs.world, resolution)
                 .map(Some)
                 .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: expression }),
@@ -5369,6 +5372,22 @@ impl Analyzer<'_, '_, '_> {
                 return Ok(AnalyzerPreparedCalleeExpression::none());
             }
         };
+        if let CallableCandidateId::Project(declaration) = selected.id()
+            && declaration.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::View
+        {
+            let expected = TypeKind::CompileTimeCallable(
+                crate::types::CompileTimeCallableType::ProjectView(declaration.clone()),
+            );
+            let checked = self
+                .facts
+                .expressions()
+                .get(&value)
+                .ok_or(FinalSemanticAnalysisError::CallResolutionFailed { owner: value })?;
+            if checked.value_type() != Some(&expected) {
+                return Err(FinalSemanticAnalysisError::CallResolutionFailed { owner: value });
+            }
+            return Ok(AnalyzerPreparedCalleeExpression::semantic(value));
+        }
         if nominal_receiver {
             let ty = callee_inputs
                 .nominal_callee_expression_type(selected.instantiation())

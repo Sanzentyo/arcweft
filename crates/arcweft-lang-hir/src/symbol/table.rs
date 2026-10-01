@@ -1447,7 +1447,7 @@ impl ProjectSymbolTable {
                     .into_iter()
                     .map(|binding| binding.target)
                     .collect::<Vec<_>>();
-                let callables = Self::callable_value_targets(targets);
+                let callables = self.callable_value_targets(targets);
                 if callables.is_empty() {
                     return Ok(ProjectValueLookup::Absent);
                 }
@@ -1459,7 +1459,7 @@ impl ProjectSymbolTable {
                 });
             }
             Err(ImportResolutionError::Ambiguous(targets)) => {
-                let callables = Self::callable_value_targets(targets);
+                let callables = self.callable_value_targets(targets);
                 match callables.as_slice() {
                     [] => return Ok(ProjectValueLookup::Absent),
                     [ProjectSymbolTargetId::Callable(id)] => {
@@ -1485,12 +1485,11 @@ impl ProjectSymbolTable {
             }
         };
 
-        let callables = Self::callable_value_targets(
-            bindings.into_iter().map(|binding| binding.target).collect(),
-        );
+        let callables = self
+            .callable_value_targets(bindings.into_iter().map(|binding| binding.target).collect());
         match callables.as_slice() {
             [] => {
-                let inaccessible = Self::callable_value_targets(
+                let inaccessible = self.callable_value_targets(
                     self.inaccessible_bindings_for_symbol_path(module, reference)
                         .into_iter()
                         .map(|binding| binding.target)
@@ -1607,10 +1606,32 @@ impl ProjectSymbolTable {
             .map_err(ProjectHirSymbolLookupError::from)
     }
 
-    fn callable_value_targets(targets: Vec<ProjectSymbolTargetId>) -> Vec<ProjectSymbolTargetId> {
+    /// Projects a scope target into its callable value identity, preserving the
+    /// retained owner's entity identity in the scope itself.
+    pub fn callable_value_target<'a>(
+        &'a self,
+        target: &'a ProjectSymbolTargetId,
+    ) -> Option<&'a CallableDeclarationKey> {
+        match target {
+            ProjectSymbolTargetId::Callable(declaration) => Some(declaration),
+            ProjectSymbolTargetId::Retained(public_id) => self
+                .retained(public_id)
+                .and_then(ProjectRetainedSymbol::callable),
+            _ => None,
+        }
+    }
+
+    fn callable_value_targets(
+        &self,
+        targets: Vec<ProjectSymbolTargetId>,
+    ) -> Vec<ProjectSymbolTargetId> {
         let mut targets = targets
             .into_iter()
-            .filter(|target| matches!(target, ProjectSymbolTargetId::Callable(_)))
+            .filter_map(|target| {
+                self.callable_value_target(&target)
+                    .cloned()
+                    .map(ProjectSymbolTargetId::Callable)
+            })
             .collect::<Vec<_>>();
         targets.sort();
         targets.dedup();
@@ -1755,6 +1776,9 @@ impl ProjectSymbolTable {
                 })
             }
             ResolvedProjectSymbol::Retained(retained) => {
+                if let Some(callable) = retained.callable().and_then(|id| self.callable(id)) {
+                    return Ok(callable);
+                }
                 Err(ProjectSymbolResolutionError::NotCallable {
                     reference: reference.clone(),
                     source: source.clone(),

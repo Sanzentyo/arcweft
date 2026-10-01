@@ -422,24 +422,29 @@ impl RegisteredCallableCatalogBuilder {
             };
             let path =
                 ProjectCallablePath::new(project.package().clone(), module.clone(), callable_path);
-            let binding = match target {
-                ProjectSymbolTargetId::Callable(declaration) => {
-                    ProjectNameBinding::Callable(declaration.clone())
+            let binding = if let Some(declaration) = symbols.callable_value_target(target) {
+                ProjectNameBinding::Callable(declaration.clone())
+            } else {
+                match target {
+                    ProjectSymbolTargetId::Callable(_) => {
+                        unreachable!("callable scope targets have a callable value projection")
+                    }
+                    ProjectSymbolTargetId::StructuralCallable(_)
+                    | ProjectSymbolTargetId::Trait(_) => {
+                        continue;
+                    }
+                    ProjectSymbolTargetId::External(_)
+                    | ProjectSymbolTargetId::Nominal(_)
+                    | ProjectSymbolTargetId::Retained(_)
+                    | ProjectSymbolTargetId::Module(_) => ProjectNameBinding::NonCallable {
+                        path: path.clone(),
+                        ty: non_callable_type(target).ok_or_else(|| {
+                            CallableCatalogBuildError::MissingProjectBindingType {
+                                target: Box::new(target.clone()),
+                            }
+                        })?,
+                    },
                 }
-                ProjectSymbolTargetId::StructuralCallable(_) | ProjectSymbolTargetId::Trait(_) => {
-                    continue;
-                }
-                ProjectSymbolTargetId::External(_)
-                | ProjectSymbolTargetId::Nominal(_)
-                | ProjectSymbolTargetId::Retained(_)
-                | ProjectSymbolTargetId::Module(_) => ProjectNameBinding::NonCallable {
-                    path: path.clone(),
-                    ty: non_callable_type(target).ok_or_else(|| {
-                        CallableCatalogBuildError::MissingProjectBindingType {
-                            target: Box::new(target.clone()),
-                        }
-                    })?,
-                },
             };
             self.project_bindings.push((path, binding));
         }

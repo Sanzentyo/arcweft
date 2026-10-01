@@ -631,26 +631,39 @@ impl StyleCallableId {
 }
 
 /// Closed semantic identity of one compile-time callable value.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CompileTimeCallableType {
     View(ViewCallableId),
     Style(StyleCallableId),
+    /// Exact retained View declaration; this token never allocates a Core function value.
+    ProjectView(arcweft_lang_hir::symbol::CallableDeclarationKey),
 }
 
 impl CompileTimeCallableType {
+    /// Selects the semantic-only callable role of an accepted project declaration.
+    pub fn for_project(
+        declaration: &arcweft_lang_hir::symbol::CallableDeclarationKey,
+    ) -> Option<Self> {
+        (declaration.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::View)
+            .then(|| Self::ProjectView(declaration.clone()))
+    }
     /// Stable semantic tag in declaration order.
-    pub const fn semantic_tag(self) -> u8 {
+    pub const fn semantic_tag(&self) -> u8 {
         match self {
             Self::View(_) => 0,
             Self::Style(_) => 1,
+            Self::ProjectView(_) => 2,
         }
     }
 
     /// Canonical diagnostic/tooling label for this callable identity.
-    pub fn source_label(self) -> String {
+    pub fn source_label(&self) -> String {
         match self {
             Self::View(id) => format!("View::{}", id.source_label()),
             Self::Style(id) => format!("Style::{}", id.source_label()),
+            Self::ProjectView(declaration) => {
+                format!("View::{}::{}", declaration.module(), declaration.name())
+            }
         }
     }
 }

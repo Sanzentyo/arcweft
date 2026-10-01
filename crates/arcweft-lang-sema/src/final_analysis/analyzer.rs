@@ -15,8 +15,8 @@ use arcweft_lang_hir::{
     expr::{
         HirAssociatedSeparator, HirAwaitBranchKind, HirBinaryOp, HirBorrowKind, HirCallArgument,
         HirCallCallee, HirCallInvocation, HirCallValue, HirChoiceCompactAction, HirChoiceItem,
-        HirComputationBlockKind, HirExpr, HirExprKind, HirRecordField, HirRecoveredName,
-        HirSelectedMember, HirUnaryOp,
+        HirComputationBlockKind, HirExpr, HirExprKind, HirRecordField, HirSelectedMember,
+        HirUnaryOp,
     },
     identity::{
         ExprId, HirModuleId, ItemId, LocalId, PatternId, ScopeId, StmtId, SyntheticOwner, TypeId,

@@ -1314,11 +1314,13 @@ fn source_callable_execution(
         (
             HirCallableSourceOwner::Item,
             HirItemKind::Flow(_) | HirItemKind::Predicate(_) | HirItemKind::Proof(_),
-        )
-        | (HirCallableSourceOwner::ViewItem, HirItemKind::View(_)) => {
+        ) => {
             return Ok(CheckedCallableExecution::Runtime(
                 CheckedFunctionExecution::DirectFrame,
             ));
+        }
+        (HirCallableSourceOwner::ViewItem, HirItemKind::View(_)) => {
+            return Ok(CheckedCallableExecution::RetainedView);
         }
         _ => return Err(FinalSemanticAnalysisError::InvalidCallableOwner),
     };

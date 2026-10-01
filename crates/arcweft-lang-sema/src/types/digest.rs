@@ -982,6 +982,10 @@ impl Encoder {
                 self.byte(1);
                 self.byte(id.semantic_tag());
             }
+            CompileTimeCallableType::ProjectView(declaration) => {
+                self.byte(2);
+                self.callable_declaration(declaration);
+            }
         }
     }
 

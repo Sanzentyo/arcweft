@@ -741,20 +741,21 @@ fn compiler_rejects_well_formed_view_values_without_a_typed_runtime_contract() {
 }
 
 #[test]
-fn compiler_rejects_semantically_checked_view_defaults_at_the_unimplemented_runtime_boundary() {
+fn compiler_rejects_checked_view_calls_and_defaults_at_the_unimplemented_runtime_boundary() {
     let cases = [
         "view Good() { Text(\"ok\") }\n\nview Broken(value: String = \"x\") { Text(\"x\") }\n",
         "fn make_default() -> i32 { 1 }\n\nview Good() { Text(\"ok\") }\n\nview Broken(value: i32 = make_default()) { Text(\"x\") }\n",
+        "view Child(value: i32) { Text(value) }\nview Main() { Child(1i32) }\n",
     ];
 
     for source in cases {
         let fixture = project_view_fixture(
             source,
-            "arcweft-test://compiler-view-schema-default-rejection",
+            "arcweft-test://compiler-view-call-and-default-rejection",
         );
-        let error = fixture
-            .compile()
-            .expect_err("a checked default must fail closed before unsupported runtime lowering");
+        let error = fixture.compile().expect_err(
+            "checked View semantics must fail closed before unsupported runtime lowering",
+        );
         assert_eq!(
             error.diagnostics().len(),
             1,

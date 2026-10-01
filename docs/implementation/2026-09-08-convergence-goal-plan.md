@@ -3432,3 +3432,108 @@ commit 後の `main` working tree は clean で、検証した source と一致�
 T06 semantic matrix を閉じ、T01 Pending 0 と合わせて C3/C5 の残る受入照合から `.1.4`
 の producer/value/runtime migration へ継続する。`.1.3.1`、nominal、scheduler/restore と
 最終全体検証も残り、goal は active のまま保持する。
+
+### 2026-10-01 — retained View callable producer
+
+Inspected base: `c24d76b360ad3311601a071abdc432c21aa3a086`、`main == origin/main`、
+着手時 clean。以下は同じ checkout の in-scope dirty patch を検証する cut。
+前 goal turn は T06/default authority を source と実行証拠で進めた progress。
+今回も goal の全範囲を維持し、`.1.4` の実行側を完了扱いにはしない。
+
+Supersedes: 直前の user View call probe が `ProjectItem(View)` / NonCallable に
+落ちる現行状態。retained owner が package/module/name から callable identity を
+一度だけ生成・保持し、View の非 binding callable row は、その owner/item/module
+に一致する関係を消費する。scope binding は一つの Retained target のまま。
+value projection は通常・import・ambiguous・inaccessible の各選択前に同じ関係を
+投影し、登録済み callable catalog の project binding もこの API を使う。
+entity reference は同じ owner の public ID を保持する。
+
+View callee は `CompileTimeCallableType::ProjectView` の semantic token、呼び出し結果は
+`ViewValue`、checked execution は `RetainedView` とした。registered schema/result と
+execution family を pending/final catalog の両段階で照合し、interface/transcript の
+閉じた encoder に同じ role を記録する。すべての domain/version は `1`。
+通常の function arrow、Core function allocation、runtime function root に投影しない。
+所有権 classifier も token を MissingRuntimeSnapshotOwner として拒否する。
+
+直接・import・修飾 path は既存 exact project resolver と binding provenance を使い、
+local 別名・block 結果は token の exact declaration で同じ resolver に入る。
+resolver の binding evidence だけを optional にし、引数 mapper、candidate constraint、
+選択・execution projection・final seal は既存の共通経路を使う。
+selected callee staging は token と元の local/structural resolution を保持する。
+builtin View head の手前でも通常の local/project lookup と visibility を尊重する。
+非 builtin の Select/dot/associated callee を View checker が先に値評価する経路を
+削除し、共通 callee checker に統合した。これは qualified module receiver を誤って
+値評価していた failure の修正でもある。
+
+ユーザーの条件付き許可に従い、この難しい callable/value boundary だけ
+fresh-context `gpt-6-astra` / Max へ advice を求めた。advice agent は編集・検証・Git
+操作をしていない。今後 Sol を指定する相談/チャットには `gpt-6.1-sol` を使う。
+runtime function と retained entity のどちらかへ無理に統合せず、既存 signature と
+typed retained execution を組み合わせる判断を採用した。
+
+証拠: focused sema 5 tests が直接・named・default omission・local/block alias・import・
+qualified path・project/local Text shadowing を受理し、必須/未知/型不一致/余分な supply
+を拒否する。source order と parameter destination の入替、compact spread の exact
+element projection を production execution facts で照合する。Match transcript は選択先
+変更に反応し、整形・無関係な先行宣言による raw allocation の変更で不変。
+HIR regression は単一 binding、owner/callable join、entity identity、private View の
+inaccessible candidate projection を検査する。compiler fixture は user View call も
+`ViewLower / compiler.view.lower` で fail closed するよう拡張した。
+
+構造: 新しい dependency、I/O、parallel symbol index、名前ベース resolver はない。
+既存の HIR symbol owner、sema type algebra、checked callable catalog、callee transaction
+の責任に配置し、Core callable carrier を増やさない。新しい test leaf は parent の
+acceptance fixture を使う 205 LOC / 7,346 bytes（test-only、production dependency なし）。
+主要 owner の現物測定は以下。embedded test の新規追加は既存 HIR test leaf と新しい
+sema test leaf、compiler integration fixture に属する。
+
+| Owner | Base physical LOC | Current physical LOC | Current bytes |
+| --- | ---: | ---: | ---: |
+| HIR `symbol/identity.rs` | 1,270 | 1,290 | 40,699 |
+| HIR `symbol/table.rs` | 2,058 | 2,082 | 76,873 |
+| HIR `symbol/table/publication.rs` | 1,032 | 1,028 | 38,750 |
+| HIR `symbol/tests/symbol_projection.rs` | 1,071 | 1,114 | 40,536 |
+| sema `callable/checked_catalog.rs` | 2,838 | 2,862 | 105,380 |
+| sema `callable/resolver/preparation.rs` | 830 | 862 | 35,805 |
+| sema `final_analysis/analyzer/calls.rs` | 5,756 | 5,775 | 251,151 |
+| sema `final_analysis/analyzer/expressions.rs` | 4,941 | 4,919 | 212,869 |
+| sema `types.rs` | 1,799 | 1,812 | 60,325 |
+| compiler `tests/view_product.rs` | 1,120 | 1,121 | 40,080 |
+
+上限を超える既存 catalog/call/expression owner は、それぞれ sealed callable authority、
+atomic candidate transaction、checked expression-family dispatch の cohesive owner として
+保持する。今回追加する state cluster はなく、共通 callee boundary を移行して既存の
+重複先行評価を削除する。ファイル分割のための API widening はしない。
+`just structure-audit-gate` は 97 packages、blocking violations 0、review triggers 348。
+
+検証: production patch の `cargo check --workspace --all-targets --all-features`、
+同 Clippy、format/diff check、focused sema 5 tests は合格。Clippy は既存の大きい
+owner 等の warnings あり。初期 focused 試行の型/API・fixture 記述ミスと、発見した
+callee staging/qualified receiver failure は修正後に再実行して合格した。
+最初の `just test-workspace` は完了結果の取得前に execution handle が消え、実際の
+cargo/just/rustc process も終了していた。合格扱いにせず元ログを保持し、
+`RUST_MIN_STACK=16777216` で再実行した。２回目は新 HIR fixture が暗黙 public ID を
+`view.child.Public` と推測していたため 925 passed / 1 failed / 8 ignored で失敗。
+published retained owner の public ID を使う exact join の検査へ修正し、focused HIR
+regression 1 test は合格。修正後の全 recipe は終了コード 0 で完了した。
+308 suites、7,131 passed / 0 failed / 24 ignored、sema lib 1,105 件、HIR lib
+926 passed / 0 failed / 8 ignored を含む。成功ログは
+`%TEMP%/arcweft-1001-view-call-workspace-test-final2.log`、対応する `.exit` は `0`。
+最終 test fixture の修正も含めた workspace check/Clippy/format の再確認も合格。
+最終ログは `%TEMP%/arcweft-1001-view-call-workspace-check-final.log` と
+`%TEMP%/arcweft-1001-view-call-clippy-final.log`。構造結果は API/dependency/owner が
+同じため再利用し、修正した test leaf の現物 bytes は上表へ反映した。
+
+残り: この cut は semantic callable producer の移行。View instructions、一般値
+slot と expression/default の `RuntimePureProgram` root/input ABI、nested CallView、
+Need observer と replacement/save の Cut-5 は未完了。compiler fixture の拒否は
+runtime 実行の合格証拠ではない。次は checked input authority と runtime reachability
+を一般 expression root に接続し、最終 typed consumer で scalar-only mount/value と
+旧 Await/Repeat/BindLocal を削除する。`.1.3.1`、nominal、scheduler/restore と最終
+全体受入検証も残るため、goal は active を保持する。
+
+次の consumer join で移行する現行境界: `compiler/view.rs::prepare_authored_view` は
+DerivedFromName の View ID を module/name から再生成しており、HIR header/publication
+の public ID と異なる。新 HIR regression の失敗でこの差を確認した。maintained View
+contract の module-scoped identity を final typed publication に閉じ、compiler はその
+published identity を消費する必要がある。module/name 再生成を最終 consumer に残さない。

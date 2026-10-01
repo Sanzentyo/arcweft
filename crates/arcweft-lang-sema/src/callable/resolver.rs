@@ -89,6 +89,9 @@ use super::{
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PreparedCallCallee<'a> {
+    ProjectView {
+        declaration: &'a CallableDeclarationKey,
+    },
     Free {
         path: &'a CallablePath,
         project: Option<&'a CallableDeclarationKey>,
@@ -150,6 +153,9 @@ pub(crate) enum PreparedFreeCallContext {
 /// detached syntax node, or temporary label has to outlive preparation.
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum PreparedFinalCallCallee<'a> {
+    ProjectView {
+        declaration: Box<CallableDeclarationKey>,
+    },
     Free {
         path: Box<CallablePath>,
         project: Option<Box<CallableDeclarationKey>>,
@@ -650,6 +656,7 @@ impl PreparedFinalCallCallee<'_> {
         match self {
             Self::FunctionValue { value } => Some(value.into_origin()),
             Self::Free { .. }
+            | Self::ProjectView { .. }
             | Self::EnumConstructor { .. }
             | Self::Selected { .. }
             | Self::AssociatedType { .. }
@@ -660,7 +667,9 @@ impl PreparedFinalCallCallee<'_> {
 
     pub(crate) fn constraint_inputs(&self) -> PreparedCallCalleeConstraintInputs {
         match self {
-            Self::Free { .. } => PreparedCallCalleeConstraintInputs::Free,
+            Self::Free { .. } | Self::ProjectView { .. } => {
+                PreparedCallCalleeConstraintInputs::Free
+            }
             Self::EnumConstructor { .. } => PreparedCallCalleeConstraintInputs::EnumConstructor,
             Self::Selected {
                 receiver_expression,
@@ -685,6 +694,7 @@ impl PreparedFinalCallCallee<'_> {
 
     pub(crate) fn as_borrowed(&self) -> PreparedCallCallee<'_> {
         match self {
+            Self::ProjectView { declaration } => PreparedCallCallee::ProjectView { declaration },
             Self::Free {
                 path,
                 project,

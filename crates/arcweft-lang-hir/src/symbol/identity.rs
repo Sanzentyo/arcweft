@@ -297,6 +297,7 @@ pub struct ProjectRetainedSymbol {
     visibility: Option<Visibility>,
     declaration_span: SourceSpan,
     executable: bool,
+    callable: Option<CallableDeclarationKey>,
 }
 
 /// Unified declaration identity.
@@ -1111,7 +1112,8 @@ impl ExternalSymbol {
 
 impl ProjectRetainedSymbol {
     #[allow(clippy::too_many_arguments)]
-    pub(super) const fn new(
+    pub(super) fn new(
+        package: CallablePackageId,
         public_id: PublicId,
         family: DeclarationIdentityFamily,
         name: DeclarationName,
@@ -1121,6 +1123,17 @@ impl ProjectRetainedSymbol {
         declaration_span: SourceSpan,
         executable: bool,
     ) -> Self {
+        let callable = (family == DeclarationIdentityFamily::View).then(|| {
+            CallableDeclarationKey::Existing(
+                CallableDeclarationId::try_new(
+                    package,
+                    module.clone(),
+                    CallableDeclarationOwner::View,
+                    name.as_str(),
+                )
+                .expect("accepted retained View names are callable names"),
+            )
+        });
         Self {
             public_id,
             family,
@@ -1130,11 +1143,18 @@ impl ProjectRetainedSymbol {
             visibility,
             declaration_span,
             executable,
+            callable,
         }
     }
 
     pub const fn public_id(&self) -> &PublicId {
         &self.public_id
+    }
+
+    /// Callable projection of this retained owner. Entity lookup continues to
+    /// use its public ID and the single retained scope binding.
+    pub const fn callable(&self) -> Option<&CallableDeclarationKey> {
+        self.callable.as_ref()
     }
 
     pub const fn family(&self) -> DeclarationIdentityFamily {

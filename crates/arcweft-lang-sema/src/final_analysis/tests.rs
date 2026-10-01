@@ -9823,7 +9823,7 @@ fn project_index_preserves_same_named_module_scoped_flows() {
 }
 
 #[test]
-fn view_has_checked_callable_and_project_index_rows_without_a_call_binding() {
+fn view_has_checked_callable_and_project_index_rows_from_a_single_retained_binding() {
     let fixture = fixture("view Main(count: u32) {\n    Text(count)\n}\n", None);
     let analysis = analyze(&fixture).expect("View checked callable analysis");
     let symbol = fixture

@@ -4612,6 +4612,9 @@ fn write_project_callable(
     }
     transcript_update!(hasher, facts.signature().semantic_digest().as_bytes());
     match facts.execution() {
+        crate::callable::CheckedCallableExecution::RetainedView => {
+            transcript_update!(hasher, &[3]);
+        }
         crate::callable::CheckedCallableExecution::DispatchContract => {
             transcript_update!(hasher, &[0]);
         }

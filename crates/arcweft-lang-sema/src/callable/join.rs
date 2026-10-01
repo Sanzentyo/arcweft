@@ -631,7 +631,7 @@ pub fn select_project_function_root_runtime(
         CheckedCallableExecution::Runtime(CheckedFunctionExecution::StreamFactory { .. }) => {
             return Err(CheckedProjectFunctionRuntimeSelectionError::StreamFactory);
         }
-        CheckedCallableExecution::DispatchContract => {
+        CheckedCallableExecution::DispatchContract | CheckedCallableExecution::RetainedView => {
             return Err(CheckedProjectFunctionRuntimeSelectionError::MissingRuntimeExecution);
         }
     }
@@ -717,7 +717,7 @@ pub fn select_project_function_runtime(
         CheckedCallableExecution::Runtime(CheckedFunctionExecution::StreamFactory { .. }) => {
             return Err(CheckedProjectFunctionRuntimeSelectionError::StreamFactory);
         }
-        CheckedCallableExecution::DispatchContract => {
+        CheckedCallableExecution::DispatchContract | CheckedCallableExecution::RetainedView => {
             return Err(CheckedProjectFunctionRuntimeSelectionError::MissingRuntimeExecution);
         }
     }

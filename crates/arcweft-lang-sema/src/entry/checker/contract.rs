@@ -662,7 +662,7 @@ fn require_direct_frame(facts: &CheckedCallableFacts, role: &str) -> Result<(), 
         CheckedCallableExecution::Runtime(CheckedFunctionExecution::StreamFactory { .. }) => {
             Err(format!("{role} must be an ordinary direct-frame function"))
         }
-        CheckedCallableExecution::DispatchContract => {
+        CheckedCallableExecution::DispatchContract | CheckedCallableExecution::RetainedView => {
             Err(format!("{role} cannot be a bodyless dispatch contract"))
         }
     }

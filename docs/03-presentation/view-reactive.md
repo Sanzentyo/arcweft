@@ -40,6 +40,13 @@ pub view SettingsPanel(
 }
 ```
 
+裸の View 宣言名は、その宣言を特定する semantic callable token として解決する。
+直接名、import、修飾パス、local な別名の呼び出しは共通の selected-call 型検査と
+引数束縛に従い、結果は `ViewValue` になる。宣言は retained View execution を持ち、
+Core の通常関数値や実行 frame へ投影しない。`@view.*` は同じ retained owner の
+public identity を参照する entity reference として保持する。local/project の名前が
+builtin View head と同じ場合も、通常の shadowing と visibility に従う。
+
 ## Parameter defaults
 
 View の parameter default は宣言型を expected type として検査する通常の式であり、

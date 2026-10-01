@@ -117,6 +117,37 @@ where
         .resolve_expr(value)
         .map_err(|_| PrepareFinalCallCalleeError::InvalidCallExpression { expression: value })?;
 
+    if let Some(TypeKind::CompileTimeCallable(crate::types::CompileTimeCallableType::ProjectView(
+        declaration,
+    ))) = facts
+        .expressions
+        .get(&value)
+        .and_then(PreparedExpressionFact::value_type)
+        && !matches!(
+            facts
+                .expressions
+                .get(&value)
+                .and_then(PreparedExpressionFact::checked_resolution),
+            Some(CheckedExpressionResolution::Value(
+                CheckedValueResolution::ProjectCallable(_)
+            ))
+        )
+    {
+        if function_origin.is_some() {
+            return Err(PrepareFinalCallCalleeError::UnexpectedFunctionValueOrigin {
+                expression: value,
+            });
+        }
+        if declaration.owner() != arcweft_lang_hir::symbol::CallableDeclarationOwner::View {
+            return Err(PrepareFinalCallCalleeError::ProjectValueFactMismatch {
+                expression: value,
+            });
+        }
+        return Ok(PreparedFinalCallCallee::ProjectView {
+            declaration: Box::new(declaration.clone()),
+        });
+    }
+
     if let Some(checked) = facts.expressions.get(&value)
         && let Some(callee) = character_dialogue_callee(value, checked)?
     {
@@ -733,6 +764,7 @@ pub(super) fn classify_prepared_callee(
     match (prepared, call.callee()) {
         (
             PreparedCallCallee::Free { .. }
+            | PreparedCallCallee::ProjectView { .. }
             | PreparedCallCallee::EnumConstructor { .. }
             | PreparedCallCallee::Dialogue { .. }
             | PreparedCallCallee::FunctionValue { .. }
