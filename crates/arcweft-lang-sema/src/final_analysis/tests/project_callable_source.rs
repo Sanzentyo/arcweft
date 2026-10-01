@@ -4,10 +4,64 @@ use super::{analyze, fixture, project_specialization::selections};
 use crate::{
     callable::{
         CallableGroupIndex, CallableParameterPassing, CallableParameterPresence,
-        CheckedProjectFunctionCallableOrigin, select_project_function_value_runtime,
+        CheckedProjectFunctionCallableOrigin,
     },
     types::{GenericBinder, TypeKind, UnmeteredTypeProjection},
 };
+
+#[test]
+fn callable_source_and_continuation_reject_a_foreign_catalog() {
+    let source = "fn choose<A, B>(first: A)(second: B) -> B { second }\nfn apply(handler: i64 -> i64 effects {}, value: i64) -> i64 { handler(value) }\nflow main() -> i64 { let prefix = choose(\"saved\"); return apply(prefix, 1i64) }";
+    let first = fixture(source, None);
+    let second = fixture(source, None);
+    let analysis = analyze(&first).unwrap();
+    let foreign_analysis = analyze(&second).unwrap();
+    let prefix = selections(&analysis, "choose").remove(0);
+    let witness = analysis
+        .expressions()
+        .find_map(|(_, fact)| fact.function_specialization())
+        .unwrap();
+    let current_source = prefix
+        .callable_value_source_with_control(
+            analysis.checked_callables(),
+            None,
+            &mut UnmeteredTypeProjection,
+        )
+        .unwrap();
+    assert!(matches!(
+        prefix.callable_value_source_with_control(
+            foreign_analysis.checked_callables(),
+            None,
+            &mut UnmeteredTypeProjection
+        ),
+        Err(
+            crate::callable::CheckedProjectFunctionInstanceProjectionError::Selection(
+                crate::callable::CheckedProjectFunctionRuntimeSelectionError::ForeignAuthority
+            )
+        )
+    ));
+    assert!(matches!(
+        current_source.specialize_callable_value_with_control(
+            foreign_analysis.checked_callables(),
+            witness,
+            None,
+            &mut UnmeteredTypeProjection
+        ),
+        Err(
+            crate::callable::CheckedProjectFunctionInstanceProjectionError::Selection(
+                crate::callable::CheckedProjectFunctionRuntimeSelectionError::ForeignAuthority
+            )
+        )
+    ));
+    current_source
+        .specialize_callable_value_with_control(
+            analysis.checked_callables(),
+            witness,
+            None,
+            &mut UnmeteredTypeProjection,
+        )
+        .unwrap();
+}
 
 #[test]
 fn project_callable_source_bare_root_witness_and_value_call_select_the_same_body() {
@@ -26,13 +80,13 @@ flow main() -> i64 {
     );
     let analysis = analyze(&fixture).expect("bare scheme, alias invocation and callback use");
     let call = selections(&analysis, "identity").remove(0);
-    let source = select_project_function_value_runtime(
-        call.declaration(),
-        analysis.checked_callables(),
-        None,
-        &mut UnmeteredTypeProjection,
-    )
-    .unwrap();
+    let source = analysis
+        .project_function_value_runtime_with_control(
+            call.declaration(),
+            None,
+            &mut UnmeteredTypeProjection,
+        )
+        .unwrap();
     assert_eq!(source.origin(), CheckedProjectFunctionCallableOrigin::Root);
     assert_eq!(source.group(), CallableGroupIndex::ZERO);
     assert!(source.closed_selection().is_none());
@@ -114,13 +168,13 @@ flow main() -> bool { let text = outer("saved"); return outer(true) }
     let roots = instances
         .iter()
         .map(|enclosing| {
-            select_project_function_value_runtime(
-                call.declaration(),
-                analysis.checked_callables(),
-                Some(enclosing),
-                &mut UnmeteredTypeProjection,
-            )
-            .unwrap()
+            analysis
+                .project_function_value_runtime_with_control(
+                    call.declaration(),
+                    Some(enclosing),
+                    &mut UnmeteredTypeProjection,
+                )
+                .unwrap()
         })
         .collect::<Vec<_>>();
     assert_eq!(roots[0], roots[1]);
@@ -215,13 +269,13 @@ flow main() -> i64 { return add(20i64)(22i64) }
     );
     let analysis = analyze(&fixture).unwrap();
     let call = selections(&analysis, "add").remove(0);
-    let root = select_project_function_value_runtime(
-        call.declaration(),
-        analysis.checked_callables(),
-        None,
-        &mut UnmeteredTypeProjection,
-    )
-    .unwrap();
+    let root = analysis
+        .project_function_value_runtime_with_control(
+            call.declaration(),
+            None,
+            &mut UnmeteredTypeProjection,
+        )
+        .unwrap();
     assert_eq!(root.group(), CallableGroupIndex::ZERO);
     assert!(root.retained_parameters().is_empty());
     let body = root.closed_selection().unwrap();
@@ -250,13 +304,13 @@ fn opening() { alice[#maybe(42i64)]; }
     );
     let analysis = analyze(&fixture).unwrap();
     let call = selections(&analysis, "maybe").remove(0);
-    let source = select_project_function_value_runtime(
-        call.declaration(),
-        analysis.checked_callables(),
-        None,
-        &mut UnmeteredTypeProjection,
-    )
-    .unwrap();
+    let source = analysis
+        .project_function_value_runtime_with_control(
+            call.declaration(),
+            None,
+            &mut UnmeteredTypeProjection,
+        )
+        .unwrap();
     let attached = source.attached_source_schema().unwrap();
     assert_eq!(attached.parameter().group(), CallableGroupIndex::ZERO);
     assert_eq!(

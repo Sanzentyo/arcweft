@@ -486,6 +486,7 @@ pub enum CheckedDisplayFloatWidth {
 /// One closed project `DisplayText` implementation selected for an exact value type.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedDisplayConformance {
+    authority: crate::callable::CheckedCallableAuthorityLease,
     target: TypeKind,
     implementation: ItemId,
     method_ordinal: u16,
@@ -501,6 +502,7 @@ pub enum CheckedDisplayInstantiationError {
 
 impl CheckedDisplayConformance {
     pub(crate) fn new(
+        authority: crate::callable::CheckedCallableAuthorityLease,
         target: TypeKind,
         implementation: ItemId,
         method_ordinal: u16,
@@ -508,6 +510,7 @@ impl CheckedDisplayConformance {
         type_arguments: Box<[(crate::types::GenericTypeParameterId, TypeKind)]>,
     ) -> Self {
         Self {
+            authority,
             target,
             implementation,
             method_ordinal,
@@ -518,6 +521,13 @@ impl CheckedDisplayConformance {
 
     pub const fn target(&self) -> &TypeKind {
         &self.target
+    }
+
+    pub(crate) fn admits_authority(
+        &self,
+        catalog: &crate::callable::CheckedCallableCatalog,
+    ) -> bool {
+        self.authority.admits(catalog)
     }
     pub const fn implementation(&self) -> ItemId {
         self.implementation

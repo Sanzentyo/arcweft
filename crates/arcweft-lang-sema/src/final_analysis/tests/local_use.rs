@@ -9,6 +9,45 @@ use crate::types::TypeKind;
 use super::{analyze, character_nominal_fixture, fixture};
 
 #[test]
+fn closed_instance_from_an_equivalent_rebuild_cannot_issue_local_use_evidence() {
+    let source = "fn pair<T>(value: T) -> (T, T) { (value, value) }\nfn caller() -> (i64, i64) { pair(1i64) }";
+    let first = fixture(source, None);
+    let second = fixture(source, None);
+    let first_report = analyze(&first).unwrap();
+    let second_report = analyze(&second).unwrap();
+    let foreign = super::project_specialization::selections(&first_report, "pair")
+        .remove(0)
+        .close_instance(None)
+        .unwrap();
+    let current = super::project_specialization::selections(&second_report, "pair")
+        .remove(0)
+        .close_instance(None)
+        .unwrap();
+    assert_eq!(foreign.declaration(), current.declaration());
+    assert_eq!(foreign.instantiation(), current.instantiation());
+    assert_eq!(foreign.callable_type(), current.callable_type());
+    assert_ne!(
+        foreign, current,
+        "equal semantic identities do not share admission leases"
+    );
+    assert!(matches!(
+        second_report.checked_local_uses_for_instance(
+            second.project.analysis_view().unwrap(),
+            &second.symbols,
+            CheckedLocalUseInstantiation::ProjectFunction(&foreign),
+        ),
+        Err(CheckedLocalUseError::ForeignInstance)
+    ));
+    second_report
+        .checked_local_uses_for_instance(
+            second.project.analysis_view().unwrap(),
+            &second.symbols,
+            CheckedLocalUseInstantiation::ProjectFunction(&current),
+        )
+        .unwrap();
+}
+
+#[test]
 fn indexing_requires_a_copyable_selected_item() {
     let copyable = fixture(
         r#"

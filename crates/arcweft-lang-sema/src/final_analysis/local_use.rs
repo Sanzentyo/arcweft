@@ -582,6 +582,17 @@ impl CheckedLocalUseCatalog {
         analysis
             .validate_generation(project, symbols)
             .map_err(|_| CheckedLocalUseError::ForeignInstance)?;
+        let admitted = match instance {
+            CheckedLocalUseInstantiation::ProjectFunction(solution) => solution
+                .validate_authority(analysis.checked_callables())
+                .is_ok(),
+            CheckedLocalUseInstantiation::DisplayText(conformance) => {
+                conformance.admits_authority(analysis.checked_callables())
+            }
+        };
+        if !admitted {
+            return Err(CheckedLocalUseError::ForeignInstance);
+        }
         let declaration = instance.declaration();
         let view = analysis
             .hir_topology()

@@ -6,7 +6,7 @@ use crate::{
     callable::{
         CallableCandidateId, CheckedProjectFunctionInstanceProjectionError,
         CheckedProjectFunctionRuntimeOutcome, CheckedProjectFunctionRuntimeSelection,
-        CheckedProjectFunctionRuntimeSelectionError, select_project_function_runtime,
+        CheckedProjectFunctionRuntimeSelectionError,
     },
     final_analysis::FinalSemanticAnalysis,
     types::{TypeKind, UnmeteredTypeProjection},
@@ -27,18 +27,88 @@ pub(super) fn selections(
                 return None;
             };
             (declaration.name() == name).then(|| {
-                select_project_function_runtime(
-                    application,
-                    analysis
-                        .checked_callable_join(owner)
-                        .expect("exact call join"),
-                    analysis.checked_callables(),
-                )
-                .expect("project runtime selection")
-                .expect("ordinary project function")
+                analysis
+                    .project_function_runtime(owner)
+                    .expect("project runtime selection")
+                    .expect("ordinary project function")
             })
         })
         .collect()
+}
+
+#[test]
+fn call_closing_rejects_a_wrong_lexical_instance_even_when_the_call_is_closed() {
+    let world = fixture(
+        "fn identity<T>(value: T) -> T { value }\nfn first<T>(value: T) -> i64 { identity(1i64) }\nfn second<T>(value: T) -> T { value }\nfn caller() -> i64 { first(0i64) + second(1i64) }",
+        None,
+    );
+    let analysis = analyze(&world).unwrap();
+    let nested = selections(&analysis, "identity").remove(0);
+    let first = selections(&analysis, "first")
+        .remove(0)
+        .close_instance(None)
+        .unwrap();
+    let second = selections(&analysis, "second")
+        .remove(0)
+        .close_instance(None)
+        .unwrap();
+    nested.close_instance(Some(&first)).unwrap();
+    assert!(matches!(
+        nested.close_instance(Some(&second)),
+        Err(CheckedProjectFunctionRuntimeSelectionError::ForeignAuthority)
+    ));
+    assert!(matches!(
+        nested.application_function_type_with_control(
+            analysis.checked_callables(),
+            Some(&second),
+            &mut UnmeteredTypeProjection
+        ),
+        Err(CheckedProjectFunctionInstanceProjectionError::Selection(
+            CheckedProjectFunctionRuntimeSelectionError::ForeignAuthority
+        ))
+    ));
+    assert!(matches!(
+        nested.specialize_input_callable_with_control(
+            analysis.checked_callables(),
+            Some(&second),
+            &mut UnmeteredTypeProjection,
+        ),
+        Err(CheckedProjectFunctionInstanceProjectionError::Selection(
+            CheckedProjectFunctionRuntimeSelectionError::ForeignAuthority
+        ))
+    ));
+}
+
+#[test]
+fn selection_rejects_foreign_catalog_and_enclosing_instance() {
+    let source = "fn identity<T>(value: T) -> T { value }\nfn outer<T>(value: T) -> T { identity(value) }\nfn caller() -> i64 { outer(1i64) }";
+    let first = fixture(source, None);
+    let second = fixture(source, None);
+    let first_analysis = analyze(&first).unwrap();
+    let second_analysis = analyze(&second).unwrap();
+    let call = selections(&first_analysis, "identity").remove(0);
+    let foreign_enclosing = selections(&second_analysis, "outer")
+        .remove(0)
+        .close_instance(None)
+        .unwrap();
+    assert!(matches!(
+        call.close_instance(Some(&foreign_enclosing)),
+        Err(CheckedProjectFunctionRuntimeSelectionError::ForeignAuthority)
+    ));
+    let current_enclosing = selections(&first_analysis, "outer")
+        .remove(0)
+        .close_instance(None)
+        .unwrap();
+    assert!(matches!(
+        call.application_function_type_with_control(
+            second_analysis.checked_callables(),
+            Some(&current_enclosing),
+            &mut UnmeteredTypeProjection
+        ),
+        Err(CheckedProjectFunctionInstanceProjectionError::Selection(
+            CheckedProjectFunctionRuntimeSelectionError::ForeignAuthority
+        ))
+    ));
 }
 
 #[test]

@@ -4166,3 +4166,104 @@ This candidate is validated for the shared callable/Return/body-emission cut;
 explicit staged review and non-forced main delivery follow. Full convergence
 acceptance above remains unfinished, including general closed root admission,
 owned program execution and retained View/UI acceptance.
+
+### 2026-10-02 — Accepted callable instance provenance
+
+Inspected and continued delivered main
+`d8a5b78404625d57c3b91fa1b31578f834f2594d`; its non-forced push and
+matching remote SHA were observed, followed by a clean working tree. The
+shared Return/callable/body-emission receipt immediately above belongs to
+that delivered commit. This next candidate retains that cut and the terminal
+Move contract. The goal UI still reports blocked; the API rejected a new goal
+while an unfinished goal exists and has no resume/objective-edit operation.
+The pending app-side resume question does not block independent source work.
+
+At this design boundary, fresh-context Astra Max provided read-only advice.
+Source tracing confirmed a missing admission seam: a frozen generic solution
+was a flat semantic substitution, but its local-use issuer validated only the
+current report/project/symbols. It did not authenticate the supplied instance.
+This is a public-boundary gap; it is not evidence that the ordinary compiler
+had actually mixed worlds.
+
+The accepted report now owns public source selectors. It retrieves its own
+application/join/catalog instead of accepting independently paired evidence.
+The old free selector exports are removed and compiler/test consumers migrate.
+Selected calls retain their exact lexical declaration from accepted topology;
+a supplied enclosing instance must match that declaration and authority even
+when the call's types were already closed.
+
+One private callable-authority lease retains existing generation and registered
+catalog authority. Generation equality includes the exact HIR allocation;
+registered allocation equality uses Arc::ptr_eq, matching the existing catalog
+admission contract. A shallow catalog clone retaining both authorities is valid;
+a separately allocated equal-digest catalog is not. Leases are propagated through
+runtime selections, declaration values, continuations, specialized closed bodies
+and DisplayText templates/conformances. They do not enter stable transcripts,
+instance digests, codecs or version markers. The lower generic solver remains
+portable, and context-free declaration-value normalization remains unchanged.
+The local-use issuer rejects a foreign project-function or DisplayText instance
+before applying its substitution.
+
+New behavior coverage checks equivalent rebuild rejection with stable identities,
+registered allocation versus shared clones, wrong same-world lexical enclosing
+instances, foreign catalog closing/continuation/specialization, and DisplayText
+provenance. The current sema owner run passed 1,144 tests before the final
+input-call authority check was added; full workspace validation is running on
+that final source. The initial compiler check caught the report Result/Option
+API mismatch and a removed application binding needed by a later consumer;
+both were repaired. Neither failed check is a passing receipt.
+
+Ownership remains sema -> runtime-plan/verify -> compiler/tooling. The existing
+checked catalog owns the private lease; report/project_functions owns only
+report-bound issuing APIs; join and source retain their existing projection
+responsibilities. Display templates hold the lease rather than Arc<CheckedCatalog>,
+so final interface publication's unique Arc mutation remains valid. No source
+reconstruction, alternate resolver, fallback global transfer seal, dependency
+or feature change is introduced. General closed root/context admission and owned
+program execution remain the next unfinished acceptance; provenance alone does
+not satisfy the full convergence goal or the retained View/UI audit.
+
+
+Structure receipt: canonical gate exits 0, 97 workspace packages, 351 review
+triggers, 0 blocking violations, 1,470,076 Rust physical LOC. Report:
+%TEMP%/arcweft-1002-instance-structure. Existing upper-size owner dispositions
+for compiler lower, sema checked_catalog/join/model/local_use/report remain
+applicable: this cut only authenticates their existing projection and publication
+responsibilities. New issuing API and allocation-boundary tests follow their
+respective report and checked-catalog owners. No Cargo dependencies/features change.
+
+| Path / crate | Class | Bytes | Base → final physical LOC | Embedded tests |
+|---|---|---:|---:|---:|
+| crates/arcweft-compiler/src/lower.rs / arcweft-compiler | production | 403730 | 9534 → 9512 | 0 |
+| crates/arcweft-compiler/src/lower/project_instances/callables.rs / arcweft-compiler | production | 24576 | 633 → 633 | 0 |
+| crates/arcweft-compiler/src/lower/project_instances/tests.rs / arcweft-compiler | test | 24453 | 669 → 668 | 0 |
+| crates/arcweft-compiler/tests/project_function_instances.rs / arcweft-compiler | test | 17087 | 509 → 503 | 0 |
+| crates/arcweft-lang-sema/src/callable.rs / arcweft-lang-sema | production | 14909 | 247 → 252 | 0 |
+| crates/arcweft-lang-sema/src/callable/checked_catalog.rs / arcweft-lang-sema | production | 106633 | 2862 → 2900 | 0 |
+| crates/arcweft-lang-sema/src/callable/join.rs / arcweft-lang-sema | production | 82463 | 2098 → 2146 | 0 |
+| crates/arcweft-lang-sema/src/callable/join/source.rs / arcweft-lang-sema | production | 27023 | 648 → 664 | 0 |
+| crates/arcweft-lang-sema/src/checked_rich_text/model.rs / arcweft-lang-sema | production | 35487 | 1076 → 1086 | 143 |
+| crates/arcweft-lang-sema/src/final_analysis/analyzer/display.rs / arcweft-lang-sema | production | 13953 | 312 → 315 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/local_use.rs / arcweft-lang-sema | production | 111424 | 2839 → 2850 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/report.rs / arcweft-lang-sema | production | 97874 | 2423 → 2424 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/tests/display_text.rs / arcweft-lang-sema | test | 11026 | 299 → 346 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/tests/higher_order_effects.rs / arcweft-lang-sema | test | 22628 | 707 → 692 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/tests/local_use.rs / arcweft-lang-sema | test | 42889 | 1317 → 1356 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/tests/project_callable_source.rs / arcweft-lang-sema | test | 11670 | 272 → 326 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/tests/project_specialization.rs / arcweft-lang-sema | test | 13574 | 308 → 378 | 0 |
+| crates/arcweft-lang-sema/src/callable/checked_catalog/authority_tests.rs / arcweft-lang-sema | test | 992 | 0 → 25 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/report/project_functions.rs / arcweft-lang-sema | production | 3029 | 0 → 77 | 0 |
+
+Final validation on unchanged candidate Rust bytes: just test-workspace exits 0
+with 308 suites, 7204 passed, 0 failed and 24 ignored.
+Workspace check and Clippy, all-targets/all-features, both exit 0; format, diff
+and structural gate pass. Existing warning categories remain. Receipts use
+%TEMP%/arcweft-1002-instance-{test-workspace,workspace-check,workspace-clippy,fmt}.
+The final workspace run supersedes the pre-final sema owner run and covers the
+added input-call authority check. Dependency edge and package/fan metrics are
+unchanged from the preceding cut (SHA256
+7ED2CD7BDA7DC6A879DD5684072D06357883E1B185C6A00343A7D7C27CB7AC42 and
+6242C34313F5C79FA7B8ADC1EE1732C9319F02BDDEBD5FB78054B0A8B6A0DFE7).
+Explicit stage review and non-forced main delivery follow. General closed
+execution context/root and owned runner migration remain unfinished; no GPU
+or allocation-performance claim is made from these checks.

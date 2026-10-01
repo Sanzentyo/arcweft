@@ -52,6 +52,7 @@ pub enum DisplayConformanceRejection {
 
 #[derive(Clone, Debug)]
 struct DisplayImplTemplate {
+    authority: crate::callable::CheckedCallableAuthorityLease,
     target: TypeKind,
     required_type_arguments: usize,
     implementation: ItemId,
@@ -224,6 +225,7 @@ impl DisplayConformanceCatalog {
                     });
                 }
                 templates.push(DisplayImplTemplate {
+                    authority: callables.authority_lease(),
                     target,
                     required_type_arguments,
                     implementation: owner,
@@ -283,6 +285,7 @@ impl DisplayConformanceCatalog {
                 .collect::<Vec<_>>()
                 .into_boxed_slice();
             let conformance = CheckedDisplayConformance::new(
+                template.authority.clone(),
                 target.clone(),
                 template.implementation,
                 template.method_ordinal,

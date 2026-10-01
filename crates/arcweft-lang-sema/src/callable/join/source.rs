@@ -108,6 +108,7 @@ enum SourceProjection {
 /// The source environment is sealed here; a later witness has its own context.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedProjectFunctionCallableSource {
+    authority: super::CheckedCallableAuthorityLease,
     digest: CheckedProjectFunctionCallableSourceDigest,
     declaration: CallableDeclarationKey,
     checked: CheckedCallableFacts,
@@ -273,6 +274,9 @@ impl CheckedProjectFunctionCallableSource {
         CheckedProjectFunctionInstanceProjectionError<C::Error>,
     > {
         self.validate_catalog(catalog)?;
+        if let Some(instance) = witness_enclosing {
+            instance.validate_authority(catalog)?;
+        }
         let empty = ClosedTypeInstantiation::default();
         let caller = witness_enclosing.map_or(&empty, |row| row.solution.as_ref());
         let expected_source =
@@ -334,6 +338,9 @@ impl CheckedProjectFunctionCallableSource {
         &self,
         catalog: &CheckedCallableCatalog,
     ) -> Result<(), CheckedProjectFunctionRuntimeSelectionError> {
+        if !self.authority.admits(catalog) {
+            return Err(CheckedProjectFunctionRuntimeSelectionError::ForeignAuthority);
+        }
         let checked = catalog
             .project_callable(&self.declaration)
             .map_err(CheckedProjectFunctionRuntimeSelectionError::Catalog)?;
@@ -393,6 +400,7 @@ impl CheckedProjectFunctionCallableSource {
             function_type: function_type.clone(),
             effects,
             solution: CheckedProjectFunctionInstanceSolution {
+                authority: self.authority.clone(),
                 declaration: self.declaration.clone(),
                 solution: Arc::new(body),
                 instantiation,
@@ -403,7 +411,7 @@ impl CheckedProjectFunctionCallableSource {
     }
 }
 
-pub fn select_project_function_value_runtime<C: TypeProjectionControl>(
+pub(crate) fn select_project_function_value_runtime<C: TypeProjectionControl>(
     declaration: &CallableDeclarationKey,
     catalog: &CheckedCallableCatalog,
     enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
@@ -412,6 +420,9 @@ pub fn select_project_function_value_runtime<C: TypeProjectionControl>(
     CheckedProjectFunctionCallableSource,
     CheckedProjectFunctionInstanceProjectionError<C::Error>,
 > {
+    if let Some(instance) = enclosing {
+        instance.validate_authority(catalog)?;
+    }
     let checked = checked_function(declaration, catalog)?;
     let binder = checked
         .signature()
@@ -426,6 +437,7 @@ pub fn select_project_function_value_runtime<C: TypeProjectionControl>(
         .view()
         .to_quantified_type_with_control(control)?;
     CheckedProjectFunctionCallableSource {
+        authority: catalog.authority_lease(),
         digest: CheckedProjectFunctionCallableSourceDigest::UNSEALED,
         declaration: declaration.clone(),
         checked: checked.clone(),
@@ -453,6 +465,7 @@ impl CheckedProjectFunctionRuntimeSelection {
         enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
         control: &mut C,
     ) -> Result<TypeKind, CheckedProjectFunctionInstanceProjectionError<C::Error>> {
+        self.validate_authority(catalog, enclosing)?;
         let checked = checked_function(&self.declaration, catalog)?;
         let group = checked
             .signature()
@@ -513,6 +526,7 @@ impl CheckedProjectFunctionRuntimeSelection {
         CheckedProjectFunctionCallableSource,
         CheckedProjectFunctionInstanceProjectionError<C::Error>,
     > {
+        self.validate_authority(catalog, enclosing)?;
         match (&self.input, &self.input_continuation) {
             (super::CheckedProjectFunctionRuntimeInput::Direct, None) => {
                 select_project_function_value_runtime(
@@ -553,11 +567,13 @@ impl CheckedProjectFunctionRuntimeSelection {
         CheckedProjectFunctionCallableSource,
         CheckedProjectFunctionInstanceProjectionError<C::Error>,
     > {
+        self.validate_authority(catalog, enclosing)?;
         let checked = checked_function(&self.declaration, catalog)?;
         let empty = ClosedTypeInstantiation::default();
         let caller = enclosing.map_or(&empty, |row| row.solution.as_ref());
         let function_type = caller.instantiate_type_with_control(abi.function_type(), control)?;
         CheckedProjectFunctionCallableSource {
+            authority: self.authority.clone(),
             digest: CheckedProjectFunctionCallableSourceDigest::UNSEALED,
             declaration: self.declaration.clone(),
             checked: checked.clone(),

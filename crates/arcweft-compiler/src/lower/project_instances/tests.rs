@@ -1,7 +1,6 @@
 use arcweft_core::entry::RuntimeCallableId;
 use arcweft_lang_hir::item::HirItemKind;
 use arcweft_lang_hir::source_index::HirCallableSourceOwner;
-use arcweft_lang_sema::callable::select_project_function_runtime;
 use arcweft_lang_sema::types::{ArrayLength, TypeKind, TypeProjectionError};
 
 use super::*;
@@ -17,9 +16,9 @@ fn instance() -> (RuntimeProjectFunctionInstanceKey, ProjectInstanceNode) {
     let (owner, selection) = analysis
         .calls()
         .find_map(|(owner, call)| {
-            let application = call.selected_application()?;
-            let join = analysis.checked_callable_join(owner).expect("checked join");
-            select_project_function_runtime(application, join, analysis.checked_callables())
+            call.selected_application()?;
+            analysis
+                .project_function_runtime(owner)
                 .expect("checked runtime selection")
                 .map(|selection| (owner, selection))
         })
@@ -72,9 +71,9 @@ fn instance_key_encoding_spends_the_same_projection_budget() {
     let (owner, selection) = analysis
         .calls()
         .find_map(|(owner, call)| {
-            let application = call.selected_application()?;
-            let join = analysis.checked_callable_join(owner).expect("checked join");
-            select_project_function_runtime(application, join, analysis.checked_callables())
+            call.selected_application()?;
+            analysis
+                .project_function_runtime(owner)
                 .expect("checked selection")
                 .map(|selection| (owner, selection))
         })

@@ -21,6 +21,7 @@ use crate::{
     types::{ArrayLength, TypeKind, constraints::ClosedTypeInstantiation},
 };
 
+use super::CheckedCallableAuthorityLease;
 use super::{
     CallableArgumentSlotIndex, CallableCandidateId, CallableFamily, CallableGroupIndex,
     CallableParameterConsumer, CallableParameterCoordinate, CallableParameterPassing,
@@ -35,11 +36,11 @@ use super::{
 
 mod source;
 mod specialization;
+pub(crate) use source::select_project_function_value_runtime;
 pub use source::{
     CheckedProjectFunctionCallableAttached, CheckedProjectFunctionCallableOrigin,
     CheckedProjectFunctionCallableParameter, CheckedProjectFunctionCallableRetainedParameter,
     CheckedProjectFunctionCallableSource, CheckedProjectFunctionCallableSourceDigest,
-    select_project_function_value_runtime,
 };
 pub use specialization::CheckedProjectFunctionSpecialization;
 
@@ -204,6 +205,8 @@ pub enum CheckedProjectFunctionRuntimeOutcome {
 /// frozen substitution rather than exposing a call-site reconstruction API.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedProjectFunctionRuntimeSelection {
+    authority: CheckedCallableAuthorityLease,
+    caller: Option<CallableDeclarationKey>,
     declaration: CallableDeclarationKey,
     group: CallableGroupIndex,
     instantiation: CallableInstantiationDigest,
@@ -240,6 +243,7 @@ pub struct CheckedProjectFunctionRootRuntimeSelection {
 /// environment; body projection applies these callee keys simultaneously.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedProjectFunctionInstanceSolution {
+    authority: CheckedCallableAuthorityLease,
     declaration: CallableDeclarationKey,
     solution: Arc<ClosedTypeInstantiation>,
     instantiation: CallableInstantiationDigest,
@@ -248,6 +252,17 @@ pub struct CheckedProjectFunctionInstanceSolution {
 }
 
 impl CheckedProjectFunctionInstanceSolution {
+    pub(crate) fn validate_authority(
+        &self,
+        catalog: &CheckedCallableCatalog,
+    ) -> Result<(), CheckedProjectFunctionRuntimeSelectionError> {
+        if self.authority.admits(catalog) {
+            Ok(())
+        } else {
+            Err(CheckedProjectFunctionRuntimeSelectionError::ForeignAuthority)
+        }
+    }
+
     pub const fn declaration(&self) -> &CallableDeclarationKey {
         &self.declaration
     }
@@ -355,6 +370,30 @@ impl CheckedProjectFunctionInstanceSolution {
 }
 
 impl CheckedProjectFunctionRuntimeSelection {
+    fn validate_authority(
+        &self,
+        catalog: &CheckedCallableCatalog,
+        enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
+    ) -> Result<(), CheckedProjectFunctionRuntimeSelectionError> {
+        if !self.authority.admits(catalog) {
+            return Err(CheckedProjectFunctionRuntimeSelectionError::ForeignAuthority);
+        }
+        self.validate_enclosing(enclosing)
+    }
+
+    fn validate_enclosing(
+        &self,
+        enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
+    ) -> Result<(), CheckedProjectFunctionRuntimeSelectionError> {
+        if enclosing.is_some_and(|instance| {
+            instance.authority != self.authority
+                || Some(instance.declaration()) != self.caller.as_ref()
+        }) {
+            return Err(CheckedProjectFunctionRuntimeSelectionError::ForeignAuthority);
+        }
+        Ok(())
+    }
+
     pub const fn declaration(&self) -> &CallableDeclarationKey {
         &self.declaration
     }
@@ -416,6 +455,7 @@ impl CheckedProjectFunctionRuntimeSelection {
         Option<CheckedProjectFunctionRootRuntimeSelection>,
         CheckedProjectFunctionInstanceProjectionError<C::Error>,
     > {
+        self.validate_authority(catalog, enclosing)?;
         control
             .check()
             .map_err(crate::types::TypeProjectionError::Control)?;
@@ -456,6 +496,7 @@ impl CheckedProjectFunctionRuntimeSelection {
         CheckedProjectFunctionInstanceSolution,
         CheckedProjectFunctionInstanceProjectionError<C::Error>,
     > {
+        self.validate_enclosing(enclosing)?;
         let solution = self.solution.close_instantiation_with_control(
             enclosing.map(|row| row.solution.as_ref()),
             control,
@@ -484,6 +525,7 @@ impl CheckedProjectFunctionRuntimeSelection {
             }
         })?;
         Ok(CheckedProjectFunctionInstanceSolution {
+            authority: self.authority.clone(),
             declaration: self.declaration.clone(),
             solution: Arc::new(solution),
             instantiation,
@@ -564,6 +606,8 @@ pub struct CheckedProjectFunctionProjectionFailure {
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum CheckedProjectFunctionRuntimeSelectionError {
+    #[error("project-function evidence belongs to another accepted callable authority")]
+    ForeignAuthority,
     #[error(transparent)]
     Instantiation(#[from] crate::types::TypeInstantiationError),
     #[error("project-function runtime selection disagrees with the checked callable join")]
@@ -615,7 +659,7 @@ impl From<super::CallConstraintInvariant> for CheckedProjectFunctionRuntimeSelec
 /// manufacture continuation groups, infer generic substitutions, or supply
 /// attached content. The checked Entry contract is expected to establish
 /// these preconditions before requesting this projection.
-pub fn select_project_function_root_runtime(
+pub(crate) fn select_project_function_root_runtime(
     declaration: &CallableDeclarationKey,
     catalog: &CheckedCallableCatalog,
 ) -> Result<CheckedProjectFunctionRootRuntimeSelection, CheckedProjectFunctionRuntimeSelectionError>
@@ -669,6 +713,7 @@ pub fn select_project_function_root_runtime(
         declaration: declaration.clone(),
         group: group.index(),
         solution: CheckedProjectFunctionInstanceSolution {
+            authority: catalog.authority_lease(),
             declaration: declaration.clone(),
             solution: Arc::new(ClosedTypeInstantiation::default()),
             instantiation,
@@ -688,10 +733,11 @@ pub fn select_project_function_root_runtime(
 /// their existing typed runtime owners remain distinct. A Function selection
 /// is either complete or a typed error—there is no non-generic or single-group
 /// fallback.
-pub fn select_project_function_runtime(
+pub(crate) fn select_project_function_runtime(
     application: &CheckedCallApplication,
     join: &CheckedCallableJoin,
     catalog: &CheckedCallableCatalog,
+    caller: Option<CallableDeclarationKey>,
 ) -> Result<
     Option<CheckedProjectFunctionRuntimeSelection>,
     CheckedProjectFunctionRuntimeSelectionError,
@@ -800,6 +846,8 @@ pub fn select_project_function_runtime(
         join.current_group(),
     )?;
     Ok(Some(CheckedProjectFunctionRuntimeSelection {
+        authority: catalog.authority_lease(),
+        caller,
         declaration: declaration.clone(),
         group: join.current_group(),
         instantiation: join.instantiation(),

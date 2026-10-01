@@ -25,6 +25,53 @@ fn render(value: RouteInfo) -> Content {{ fmt(value) }}
 const VALID_METHOD: &str = "fn display_text(self, ctx: DisplayContext) -> Result<Content, DisplayError> { Ok(fmt(self.label)) }";
 
 #[test]
+fn foreign_display_conformance_cannot_issue_local_use_evidence() {
+    let source = source(VALID_METHOD, "");
+    let first = fixture(&source, None);
+    let second = fixture(&source, None);
+    let first_report = analyze(&first).unwrap();
+    let second_report = analyze(&second).unwrap();
+    let foreign = first_report
+        .calls()
+        .find_map(|(_, call)| {
+            call.selected_application()?
+                .format_call()?
+                .witness()
+                .project_conformance()
+        })
+        .unwrap();
+    let current = second_report
+        .calls()
+        .find_map(|(_, call)| {
+            call.selected_application()?
+                .format_call()?
+                .witness()
+                .project_conformance()
+        })
+        .unwrap();
+    assert_eq!(foreign.method_declaration(), current.method_declaration());
+    assert_eq!(
+        foreign.target().semantic_identity_digest().unwrap(),
+        current.target().semantic_identity_digest().unwrap()
+    );
+    assert!(matches!(
+        second_report.checked_local_uses_for_instance(
+            second.project.analysis_view().unwrap(),
+            &second.symbols,
+            crate::final_analysis::CheckedLocalUseInstantiation::DisplayText(foreign),
+        ),
+        Err(CheckedLocalUseError::ForeignInstance)
+    ));
+    second_report
+        .checked_local_uses_for_instance(
+            second.project.analysis_view().unwrap(),
+            &second.symbols,
+            crate::final_analysis::CheckedLocalUseInstantiation::DisplayText(current),
+        )
+        .unwrap();
+}
+
+#[test]
 fn project_display_text_seals_exact_method_and_closed_type() {
     let fixture = fixture(&source(VALID_METHOD, ""), None);
     let report = analyze(&fixture).expect("valid standard DisplayText implementation");

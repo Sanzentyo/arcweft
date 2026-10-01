@@ -7,7 +7,6 @@ use arcweft_core::value::{
 };
 use arcweft_lang_sema::callable::{
     CheckedProjectFunctionRuntimeInput, CheckedProjectFunctionRuntimeOutcome,
-    select_project_function_runtime,
 };
 
 #[path = "support/execution.rs"]
@@ -165,11 +164,9 @@ flow main() -> i64 {
     let selections = analysis
         .calls()
         .filter_map(|(owner, facts)| {
-            let application = facts.selected_application()?;
-            let join = analysis
-                .checked_callable_join(owner)
-                .expect("selected call has a checked join");
-            select_project_function_runtime(application, join, analysis.checked_callables())
+            facts.selected_application()?;
+            analysis
+                .project_function_runtime(owner)
                 .expect("project-function runtime selection")
         })
         .collect::<Vec<_>>();
@@ -237,11 +234,8 @@ flow main() -> i64 {
     let terminal_instantiations = analysis
         .calls()
         .filter_map(|(owner, facts)| {
-            let application = facts.selected_application()?;
-            let join = analysis.checked_callable_join(owner).ok()?;
-            let selection =
-                select_project_function_runtime(application, join, analysis.checked_callables())
-                    .ok()??;
+            facts.selected_application()?;
+            let selection = analysis.project_function_runtime(owner).ok()??;
             matches!(
                 selection.outcome(),
                 CheckedProjectFunctionRuntimeOutcome::Invoke { .. }

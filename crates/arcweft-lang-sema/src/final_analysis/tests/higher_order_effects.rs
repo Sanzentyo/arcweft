@@ -4,7 +4,7 @@ use super::{analyze, fixture};
 use crate::{
     callable::{
         CallableCandidateId, CheckedCallApplication, CheckedProjectFunctionRuntimeInput,
-        CheckedProjectFunctionRuntimeOutcome, select_project_function_runtime,
+        CheckedProjectFunctionRuntimeOutcome,
     },
     final_analysis::FinalSemanticAnalysis,
     types::TypeKind,
@@ -256,18 +256,13 @@ flow main() -> i64 { return ignore(|value: i64| writer(value), 42i64) }
         [Vec::<String>::new()]
     );
     let calls = project_applications(&analysis, "ignore");
-    let [(owner, application)] = calls.as_slice() else {
+    let [(owner, _)] = calls.as_slice() else {
         panic!("one ignore call")
     };
-    let selection = select_project_function_runtime(
-        application,
-        analysis
-            .checked_callable_join(*owner)
-            .expect("exact checked join"),
-        analysis.checked_callables(),
-    )
-    .expect("parameter ABI projection")
-    .expect("project function");
+    let selection = analysis
+        .project_function_runtime(*owner)
+        .expect("parameter ABI projection")
+        .expect("project function");
     assert!(selection.effects().is_empty());
     let callback = &selection.current_group_materialization()[0];
     let TypeKind::Function { effects, .. } = callback.abi_type() else {
@@ -308,16 +303,11 @@ flow main() -> i64 {
     assert_eq!(calls.len(), 2);
     let mut produced = None;
     let mut consumed = None;
-    for (owner, application) in calls {
-        let selection = select_project_function_runtime(
-            application,
-            analysis
-                .checked_callable_join(owner)
-                .expect("exact checked join"),
-            analysis.checked_callables(),
-        )
-        .expect("prefix ABI projection")
-        .expect("project function");
+    for (owner, _) in calls {
+        let selection = analysis
+            .project_function_runtime(owner)
+            .expect("prefix ABI projection")
+            .expect("project function");
         assert!(selection.effects().is_empty());
         if let CheckedProjectFunctionRuntimeInput::Continuation { abi } = selection.input() {
             consumed = Some(abi.clone());
@@ -410,18 +400,13 @@ fn contextual_effect_rows_survive_value_expression_boundaries() {
             "{name}"
         );
         let calls = project_applications(&analysis, "ignore");
-        let [(owner, application)] = calls.as_slice() else {
+        let [(owner, _)] = calls.as_slice() else {
             panic!("{name}: one selected call");
         };
-        let selection = select_project_function_runtime(
-            application,
-            analysis
-                .checked_callable_join(*owner)
-                .expect("checked join"),
-            analysis.checked_callables(),
-        )
-        .unwrap_or_else(|error| panic!("{name}: {error:?}"))
-        .expect("project function");
+        let selection = analysis
+            .project_function_runtime(*owner)
+            .unwrap_or_else(|error| panic!("{name}: {error:?}"))
+            .expect("project function");
         assert_eq!(
             selection.current_group_materialization()[0].abi_type(),
             &expected,

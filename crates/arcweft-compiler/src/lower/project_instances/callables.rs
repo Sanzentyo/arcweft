@@ -208,13 +208,13 @@ impl ProjectInstanceProjection<'_> {
         analysis: &FinalSemanticAnalysis,
     ) -> Result<RuntimeProjectCallableValueTarget, RuntimeSemanticProjectionError> {
         let origin = ProjectInstantiationOrigin::CallableValue(owner);
-        let source = arcweft_lang_sema::callable::select_project_function_value_runtime(
-            declaration,
-            analysis.checked_callables(),
-            enclosing,
-            &mut self.callable_work().type_control(origin),
-        )
-        .map_err(|error| projection_error(origin, error))?;
+        let source = analysis
+            .project_function_value_runtime_with_control(
+                declaration,
+                enclosing,
+                &mut self.callable_work().type_control(origin),
+            )
+            .map_err(|error| projection_error(origin, error))?;
         self.callable_source(origin, source, enclosing, symbols, world, analysis)
     }
 
@@ -309,13 +309,13 @@ impl ProjectInstanceProjection<'_> {
         {
             None
         } else {
-            let root = arcweft_lang_sema::callable::select_project_function_value_runtime(
-                checked.declaration(),
-                analysis.checked_callables(),
-                enclosing,
-                &mut self.callable_work().type_control(origin),
-            )
-            .map_err(|error| projection_error(origin, error))?;
+            let root = analysis
+                .project_function_value_runtime_with_control(
+                    checked.declaration(),
+                    enclosing,
+                    &mut self.callable_work().type_control(origin),
+                )
+                .map_err(|error| projection_error(origin, error))?;
             Some(self.insert_source(origin, root, None, symbols, world, analysis)?)
         };
         Ok(RuntimeProjectCallableValueTarget::Source(

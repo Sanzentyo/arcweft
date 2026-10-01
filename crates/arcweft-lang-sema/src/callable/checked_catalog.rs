@@ -33,6 +33,9 @@ use super::{
     RegisteredCallableCatalogDigest, StandardTraitCatalogVersion,
 };
 
+#[cfg(test)]
+mod authority_tests;
+
 /// Exact generation shared by every record in one frozen checked catalog.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedCallableCatalogGeneration {
@@ -72,6 +75,34 @@ impl PartialEq for CheckedCallableCatalogOrigin {
 }
 
 impl Eq for CheckedCallableCatalogOrigin {}
+
+/// In-memory admission lease for the accepted callable authority. This is not
+/// part of semantic identity: equal transcripts from another registration do
+/// not authorize executing this generation's body or projecting its evidence.
+#[derive(Clone, Debug)]
+pub(crate) struct CheckedCallableAuthorityLease {
+    generation: CheckedCallableCatalogGeneration,
+    registered: Option<Arc<RegisteredCallableCatalog>>,
+}
+
+impl PartialEq for CheckedCallableAuthorityLease {
+    fn eq(&self, other: &Self) -> bool {
+        self.generation == other.generation
+            && match (&self.registered, &other.registered) {
+                (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+                (None, None) => true,
+                _ => false,
+            }
+    }
+}
+
+impl Eq for CheckedCallableAuthorityLease {}
+
+impl CheckedCallableAuthorityLease {
+    pub(crate) fn admits(&self, catalog: &CheckedCallableCatalog) -> bool {
+        self == &catalog.authority_lease()
+    }
+}
 
 /// Runtime disposition frozen after semantic role checking.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -966,6 +997,13 @@ pub struct CheckedCallableCatalog {
 }
 
 impl CheckedCallableCatalog {
+    pub(crate) fn authority_lease(&self) -> CheckedCallableAuthorityLease {
+        CheckedCallableAuthorityLease {
+            generation: self.generation.clone(),
+            registered: self.registered.clone(),
+        }
+    }
+
     pub const fn generation(&self) -> &CheckedCallableCatalogGeneration {
         &self.generation
     }

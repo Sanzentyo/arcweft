@@ -141,7 +141,6 @@ use arcweft_lang_sema::{
         CollectionMethodId, DomainMethodId, LineContextMethodId, LineScheduleCallableId,
         MathCallableId, ProbeComparisonOperator, ReductionConstructorKind, ResolvedCallableOrigin,
         ResolvedCallableState, StageMethodId, StandardMapFamily, StdFloatOperation,
-        select_project_function_root_runtime, select_project_function_runtime,
     },
     checked_rich_text::{
         CheckedContentEmission, CheckedContentModifier, CheckedContentParameter,
@@ -5992,9 +5991,9 @@ fn runtime_project_function_roots(
         for (role, root_role) in roles {
             let origin = ProjectInstantiationOrigin::Root(entry);
             let declaration = CallableDeclarationKey::Existing(role.declaration().clone());
-            let selection =
-                select_project_function_root_runtime(&declaration, analysis.checked_callables())
-                    .map_err(|error| origin.error(error.to_string()))?;
+            let selection = analysis
+                .project_function_root_runtime(&declaration)
+                .map_err(|error| origin.error(error.to_string()))?;
             let callable =
                 runtime_project_callable(selection.declaration(), symbols, world, analysis)
                     .map_err(|reason| origin.error(reason))?;
@@ -6087,12 +6086,6 @@ fn runtime_call(
             reason: "unselected call evidence cannot enter runtime lowering".to_owned(),
         });
     };
-    let callable_join = analysis.checked_callable_join(owner).map_err(|error| {
-        RuntimeSemanticProjectionError::Call {
-            owner,
-            reason: format!("runtime call has no exact checked callable join: {error}"),
-        }
-    })?;
     if let Some(dialogue) = character_dialogue::runtime_character_dialogue_call(
         owner,
         application,
@@ -6103,12 +6096,12 @@ fn runtime_call(
     )? {
         return Ok(dialogue);
     }
-    let project_function_selection =
-        select_project_function_runtime(application, callable_join, analysis.checked_callables())
-            .map_err(|error| RuntimeSemanticProjectionError::Call {
+    let project_function_selection = analysis.project_function_runtime(owner).map_err(|error| {
+        RuntimeSemanticProjectionError::Call {
             owner,
             reason: error.to_string(),
-        })?;
+        }
+    })?;
     let project_function_callable = project_function_selection
         .as_ref()
         .map(|selection| {
@@ -6995,36 +6988,21 @@ fn discover_runtime_project_executable_dependencies(
             match row.family() {
                 CheckedExecutableRuntimeExpressionFactFamily::Call => {
                     let owner = row.owner();
-                    let facts = analysis.call(owner).ok_or_else(|| {
-                        RuntimeSemanticProjectionError::Call {
-                            owner,
-                            reason: "discovered instance call has no checked call fact".to_owned(),
-                        }
-                    })?;
-                    let application = facts.selected_application().ok_or_else(|| {
-                        RuntimeSemanticProjectionError::Call {
+                    let application = analysis
+                        .call(owner)
+                        .and_then(|facts| facts.selected_application())
+                        .ok_or_else(|| RuntimeSemanticProjectionError::Call {
                             owner,
                             reason: "discovered instance call has no selected application"
                                 .to_owned(),
-                        }
-                    })?;
-                    let join = analysis.checked_callable_join(owner).map_err(|error| {
-                    RuntimeSemanticProjectionError::Call {
-                        owner,
-                        reason: format!(
-                            "discovered instance call has no exact checked callable join: {error}"
-                        ),
-                    }
-                })?;
-                    let Some(selection) = select_project_function_runtime(
-                        application,
-                        join,
-                        analysis.checked_callables(),
-                    )
-                    .map_err(|error| RuntimeSemanticProjectionError::Call {
-                        owner,
-                        reason: error.to_string(),
-                    })?
+                        })?;
+                    let Some(selection) =
+                        analysis.project_function_runtime(owner).map_err(|error| {
+                            RuntimeSemanticProjectionError::Call {
+                                owner,
+                                reason: error.to_string(),
+                            }
+                        })?
                     else {
                         continue;
                     };

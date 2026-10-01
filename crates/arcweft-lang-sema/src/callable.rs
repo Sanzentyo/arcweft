@@ -93,7 +93,9 @@ pub use checked_catalog::{
     CheckedMethodLookup, EffectClauseSource, EffectContractBuildError, EffectContractOrigin,
     EffectContractSource, EffectItemSource, EffectPermission,
 };
-pub(crate) use checked_catalog::{CheckedCallableCatalogBuildError, CheckedCallableCatalogBuilder};
+pub(crate) use checked_catalog::{
+    CheckedCallableAuthorityLease, CheckedCallableCatalogBuildError, CheckedCallableCatalogBuilder,
+};
 pub(crate) use constraints::{
     CandidateConstraintDriverStartFailure, CandidateConstraintSourceContext,
     CandidateConstraintWorkSession, FunctionSpecializationFailure, PreparedSourceConstraintGroup,
@@ -171,10 +173,13 @@ pub use join::{
     CheckedProjectFunctionRootRuntimeSelection, CheckedProjectFunctionRuntimeInput,
     CheckedProjectFunctionRuntimeOutcome, CheckedProjectFunctionRuntimeSelection,
     CheckedProjectFunctionRuntimeSelectionError, CheckedProjectFunctionSpecialization,
-    IntrinsicCallableCandidateTag, select_project_function_root_runtime,
-    select_project_function_runtime, select_project_function_value_runtime,
+    IntrinsicCallableCandidateTag,
 };
-pub(crate) use join::{CheckedCallableJoinTranscriptDigest, validate_selected_application};
+pub(crate) use join::{
+    CheckedCallableJoinTranscriptDigest, select_project_function_root_runtime,
+    select_project_function_runtime, select_project_function_value_runtime,
+    validate_selected_application,
+};
 pub use limits::{
     CallResolverAccountingReport, CallableLimits, PRODUCTION_CALLABLE_LIMITS,
     PRODUCTION_SIGNATURE_LIMITS, SignatureAccountingError, SignatureQueryLimits,

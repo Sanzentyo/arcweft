@@ -1,5 +1,6 @@
 //! Immutable accepted semantic report and publication transaction.
 
+mod project_functions;
 mod variants;
 
 use super::declaration_defaults::{
