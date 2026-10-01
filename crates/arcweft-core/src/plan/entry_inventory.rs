@@ -920,7 +920,7 @@ impl RuntimePlan {
                 FlowOp::Bind(_)
                 | FlowOp::Let { .. }
                 | FlowOp::CompleteFormatOperand { .. }
-                | FlowOp::AssignNominalField { .. }
+                | FlowOp::Assign { .. }
                 | FlowOp::LineOperation { .. }
                 | FlowOp::CommitDialogueResult { .. }
                 | FlowOp::SelectDialogueResult { .. }

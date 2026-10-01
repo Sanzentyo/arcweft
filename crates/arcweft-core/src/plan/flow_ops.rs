@@ -82,7 +82,7 @@ fn visit_ops(ops: &[FlowOp], visitor: &mut impl FnMut(&FlowOp)) {
             FlowOp::Bind(_)
             | FlowOp::Let { .. }
             | FlowOp::CompleteFormatOperand { .. }
-            | FlowOp::AssignNominalField { .. }
+            | FlowOp::Assign { .. }
             | FlowOp::LineOperation { .. }
             | FlowOp::CommitDialogueResult { .. }
             | FlowOp::SelectDialogueResult { .. }

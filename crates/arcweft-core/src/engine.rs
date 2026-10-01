@@ -523,13 +523,10 @@ fn flow_fiber_line_handle_owners(
     crate::line_task::LineRuntimeError,
 > {
     let mut owners = BTreeMap::new();
-    for binding in fiber.env.bindings() {
-        let owner = crate::value::ownership::RuntimeOwnedSlotId::environment_local(
-            fiber.execution,
-            binding.local,
-        );
-        for handle in binding
-            .value
+    for (local, value) in fiber.env.bindings() {
+        let owner =
+            crate::value::ownership::RuntimeOwnedSlotId::environment_local(fiber.execution, local);
+        for handle in value
             .affine_line_handles()
             .map_err(|_| crate::line_task::LineRuntimeError::InvalidHandlePayload)?
         {
@@ -2488,6 +2485,14 @@ impl Engine {
         let mut staged_output = RuntimeStepOutput::default();
         let mut drop_policy = None;
         candidate.step_flow(&mut staged_output, pure_backend, &mut drop_policy);
+        let mut drops = candidate.fiber.env.take_assignment_discard_authorization();
+        if let Err(error) = drops.set_boundary(drop_policy) {
+            drop(candidate);
+            *self = Self::from_rollback_image(image)
+                .expect("a native Engine rollback image reconstructs its admitted owner");
+            self.fail_eval(error, output);
+            return;
+        }
         let after = match flow_fiber_line_handle_owners(&candidate.fiber) {
             Ok(owners) => owners,
             Err(error) => {
@@ -2502,7 +2507,7 @@ impl Engine {
             candidate.fiber.execution,
             &before,
             &after,
-            drop_policy,
+            &drops,
         ) {
             Ok(receipt) => receipt,
             Err(error) => {
@@ -3356,6 +3361,8 @@ impl Engine {
         let live_tokens = matches!(&owner, FlowFiberOwner::LineTask(_))
             .then(|| flow_fiber_line_handle_tokens(&child))
             .transpose()?;
+        let mut drops = child.env.take_assignment_discard_authorization();
+        drops.set_boundary(drop_policy)?;
         if let FlowFiberOwner::LineTask(owner) = &owner {
             let mut transaction = self
                 .dialogue_activations
@@ -3368,7 +3375,7 @@ impl Engine {
                 live_tokens
                     .as_ref()
                     .ok_or(crate::line_task::LineRuntimeError::InvalidActivationOperation)?,
-                drop_policy,
+                &drops,
             )?;
             let receipt = self.dialogue_activations.commit_transaction(transaction)?;
             Self::publish_dialogue_line_receipt(receipt.into_line(), output);

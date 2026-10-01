@@ -859,7 +859,7 @@ pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
                 .sum::<usize>();
             8 + runtime_expr_work_units(target) + field_units
         }
-        RuntimeExprKind::AssignNominalField { expr, body, .. } => {
+        RuntimeExprKind::Assign { expr, body, .. } => {
             8 + runtime_expr_work_units(expr) + runtime_expr_work_units(body)
         }
         RuntimeExprKind::Tuple(items) | RuntimeExprKind::BracketSeq(items) => {

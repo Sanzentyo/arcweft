@@ -309,7 +309,7 @@ fn implicit_record_input_preserves_an_open_generic_binding_type() {
     assert!(
         report
             .checked_local_uses()
-            .rows()
+            .value_transfers()
             .all(|(site, _)| !matches!(site, CheckedLocalUseSite::RecordField { .. }))
     );
 }

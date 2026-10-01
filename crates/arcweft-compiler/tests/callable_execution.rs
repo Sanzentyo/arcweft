@@ -956,6 +956,36 @@ flow main() -> i64 {
 );
 
 callable_case!(
+    whole_live_local_replacement_survives_nested_scope_exit,
+    r#"
+flow main() -> i64 {
+    let mut items = Vec<Content>::with_capacity(0usize)
+    let ignored = { let marker = 0i64; items = Vec<Content>::with_capacity(0usize); () }
+    match items.pop() {
+        .None => return 42i64
+        .Some(_) => return 0i64
+    }
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    pure_helper_replacement_updates_the_outer_declaration,
+    r#"
+fn update() -> i64 {
+    let mut result = 1i64
+    let ignored = { let marker = 0i64; result = 42i64; () }
+    result
+}
+flow main() -> i64 { return update() }
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
     local_vec_pop_front_drains_the_local,
     r#"
 flow main() -> i64 {
@@ -1159,9 +1189,13 @@ flow main() -> i64 {
     let write = wrong_write
         .instructions
         .iter_mut()
-        .find(|instruction| matches!(instruction, AwbcInstruction::AssignRecordField { .. }))
+        .find(|instruction| matches!(instruction, AwbcInstruction::Assign { .. }))
         .expect("assignment instruction");
-    let AwbcInstruction::AssignRecordField { field, .. } = write else {
+    let AwbcInstruction::Assign {
+        place: arcweft_core::awbc::schema::AwbcMutablePlace::NominalField { field, .. },
+        ..
+    } = write
+    else {
         unreachable!()
     };
     *field = 1;
@@ -1174,9 +1208,13 @@ flow main() -> i64 {
     let write = wrong_value
         .instructions
         .iter_mut()
-        .find(|instruction| matches!(instruction, AwbcInstruction::AssignRecordField { .. }))
+        .find(|instruction| matches!(instruction, AwbcInstruction::Assign { .. }))
         .expect("assignment instruction");
-    let AwbcInstruction::AssignRecordField { target, value, .. } = write else {
+    let AwbcInstruction::Assign {
+        place: arcweft_core::awbc::schema::AwbcMutablePlace::NominalField { base: target, .. },
+        value,
+    } = write
+    else {
         unreachable!()
     };
     *value = *target;

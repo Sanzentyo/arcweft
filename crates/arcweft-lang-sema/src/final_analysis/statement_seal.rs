@@ -23,13 +23,12 @@ use crate::{
 };
 
 use super::{
-    CheckedAssignment, CheckedBinding, CheckedDefer, CheckedExpression,
-    CheckedExpressionResolution, CheckedIncludeFlowTarget, CheckedMutablePlace,
-    CheckedScopeIdentity, CheckedSelectBranchHead, CheckedSelectResolution, CheckedSelectStatement,
-    CheckedStatement, CheckedStatementPayload, CheckedTrigger, CheckedUnsafeAudit,
-    FinalSemanticAnalysisError, PreparedSelectBranchHeadProof, PreparedSelectScrutineeProof,
-    PreparedStatementIngressSeal, PreparedStatementPayload, PreparedStatementScrutineeProof,
-    PreparedTriggerScrutineeProof, statement_effects::CheckedStatementPayloadSealer,
+    CheckedAssignment, CheckedBinding, CheckedDefer, CheckedExpression, CheckedIncludeFlowTarget,
+    CheckedScopeIdentity, CheckedSelectBranchHead, CheckedSelectStatement, CheckedStatement,
+    CheckedStatementPayload, CheckedTrigger, CheckedUnsafeAudit, FinalSemanticAnalysisError,
+    PreparedSelectBranchHeadProof, PreparedSelectScrutineeProof, PreparedStatementIngressSeal,
+    PreparedStatementPayload, PreparedStatementScrutineeProof, PreparedTriggerScrutineeProof,
+    statement_effects::CheckedStatementPayloadSealer,
 };
 
 /// Move-only all-statement producer used by the final effect transaction.
@@ -182,21 +181,13 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
         let PreparedStatementPayload::Assignment(prepared) = self.take_prepared(owner)? else {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         };
-        let (local, nominal, target, value, field_type) = prepared.into_parts();
-        if self.locals.get(&local).map(CheckedBinding::ty) != Some(&nominal.ty()) {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-        }
+        let (target, value, target_type) = prepared.into_parts();
         let target_id = target;
         let value_id = value;
         let target = expressions
             .get(&target)
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: target })?;
-        let CheckedExpressionResolution::Select(CheckedSelectResolution::Field(selection)) =
-            target.resolution()
-        else {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-        };
-        let target_type = target
+        let checked_target_type = target
             .value_type()
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: target_id })?;
         let value = expressions
@@ -205,16 +196,12 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
         let value_type = value
             .value_type()
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: value_id })?;
-        if target_type != &field_type || value_type != &field_type {
+        if checked_target_type != &target_type || value_type != &target_type {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
-        let place = CheckedMutablePlace::try_nominal_field(
-            local,
-            nominal,
-            selection.selection().clone(),
-            field_type,
-        )
-        .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        let place = target
+            .mutable_place()
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
         Ok(CheckedStatementPayload::Assignment(Box::new(
             CheckedAssignment::new(place, value_type.clone()),
         )))

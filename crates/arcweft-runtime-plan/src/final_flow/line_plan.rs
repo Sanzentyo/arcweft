@@ -996,7 +996,7 @@ impl LinePlanLowerer<'_, '_> {
         let checked = self
             .flow
             .semantic_facts
-            .checked_local_use(CheckedLocalUseSite::Expression(receiver))
+            .checked_local_value_transfer(CheckedLocalUseSite::Expression(receiver))
             .ok_or_else(|| {
                 RuntimePlanLowerError::new(format!(
                     "actor.look receiver {receiver:?} has no selected local-use row"
@@ -1040,7 +1040,7 @@ impl LinePlanLowerer<'_, '_> {
             owner: callback,
             local,
         };
-        let checked = self.flow.semantic_facts.checked_local_use(site).ok_or_else(|| {
+        let checked = self.flow.semantic_facts.checked_local_value_transfer(site).ok_or_else(|| {
             RuntimePlanLowerError::new(format!(
                 "scheduled callback capture {local:?} has no checked local-use row at {callback:?}"
             ))

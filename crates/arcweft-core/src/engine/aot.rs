@@ -137,17 +137,11 @@ impl Engine {
                 self.evaluate_let_with_backend(pattern, expr, output, pure_backend);
                 self.advance_aot_linear_cursor(next_op_index);
             }
-            AotLinearOp::AssignNominalField { base, field, value } => {
+            AotLinearOp::Assign { place, value } => {
                 match self.evaluate_expr_with_backend(value, pure_backend) {
-                    Ok(value) => match self.fiber.env.set_record_field(*base, *field, value) {
-                        Ok(()) => self.advance_aot_linear_cursor(next_op_index),
-                        Err(target) => self.fail_eval(
-                            crate::value::RuntimeEvalError::InvalidFieldAssignment {
-                                field: field.zero_based().to_string(),
-                                value: super::runtime_value_label(&target),
-                            },
-                            output,
-                        ),
+                    Ok(value) => match self.fiber.env.assign_place(*place, value) {
+                        Ok(_) => self.advance_aot_linear_cursor(next_op_index),
+                        Err(error) => self.fail_eval(error.into_parts().0, output),
                     },
                     Err(error) => self.fail_eval(error, output),
                 }

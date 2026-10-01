@@ -899,10 +899,11 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
     let bump_state = |local: crate::plan::RuntimeLocalSeedId, amount: u32| {
         RuntimeExprSeed::new(
             u32_ty,
-            RuntimeExprSeedKind::AssignNominalField {
-                base: local.clone(),
-                owner: state_ty,
-                field,
+            RuntimeExprSeedKind::Assign {
+                place: crate::plan::RuntimeMutablePlaceSeed::NominalField {
+                    base: local.clone(),
+                    field,
+                },
                 expr: Box::new(RuntimeExprSeed::new(
                     u32_ty,
                     RuntimeExprSeedKind::Binary {

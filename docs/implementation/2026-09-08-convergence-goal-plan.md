@@ -3845,3 +3845,173 @@ Measurements are current file bytes/physical lines; embedded test LOC and packag
 Final receipt: `just test-workspace` exits 0, **308 suites, 7,166 passed, 0 failed, 24 ignored**, with `RUST_MIN_STACK=16777216`. Workspace check and Clippy all-targets/all-features exit 0. Final sema all-feature library evidence is 1,123/0. Afterward, documentation backticks and three equivalent test method references replace avoidable doc/redundant-closure lint warnings; the seven input-ABI cases pass again 7/0 and sema Clippy all-targets/all-features passes again with the existing shared large-error/other warnings retained. No production execution decision, fixture value/assertion, manifest, feature or dependency changes in that lint cleanup. The workspace behavioral/check receipts and structure graph are therefore reused for those edits; table bytes are refreshed directly, and physical/embedded-test LOC is unchanged. Format and diff checks pass. Logs and exit receipts use `%TEMP%/arcweft-1001-expression-input-{workspace,check,clippy,structure}` plus `focused-lint-final` and `clippy-lint-final`.
 
 The input-source/field-receiver/DAG foundation is validated. The full convergence goal stays active: next implement typed ValueTransfer/PlaceAccess and explicit closed-context EvaluateValue/InvokeBody admission, finish the deterministic executable program runner and RuntimePureProgram ingress, and connect the RuntimeValue View/default consumer. Those remaining conditions are not discharged by this cut or its commit boundary.
+
+### 2026-10-01 — local access and general assignment: initial migration (ownership rule superseded below)
+
+Base: `2ef441c6791a2aba4ec8ab18c593eb0aea6cdf03`, existing main. This section records uncommitted implementation progress; no final workspace/structure receipt or delivery is claimed yet. The full goal remains active.
+
+The local-use catalog now owns one `CheckedLocalAccess` sum: value transfer (Copy/Move/Borrow) or exact place access (Replace/Mutate). Source coordinates distinguish Place at tag 4 within the existing version-one grammar. The existing eager fold issues Value/Place/Statement membership; places do not traverse value receivers. The expression-input and default-input collectors consume that same inventory. Global and selected closed-instance runtime views project the same catalog, and assignment/capacity lowering requires its exact place certificate. Creation captures preserve latent Reassign requirements without inventing an eager write.
+
+Whole mutable-local assignment joins the existing final `CheckedAssignment` place authority. Prepared statements retain target/value/type until the final target is sealed, replacing the field-only prepared model. Runtime assignment facts and native expression/Flow/AOT operations now carry a general typed place; the old field-only operation is deleted. AWBC opcode 0x11 is likewise `Assign { place, value }`, with its version-one codec evolved in place. Local targets may be empty; field targets require an initialized nominal base. Its verifier carries the value's Copy proof into the replaced local.
+
+Exceptionally difficult ownership-boundary advice was requested from fresh-context Astra Max (`affine_place_scope_advice`) under the user's conditional authorization. The advice was read-only. It identified lost declaration scope after Move and missing displaced-value cleanup. Native environments now store declaration slots with optional contents; initialized binding packets remain distinct transfer data. Nearest-slot lookup cannot fall through a vacant inner slot. Both native rollback users retain vacant slots and scope identity. Public native session persistence remains unsupported; do not infer native save support from rollback evidence.
+
+Assignment returns its displaced carrier or retains a rejected supplied carrier. A transaction-local typed drop authorization journals only displaced handle graphs; explicit drop/scope-exit policies keep their separate boundary meaning. Native parent/child and activation owners, and AWBC product/activation owners, reconcile that evidence through the existing ledger. AWBC owns a DiscardedValue packet until the product consumer admits its exact graph. No blanket assignment permission to discard unrelated handles is issued, and Need disappearance does not invent producer cancellation. Journal preparation avoids cloning its growing token map; validation queries the actual before/after inventories without cloning them.
+
+Source availability also rechecks mutation owners after value operands, and borrowed receiver loans reject consumption/replacement during operand evaluation. Partial calls retain receiver evaluation while withholding terminal body effects.
+
+Current evidence: input ABI 9/0; local-use 40/0, including closed-instance place issuance, move-then-reinitialize, mutation after move, argument-induced receiver invalidation and borrowed actor invalidation; native slot/rollback tests 9/0 before the final discard-journal additions; exact nested displaced-graph/retained-new-owner ledger case 1/0. Core/sema checks passed at their recorded intermediate states. Pure-helper local replacement passes native and decoded AWBC (2/0), and the migrated field ordinal/type codec case passes. The first affine-Vec source fixture used an invalid empty literal; the constructor repair then exposed existing nested Need runtime-type rejection. The fixture now uses representable affine Content and passes native and decoded AWBC 2/0, rather than weakening Need admission. Logs use `%TEMP%/arcweft-1001-place-*` and `arcweft-1001-general-place-*`.
+
+Required before this migration is a delivered cut: finish native/decoded AWBC and AWBC checkpoint/save-restore acceptance for reinitializable empty slots; test rejected-write rollback and exact resource cleanup on the real execution owners; complete all-feature sema/Core and required workspace check/Clippy/test recipes; update actual structure/byte/physical-LOC/embedded-test/dependency evidence; inspect the complete staged diff, commit and push. Review native activation journal handling and transient pure/helper ownership propagation as part of those execution checks. No failed or unavailable receipt is a completion claim. Explicit root intent, closed root context, general program/owned ingress, retained View/UI audit, .1.3.1 and the remaining goal rows still follow.
+
+### 2026-10-01 — user-directed terminal move contract: active correction
+
+The user's explicit instruction supersedes the earlier reinitialization decision:
+move ends the availability of the same local declaration/generation, and assignment
+after move is forbidden. The referenced conversation `6abe4a29-83ac-83e8-a299-3e95430165fd`
+(テスト再実行計画) was read in full as supporting advice. No additional Astra consultation
+is needed. Shadowing initializes a new declaration; it never restores the old one.
+Both Replace and Mutate require a live owner, including after right-hand-side/operand
+evaluation and at reachable branch joins. Active receiver loans reject consuming or
+replacing the owner while evaluating arguments. Slot identity survives for nearest
+scope lookup and rollback, but absent contents grant no write permission.
+
+The source checker no longer clears moved evidence at assignment. Native assignment
+rejects an absent target and retains rejected input; successful assignment always
+returns one displaced live carrier. AWBC opcode 0x11 requires an initialized target
+in static verification and guards target liveness before taking the incoming register
+at execution. Live replacement, exact displaced-resource cleanup, and the typed access
+catalog remain. The previous positive move/reinitialization tests are replaced by
+rejection tests and independent shadowing/live-replacement tests. Snapshot/checkpoint
+tests exercise the VM guard after restoration independently of static admission; an
+invalid program is never published as an executable product. Native activation also
+reconciles the retained incoming graph's owner and journals the previous graph's
+release command; release is pending host acknowledgment rather than prematurely
+reported as Released.
+
+Earlier passing reinitialization receipts do not validate this contract. The two full
+workspace attempts ended with a stale native scope fixture expectation, and an
+intermediate Clippy/Core run failed on a newly added test's missing token qualification.
+The initial terminal-contract tests exposed a malformed branch fixture and scope-yield/
+asynchronous-release test expectations (sema 41/1; Core 783/2); those are being repaired
+without weakening liveness checks. Final all-feature owner tests, workspace check,
+Clippy and full test recipe, structural evidence, staged review and commit/push remain
+required. The full convergence goal remains active; this instruction changes ownership
+acceptance, not its remaining UI/runtime/scheduler scope. Transient pure/helper owning
+ingress and root admission are still tracked for the ensuing general runner migration.
+
+
+#### Local-access migration structural owner inventory
+
+Base: 2ef441c6791a2aba4ec8ab18c593eb0aea6cdf03. Current uncommitted main after the terminal-move correction. Rust paths are relative to crates/ where shown by the scanner; bytes and physical LOC are measured from current files, and embedded test LOC/roles come from the canonical scanner. No manifests, dependencies, features or package boundaries are changed.
+
+| Rust path / owner | Role | Bytes | Physical LOC before → current | Embedded test LOC |
+|---|---|---:|---:|---:|
+| crates/arcweft-compiler/src/lower.rs / arcweft-compiler | production | 404114 | 9520 → 9524 | 0 |
+| crates/arcweft-compiler/tests/callable_execution.rs / arcweft-compiler | test | 33978 | 1202 → 1240 | 0 |
+| crates/arcweft-compiler/tests/generic_continuation_snapshot.rs / arcweft-compiler | test | 21255 | 504 → 590 | 0 |
+| crates/arcweft-core/src/aot.rs / arcweft-core | production | 14842 | 442 → 439 | 0 |
+| crates/arcweft-core/src/awbc/codec/code.rs / arcweft-core | production | 84451 | 2269 → 2263 | 359 |
+| crates/arcweft-core/src/awbc/parity.rs / arcweft-core | production | 9535 | 271 → 274 | 0 |
+| crates/arcweft-core/src/awbc/product_step.rs / arcweft-core | production | 210074 | 5214 → 5212 | 0 |
+| crates/arcweft-core/src/awbc/product_step/dialogue.rs / arcweft-core | production | 18681 | 461 → 461 | 0 |
+| crates/arcweft-core/src/awbc/product_step/line.rs / arcweft-core | production | 177257 | 4162 → 4173 | 74 |
+| crates/arcweft-core/src/awbc/product_step/suspension.rs / arcweft-core | production | 114808 | 2817 → 2824 | 0 |
+| crates/arcweft-core/src/awbc/schema.rs / arcweft-core | production | 112789 | 3546 → 3545 | 0 |
+| crates/arcweft-core/src/awbc/tests.rs / arcweft-core | test | 282939 | 7889 → 7890 | 0 |
+| crates/arcweft-core/src/awbc/tests/local_assignment.rs / arcweft-core | test | 6989 | 0 → 199 | 0 |
+| crates/arcweft-core/src/awbc/verify/code.rs / arcweft-core | production | 224598 | 5754 → 5759 | 0 |
+| crates/arcweft-core/src/awbc/vm.rs / arcweft-core | production | 217525 | 5263 → 5291 | 0 |
+| crates/arcweft-core/src/engine.rs / arcweft-core | production | 155050 | 3944 → 3951 | 62 |
+| crates/arcweft-core/src/engine/aot.rs / arcweft-core | production | 8026 | 203 → 197 | 0 |
+| crates/arcweft-core/src/engine/dialogue.rs / arcweft-core | production | 145529 | 3197 → 3376 | 721 |
+| crates/arcweft-core/src/engine/dialogue/store.rs / arcweft-core | production | 65798 | 1676 → 1751 | 575 |
+| crates/arcweft-core/src/engine/eval.rs / arcweft-core | production | 63688 | 1577 → 1568 | 124 |
+| crates/arcweft-core/src/engine/flow.rs / arcweft-core | production | 66093 | 1666 → 1660 | 102 |
+| crates/arcweft-core/src/line_task.rs / arcweft-core | production | 70999 | 2107 → 2109 | 0 |
+| crates/arcweft-core/src/line_task/activation.rs / arcweft-core | production | 35676 | 910 → 912 | 0 |
+| crates/arcweft-core/src/line_task/drop_authorization.rs / arcweft-core | production | 3058 | 0 → 91 | 0 |
+| crates/arcweft-core/src/line_task/handle.rs / arcweft-core | production | 216664 | 5614 → 5622 | 666 |
+| crates/arcweft-core/src/plan.rs / arcweft-core | production | 56345 | 1599 → 1598 | 0 |
+| crates/arcweft-core/src/plan/construction/lower.rs / arcweft-core | production | 241813 | 5707 → 5692 | 269 |
+| crates/arcweft-core/src/plan/construction/seed.rs / arcweft-core | production | 91089 | 2868 → 2870 | 0 |
+| crates/arcweft-core/src/plan/entry_inventory.rs / arcweft-core | production | 60039 | 1559 → 1559 | 0 |
+| crates/arcweft-core/src/plan/flow_ops.rs / arcweft-core | production | 4332 | 114 → 114 | 0 |
+| crates/arcweft-core/src/pure.rs / arcweft-core | production | 129263 | 3423 → 3416 | 134 |
+| crates/arcweft-core/src/tests/flow.rs / arcweft-core | test | 72668 | 1914 → 1915 | 0 |
+| crates/arcweft-core/src/value.rs / arcweft-core | production | 138654 | 3785 → 3802 | 0 |
+| crates/arcweft-core/src/value/env.rs / arcweft-core | production | 31416 | 695 → 886 | 306 |
+| crates/arcweft-core/src/value/expression_literals.rs / arcweft-core | production | 8353 | 190 → 190 | 43 |
+| crates/arcweft-core/src/value/expression_locals.rs / arcweft-core | production | 14427 | 353 → 351 | 0 |
+| crates/arcweft-core/src/value/nominal_record.rs / arcweft-core | production | 24703 | 728 → 727 | 233 |
+| crates/arcweft-lang-sema/src/callable.rs / arcweft-lang-sema | production | 14860 | 247 → 247 | 0 |
+| crates/arcweft-lang-sema/src/callable/checked_application.rs / arcweft-lang-sema | production | 175613 | 4735 → 4733 | 0 |
+| crates/arcweft-lang-sema/src/callable/identity.rs / arcweft-lang-sema | production | 60986 | 1945 → 1961 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis.rs / arcweft-lang-sema | production | 13769 | 251 → 253 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/analyzer/callable_effect_graph.rs / arcweft-lang-sema | production | 23538 | 591 → 596 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/analyzer/calls/constraints.rs / arcweft-lang-sema | production | 284135 | 6845 → 6867 | 546 |
+| crates/arcweft-lang-sema/src/final_analysis/analyzer/items.rs / arcweft-lang-sema | production | 67091 | 1608 → 1608 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/analyzer/pending_effects.rs / arcweft-lang-sema | production | 12549 | 283 → 283 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/analyzer/statements.rs / arcweft-lang-sema | production | 39827 | 967 → 999 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/declaration_defaults.rs / arcweft-lang-sema | production | 12177 | 278 → 291 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/error.rs / arcweft-lang-sema | production | 42101 | 1122 → 1122 | 64 |
+| crates/arcweft-lang-sema/src/final_analysis/execution_regions.rs / arcweft-lang-sema | production | 9994 | 228 → 274 | 51 |
+| crates/arcweft-lang-sema/src/final_analysis/expression_inputs.rs / arcweft-lang-sema | production | 10367 | 238 → 275 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/free_capture.rs / arcweft-lang-sema | production | 26042 | 669 → 688 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/local_use.rs / arcweft-lang-sema | production | 110944 | 2693 → 2839 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/local_use/access.rs / arcweft-lang-sema | production | 2045 | 0 → 68 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/model/capture.rs / arcweft-lang-sema | production | 47297 | 1267 → 1268 | 381 |
+| crates/arcweft-lang-sema/src/final_analysis/prepared.rs / arcweft-lang-sema | production | 54636 | 1639 → 1646 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/prepared/statement.rs / arcweft-lang-sema | production | 6761 | 249 → 231 | 23 |
+| crates/arcweft-lang-sema/src/final_analysis/report.rs / arcweft-lang-sema | production | 97392 | 2411 → 2411 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/statement_effects.rs / arcweft-lang-sema | production | 58147 | 1410 → 1484 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/statement_seal.rs / arcweft-lang-sema | production | 26642 | 623 → 610 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/tests/display_text.rs / arcweft-lang-sema | test | 9429 | 294 → 299 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/tests/local_use.rs / arcweft-lang-sema | test | 41355 | 1132 → 1317 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/expression_inputs.rs / arcweft-lang-sema | test | 12147 | 244 → 344 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/view_defaults.rs / arcweft-lang-sema | test | 16617 | 430 → 430 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/validation.rs / arcweft-lang-sema | production | 130217 | 3093 → 3101 | 0 |
+| crates/arcweft-lang-sema/src/semantic_coordinate.rs / arcweft-lang-sema | production | 76397 | 2155 → 2157 | 73 |
+| crates/arcweft-lang-sema/src/semantic_coordinate/catalog.rs / arcweft-lang-sema | production | 52570 | 1271 → 1274 | 341 |
+| crates/arcweft-runtime-accelerator/src/compile.rs / arcweft-runtime-accelerator | production | 56740 | 1655 → 1655 | 0 |
+| crates/arcweft-runtime-codegen/src/awbc_region.rs / arcweft-runtime-codegen | production | 14359 | 403 → 403 | 0 |
+| crates/arcweft-runtime-plan/src/awbc_lower/expr.rs / arcweft-runtime-plan | production | 91007 | 2379 → 2369 | 0 |
+| crates/arcweft-runtime-plan/src/awbc_lower/flow.rs / arcweft-runtime-plan | production | 150788 | 3922 → 3909 | 0 |
+| crates/arcweft-runtime-plan/src/awbc_lower/trait_method.rs / arcweft-runtime-plan | production | 9602 | 291 → 269 | 0 |
+| crates/arcweft-runtime-plan/src/final_expr.rs / arcweft-runtime-plan | production | 135599 | 3318 → 3332 | 0 |
+| crates/arcweft-runtime-plan/src/final_flow.rs / arcweft-runtime-plan | production | 354262 | 8578 → 8578 | 398 |
+| crates/arcweft-runtime-plan/src/final_flow/line_plan.rs / arcweft-runtime-plan | production | 53681 | 1352 → 1352 | 0 |
+| crates/arcweft-runtime-plan/src/semantic_facts.rs / arcweft-runtime-plan | production | 516824 | 13271 → 13332 | 0 |
+| crates/arcweft-runtime-plan/src/semantic_facts/project_function.rs / arcweft-runtime-plan | production | 103791 | 2798 → 2812 | 0 |
+| crates/arcweft-runtime-plan/src/semantic_facts/tests.rs / arcweft-runtime-plan | test | 120391 | 3342 → 3346 | 0 |
+| crates/arcweft-runtime-plan/src/semantic_facts/type_dependencies.rs / arcweft-runtime-plan | production | 13818 | 388 → 388 | 0 |
+
+The final scanner reports 97 packages, 351 ownership review triggers, and zero
+blocking violations (1,468,711 Rust physical lines). The touched owners remain the
+semantic local-access checker/catalog, prepared/final execution proof projection,
+runtime place lowering, native environment/ledger transactions, and AWBC
+codec/verifier/VM/product transactions. New private modules own local-access algebra,
+exact transaction drop authorization, and AWBC assignment tests; there is no second
+live-value authority, source reconstruction, package split, or compatibility reader.
+Large existing owners and the shared actor lifecycle fixture remain ownership review
+triggers, not acceptance gates based on source placement. Input evidence is borrowed
+from the one catalog; cleanup metadata is not duplicated live storage. Assignment
+preflight does not clone the growing authorization map or the whole value graph.
+No allocation/GPU benchmark or native public session persistence support is claimed.
+
+Both the complete workspace dependency-edge report and package fan-in/fan-out report
+are byte-identical to the preceding input-evidence cut. SHA-256 values are
+`7ED2CD7BDA7DC6A879DD5684072D06357883E1B185C6A00343A7D7C27CB7AC42`
+(dependency edges) and
+`6242C34313F5C79FA7B8ADC1EE1732C9319F02BDDEBD5FB78054B0A8B6A0DFE7`
+(package metrics). No Cargo manifests, lockfile, features, or dependencies changed.
+Reports use `%TEMP%/arcweft-1001-place-terminal-final-structure`.
+
+Final owner receipts: sema all-feature library 1,133/0; Core all-feature library
+785/0; compiler native/decoded AWBC callable cases 123/0 and continuation/AWFB
+save cases 5/0. Workspace check and Clippy all-targets/all-features exit 0. Core
+Clippy all-targets/all-features passes after removing an unused private authorization
+merge and qualifying equivalent test defaults. Existing warning categories remain;
+no broad lint suppression is added. These source-neutral cleanup edits preserve the
+workspace Clippy receipt, while the current Core tests/check/Clippy validate their
+actual compiled form. Format and diff checks pass. The final just test-workspace receipt exits 0: 308 suites, 7188 passed, 0 failed, 24 ignored, with RUST_MIN_STACK=16777216. Logs and exit receipts use %TEMP%/arcweft-1001-place-terminal-*. Earlier fixture/compiler/expectation failures are retained in their logs and are superseded by these passing receipts. This candidate is fully validated for the local-access/terminal-move cut; explicit staged review and fast-forward delivery follow. The full convergence goal remains active, including closed root admission, owned general-program ingress and execution, retained View/UI audit, nominal/runtime-plan and scheduler/restore acceptance.

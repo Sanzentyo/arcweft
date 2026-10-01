@@ -1897,7 +1897,7 @@ impl<'a> PureEvaluator<'a> {
                 RuntimeExprKind::SequencePopFront { .. }
                 | RuntimeExprKind::SequencePush { .. }
                 | RuntimeExprKind::SequencePopBack { .. }
-                | RuntimeExprKind::AssignNominalField { .. }
+                | RuntimeExprKind::Assign { .. }
                 | RuntimeExprKind::CharacterDialogue { .. } => {
                     return Self::unsupported_pure_trait_operation(
                         "mutation or dialogue construction requires the flow runtime",
@@ -1992,12 +1992,9 @@ impl<'a> PureEvaluator<'a> {
             RuntimeExprKind::ProjectRecord { target, ordinal } => {
                 self.evaluate_project_record_expr(target, *ordinal)
             }
-            RuntimeExprKind::AssignNominalField {
-                base,
-                field,
-                expr,
-                body,
-            } => self.evaluate_assign_field_expr(*base, *field, expr, body),
+            RuntimeExprKind::Assign { place, expr, body } => {
+                self.evaluate_assign_expr(*place, expr, body)
+            }
             RuntimeExprKind::Call { callee, args }
                 if callee.as_intrinsic().is_none() && self.external.is_some() =>
             {
@@ -2563,20 +2560,16 @@ impl<'a> PureEvaluator<'a> {
             .map_err(|_| RuntimeEvalError::InvalidExpressionType(ty))
     }
 
-    fn evaluate_assign_field_expr(
+    fn evaluate_assign_expr(
         &mut self,
-        base: RuntimeLocalDeclarationId,
-        field: crate::value::RuntimeRecordFieldId,
+        place: crate::value::RuntimeMutablePlace,
         expr: &RuntimeExpr,
         body: &RuntimeExpr,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr(expr)?;
         self.env
-            .set_record_field(base, field, value)
-            .map_err(|target| RuntimeEvalError::InvalidFieldAssignment {
-                field: field.zero_based().to_string(),
-                value: runtime_value_label(&target),
-            })?;
+            .assign_place(place, value)
+            .map_err(|error| error.into_parts().0)?;
         self.evaluate_expr(body)
     }
 

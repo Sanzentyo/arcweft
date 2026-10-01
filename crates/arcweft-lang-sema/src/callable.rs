@@ -81,7 +81,7 @@ pub(crate) use checked_application::{
     CheckedCallExecutionSlotSeal, CheckedCallResultSeal, CheckedCallSemanticOperandSeal,
     CheckedCaptureSignatureSeal, PreparedCandidateIndex, ResolvedCallableBaseSeal,
     ResolvedCallableCheckedDefinition, ResolvedCallableStableIdentitySeal,
-    checked_view_fx_runtime_parameter,
+    checked_view_fx_runtime_parameter, is_contextual_capability_type,
 };
 pub use checked_catalog::{
     CallableEffectContract, CallableInterfaceDigest, CheckedCallableAttachedContentParameter,

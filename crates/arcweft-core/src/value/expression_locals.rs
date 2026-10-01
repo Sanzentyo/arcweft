@@ -171,10 +171,8 @@ impl RuntimeExpr {
                     payload.collect_evaluation_free_locals(plan, bound, locals)?;
                 }
             }
-            RuntimeExprKind::AssignNominalField {
-                base, expr, body, ..
-            } => {
-                push_free_local(*base, bound, locals);
+            RuntimeExprKind::Assign { place, expr, body } => {
+                push_free_local(place.local(), bound, locals);
                 expr.collect_evaluation_free_locals(plan, bound, locals)?;
                 body.collect_evaluation_free_locals(plan, bound, locals)?;
             }

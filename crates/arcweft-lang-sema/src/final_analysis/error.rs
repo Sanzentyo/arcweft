@@ -419,8 +419,8 @@ pub enum FinalSemanticAnalysisError {
     ExpressionTypeUnavailable { owner: ExprId },
     #[error("checked expression {owner:?} has no accepted eager execution region")]
     ExpressionExecutionUnavailable { owner: ExprId },
-    #[error("expression input {site:?} has no checked local-read authority")]
-    ExpressionInputReadUnavailable { site: super::CheckedLocalUseSite },
+    #[error("expression input {site:?} has no checked local-access authority")]
+    ExpressionInputAccessUnavailable { site: super::CheckedLocalUseSite },
     #[error("View parameter default {owner:?} executes external effects")]
     ViewParameterDefaultEffects { owner: ExprId },
     #[error("View parameter default {owner:?} may suspend")]

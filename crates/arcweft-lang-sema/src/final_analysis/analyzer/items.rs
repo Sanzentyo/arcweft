@@ -13,7 +13,7 @@ use super::{
     HirPredicateBody, HirProofBody, HirSourceQuery, HirStmtKind, HirTraitMember, ItemId,
     ProjectSymbolTable, STANDARD_TRAIT_CATALOG_VERSION, ScopeId, SourceSpan, StagedCallableBody,
     StagedCheckedCallables, TypeId, TypeKind,
-    callable_effect_graph::{CallableEffectGraph, prepared_fixed_call_effect_rows},
+    callable_effect_graph::{CallableEffectGraph, prepared_call_execution_rows},
     calls::{AnalyzerPreparedCallGraph, AnalyzerPreparedCallPrefix},
     statements::{checked_effect_expression, function_effect_contract, scope_span, source_span},
 };
@@ -702,7 +702,7 @@ impl Analyzer<'_, '_, '_> {
             .facts
             .prepared_calls()
             .map_err(FinalSemanticAnalysisError::from)?;
-        let fixed_call_effect_rows = prepared_fixed_call_effect_rows(prepared_calls, self.control)?;
+        let fixed_call_effect_rows = prepared_call_execution_rows(prepared_calls, self.control)?;
         let mut prepared_effects =
             crate::final_analysis::statement_effects::prepare_execution_effects(
                 crate::final_analysis::statement_effects::PreparedExecutionEffectInput {

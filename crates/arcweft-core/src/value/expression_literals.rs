@@ -48,7 +48,7 @@ impl RuntimeExpr {
             | RuntimeExprKind::Unary { expr: value, .. }
             | RuntimeExprKind::ReductionUnchanged { state: value } => value.literals_permit_copy(),
             RuntimeExprKind::Let { expr, body, .. }
-            | RuntimeExprKind::AssignNominalField { expr, body, .. } => {
+            | RuntimeExprKind::Assign { expr, body, .. } => {
                 expr.literals_permit_copy() && body.literals_permit_copy()
             }
             RuntimeExprKind::DialogueContent {

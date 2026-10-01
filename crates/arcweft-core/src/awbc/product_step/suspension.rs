@@ -952,7 +952,9 @@ impl AwbcProductStepExecutor {
                     self.facade_fiber.execution,
                     &before_handles,
                     &after,
-                    Some(crate::effect::RuntimeDropPolicy::Default),
+                    &crate::line_task::RuntimeHandleDropAuthorization::at_boundary(Some(
+                        crate::effect::RuntimeDropPolicy::Default,
+                    )),
                 )?;
                 Ok((need, resume, binding, reconciliation))
             })();
@@ -968,7 +970,9 @@ impl AwbcProductStepExecutor {
                         self.facade_fiber.execution,
                         &before_handles,
                         &dropped,
-                        Some(crate::effect::RuntimeDropPolicy::Default),
+                        &crate::line_task::RuntimeHandleDropAuthorization::at_boundary(Some(
+                            crate::effect::RuntimeDropPolicy::Default,
+                        )),
                     ) {
                         let receipt = self
                             .dialogues
@@ -1043,7 +1047,7 @@ impl AwbcProductStepExecutor {
             self.facade_fiber.execution,
             before,
             &after,
-            Some(policy),
+            &crate::line_task::RuntimeHandleDropAuthorization::at_boundary(Some(policy)),
         ) {
             Ok(prepared) => prepared,
             Err(error) => {
@@ -1092,7 +1096,9 @@ impl AwbcProductStepExecutor {
             self.facade_fiber.execution,
             &before,
             &after,
-            Some(crate::effect::RuntimeDropPolicy::Default),
+            &crate::line_task::RuntimeHandleDropAuthorization::at_boundary(Some(
+                crate::effect::RuntimeDropPolicy::Default,
+            )),
         ) {
             Ok(prepared) => prepared,
             Err(error) => {
@@ -2439,7 +2445,8 @@ impl AwbcProductStepExecutor {
                 | VmObservation::ScopedDeferRegistration { .. }
                 | VmObservation::ScopedDeferUnwind { .. }
                 | VmObservation::ScopedDeferFailure(_)
-                | VmObservation::Drop { .. } => self.fail_with_error(
+                | VmObservation::Drop { .. }
+                | VmObservation::DiscardedValue(_) => self.fail_with_error(
                     crate::line_task::LineRuntimeError::InvalidActivationOperation.into(),
                     output,
                 ),

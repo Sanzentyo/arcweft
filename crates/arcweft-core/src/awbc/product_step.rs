@@ -279,22 +279,24 @@ impl ProductStepError {
 fn partition_drop_observation(
     observations: Vec<VmObservation>,
 ) -> Result<
-    (Option<crate::effect::RuntimeDropPolicy>, Vec<VmObservation>),
+    (
+        crate::line_task::RuntimeHandleDropAuthorization,
+        Vec<VmObservation>,
+    ),
     crate::line_task::LineRuntimeError,
 > {
-    let mut drop_policy = None;
+    let mut authorization = crate::line_task::RuntimeHandleDropAuthorization::default();
     let mut remaining = Vec::with_capacity(observations.len());
     for observation in observations {
         match observation {
             VmObservation::Drop { policy } => {
-                if drop_policy.replace(policy).is_some() {
-                    return Err(crate::line_task::LineRuntimeError::InvalidActivationOperation);
-                }
+                authorization.set_boundary(Some(policy))?;
             }
+            VmObservation::DiscardedValue(value) => authorization.authorize_displaced(&value)?,
             observation => remaining.push(observation),
         }
     }
-    Ok((drop_policy, remaining))
+    Ok((authorization, remaining))
 }
 
 #[derive(Debug, PartialEq)]
@@ -1260,21 +1262,17 @@ impl DeferredChildResumeJournal {
         self.record_drop_policy(crate::effect::RuntimeDropPolicy::Default);
     }
 
-    fn merge_drop_policy(
+    fn merge_drop_authorization(
         &self,
-        existing: Option<crate::effect::RuntimeDropPolicy>,
-    ) -> Result<Option<crate::effect::RuntimeDropPolicy>, ProductStepError> {
-        if self.drop_policy_conflict
-            || self
-                .drop_policy
-                .zip(existing)
-                .is_some_and(|(recorded, observed)| recorded != observed)
-        {
+        mut existing: crate::line_task::RuntimeHandleDropAuthorization,
+    ) -> Result<crate::line_task::RuntimeHandleDropAuthorization, ProductStepError> {
+        if self.drop_policy_conflict {
             return Err(ProductStepError::Internal(
                 "one deferred child step produced conflicting affine drop policies".to_owned(),
             ));
         }
-        Ok(self.drop_policy.or(existing))
+        existing.set_boundary(self.drop_policy)?;
+        Ok(existing)
     }
 
     fn has_owner_value_transfer(&self) -> bool {
@@ -2341,7 +2339,7 @@ impl AwbcProductStepExecutor {
                     self.facade_fiber.execution,
                     &before_owners,
                     &after_owners,
-                    drop_policy,
+                    &drop_policy,
                 ) {
                     Ok(receipt) => receipt,
                     Err(error) => {
@@ -2787,7 +2785,7 @@ impl AwbcProductStepExecutor {
                         message: Some(error.to_string()),
                         source_map: None,
                     });
-                    (None, Vec::new())
+                    (Default::default(), Vec::new())
                 }
                 ProductChildFiberOwner::Independent => {
                     if !self.rollback_selected_child_step(
@@ -2805,7 +2803,7 @@ impl AwbcProductStepExecutor {
                 }
             },
         };
-        let drop_policy = match resume_journal.merge_drop_policy(drop_policy) {
+        let drop_policy = match resume_journal.merge_drop_authorization(drop_policy) {
             Ok(policy) => policy,
             Err(error) => {
                 if !self.rollback_selected_child_step(
@@ -2961,7 +2959,7 @@ impl AwbcProductStepExecutor {
             &tag,
             before_handles,
             &after_handles,
-            drop_policy,
+            &drop_policy,
         ) {
             if !self.rollback_selected_child_step(
                 child,

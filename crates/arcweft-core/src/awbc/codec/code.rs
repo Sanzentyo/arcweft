@@ -757,13 +757,8 @@ impl Wire for AwbcInstruction {
                 args.write_wire(writer)?;
             }
             Self::CommitDialogueResult { source } => source.write_wire(writer)?,
-            Self::AssignRecordField {
-                target,
-                field,
-                value,
-            } => {
-                target.write_wire(writer)?;
-                field.write_wire(writer)?;
+            Self::Assign { place, value } => {
+                place.write_wire(writer)?;
                 value.write_wire(writer)?;
             }
             Self::CallTraitMethod {
@@ -1069,9 +1064,8 @@ impl Wire for AwbcInstruction {
                 register: AwbcRegisterId::read_wire(reader)?,
                 policy: AwbcDropPolicy::read_wire(reader)?,
             },
-            AwbcOpcode::AssignRecordField => Self::AssignRecordField {
-                target: AwbcRegisterId::read_wire(reader)?,
-                field: u32::read_wire(reader)?,
+            AwbcOpcode::Assign => Self::Assign {
+                place: AwbcMutablePlace::read_wire(reader)?,
                 value: AwbcRegisterId::read_wire(reader)?,
             },
             AwbcOpcode::CallTraitMethod => Self::CallTraitMethod {
@@ -1597,7 +1591,7 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::ExecuteLineOperation
             | AwbcOpcode::CommitDialogueResult
             | AwbcOpcode::Drop
-            | AwbcOpcode::AssignRecordField
+            | AwbcOpcode::Assign
             | AwbcOpcode::CallTraitMethod
             | AwbcOpcode::RegisterCleanup
             | AwbcOpcode::CancelCleanup

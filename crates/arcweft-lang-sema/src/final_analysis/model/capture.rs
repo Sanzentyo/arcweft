@@ -828,7 +828,8 @@ fn validate_implicit_callable_evidence(
             super::super::CheckedLocalUseSite::Capture { local, .. } => {
                 local == occurrence.lookup_local
             }
-            super::super::CheckedLocalUseSite::StatementCapture { .. } => false,
+            super::super::CheckedLocalUseSite::StatementCapture { .. }
+            | super::super::CheckedLocalUseSite::Place(_) => false,
         };
         if !sites.insert(occurrence.lookup_site)
             || region.contains_binding(binding)

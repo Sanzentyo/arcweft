@@ -258,12 +258,17 @@ fn speak(voice: VoiceHandle) {
             .expressions()
             .any(|(_, expression)| matches!(expression.value_type(), Some(TypeKind::VoiceHandle)))
     );
-    assert!(report.checked_local_uses().rows().any(|(_, row)| {
+    assert!(
         report
-            .local(row.local())
-            .is_some_and(|binding| binding.ty() == &TypeKind::VoiceHandle)
-            && row.mode() == CheckedLocalReadMode::Move
-    }));
+            .checked_local_uses()
+            .value_transfers()
+            .any(|(_, row)| {
+                report
+                    .local(row.local())
+                    .is_some_and(|binding| binding.ty() == &TypeKind::VoiceHandle)
+                    && row.mode() == CheckedLocalReadMode::Move
+            })
+    );
 }
 
 #[test]

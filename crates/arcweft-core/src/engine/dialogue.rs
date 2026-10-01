@@ -930,6 +930,7 @@ impl Engine {
             .get(frame.activation_pc)
             .cloned()
             .ok_or(LineRuntimeError::ResultNotCommitted)?;
+        let assignment_before = self.activation_local_handle_owners(frame)?;
         match operation {
             FlowOp::EnterScope { identity } => {
                 frame.locals.push_scope_with_identity(identity);
@@ -963,6 +964,13 @@ impl Engine {
                     pure_backend,
                 )?;
             }
+            FlowOp::Assign { place, value } => {
+                let value = self.evaluate_dialogue_expr(frame, &value, pure_backend)?;
+                frame
+                    .locals
+                    .assign_place(place, value)
+                    .map_err(|error| error.into_parts().0)?;
+            }
             FlowOp::HostCall { binding, target } => {
                 let (args, named_args) = {
                     std::mem::swap(&mut self.fiber.env, &mut frame.locals);
@@ -991,6 +999,12 @@ impl Engine {
                     result: target.result,
                     binding,
                 });
+                self.commit_activation_assignment_discards(
+                    &activation_id,
+                    frame,
+                    activation,
+                    &assignment_before,
+                )?;
                 return Ok(DialogueActivationStep::HostCall(
                     crate::step::RuntimeHostCallRequest {
                         id,
@@ -1038,6 +1052,12 @@ impl Engine {
                         }
                         request => request,
                     };
+                    self.commit_activation_assignment_discards(
+                        &activation_id,
+                        frame,
+                        activation,
+                        &assignment_before,
+                    )?;
                     advance_activation_pc(frame)?;
                     return Ok(DialogueActivationStep::Effect(request));
                 }
@@ -1052,10 +1072,87 @@ impl Engine {
             }
             _ => return Err(LineRuntimeError::InvalidActivationOperation.into()),
         }
+        self.commit_activation_assignment_discards(
+            &activation_id,
+            frame,
+            activation,
+            &assignment_before,
+        )?;
         if frame.pending_line_operation.is_none() {
             advance_activation_pc(frame)?;
         }
         Ok(DialogueActivationStep::Continue)
+    }
+
+    fn activation_local_handle_owners(
+        &self,
+        frame: &DialogueActivationFrame,
+    ) -> Result<
+        std::collections::BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>,
+        DialogueExecutionError,
+    > {
+        let mut owners = std::collections::BTreeMap::new();
+        for (local, value) in frame.locals.bindings() {
+            let owner = RuntimeHandleOwnerSlot::ActivationLocal(self.owned_slot(local)?);
+            for handle in unique_affine_line_handles(value)? {
+                if owners
+                    .insert(handle.token().clone(), owner.clone())
+                    .is_some()
+                {
+                    return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
+                }
+            }
+        }
+        Ok(owners)
+    }
+
+    fn commit_activation_assignment_discards(
+        &self,
+        activation_id: &crate::runtime_id::DialogueActivationId,
+        frame: &mut DialogueActivationFrame,
+        activation: &mut NativeDialogueActivationState,
+        before: &std::collections::BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>,
+    ) -> Result<(), DialogueExecutionError> {
+        let drops = frame.locals.take_assignment_discard_authorization();
+        let after = self.activation_local_handle_owners(frame)?;
+        if !drops.has_displaced_values() && before == &after {
+            return Ok(());
+        }
+        drops.validate_removed(
+            |token| before.contains_key(token),
+            |token| after.contains_key(token),
+        )?;
+        let mut ledger = activation.ledger().clone();
+        let mut commands =
+            RuntimeCommandQueue::new(activation_id.clone(), activation.command_sequence());
+        for (token, destination) in &after {
+            let Some(source) = before.get(token) else {
+                continue;
+            };
+            if source != destination {
+                let current = ledger
+                    .lease(token)
+                    .ok_or(LineRuntimeError::UnknownHandle)?
+                    .owner();
+                if current == source {
+                    ledger.transfer(token, source, destination.clone())?;
+                } else if current != destination {
+                    return Err(LineRuntimeError::WrongOwner.into());
+                }
+            }
+        }
+        for token in drops.displaced_tokens() {
+            let owner = before
+                .get(token)
+                .ok_or(LineRuntimeError::UnjournaledHandleDrop)?;
+            let policy = drops
+                .policy_for(token)
+                .ok_or(LineRuntimeError::UnjournaledHandleDrop)?;
+            ledger.drop_owned_with_policy(token, owner, policy, &mut commands)?;
+        }
+        flush_commands(activation_id, activation, commands)?;
+        activation.commit_ledger(ledger);
+        Ok(())
     }
 
     /// Captures the exact reached defer site without executing its body.
@@ -1289,8 +1386,8 @@ impl Engine {
         let mut commands =
             RuntimeCommandQueue::new(activation_id.clone(), activation.command_sequence());
         let mut seen = std::collections::BTreeSet::new();
-        for binding in frame.locals.current_scope_bindings() {
-            for handle in unique_affine_line_handles(&binding.value)? {
+        for (local, value) in frame.locals.current_scope_bindings() {
+            for handle in unique_affine_line_handles(value)? {
                 if handle.token().activation() != activation_id
                     || !seen.insert(handle.token().clone())
                 {
@@ -1305,8 +1402,7 @@ impl Engine {
                 if matches!(lease.owner(), RuntimeHandleOwnerSlot::DialogueResult(_)) {
                     continue;
                 }
-                let owner =
-                    RuntimeHandleOwnerSlot::ActivationLocal(self.owned_slot(binding.local)?);
+                let owner = RuntimeHandleOwnerSlot::ActivationLocal(self.owned_slot(local)?);
                 ledger.drop_owned(handle.token(), &owner, &mut commands)?;
             }
         }
@@ -1381,11 +1477,11 @@ impl Engine {
                     } else {
                         None
                     };
-                    for binding in frame.locals.bindings() {
-                        if &self.owned_slot(binding.local)? == slot
-                            && value_contains_token(&binding.value, handle.token())?
+                    for (local, value) in frame.locals.bindings() {
+                        if &self.owned_slot(local)? == slot
+                            && value_contains_token(value, handle.token())?
                         {
-                            if source_local.replace(binding.local).is_some() {
+                            if source_local.replace(local).is_some() {
                                 return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
                             }
                         }
@@ -3063,7 +3159,7 @@ mod tests {
     }
 
     #[test]
-    fn init_scope_let_moves_affine_custody_and_exit_journals_release() {
+    fn init_scope_let_and_assignment_move_custody_and_journal_exact_release() {
         let actor_type = RuntimeSemanticTypeId::from_bytes([0x73; 32]);
         let producer = crate::value::RuntimeHandleKind::StageActor
             .try_producer()
@@ -3086,6 +3182,7 @@ mod tests {
                 [
                     RuntimeLocalDeclarationSeed::new(actor_type),
                     RuntimeLocalDeclarationSeed::new(actor_type),
+                    RuntimeLocalDeclarationSeed::new(actor_type),
                 ],
             )
             .expect("local declaration");
@@ -3096,6 +3193,7 @@ mod tests {
             NonZeroU32::new(2).expect("second local"),
         );
         let mut frame = activation_frame(source);
+        frame.locals = crate::value::RuntimeEnv::default();
         frame.locals.push_scope();
         frame.scopes.push(DialogueActivationScope::new());
         let character =
@@ -3125,7 +3223,7 @@ mod tests {
             .issue(
                 &id,
                 &site,
-                RuntimeHandleResource::StageActor(RuntimeStageActorLease::new(character)),
+                RuntimeHandleResource::StageActor(RuntimeStageActorLease::new(character.clone())),
                 owner,
             )
             .expect("actor issue");
@@ -3167,7 +3265,7 @@ mod tests {
                 &mut VmRuntimePureCallBackend::default(),
             )
             .expect("affine let transfers owner");
-        assert_eq!(frame.locals.get(source), Some(&RuntimeValue::Unit));
+        assert!(frame.locals.get(source).is_none());
         assert!(matches!(
             frame.locals.get(destination),
             Some(RuntimeValue::Opaque(_))
@@ -3179,12 +3277,93 @@ mod tests {
             )
         );
 
+        let incoming_local =
+            RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::new(3).unwrap());
+        let mut ledger = line.ledger().clone();
+        let incoming = ledger
+            .issue(
+                &id,
+                &site,
+                RuntimeHandleResource::StageActor(RuntimeStageActorLease::new(character)),
+                RuntimeHandleOwnerSlot::ActivationLocal(engine.owned_slot(incoming_local).unwrap()),
+            )
+            .unwrap();
+        let incoming_token =
+            crate::runtime_id::RuntimeLineHandleToken::try_decode_payload(incoming.payload())
+                .unwrap();
+        ledger
+            .set_state(
+                &incoming_token,
+                RuntimeHandleLeaseState::Allocating,
+                RuntimeHandleLeaseState::Active,
+            )
+            .unwrap();
+        line.commit_ledger(ledger);
+        frame
+            .locals
+            .set(incoming_local, RuntimeValue::Opaque(incoming));
+        let incoming_expr = RuntimeExpr::from_admitted_parts(
+            RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN),
+            RuntimeExprKind::Local(crate::value::RuntimeLocalRead::from_admitted_parts(
+                incoming_local,
+                crate::value::RuntimeLocalReadMode::Move,
+            )),
+        );
+        let before = engine.activation_local_handle_owners(&frame).unwrap();
+        let value = engine
+            .evaluate_dialogue_expr(
+                &mut frame,
+                &incoming_expr,
+                &mut VmRuntimePureCallBackend::default(),
+            )
+            .unwrap();
+        frame
+            .locals
+            .assign_place(crate::value::RuntimeMutablePlace::Local(destination), value)
+            .unwrap();
+        engine
+            .commit_activation_assignment_discards(&id, &mut frame, &mut line, &before)
+            .unwrap();
+        assert_eq!(
+            line.ledger().lease(&token).unwrap().state(),
+            RuntimeHandleLeaseState::Cancelling
+        );
+        assert_eq!(
+            line.ledger().lease(&incoming_token).unwrap().owner(),
+            &RuntimeHandleOwnerSlot::ActivationLocal(engine.owned_slot(destination).unwrap())
+        );
+        let commands = line.take_commit_receipt().into_commands();
+        let [
+            crate::presentation::RuntimeLineHostCommand::Stage(
+                crate::presentation::RuntimeStageCommand::ReleaseActor { command, actor },
+            ),
+        ] = commands.as_slice()
+        else {
+            panic!("only the displaced actor is released");
+        };
+        assert_eq!(actor, &token);
+        assert!(matches!(
+            engine.prepare_activation_scope_exit(&id, &mut frame, &mut line, ScopeExit::Completed),
+            Ok(ActivationScopeStep::Waiting)
+        ));
+        line.accept_runtime_outcome(&crate::presentation::RuntimeLineHostOutcome::Stage(
+            crate::presentation::RuntimeStageCommandOutcome::ReleasedActor {
+                command: command.clone(),
+                actor: actor.clone(),
+            },
+        ))
+        .unwrap();
+        assert_eq!(
+            line.ledger().lease(&token).unwrap().state(),
+            RuntimeHandleLeaseState::Released
+        );
+
         assert!(matches!(
             engine.prepare_activation_scope_exit(&id, &mut frame, &mut line, ScopeExit::Completed),
             Ok(ActivationScopeStep::Finished)
         ));
         assert!(frame.scopes.is_empty());
-        assert_eq!(frame.locals.get(source), Some(&RuntimeValue::Unit));
+        assert!(frame.locals.get(source).is_none());
         assert!(frame.locals.get(destination).is_none());
         assert!(line.has_pending_commands());
         assert!(matches!(

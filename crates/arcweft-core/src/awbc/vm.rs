@@ -347,6 +347,9 @@ pub enum VmObservation {
     Drop {
         policy: crate::effect::RuntimeDropPolicy,
     },
+    /// Owning packet for the exact graph displaced by one assignment. The
+    /// product owner journals its resource drops before publishing the write.
+    DiscardedValue(RuntimeValue),
     Trap(FiberTrap),
 }
 
@@ -1319,25 +1322,50 @@ fn execute_instruction(
                 return Ok(InstructionControl::Transferred);
             }
         }
-        AwbcInstruction::AssignRecordField {
-            target,
-            field,
-            value,
-        } => {
+        AwbcInstruction::Assign { place, value } => {
+            let base = match place {
+                AwbcMutablePlace::Local(base) | AwbcMutablePlace::NominalField { base, .. } => {
+                    *base
+                }
+            };
+            register(fiber, base)?;
             let value = fiber.active_frame_mut()?.take_register(*value)?;
             let frame = fiber.active_frame_mut()?;
-            let Some(target_value) = frame
-                .registers
-                .get_mut(target.index())
-                .and_then(Option::as_mut)
-            else {
-                return Err(FiberStateError::RegisterOutOfBounds {
-                    register: target.0,
-                    layout: frame.layout.0,
+            let displaced = match place {
+                AwbcMutablePlace::Local(target) => frame
+                    .registers
+                    .get_mut(target.index())
+                    .ok_or(FiberStateError::RegisterOutOfBounds {
+                        register: target.0,
+                        layout: frame.layout.0,
+                    })?
+                    .replace(value)
+                    .expect("assignment requires a live target"),
+                AwbcMutablePlace::NominalField {
+                    base: target,
+                    field,
+                } => {
+                    let Some(target_value) = frame
+                        .registers
+                        .get_mut(target.index())
+                        .and_then(Option::as_mut)
+                    else {
+                        return Err(FiberStateError::RegisterOutOfBounds {
+                            register: target.0,
+                            layout: frame.layout.0,
+                        }
+                        .into());
+                    };
+                    replace_record_field_value(target_value, *field, value)?
                 }
-                .into());
             };
-            set_record_field_value(target_value, *field, value)?;
+            let handles = displaced
+                .affine_line_handles()
+                .map_err(|error| VmError::Runtime(error.to_string()))?;
+            if !handles.is_empty() {
+                observations.push(VmObservation::DiscardedValue(displaced));
+                return Ok(InstructionControl::YieldAdvanced);
+            }
         }
         AwbcInstruction::CallTraitMethod {
             dst,
@@ -2583,11 +2611,11 @@ fn complete_context_callback_return(
     Ok(())
 }
 
-fn set_record_field_value(
+fn replace_record_field_value(
     target: &mut RuntimeValue,
     field: u32,
     value: RuntimeValue,
-) -> Result<(), VmError> {
+) -> Result<RuntimeValue, VmError> {
     let identity = crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(field as usize)
         .map_err(|error| VmError::Runtime(error.to_string()))?;
     target

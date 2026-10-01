@@ -310,10 +310,10 @@ impl ProductDialogueStore {
         execution: crate::runtime_id::ExecutionInstanceId,
         before: &BTreeMap<crate::runtime_id::RuntimeLineHandleToken, RuntimeOwnedSlotId>,
         after: &BTreeMap<crate::runtime_id::RuntimeLineHandleToken, RuntimeOwnedSlotId>,
-        drop_policy: Option<crate::effect::RuntimeDropPolicy>,
+        drops: &crate::line_task::RuntimeHandleDropAuthorization,
     ) -> Result<crate::line_task::RuntimeHandleDropReceipt, LineRuntimeError> {
         self.registry
-            .reconcile_parent_fiber(execution, before, after, drop_policy)
+            .reconcile_parent_fiber(execution, before, after, drops)
     }
 
     pub(super) fn inspect_parent_fiber_reconciliation(
@@ -321,10 +321,10 @@ impl ProductDialogueStore {
         execution: crate::runtime_id::ExecutionInstanceId,
         before: &BTreeMap<crate::runtime_id::RuntimeLineHandleToken, RuntimeOwnedSlotId>,
         after: &BTreeMap<crate::runtime_id::RuntimeLineHandleToken, RuntimeOwnedSlotId>,
-        drop_policy: Option<crate::effect::RuntimeDropPolicy>,
+        drops: &crate::line_task::RuntimeHandleDropAuthorization,
     ) -> Result<PreparedRuntimeParentFiberReconciliation, LineRuntimeError> {
         self.registry
-            .inspect_parent_fiber_reconciliation(execution, before, after, drop_policy)
+            .inspect_parent_fiber_reconciliation(execution, before, after, drops)
     }
 
     pub(super) fn commit_parent_fiber_reconciliation(

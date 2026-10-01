@@ -180,32 +180,10 @@ impl TraitMethodBodyBuilder {
                     format!("{path}.let.{binding}"),
                 );
             }
-            arcweft_core::value::RuntimeExprKind::AssignNominalField {
-                base,
-                field,
-                expr,
-                body,
-            } => {
-                let value = AwbcExprLowerer::new(inventory, frame, path.clone(), plan).lower(expr);
-                if let Some(target) = frame.register_for_local(*base) {
-                    inventory.push_instruction(AwbcInstruction::AssignRecordField {
-                        target,
-                        field: field.zero_based(),
-                        value,
-                    });
-                } else {
-                    inventory.diagnostic(AwbcLowerDiagnostic::error(
-                        path.clone(),
-                        format!("field assignment base `{base}` is not a local register"),
-                    ));
-                }
-                self.lower_returning_expr(
-                    inventory,
-                    frame,
-                    plan,
-                    body,
-                    format!("{path}.assign_field.{}", field.zero_based()),
-                );
+            arcweft_core::value::RuntimeExprKind::Assign { place, expr, body } => {
+                AwbcExprLowerer::new(inventory, frame, path.clone(), plan)
+                    .lower_assignment(place, expr);
+                self.lower_returning_expr(inventory, frame, plan, body, format!("{path}.assign"));
             }
             _ => {
                 let value = AwbcExprLowerer::new(inventory, frame, path, plan).lower(expr);

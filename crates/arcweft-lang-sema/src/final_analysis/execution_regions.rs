@@ -16,16 +16,34 @@ use super::{
     FinalSemanticAnalysisError, statement_effects::PreparedExecutableSuspensionRow,
 };
 
+/// Membership in one eager execution frame. A place is addressed without
+/// evaluating its source expression as a value or traversing value receivers.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CheckedExecutionOperation {
+    Value(ExprId),
+    Place(ExprId),
+    Statement(StmtId),
+}
+
+impl From<HirBodyChild> for CheckedExecutionOperation {
+    fn from(child: HirBodyChild) -> Self {
+        match child {
+            HirBodyChild::Expression(owner) => Self::Value(owner),
+            HirBodyChild::Statement(owner) => Self::Statement(owner),
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct PreparedExecutableSuspensionCatalog {
     expressions: BTreeMap<ExprId, PreparedExecutableSuspensionRow>,
-    statements: BTreeMap<StmtId, Box<[HirBodyChild]>>,
+    statements: BTreeMap<StmtId, Box<[CheckedExecutionOperation]>>,
 }
 
 impl PreparedExecutableSuspensionCatalog {
     pub(crate) fn new(
         expressions: BTreeMap<ExprId, PreparedExecutableSuspensionRow>,
-        statements: BTreeMap<StmtId, Box<[HirBodyChild]>>,
+        statements: BTreeMap<StmtId, Box<[CheckedExecutionOperation]>>,
     ) -> Self {
         Self {
             expressions,
@@ -55,8 +73,12 @@ impl PreparedExecutableSuspensionCatalog {
         {
             if edges.windows(2).any(|pair| pair[0] >= pair[1])
                 || edges.iter().any(|edge| match edge {
-                    HirBodyChild::Expression(owner) => !expressions.contains_key(owner),
-                    HirBodyChild::Statement(owner) => !statements.contains_key(owner),
+                    CheckedExecutionOperation::Value(owner) => !expressions.contains_key(owner),
+                    CheckedExecutionOperation::Place(owner) => expressions
+                        .get(owner)
+                        .and_then(CheckedExpression::mutable_place)
+                        .is_none(),
+                    CheckedExecutionOperation::Statement(owner) => !statements.contains_key(owner),
                 })
             {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
@@ -66,8 +88,13 @@ impl PreparedExecutableSuspensionCatalog {
             .expressions
             .keys()
             .copied()
-            .map(HirBodyChild::Expression)
-            .chain(self.statements.keys().copied().map(HirBodyChild::Statement))
+            .map(CheckedExecutionOperation::Value)
+            .chain(
+                self.statements
+                    .keys()
+                    .copied()
+                    .map(CheckedExecutionOperation::Statement),
+            )
             .map(|owner| (owner, 0usize))
             .collect::<BTreeMap<_, _>>();
         for edges in self
@@ -77,6 +104,9 @@ impl PreparedExecutableSuspensionCatalog {
             .chain(self.statements.values().map(AsRef::as_ref))
         {
             for child in edges {
+                if matches!(child, CheckedExecutionOperation::Place(_)) {
+                    incoming.entry(*child).or_insert(0);
+                }
                 *incoming
                     .get_mut(child)
                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)? += 1;
@@ -90,8 +120,9 @@ impl PreparedExecutableSuspensionCatalog {
         while let Some(owner) = pending.pop() {
             completed += 1;
             let children = match owner {
-                HirBodyChild::Expression(owner) => self.expressions[&owner].children(),
-                HirBodyChild::Statement(owner) => &self.statements[&owner],
+                CheckedExecutionOperation::Value(owner) => self.expressions[&owner].children(),
+                CheckedExecutionOperation::Place(_) => &[],
+                CheckedExecutionOperation::Statement(owner) => &self.statements[&owner],
             };
             for child in children {
                 let count = incoming
@@ -116,26 +147,30 @@ impl PreparedExecutableSuspensionCatalog {
 #[derive(Clone, Debug)]
 pub(super) struct CheckedExpressionExecutionCatalog {
     expressions: BTreeMap<ExprId, PreparedExecutableSuspensionRow>,
-    statements: BTreeMap<StmtId, Box<[HirBodyChild]>>,
+    statements: BTreeMap<StmtId, Box<[CheckedExecutionOperation]>>,
 }
 
 impl CheckedExpressionExecutionCatalog {
     pub(super) fn region(&self, root: ExprId) -> Option<CheckedExpressionExecutionRegion> {
         let row = self.expressions.get(&root)?;
         let mut visited = BTreeSet::new();
-        let mut pending = vec![HirBodyChild::Expression(root)];
+        let mut pending = vec![CheckedExecutionOperation::Value(root)];
         let mut expressions = BTreeSet::new();
+        let mut places = BTreeSet::new();
         let mut statements = BTreeSet::new();
         while let Some(owner) = pending.pop() {
             if !visited.insert(owner) {
                 continue;
             }
             match owner {
-                HirBodyChild::Expression(owner) => {
+                CheckedExecutionOperation::Value(owner) => {
                     expressions.insert(owner);
                     pending.extend(self.expressions.get(&owner)?.children());
                 }
-                HirBodyChild::Statement(owner) => {
+                CheckedExecutionOperation::Place(owner) => {
+                    places.insert(owner);
+                }
+                CheckedExecutionOperation::Statement(owner) => {
                     statements.insert(owner);
                     pending.extend(self.statements.get(&owner)?);
                 }
@@ -143,6 +178,8 @@ impl CheckedExpressionExecutionCatalog {
         }
         Some(CheckedExpressionExecutionRegion {
             expressions: expressions.into_iter().collect(),
+            places: places.into_iter().collect(),
+            operations: visited.into_iter().collect(),
             statements: statements.into_iter().collect(),
             suspension: row.suspension(),
             control: row.control(),
@@ -152,12 +189,21 @@ impl CheckedExpressionExecutionCatalog {
 
 pub(super) struct CheckedExpressionExecutionRegion {
     expressions: Box<[ExprId]>,
+    places: Box<[ExprId]>,
+    operations: Box<[CheckedExecutionOperation]>,
     statements: Box<[StmtId]>,
     suspension: CheckedSuspensionRole,
     control: CheckedExecutableControlRole,
 }
 
 impl CheckedExpressionExecutionRegion {
+    pub(super) fn places(&self) -> &[ExprId] {
+        &self.places
+    }
+
+    pub(super) fn operations(&self) -> &[CheckedExecutionOperation] {
+        &self.operations
+    }
     pub(super) fn expressions(&self) -> &[ExprId] {
         &self.expressions
     }
@@ -204,7 +250,7 @@ mod tests {
                 .keys()
                 .map(|&owner| {
                     let children = if owner == root {
-                        vec![HirBodyChild::Expression(rejected_child)]
+                        vec![CheckedExecutionOperation::Value(rejected_child)]
                     } else {
                         vec![]
                     };

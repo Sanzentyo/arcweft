@@ -2,6 +2,101 @@ use super::*;
 use crate::final_analysis::{CheckedExpressionInput, CheckedLocalReadMode, CheckedLocalUseSite};
 
 #[test]
+fn expression_input_abi_distinguishes_place_mutation_from_value_evaluation() {
+    let world = super::fixture(
+        "struct Queue { items: Vec<i64> }\nfn root(input: Queue) -> Option<i64> { { let mut queue = input; queue.items.pop() } }",
+        None,
+    );
+    let report = super::analyze(&world).unwrap();
+    let call = report
+        .calls()
+        .find_map(|(owner, call)| {
+            call.selected_application()
+                .filter(|application| {
+                    application
+                        .core()
+                        .candidates()
+                        .selected()
+                        .capacity_operation()
+                        == Some(crate::callable::CheckedCapacityOperation::Pop)
+                })
+                .map(|_| owner)
+        })
+        .unwrap();
+    let abi = report.checked_expression_input_abi(call).unwrap();
+    let [receiver] = abi.places() else {
+        panic!("one addressed receiver")
+    };
+    assert!(!abi.expressions().contains(receiver));
+    let [input] = abi.inputs() else {
+        panic!("one external place owner")
+    };
+    let [usage] = input.uses() else {
+        panic!("one place access, no receiver value read")
+    };
+    assert_eq!(usage.site(), CheckedLocalUseSite::Place(*receiver));
+    let access = usage.access().place_access().unwrap();
+    assert_eq!(
+        access.mode(),
+        crate::final_analysis::CheckedLocalPlaceMode::Mutate
+    );
+    assert!(access.place().nominal_field().is_some());
+    assert!(usage.access().value_transfer().is_none());
+    assert!(usage.latent_requirement().is_none());
+    assert!(
+        report
+            .checked_local_uses()
+            .value_transfer_at(usage.site())
+            .is_none()
+    );
+    let whole_body = report
+        .expressions()
+        .filter_map(|(owner, _)| report.checked_expression_input_abi(owner).ok())
+        .find(|region| !region.statements().is_empty() && region.places().contains(receiver))
+        .unwrap();
+    assert_eq!(whole_body.inputs().len(), 1);
+    assert_ne!(
+        whole_body.inputs()[0].binding().local(),
+        input.binding().local()
+    );
+    assert!(
+        whole_body.inputs()[0]
+            .uses()
+            .iter()
+            .all(|usage| usage.access().place_access().is_none())
+    );
+}
+
+#[test]
+fn expression_input_abi_records_replacement_without_reading_the_previous_value() {
+    let world = super::fixture(
+        "fn root(input: Vec<Need<i64>>, replacement: Vec<Need<i64>>) -> i64 { let mut items = input; { let marker = 0i64; items = replacement; 42i64 } }",
+        None,
+    );
+    let report = super::analyze(&world).unwrap();
+    let abi = report
+        .expressions()
+        .filter_map(|(owner, _)| report.checked_expression_input_abi(owner).ok())
+        .find(|abi| abi.places().len() == 1 && abi.inputs().len() == 2)
+        .unwrap();
+    let place = abi.places()[0];
+    assert!(!abi.expressions().contains(&place));
+    let usage = abi
+        .inputs()
+        .iter()
+        .flat_map(CheckedExpressionInput::uses)
+        .find(|usage| usage.site() == CheckedLocalUseSite::Place(place))
+        .unwrap();
+    let access = usage.access().place_access().unwrap();
+    assert_eq!(
+        access.mode(),
+        crate::final_analysis::CheckedLocalPlaceMode::Replace
+    );
+    assert!(access.place().nominal_field().is_none());
+    assert!(usage.access().value_transfer().is_none());
+}
+
+#[test]
 fn expression_input_abi_retains_callable_copy_ingress_obligations() {
     let world = super::fixture(
         "fn twice(callback: i64 -> i64, value: i64) -> (i64, i64) { (callback(value), callback(value)) }\nfn caller() -> (i64, i64) { twice(|value: i64| value, 42i64) }",
@@ -24,7 +119,10 @@ fn expression_input_abi_retains_callable_copy_ingress_obligations() {
     let [input] = abi.inputs() else {
         panic!("one callable ingress")
     };
-    assert_eq!(input.uses()[0].mode(), CheckedLocalReadMode::Copy);
+    assert_eq!(
+        input.uses()[0].access().value_transfer().unwrap().mode(),
+        CheckedLocalReadMode::Copy
+    );
     assert!(input.copy_evidence().is_none());
     let requirement = input
         .copy_requirement()
@@ -46,7 +144,7 @@ fn expression_input_abi_does_not_invent_modes_for_an_open_generic_body() {
         .unwrap();
     assert!(matches!(
         report.checked_expression_input_abi(owner),
-        Err(FinalSemanticAnalysisError::ExpressionInputReadUnavailable { .. })
+        Err(FinalSemanticAnalysisError::ExpressionInputAccessUnavailable { .. })
     ));
 }
 
@@ -132,7 +230,9 @@ view Main(first: i64, second: i64,
         abi.inputs()
             .iter()
             .flat_map(CheckedExpressionInput::uses)
-            .all(|usage| { usage.mode() == CheckedLocalReadMode::Copy })
+            .all(|usage| {
+                usage.access().value_transfer().unwrap().mode() == CheckedLocalReadMode::Copy
+            })
     );
 }
 

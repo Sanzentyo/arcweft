@@ -398,15 +398,14 @@ impl RuntimeNominalRecordValue {
         &mut self,
         field: RuntimeRecordFieldId,
         value: RuntimeValue,
-    ) -> Result<(), RuntimeValue> {
+    ) -> Result<RuntimeValue, RuntimeValue> {
         let Some(slot) = usize::try_from(field.zero_based())
             .ok()
             .and_then(|ordinal| self.fields.get_mut(ordinal))
         else {
             return Err(value);
         };
-        *slot = value;
-        Ok(())
+        Ok(std::mem::replace(slot, value))
     }
 
     /// Validates a restored or otherwise pre-existing value against one layout.

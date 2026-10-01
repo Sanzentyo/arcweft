@@ -25,6 +25,7 @@ use super::{
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckedLocalUseSite {
     Expression(ExprId),
+    Place(ExprId),
     RecordField { owner: ExprId, source_ordinal: u32 },
     Capture { owner: ExprId, local: LocalId },
     StatementCapture { owner: StmtId, local: LocalId },
@@ -34,6 +35,7 @@ impl CheckedLocalUseSite {
     pub const fn owner(self) -> arcweft_lang_hir::body_edges::HirBodyChild {
         match self {
             Self::Expression(owner)
+            | Self::Place(owner)
             | Self::RecordField { owner, .. }
             | Self::Capture { owner, .. } => {
                 arcweft_lang_hir::body_edges::HirBodyChild::Expression(owner)
@@ -195,6 +197,23 @@ pub(super) fn implicit_region_inputs(
 }
 
 impl CheckedCaptureExpression {
+    pub(super) fn from_place(
+        owner: ExprId,
+        place: &super::CheckedMutablePlace,
+        ty: &TypeKind,
+    ) -> Result<Self, FinalSemanticAnalysisError> {
+        Ok(Self {
+            sources: vec![CheckedLocalInputSource {
+                site: CheckedLocalUseSite::Place(owner),
+                local: place.local_id(),
+                ty: ty.semantic_identity_digest()?,
+                origin: None,
+                access: CaptureAccess::Reassign,
+            }],
+            record_sources: None,
+            descends: false,
+        })
+    }
     pub(super) fn from_checked(
         owner: ExprId,
         checked: &CheckedExpression,

@@ -6,6 +6,7 @@ mod callable_specialization;
 mod context_callback_execution;
 mod format_content_execution;
 mod instruction_call_execution;
+mod local_assignment;
 mod record_shapes;
 use super::fiber::{
     AwbcFiberStateSnapshot, FiberResumeTarget, FiberReturnContinuation, FiberScopeCleanup,
@@ -2748,7 +2749,7 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         (AwbcOpcode::ProjectTuple, 0x0e, Value),
         (AwbcOpcode::ProjectRecord, 0x0f, Value),
         (AwbcOpcode::ProjectField, 0x10, Value),
-        (AwbcOpcode::AssignRecordField, 0x11, Value),
+        (AwbcOpcode::Assign, 0x11, Value),
         (AwbcOpcode::TestPattern, 0x12, Value),
         (AwbcOpcode::Unary, 0x13, Value),
         (AwbcOpcode::Binary, 0x14, Value),

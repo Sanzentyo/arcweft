@@ -204,6 +204,19 @@ pub(super) fn checked_declaration_default_captures(
             super::free_capture::CheckedCaptureExpression::from_statement(owner, statement)?,
         )?;
     }
+    for &owner in execution.places() {
+        let place = analysis
+            .expression(owner)
+            .and_then(super::CheckedExpression::mutable_place)
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        let ty = analysis
+            .local(place.local_id())
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?
+            .ty();
+        collector.include(super::free_capture::CheckedCaptureExpression::from_place(
+            owner, &place, ty,
+        )?)?;
+    }
     for capture in collector.finish() {
         let (parameter, _) = parameters
             .get(&capture.local())

@@ -1,3 +1,4 @@
+#[cfg(test)]
 use crate::effect::RuntimeDropPolicy;
 use crate::line_task::{
     LineRuntimeError, LineTaskLiveState, RuntimeDialogueAbandonedCommitProof,
@@ -1136,10 +1137,10 @@ impl DialogueActivationStore {
         execution: crate::runtime_id::ExecutionInstanceId,
         before: &BTreeMap<crate::runtime_id::RuntimeLineHandleToken, RuntimeOwnedSlotId>,
         after: &BTreeMap<crate::runtime_id::RuntimeLineHandleToken, RuntimeOwnedSlotId>,
-        drop_policy: Option<RuntimeDropPolicy>,
+        drops: &crate::line_task::RuntimeHandleDropAuthorization,
     ) -> Result<RuntimeHandleDropReceipt, LineRuntimeError> {
         self.registry
-            .reconcile_parent_fiber(execution, before, after, drop_policy)
+            .reconcile_parent_fiber(execution, before, after, drops)
     }
 
     pub(crate) fn commit_transaction(
@@ -1545,7 +1546,9 @@ mod tests {
                 ExecutionInstanceId::from_allocated(NonZeroU64::new(18).expect("nonzero")),
                 &before,
                 &BTreeMap::new(),
-                Some(RuntimeDropPolicy::Default),
+                &crate::line_task::RuntimeHandleDropAuthorization::at_boundary(Some(
+                    RuntimeDropPolicy::Default
+                )),
             ),
             Err(LineRuntimeError::WrongOwner)
         );
@@ -1556,7 +1559,9 @@ mod tests {
                 execution,
                 &before,
                 &BTreeMap::new(),
-                Some(RuntimeDropPolicy::Default),
+                &crate::line_task::RuntimeHandleDropAuthorization::at_boundary(Some(
+                    RuntimeDropPolicy::Default,
+                )),
             )
             .expect("parent drop")
             .into_commands();
@@ -1626,7 +1631,7 @@ mod tests {
         let unchanged = published_registry_snapshot(&store);
         assert!(
             store
-                .reconcile_parent_fiber(execution, &before, &before, None)
+                .reconcile_parent_fiber(execution, &before, &before, &Default::default())
                 .expect("no-op reconciliation")
                 .into_commands()
                 .is_empty()
@@ -1634,7 +1639,7 @@ mod tests {
         assert_eq!(published_registry_snapshot(&store), unchanged);
 
         assert_eq!(
-            store.reconcile_parent_fiber(execution, &before, &BTreeMap::new(), None),
+            store.reconcile_parent_fiber(execution, &before, &BTreeMap::new(), &Default::default()),
             Err(LineRuntimeError::UnjournaledHandleDrop)
         );
         assert_eq!(published_registry_snapshot(&store), unchanged);
@@ -1646,7 +1651,7 @@ mod tests {
         let after = BTreeMap::from([(token.clone(), destination)]);
         assert!(
             store
-                .reconcile_parent_fiber(execution, &before, &after, None)
+                .reconcile_parent_fiber(execution, &before, &after, &Default::default())
                 .expect("exact parent move")
                 .into_commands()
                 .is_empty()
@@ -1657,11 +1662,81 @@ mod tests {
                 execution,
                 &before,
                 &BTreeMap::new(),
-                Some(RuntimeDropPolicy::Default),
+                &crate::line_task::RuntimeHandleDropAuthorization::at_boundary(Some(
+                    RuntimeDropPolicy::Default
+                )),
             ),
             Err(LineRuntimeError::WrongOwner)
         );
         assert_eq!(published_registry_snapshot(&store), moved);
+    }
+
+    #[test]
+    fn replacement_discards_only_the_old_nested_graph_and_transfers_the_new_owner() {
+        let mut store = DialogueActivationStore::default();
+        let (old, execution) = publish_stage_actor(&mut store, &activation(41));
+        let (new, _) = publish_stage_actor(&mut store, &activation(42));
+        let old_token = crate::line_task::RuntimeLineHandleLedger::token_from_value(&old).unwrap();
+        let new_token = crate::line_task::RuntimeLineHandleLedger::token_from_value(&new).unwrap();
+        let destination_local =
+            RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::new(23).unwrap());
+        let incoming_local =
+            RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::new(24).unwrap());
+        let destination = RuntimeOwnedSlotId::environment_local(execution, destination_local);
+        let incoming = RuntimeOwnedSlotId::environment_local(execution, incoming_local);
+        store
+            .reconcile_parent_fiber(
+                execution,
+                &BTreeMap::from([(new_token.clone(), destination)]),
+                &BTreeMap::from([(new_token.clone(), incoming)]),
+                &Default::default(),
+            )
+            .unwrap();
+        let before = BTreeMap::from([
+            (old_token.clone(), destination),
+            (new_token.clone(), incoming),
+        ]);
+        let mut env = crate::value::RuntimeEnv::default();
+        env.set(
+            destination_local,
+            RuntimeValue::Tuple(vec![RuntimeValue::Tuple(vec![old])]),
+        );
+        env.set(
+            incoming_local,
+            RuntimeValue::Tuple(vec![RuntimeValue::Tuple(vec![new])]),
+        );
+        let value = env.take(incoming_local).unwrap();
+        let displaced = env
+            .assign_place(
+                crate::value::RuntimeMutablePlace::Local(destination_local),
+                value,
+            )
+            .unwrap();
+        assert!(!displaced.affine_line_handles().unwrap().is_empty());
+        let drops = env.take_assignment_discard_authorization();
+        let after = BTreeMap::from([(new_token.clone(), destination)]);
+        assert_eq!(
+            drops.policy_for(&old_token),
+            Some(RuntimeDropPolicy::Default)
+        );
+        assert!(drops.policy_for(&new_token).is_none());
+        let published = published_registry_snapshot(&store);
+        assert_eq!(
+            store.reconcile_parent_fiber(execution, &before, &BTreeMap::new(), &drops),
+            Err(LineRuntimeError::UnjournaledHandleDrop)
+        );
+        assert_eq!(published_registry_snapshot(&store), published);
+        let commands = store
+            .reconcile_parent_fiber(execution, &before, &after, &drops)
+            .unwrap()
+            .into_commands();
+        assert_eq!(commands.len(), 1);
+        assert!(
+            matches!(&commands[0], crate::presentation::RuntimeLineHostCommand::Stage(
+            crate::presentation::RuntimeStageCommand::ReleaseActor { actor, .. }) if actor == &old_token)
+        );
+        assert!(env.get(incoming_local).is_none());
+        assert!(env.get(destination_local).is_some());
     }
 
     #[test]

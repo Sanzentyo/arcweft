@@ -3577,6 +3577,28 @@ impl AnalyzerPreparedCallPrefix {
         &self.record
     }
 
+    pub(crate) fn receiver_evaluation(
+        &self,
+    ) -> Option<crate::final_analysis::statement_effects::PreparedCallReceiverEvaluation> {
+        use crate::final_analysis::statement_effects::PreparedCallReceiverEvaluation;
+        let PreparedCallCalleeConstraintInputs::ValueReceiver { source, actual } =
+            &self.record.callee_inputs
+        else {
+            return None;
+        };
+        if crate::callable::is_contextual_capability_type(actual) {
+            return None;
+        }
+        Some(match self.application.selected().id() {
+            crate::callable::CallableCandidateId::CapacityMethod(id)
+                if id.operation().requires_place_receiver() =>
+            {
+                PreparedCallReceiverEvaluation::Place(*source)
+            }
+            _ => PreparedCallReceiverEvaluation::Value(*source),
+        })
+    }
+
     /// Projects the complete HIR Call child inventory owned by this selected
     /// mapper/callee transaction.  Authored expressions come from mapper rows
     /// (including zero-slot spreads); the optional callee comes only from the

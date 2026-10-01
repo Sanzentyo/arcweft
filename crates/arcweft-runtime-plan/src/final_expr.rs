@@ -27,7 +27,7 @@ use arcweft_lang_hir::module::HirModule;
 use arcweft_lang_hir::stmt::HirStmtKind;
 use arcweft_lang_sema::callable::{CheckedFmtFailurePolicy, FmtParameterId};
 use arcweft_lang_sema::final_analysis::{
-    CheckedLocalReadMode, CheckedLocalUseSite, CheckedSyntheticUseOwner,
+    CheckedLocalPlaceMode, CheckedLocalReadMode, CheckedLocalUseSite, CheckedSyntheticUseOwner,
 };
 
 use crate::agent::RuntimeAgentIntrinsic;
@@ -1587,13 +1587,11 @@ impl<'hir> FinalExprLowerer<'hir> {
         value: RuntimeExprSeed,
         body: RuntimeExprSeed,
     ) -> Result<RuntimeExprSeed, String> {
-        let (local, owner, field) = self.assignment_parts(statement)?;
+        let place = self.assignment_place(statement)?;
         Ok(RuntimeExprSeed::new(
             body.ty(),
-            RuntimeExprSeedKind::AssignNominalField {
-                base: self.local(local)?,
-                owner,
-                field,
+            RuntimeExprSeedKind::Assign {
+                place,
                 expr: Box::new(value),
                 body: Box::new(body),
             },
@@ -1605,34 +1603,60 @@ impl<'hir> FinalExprLowerer<'hir> {
         statement: StmtId,
         value: ExprId,
     ) -> Result<RuntimeFlowOpSeed, String> {
-        let (local, owner, field) = self.assignment_parts(statement)?;
-        Ok(RuntimeFlowOpSeed::AssignNominalField {
-            base: self.local(local)?,
-            owner,
-            field,
+        let place = self.assignment_place(statement)?;
+        Ok(RuntimeFlowOpSeed::Assign {
+            place,
             value: self.lower(value)?,
         })
     }
 
-    fn assignment_parts(
-        &self,
-        statement: StmtId,
-    ) -> Result<
-        (
-            LocalId,
-            arcweft_core::pattern::RuntimeSemanticTypeId,
-            RuntimeRecordFieldSeedId,
-        ),
-        String,
-    > {
+    fn assignment_place(&self, statement: StmtId) -> Result<RuntimeMutablePlaceSeed, String> {
         let assignment = self.assignment(statement).ok_or_else(|| {
             format!("checked assignment fact is missing for statement {statement:?}")
         })?;
-        Ok((
-            assignment.base(),
-            assignment.nominal().identity(),
-            RuntimeRecordFieldSeedId::from_zero_based(assignment.field().zero_based()),
-        ))
+        let hir = self
+            .module
+            .resolve_stmt(statement)
+            .map_err(|error| error.to_string())?;
+        let HirStmtKind::Assign { target, .. } = hir.kind() else {
+            return Err(format!(
+                "assignment {statement:?} has the wrong source family"
+            ));
+        };
+        let place = assignment.place().projection();
+        let mode = match place {
+            RuntimeResolvedMutablePlace::Local(_) => CheckedLocalPlaceMode::Replace,
+            RuntimeResolvedMutablePlace::NominalField { .. } => CheckedLocalPlaceMode::Mutate,
+        };
+        self.checked_place_seed(*target, place, mode)
+    }
+
+    fn checked_place_seed(
+        &self,
+        source: ExprId,
+        place: RuntimeResolvedMutablePlace,
+        mode: CheckedLocalPlaceMode,
+    ) -> Result<RuntimeMutablePlaceSeed, String> {
+        let access = self
+            .semantic_facts
+            .checked_local_place_access(source)
+            .ok_or_else(|| format!("checked place access is missing for {source:?}"))?;
+        if access.mode() != mode || !place.matches_checked(access.place()) {
+            return Err(format!(
+                "place {source:?} disagrees with its checked access"
+            ));
+        }
+        match place {
+            RuntimeResolvedMutablePlace::Local(local) => {
+                Ok(RuntimeMutablePlaceSeed::Local(self.local(local)?))
+            }
+            RuntimeResolvedMutablePlace::NominalField { base, field } => {
+                Ok(RuntimeMutablePlaceSeed::NominalField {
+                    base: self.local(base)?,
+                    field: RuntimeRecordFieldSeedId::from_zero_based(field.zero_based()),
+                })
+            }
+        }
     }
 
     fn lower_path(&self, id: ExprId) -> Result<RuntimeExprSeedKind, String> {
@@ -1695,7 +1719,7 @@ impl<'hir> FinalExprLowerer<'hir> {
     ) -> Result<RuntimeLocalReadSeed, String> {
         let checked = self
             .semantic_facts
-            .checked_local_use(site)
+            .checked_local_value_transfer(site)
             .ok_or_else(|| format!("checked local use is missing for {site:?}"))?;
         if checked.local() != local {
             return Err(format!(
@@ -1795,22 +1819,12 @@ impl<'hir> FinalExprLowerer<'hir> {
     ) -> Result<RuntimeExprSeedKind, String> {
         let selected = self.call(id)?;
         if let Some(mutation) = selected.mutation() {
-            let place = match mutation {
-                RuntimeResolvedCallMutation::VecPopFront { place, .. }
-                | RuntimeResolvedCallMutation::VecPop { place, .. }
-                | RuntimeResolvedCallMutation::VecPush { place, .. } => place,
+            let (source, place) = match mutation {
+                RuntimeResolvedCallMutation::VecPopFront { source, place }
+                | RuntimeResolvedCallMutation::VecPop { source, place }
+                | RuntimeResolvedCallMutation::VecPush { source, place } => (source, place),
             };
-            let place = match place {
-                RuntimeResolvedMutablePlace::Local(local) => {
-                    RuntimeMutablePlaceSeed::Local(self.local(local)?)
-                }
-                RuntimeResolvedMutablePlace::NominalField { base, field } => {
-                    RuntimeMutablePlaceSeed::NominalField {
-                        base: self.local(base)?,
-                        field: RuntimeRecordFieldSeedId::from_zero_based(field.zero_based()),
-                    }
-                }
-            };
+            let place = self.checked_place_seed(source, place, CheckedLocalPlaceMode::Mutate)?;
             return match mutation {
                 RuntimeResolvedCallMutation::VecPopFront { .. } => {
                     Ok(RuntimeExprSeedKind::SequencePopFront { place })

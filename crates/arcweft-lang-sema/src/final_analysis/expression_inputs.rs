@@ -2,7 +2,7 @@
 //!
 //! The existing eager execution fold owns membership. The shared free-local
 //! collector authenticates external bindings, and the local-use catalog owns
-//! Copy/Move/Borrow. This projection stores no second read index and never
+//! value transfer and place access. This projection stores no second access index and never
 //! treats a callable value's latent body as value-creation execution.
 
 use std::collections::BTreeMap;
@@ -21,20 +21,20 @@ use crate::{
 };
 
 use super::{
-    CheckedExecutableCapture, CheckedExecutableControlRole, CheckedLocalCopyEvidence,
-    CheckedLocalCopyRequirement, CheckedLocalReadMode, CheckedLocalUseSite, CheckedSuspensionRole,
-    FinalSemanticAnalysis, FinalSemanticAnalysisError,
+    CheckedExecutableCapture, CheckedExecutableControlRole, CheckedLocalAccess,
+    CheckedLocalCopyEvidence, CheckedLocalCopyRequirement, CheckedLocalUseSite,
+    CheckedSuspensionRole, FinalSemanticAnalysis, FinalSemanticAnalysisError,
     execution_regions::CheckedExpressionExecutionRegion,
     free_capture::{CheckedCaptureExpression, CheckedFreeLocalCollector},
 };
 
-/// One external binding and its selected read/capture-transfer occurrences.
+/// One external binding and its selected value-transfer/place occurrences.
 /// `CaptureAccess` retains a latent body's requirement; a creation transfer
 /// does not itself perform that latent mutation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedExpressionInput<'analysis> {
     binding: CheckedExecutableCapture,
-    uses: Box<[CheckedExpressionInputUse]>,
+    uses: Box<[CheckedExpressionInputUse<'analysis>]>,
     copy_requirement: Option<&'analysis CheckedLocalCopyRequirement>,
     copy_evidence: Option<CheckedLocalCopyEvidence>,
 }
@@ -44,7 +44,7 @@ impl CheckedExpressionInput<'_> {
         &self.binding
     }
 
-    pub const fn uses(&self) -> &[CheckedExpressionInputUse] {
+    pub const fn uses(&self) -> &[CheckedExpressionInputUse<'_>] {
         &self.uses
     }
 
@@ -61,14 +61,14 @@ impl CheckedExpressionInput<'_> {
 
 /// A stable input occurrence and its exact generation-bound lowering evidence.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedExpressionInputUse {
+pub struct CheckedExpressionInputUse<'analysis> {
     site: CheckedLocalUseSite,
     coordinate: CheckedLocalInputCoordinate,
-    access: CaptureAccess,
-    mode: CheckedLocalReadMode,
+    access: &'analysis CheckedLocalAccess,
+    latent_requirement: Option<CaptureAccess>,
 }
 
-impl CheckedExpressionInputUse {
+impl CheckedExpressionInputUse<'_> {
     pub const fn site(&self) -> CheckedLocalUseSite {
         self.site
     }
@@ -77,12 +77,12 @@ impl CheckedExpressionInputUse {
         &self.coordinate
     }
 
-    pub const fn access(&self) -> CaptureAccess {
+    pub const fn access(&self) -> &CheckedLocalAccess {
         self.access
     }
 
-    pub const fn mode(&self) -> CheckedLocalReadMode {
-        self.mode
+    pub const fn latent_requirement(&self) -> Option<CaptureAccess> {
+        self.latent_requirement
     }
 }
 
@@ -115,6 +115,14 @@ impl CheckedExpressionInputAbi<'_> {
 
     pub fn statements(&self) -> &[StmtId] {
         self.execution.statements()
+    }
+
+    pub fn places(&self) -> &[ExprId] {
+        self.execution.places()
+    }
+
+    pub fn operations(&self) -> &[super::CheckedExecutionOperation] {
+        self.execution.operations()
     }
 
     pub const fn result(&self) -> &TypeKind {
@@ -182,9 +190,33 @@ impl FinalSemanticAnalysis {
             )?;
         }
         let mut uses = BTreeMap::new();
+        for &owner in execution.places() {
+            let site = CheckedLocalUseSite::Place(owner);
+            let access = self
+                .checked_local_uses()
+                .access_at(site)
+                .and_then(CheckedLocalAccess::place_access)
+                .ok_or(FinalSemanticAnalysisError::ExpressionInputAccessUnavailable { site })?;
+            if self
+                .expression(owner)
+                .and_then(super::CheckedExpression::mutable_place)
+                .as_ref()
+                != Some(access.place())
+            {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+            let ty = self
+                .local(access.place().local_id())
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?
+                .ty();
+            collector.include_with_free_sources(
+                CheckedCaptureExpression::from_place(owner, access.place(), ty)?,
+                |source| sources.push(source),
+            )?;
+        }
         for source in sources {
-            let local_use = self.checked_local_uses().use_at(source.site()).ok_or(
-                FinalSemanticAnalysisError::ExpressionInputReadUnavailable {
+            let local_use = self.checked_local_uses().access_at(source.site()).ok_or(
+                FinalSemanticAnalysisError::ExpressionInputAccessUnavailable {
                     site: source.site(),
                 },
             )?;
@@ -199,8 +231,13 @@ impl FinalSemanticAnalysis {
                 .push(CheckedExpressionInputUse {
                     site: source.site(),
                     coordinate,
-                    access: source.access(),
-                    mode: local_use.mode(),
+                    access: local_use,
+                    latent_requirement: matches!(
+                        source.site(),
+                        CheckedLocalUseSite::Capture { .. }
+                            | CheckedLocalUseSite::StatementCapture { .. }
+                    )
+                    .then_some(source.access()),
                 });
         }
         let mut inputs = Vec::new();

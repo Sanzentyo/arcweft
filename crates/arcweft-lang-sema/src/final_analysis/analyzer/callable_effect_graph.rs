@@ -47,28 +47,33 @@ pub(super) struct CallableEffectGraph<'a> {
     closure_execution: BTreeMap<ExprId, IndexedClosureExecution>,
 }
 
-pub(super) fn prepared_fixed_call_effect_rows(
+pub(super) fn prepared_call_execution_rows(
     prepared_calls: &AnalyzerPreparedCallGraph,
     control: FinalSemanticAnalysisControl<'_>,
-) -> Result<BTreeMap<ExprId, EffectRow>, FinalSemanticAnalysisError> {
+) -> Result<
+    BTreeMap<ExprId, crate::final_analysis::statement_effects::PreparedCallExecutionRow>,
+    FinalSemanticAnalysisError,
+> {
     let mut rows = BTreeMap::new();
     for node in prepared_calls.selected_nodes() {
         control.check()?;
         let application = node.prefix().application();
         let selected = application.selected();
-        if selected
+        let terminal = selected
             .next_group_for(application.completed_group())
-            .is_some()
-        {
-            continue;
-        }
-        let Some(row) = selected.schema().effects().fixed_row() else {
-            continue;
-        };
+            .is_none();
         let owner = node.site().expression();
-        let row = application
-            .specialize_effect_row(row)
+        let effects = terminal
+            .then(|| selected.schema().effects().fixed_row())
+            .flatten()
+            .map(|row| application.specialize_effect_row(row))
+            .transpose()
             .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed { owner })?;
+        let receiver = node.prefix().receiver_evaluation();
+        let row = crate::final_analysis::statement_effects::PreparedCallExecutionRow {
+            effects,
+            receiver,
+        };
         if rows.insert(owner, row).is_some() {
             return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
         }

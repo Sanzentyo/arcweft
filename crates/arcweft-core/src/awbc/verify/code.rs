@@ -1404,28 +1404,29 @@ fn apply_instruction(
                 &format!("pure helper {}", helper.public_id.0),
             )?;
         }
-        AwbcInstruction::AssignRecordField {
-            target,
-            field,
-            value,
-        } => {
-            let target_ty = read_register(verifier, function, block, *target, state)?;
+        AwbcInstruction::Assign { place, value } => {
             let value_ty = read_register(verifier, function, block, *value, state)?;
-            match runtime_shape(program, target_ty) {
-                Some(
-                    AwbcRuntimeTypeShape::Record { fields, .. }
-                    | AwbcRuntimeTypeShape::NominalRecord { fields, .. },
-                ) => {
-                    let Some(field_layout) = fields.get(*field as usize) else {
-                        return Err(AwbcVerifyError::InvalidInvariant {
-                            at,
-                            message: "assigned field does not exist".to_owned(),
-                        });
-                    };
-                    require_compatible(program, field_layout.ty, value_ty, "field assignment")?;
+            let expected = match place {
+                AwbcMutablePlace::Local(target) => {
+                    read_register(verifier, function, block, *target, state)?
                 }
-                _ => return invalid_type(&at, "record assignment target"),
-            }
+                AwbcMutablePlace::NominalField { base, field } => {
+                    let target_ty = read_register(verifier, function, block, *base, state)?;
+                    let Some(AwbcRuntimeTypeShape::NominalRecord { fields, .. }) =
+                        runtime_shape(program, target_ty)
+                    else {
+                        return invalid_type(&at, "nominal assignment target");
+                    };
+                    fields
+                        .get(*field as usize)
+                        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                            at: at.clone(),
+                            message: "assigned field does not exist".to_owned(),
+                        })?
+                        .ty
+                }
+            };
+            require_compatible(program, expected, value_ty, "place assignment")?;
         }
         AwbcInstruction::CallTraitMethod {
             dst,
@@ -2477,28 +2478,32 @@ fn apply_instruction_copy_and_move_effects(
             }
         }
         AwbcInstruction::CommitDialogueResult { source } => consumed.push(*source),
-        AwbcInstruction::AssignRecordField {
-            target,
-            field,
-            value,
-        } => {
+        AwbcInstruction::Assign { place, value } => {
             consumed.push(*value);
-            mutated.push(*target);
             let value_proof = state.copy_proofs[value.index()].clone();
-            let record_ty = register_type(verifier, function, block, *target)?;
-            let field_count = match runtime_shape(program, record_ty) {
-                Some(
-                    AwbcRuntimeTypeShape::Record { fields, .. }
-                    | AwbcRuntimeTypeShape::NominalRecord { fields, .. },
-                ) => fields.len(),
-                _ => 0,
-            };
-            mutated_proof = Some(update_record_proof_field(
-                &state.copy_proofs[target.index()],
-                *field as usize,
-                field_count,
-                |_| value_proof,
-            ));
+            match place {
+                AwbcMutablePlace::Local(target) => {
+                    outputs.push(*target);
+                    output_proof = Some(value_proof);
+                }
+                AwbcMutablePlace::NominalField {
+                    base: target,
+                    field,
+                } => {
+                    mutated.push(*target);
+                    let record_ty = register_type(verifier, function, block, *target)?;
+                    let field_count = match runtime_shape(program, record_ty) {
+                        Some(AwbcRuntimeTypeShape::NominalRecord { fields, .. }) => fields.len(),
+                        _ => 0,
+                    };
+                    mutated_proof = Some(update_record_proof_field(
+                        &state.copy_proofs[target.index()],
+                        *field as usize,
+                        field_count,
+                        |_| value_proof,
+                    ));
+                }
+            }
         }
         AwbcInstruction::Drop { .. } => return Ok(()),
     }

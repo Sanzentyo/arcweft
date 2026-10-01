@@ -362,7 +362,7 @@ impl RuntimeProjectFunctionStatementPayload {
     fn append_normalized_types<'a>(&'a self, roots: &mut Vec<&'a RuntimeNormalizedType>) {
         match self {
             Self::Assignment(assignment) => {
-                roots.extend([assignment.field_type(), assignment.value_type()]);
+                roots.push(assignment.value_type());
             }
             Self::Defer(defer) => roots.extend(
                 defer

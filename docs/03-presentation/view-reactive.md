@@ -130,6 +130,9 @@ callable を返す default は値生成であり、capture の転送だけをそ
 含める。latent body と defer の cleanup body は別の実行境界で、cleanup の効果・
 中断条件は保持する。field access は field identity と receiver の評価元を別々に
 持ち、直接 binding の read と receiver expression の評価を二重に数えない。
+Move は同じ local generation の availability を終了し、代入では復活しない。
+replacement/mutation は live owner を必須とし、借用中の owner の消費・置換を拒否する。
+shadowing は新しい local generation の初期化として扱う。
 値の Copy/Move/Borrow と place の replacement/mutation はそれぞれの checked
 access 証拠を必要とする。純粋な program への抽出は root 外の place mutation と
 root 外を対象にする制御移動を拒否し、root 内の local mutation と loop exit は

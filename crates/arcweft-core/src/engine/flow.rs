@@ -113,17 +113,11 @@ impl Engine {
                     Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
             }
-            FlowOp::AssignNominalField { base, field, value } => {
+            FlowOp::Assign { place, value } => {
                 match self.evaluate_expr_with_backend(&value, pure_backend) {
-                    Ok(value) => match self.fiber.env.set_record_field(base, field, value) {
-                        Ok(()) => self.advance_if_needed(next_op_index),
-                        Err(target) => self.fail_eval(
-                            RuntimeEvalError::InvalidFieldAssignment {
-                                field: field.zero_based().to_string(),
-                                value: runtime_value_label(&target),
-                            },
-                            output,
-                        ),
+                    Ok(value) => match self.fiber.env.assign_place(place, value) {
+                        Ok(_) => self.advance_if_needed(next_op_index),
+                        Err(error) => self.fail_eval(error.into_parts().0, output),
                     },
                     Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }

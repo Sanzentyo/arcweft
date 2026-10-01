@@ -85,16 +85,17 @@ flow main() -> (i64, i64) { return pair(1i64) }
         .expect("closed i64 value is deeply Copy");
     assert_eq!(
         closed
-            .rows()
+            .value_transfers()
             .filter(|(_, row)| row.mode() == CheckedLocalReadMode::Copy)
             .count(),
         2
     );
-    assert!(
-        closed
-            .rows()
-            .all(|(site, _)| report.checked_local_uses().use_at(site).is_none())
-    );
+    assert!(closed.value_transfers().all(|(site, _)| {
+        report
+            .checked_local_uses()
+            .value_transfer_at(site)
+            .is_none()
+    }));
 }
 
 #[test]
@@ -256,7 +257,7 @@ fn caller() -> (i64, i64) { twice(|value: i64| value, 42i64) }
     assert_eq!(
         report
             .checked_local_uses()
-            .rows()
+            .value_transfers()
             .filter(|(_, row)| row.local() == requirement.local()
                 && row.mode() == CheckedLocalReadMode::Copy)
             .count(),
@@ -301,7 +302,7 @@ fn twice(value: RichTextStyle) -> (RichTextStyle, RichTextStyle) {
     assert_eq!(
         report
             .checked_local_uses()
-            .rows()
+            .value_transfers()
             .filter(|(_, row)| row.local() == requirement.local()
                 && row.mode() == CheckedLocalReadMode::Copy)
             .count(),
@@ -349,7 +350,7 @@ fn caller() -> (i64, i64) { twice(|value: i64| value) }
     assert_eq!(
         report
             .checked_local_uses()
-            .rows()
+            .value_transfers()
             .filter(|(_, row)| row.local() == alias && row.mode() == CheckedLocalReadMode::Copy)
             .count(),
         2
@@ -491,7 +492,7 @@ fn reuse() -> (i32, i32) {
     assert_eq!(
         report
             .checked_local_uses()
-            .rows()
+            .value_transfers()
             .filter(|(_, row)| row.local() == function_local
                 && row.mode() == CheckedLocalReadMode::Copy)
             .count(),
@@ -548,7 +549,7 @@ fn scheduled_line_closure_capture_has_exact_move_site() {
         .expect("scheduled closure");
     let observed = report
         .checked_local_uses()
-        .rows()
+        .value_transfers()
         .filter_map(|(site, row)| match site {
             CheckedLocalUseSite::Capture { owner, local } => Some((
                 owner,
@@ -574,15 +575,18 @@ fn scheduled_line_closure_capture_has_exact_move_site() {
         })
         .collect::<Vec<_>>();
     assert!(
-        report.checked_local_uses().rows().any(|(site, row)| {
-            site == CheckedLocalUseSite::Capture {
-                owner: callback,
-                local: row.local(),
-            } && row.mode() == CheckedLocalReadMode::Move
-                && report
-                    .local(row.local())
-                    .is_some_and(|binding| matches!(binding.ty(), TypeKind::StageActorHandle(_)))
-        }),
+        report
+            .checked_local_uses()
+            .value_transfers()
+            .any(|(site, row)| {
+                site == CheckedLocalUseSite::Capture {
+                    owner: callback,
+                    local: row.local(),
+                } && row.mode() == CheckedLocalReadMode::Move
+                    && report.local(row.local()).is_some_and(|binding| {
+                        matches!(binding.ty(), TypeKind::StageActorHandle(_))
+                    })
+            }),
         "callback {callback:?}, capture rows {observed:?}, line owners {line_owners:?}"
     );
 }
@@ -604,7 +608,7 @@ fn stage_actor_look_borrows_one_affine_receiver_twice_before_transfer() {
     let report = analyze(&fixture).expect("Look borrows the live StageActor receiver");
     let actor_uses = report
         .checked_local_uses()
-        .rows()
+        .value_transfers()
         .filter_map(|(_, row)| {
             report
                 .local(row.local())
@@ -657,8 +661,8 @@ fn repeated_pop_reads_an_affine_vec_receiver_as_a_mutable_place() {
         r#"
 fn pop_twice(input: Vec<Need<i64>>) {
     let mut items = input
-    items.pop()
-    items.pop()
+    items.pop();
+    items.pop();
 }
 "#,
         None,
@@ -679,9 +683,190 @@ fn pop_twice(input: Vec<Need<i64>>) {
     assert!(
         report
             .checked_local_uses()
-            .rows()
+            .value_transfers()
             .all(|(_, row)| row.local() != mutable_vec)
     );
+    let places = report
+        .checked_local_uses()
+        .rows()
+        .filter_map(|(_, access)| access.place_access())
+        .collect::<Vec<_>>();
+    assert_eq!(places.len(), 2);
+    assert!(
+        places
+            .iter()
+            .all(|access| access.place().local_id() == mutable_vec
+                && access.mode() == crate::final_analysis::CheckedLocalPlaceMode::Mutate)
+    );
+}
+
+#[test]
+fn mutation_requires_the_affine_owner_to_remain_available() {
+    for source in [
+        "fn root(input: Vec<Need<i64>>) { let mut items = input; let moved = items; items.pop(); () }",
+    ] {
+        let world = fixture(source, None);
+        assert!(
+            matches!(
+                analyze(&world),
+                Err(FinalSemanticAnalysisError::LocalUse(
+                    CheckedLocalUseError::Unavailable {
+                        site: CheckedLocalUseSite::Place(_),
+                        ..
+                    }
+                ))
+            ),
+            "mutation after owner transfer: {source}"
+        );
+    }
+}
+
+#[test]
+fn whole_local_replacement_requires_a_live_owner() {
+    let world = fixture(
+        "fn root(input: Vec<Need<i64>>, replacement: Vec<Need<i64>>) -> Option<Need<i64>> { let mut items = input; items = replacement; items.pop() }",
+        None,
+    );
+    let report = analyze(&world).expect("replacement keeps a live owner available");
+    let modes = report
+        .checked_local_uses()
+        .rows()
+        .filter_map(|(_, access)| access.place_access().map(|access| access.mode()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        modes,
+        [
+            crate::final_analysis::CheckedLocalPlaceMode::Replace,
+            crate::final_analysis::CheckedLocalPlaceMode::Mutate
+        ]
+    );
+}
+
+#[test]
+fn replacement_cannot_revive_a_moved_declaration_on_any_reachable_path() {
+    for body in [
+        "let moved = items; items = replacement; ()",
+        "let moved = items; let ignored = { let marker = 0i64; items = replacement; () }; ()",
+        "let ignored = if condition { let moved = items; () } else { () }; items = replacement; ()",
+        "items = identity(items); ()",
+    ] {
+        let source = format!(
+            "fn identity(input: Vec<Need<i64>>) -> Vec<Need<i64>> {{ input }}\nfn root(input: Vec<Need<i64>>, replacement: Vec<Need<i64>>, condition: bool) {{ let mut items = input; {body} }}"
+        );
+        let world = fixture(&source, None);
+        assert!(
+            matches!(
+                analyze(&world),
+                Err(FinalSemanticAnalysisError::LocalUse(
+                    CheckedLocalUseError::Unavailable {
+                        site: CheckedLocalUseSite::Place(_),
+                        ..
+                    }
+                ))
+            ),
+            "assignment after move must fail: {source}"
+        );
+    }
+}
+
+#[test]
+fn shadowing_after_move_creates_a_new_owner_generation() {
+    let world = fixture(
+        "fn root(input: Vec<Need<i64>>, replacement: Vec<Need<i64>>) -> Option<Need<i64>> { let items = input; let moved = items; let items = replacement; items.pop() }",
+        None,
+    );
+    analyze(&world).expect("shadowing initializes a distinct declaration");
+}
+
+#[test]
+fn generic_place_access_is_issued_only_by_the_selected_closed_instance() {
+    let world = fixture(
+        "fn root<T>(input: Vec<T>) -> Option<T> { let mut items = input; items.pop() }\nfn caller(input: Vec<i64>) -> Option<i64> { root(input) }",
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let selection = super::project_specialization::selections(&report, "root").remove(0);
+    let instance = selection.close_instance(None).unwrap();
+    let catalog = report
+        .checked_local_uses_for_instance(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            CheckedLocalUseInstantiation::ProjectFunction(&instance),
+        )
+        .unwrap();
+    let (site, access) = catalog
+        .rows()
+        .find(|(_, access)| access.place_access().is_some())
+        .unwrap();
+    assert!(report.checked_local_uses().access_at(site).is_none());
+    assert_eq!(
+        access.place_access().unwrap().mode(),
+        crate::final_analysis::CheckedLocalPlaceMode::Mutate
+    );
+    assert!(catalog.value_transfer_at(site).is_none());
+}
+
+#[test]
+fn closed_generic_instance_rejects_replacement_after_affine_transfer() {
+    let world = fixture(
+        "fn root<T>(input: Vec<T>, replacement: Vec<T>) { let mut items = input; let moved = items; items = replacement; () }\nfn caller(input: Vec<Need<i64>>, replacement: Vec<Need<i64>>) { root(input, replacement); () }",
+        None,
+    );
+    let report =
+        analyze(&world).expect("the open body defers local access until its selected instance");
+    let selection = super::project_specialization::selections(&report, "root").remove(0);
+    let instance = selection.close_instance(None).unwrap();
+    assert!(matches!(
+        report.checked_local_uses_for_instance(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            CheckedLocalUseInstantiation::ProjectFunction(&instance),
+        ),
+        Err(CheckedLocalUseError::Unavailable {
+            site: CheckedLocalUseSite::Place(_),
+            ..
+        })
+    ));
+}
+
+#[test]
+fn in_place_call_rechecks_owner_after_its_value_operands() {
+    let world = fixture(
+        "fn take(input: Vec<Need<i64>>, item: Need<i64>) -> Need<i64> { item }\nfn root(input: Vec<Need<i64>>, item: Need<i64>) { let mut items = input; items.push(take(items, item)); () }",
+        None,
+    );
+    assert!(matches!(
+        analyze(&world),
+        Err(FinalSemanticAnalysisError::LocalUse(
+            CheckedLocalUseError::Unavailable {
+                site: CheckedLocalUseSite::Place(_),
+                ..
+            }
+        ))
+    ));
+}
+
+#[test]
+fn borrowed_receiver_cannot_be_moved_or_replaced_by_a_later_operand() {
+    for operand in [
+        "{ let moved = actor; 0ms }",
+        "{ let marker = 0i64; actor = replacement; 0ms }",
+    ] {
+        let source = format!(
+            "pub character akane {{}}\nflow root() -> String {{\n    let (retained, _) = akane(voice=auto)[聞いて。[p]]\n    with:\n        let mut actor = akane.stage.acquire(scope=line)\n        let replacement = akane.stage.acquire(scope=line)\n        actor.look(.normal, crossfade={operand})\n        out (actor, ())\n    return \"done\"\n}}"
+        );
+        let world = character_nominal_fixture(&source);
+        let result = analyze(&world);
+        assert!(
+            matches!(
+                result,
+                Err(FinalSemanticAnalysisError::LocalUse(
+                    CheckedLocalUseError::BorrowedReceiverInvalidation { .. }
+                ))
+            ),
+            "receiver loan protects operand evaluation: {result:?}"
+        );
+    }
 }
 
 #[test]
@@ -878,7 +1063,7 @@ fn guarded(candidate: (VoiceHandle, i64)) {
     assert!(
         report
             .checked_local_uses()
-            .rows()
+            .value_transfers()
             .any(|(_, row)| row.local() == *local && row.mode() == CheckedLocalReadMode::Copy)
     );
 }
@@ -922,7 +1107,7 @@ fn guarded(candidate: Option<(i64 -> bool effects {})>) {
     assert!(
         report
             .checked_local_uses()
-            .rows()
+            .value_transfers()
             .any(|(_, row)| row.local() == *local && row.mode() == CheckedLocalReadMode::Copy)
     );
 }
@@ -994,7 +1179,7 @@ fn twice(value: String) -> (String, String) { (value, value) }
     let report = analyze(&string).expect("String has an unrestricted runtime carrier");
     let copies = report
         .checked_local_uses()
-        .rows()
+        .value_transfers()
         .filter(|(_, row)| {
             report
                 .local(row.local())

@@ -2390,13 +2390,21 @@ pub(super) fn validate_statements(
         match fact.payload() {
             CheckedStatementPayload::Assignment(assignment) => {
                 let place = assignment.place();
-                let Some(field_place) = place.nominal_field() else {
-                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                let valid = match place.nominal_field() {
+                    Some(field_place) => {
+                        locals.get(&place.local_id()).map(CheckedBinding::ty)
+                            == Some(&field_place.nominal().ty())
+                            && field_place.field_type() == assignment.value_type()
+                    }
+                    None => {
+                        locals.get(&place.local_id()).map(CheckedBinding::ty)
+                            == Some(assignment.value_type())
+                            && resolve_module(modules, place.local_id().module())?
+                                .resolve_local(place.local_id())
+                                .is_ok_and(|local| local.is_mutable_binding())
+                    }
                 };
-                if locals.get(&place.local_id()).map(CheckedBinding::ty)
-                    != Some(&field_place.nominal().ty())
-                    || field_place.field_type() != assignment.value_type()
-                {
+                if !valid {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
             }

@@ -224,6 +224,9 @@ fn vm_observation(event: &VmObservation) -> ParityEvent {
                 policy => format!("drop:{}", policy.kind_label()),
             },
         },
+        VmObservation::DiscardedValue(_) => ParityEvent::Effect {
+            id: "drop:default".to_owned(),
+        },
         VmObservation::Trap(trap) => ParityEvent::Trap {
             code: trap_code(trap.code).to_owned(),
             message: trap.message.clone(),

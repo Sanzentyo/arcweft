@@ -51,6 +51,7 @@ mod declaration_defaults;
 mod error;
 mod execution_plan;
 mod execution_regions;
+pub use execution_regions::CheckedExecutionOperation;
 mod expression_inputs;
 mod free_capture;
 pub use free_capture::CheckedLocalUseSite;
@@ -128,10 +129,11 @@ pub use fx_application::{
 };
 pub(crate) use input::FinalSemanticAnalysisInput;
 pub use local_use::{
-    CheckedIngressParameterCoordinate, CheckedLocalCopyEvidence, CheckedLocalCopyIngressOwner,
-    CheckedLocalCopyRequirement, CheckedLocalReadMode, CheckedLocalUse, CheckedLocalUseCatalog,
-    CheckedLocalUseError, CheckedLocalUseInstanceCatalog, CheckedLocalUseInstanceIdentity,
-    CheckedLocalUseInstantiation, CheckedSyntheticCopyRequirement, CheckedSyntheticUse,
+    CheckedIngressParameterCoordinate, CheckedLocalAccess, CheckedLocalCopyEvidence,
+    CheckedLocalCopyIngressOwner, CheckedLocalCopyRequirement, CheckedLocalPlaceAccess,
+    CheckedLocalPlaceMode, CheckedLocalReadMode, CheckedLocalUseCatalog, CheckedLocalUseError,
+    CheckedLocalUseInstanceCatalog, CheckedLocalUseInstanceIdentity, CheckedLocalUseInstantiation,
+    CheckedLocalValueTransfer, CheckedSyntheticCopyRequirement, CheckedSyntheticUse,
     CheckedSyntheticUseOwner,
 };
 pub use match_coverage::{

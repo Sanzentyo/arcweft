@@ -976,6 +976,13 @@ impl From<PreparedProjectNominalTypeValueExpression> for PreparedExpressionFact 
 }
 
 impl PreparedExpressionFact {
+    pub(crate) fn supports_place_access(&self) -> bool {
+        match self {
+            Self::Complete(value) => value.mutable_place().is_some(),
+            Self::ProjectField(field) => field.mutable_base.is_some(),
+            _ => false,
+        }
+    }
     pub(crate) fn with_function_specialization(
         mut self,
         owner: ExprId,

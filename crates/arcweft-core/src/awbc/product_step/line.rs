@@ -1241,15 +1241,16 @@ impl super::AwbcProductStepExecutor {
             let mut scoped_unwind_observation = None;
             let mut scoped_failure = None;
             let mut activation_effects = Vec::new();
-            let mut drop_policy = None;
+            let mut drops = crate::line_task::RuntimeHandleDropAuthorization::default();
             let collected = (|| -> Result<(), ProductStepError> {
                 for observation in step.observations {
                     match observation {
                         VmObservation::Instruction { .. } => {}
                         VmObservation::Drop { policy } => {
-                            if drop_policy.replace(policy).is_some() {
-                                return Err(LineRuntimeError::InvalidActivationOperation.into());
-                            }
+                            drops.set_boundary(Some(policy))?;
+                        }
+                        VmObservation::DiscardedValue(value) => {
+                            drops.authorize_displaced(&value)?
                         }
                         VmObservation::LineOperation { .. }
                         | VmObservation::DialogueResult { .. } => {
@@ -1437,7 +1438,7 @@ impl super::AwbcProductStepExecutor {
                     effect_frame,
                     activation_effects.as_slice(),
                 )),
-                drop_policy,
+                &drops,
                 &deferred_tokens,
                 &scoped_reconciled_tokens,
             );
@@ -2995,7 +2996,7 @@ impl super::AwbcProductStepExecutor {
                     &before_owners,
                     fiber,
                     None,
-                    None,
+                    &Default::default(),
                     &BTreeSet::new(),
                     &handled,
                 )?;
@@ -3027,7 +3028,9 @@ impl super::AwbcProductStepExecutor {
                 &before_owners,
                 fiber,
                 None,
-                Some(crate::effect::RuntimeDropPolicy::Default),
+                &crate::line_task::RuntimeHandleDropAuthorization::at_boundary(Some(
+                    crate::effect::RuntimeDropPolicy::Default,
+                )),
                 &BTreeSet::new(),
                 &BTreeSet::new(),
             )?;
@@ -3106,7 +3109,7 @@ impl super::AwbcProductStepExecutor {
                 &before_owners,
                 fiber,
                 None,
-                None,
+                &Default::default(),
                 &BTreeSet::new(),
                 &handled,
             )?;
@@ -3131,7 +3134,9 @@ impl super::AwbcProductStepExecutor {
             &before_owners,
             fiber,
             None,
-            Some(crate::effect::RuntimeDropPolicy::Default),
+            &crate::line_task::RuntimeHandleDropAuthorization::at_boundary(Some(
+                crate::effect::RuntimeDropPolicy::Default,
+            )),
             &BTreeSet::new(),
             &BTreeSet::new(),
         )?;
@@ -3238,7 +3243,7 @@ impl super::AwbcProductStepExecutor {
         before: &BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>,
         fiber: &FiberState,
         observation: Option<&VmObservation>,
-        drop_policy: Option<crate::effect::RuntimeDropPolicy>,
+        drops: &crate::line_task::RuntimeHandleDropAuthorization,
         deferred_tokens: &BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
         scoped_reconciled_tokens: &BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
     ) -> Result<(), ProductStepError> {
@@ -3249,7 +3254,7 @@ impl super::AwbcProductStepExecutor {
             fiber,
             observation,
             None,
-            drop_policy,
+            drops,
             deferred_tokens,
             scoped_reconciled_tokens,
         )?;
@@ -3279,7 +3284,7 @@ impl super::AwbcProductStepExecutor {
             crate::runtime_id::RuntimeFrameInstanceId,
             &[VmObservation],
         )>,
-        drop_policy: Option<crate::effect::RuntimeDropPolicy>,
+        drops: &crate::line_task::RuntimeHandleDropAuthorization,
         deferred_tokens: &BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
         scoped_reconciled_tokens: &BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
     ) -> Result<PreparedActivationFiberReconciliation, ProductStepError> {
@@ -3365,6 +3370,10 @@ impl super::AwbcProductStepExecutor {
                 }
             }
         }
+        drops.validate_removed(
+            |token| before.contains_key(token),
+            |token| after.contains_key(token),
+        )?;
         let mut ledger = line.ledger().clone();
         let mut commands = RuntimeCommandQueue::new(activation.clone(), line.command_sequence());
         let mut emitted_command = false;
@@ -3386,7 +3395,9 @@ impl super::AwbcProductStepExecutor {
                         ledger.transfer(&token, source, RuntimeHandleOwnerSlot::LineScope)?;
                         continue;
                     }
-                    let policy = drop_policy.ok_or(LineRuntimeError::UnjournaledHandleDrop)?;
+                    let policy = drops
+                        .policy_for(&token)
+                        .ok_or(LineRuntimeError::UnjournaledHandleDrop)?;
                     let before_sequence = commands.next_sequence();
                     ledger.drop_owned_with_policy(&token, source, policy, &mut commands)?;
                     emitted_command |= commands.next_sequence() != before_sequence;

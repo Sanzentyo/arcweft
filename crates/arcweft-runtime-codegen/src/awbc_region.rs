@@ -192,7 +192,7 @@ fn opcode_eligible(opcode: AwbcOpcode, options: &AwbcRegionLowerOptions) -> bool
         AwbcOpcode::MakeCallable
         | AwbcOpcode::SpecializeCallable
         | AwbcOpcode::MakeReductionUnchanged
-        | AwbcOpcode::AssignRecordField
+        | AwbcOpcode::Assign
         | AwbcOpcode::CallTraitMethod
         | AwbcOpcode::ApplyGroup
         | AwbcOpcode::ExecuteLineOperation

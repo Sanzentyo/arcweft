@@ -352,6 +352,9 @@ impl<'catalog, 'edges> SemanticCoordinateIndex<'catalog, 'edges> {
                 self.expression(owner)?,
                 super::CheckedLocalInputRole::Expression,
             ),
+            CheckedLocalUseSite::Place(owner) => {
+                (self.expression(owner)?, super::CheckedLocalInputRole::Place)
+            }
             CheckedLocalUseSite::RecordField {
                 owner,
                 source_ordinal,

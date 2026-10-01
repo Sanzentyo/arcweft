@@ -425,6 +425,40 @@ impl Analyzer<'_, '_, '_> {
         let target_expression = module
             .resolve_expr(target)
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        let target_fact = self
+            .facts
+            .expressions()
+            .get(&target)
+            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: target })?;
+        if let Some(CheckedExpressionResolution::Value(CheckedValueResolution::Local(local))) =
+            target_fact.checked_resolution()
+        {
+            if !matches!(target_expression.kind(), HirExprKind::Path(_))
+                || !module
+                    .resolve_local(*local)
+                    .is_ok_and(|local| local.is_mutable_binding())
+            {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+            let target_type = target_fact
+                .value_type()
+                .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: target })?;
+            if self
+                .facts
+                .expressions()
+                .get(&value)
+                .and_then(PreparedExpressionFact::value_type)
+                != Some(target_type)
+                || self.facts.locals().get(local) != Some(target_type)
+            {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+            return Ok(PreparedAssignmentStatement::new(
+                target,
+                value,
+                target_type.clone(),
+            ));
+        }
         let HirExprKind::Select(select) = target_expression.kind() else {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         };
@@ -492,8 +526,6 @@ impl Analyzer<'_, '_, '_> {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
         Ok(PreparedAssignmentStatement::new(
-            *local,
-            nominal,
             target,
             value,
             target_type.clone(),

@@ -169,9 +169,7 @@ impl Engine {
             | RuntimeExprKind::Field { .. }
             | RuntimeExprKind::ProjectTuple { .. }
             | RuntimeExprKind::ProjectRecord { .. }
-            | RuntimeExprKind::AssignNominalField { .. } => {
-                self.evaluate_data_expr(expr, pure_backend)
-            }
+            | RuntimeExprKind::Assign { .. } => self.evaluate_data_expr(expr, pure_backend),
             RuntimeExprKind::DialogueContent {
                 template,
                 values,
@@ -345,12 +343,9 @@ impl Engine {
             RuntimeExprKind::ProjectRecord { target, ordinal } => {
                 self.evaluate_project_record_expr(target, *ordinal, pure_backend)
             }
-            RuntimeExprKind::AssignNominalField {
-                base,
-                field,
-                expr,
-                body,
-            } => self.evaluate_assign_field_expr(*base, *field, expr, body, pure_backend),
+            RuntimeExprKind::Assign { place, expr, body } => {
+                self.evaluate_assign_expr(*place, expr, body, pure_backend)
+            }
             _ => unreachable!("data expression helper received non-data expression"),
         }
     }
@@ -1134,10 +1129,9 @@ impl Engine {
         result
     }
 
-    fn evaluate_assign_field_expr(
+    fn evaluate_assign_expr(
         &mut self,
-        base: RuntimeLocalDeclarationId,
-        field: crate::value::RuntimeRecordFieldId,
+        place: crate::value::RuntimeMutablePlace,
         expr: &RuntimeExpr,
         body: &RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,
@@ -1145,11 +1139,8 @@ impl Engine {
         let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
         self.fiber
             .env
-            .set_record_field(base, field, value)
-            .map_err(|target| RuntimeEvalError::InvalidFieldAssignment {
-                field: field.zero_based().to_string(),
-                value: runtime_value_label(&target),
-            })?;
+            .assign_place(place, value)
+            .map_err(|error| error.into_parts().0)?;
         self.evaluate_expr_with_backend(body, pure_backend)
     }
 

@@ -1128,7 +1128,7 @@ impl FinalSemanticAnalysisDraftParts {
 }
 
 impl FinalSemanticAnalysisPostEntryDraft {
-    pub(crate) fn seal(
+    pub(super) fn seal(
         self,
         project: HirAnalysisProjectView<'_>,
         symbols: &ProjectSymbolTable,

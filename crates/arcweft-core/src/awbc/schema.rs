@@ -1624,7 +1624,7 @@ pub enum AwbcOpcode {
     ProjectTuple = 0x0e,
     ProjectRecord = 0x0f,
     ProjectField = 0x10,
-    AssignRecordField = 0x11,
+    Assign = 0x11,
     TestPattern = 0x12,
     Unary = 0x13,
     Binary = 0x14,
@@ -1699,7 +1699,7 @@ impl AwbcOpcode {
         Self::ProjectTuple,
         Self::ProjectRecord,
         Self::ProjectField,
-        Self::AssignRecordField,
+        Self::Assign,
         Self::TestPattern,
         Self::Unary,
         Self::Binary,
@@ -1806,7 +1806,7 @@ impl AwbcOpcode {
             | Self::ProjectTuple
             | Self::ProjectRecord
             | Self::ProjectField
-            | Self::AssignRecordField
+            | Self::Assign
             | Self::TestPattern
             | Self::Unary
             | Self::Binary
@@ -2106,9 +2106,8 @@ pub enum AwbcInstruction {
         register: AwbcRegisterId,
         policy: AwbcDropPolicy,
     },
-    AssignRecordField {
-        target: AwbcRegisterId,
-        field: u32,
+    Assign {
+        place: AwbcMutablePlace,
         value: AwbcRegisterId,
     },
     CallTraitMethod {
@@ -2233,7 +2232,7 @@ impl AwbcInstruction {
             Self::ExecuteLineOperation { .. } => AwbcOpcode::ExecuteLineOperation,
             Self::CommitDialogueResult { .. } => AwbcOpcode::CommitDialogueResult,
             Self::Drop { .. } => AwbcOpcode::Drop,
-            Self::AssignRecordField { .. } => AwbcOpcode::AssignRecordField,
+            Self::Assign { .. } => AwbcOpcode::Assign,
             Self::CallTraitMethod { .. } => AwbcOpcode::CallTraitMethod,
             Self::RegisterCleanup { .. } => AwbcOpcode::RegisterCleanup,
             Self::CancelCleanup { .. } => AwbcOpcode::CancelCleanup,

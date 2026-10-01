@@ -1238,22 +1238,9 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             } => {
                 self.lower_let_else(frame, body, pattern, expr, else_ops, path);
             }
-            FlowOp::AssignNominalField { base, field, value } => {
-                let Some(target) = frame.register_for_local(*base) else {
-                    self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                        path,
-                        format!("field assignment base `{base}` is not in the AWBC frame"),
-                    ));
-                    return;
-                };
-                let value =
-                    AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(value);
-                self.inventory
-                    .push_instruction(AwbcInstruction::AssignRecordField {
-                        target,
-                        field: field.zero_based(),
-                        value,
-                    });
+            FlowOp::Assign { place, value } => {
+                AwbcExprLowerer::new(self.inventory, frame, path, self.plan)
+                    .lower_assignment(place, value);
             }
             FlowOp::LineOperation { binding, operation } => {
                 self.lower_line_operation(frame, binding.as_ref(), operation, path);
@@ -3889,7 +3876,7 @@ fn collect_flow_dependencies(
             FlowOp::Bind(_)
             | FlowOp::Let { .. }
             | FlowOp::CompleteFormatOperand { .. }
-            | FlowOp::AssignNominalField { .. }
+            | FlowOp::Assign { .. }
             | FlowOp::LineOperation { .. }
             | FlowOp::CommitDialogueResult { .. }
             | FlowOp::Dialogue { .. }

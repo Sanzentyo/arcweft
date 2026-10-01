@@ -12,12 +12,14 @@ use thiserror::Error;
 
 mod activation;
 mod defer;
+mod drop_authorization;
 mod handle;
 #[cfg(test)]
 mod result_selection_tests;
 
 pub use defer::{RuntimeDeferOutcomeFilter, RuntimeLineDeferredRegistration};
 pub(crate) use defer::{RuntimeDeferUnwindStep, RuntimeScopedDeferDecision};
+pub(crate) use drop_authorization::RuntimeHandleDropAuthorization;
 
 pub(crate) use activation::{
     PreparedRuntimeParentFiberReconciliation, RuntimeDialogueAbandonedCommitProof,

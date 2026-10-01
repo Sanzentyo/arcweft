@@ -2254,8 +2254,12 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         tag: &LineTaskWorkTag,
         before: &std::collections::BTreeSet<RuntimeLineHandleToken>,
         after: &std::collections::BTreeSet<RuntimeLineHandleToken>,
-        drop_policy: Option<RuntimeDropPolicy>,
+        drops: &super::RuntimeHandleDropAuthorization,
     ) -> Result<(), LineRuntimeError> {
+        drops.validate_removed(
+            |token| before.contains(token),
+            |token| after.contains(token),
+        )?;
         if after.iter().any(|token| !before.contains(token)) {
             return Err(LineRuntimeError::UnexpectedChildHandleOccurrence);
         }
@@ -2272,7 +2276,9 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                 return Err(LineRuntimeError::WrongOwner);
             }
             if !after.contains(token) {
-                let policy = drop_policy.ok_or(LineRuntimeError::UnjournaledHandleDrop)?;
+                let policy = drops
+                    .policy_for(token)
+                    .ok_or(LineRuntimeError::UnjournaledHandleDrop)?;
                 ledger.drop_owned_with_policy(token, &owner, policy, &mut queue)?;
             }
         }
@@ -3515,7 +3521,7 @@ impl RuntimePublishedDialogueHandles {
         execution: crate::runtime_id::ExecutionInstanceId,
         before: &BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>,
         after: &BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>,
-        drop_policy: Option<RuntimeDropPolicy>,
+        drops: &super::RuntimeHandleDropAuthorization,
     ) -> Result<RuntimeHandleDropReceipt, LineRuntimeError> {
         if after.keys().any(|token| !before.contains_key(token)) {
             return Err(LineRuntimeError::UnexpectedParentHandleOccurrence);
@@ -3550,7 +3556,9 @@ impl RuntimePublishedDialogueHandles {
                     RuntimeHandleOwnerSlot::ParentFiber(*destination),
                 )?,
                 None => {
-                    let policy = drop_policy.ok_or(LineRuntimeError::UnjournaledHandleDrop)?;
+                    let policy = drops
+                        .policy_for(token)
+                        .ok_or(LineRuntimeError::UnjournaledHandleDrop)?;
                     candidate
                         .ledger
                         .drop_owned_with_policy(token, &expected, policy, &mut queue)?;

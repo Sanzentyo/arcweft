@@ -1166,9 +1166,8 @@ pub enum FlowOp {
         expr: RuntimeExpr,
         else_ops: Vec<FlowOp>,
     },
-    AssignNominalField {
-        base: RuntimeLocalDeclarationId,
-        field: crate::value::RuntimeRecordFieldId,
+    Assign {
+        place: crate::value::RuntimeMutablePlace,
         value: RuntimeExpr,
     },
     LineOperation {

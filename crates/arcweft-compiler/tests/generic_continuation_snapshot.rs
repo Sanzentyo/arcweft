@@ -33,6 +33,88 @@ flow main() -> bool {
 "#;
 
 #[test]
+fn awfb_session_save_preserves_a_live_local_before_nested_replacement() {
+    use arcweft_core::awbc::schema::{AwbcInstruction, AwbcMutablePlace};
+
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> i64 {
+    let mut items = Vec<Content>::with_capacity(0usize)
+    let ignored = { let marker = 0i64; items = Vec<Content>::with_capacity(0usize); () }
+    match items.pop() {
+        .None => return 42i64
+        .Some(_) => return 0i64
+    }
+}
+"#;
+    let bytes = awfb_bytes_from_source(source, [0x6d; 32]);
+    let mut session = session_from_bytes(&bytes);
+    let mut reached = false;
+    for _ in 0..2048 {
+        let snapshot = session.snapshot_session().unwrap();
+        let fiber = &snapshot.executor.state.fiber;
+        let RuntimeProgramOwner::Awbc(program) = session.program_owner() else {
+            panic!("AWFB pins an AWBC program");
+        };
+        let block = &program.blocks[fiber.cursor.block.index()];
+        if fiber.cursor.instruction_offset < block.instructions.len {
+            let instruction = &program.instructions
+                [(block.instructions.start + fiber.cursor.instruction_offset) as usize];
+            if let AwbcInstruction::Assign {
+                place: AwbcMutablePlace::Local(target),
+                value,
+            } = instruction
+            {
+                let frame = fiber.frames.last().unwrap();
+                assert!(frame.registers[target.index()].is_some());
+                assert!(frame.registers[value.index()].is_some());
+                let save = session.export_session_save_bytes().unwrap();
+                let mut restored = session_from_bytes(&bytes);
+                restored
+                    .import_session_save_bytes(&save, &Default::default())
+                    .unwrap();
+                assert_eq!(restored.snapshot_session().unwrap(), snapshot);
+                session = restored;
+                reached = true;
+                break;
+            }
+        }
+        let step = session.step_with_clock(
+            RuntimeClockStep::from_millis(1, 16).unwrap(),
+            BundleStepInput::default(),
+        );
+        assert!(step.diagnostics.is_empty(), "{:?}", step.diagnostics);
+        assert!(
+            !session.is_finished(),
+            "replacement boundary must be reached"
+        );
+    }
+    assert!(reached, "save occurs before replacing the live outer local");
+    for _ in 0..2048 {
+        if session.is_finished() {
+            break;
+        }
+        let step = session.step_with_clock(
+            RuntimeClockStep::from_millis(1, 16).unwrap(),
+            BundleStepInput::default(),
+        );
+        assert!(step.diagnostics.is_empty(), "{:?}", step.diagnostics);
+    }
+    assert!(session.is_finished());
+    assert_eq!(
+        session
+            .snapshot_session()
+            .unwrap()
+            .executor
+            .state
+            .fiber
+            .return_summary
+            .as_deref(),
+        Some("42")
+    );
+}
+
+#[test]
 fn native_generic_continuation_keeps_its_scheme_origin_position_and_prefix() {
     let compiled = compile_source(SOURCE).expect("generic continuation source compiles");
     let [flow] = compiled.plan.flows() else {
@@ -439,7 +521,11 @@ fn lowered_program() -> AwbcProgram {
 }
 
 fn awfb_bytes(artifact_fingerprint: [u8; 32]) -> Vec<u8> {
-    let compiled = compile_source(SOURCE).expect("generic continuation source compiles");
+    awfb_bytes_from_source(SOURCE, artifact_fingerprint)
+}
+
+fn awfb_bytes_from_source(source: &str, artifact_fingerprint: [u8; 32]) -> Vec<u8> {
+    let compiled = compile_source(source).expect("snapshot fixture source compiles");
     let character_dialogue_generation = compiled
         .character_dialogue_generation
         .as_ref()

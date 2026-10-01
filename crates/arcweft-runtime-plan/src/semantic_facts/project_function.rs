@@ -20,8 +20,8 @@ use arcweft_lang_sema::callable::{
 use arcweft_lang_sema::final_analysis::{
     CheckedExecutableRuntimeExpressionFactFamily, CheckedExecutableRuntimeFactPartition,
     CheckedExecutableRuntimePatternFactFamily, CheckedExecutableRuntimeStatementFactFamily,
-    CheckedLocalUse, CheckedLocalUseCatalog, CheckedLocalUseInstanceCatalog, CheckedLocalUseSite,
-    CheckedSyntheticUse,
+    CheckedLocalUseCatalog, CheckedLocalUseInstanceCatalog, CheckedLocalUseSite,
+    CheckedLocalValueTransfer, CheckedSyntheticUse,
 };
 use thiserror::Error;
 
@@ -1430,6 +1430,17 @@ pub enum RuntimeClosedLocalUseCatalog {
 }
 
 impl RuntimeClosedLocalUseCatalog {
+    pub fn place_access_at(
+        &self,
+        source: ExprId,
+    ) -> Option<&arcweft_lang_sema::final_analysis::CheckedLocalPlaceAccess> {
+        let site = CheckedLocalUseSite::Place(source);
+        match self {
+            Self::Global(catalog) => catalog.access_at(site),
+            Self::Instance(catalog) => catalog.access_at(site),
+        }?
+        .place_access()
+    }
     pub fn generation(&self) -> &Arc<arcweft_lang_hir::project::AcceptedHirProjectGeneration> {
         match self {
             Self::Global(catalog) => catalog.generation(),
@@ -1437,10 +1448,13 @@ impl RuntimeClosedLocalUseCatalog {
         }
     }
 
-    pub fn use_at(&self, site: CheckedLocalUseSite) -> Option<CheckedLocalUse> {
+    pub fn value_transfer_at(
+        &self,
+        site: CheckedLocalUseSite,
+    ) -> Option<CheckedLocalValueTransfer> {
         match self {
-            Self::Global(catalog) => catalog.use_at(site),
-            Self::Instance(catalog) => catalog.use_at(site),
+            Self::Global(catalog) => catalog.value_transfer_at(site),
+            Self::Instance(catalog) => catalog.value_transfer_at(site),
         }
     }
 
@@ -1487,7 +1501,7 @@ impl RuntimeClosedLocalUseCatalog {
         }
     }
 
-    pub fn captures_at(&self, owner: ExprId) -> Vec<CheckedLocalUse> {
+    pub fn captures_at(&self, owner: ExprId) -> Vec<CheckedLocalValueTransfer> {
         match self {
             Self::Global(catalog) => catalog.captures_at(owner).collect(),
             Self::Instance(catalog) => catalog.captures_at(owner).collect(),

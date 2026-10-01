@@ -323,6 +323,15 @@ pub enum CheckedCapacityOperation {
     Shrink,
 }
 
+impl CheckedCapacityOperation {
+    /// These operations update the supplied receiver rather than returning a
+    /// transformed value. Source availability and place lowering share this
+    /// selected operation contract.
+    pub const fn requires_place_receiver(self) -> bool {
+        matches!(self, Self::Pop | Self::PopFront | Self::Push)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedCapacityMethodIdentity {
     operation: CheckedCapacityOperation,
@@ -345,18 +354,7 @@ impl CheckedCapacityMethodIdentity {
         if !id.is_supported_shape() {
             return Err(CallConstraintInvariant::PreparedBaseMismatch);
         }
-        let operation = match id.method().as_str() {
-            "with_capacity" => CheckedCapacityOperation::WithCapacity,
-            "trim" => CheckedCapacityOperation::Trim,
-            "to_string" => CheckedCapacityOperation::ToString,
-            "pop" => CheckedCapacityOperation::Pop,
-            "pop_front" => CheckedCapacityOperation::PopFront,
-            "push" => CheckedCapacityOperation::Push,
-            "reserve" => CheckedCapacityOperation::Reserve,
-            "shrink_to" => CheckedCapacityOperation::ShrinkTo,
-            "shrink" => CheckedCapacityOperation::Shrink,
-            _ => return Err(CallConstraintInvariant::PreparedBaseMismatch),
-        };
+        let operation = id.operation();
         let arity = u16::try_from(id.arity())
             .map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?;
         Ok(Self {
@@ -3384,7 +3382,7 @@ fn validate_receiver(
         .ok_or(CallConstraintInvariant::PreparedBaseMismatch)
 }
 
-fn is_contextual_capability_type(ty: &TypeKind) -> bool {
+pub(crate) fn is_contextual_capability_type(ty: &TypeKind) -> bool {
     matches!(ty, TypeKind::LineContext | TypeKind::StageApi(_))
 }
 

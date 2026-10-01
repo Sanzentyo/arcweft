@@ -857,26 +857,14 @@ impl RuntimePlanBuilder {
                     })?,
                 }
             }
-            RuntimeExprSeedKind::AssignNominalField {
-                base,
-                owner,
-                field,
-                expr,
-                body,
-            } => {
-                let (base, base_ty) = base
-                    .resolve(&self.issuer)
-                    .ok_or(RuntimePlanBuildError::ForeignLocalSeed)?;
-                let owner = self.resolve_seed_type("assigned record owner", owner)?;
-                require_same("assigned record target", owner, base_ty)?;
-                let (field, field_ty) = self.resolve_record_field(owner, field)?;
+            RuntimeExprSeedKind::Assign { place, expr, body } => {
+                let (place, place_ty) = self.lower_mutable_place(place, "assignment place")?;
                 let expr = self.lower_expression(*expr)?;
                 let body = self.lower_expression(*body)?;
-                require_same("assigned record field", field_ty, expr.ty())?;
+                require_same("assigned place", place_ty, expr.ty())?;
                 require_same("assignment body", ty, body.ty())?;
-                RuntimeExprKind::AssignNominalField {
-                    base,
-                    field,
+                RuntimeExprKind::Assign {
+                    place,
                     expr: Box::new(expr),
                     body: Box::new(body),
                 }
@@ -1608,12 +1596,12 @@ impl RuntimePlanBuilder {
         }
     }
 
-    fn lower_vec_place(
+    fn lower_mutable_place(
         &self,
         place: RuntimeMutablePlaceSeed,
         context: &'static str,
     ) -> Result<(RuntimeMutablePlace, RuntimePlanTypeId), RuntimePlanBuildError> {
-        let (place, sequence_type) = match place {
+        let (place, place_type) = match place {
             RuntimeMutablePlaceSeed::Local(local) => {
                 let (local, sequence_type) = self.resolve_local(&local)?;
                 (RuntimeMutablePlace::Local(local), sequence_type)
@@ -1630,6 +1618,15 @@ impl RuntimePlanBuilder {
                 )
             }
         };
+        Ok((place, place_type))
+    }
+
+    fn lower_vec_place(
+        &self,
+        place: RuntimeMutablePlaceSeed,
+        context: &'static str,
+    ) -> Result<(RuntimeMutablePlace, RuntimePlanTypeId), RuntimePlanBuildError> {
+        let (place, sequence_type) = self.lower_mutable_place(place, context)?;
         let item = match self.projection(sequence_type)? {
             RuntimePlanTypeProjection::Sequence {
                 kind: crate::plan::RuntimePlanSequenceKind::Vec,
@@ -2780,11 +2777,9 @@ impl RuntimePlanBuilder {
                 }
                 Ok(())
             }
-            RuntimeExprKind::AssignNominalField {
-                base, expr, body, ..
-            } => {
-                require_local_in_scope(*base, scope)?;
-                used.insert(*base);
+            RuntimeExprKind::Assign { place, expr, body } => {
+                require_local_in_scope(place.local(), scope)?;
+                used.insert(place.local());
                 self.validate_expression_locals(expr, scope, used)?;
                 self.validate_expression_locals(body, scope, used)
             }
@@ -3257,21 +3252,11 @@ impl RuntimePlanBuilder {
                     else_ops: self.lower_flow_ops(else_ops)?,
                 }
             }
-            RuntimeFlowOpSeed::AssignNominalField {
-                base,
-                owner,
-                field,
-                value,
-            } => {
-                let (base, base_ty) = base
-                    .resolve(&self.issuer)
-                    .ok_or(RuntimePlanBuildError::ForeignLocalSeed)?;
-                let owner = self.resolve_seed_type("flow assignment owner", owner)?;
-                require_same("flow assignment base", owner, base_ty)?;
-                let (field, field_ty) = self.resolve_record_field(owner, field)?;
+            RuntimeFlowOpSeed::Assign { place, value } => {
+                let (place, place_ty) = self.lower_mutable_place(place, "flow assignment place")?;
                 let value = self.lower_expression(value)?;
-                require_same("flow assignment value", field_ty, value.ty())?;
-                FlowOp::AssignNominalField { base, field, value }
+                require_same("flow assignment value", place_ty, value.ty())?;
+                FlowOp::Assign { place, value }
             }
             RuntimeFlowOpSeed::Dialogue {
                 target,
@@ -4818,9 +4803,9 @@ impl RuntimePlanBuilder {
                     )?;
                     *scope = extend_scope(scope, pattern_binding_locals(pattern))?;
                 }
-                FlowOp::AssignNominalField { base, value, .. } => {
-                    require_local_in_scope(*base, scope)?;
-                    used.insert(*base);
+                FlowOp::Assign { place, value } => {
+                    require_local_in_scope(place.local(), scope)?;
+                    used.insert(place.local());
                     self.validate_expression_locals(value, scope, used)?;
                 }
                 FlowOp::LineOperation { binding, operation } => {

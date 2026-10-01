@@ -419,10 +419,8 @@ pub enum RuntimeFlowOpSeed {
         expr: RuntimeExprSeed,
         else_ops: Vec<Self>,
     },
-    AssignNominalField {
-        base: RuntimeLocalSeedId,
-        owner: RuntimeSemanticTypeId,
-        field: RuntimeRecordFieldSeedId,
+    Assign {
+        place: RuntimeMutablePlaceSeed,
         value: RuntimeExprSeed,
     },
     Dialogue {
@@ -773,8 +771,8 @@ fn collect_binding_or_host_free_locals(
             collect_flow_ops_free_locals(else_ops, bound, locals);
             pattern.collect_binding_locals(bound);
         }
-        RuntimeFlowOpSeed::AssignNominalField { base, value, .. } => {
-            push_free_local(base, bound, locals);
+        RuntimeFlowOpSeed::Assign { place, value } => {
+            push_free_local(place.local(), bound, locals);
             value.collect_free_locals(bound, locals);
         }
         RuntimeFlowOpSeed::Dialogue { target, result, .. } => {
@@ -984,7 +982,7 @@ fn collect_terminal_or_effect_free_locals(
         RuntimeFlowOpSeed::Let { .. }
         | RuntimeFlowOpSeed::FormatOperandAttempt { .. }
         | RuntimeFlowOpSeed::LetElse { .. }
-        | RuntimeFlowOpSeed::AssignNominalField { .. }
+        | RuntimeFlowOpSeed::Assign { .. }
         | RuntimeFlowOpSeed::Dialogue { .. }
         | RuntimeFlowOpSeed::LineOperation { .. }
         | RuntimeFlowOpSeed::Await { .. }
@@ -1913,6 +1911,14 @@ pub enum RuntimeMutablePlaceSeed {
     },
 }
 
+impl RuntimeMutablePlaceSeed {
+    pub const fn local(&self) -> &RuntimeLocalSeedId {
+        match self {
+            Self::Local(local) | Self::NominalField { base: local, .. } => local,
+        }
+    }
+}
+
 /// Checked field coordinate before plan-local owner/type rewriting.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeFieldProjectionSeed {
@@ -2182,10 +2188,8 @@ pub enum RuntimeExprSeedKind {
         target: Box<RuntimeExprSeed>,
         field: RuntimeRecordFieldSeedId,
     },
-    AssignNominalField {
-        base: RuntimeLocalSeedId,
-        owner: RuntimeSemanticTypeId,
-        field: RuntimeRecordFieldSeedId,
+    Assign {
+        place: RuntimeMutablePlaceSeed,
         expr: Box<RuntimeExprSeed>,
         body: Box<RuntimeExprSeed>,
     },
@@ -2605,10 +2609,8 @@ impl RuntimeExprSeed {
             | RuntimeExprSeedKind::ProjectRecord { target, .. } => {
                 target.collect_free_locals(bound, locals);
             }
-            RuntimeExprSeedKind::AssignNominalField {
-                base, expr, body, ..
-            } => {
-                push_free_local(base, bound, locals);
+            RuntimeExprSeedKind::Assign { place, expr, body } => {
+                push_free_local(place.local(), bound, locals);
                 expr.collect_free_locals(bound, locals);
                 body.collect_free_locals(bound, locals);
             }

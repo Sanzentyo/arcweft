@@ -553,6 +553,7 @@ pub struct CheckedLocalInputCoordinate {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum CheckedLocalInputRole {
     Expression,
+    Place,
     RecordField {
         source_ordinal: u32,
         accepted_field: CheckedRecordFieldSemanticId,
@@ -570,6 +571,7 @@ impl CheckedLocalInputCoordinate {
         let mut bytes = self.owner.canonical_bytes()?;
         match &self.role {
             CheckedLocalInputRole::Expression => bytes.push(0),
+            CheckedLocalInputRole::Place => bytes.push(4),
             CheckedLocalInputRole::RecordField {
                 source_ordinal,
                 accepted_field,

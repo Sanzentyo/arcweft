@@ -31,18 +31,34 @@ use crate::{
     effects::{EffectId, EffectSet},
 };
 
+use super::execution_regions::CheckedExecutionOperation;
 use super::{
     CheckedExpression, CheckedStatement, CheckedStatementPayload, FinalSemanticAnalysisControl,
     FinalSemanticAnalysisError, PreparedExpressionFact, PreparedStatementPayload,
     match_edges::CheckedSelectedExpressionGraph,
 };
 
+/// Selected call execution row used by the existing effect/eager fold. A
+/// required place receiver is authenticated as addressable by the expression
+/// fact before it becomes a Place edge; computed operands remain values.
+#[derive(Clone, Debug)]
+pub(crate) struct PreparedCallExecutionRow {
+    pub(crate) effects: Option<EffectRow>,
+    pub(crate) receiver: Option<PreparedCallReceiverEvaluation>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum PreparedCallReceiverEvaluation {
+    Value(ExprId),
+    Place(ExprId),
+}
+
 /// One typed execution fold before final project-call rows are closed.
 #[derive(Clone, Debug)]
 struct PreparedExecutionEffectRow {
     effects: EffectRow,
-    source: Option<HirBodyChild>,
-    children: BTreeSet<HirBodyChild>,
+    source: Option<CheckedExecutionOperation>,
+    children: BTreeSet<CheckedExecutionOperation>,
     expressions: BTreeSet<ExprId>,
     statements: BTreeSet<StmtId>,
     direct_suspension: bool,
@@ -75,14 +91,14 @@ fn body_projection_has_selected_owner(
 /// edges retain shared subtrees without storing each transitive inventory.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedExecutableSuspensionRow {
-    children: Box<[HirBodyChild]>,
+    children: Box<[CheckedExecutionOperation]>,
     suspension: super::CheckedSuspensionRole,
     control: super::CheckedExecutableControlRole,
 }
 
 impl PreparedExecutableSuspensionRow {
     pub(crate) fn new(
-        children: Box<[HirBodyChild]>,
+        children: Box<[CheckedExecutionOperation]>,
         suspension: super::CheckedSuspensionRole,
         control: super::CheckedExecutableControlRole,
     ) -> Self {
@@ -93,7 +109,7 @@ impl PreparedExecutableSuspensionRow {
         }
     }
 
-    pub(crate) fn children(&self) -> &[HirBodyChild] {
+    pub(crate) fn children(&self) -> &[CheckedExecutionOperation] {
         &self.children
     }
 
@@ -107,6 +123,13 @@ impl PreparedExecutableSuspensionRow {
 }
 
 impl PreparedExecutionEffectRow {
+    fn place(owner: ExprId) -> Self {
+        Self {
+            source: Some(CheckedExecutionOperation::Place(owner)),
+            expressions: BTreeSet::from([owner]),
+            ..Self::default()
+        }
+    }
     fn union_with(
         &mut self,
         other: &Self,
@@ -195,7 +218,14 @@ pub(crate) struct PreparedExecutionEffectCatalog {
 impl PreparedExecutionEffectCatalog {
     pub(crate) fn expression_execution_rows(
         &self,
-    ) -> impl Iterator<Item = (ExprId, bool, &BTreeSet<ExprId>, &BTreeSet<HirBodyChild>)> + '_ {
+    ) -> impl Iterator<
+        Item = (
+            ExprId,
+            bool,
+            &BTreeSet<ExprId>,
+            &BTreeSet<CheckedExecutionOperation>,
+        ),
+    > + '_ {
         self.expression_rows.iter().map(|(owner, row)| {
             (
                 *owner,
@@ -206,7 +236,9 @@ impl PreparedExecutionEffectCatalog {
         })
     }
 
-    pub(crate) fn statement_execution_edges(&self) -> BTreeMap<StmtId, Box<[HirBodyChild]>> {
+    pub(crate) fn statement_execution_edges(
+        &self,
+    ) -> BTreeMap<StmtId, Box<[CheckedExecutionOperation]>> {
         self.statement_rows
             .iter()
             .map(|(&owner, row)| (owner, row.children.iter().copied().collect()))
@@ -292,7 +324,7 @@ pub(crate) struct PreparedExecutionEffectInput<'a> {
     pub(crate) modules: &'a BTreeMap<HirModuleId, &'a HirModule>,
     pub(crate) topology: &'a HirProjectEvaluationTopology,
     pub(crate) selected: &'a CheckedSelectedExpressionGraph,
-    pub(crate) call_effects: &'a BTreeMap<ExprId, EffectRow>,
+    pub(crate) call_effects: &'a BTreeMap<ExprId, PreparedCallExecutionRow>,
     pub(crate) expressions: &'a [(ExprId, PreparedExpressionFact)],
     pub(crate) statements: &'a [(StmtId, PreparedStatementPayload)],
     pub(crate) control: FinalSemanticAnalysisControl<'a>,
@@ -311,7 +343,7 @@ pub(crate) struct PreparedDeclarationExecutionEffectInput<'a> {
     pub(crate) modules: &'a BTreeMap<HirModuleId, &'a HirModule>,
     pub(crate) topology: &'a HirProjectEvaluationTopology,
     pub(crate) selected: &'a arcweft_lang_hir::project::HirSelectedDeclarationExpressionGraph,
-    pub(crate) call_effects: &'a BTreeMap<ExprId, EffectRow>,
+    pub(crate) call_effects: &'a BTreeMap<ExprId, PreparedCallExecutionRow>,
     pub(crate) expressions: &'a [(ExprId, PreparedExpressionFact)],
     pub(crate) statements: &'a [(StmtId, PreparedStatementPayload)],
     pub(crate) control: FinalSemanticAnalysisControl<'a>,
@@ -382,7 +414,7 @@ struct PreparedExecutionEffectSealer<'a> {
     modules: &'a BTreeMap<HirModuleId, &'a HirModule>,
     topology: &'a HirProjectEvaluationTopology,
     selected: PreparedEffectSelection<'a>,
-    call_effects: &'a BTreeMap<ExprId, EffectRow>,
+    call_effects: &'a BTreeMap<ExprId, PreparedCallExecutionRow>,
     expression_facts: BTreeMap<ExprId, &'a PreparedExpressionFact>,
     statement_facts: BTreeMap<StmtId, &'a PreparedStatementPayload>,
     expression_rows: BTreeMap<ExprId, PreparedExecutionEffectRow>,
@@ -413,7 +445,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
         modules: &'a BTreeMap<HirModuleId, &'a HirModule>,
         topology: &'a HirProjectEvaluationTopology,
         selection: PreparedEffectSelection<'a>,
-        call_effects: &'a BTreeMap<ExprId, EffectRow>,
+        call_effects: &'a BTreeMap<ExprId, PreparedCallExecutionRow>,
         expressions: &'a [(ExprId, PreparedExpressionFact)],
         statements: &'a [(StmtId, PreparedStatementPayload)],
         control: FinalSemanticAnalysisControl<'a>,
@@ -653,13 +685,17 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             .kind();
         let mut row = PreparedExecutionEffectRow {
             effects: EffectRow::closed(fact.effects().clone()),
-            source: Some(HirBodyChild::Expression(owner)),
+            source: Some(CheckedExecutionOperation::Value(owner)),
             children: BTreeSet::new(),
             expressions: BTreeSet::from([owner]),
             statements: BTreeSet::new(),
             direct_suspension: matches!(kind, HirExprKind::Await(_)),
         };
-        if let Some(call_effects) = self.call_effects.get(&owner) {
+        if let Some(call_effects) = self
+            .call_effects
+            .get(&owner)
+            .and_then(|row| row.effects.as_ref())
+        {
             row.effects = union_effect_rows(&row.effects, call_effects, self.control)?;
         }
         let latent_callable =
@@ -673,6 +709,26 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                     HirComputationBlockKind::Seq | HirComputationBlockKind::Stream
                 )
         );
+        if !latent_callable
+            && !independent_computation
+            && let Some(receiver) = self.call_effects.get(&owner).and_then(|row| row.receiver)
+        {
+            let receiver_row = match receiver {
+                PreparedCallReceiverEvaluation::Place(receiver)
+                    if self
+                        .expression_facts
+                        .get(&receiver)
+                        .is_some_and(|fact| fact.supports_place_access()) =>
+                {
+                    PreparedExecutionEffectRow::place(receiver)
+                }
+                PreparedCallReceiverEvaluation::Value(receiver)
+                | PreparedCallReceiverEvaluation::Place(receiver) => {
+                    self.seal_expression(receiver)?
+                }
+            };
+            row.union_with(&receiver_row, self.control)?;
+        }
         for edge in self.selected.expression_edges(owner).to_vec() {
             let HirExpressionEvaluationEdge::Expression {
                 role,
@@ -682,7 +738,17 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             else {
                 continue;
             };
-            let child_row = self.seal_expression(child)?;
+            let child_row = if !latent_callable
+                && matches!(self.call_effects.get(&owner).and_then(|row| row.receiver), Some(PreparedCallReceiverEvaluation::Place(receiver)) if receiver == child)
+                && self
+                    .expression_facts
+                    .get(&child)
+                    .is_some_and(|fact| fact.supports_place_access())
+            {
+                PreparedExecutionEffectRow::place(child)
+            } else {
+                self.seal_expression(child)?
+            };
             if matches!(kind, HirExprKind::Closure(_))
                 && matches!(role, HirExpressionChildRole::ClosureBody)
             {
@@ -776,13 +842,21 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             _ => None,
         };
         let mut row = PreparedExecutionEffectRow::default();
-        row.source = Some(HirBodyChild::Statement(owner));
+        row.source = Some(CheckedExecutionOperation::Statement(owner));
         row.statements.insert(owner);
         for edge in kind
             .try_child_edges()
             .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?
         {
             let child = match edge.child() {
+                HirStatementChild::Expression(child)
+                    if matches!(kind.evaluation_plan(),
+                    arcweft_lang_hir::stmt::HirStmtEvaluationPlan::OrderedPair {
+                        kind: arcweft_lang_hir::stmt::HirStmtOrderedPairPlanKind::Assign, first, ..
+                    } if first == child) =>
+                {
+                    PreparedExecutionEffectRow::place(child)
+                }
                 HirStatementChild::Expression(owner) => self.seal_expression(owner)?,
                 HirStatementChild::Statement(owner)
                     if !matches!(edge.role(), HirStatementChildRole::BodyItem { .. }) =>
@@ -794,7 +868,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                 | HirStatementChild::Type(_)
                 | HirStatementChild::Local(_) => continue,
             };
-            if child.source == cleanup.map(HirBodyChild::Expression) {
+            if child.source == cleanup.map(CheckedExecutionOperation::Value) {
                 row.union_dependency(&child, self.control)?;
             } else {
                 row.union_with(&child, self.control)?;

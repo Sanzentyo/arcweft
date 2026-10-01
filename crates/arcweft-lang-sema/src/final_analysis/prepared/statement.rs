@@ -2,67 +2,49 @@
 
 use arcweft_lang_hir::{
     dialogue_application::HirDialogueMarkId,
-    identity::{ExprId, ItemId, LocalId, StmtId},
+    identity::{ExprId, ItemId, StmtId},
     symbol::{CallableDeclarationKey, FlowDeclarationId},
 };
 
 use crate::{
     final_analysis::{
         CheckedAssertionDisposition, CheckedEvaluatedEffectReference, CheckedIteration,
-        CheckedProjectNominal, CheckedSuspensionStatement,
+        CheckedSuspensionStatement,
     },
     types::{SemanticTypeDigest, TypeKind},
 };
 
 use super::PreparedEvaluatedEffect;
 
-/// One direct-local project-field assignment awaiting the project-wide field
-/// coordinate seal.
+/// One typed assignment awaiting the final target place seal.
 ///
 /// This evidence is affine: the all-statement seal consumes it while joining
 /// the already checked local, target, value, and nominal field projection.
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct PreparedAssignmentStatement {
-    local: LocalId,
-    nominal: CheckedProjectNominal,
     target: ExprId,
     value: ExprId,
-    field_type: TypeKind,
+    target_type: TypeKind,
 }
 
 impl PreparedAssignmentStatement {
-    pub(crate) const fn new(
-        local: LocalId,
-        nominal: CheckedProjectNominal,
-        target: ExprId,
-        value: ExprId,
-        field_type: TypeKind,
-    ) -> Self {
+    pub(crate) const fn new(target: ExprId, value: ExprId, target_type: TypeKind) -> Self {
         Self {
-            local,
-            nominal,
             target,
             value,
-            field_type,
+            target_type,
         }
     }
 
-    pub(crate) fn into_parts(self) -> (LocalId, CheckedProjectNominal, ExprId, ExprId, TypeKind) {
-        (
-            self.local,
-            self.nominal,
-            self.target,
-            self.value,
-            self.field_type,
-        )
+    pub(crate) fn into_parts(self) -> (ExprId, ExprId, TypeKind) {
+        (self.target, self.value, self.target_type)
     }
 
     fn visit_types<E>(
         &self,
         visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
     ) -> Result<(), E> {
-        self.nominal.visit_types(visitor)?;
-        visitor(&self.field_type)
+        visitor(&self.target_type)
     }
 }
 

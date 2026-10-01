@@ -319,15 +319,14 @@ impl RuntimeValue {
         &mut self,
         field: RuntimeRecordFieldId,
         value: RuntimeValue,
-    ) -> Result<(), RuntimeValue> {
+    ) -> Result<RuntimeValue, RuntimeValue> {
         match self {
             Self::NominalRecord(record) => record.replace_field(field, value),
             Self::Record(fields) => {
                 let Some(target) = fields.field_value_mut(field) else {
                     return Err(value);
                 };
-                *target = value;
-                Ok(())
+                Ok(std::mem::replace(target, value))
             }
             _ => Err(value),
         }
@@ -1453,6 +1452,14 @@ pub enum RuntimeMutablePlace {
     },
 }
 
+impl RuntimeMutablePlace {
+    pub const fn local(self) -> RuntimeLocalDeclarationId {
+        match self {
+            Self::Local(local) | Self::NominalField { base: local, .. } => local,
+        }
+    }
+}
+
 /// Checked runtime identity retained by an entity-reference expression or
 /// pattern. Project identities preserve their accepted declaration family;
 /// structural dialogue lines retain their typed runtime ID.
@@ -1724,9 +1731,8 @@ pub enum RuntimeExprKind {
         target: Box<RuntimeExpr>,
         ordinal: usize,
     },
-    AssignNominalField {
-        base: RuntimeLocalDeclarationId,
-        field: RuntimeRecordFieldId,
+    Assign {
+        place: RuntimeMutablePlace,
         expr: Box<RuntimeExpr>,
         body: Box<RuntimeExpr>,
     },
@@ -1920,7 +1926,7 @@ impl RuntimeExpr {
             | RuntimeExprKind::Field { .. }
             | RuntimeExprKind::ProjectTuple { .. }
             | RuntimeExprKind::ProjectRecord { .. }
-            | RuntimeExprKind::AssignNominalField { .. }
+            | RuntimeExprKind::Assign { .. }
             | RuntimeExprKind::Call { .. }
             | RuntimeExprKind::MakeCallable { .. }
             | RuntimeExprKind::SpecializeCallable { .. }
@@ -2018,8 +2024,8 @@ impl fmt::Display for RuntimeExpr {
             RuntimeExprKind::Field { field, .. } => write!(f, ".{}", field.label()),
             RuntimeExprKind::ProjectTuple { ordinal, .. } => write!(f, ".{ordinal}"),
             RuntimeExprKind::ProjectRecord { ordinal, .. } => write!(f, ".#{ordinal}"),
-            RuntimeExprKind::AssignNominalField { field, .. } => {
-                write!(f, "assign .field#{}", field.zero_based())
+            RuntimeExprKind::Assign { place, .. } => {
+                write!(f, "assign {place:?}")
             }
             RuntimeExprKind::Call { callee, .. } => write!(f, "{callee}()"),
             RuntimeExprKind::MakeCallable { state, captures } => {
@@ -2153,12 +2159,19 @@ impl RuntimeBinaryOp {
 pub struct RuntimeEnv {
     scopes: Vec<RuntimeScope>,
     spare_scopes: Vec<RuntimeScope>,
+    assignment_discards: crate::line_task::RuntimeHandleDropAuthorization,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
 struct RuntimeScope {
     identity: RuntimeScopeIdentity,
-    bindings: Vec<RuntimeLocalBinding>,
+    slots: Vec<RuntimeLocalSlot>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct RuntimeLocalSlot {
+    local: RuntimeLocalDeclarationId,
+    value: Option<RuntimeValue>,
 }
 
 /// Pure runtime program consumed by the minimal Sans I/O engine.
@@ -2183,6 +2196,10 @@ pub enum RuntimeEvalError {
     UnknownBinding(String),
     #[error("unknown runtime local declaration {0}")]
     UnknownLocal(RuntimeLocalDeclarationId),
+    #[error("runtime local declaration {0} has no initialized value")]
+    UninitializedLocal(RuntimeLocalDeclarationId),
+    #[error("discarded runtime value has an invalid affine handle graph")]
+    InvalidDiscardGraph,
     #[error("runtime local {0} contains an affine value and cannot be copied")]
     AffineLocalCopy(RuntimeLocalDeclarationId),
     #[error(transparent)]

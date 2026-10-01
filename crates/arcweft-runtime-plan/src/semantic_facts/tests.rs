@@ -53,15 +53,16 @@ use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use super::{
-    RuntimeAgentTypeShape, RuntimeAssignmentFact, RuntimeBuiltinIteratorFact,
-    RuntimeCallResultShape, RuntimeCallableAttachedContentAbi, RuntimeCheckedTypeProjectionError,
-    RuntimeDeferFact, RuntimeDropFadeFact, RuntimeDropPolicyFact, RuntimeEvaluatedEffect,
-    RuntimeEvaluatedEffectFact, RuntimeEvaluatedEffectOperandFact, RuntimeIteratorFact,
-    RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact, RuntimeNormalizedVariantCase,
-    RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts, RuntimePositionedAttachedContent,
-    RuntimeProjectCallable, RuntimeRecordTypeField, RuntimeRegisteredValueId,
-    RuntimeResolvedAttachedContent, RuntimeResolvedCall, RuntimeResolvedCallDispatch,
-    RuntimeResolvedCallError, RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
+    RuntimeAgentTypeShape, RuntimeAssignmentFact, RuntimeAssignmentPlace,
+    RuntimeBuiltinIteratorFact, RuntimeCallResultShape, RuntimeCallableAttachedContentAbi,
+    RuntimeCheckedTypeProjectionError, RuntimeDeferFact, RuntimeDropFadeFact,
+    RuntimeDropPolicyFact, RuntimeEvaluatedEffect, RuntimeEvaluatedEffectFact,
+    RuntimeEvaluatedEffectOperandFact, RuntimeIteratorFact, RuntimeIteratorWitnessExecutableFact,
+    RuntimeIteratorWitnessFact, RuntimeNormalizedVariantCase, RuntimePlanSemanticFactInput,
+    RuntimePlanSemanticFacts, RuntimePositionedAttachedContent, RuntimeProjectCallable,
+    RuntimeRecordTypeField, RuntimeRegisteredValueId, RuntimeResolvedAttachedContent,
+    RuntimeResolvedCall, RuntimeResolvedCallDispatch, RuntimeResolvedCallError,
+    RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
     RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
     RuntimeResolvedCallOperandSource, RuntimeResolvedNominal, RuntimeResolvedSelect,
     RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeResolvedVariant,
@@ -813,10 +814,11 @@ fn assignment_fact_fixture(
     let runtime_field = RuntimeRecordFieldId::try_from_zero_based_ordinal(1)
         .expect("assignment fixture field coordinate");
     let fact = RuntimeAssignmentFact::new(
-        local,
-        resolved.clone(),
-        runtime_field,
-        field_type.clone(),
+        RuntimeAssignmentPlace::NominalField {
+            base: local,
+            nominal: resolved.clone(),
+            field: runtime_field,
+        },
         field_type.clone(),
     );
     let mut input = complete_type_input(&project);
@@ -1011,16 +1013,18 @@ fn assignment_facts_are_complete_unique_and_bound_to_assignment_statements() {
         .assignment(statement)
         .expect("assignment accessor returns the sole fact");
     assert_eq!(accepted, &fact);
-    assert_eq!(accepted.field().zero_based(), 1);
-    assert_eq!(accepted.field_type(), accepted.value_type());
+    assert!(
+        matches!(accepted.place(), RuntimeAssignmentPlace::NominalField { field, .. } if field.zero_based() == 1)
+    );
+    let RuntimeAssignmentPlace::NominalField { nominal, .. } = accepted.place() else {
+        panic!("nominal fixture")
+    };
     let proof = facts
         .runtime_plan_nominal_schema()
         .expect("source proof reaches plan admission");
     assert_eq!(
-        proof
-            .try_layout_hash(accepted.nominal().identity())
-            .unwrap(),
-        accepted.nominal().layout()
+        proof.try_layout_hash(nominal.identity()).unwrap(),
+        nominal.layout()
     );
     assert_eq!(proof.definitions().len(), 1);
 

@@ -19,7 +19,7 @@ use crate::{
 
 use super::{
     Analyzer,
-    callable_effect_graph::prepared_fixed_call_effect_rows,
+    callable_effect_graph::prepared_call_execution_rows,
     executable_ingress::{PreparedExecutableDeclarationInventory, PreparedExecutableIngressFacts},
     expression_error::AnalyzerExpressionError,
     items::{inferred_callable_result_schema, result_schema_has_omitted_function_rows},
@@ -181,7 +181,7 @@ impl Analyzer<'_, '_, '_> {
             .facts
             .prepared_calls()
             .map_err(FinalSemanticAnalysisError::from)?;
-        let call_effects = prepared_fixed_call_effect_rows(graph, self.control)?;
+        let call_effects = prepared_call_execution_rows(graph, self.control)?;
         let selected = self
             .executable
             .selected_declaration_expression_graph_with_select_target_disposition(

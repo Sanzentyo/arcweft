@@ -4227,7 +4227,7 @@ fn lower_dialogue_application<'facts>(
                                     owner: effect.operation().root(),
                                     local: capture.local(),
                                 };
-                                let checked = scope.checked_local_use(site)?;
+                                let checked = scope.checked_local_value_transfer(site)?;
                                 (checked.local() == capture.local()).then(|| {
                                     RuntimeExprSeed::new(
                                         capture.ty().identity(),
@@ -5907,7 +5907,7 @@ impl<'a> FinalFlowLowerer<'a> {
                             owner: statement,
                             local: capture.local(),
                         };
-                        let checked = self.semantic_facts.checked_local_use(site)?;
+                        let checked = self.semantic_facts.checked_local_value_transfer(site)?;
                         (checked.local() == capture.local()).then(|| {
                             RuntimeExprSeed::new(
                                 capture.ty().identity(),

@@ -3,7 +3,6 @@ use super::{
     LineRuntimeError, RuntimeDialogueActivationState, RuntimeDialogueCommitReceipt,
     RuntimeDialogueTerminalKind, RuntimeHandleDropReceipt, RuntimePublishedDialogueHandles,
 };
-use crate::effect::RuntimeDropPolicy;
 use crate::runtime_id::{
     DialogueActivationId, ExecutionInstanceId, RuntimeDeferRegistrationId, RuntimeDeferSiteId,
 };
@@ -815,10 +814,9 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         execution: ExecutionInstanceId,
         before: &BTreeMap<crate::runtime_id::RuntimeLineHandleToken, RuntimeOwnedSlotId>,
         after: &BTreeMap<crate::runtime_id::RuntimeLineHandleToken, RuntimeOwnedSlotId>,
-        drop_policy: Option<RuntimeDropPolicy>,
+        drops: &super::RuntimeHandleDropAuthorization,
     ) -> Result<RuntimeHandleDropReceipt, LineRuntimeError> {
-        let prepared =
-            self.inspect_parent_fiber_reconciliation(execution, before, after, drop_policy)?;
+        let prepared = self.inspect_parent_fiber_reconciliation(execution, before, after, drops)?;
         Ok(self.commit_parent_fiber_reconciliation(prepared))
     }
 
@@ -827,11 +825,15 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         execution: ExecutionInstanceId,
         before: &BTreeMap<crate::runtime_id::RuntimeLineHandleToken, RuntimeOwnedSlotId>,
         after: &BTreeMap<crate::runtime_id::RuntimeLineHandleToken, RuntimeOwnedSlotId>,
-        drop_policy: Option<RuntimeDropPolicy>,
+        drops: &super::RuntimeHandleDropAuthorization,
     ) -> Result<PreparedRuntimeParentFiberReconciliation, LineRuntimeError> {
         if after.keys().any(|token| !before.contains_key(token)) {
             return Err(LineRuntimeError::UnexpectedParentHandleOccurrence);
         }
+        drops.validate_removed(
+            |token| before.contains_key(token),
+            |token| after.contains_key(token),
+        )?;
         let mut grouped_before = BTreeMap::<DialogueActivationId, BTreeMap<_, _>>::new();
         let mut grouped_after = BTreeMap::<DialogueActivationId, BTreeMap<_, _>>::new();
         for (token, owner) in before {
@@ -868,7 +870,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
                 execution,
                 &source,
                 &destination,
-                drop_policy,
+                drops,
             )?;
             updates.push((activation, *revision, next_revision, candidate));
             commands.extend(receipt.into_commands());

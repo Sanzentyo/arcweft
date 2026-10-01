@@ -556,25 +556,8 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                     });
                 dst
             }
-            RuntimeExprKind::AssignNominalField {
-                base,
-                field,
-                expr,
-                body,
-            } => {
-                let Some(target) = self.frame.register_for_local(*base) else {
-                    panic!(
-                        "admitted field assignment base `{base}` is not in the AWBC frame at {}",
-                        self.path
-                    );
-                };
-                let value = self.lower(expr);
-                self.inventory
-                    .push_instruction(AwbcInstruction::AssignRecordField {
-                        target,
-                        field: field.zero_based(),
-                        value,
-                    });
+            RuntimeExprKind::Assign { place, expr, body } => {
+                self.lower_assignment(place, expr);
                 self.lower(body)
             }
             RuntimeExprKind::Call { callee, args } => self.lower_call(expr.ty(), callee, args),
@@ -991,6 +974,13 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
         self.inventory
             .push_instruction(AwbcInstruction::LoadConst { dst, constant });
         dst
+    }
+
+    pub(super) fn lower_assignment(&mut self, place: &RuntimeMutablePlace, value: &RuntimeExpr) {
+        let place = self.lower_mutable_place(place, "assignment");
+        let value = self.lower(value);
+        self.inventory
+            .push_instruction(AwbcInstruction::Assign { place, value });
     }
 
     fn lower_mutable_place(

@@ -1,8 +1,7 @@
 use crate::effect::LineEffectRequest;
 use crate::pattern::RuntimePattern;
 use crate::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
-use crate::runtime_id::RuntimeLocalDeclarationId;
-use crate::value::{RuntimeExpr, RuntimeLocalBinding, RuntimeRecordFieldId};
+use crate::value::{RuntimeExpr, RuntimeLocalBinding};
 
 /// Typed AOT compilation artifact for a runtime plan.
 ///
@@ -55,9 +54,8 @@ pub(crate) enum AotLinearOp {
         pattern: RuntimePattern,
         expr: RuntimeExpr,
     },
-    AssignNominalField {
-        base: RuntimeLocalDeclarationId,
-        field: RuntimeRecordFieldId,
+    Assign {
+        place: crate::value::RuntimeMutablePlace,
         value: RuntimeExpr,
     },
     Return(String),
@@ -92,9 +90,8 @@ impl AotLinearOp {
                 pattern: pattern.clone(),
                 expr: expr.clone(),
             }),
-            FlowOp::AssignNominalField { base, field, value } => Some(Self::AssignNominalField {
-                base: *base,
-                field: *field,
+            FlowOp::Assign { place, value } => Some(Self::Assign {
+                place: *place,
                 value: value.clone(),
             }),
             FlowOp::Return(value) => Some(Self::Return(value.clone())),
@@ -242,7 +239,7 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
     match op {
         FlowOp::Bind(_)
         | FlowOp::Let { .. }
-        | FlowOp::AssignNominalField { .. }
+        | FlowOp::Assign { .. }
         | FlowOp::Return(_)
         | FlowOp::ReturnExpr(_)
         | FlowOp::RegisterCleanup { .. }
@@ -309,7 +306,7 @@ impl AotOpClass {
             FlowOp::Bind(_)
             | FlowOp::Let { .. }
             | FlowOp::CompleteFormatOperand { .. }
-            | FlowOp::AssignNominalField { .. }
+            | FlowOp::Assign { .. }
             | FlowOp::LetScope { .. }
             | FlowOp::Return(_)
             | FlowOp::ReturnExpr(_)
@@ -396,7 +393,7 @@ impl AotProgramStats {
                 FlowOp::Bind(_)
                 | FlowOp::Let { .. }
                 | FlowOp::CompleteFormatOperand { .. }
-                | FlowOp::AssignNominalField { .. }
+                | FlowOp::Assign { .. }
                 | FlowOp::LineOperation { .. }
                 | FlowOp::CommitDialogueResult { .. }
                 | FlowOp::SelectDialogueResult { .. }

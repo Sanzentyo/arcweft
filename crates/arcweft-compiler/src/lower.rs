@@ -191,25 +191,25 @@ use arcweft_runtime_plan::{
     assertion_identity::RuntimeAssertionMode,
     semantic_facts::{
         RuntimeAcceptedDeclarationSemanticId, RuntimeAgentTypeShape, RuntimeAssertionAdmission,
-        RuntimeAssignmentFact, RuntimeAwaitFact, RuntimeAwaitPendingObserverFact,
-        RuntimeBuiltinIteratorFact, RuntimeCallParameterCoordinate, RuntimeCallResultShape,
-        RuntimeCallableAttachedContentAbi, RuntimeCallableAttachedContentDefault,
-        RuntimeCallableValueSpecialization, RuntimeCheckedCapture,
-        RuntimeCheckedTypeProjectionError, RuntimeChoiceFact, RuntimeChoiceGotoFact,
-        RuntimeClosedLocalUseCatalog, RuntimeClosureCaptureFact, RuntimeClosureInstanceFact,
-        RuntimeClosureInstanceKey, RuntimeClosureLexicalOwner, RuntimeClosureParameterFact,
-        RuntimeContentFragmentFact, RuntimeDeferFact, RuntimeDialogueApplication,
-        RuntimeDialogueEffectOperationFact, RuntimeDialogueEffectProgramFact,
-        RuntimeDialogueEffectTrigger, RuntimeDialogueMarkFact, RuntimeDialogueMarkKey,
-        RuntimeDialogueValueExpression, RuntimeDropFadeFact, RuntimeDropPolicyFact,
-        RuntimeEffectFieldFact, RuntimeEvaluatedEffect, RuntimeEvaluatedEffectFact,
-        RuntimeEvaluatedEffectOperandFact, RuntimeExecutableCaptureFact,
-        RuntimeExecutableSemanticScope, RuntimeFormatExecutableScope, RuntimeFormatTemplateFact,
-        RuntimeFormatTemplateKey, RuntimeImplicitCallableFact, RuntimeIteratorFact,
-        RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact, RuntimeLineCallable,
-        RuntimeLogLevel, RuntimeMapKind, RuntimeNominalRecordFactError, RuntimeNormalizedType,
-        RuntimeNormalizedVariantCase, RuntimePipeFact, RuntimePlanSemanticFactInput,
-        RuntimePlanSemanticFacts, RuntimePositionedAttachedContent,
+        RuntimeAssignmentFact, RuntimeAssignmentPlace, RuntimeAwaitFact,
+        RuntimeAwaitPendingObserverFact, RuntimeBuiltinIteratorFact,
+        RuntimeCallParameterCoordinate, RuntimeCallResultShape, RuntimeCallableAttachedContentAbi,
+        RuntimeCallableAttachedContentDefault, RuntimeCallableValueSpecialization,
+        RuntimeCheckedCapture, RuntimeCheckedTypeProjectionError, RuntimeChoiceFact,
+        RuntimeChoiceGotoFact, RuntimeClosedLocalUseCatalog, RuntimeClosureCaptureFact,
+        RuntimeClosureInstanceFact, RuntimeClosureInstanceKey, RuntimeClosureLexicalOwner,
+        RuntimeClosureParameterFact, RuntimeContentFragmentFact, RuntimeDeferFact,
+        RuntimeDialogueApplication, RuntimeDialogueEffectOperationFact,
+        RuntimeDialogueEffectProgramFact, RuntimeDialogueEffectTrigger, RuntimeDialogueMarkFact,
+        RuntimeDialogueMarkKey, RuntimeDialogueValueExpression, RuntimeDropFadeFact,
+        RuntimeDropPolicyFact, RuntimeEffectFieldFact, RuntimeEvaluatedEffect,
+        RuntimeEvaluatedEffectFact, RuntimeEvaluatedEffectOperandFact,
+        RuntimeExecutableCaptureFact, RuntimeExecutableSemanticScope, RuntimeFormatExecutableScope,
+        RuntimeFormatTemplateFact, RuntimeFormatTemplateKey, RuntimeImplicitCallableFact,
+        RuntimeIteratorFact, RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact,
+        RuntimeLineCallable, RuntimeLogLevel, RuntimeMapKind, RuntimeNominalRecordFactError,
+        RuntimeNormalizedType, RuntimeNormalizedVariantCase, RuntimePipeFact,
+        RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts, RuntimePositionedAttachedContent,
         RuntimeProjectAttachedDefaultCapture, RuntimeProjectAttachedDefaultFunctionFact,
         RuntimeProjectCallable, RuntimeProjectCallableValueTarget, RuntimeProjectContinuationAbi,
         RuntimeProjectFunctionBody, RuntimeProjectFunctionCallInput,
@@ -1584,9 +1584,12 @@ fn runtime_assignment_under(
     instance: Option<ProjectInstanceTypes<'_>>,
 ) -> Result<RuntimeAssignmentFact, RuntimeSemanticProjectionError> {
     let place = assignment.place();
-    let field_place = place
-        .nominal_field()
-        .ok_or(RuntimeSemanticProjectionError::InvalidAssignmentPlace { owner })?;
+    let Some(field_place) = place.nominal_field() else {
+        return Ok(RuntimeAssignmentFact::new(
+            RuntimeAssignmentPlace::Local(place.local_id()),
+            runtime_type_under(assignment.value_type(), instance, symbols, world, analysis)?,
+        ));
+    };
     let field = field_place
         .field()
         .project_runtime_field(analysis)
@@ -1603,10 +1606,11 @@ fn runtime_assignment_under(
             },
         )?;
     Ok(RuntimeAssignmentFact::new(
-        place.local_id(),
-        runtime_nominal_under(field_place.nominal(), analysis, instance)?,
-        field.field().runtime_field(),
-        runtime_type_under(field_place.field_type(), instance, symbols, world, analysis)?,
+        RuntimeAssignmentPlace::NominalField {
+            base: place.local_id(),
+            nominal: runtime_nominal_under(field_place.nominal(), analysis, instance)?,
+            field: field.field().runtime_field(),
+        },
         runtime_type_under(assignment.value_type(), instance, symbols, world, analysis)?,
     ))
 }

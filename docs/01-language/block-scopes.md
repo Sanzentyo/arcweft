@@ -14,6 +14,38 @@ let x = {
 
 `a` and `b` are visible only inside the block.
 
+## Local ownership and replacement
+
+Each binding introduces a distinct local declaration and generation. Shadowing
+with another `let` introduces a new declaration; assignment updates the existing
+declaration only while it is live and permits replacement (`let mut`).
+
+Move ends the availability of that declaration on the affected path. Reading,
+borrowing, replacing, and mutating it afterward are errors. Assignment does not
+undo a move. If any reachable incoming branch has moved the owner, a subsequent
+place operation is rejected. Explicit drop also ends the binding's lifetime.
+
+```arcw
+let mut items = Vec<Content>::with_capacity(0usize)
+let moved = items
+items = Vec<Content>::with_capacity(0usize) // error: assignment after move
+```
+
+Use a new binding when a new owner is intended:
+
+```arcw
+let items = Vec<Content>::with_capacity(0usize)
+let moved = items
+let items = Vec<Content>::with_capacity(0usize) // new declaration
+```
+
+The assignment target is a place, not a value read. Both whole-local replacement
+and field/in-place mutation nevertheless require a live owner. The right-hand
+side is evaluated first; consuming the target there does not permit writing it
+back. Active receiver loans also prohibit consuming or changing their owner
+during operand evaluation. A successful replacement transfers the previous live
+value to the owning runtime's cleanup transaction exactly once.
+
 ## Expression block
 
 In expression position, the final expression is the block value unless it is explicitly discarded with `;`.

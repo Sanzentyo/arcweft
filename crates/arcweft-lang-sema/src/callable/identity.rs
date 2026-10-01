@@ -1144,6 +1144,22 @@ impl CapacityMethodId {
         self.arity as usize
     }
 
+    pub fn operation(&self) -> super::CheckedCapacityOperation {
+        use super::CheckedCapacityOperation;
+        match self.method().as_str() {
+            "with_capacity" => CheckedCapacityOperation::WithCapacity,
+            "trim" => CheckedCapacityOperation::Trim,
+            "to_string" => CheckedCapacityOperation::ToString,
+            "pop" => CheckedCapacityOperation::Pop,
+            "pop_front" => CheckedCapacityOperation::PopFront,
+            "push" => CheckedCapacityOperation::Push,
+            "reserve" => CheckedCapacityOperation::Reserve,
+            "shrink_to" => CheckedCapacityOperation::ShrinkTo,
+            "shrink" => CheckedCapacityOperation::Shrink,
+            _ => unreachable!("CapacityMethodId retains a supported method identity"),
+        }
+    }
+
     pub(crate) fn is_supported_shape(&self) -> bool {
         Self::supports_shape(self.receiver(), self.method().as_str(), self.arity())
     }
