@@ -30,8 +30,8 @@ use super::callable::{
     postcondition_result_matches,
 };
 use super::{
-    ItemValidationArenas, generic_issue, generic_parameters_match, item_prefix_matches, item_state,
-    name_issue, prefix_issue, required_name_matches, type_owner_matches, where_issue,
+    ItemValidationContext, generic_issue, generic_parameters_match, item_prefix_matches,
+    item_state, name_issue, prefix_issue, required_name_matches, type_owner_matches, where_issue,
     where_predicates_match,
 };
 
@@ -48,7 +48,7 @@ pub(super) fn payload_matches(
     members: Option<&HirDeclarationMemberArena>,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let HirItemKind::Proof(proof) = item.kind() else {
         return false;
@@ -235,7 +235,7 @@ fn return_matches(
     proof: &HirProof,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> Option<ReturnState> {
     let retained = proof.return_type();
     let payload = arenas.types.resolve_prepared(slots, retained).ok()?;
@@ -284,7 +284,7 @@ struct ProofBodyValidation<'a, 'arena> {
     proof: &'a HirProof,
     parsed: &'a ParsedSource,
     slots: &'a SlotSnapshot,
-    arenas: &'a ItemValidationArenas<'arena>,
+    arenas: &'a ItemValidationContext<'arena>,
     block_arenas: &'a BlockValidationArenas<'arena>,
 }
 
@@ -423,7 +423,7 @@ fn proof_body_matches(
     }
 }
 
-fn block_arenas<'arena>(arenas: &ItemValidationArenas<'arena>) -> BlockValidationArenas<'arena> {
+fn block_arenas<'arena>(arenas: &ItemValidationContext<'arena>) -> BlockValidationArenas<'arena> {
     BlockValidationArenas {
         expressions: arenas.expressions,
         statements: arenas.statements,

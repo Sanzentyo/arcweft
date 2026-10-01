@@ -41,7 +41,11 @@ impl StagedHirModuleTransaction<'_> {
 
         let prefix = self.lower_item_prefix(attached.prefix(), scope)?;
         let prefix_issue = prefix.issue;
-        let header = project_retained_header(attached.header(), DeclarationIdentityFamily::Metric)?;
+        let header = project_retained_header(
+            attached.header(),
+            DeclarationIdentityFamily::Metric,
+            self.request.key().path(),
+        )?;
         let kind = project_metric_kind(attached.kind());
         let value_type = self.lower_attached_type(attached.value_type(), scope)?;
         let value_type_poisoned = self.staged_type_is_poisoned(value_type)?;

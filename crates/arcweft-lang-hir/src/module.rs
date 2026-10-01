@@ -42,7 +42,7 @@ use crate::source_index::{
     HirResolvedSourceRole, HirScopeSourceRole, HirSourceIndex, HirSourceIndexLookupError,
     HirSourceLookup, HirSourceOwnerStatus, HirSourcePresence, HirSourceQuery, HirSourceQueryError,
     HirStmtSourceRole, HirTestBenchSourceRole, HirThreadBodySourceRole,
-    HirThreadFlowItemSourcePart, HirTypeSourceRole, ItemValidationArenas,
+    HirThreadFlowItemSourcePart, HirTypeSourceRole, ItemValidationContext,
 };
 use crate::stmt::HirStmt;
 use crate::type_ref::HirType;
@@ -508,7 +508,8 @@ impl HirModule {
                 &slots,
                 arenas.items(),
                 &declaration_members,
-                &ItemValidationArenas {
+                &ItemValidationContext {
+                    module: key.path(),
                     scopes: arenas.scopes(),
                     locals: arenas.locals(),
                     expressions: arenas.expressions(),

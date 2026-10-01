@@ -25,9 +25,9 @@ use super::callable::{
     postcondition_result_matches,
 };
 use super::{
-    ItemValidationArenas, generic_issue, generic_parameters_match, item_prefix_matches, item_state,
-    name_issue, prefix_issue, required_name_matches, type_tree_is_unallocated, where_issue,
-    where_predicates_match,
+    ItemValidationContext, generic_issue, generic_parameters_match, item_prefix_matches,
+    item_state, name_issue, prefix_issue, required_name_matches, type_tree_is_unallocated,
+    where_issue, where_predicates_match,
 };
 
 #[allow(
@@ -43,7 +43,7 @@ pub(super) fn payload_matches(
     members: Option<&HirDeclarationMemberArena>,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let HirItemKind::Predicate(predicate) = item.kind() else {
         return false;
@@ -190,7 +190,7 @@ fn predicate_bool_return_matches(
     predicate: &HirPredicate,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let return_type = predicate.return_type();
     let Ok(key) = SyntheticKey::try_new(
@@ -238,7 +238,7 @@ fn predicate_body_matches(
     predicate: &HirPredicate,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
     block_arenas: &BlockValidationArenas<'_>,
 ) -> Option<Option<HirItemIssue>> {
     let body_has_recovery = attached.body().has_recovery();
@@ -356,7 +356,7 @@ fn predicate_body_matches(
     }
 }
 
-fn block_arenas<'arena>(arenas: &ItemValidationArenas<'arena>) -> BlockValidationArenas<'arena> {
+fn block_arenas<'arena>(arenas: &ItemValidationContext<'arena>) -> BlockValidationArenas<'arena> {
     BlockValidationArenas {
         expressions: arenas.expressions,
         statements: arenas.statements,

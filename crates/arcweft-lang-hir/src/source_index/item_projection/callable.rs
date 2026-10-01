@@ -29,7 +29,7 @@ use crate::source_index::block_projection::{
 use crate::source_index::control_projection::canonical_pattern_locals;
 use crate::source_index::pattern_projection::{BindingLocalValidation, binding_locals_match};
 
-use super::{ItemValidationArenas, slot_is_poisoned, type_owner_matches};
+use super::{ItemValidationContext, slot_is_poisoned, type_owner_matches};
 
 #[derive(Clone, Copy)]
 pub(super) struct CallableScopeSource<'a> {
@@ -53,7 +53,7 @@ pub(super) fn contract_scopes_match(
     ids: CallableScopeIds,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let Ok(callable) = arenas.scopes.resolve_prepared(slots, ids.callable) else {
         return false;
@@ -127,7 +127,7 @@ pub(super) fn item_callable_scope_matches(
     syntax: SyntaxNodeId,
     source: &SourceSpan,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     source_owner_matches(
         slots,
@@ -162,7 +162,7 @@ pub(super) fn item_owned_callable_scopes_are_exact(
     item_scope: ScopeId,
     expected: &[ScopeId],
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let expected_set = expected.iter().copied().collect::<BTreeSet<_>>();
     if expected_set.len() != expected.len() {
@@ -203,7 +203,7 @@ pub(super) fn item_owned_callable_scopes_are_exact(
 pub(super) fn scope_children_are_exact_in_source_order(
     scope: ScopeId,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let Ok(payload) = arenas.scopes.resolve_prepared(slots, scope) else {
         return false;
@@ -253,7 +253,7 @@ pub(super) fn attached_content_matches(
     retained: Option<HirCallableAttachedContentParameter>,
     callable_scope: ScopeId,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> Option<AttachedContentState> {
     let (Some(attached), Some(retained)) = (attached, retained) else {
         return (attached.is_none() && retained.is_none())
@@ -326,7 +326,7 @@ pub(super) fn function_parameter_groups_match(
     callable_scope: ScopeId,
     policy: HirPatternBindingPolicy,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
     block_arenas: &BlockValidationArenas<'_>,
     attached_content_local: Option<LocalId>,
 ) -> Option<ParameterState> {
@@ -381,7 +381,7 @@ pub(super) fn parameters_match<'a, 'b>(
     callable_scope: ScopeId,
     policy: HirPatternBindingPolicy,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
     block_arenas: &BlockValidationArenas<'_>,
     attached_content_local: Option<LocalId>,
 ) -> Option<ParameterState> {
@@ -534,7 +534,7 @@ pub(super) fn contracts_match(
     requires_scope: ScopeId,
     ensures_scope: ScopeId,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> Option<bool> {
     let mut requires_position = 0_usize;
     let mut ensures_position = 0_usize;
@@ -612,7 +612,7 @@ pub(super) fn postcondition_result_matches(
     return_type: Option<TypeId>,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let Ok(ensures_scope) = arenas.scopes.resolve_prepared(slots, ensures_scope_id) else {
         return false;
@@ -664,7 +664,7 @@ pub(super) fn direct_children_are_exact(
     item_body_scope: ScopeId,
     callable: &HirScope,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     direct_children_with_default_expressions_are_exact(
         callable_scope,
@@ -690,7 +690,7 @@ pub(super) fn direct_children_with_default_expressions_are_exact(
     default_roots: &[ExprId],
     callable: &HirScope,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let fixed = [Some(requires_scope), Some(ensures_scope), item_body_scope];
     let fixed = fixed.into_iter().flatten().collect::<Vec<_>>();
@@ -760,7 +760,7 @@ pub(super) fn item_body_scope_matches(
     body_syntax: SyntaxNodeId,
     body_source: SourceSpan,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     item_body_scope_matches_at_site(
         owner,
@@ -787,7 +787,7 @@ pub(super) fn item_body_scope_matches_at_site(
     body_syntax: SyntaxNodeId,
     body_source: HirSourceSite,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     source_owner_matches(slots, body_scope, body_syntax, &body_source)
         && arenas
@@ -804,7 +804,7 @@ pub(super) fn scope_locals_are_exact(
     scope: ScopeId,
     expected: &[LocalId],
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let expected_len = expected.len();
     let expected = expected.iter().copied().collect::<BTreeSet<_>>();

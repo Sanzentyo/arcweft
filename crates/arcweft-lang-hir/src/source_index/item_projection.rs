@@ -9,8 +9,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use arcweft_lang_syntax::attachment::{
     AttachedActionDeclaration, AttachedAttributeValue, AttachedCharacterBody,
     AttachedCharacterDeclaration, AttachedCharacterDisplayMember, AttachedCharacterInitializer,
-    AttachedCharacterMember, AttachedDeclarationPublicId, AttachedDeclarationPublicIdIssue,
-    AttachedEnumBody, AttachedEnumVariantPayload, AttachedExpressionNode, AttachedGenericParameter,
+    AttachedCharacterMember, AttachedDeclarationPublicId, AttachedEnumBody,
+    AttachedEnumVariantPayload, AttachedExpressionNode, AttachedGenericParameter,
     AttachedItemPrefix, AttachedNominalDeclaration, AttachedOuterAttribute, AttachedRequiredName,
     AttachedRetainedHeader, AttachedRetainedName, AttachedSignalDeclaration, AttachedStructBody,
     AttachedTypeAliasDeclaration, AttachedTypeRefNode, AttachedWhereClause, TypedItemNode,
@@ -41,8 +41,7 @@ use crate::item::{
     HirDeclarationMemberArena, HirDeclarationMemberId, HirDeclarationMemberIndex,
     HirDeclarationMemberIssue, HirDeclarationMemberKind, HirDeclarationMemberPoisonState,
     HirEnumItem, HirEnumVariantPayload, HirGenericParameter, HirItem, HirItemIssue, HirItemKind,
-    HirItemPoisonState, HirPublicIdOrigin, HirRequiredName, HirRetainedName, HirRetainedPublicId,
-    HirRetainedPublicIdIssue, HirStructItem, HirTypeAliasItem, HirWherePredicate,
+    HirItemPoisonState, HirRequiredName, HirStructItem, HirTypeAliasItem, HirWherePredicate,
 };
 use crate::leaf::HirName;
 use crate::pattern::HirPattern;
@@ -58,7 +57,8 @@ struct RetainedAttributeProjection<'a> {
     arguments: Box<[HirCallArgument]>,
 }
 
-pub(crate) struct ItemValidationArenas<'a> {
+pub(crate) struct ItemValidationContext<'a> {
+    pub(crate) module: &'a arcweft_lang_syntax::ast::module_path::CanonicalModulePath,
     pub(crate) scopes: &'a ArenaSnapshot<HirScope, ScopeId>,
     pub(crate) locals: &'a ArenaSnapshot<HirLocal, LocalId>,
     pub(crate) expressions: &'a ArenaSnapshot<HirExpr, ExprId>,
@@ -108,7 +108,7 @@ impl HirSourceIndex {
         slots: &SlotSnapshot,
         items: &ArenaSnapshot<HirItem, ItemId>,
         declaration_members: &HirDeclarationMemberIndex,
-        arenas: &ItemValidationArenas<'_>,
+        arenas: &ItemValidationContext<'_>,
     ) -> bool {
         let Ok(attached_items) = parsed.items() else {
             return false;
@@ -170,6 +170,7 @@ impl HirSourceIndex {
                 (TypedItemNode::Character(character), HirItemKind::Character(_)) => {
                     character.semantics().is_ok_and(|attached| {
                         character_payload_matches(
+                            arenas.module,
                             owner,
                             &attached,
                             item,
@@ -186,7 +187,7 @@ impl HirSourceIndex {
                 }
                 (TypedItemNode::Signal(signal), HirItemKind::Signal(_)) => {
                     signal.semantics().is_ok_and(|attached| {
-                        signal_payload_matches(&attached, item, slots)
+                        signal_payload_matches(arenas.module, &attached, item, slots)
                             && declaration_members.arena(owner).is_none()
                     })
                 }
@@ -731,7 +732,7 @@ pub(super) fn expression_owner_matches(
     attached: &AttachedExpressionNode,
     scope: ScopeId,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     source_matches(slots, retained, attached.id())
         && arenas
@@ -844,6 +845,7 @@ fn expected_enum_state(
 }
 
 fn signal_payload_matches(
+    module: &arcweft_lang_syntax::ast::module_path::CanonicalModulePath,
     attached: &AttachedSignalDeclaration,
     item: &HirItem,
     slots: &SlotSnapshot,
@@ -852,7 +854,7 @@ fn signal_payload_matches(
         return false;
     };
     item_prefix_matches(item, attached.prefix(), slots)
-        && retained_header_matches(signal.header(), attached.header())
+        && retained_header_matches(signal.header(), attached.header(), module)
         && type_owner_matches(signal.observable_type(), attached.observable_type(), slots)
         && item.members().is_empty()
         && item.state()
@@ -900,7 +902,7 @@ fn action_payload_matches(
     attached: &AttachedActionDeclaration,
     item: &HirItem,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let HirItemKind::Action(action) = item.kind() else {
         return false;
@@ -922,7 +924,7 @@ fn action_payload_matches(
             metadata.source_site() == &HirSourceSite::Span(attached.syntax().source_span())
         });
     if !item_prefix_matches(item, attached.prefix(), slots)
-        || !retained_header_matches(action.header(), attached.header())
+        || !retained_header_matches(action.header(), attached.header(), arenas.module)
         || !item.members().is_empty()
         || !source_matches(slots, callable_scope, attached.syntax().id())
         || !scope_site_matches
@@ -1235,73 +1237,14 @@ const fn item_state(issue: Option<HirItemIssue>) -> HirItemPoisonState {
 fn retained_header_matches(
     retained: &crate::item::HirRetainedHeader,
     attached: &AttachedRetainedHeader,
+    module: &arcweft_lang_syntax::ast::module_path::CanonicalModulePath,
 ) -> bool {
-    let name_matches = match (retained.name(), attached.name()) {
-        (
-            HirRetainedName::Resolved(retained),
-            AttachedRetainedName::Resolved { value, .. }
-            | AttachedRetainedName::Derived { value, .. },
-        ) => retained.as_str() == value.as_str(),
-        (HirRetainedName::Missing, AttachedRetainedName::Missing { .. })
-        | (HirRetainedName::Invalid, AttachedRetainedName::Invalid { .. }) => true,
-        _ => false,
-    };
-    name_matches
-        && match (retained.public_id(), attached.public_id()) {
-            (
-                HirRetainedPublicId::Resolved {
-                    origin: HirPublicIdOrigin::DerivedFromName,
-                    ..
-                },
-                AttachedDeclarationPublicId::Derived,
-            ) if matches!(
-                attached.name(),
-                AttachedRetainedName::Resolved { .. } | AttachedRetainedName::Derived { .. }
-            ) =>
-            {
-                true
-            }
-            (
-                HirRetainedPublicId::Recovered(HirRetainedPublicIdIssue::DerivedFromRecoveredName),
-                AttachedDeclarationPublicId::Derived,
-            ) if !matches!(
-                attached.name(),
-                AttachedRetainedName::Resolved { .. } | AttachedRetainedName::Derived { .. }
-            ) =>
-            {
-                true
-            }
-            (
-                HirRetainedPublicId::Resolved {
-                    value: retained,
-                    origin: HirPublicIdOrigin::Explicit,
-                },
-                AttachedDeclarationPublicId::Explicit { value, .. },
-            ) => retained == value,
-            (
-                HirRetainedPublicId::Recovered(retained),
-                AttachedDeclarationPublicId::Recovered { issue, .. },
-            ) => retained_public_id_issue_matches(retained, issue),
-            _ => false,
-        }
-}
-
-fn retained_public_id_issue_matches(
-    retained: &HirRetainedPublicIdIssue,
-    attached: &AttachedDeclarationPublicIdIssue,
-) -> bool {
-    match (retained, attached) {
-        (HirRetainedPublicIdIssue::Malformed, AttachedDeclarationPublicIdIssue::Malformed)
-        | (HirRetainedPublicIdIssue::Missing, AttachedDeclarationPublicIdIssue::Missing) => true,
-        (
-            HirRetainedPublicIdIssue::WrongFamily(retained),
-            AttachedDeclarationPublicIdIssue::WrongFamily(attached),
-        ) => retained == attached,
-        _ => false,
-    }
+    crate::item::HirRetainedHeader::try_project_attached(module, attached, retained.family())
+        .is_ok_and(|expected| &expected == retained)
 }
 
 fn character_payload_matches(
+    module: &arcweft_lang_syntax::ast::module_path::CanonicalModulePath,
     owner: ItemId,
     attached: &AttachedCharacterDeclaration,
     item: &HirItem,
@@ -1312,7 +1255,7 @@ fn character_payload_matches(
         return false;
     };
     item_prefix_matches(item, attached.prefix(), slots)
-        && retained_header_matches(character.header(), attached.header())
+        && retained_header_matches(character.header(), attached.header(), module)
         && character_members_match(owner, character.display(), item, members, attached, slots)
         && item.state() == &character_item_state(attached, members, item.prefix(), slots)
 }

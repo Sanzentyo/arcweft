@@ -49,6 +49,7 @@ impl StagedHirModuleTransaction<'_> {
         let prefix = self.lower_item_prefix(attached.prefix(), scope)?;
         preflight_character_members(attached.body().members().len())?;
         let header = HirRetainedHeader::try_project_attached(
+            self.request.key().path(),
             attached.header(),
             DeclarationIdentityFamily::Character,
         )?;
@@ -169,6 +170,7 @@ impl StagedHirModuleTransaction<'_> {
         let prefix = self.lower_item_prefix(attached.prefix(), scope)?;
         let prefix_issue = prefix.issue;
         let header = HirRetainedHeader::try_project_attached(
+            self.request.key().path(),
             attached.header(),
             DeclarationIdentityFamily::Signal,
         )?;
@@ -226,6 +228,7 @@ impl StagedHirModuleTransaction<'_> {
         let prefix = self.lower_item_prefix(attached.prefix(), scope)?;
         let prefix_issue = prefix.issue;
         let header = HirRetainedHeader::try_project_attached(
+            self.request.key().path(),
             attached.header(),
             DeclarationIdentityFamily::Action,
         )?;
@@ -314,6 +317,7 @@ impl StagedHirModuleTransaction<'_> {
 impl HirRetainedHeader {
     /// Projects one parser-owned retained identity for compiler and loader consumers.
     pub fn try_project_attached(
+        module: &arcweft_lang_syntax::ast::module_path::CanonicalModulePath,
         attached: &arcweft_lang_syntax::attachment::AttachedRetainedHeader,
         family: DeclarationIdentityFamily,
     ) -> Result<Self, HirLowerFailure> {
@@ -332,8 +336,7 @@ impl HirRetainedHeader {
         let public_id = match attached.public_id() {
             AttachedDeclarationPublicId::Derived => match &name {
                 HirRetainedName::Resolved(name) => HirRetainedPublicId::Resolved {
-                    value: family
-                        .derive_public_id(name)
+                    value: Self::derived_public_id(family, module, name)
                         .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
                     origin: HirPublicIdOrigin::DerivedFromName,
                 },
@@ -359,7 +362,7 @@ impl HirRetainedHeader {
                 })
             }
         };
-        Self::try_new(family, public_id, name)
+        Self::try_new(module, family, public_id, name)
             .map_err(|_| HirInvariantFailure::InvalidArenaCommit.into())
     }
 }
@@ -367,8 +370,9 @@ impl HirRetainedHeader {
 fn project_retained_header(
     attached: &arcweft_lang_syntax::attachment::AttachedRetainedHeader,
     family: DeclarationIdentityFamily,
+    module: &arcweft_lang_syntax::ast::module_path::CanonicalModulePath,
 ) -> Result<HirRetainedHeader, HirLowerFailure> {
-    HirRetainedHeader::try_project_attached(attached, family)
+    HirRetainedHeader::try_project_attached(module, attached, family)
 }
 
 fn retained_header_issue(

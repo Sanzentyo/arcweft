@@ -233,6 +233,7 @@ fn activity_ports_require_exact_names_locals_and_disjoint_direction_rows() {
     assert_eq!(port.local(), Some(local));
 
     let header = HirRetainedHeader::try_new(
+        &arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root(),
         DeclarationIdentityFamily::Activity,
         HirRetainedPublicId::Resolved {
             value: PublicId::try_new("activity.route_planner").unwrap(),
@@ -334,6 +335,7 @@ fn layer_kind_defaults_and_member_recovery_are_owned_by_typed_payloads() {
     .unwrap();
 
     let header = HirRetainedHeader::try_new(
+        &arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root(),
         DeclarationIdentityFamily::Layer,
         HirRetainedPublicId::Resolved {
             value: PublicId::try_new("layer.dialogue").unwrap(),
@@ -362,6 +364,7 @@ fn layer_item_rejects_transplanted_member_rows_and_clean_recovered_headers() {
     let first_member = HirDeclarationMemberId::new(first_owner, 0);
     let second_member = HirDeclarationMemberId::new(second_owner, 0);
     let header = HirRetainedHeader::try_new(
+        &arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root(),
         DeclarationIdentityFamily::Layer,
         HirRetainedPublicId::Resolved {
             value: PublicId::try_new("layer.dialogue").unwrap(),
@@ -392,6 +395,7 @@ fn layer_item_rejects_transplanted_member_rows_and_clean_recovered_headers() {
     );
 
     let recovered_header = HirRetainedHeader::try_new(
+        &arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root(),
         DeclarationIdentityFamily::Layer,
         HirRetainedPublicId::Recovered(HirRetainedPublicIdIssue::Missing),
         HirRetainedName::Missing,
@@ -461,6 +465,7 @@ fn layer_reference_recovery_poison_propagates_to_its_item() {
     )
     .unwrap();
     let header = HirRetainedHeader::try_new(
+        &arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root(),
         DeclarationIdentityFamily::Layer,
         HirRetainedPublicId::Resolved {
             value: PublicId::try_new("layer.dialogue").unwrap(),
@@ -513,6 +518,7 @@ fn module_member_index_freezes_multiple_arenas_and_resolves_composite_ids() {
     let scope = typed_id::<ScopeId>(local, 2);
     let member_id = HirDeclarationMemberId::new(owner, 0);
     let header = HirRetainedHeader::try_new(
+        &arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root(),
         DeclarationIdentityFamily::Character,
         HirRetainedPublicId::Resolved {
             value: PublicId::try_new("character.Alice").unwrap(),
@@ -555,6 +561,7 @@ fn module_member_index_freezes_multiple_arenas_and_resolves_composite_ids() {
     let second_owner = typed_id::<ItemId>(local, 4);
     let second_member_id = HirDeclarationMemberId::new(second_owner, 0);
     let second_header = HirRetainedHeader::try_new(
+        &arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root(),
         DeclarationIdentityFamily::Character,
         HirRetainedPublicId::Resolved {
             value: PublicId::try_new("character.Bob").unwrap(),
@@ -658,6 +665,7 @@ fn module_member_index_rejects_foreign_family_and_order_mismatches_before_freeze
     let character_owner = typed_id::<ItemId>(local, 3);
     let character_member = HirDeclarationMemberId::new(character_owner, 0);
     let header = HirRetainedHeader::try_new(
+        &arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root(),
         DeclarationIdentityFamily::Character,
         HirRetainedPublicId::Resolved {
             value: PublicId::try_new("character.Bob").unwrap(),
@@ -827,6 +835,7 @@ fn retained_identity_and_known_family_recovery_remain_typed() {
     let name = DeclarationName::try_new("Alice").unwrap();
     let public_id = PublicId::try_new("character.Alice").unwrap();
     let header = HirRetainedHeader::try_new(
+        &arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root(),
         DeclarationIdentityFamily::Character,
         HirRetainedPublicId::Resolved {
             value: public_id.clone(),
@@ -842,6 +851,7 @@ fn retained_identity_and_known_family_recovery_remain_typed() {
     );
     assert_eq!(
         HirRetainedHeader::try_new(
+            &arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root(),
             DeclarationIdentityFamily::Asset,
             HirRetainedPublicId::Resolved {
                 value: PublicId::try_new("asset.room").unwrap(),
@@ -891,8 +901,52 @@ fn retained_identity_and_known_family_recovery_remain_typed() {
 }
 
 #[test]
+fn retained_view_header_validates_derived_identity_in_its_canonical_module() {
+    use arcweft_lang_syntax::ast::module_path::{CanonicalModulePath, ModuleSegment};
+    let module = CanonicalModulePath::from_segments([ModuleSegment::new("ui").unwrap()]);
+    let name = HirRetainedName::Resolved(DeclarationName::try_new("Card").unwrap());
+    let derived = |value: &str| HirRetainedPublicId::Resolved {
+        value: PublicId::try_new(value).unwrap(),
+        origin: HirPublicIdOrigin::DerivedFromName,
+    };
+    assert!(
+        HirRetainedHeader::try_new(
+            &module,
+            DeclarationIdentityFamily::View,
+            derived("view.ui.Card"),
+            name.clone()
+        )
+        .is_ok()
+    );
+    assert_eq!(
+        HirRetainedHeader::try_new(
+            &module,
+            DeclarationIdentityFamily::View,
+            derived("view.Card"),
+            name.clone()
+        ),
+        Err(HirRetainedHeaderError::DerivedIdentityMismatch)
+    );
+    let explicit = HirRetainedHeader::try_new(
+        &module,
+        DeclarationIdentityFamily::View,
+        HirRetainedPublicId::Resolved {
+            value: PublicId::try_new("view.authored").unwrap(),
+            origin: HirPublicIdOrigin::Explicit,
+        },
+        name,
+    )
+    .unwrap();
+    assert_eq!(
+        explicit.public_id().resolved().unwrap().as_str(),
+        "view.authored"
+    );
+}
+
+#[test]
 fn retained_header_preserves_recovery_without_fabricating_identity_or_name() {
     let recovered = HirRetainedHeader::try_new(
+        &arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root(),
         DeclarationIdentityFamily::Character,
         HirRetainedPublicId::Recovered(HirRetainedPublicIdIssue::Missing),
         HirRetainedName::Missing,
@@ -907,6 +961,7 @@ fn retained_header_preserves_recovery_without_fabricating_identity_or_name() {
     let wrong_family = PublicId::try_new("view.Alice").unwrap();
     assert!(
         HirRetainedHeader::try_new(
+            &arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root(),
             DeclarationIdentityFamily::Character,
             HirRetainedPublicId::Recovered(HirRetainedPublicIdIssue::WrongFamily(wrong_family,)),
             HirRetainedName::Resolved(DeclarationName::try_new("Alice").unwrap()),
@@ -915,6 +970,7 @@ fn retained_header_preserves_recovery_without_fabricating_identity_or_name() {
     );
     assert_eq!(
         HirRetainedHeader::try_new(
+            &arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root(),
             DeclarationIdentityFamily::Character,
             HirRetainedPublicId::Recovered(HirRetainedPublicIdIssue::WrongFamily(
                 PublicId::try_new("character.Alice").unwrap(),
@@ -925,6 +981,7 @@ fn retained_header_preserves_recovery_without_fabricating_identity_or_name() {
     );
     assert_eq!(
         HirRetainedHeader::try_new(
+            &arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root(),
             DeclarationIdentityFamily::Character,
             HirRetainedPublicId::Recovered(HirRetainedPublicIdIssue::DerivedFromRecoveredName,),
             HirRetainedName::Resolved(DeclarationName::try_new("Alice").unwrap()),

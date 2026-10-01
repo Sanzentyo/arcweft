@@ -23,9 +23,9 @@ use super::callable::{
     function_parameter_groups_match, item_body_scope_matches, postcondition_result_matches,
 };
 use super::{
-    ItemValidationArenas, generic_issue, generic_parameters_match, item_prefix_matches, item_state,
-    name_issue, prefix_issue, required_name_matches, slot_is_poisoned, type_owner_matches,
-    where_issue, where_predicates_match,
+    ItemValidationContext, generic_issue, generic_parameters_match, item_prefix_matches,
+    item_state, name_issue, prefix_issue, required_name_matches, slot_is_poisoned,
+    type_owner_matches, where_issue, where_predicates_match,
 };
 
 pub(super) fn payload_matches(
@@ -35,7 +35,7 @@ pub(super) fn payload_matches(
     members: Option<&HirDeclarationMemberArena>,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let HirItemKind::Function(function) = item.kind() else {
         return false;
@@ -196,7 +196,7 @@ fn function_return_matches(
     attached: &AttachedFunctionDeclaration,
     function: &HirFunctionItem,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> Option<(bool, bool)> {
     match (attached.authored_return(), function.return_type()) {
         (None, None) => Some((false, false)),
@@ -225,7 +225,7 @@ fn function_body_matches(
     function: &HirFunctionItem,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
     block_arenas: &BlockValidationArenas<'_>,
 ) -> Option<FunctionBodyMatch> {
     let callable = arenas
@@ -330,7 +330,7 @@ struct FunctionBodyMatch {
     issue: Option<HirItemIssue>,
 }
 
-fn block_arenas<'arena>(arenas: &ItemValidationArenas<'arena>) -> BlockValidationArenas<'arena> {
+fn block_arenas<'arena>(arenas: &ItemValidationContext<'arena>) -> BlockValidationArenas<'arena> {
     BlockValidationArenas {
         expressions: arenas.expressions,
         statements: arenas.statements,

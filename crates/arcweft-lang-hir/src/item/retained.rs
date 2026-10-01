@@ -1,6 +1,7 @@
 //! Retained-identity declarations and their secondary member arena.
 
 use arcweft_id::{DeclarationIdentityFamily, DeclarationName, PublicId, PublicIdFamilyError};
+use arcweft_lang_syntax::ast::module_path::{CanonicalModulePath, ModuleSegment};
 use thiserror::Error;
 
 use crate::identity::{ExprId, HirModuleId, ItemId, LocalId, ScopeId, TypeId};
@@ -22,6 +23,7 @@ pub struct HirRetainedHeader {
 
 impl HirRetainedHeader {
     pub(crate) fn try_new(
+        module: &CanonicalModulePath,
         family: DeclarationIdentityFamily,
         public_id: HirRetainedPublicId,
         name: HirRetainedName,
@@ -36,7 +38,7 @@ impl HirRetainedHeader {
                     let HirRetainedName::Resolved(name) = &name else {
                         return Err(HirRetainedHeaderError::DerivedIdentityWithoutResolvedName);
                     };
-                    if family.derive_public_id(name)? != *value {
+                    if Self::derived_public_id(family, module, name)? != *value {
                         return Err(HirRetainedHeaderError::DerivedIdentityMismatch);
                     }
                 }
@@ -62,6 +64,29 @@ impl HirRetainedHeader {
 
     pub const fn family(&self) -> DeclarationIdentityFamily {
         self.family
+    }
+
+    pub(crate) fn derived_public_id(
+        family: DeclarationIdentityFamily,
+        module: &CanonicalModulePath,
+        name: &DeclarationName,
+    ) -> Result<PublicId, PublicIdFamilyError> {
+        match family {
+            DeclarationIdentityFamily::View => family.derive_public_id_in_namespace(
+                module.segments().iter().map(ModuleSegment::as_str),
+                name,
+            ),
+            DeclarationIdentityFamily::Asset
+            | DeclarationIdentityFamily::Character
+            | DeclarationIdentityFamily::Action
+            | DeclarationIdentityFamily::Activity
+            | DeclarationIdentityFamily::Signal
+            | DeclarationIdentityFamily::Metric
+            | DeclarationIdentityFamily::Layer
+            | DeclarationIdentityFamily::Flow
+            | DeclarationIdentityFamily::Proof
+            | DeclarationIdentityFamily::Style => family.derive_public_id(name),
+        }
     }
 
     pub const fn public_id(&self) -> &HirRetainedPublicId {

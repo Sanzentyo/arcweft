@@ -90,6 +90,11 @@ flow から mount された View を root とし、View body 内の nested View 
 `Child(...)` は `view.game.opening.Child` へ解決される。module path の区切りは
 `.` である。
 
+名前から導く View の public ID は、final HIR の header projection が canonical module
+と宣言名から一度生成する。明示 ID は authored identity のまま保持する。最終 freeze、
+retained symbol、sema entity/callable join、compiler、bundle は同じ published identity
+を照合・消費し、consumer が module/name から別の ID を再生成しない。
+
 ## Retained execution and mount identity
 
 Runtime-driver は live presentation handle ごとに root View occurrence を一つ保持し、
@@ -99,10 +104,21 @@ occurrence は別の monotonic `ViewMountId`、activation logical time、determi
 seed、parameter/state revision、TextInput 値、Fx instance identity を持つ。resource
 ID は definition identity であり、単一 owner を表さない。
 
-View evaluator は bundle の `ViewValueProgram` を共通の typed value evaluator で
-実行する。parameter、state projection、local、repeat ordinal は明示 slot からのみ
-読み、未初期化 slot、型不一致、非有限値、budget 超過は structured diagnostic に
-なる。placeholder 値を実行値として使わない。context time は mount activation から
+定義内の構築 site は compiler が受理した typed inventory で識別し、動的な
+occurrence は mount、site、型付き repeat key の path で識別する。instruction index
+は受理世代内の実行位置であり、replacement を跨ぐ同一性には使わない。state、
+style、text/image/control resource、geometry、paint、hit-test、focus、handler、Agent
+observation は同じ node occurrence を参照する。直接繰り返した要素も item key を
+含むため、同じ mount/source から生成した複数要素を一意に束縛できる。
+構造編集による対応が曖昧な場合は explicit key または検証済みの対応計画を必要とし、
+それがなければ決定的な reset/rejection とする。source 文字列や位置から推測しない。
+
+View fragment program は構造の構築を所有し、一般 expression/default は既存の
+`RuntimePureProgram` と `RuntimeValue` を使う。checked root と complete free-input
+ABI から parameter、state projection、local、repeat item を型付きで渡す。Fx evaluator
+への scalar projection は実際の `ApplyFx` ABI 境界に限定する。未初期化 slot、
+型不一致、非有限値、budget 超過は structured diagnostic にする。
+placeholder 値を実行値として使わない。context time は mount activation から
 の logical seconds、ordinal は対象内の logical instruction/item index である。
 glyph-target sampler の ordinal は Fx application ごとに最初の対象 glyph を 0
 として rebase し、文書全体の glyph index や UTF-8 byte offset を渡さない。
@@ -118,9 +134,10 @@ ownership, or branch span mismatch is a typed diagnostic rather than a no-op.
 
 評価結果は mount-scoped target/image、typed text source、Fx application を保持
 する。plain text 以外の localized/RichText/display-frame source を文字列へ黙って
-潰さない。実際の scene resource ID は `view_mount_<id>.<authored-id>` に scope
-され、同じ authored control を二つの mount で独立に操作できる。画像と scroll
-element も lowering 時に concrete target ID を持つ。
+潰さない。実際の scene resource は typed node occurrence に束縛され、同じ
+authored control を別 mount または repeat item で独立に操作できる。画像と scroll
+element も同じ occurrence authority を持ち、後段の source/target 文字列検索で
+対応関係を再構築しない。
 
 View text bundle は source record と実体 store を分離する。localized store は
 `(TextKey, locale)` に対する `RichTextDocument`、rich-text store は document ID に
@@ -143,11 +160,21 @@ affine transform、opacity を保持した `Image` primitive として同じ pai
 置く。したがって Text/Image/element/child View の相対順序は native、Web、headless
 で一つの scene contract になる。
 
-save/load は logical time、mount allocator cursor、root bindings、occurrence path、
-activation time、seed、typed parameter/state value と revision、初期化 slot、runtime
-parameter snapshot を保存する。restore は program/schema/type/allocator と、保存済み
+save/load は整数 logical timestamp、mount allocator cursor、root bindings、occurrence
+path、整数 activation time、seed、typed parameter/state value と revision、供給/default
+provenance、state 初期化状態を保存する。handler、Fx projection、snapshot は同じ
+値の正本を読む。sampler に渡す秒数は整数差分から変換し、浮動小数秒を累積しない。
+restore は program/schema/type/allocator と、保存済み
 presentation frame が retained mount table の handle/path/View/mount identity に一致
 することを代入前に検証する。
+
+replacement は View/general expression、正確な handler runtime 世代、Style、text と
+resource、field 単位の state migration を一つの候補にする。同じ field identity/型の
+値は保持し、追加 field は initializer を一度実行し、削除 field の値と依存を解除する。
+型変更は検証済み pure migration または明示 rejection とする。host の資産準備後に
+geometry/paint/hit/action と focus/capture/editing state を同じ公開境界で commit する。
+source 位置から migration を推測しない。restore/replacement は外部 interaction lease
+の有効期間も更新し、巻き戻した論理 ID に古い invocation が対応付くことを拒否する。
 
 ```arcw
 Slider(value = bind state.config.master_volume, range = 0.0..1.0)
@@ -161,6 +188,28 @@ Binding<f32> {
     set = |v| GameEvent.View(.SetMasterVolume { value = v }),
 }
 ```
+
+## Evaluation cost and derived resources
+
+cache は破棄、容量変更、save/load によって意味が変わらない派生情報とする。
+同じ評価は interpreter、cache hit、最適化 backend で同じ canonical semantic fuel を
+消費し、成功/診断と公開結果が一致する。物理的な実行命令数と CPU/GPU 処理時間は
+別の性能指標とする。フレームを跨ぐ work queue は順序と commit 状態を持つ正式な
+決定的状態として扱う。
+
+不変 program/font/image 資産は inventory/revision で共有し、transaction のために
+フレームごとに font bytes、font database、資産全体を再構築しない。派生 cache は
+完全な key を持ち、意味上の state と分ける。value/structure、style、measure、
+place/clip、paint/hit の各段階は変更とその波及範囲で invalidation を伝播する。
+schema/storage は definition と実際の free input に対応し、別 View の slot 追加で
+無関係な mount の値を reset しない。
+
+Text intrinsic measure は既存の text layout を content、font inventory、typography、
+locale、writing direction、available constraints から生成し、同じ結果を paint/hit/
+selection に渡す。CPU の state/branch/action/item identity は同じ入力列と資産から
+一致し、論理 geometry/hit は固定した数値/font/layout profile で一致する。GPU pixel
+は固定環境の golden と platform 間の許容差を別々に検証し、装飾的な差を state の
+決定へ逆流させない。
 
 ## Reactive dependencies
 

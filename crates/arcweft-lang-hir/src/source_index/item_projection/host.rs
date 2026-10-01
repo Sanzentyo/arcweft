@@ -21,7 +21,7 @@ use crate::source_index::block_projection::{
 };
 
 use super::{
-    ItemValidationArenas, expression_tree_is_unallocated, item_prefix_matches, item_state,
+    ItemValidationContext, expression_tree_is_unallocated, item_prefix_matches, item_state,
     prefix_issue,
 };
 
@@ -31,7 +31,7 @@ pub(super) fn test_payload_matches(
     item: &HirItem,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let HirItemKind::Test(retained) = item.kind() else {
         return false;
@@ -64,7 +64,7 @@ pub(super) fn bench_payload_matches(
     item: &HirItem,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let HirItemKind::Bench(retained) = item.kind() else {
         return false;
@@ -95,7 +95,7 @@ fn plan_body_matches(
     attached: &AttachedPlanBody,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> Option<bool> {
     item_statement_block_matches(
         parsed,

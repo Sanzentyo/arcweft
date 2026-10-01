@@ -23,7 +23,7 @@ use crate::slot::HirOrigin;
 use crate::source_index::HirSourceSite;
 
 use super::{
-    ItemValidationArenas, item_prefix_matches, item_state, prefix_issue, required_name_matches,
+    ItemValidationContext, item_prefix_matches, item_state, prefix_issue, required_name_matches,
     retained_header_item_issue, retained_header_matches, slot_is_poisoned, source_matches,
     type_is_poisoned, type_owner_matches,
 };
@@ -44,13 +44,13 @@ pub(super) fn payload_matches(
     item: &HirItem,
     members: Option<&HirDeclarationMemberArena>,
     slots: &crate::slot::SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let HirItemKind::Activity(activity) = item.kind() else {
         return false;
     };
     if !item_prefix_matches(item, attached.prefix(), slots)
-        || !retained_header_matches(activity.header(), attached.header())
+        || !retained_header_matches(activity.header(), attached.header(), arenas.module)
         || !contract_scopes_match(owner, attached, item, activity, slots, arenas)
     {
         return false;
@@ -242,7 +242,7 @@ fn ports_match(
     generations: &mut BTreeMap<HirName, u32>,
     callable_scope: crate::identity::ScopeId,
     slots: &crate::slot::SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
     entry_has_issue: &mut bool,
 ) -> bool {
     for (port_position, attached) in attached.iter().enumerate() {
@@ -295,7 +295,7 @@ fn activity_port_matches(
     expected_locals: &mut Vec<LocalId>,
     generations: &mut BTreeMap<HirName, u32>,
     slots: &crate::slot::SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     if !required_name_matches(retained.name(), attached.name())
         || !type_owner_matches(retained.ty(), attached.ty(), slots)
@@ -351,7 +351,7 @@ fn exact_callable_locals_match(
     callable_scope: crate::identity::ScopeId,
     expected: &[LocalId],
     slots: &crate::slot::SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let expected_set = expected.iter().copied().collect::<BTreeSet<_>>();
     if expected_set.len() != expected.len() {
@@ -372,7 +372,7 @@ fn contract_scopes_match(
     item: &HirItem,
     activity: &HirActivityDeclaration,
     slots: &crate::slot::SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let scopes = activity.scopes();
     let Ok(callable) = arenas.scopes.resolve_prepared(slots, scopes.callable()) else {

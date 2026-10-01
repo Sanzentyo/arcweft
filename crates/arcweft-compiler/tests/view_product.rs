@@ -625,19 +625,79 @@ fn compiler_lowers_project_views_in_canonical_module_and_source_order() {
         .program()
         .expect("project View program");
     let standard = ViewId::standard_dialogue();
+    let retained_ids = compiled
+        .analysis_lease()
+        .project_symbols()
+        .retained_symbols()
+        .filter(|symbol| symbol.family() == arcweft_id::DeclarationIdentityFamily::View)
+        .map(|symbol| {
+            let module = compiled
+                .analysis_lease()
+                .hir_project()
+                .view()
+                .module(symbol.module())
+                .unwrap();
+            let arcweft_lang_hir::item::HirItemKind::View(view) =
+                module.resolve_item(symbol.owner()).unwrap().kind()
+            else {
+                panic!("View owner");
+            };
+            assert_eq!(
+                view.header().public_id().resolved(),
+                Some(symbol.public_id())
+            );
+            symbol.public_id().as_str().to_owned()
+        })
+        .collect::<std::collections::BTreeSet<_>>();
     let authored = program
         .definitions()
         .filter(|definition| definition.public_id.view_id() != &standard)
         .collect::<Vec<_>>();
+    let source_order = compiled
+        .analysis_lease()
+        .hir_project()
+        .view()
+        .items()
+        .filter_map(|item| match item.item().kind() {
+            arcweft_lang_hir::item::HirItemKind::View(view) => Some(
+                view.header()
+                    .public_id()
+                    .resolved()
+                    .unwrap()
+                    .as_str()
+                    .to_owned(),
+            ),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        source_order,
+        [
+            "view.RootFirst",
+            "view.RootSecond",
+            "view.a.Card",
+            "view.z.Card",
+            "view.authored"
+        ]
+    );
     assert_eq!(
         authored
             .iter()
-            .map(|definition| definition.public_id.view_id().as_str())
-            .collect::<Vec<_>>(),
-        ["view.RootFirst", "view.RootSecond", "view.a.A", "view.z.Z",]
+            .map(|definition| definition.public_id.view_id().as_str().to_owned())
+            .collect::<std::collections::BTreeSet<_>>(),
+        retained_ids
     );
     assert_eq!(program.program_id().as_str(), "view.program.view.RootFirst");
-    for pair in authored.windows(2) {
+    let source_ordered_definitions = source_order
+        .iter()
+        .map(|id| {
+            authored
+                .iter()
+                .find(|definition| definition.public_id.view_id().as_str() == id)
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    for pair in source_ordered_definitions.windows(2) {
         assert!(
             pair[0].body.end_instruction <= pair[1].body.start_instruction,
             "View instruction spans must advance across module boundaries"
@@ -646,8 +706,9 @@ fn compiler_lowers_project_views_in_canonical_module_and_source_order() {
 
     for (view, document) in [
         ("view.RootFirst", &root_document),
-        ("view.a.A", &a_document),
-        ("view.z.Z", &z_document),
+        ("view.a.Card", &a_document),
+        ("view.z.Card", &z_document),
+        ("view.authored", &z_document),
     ] {
         let view = ViewId::try_new(view).expect("View ID");
         let span = compiled
@@ -1024,12 +1085,12 @@ fn canonical_view_project_fixture() -> (
     let a_document = canonical_view_document(
         "arcweft-test://canonical-view/a",
         "src/a.arcw",
-        "mod a\n\npub view A() { Text(\"a\") }\n",
+        "mod a\n\npub view Card() { Text(\"a\") }\n",
     );
     let z_document = canonical_view_document(
         "arcweft-test://canonical-view/z",
         "src/z.arcw",
-        "mod z\n\npub view Z() { Text(\"z\") }\n",
+        "mod z\n\npub view Card() { Text(\"z\") }\npub view @view.authored Named() { Text(\"authored\") }\n",
     );
     let project = ProjectSources::new(
         PathBuf::from("arcw.toml"),

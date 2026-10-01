@@ -27,7 +27,7 @@ use arcweft_id::DeclarationIdentityFamily;
 use arcweft_lang_hir::{
     expr::HirCallArgument,
     identity::{CaptureId, ExprId, ItemId, LocalId},
-    item::{HirItemKind, HirPublicIdOrigin, HirRetainedName, HirViewDeclaration},
+    item::{HirItemKind, HirViewDeclaration},
     leaf::{HirLiteral, HirStringLiteral},
     module::HirModule,
     project::HirProject,
@@ -654,28 +654,13 @@ fn prepare_authored_view<'a>(
     if view.header().family() != DeclarationIdentityFamily::View {
         return Err(ViewProjectLowerError::InvalidViewIdentity { owner });
     }
-    let public_id = view.header().public_id();
-    let view_id = match (public_id.origin(), view.header().name()) {
-        (Some(HirPublicIdOrigin::Explicit), _) => ViewId::try_new(
-            public_id
-                .resolved()
-                .ok_or(ViewProjectLowerError::InvalidViewIdentity { owner })?
-                .as_str()
-                .to_owned(),
-        ),
-        (Some(HirPublicIdOrigin::DerivedFromName), HirRetainedName::Resolved(name)) => {
-            ViewId::try_from_module_name(
-                module
-                    .key()
-                    .path()
-                    .segments()
-                    .iter()
-                    .map(arcweft_lang_syntax::ast::module_path::ModuleSegment::as_str),
-                name,
-            )
-        }
-        _ => return Err(ViewProjectLowerError::InvalidViewIdentity { owner }),
-    }
+    let view_id = ViewId::try_from(
+        view.header()
+            .public_id()
+            .resolved()
+            .ok_or(ViewProjectLowerError::InvalidViewIdentity { owner })?
+            .clone(),
+    )
     .map_err(|_| ViewProjectLowerError::InvalidViewIdentity { owner })?;
     let source = view_source_span(module, owner, HirViewSourceRole::Whole, "whole declaration")?;
     let mut parameters = BTreeMap::new();

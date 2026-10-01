@@ -13,7 +13,7 @@ use crate::item::{HirItem, HirItemIssue, HirItemKind, HirItemPoisonState};
 use crate::slot::SlotSnapshot;
 
 use super::{
-    ItemValidationArenas, expression_owner_matches, expression_tree_is_unallocated,
+    ItemValidationContext, expression_owner_matches, expression_tree_is_unallocated,
     item_prefix_matches, item_state, name_issue, prefix_issue, required_name_matches,
     slot_is_poisoned, type_is_poisoned, type_owner_matches,
 };
@@ -22,7 +22,7 @@ pub(super) fn payload_matches(
     attached: &AttachedResourceDeclaration,
     item: &HirItem,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let HirItemKind::Resource(retained) = item.kind() else {
         return false;

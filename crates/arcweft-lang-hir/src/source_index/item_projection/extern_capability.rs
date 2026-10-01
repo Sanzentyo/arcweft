@@ -20,7 +20,7 @@ use super::callable::{
     item_owned_callable_scopes_are_exact, scope_children_are_exact_in_source_order,
 };
 use super::{
-    ItemValidationArenas, expression_owner_matches, generic_issue, generic_parameters_match,
+    ItemValidationContext, expression_owner_matches, generic_issue, generic_parameters_match,
     item_prefix_matches, item_state, name_issue, prefix_issue, prefix_matches,
     required_name_matches, slot_is_poisoned, type_owner_matches,
 };
@@ -29,7 +29,7 @@ struct CapabilityValidationContext<'context, 'arena> {
     owner: ItemId,
     item_scope: ScopeId,
     slots: &'context SlotSnapshot,
-    arenas: &'context ItemValidationArenas<'arena>,
+    arenas: &'context ItemValidationContext<'arena>,
     block_arenas: BlockValidationArenas<'arena>,
 }
 
@@ -43,7 +43,7 @@ pub(super) fn payload_matches(
     item: &HirItem,
     declaration_members: Option<&HirDeclarationMemberArena>,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let HirItemKind::ExternCapability(retained) = item.kind() else {
         return false;
@@ -152,7 +152,7 @@ fn associated_type_matches(
     retained: &HirCapabilityAssociatedType,
     item_scope: ScopeId,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> Option<MatchedCapabilityMember> {
     if !prefix_matches(retained.prefix(), attached.prefix(), slots)
         || !prefix_expression_scopes_match(retained.prefix(), item_scope, slots, arenas)
@@ -299,7 +299,7 @@ fn capability_return_matches(
     attached: &AttachedCapabilityFunction,
     retained: &HirCapabilityFunction,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> Option<(bool, bool)> {
     match (attached.authored_return(), retained.return_type()) {
         (None, None) => Some((false, false)),
@@ -326,7 +326,7 @@ fn capability_effects_match(
     attached: &AttachedCapabilityFunction,
     retained_function: &HirCapabilityFunction,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> Option<bool> {
     let Some(attached) = attached.effects() else {
         return retained_function.effects().is_empty().then_some(false);
@@ -358,7 +358,7 @@ fn generic_parameter_scopes_match(
     parameters: &[HirGenericParameter],
     scope: ScopeId,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     parameters.iter().all(|parameter| {
         parameter.bounds().iter().copied().all(|bound| {
@@ -374,7 +374,7 @@ fn prefix_expression_scopes_match(
     prefix: &crate::item::HirItemPrefix,
     scope: ScopeId,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     prefix.attributes().iter().all(|attribute| {
         attribute.arguments().iter().all(|argument| {

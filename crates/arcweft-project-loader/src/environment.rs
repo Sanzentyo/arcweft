@@ -440,13 +440,14 @@ fn accepted_source_character_ids(
     loaded: &LoadedProject,
 ) -> Result<BTreeSet<CharacterId>, ProjectRegistrationLoadError> {
     let mut characters = BTreeSet::new();
-    for (_, parsed) in loaded.module_parsed_sources() {
+    for (module, parsed) in loaded.module_parsed_sources() {
         for item in parsed.items()? {
             let TypedItemNode::Character(character) = item else {
                 continue;
             };
             let attached = character.semantics()?;
             let header = HirRetainedHeader::try_project_attached(
+                module,
                 attached.header(),
                 DeclarationIdentityFamily::Character,
             )?;

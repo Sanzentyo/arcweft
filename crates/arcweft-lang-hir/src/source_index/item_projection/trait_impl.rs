@@ -33,7 +33,7 @@ use super::callable::{
     scope_children_are_exact_in_source_order, scope_locals_are_exact,
 };
 use super::{
-    ItemValidationArenas, expression_owner_matches, generic_issue, generic_parameters_match,
+    ItemValidationContext, expression_owner_matches, generic_issue, generic_parameters_match,
     item_state, name_issue, prefix_issue, prefix_matches, required_name_matches, slot_is_poisoned,
     type_owner_matches, where_issue, where_predicates_match,
 };
@@ -50,7 +50,7 @@ pub(super) fn trait_payload_matches(
     member_arena: Option<&HirDeclarationMemberArena>,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let HirItemKind::Trait(retained) = item.kind() else {
         return false;
@@ -153,7 +153,7 @@ pub(super) fn impl_payload_matches(
     member_arena: Option<&HirDeclarationMemberArena>,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let HirItemKind::Impl(retained) = item.kind() else {
         return false;
@@ -269,7 +269,7 @@ fn trait_member_matches(
     retained: &HirTraitMember,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> Option<MemberEvidence> {
     match (attached, retained) {
         (
@@ -302,7 +302,7 @@ fn impl_member_matches(
     retained: &HirImplMember,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> Option<MemberEvidence> {
     match (attached, retained) {
         (AttachedImplMember::AssociatedType(attached), HirImplMember::AssociatedType(retained)) => {
@@ -332,7 +332,7 @@ fn trait_associated_type_matches(
     retained: &HirTraitAssociatedType,
     item_scope: ScopeId,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> Option<MemberEvidence> {
     if !prefix_matches(retained.prefix(), attached.prefix(), slots)
         || !prefix_expression_scopes_match(attached.prefix(), item_scope, slots, arenas)
@@ -373,7 +373,7 @@ fn impl_associated_type_matches(
     retained: &HirImplAssociatedType,
     item_scope: ScopeId,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> Option<MemberEvidence> {
     if !prefix_matches(retained.prefix(), attached.prefix(), slots)
         || !prefix_expression_scopes_match(attached.prefix(), item_scope, slots, arenas)
@@ -519,7 +519,7 @@ fn method_matches(
     retained: MethodRetention<'_>,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> Option<MemberEvidence> {
     if !prefix_matches(retained.prefix, attached.prefix, slots)
         || !prefix_expression_scopes_match(attached.prefix, item_scope, slots, arenas)
@@ -657,7 +657,7 @@ fn method_parameter_groups_match(
     retained: &[HirMethodParameterGroup],
     callable_scope: ScopeId,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
     block_arenas: &BlockValidationArenas<'_>,
 ) -> Option<MethodParameterState> {
     if attached.len() != retained.len() || attached.is_empty() {
@@ -837,7 +837,7 @@ fn method_return_matches(
     retained: Option<crate::identity::TypeId>,
     scope: ScopeId,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> Option<(bool, bool)> {
     match (attached, retained) {
         (None, None) => Some((false, false)),
@@ -859,7 +859,7 @@ fn bodyless_scope_matches(
     scope: ScopeId,
     parameter_locals: &[LocalId],
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let no_statements = arenas
         .statements
@@ -891,7 +891,7 @@ fn prefix_expression_scopes_match(
     prefix: &AttachedItemPrefix,
     scope: ScopeId,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     prefix.attributes().iter().all(|attribute| {
         attribute
@@ -913,7 +913,7 @@ fn optional_type_matches(
     attached: Option<&arcweft_lang_syntax::attachment::AttachedTypeRefNode>,
     scope: ScopeId,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     match (retained, attached) {
         (None, None) => true,
@@ -927,7 +927,7 @@ fn types_match(
     attached: &[arcweft_lang_syntax::attachment::AttachedTypeRefNode],
     scope: ScopeId,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     retained.len() == attached.len()
         && retained
@@ -942,7 +942,7 @@ fn type_matches(
     attached: &arcweft_lang_syntax::attachment::AttachedTypeRefNode,
     scope: ScopeId,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     type_owner_matches(retained, attached, slots)
         && arenas
@@ -955,7 +955,7 @@ fn generic_types_are_in_scope(
     retained: &[HirGenericParameter],
     scope: ScopeId,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     retained.iter().all(|parameter| {
         parameter.bounds().iter().copied().all(|ty| {
@@ -971,7 +971,7 @@ fn where_types_are_in_scope(
     retained: &[HirWherePredicate],
     scope: ScopeId,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     retained.iter().all(|predicate| {
         core::iter::once(predicate.subject())
@@ -985,7 +985,7 @@ fn where_types_are_in_scope(
     })
 }
 
-fn block_arenas<'arena>(arenas: &ItemValidationArenas<'arena>) -> BlockValidationArenas<'arena> {
+fn block_arenas<'arena>(arenas: &ItemValidationContext<'arena>) -> BlockValidationArenas<'arena> {
     BlockValidationArenas {
         expressions: arenas.expressions,
         statements: arenas.statements,

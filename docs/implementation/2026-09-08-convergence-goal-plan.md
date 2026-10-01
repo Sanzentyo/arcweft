@@ -3537,3 +3537,96 @@ DerivedFromName の View ID を module/name から再生成しており、HIR he
 の public ID と異なる。新 HIR regression の失敗でこの差を確認した。maintained View
 contract の module-scoped identity を final typed publication に閉じ、compiler はその
 published identity を消費する必要がある。module/name 再生成を最終 consumer に残さない。
+
+### 2026-10-01 — final retained View identity and UI audit intake
+
+Inspected base: `eb8fee0a33b506a24ecafe625dd11d1b571dfb0b`、`main == origin/main`、
+着手時 clean。同じ checkout でこの identity cut の source/test/doc dirty patch を検証。
+Supersedes: 直前の HIR/global identity と compiler/module identity の不一致。
+Final HIR retained header が canonical module/name から `view.<module>.<name>` を
+一度生成し、explicit public ID は維持する。global identity の他 retained family は
+既存契約を維持する。namespace derivation は ID owner の同じ PublicId grammar を使う。
+module segment `std` は `view.std.Card` の nested component として許される。
+
+freeze の ItemValidationContext は実際の canonical module を持ち、同じ header
+projection と全体一致を検査する。DerivedFromName を無条件で認める旧 validation、
+別 public-ID-issue 比較、compiler の module/name 再生成、ViewId の module/name
+constructor を削除した。compiler は published PublicId を ViewId の typed family
+conversion へ渡す。二重 identity index、名前の fallback、旧 signature alias はない。
+
+受入証拠: HIR は別 module の同名 Card を `view.a.Card` / `view.b.Card` に分離し、
+entity/callable/source owner の exact join を検査する。別 module で生成した header の
+差込みは final freeze が拒否する。compiler fixture は同名 Card、明示 `view.authored`、
+複数 root/module を含み、final HIR、retained symbols、bundle definition の ID 集合を
+一致させる。body span の順序は final HIR の canonical module/source inventory で検査
+する。bundle definition の ID-sorted lookup order は source order の正本ではない。
+
+構造: production owner は既存 ID grammar、HIR declaration projection/freeze、compiler
+product join、View typed ID。依存追加、I/O、parallel schema/state はない。validation
+context の module field 追加は実際の freeze invariant に必要で、物理分割のための API
+widening ではない。大きい retained/item projection/module/view compiler owner はそれぞれ
+declaration algebra、attached-to-final freeze validation、module atomic publication、
+accepted View lowering の cohesive owner として保持する。test は同じ owner の既存
+leaf/integration fixture に置く。各 file の growth は 300 LOC 未満。
+
+| Owner | Base physical LOC | Current physical LOC | Current bytes | Classification |
+| --- | ---: | ---: | ---: | --- |
+| id `src/lib.rs` | 708 | 763 | 24,117 | production + embedded tests |
+| HIR `item/retained.rs` | 1,544 | 1,569 | 48,392 | production |
+| HIR `source_index/item_projection.rs` | 1,494 | 1,437 | 55,875 | production |
+| HIR `module.rs` | 2,122 | 2,123 | 85,692 | production |
+| project-loader `environment.rs` | 937 | 938 | 32,672 | production |
+| compiler `src/view.rs` | 1,426 | 1,411 | 57,065 | production |
+| View `view/identity.rs` | 454 | 415 | 13,221 | production + embedded tests |
+| HIR lowering `tests/view.rs` | 454 | 506 | 16,930 | test leaf |
+| HIR `item/tests.rs` | 1,021 | 1,078 | 37,196 | test leaf |
+| HIR `symbol/tests/symbol_projection.rs` | 1,114 | 1,153 | 42,179 | test leaf |
+| compiler `tests/view_product.rs` | 1,121 | 1,182 | 42,054 | integration tests |
+
+embedded test LOC は id 192、View identity 130。fan-in/out と layer direction は
+最終 `just structure-audit-gate` で再確認し、97 packages、348 review triggers、
+blocking violations 0。ログは `%TEMP%/arcweft-1001-view-identity-structure-final.log`。
+
+最終 `cargo check --workspace --all-targets --all-features`、同 Clippy、format/diff check
+は合格。ログは `%TEMP%/arcweft-1001-view-identity-check-final2.log` と
+`%TEMP%/arcweft-1001-view-identity-clippy-final2.log`。Clippy warnings あり。
+focused HIR View tests は 16 passed、compiler canonical-module/source-order fixture は
+1 passed。初期試行の constructor 名/analysis lease API の誤認を修正し、compiler の
+ID-sorted lookup iteration を source order とみなす assertion も final HIR inventory を
+使う証明へ修正した後に合格した。この fixture 修正では production の final ID
+authority を変更していない。
+最終 `just test-workspace` は `RUST_MIN_STACK=16777216` で終了コード 0。
+308 suites、7,134 passed / 0 failed / 24 ignored、HIR lib は 929 passed / 8 ignored、
+sema lib は 1,105 passed。成功ログは
+`%TEMP%/arcweft-1001-view-identity-workspace-test.log`、対応する `.exit` は `0`。
+最終 Rust source/test の変更後に全 recipe を実行し、その後の変更はこの evidence と
+View chapter の prose のみ。changed content/link/format と staged diff を確認した。
+GPU benchmark、UI audit の実行時反例/未達 consumer はこの identity cut の合格証拠に
+含めない。fetch 後も `origin/main` は inspected base と一致した。
+
+UI audit intake: ユーザー指定の [UI監査結果まとめ](chatgpt-conversation://6abdc93b-4880-83e8-b6fa-a4b71236660b)
+を read_thread で取得した。監査の固定 base は上記 SHA と一致する。取得できた本文は
+20,000 characters（sections 1–8 と section 9 冒頭、tool による末尾 truncation、older
+page なし）。取得できない末尾を読了扱いにはしない。以下は主要指摘を現物に照合した
+intake であり、外部静的監査を runtime/GPU 測定結果として扱わない。
+
+| Audit boundary | 現行 evidence / goal の受入条件 |
+| --- | --- |
+| definition vs occurrence identity | この cut は definition ID の final authority を閉じる。`BundleViewInstancePathSegment` と replacement/reconcile は依然 instruction index を使う。compiler-accepted stable site + typed item path を state/style/resource/geometry/paint/input/Agent へ通し、前方挿入・並替・direct repeated Text/Button で同一性を検証する。今回で node identity 完了とはしない。 |
+| live replacement | `session/hot_swap.rs` は View/Style 変更を CodeGenerational とし旧 presentation を維持する。lower replacement は StyleProgramChanged と AWBC-less candidate catalog の制約を持つ。handler runtime/Style/text/resource/state migration を完全 candidate に含め、表示・input/action/focus/capture/editing を同じ publication で commit する。 |
+| general values/defaults/Need | 既採用 RuntimeValue/RuntimePureProgram と free-input ABI の移行に統合する。per-definition storage、supplied/default provenance と dependency revision、typed Repeat item/binding/key、ordinary Need Match/observer、typed Binding/event payload を閉じ、scalar storage/named mirror/旧 Await/count Repeat を consumer 切替で削除する。 |
+| cache/fuel transparency | `ViewMountState::evaluate` の hit は budget を消費せず、from_snapshot は cache を空にする。canonical semantic fuel を hit/miss/backend で一致させる。warm/cold/evicted/restored が同じ limit で同じ成功/診断/publication を返す実行 fixture が必要。監査の 17-mount 反例は未実行で、source-level counterexample として扱う。 |
+| retained assets/frame transaction | Glyphon candidate fork は project font bytes を clone して font database/system を再構築し cache も clone する。immutable assets の共有と disposable derived cache を semantic state transaction から分離する。frame preparation の費用が毎回 font inventory 総量へ比例しない実行証拠を必要とする。OS fallback の問題とは扱わない。 |
+| geometry/text/GPU resources | node ごとの resource 全検索と ancestor 再走査を typed product join と段階別 invalidation へ置換する。既存 text layout を actual intrinsic measurement と paint/hit/selection に共有する。direct renderer の image upload/resource lifetime を retained asset に合わせ、content/geometry/input parity と upload/work counters を検証する。 |
+| virtualization | range planner 単体を complete としない。Scroll occurrence と同じ identity で window evaluation/layout/paint を接続し、off-window state policy、focus/IME/capture pin、variable-height anchor correction の deterministic commit を検証する。 |
+| logical clock/numeric profile | FxLogicalTime は f32 秒を累積している。Core 共通の整数 timestamp と activation 差分を正本にし sampler 境界で変換する。長時間/同総 dt の分割差 fixture、CPU state/geometry profile と GPU pixel 許容差の別検証を必要とする。監査の算術再現をアプリ測定とは数えない。 |
+| restored external invocation | dispatch は route/event/target を照合し invocation raw_epoch を照合しない。通常 player での実害は未実証。restore/replacement の publication incarnation と外部 interaction lease を論理 replay ID から分離し、保持された古い invocation を拒否する lower API fixture で閉じる。内部 queue clear だけを外部寿命の証拠としない。 |
+
+この受入条件を `.1.4`、`.1.3.1` の owner/transaction と scheduler/restore A–F に
+接続し、既存 goal の全範囲を維持する。stable View chapter の target を同期した。
+cache を保存して意味論差を隠す、instruction/source 位置から移行を推測する、scalar
+旧系へ個別回避策を追加する方向は採用しない。根本 boundary を consumer ごと移行する。
+性能については変更波及に応じた work/asset reuse を測り、常に O(変更数) との未実証の
+保証はしない。次は general expression/default の complete checked input authority と
+runtime reachability を接続する。runtime 実行、UI audit の未達、`.1.3.1`、nominal、
+scheduler/restore、最終全体検証が残るため goal は active のまま。

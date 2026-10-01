@@ -35,6 +35,58 @@ fn assert_view_freeze_rejects(
     assert!(database.current(&key).is_none());
 }
 
+#[test]
+fn view_freeze_rejects_a_derived_identity_from_a_different_module() {
+    use crate::item::HirRetainedHeader;
+    use arcweft_id::{DeclarationName, PublicId};
+    use arcweft_lang_syntax::ast::module_path::ModuleSegment;
+    assert_view_freeze_rejects(
+        "foreign-derived-identity",
+        "view Main() { Text(\"hello\") }\n",
+        |transaction, owner| {
+            let (slots, arenas) = transaction.storage_mut();
+            let item = arenas.items().resolve_staged(slots, owner).unwrap();
+            let HirItemKind::View(view) = item.kind() else {
+                panic!("View owner");
+            };
+            let other = CanonicalModulePath::from_segments([ModuleSegment::new("other").unwrap()]);
+            let header = HirRetainedHeader::try_new(
+                &other,
+                DeclarationIdentityFamily::View,
+                HirRetainedPublicId::Resolved {
+                    value: PublicId::try_new("view.other.Main").unwrap(),
+                    origin: HirPublicIdOrigin::DerivedFromName,
+                },
+                HirRetainedName::Resolved(DeclarationName::try_new("Main").unwrap()),
+            )
+            .unwrap();
+            let replacement = HirItem::try_new_with_state(
+                owner,
+                item.scope(),
+                item.prefix().clone(),
+                HirItemKind::View(
+                    HirViewDeclaration::try_new(
+                        owner,
+                        header,
+                        view.callable_scope(),
+                        view.parameters().into(),
+                        view.exports().into(),
+                        view.values().into(),
+                    )
+                    .unwrap(),
+                ),
+                item.members().into(),
+                *item.state(),
+            )
+            .unwrap();
+            arenas
+                .items()
+                .revise_finalized(slots, owner, replacement)
+                .unwrap();
+        },
+    );
+}
+
 fn revise_view(
     transaction: &mut StagedHirModuleTransaction<'_>,
     owner: crate::identity::ItemId,

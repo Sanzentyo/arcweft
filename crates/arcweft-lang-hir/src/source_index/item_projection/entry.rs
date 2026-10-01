@@ -26,7 +26,7 @@ use crate::slot::SlotSnapshot;
 
 use super::super::expression_manifest::leaf::path_projection_matches;
 use super::{
-    ItemValidationArenas, expression_owner_matches, expression_tree_is_unallocated,
+    ItemValidationContext, expression_owner_matches, expression_tree_is_unallocated,
     item_prefix_matches, item_state, prefix_issue, slot_is_poisoned, type_owner_matches,
 };
 
@@ -36,7 +36,7 @@ pub(super) fn payload_matches(
     item: &HirItem,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let HirItemKind::Entry(retained) = item.kind() else {
         return false;
@@ -59,7 +59,7 @@ fn body_matches(
     item: &HirItem,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> Option<bool> {
     match attached.body() {
         AttachedEntryBody::Missing(_) => {
@@ -93,7 +93,7 @@ fn member_matches(
     item: &HirItem,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> Option<bool> {
     match (retained, attached) {
         (HirEntryMember::StateType(retained), AttachedEntryMember::StateType(attached))
@@ -160,7 +160,7 @@ fn type_binding_matches(
     attached: &AttachedEntryRoleBinding<AttachedTypeRefNode>,
     item: &HirItem,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> Option<bool> {
     let attached_type = attached.value().value()?;
     let type_record = arenas.types.resolve_prepared(slots, retained.ty()).ok()?;
@@ -480,7 +480,7 @@ fn option_expression_matches(
     item: &HirItem,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     match (retained, attached) {
         (

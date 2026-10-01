@@ -34,7 +34,11 @@ impl StagedHirModuleTransaction<'_> {
         preflight_layer_inventory(&attached)?;
 
         let prefix = self.lower_item_prefix(attached.prefix(), scope)?;
-        let header = project_retained_header(attached.header(), DeclarationIdentityFamily::Layer)?;
+        let header = project_retained_header(
+            attached.header(),
+            DeclarationIdentityFamily::Layer,
+            self.request.key().path(),
+        )?;
         let kind = project_layer_kind(attached.kind());
         let mut retained_members = Vec::new();
         let mut member_ids = Vec::new();

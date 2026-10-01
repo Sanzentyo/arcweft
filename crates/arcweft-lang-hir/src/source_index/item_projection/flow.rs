@@ -38,7 +38,7 @@ use super::callable::{
     postcondition_result_matches,
 };
 use super::{
-    ItemValidationArenas, generic_parameters_match, item_prefix_matches, item_state, prefix_issue,
+    ItemValidationContext, generic_parameters_match, item_prefix_matches, item_state, prefix_issue,
     slot_is_poisoned, type_owner_matches, where_predicates_match,
 };
 
@@ -120,7 +120,7 @@ pub(super) fn payload_matches(
     item: &HirItem,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let HirItemKind::Flow(flow) = item.kind() else {
         return false;
@@ -718,7 +718,7 @@ fn flow_return_matches(
     flow: &HirFlowItem,
     attached: &AttachedFlowReturnSyntax,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> Option<bool> {
     match (flow.result(), attached) {
         (crate::item::HirFlowReturn::OmittedUnit, AttachedFlowReturnSyntax::Omitted) => Some(false),
@@ -972,7 +972,7 @@ fn flow_contracts_match(
     flow: &HirFlowItem,
     attached: &[AttachedFlowContractClause],
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> Option<Vec<HirFlowIssue>> {
     if flow.contracts().len() != attached.len() {
         return None;
@@ -1194,7 +1194,7 @@ fn flow_scope_graph_matches(
     attached: &AttachedFlowDeclaration,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let requires_source = attached
         .contracts()
@@ -1274,7 +1274,7 @@ fn flow_result_local_matches(
     attached: &AttachedFlowDeclaration,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let has_ensures = attached
         .contracts()
@@ -1434,7 +1434,7 @@ const fn flow_owned_issue(
     HirFlowIssue::new(class, issue_owner, flow_query(owner, role))
 }
 
-fn block_arenas<'arena>(arenas: &ItemValidationArenas<'arena>) -> BlockValidationArenas<'arena> {
+fn block_arenas<'arena>(arenas: &ItemValidationContext<'arena>) -> BlockValidationArenas<'arena> {
     BlockValidationArenas {
         expressions: arenas.expressions,
         statements: arenas.statements,

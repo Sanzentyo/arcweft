@@ -17,7 +17,7 @@ use crate::item::{
 use crate::leaf::{HirLiteral, HirStringLiteral};
 
 use super::{
-    ItemValidationArenas, expression_owner_matches, item_prefix_matches, item_state, prefix_issue,
+    ItemValidationContext, expression_owner_matches, item_prefix_matches, item_state, prefix_issue,
     required_name_matches, retained_header_item_issue, retained_header_matches, slot_is_poisoned,
     source_matches, type_is_poisoned,
 };
@@ -32,13 +32,13 @@ pub(super) fn payload_matches(
     item: &HirItem,
     members: Option<&HirDeclarationMemberArena>,
     slots: &crate::slot::SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let HirItemKind::Metric(metric) = item.kind() else {
         return false;
     };
     if !item_prefix_matches(item, attached.prefix(), slots)
-        || !retained_header_matches(metric.header(), attached.header())
+        || !retained_header_matches(metric.header(), attached.header(), arenas.module)
         || metric.kind() != metric_kind(attached.kind())
         || !type_matches(
             metric.value_type(),
@@ -197,7 +197,7 @@ fn unit_value_matches(
     attached: &AttachedMetricUnitValue,
     scope: crate::identity::ScopeId,
     slots: &crate::slot::SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     match (retained, attached) {
         (HirMetricUnitValue::Missing, AttachedMetricUnitValue::Missing(_)) => true,
@@ -227,7 +227,7 @@ fn string_expression_matches(
     attached: &arcweft_lang_syntax::attachment::AttachedExpressionNode,
     scope: crate::identity::ScopeId,
     slots: &crate::slot::SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let Some(owner) = slots.prepared_source_owner::<ExprId>(attached.id()) else {
         return false;
@@ -246,7 +246,7 @@ fn buckets_value_matches(
     attached: &AttachedMetricBucketsValue,
     scope: crate::identity::ScopeId,
     slots: &crate::slot::SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     match (retained, attached) {
         (HirMetricBucketsValue::Missing, AttachedMetricBucketsValue::Missing(_)) => true,
@@ -278,7 +278,7 @@ fn type_matches(
     attached: &arcweft_lang_syntax::attachment::AttachedTypeRefNode,
     scope: crate::identity::ScopeId,
     slots: &crate::slot::SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     source_matches(slots, retained, attached.id())
         && arenas

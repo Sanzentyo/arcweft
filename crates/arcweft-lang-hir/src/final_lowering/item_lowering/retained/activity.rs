@@ -49,8 +49,11 @@ impl StagedHirModuleTransaction<'_> {
 
         let prefix = self.lower_item_prefix(attached.prefix(), scope)?;
         let prefix_issue = prefix.issue;
-        let header =
-            project_retained_header(attached.header(), DeclarationIdentityFamily::Activity)?;
+        let header = project_retained_header(
+            attached.header(),
+            DeclarationIdentityFamily::Activity,
+            self.request.key().path(),
+        )?;
         let callable_scope = self.allocate_item_callable_scope(node, owner, scope)?;
         let contract_scopes = self.allocate_item_contract_scopes(
             owner,

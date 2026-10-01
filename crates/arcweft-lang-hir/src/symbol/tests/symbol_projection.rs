@@ -130,6 +130,7 @@ fn retained_view_value_projection_preserves_import_visibility_and_entity_identit
     };
     assert_eq!(retained.callable(), Some(callable.declaration()));
     assert_eq!(retained.owner(), callable.source_item());
+    assert_eq!(retained.public_id().as_str(), "view.child.Public");
     assert!(
         matches!(table.resolve_entity_reference(&root, &absolute_entity_reference(retained.public_id().as_str()), source.clone()),
         Ok(ResolvedProjectSymbol::Retained(entity)) if entity == retained)
@@ -139,6 +140,44 @@ fn retained_view_value_projection_preserves_import_visibility_and_entity_identit
         Err(ProjectValueLookupError::Inaccessible { candidates, .. })
             if matches!(candidates.as_ref(), [ProjectSymbolTargetId::Callable(declaration)] if declaration.name() == "Private"))
     );
+}
+
+#[test]
+fn derived_view_ids_separate_same_named_owners_in_distinct_modules() {
+    let (documents, project) = project_modules(&[
+        ("", "use crate.a.Card as A\nuse crate.b.Card as B\n"),
+        ("a", "pub view Card() {}\n"),
+        ("b", "pub view Card() {}\n"),
+    ]);
+    let table = ProjectSymbolTable::link(
+        project.view(),
+        &empty_declarations(&documents, "scoped-view-identity"),
+    )
+    .expect("same View name in different modules links")
+    .into_table();
+    let root = CanonicalModulePath::crate_root();
+    let source = documents[0].span(SourceRange::new(0, 3)).unwrap();
+    let mut declarations = Vec::new();
+    for (alias, public_id, module) in [("A", "view.a.Card", "a"), ("B", "view.b.Card", "b")] {
+        let ProjectValueLookup::Present(callable) = table
+            .resolve_value_target(&root, &symbol_path(alias), source.clone())
+            .unwrap()
+        else {
+            panic!("View callable");
+        };
+        let ResolvedProjectSymbol::Retained(entity) = table
+            .resolve_entity_reference(&root, &absolute_entity_reference(public_id), source.clone())
+            .unwrap()
+        else {
+            panic!("View entity");
+        };
+        assert_eq!(entity.callable(), Some(callable.declaration()));
+        assert_eq!(entity.owner(), callable.source_item());
+        assert_eq!(entity.module(), &module_path(module));
+        assert_eq!(entity.public_id().as_str(), public_id);
+        declarations.push(callable.declaration().clone());
+    }
+    assert_ne!(declarations[0], declarations[1]);
 }
 
 #[test]

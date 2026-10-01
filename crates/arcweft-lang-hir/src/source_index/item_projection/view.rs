@@ -18,7 +18,7 @@ use crate::source_index::HirSourceSite;
 
 use super::callable::{ParameterSurfacePolicy, parameters_match};
 use super::{
-    ItemValidationArenas, expression_owner_matches, item_prefix_matches, item_state, prefix_issue,
+    ItemValidationContext, expression_owner_matches, item_prefix_matches, item_state, prefix_issue,
     retained_header_item_issue, retained_header_matches, slot_is_poisoned,
 };
 use crate::source_index::block_projection::BlockValidationArenas;
@@ -34,7 +34,7 @@ pub(super) fn payload_matches(
     item: &HirItem,
     members: Option<&HirDeclarationMemberArena>,
     slots: &crate::slot::SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let HirItemKind::View(view) = item.kind() else {
         return false;
@@ -57,7 +57,7 @@ pub(super) fn payload_matches(
                 )
         });
     if !item_prefix_matches(item, attached.prefix(), slots)
-        || !retained_header_matches(view.header(), attached.header())
+        || !retained_header_matches(view.header(), attached.header(), arenas.module)
         || !callable_source_matches
         || callable.kind() != HirScopeKind::Callable
         || callable.parent() != Some(item.scope())

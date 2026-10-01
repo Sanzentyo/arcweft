@@ -76,7 +76,7 @@ pub use flow_role::{
     HirFlowContractSourcePart, HirFlowParameterSourcePart, HirFlowReturnSourcePart,
     HirFlowSourceRole,
 };
-pub(crate) use item_projection::ItemValidationArenas;
+pub(crate) use item_projection::ItemValidationContext;
 pub use item_role::{
     HirCallableAttachedContentSourcePart, HirCallableEffectSourcePart,
     HirCallableParameterSourcePart, HirCallableSourceOwner, HirCallableSourceRole,

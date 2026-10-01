@@ -17,7 +17,7 @@ use crate::item::{
 use crate::leaf::HirIdRefValue;
 
 use super::{
-    ItemValidationArenas, expression_owner_matches, item_prefix_matches, item_state, prefix_issue,
+    ItemValidationContext, expression_owner_matches, item_prefix_matches, item_state, prefix_issue,
     retained_header_item_issue, retained_header_matches, slot_is_poisoned,
 };
 
@@ -27,13 +27,13 @@ pub(super) fn payload_matches(
     item: &HirItem,
     members: Option<&HirDeclarationMemberArena>,
     slots: &crate::slot::SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let HirItemKind::Layer(layer) = item.kind() else {
         return false;
     };
     if !item_prefix_matches(item, attached.prefix(), slots)
-        || !retained_header_matches(layer.header(), attached.header())
+        || !retained_header_matches(layer.header(), attached.header(), arenas.module)
         || layer.kind() != layer_kind(attached.kind())
     {
         return false;
@@ -112,7 +112,7 @@ fn member_matches(
     attached: &AttachedLayerEntry,
     scope: crate::identity::ScopeId,
     slots: &crate::slot::SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     let payload_matches = match (retained.kind(), attached) {
         (
@@ -248,7 +248,7 @@ fn expression_value_matches(
     attached: &AttachedLayerExpression,
     scope: crate::identity::ScopeId,
     slots: &crate::slot::SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
+    arenas: &ItemValidationContext<'_>,
 ) -> bool {
     match (retained, attached) {
         (HirLayerMemberValue::Missing, AttachedLayerExpression::Missing(_)) => true,
