@@ -208,9 +208,13 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
         if target_type != &field_type || value_type != &field_type {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
-        let place =
-            CheckedMutablePlace::try_nominal_field(local, nominal, selection.clone(), field_type)
-                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        let place = CheckedMutablePlace::try_nominal_field(
+            local,
+            nominal,
+            selection.selection().clone(),
+            field_type,
+        )
+        .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
         Ok(CheckedStatementPayload::Assignment(Box::new(
             CheckedAssignment::new(place, value_type.clone()),
         )))

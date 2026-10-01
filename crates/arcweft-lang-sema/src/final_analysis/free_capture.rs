@@ -228,14 +228,10 @@ impl CheckedCaptureExpression {
                 access,
             )?;
         }
-        if matches!(
-            checked.resolution(),
-            CheckedExpressionResolution::Select(super::CheckedSelectResolution::Field(_))
-        ) && let Some(place) = checked
-            .mutable_place()
-            .filter(|place| place.nominal_field().is_some())
+        if let CheckedExpressionResolution::Select(super::CheckedSelectResolution::Field(field)) =
+            checked.resolution()
+            && let super::CheckedFieldReceiver::Binding(local) = field.receiver()
         {
-            let local = place.local_id();
             let ty = local_type(local)
                 .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local })?;
             value.push_typed(
@@ -311,7 +307,7 @@ impl CheckedCaptureExpression {
             }
         }
         if let PreparedExpressionFact::ProjectField(field) = checked
-            && let Some(local) = field.mutable_base()
+            && let super::CheckedFieldReceiver::Binding(local) = field.receiver()
         {
             let ty = local_type(local)
                 .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local })?;
@@ -542,37 +538,64 @@ impl<'a, 'coordinate, F: Fn(LocalId) -> Option<TypeKind>>
         self.include_sources(inputs.sources)
     }
 
+    /// Projects the same authenticated free sources for an executable input
+    /// ABI. Consumers retain occurrences; the collector alone decides which
+    /// bindings are external to the root and authenticates their type/origin.
+    pub(super) fn include_with_free_sources(
+        &mut self,
+        inputs: CheckedCaptureExpression,
+        mut free: impl FnMut(CheckedLocalInputSource),
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        for source in inputs.sources {
+            if self.include_source(&source)? {
+                free(source);
+            }
+        }
+        Ok(())
+    }
+
     fn include_sources(
         &mut self,
         sources: Vec<CheckedLocalInputSource>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         for source in sources {
-            let accepted = (self.local_type)(source.local).ok_or(
-                FinalSemanticAnalysisError::LocalTypeUnavailable {
-                    owner: source.local,
-                },
-            )?;
-            let origin = self
-                .coordinates
-                .binding(source.local)
-                .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
-            if accepted.semantic_identity_digest()? != source.ty
-                || source
-                    .origin
-                    .as_ref()
-                    .is_some_and(|expected| expected != &origin)
-            {
-                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-            }
-            if !origin.path().is_at_or_below(&self.root) && self.captured.insert(source.local) {
-                self.captures.push(CheckedExecutableCapture::new(
-                    source.local,
-                    origin,
-                    accepted,
-                ));
-            }
+            self.include_source(&source)?;
         }
         Ok(())
+    }
+
+    fn include_source(
+        &mut self,
+        source: &CheckedLocalInputSource,
+    ) -> Result<bool, FinalSemanticAnalysisError> {
+        let accepted = (self.local_type)(source.local).ok_or(
+            FinalSemanticAnalysisError::LocalTypeUnavailable {
+                owner: source.local,
+            },
+        )?;
+        let origin = self
+            .coordinates
+            .binding(source.local)
+            .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        if accepted.semantic_identity_digest()? != source.ty
+            || source
+                .origin
+                .as_ref()
+                .is_some_and(|expected| expected != &origin)
+        {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        if origin.path().is_at_or_below(&self.root) {
+            return Ok(false);
+        }
+        if self.captured.insert(source.local) {
+            self.captures.push(CheckedExecutableCapture::new(
+                source.local,
+                origin,
+                accepted,
+            ));
+        }
+        Ok(true)
     }
 
     pub(super) fn finish(self) -> Box<[CheckedExecutableCapture]> {

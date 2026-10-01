@@ -84,6 +84,7 @@ pub struct FinalSemanticAnalysis {
     items: BTreeMap<ItemId, CheckedItem>,
     calls: BTreeMap<ExprId, CallTargetFacts>,
     selected_call_inventories: BTreeMap<ExprId, HirSelectedCallExpressionInventory>,
+    expression_execution_regions: super::execution_regions::CheckedExpressionExecutionCatalog,
     pub(super) edge_facts: BTreeMap<
         ExprId,
         Result<super::CheckedExpressionEdgeFact, super::CheckedExpressionEdgeError>,
@@ -968,7 +969,7 @@ pub(crate) struct FinalSemanticAnalysisDraft {
     pub(super) physical_candidate_argument_evaluations:
         BTreeMap<ExprId, Arc<[PhysicalCandidateArgumentEvaluation]>>,
     pub(super) executable_suspensions:
-        BTreeMap<ExprId, super::statement_effects::PreparedExecutableSuspensionRow>,
+        super::execution_regions::PreparedExecutableSuspensionCatalog,
 }
 
 /// Disjoint moved draft state used while the nominal context borrows only the
@@ -994,7 +995,7 @@ pub(crate) struct FinalSemanticAnalysisDraftParts {
     pub(super) physical_candidate_argument_evaluations:
         BTreeMap<ExprId, Arc<[PhysicalCandidateArgumentEvaluation]>>,
     pub(super) executable_suspensions:
-        BTreeMap<ExprId, super::statement_effects::PreparedExecutableSuspensionRow>,
+        super::execution_regions::PreparedExecutableSuspensionCatalog,
 }
 
 impl FinalSemanticAnalysisDraft {
@@ -1067,7 +1068,7 @@ pub(crate) struct FinalSemanticAnalysisPostEntryDraft {
     pub(super) physical_candidate_argument_evaluations:
         BTreeMap<ExprId, Arc<[PhysicalCandidateArgumentEvaluation]>>,
     pub(super) executable_suspensions:
-        BTreeMap<ExprId, super::statement_effects::PreparedExecutableSuspensionRow>,
+        super::execution_regions::PreparedExecutableSuspensionCatalog,
 }
 
 impl FinalSemanticAnalysisDraftParts {
@@ -1300,6 +1301,8 @@ impl FinalSemanticAnalysisPostEntryDraft {
         }
         control.check()?;
         let selected_call_inventories = selected_expressions.into_selected_call_inventories();
+        let expression_execution_regions =
+            executable_suspensions.publish(&expressions, &statements)?;
         let mut analysis = FinalSemanticAnalysis {
             authority,
             checked_callables,
@@ -1325,19 +1328,14 @@ impl FinalSemanticAnalysisPostEntryDraft {
             items,
             calls,
             selected_call_inventories,
+            expression_execution_regions,
             edge_facts,
             diagnostics: diagnostics.into(),
             #[cfg(test)]
             physical_candidate_argument_evaluations,
             work,
         };
-        seal_checked_callable_interfaces(
-            &mut analysis,
-            project,
-            symbols,
-            executable_suspensions,
-            control,
-        )?;
+        seal_checked_callable_interfaces(&mut analysis, project, symbols, control)?;
         analysis.local_uses = super::CheckedLocalUseCatalog::seal(&analysis, project)?;
         Ok(analysis)
     }
@@ -1347,10 +1345,6 @@ fn seal_checked_callable_interfaces(
     analysis: &mut FinalSemanticAnalysis,
     project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
-    executable_suspensions: BTreeMap<
-        ExprId,
-        super::statement_effects::PreparedExecutableSuspensionRow,
-    >,
     control: FinalSemanticAnalysisControl<'_>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     use crate::{
@@ -1375,7 +1369,6 @@ fn seal_checked_callable_interfaces(
             project,
             symbols,
             facts,
-            &executable_suspensions,
             &coordinates,
             control,
         )?;
@@ -1480,15 +1473,15 @@ fn seal_checked_callable_interfaces(
                             control,
                         )
                         .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-                        let execution = executable_suspensions
-                            .get(&value)
+                        let execution = analysis
+                            .expression_execution_region(value)
                             .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
                         let captures = checked_declaration_default_captures(
                             analysis,
                             module,
                             symbol,
                             value,
-                            execution,
+                            &execution,
                             &coordinates,
                         )?;
                         Some(CheckedDeclarationDefault::new(
@@ -1568,6 +1561,13 @@ fn validate_checked_entry_references(
 }
 
 impl FinalSemanticAnalysis {
+    pub(super) fn expression_execution_region(
+        &self,
+        owner: ExprId,
+    ) -> Option<super::execution_regions::CheckedExpressionExecutionRegion> {
+        self.expression_execution_regions.region(owner)
+    }
+
     /// A plain accepted opaque carrier may be copied only after the exact
     /// supplied runtime binding passes the function-ingress ownership check.
     pub(super) fn accepted_plain_opaque_nominal(

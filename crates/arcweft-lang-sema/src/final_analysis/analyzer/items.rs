@@ -694,10 +694,7 @@ impl Analyzer<'_, '_, '_> {
             Arc<CheckedCallableCatalog>,
             BTreeMap<ItemId, EffectSet>,
             BTreeMap<ItemId, CheckedSuspensionRole>,
-            BTreeMap<
-                ExprId,
-                crate::final_analysis::statement_effects::PreparedExecutableSuspensionRow,
-            >,
+            crate::final_analysis::execution_regions::PreparedExecutableSuspensionCatalog,
         ),
         FinalSemanticAnalysisError,
     > {

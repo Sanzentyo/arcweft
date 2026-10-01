@@ -50,6 +50,8 @@ mod canonical_literal;
 mod declaration_defaults;
 mod error;
 mod execution_plan;
+mod execution_regions;
+mod expression_inputs;
 mod free_capture;
 pub use free_capture::CheckedLocalUseSite;
 pub(crate) use model::CheckedRecordFieldSlot;
@@ -110,6 +112,9 @@ pub use error::{
     FinalCallSealFailure, FinalCallSealLocation, FinalSemanticAnalysisError,
     FinalSemanticProjectError, RecursiveCallableContractEdge, SemanticFactFamily,
 };
+pub use expression_inputs::{
+    CheckedExpressionInput, CheckedExpressionInputAbi, CheckedExpressionInputUse,
+};
 pub use fx_application::{
     CheckedContentFxApplication, CheckedContentFxBinding, CheckedFxApplicationOrdinal,
     CheckedFxApplicationSemanticDigest, CheckedFxArgument, CheckedFxBindingDecision, CheckedFxBody,
@@ -158,25 +163,26 @@ pub use model::{
     CheckedExecutableCapture, CheckedExecutableControlRole, CheckedExplicitDropPolicy,
     CheckedExpression, CheckedExpressionCallCallee, CheckedExpressionExecutionPlan,
     CheckedExpressionRecordField, CheckedExpressionResolution, CheckedExpressionResult,
-    CheckedExpressionSemanticDigest, CheckedFieldSelection, CheckedFunctionExecution,
-    CheckedImplicitCallable, CheckedImplicitCallableBody, CheckedImplicitCallableIdentity,
-    CheckedImplicitCapture, CheckedImplicitCaptureOccurrence, CheckedImplicitParameter,
-    CheckedImplicitParameterOccurrence, CheckedIncludeFlowTarget, CheckedItem, CheckedItemRole,
-    CheckedIteration, CheckedIteratorFamily, CheckedMatchArmFact, CheckedMatchFact,
-    CheckedMatchSemanticDigest, CheckedMethodSelection, CheckedMutablePlace,
-    CheckedNominalFieldPlace, CheckedNonValueExpressionResult, CheckedOrdinaryFunctionEmission,
-    CheckedPatchOperation, CheckedPattern, CheckedPatternResolution, CheckedPatternSemanticDigest,
-    CheckedPipe, CheckedPipeBindingIdentity, CheckedPipeLeft, CheckedPipeLeftOccurrence,
-    CheckedProjectCallable, CheckedProjectItem, CheckedProjectItemOwner, CheckedProjectNominal,
-    CheckedRecordBindingSource, CheckedRecordExpressionSource, CheckedRecordPattern,
-    CheckedRecordPatternField, CheckedRecordPatternOwner, CheckedRecordPatternRest,
-    CheckedRecordPatternSource, CheckedRecordPatternSourceRef, CheckedRecordValueSource,
-    CheckedRuntimeCallDisposition, CheckedRuntimeValueDisposition, CheckedScopeIdentity,
-    CheckedSelectBranchHead, CheckedSelectResolution, CheckedSelectStatement,
-    CheckedSelectStatementView, CheckedStageLook, CheckedStatement, CheckedStatementPayload,
-    CheckedStructuralExecutionReason, CheckedSuspensionRole, CheckedSuspensionStatement,
-    CheckedTraitConformance, CheckedTraitIdentity, CheckedTrigger, CheckedTriggerView, CheckedTry,
-    CheckedTryBoundary, CheckedTryBoundaryOwner, CheckedTryCallableBoundary, CheckedTryCarrier,
+    CheckedExpressionSemanticDigest, CheckedFieldAccess, CheckedFieldReceiver,
+    CheckedFieldSelection, CheckedFunctionExecution, CheckedImplicitCallable,
+    CheckedImplicitCallableBody, CheckedImplicitCallableIdentity, CheckedImplicitCapture,
+    CheckedImplicitCaptureOccurrence, CheckedImplicitParameter, CheckedImplicitParameterOccurrence,
+    CheckedIncludeFlowTarget, CheckedItem, CheckedItemRole, CheckedIteration,
+    CheckedIteratorFamily, CheckedMatchArmFact, CheckedMatchFact, CheckedMatchSemanticDigest,
+    CheckedMethodSelection, CheckedMutablePlace, CheckedNominalFieldPlace,
+    CheckedNonValueExpressionResult, CheckedOrdinaryFunctionEmission, CheckedPatchOperation,
+    CheckedPattern, CheckedPatternResolution, CheckedPatternSemanticDigest, CheckedPipe,
+    CheckedPipeBindingIdentity, CheckedPipeLeft, CheckedPipeLeftOccurrence, CheckedProjectCallable,
+    CheckedProjectItem, CheckedProjectItemOwner, CheckedProjectNominal, CheckedRecordBindingSource,
+    CheckedRecordExpressionSource, CheckedRecordPattern, CheckedRecordPatternField,
+    CheckedRecordPatternOwner, CheckedRecordPatternRest, CheckedRecordPatternSource,
+    CheckedRecordPatternSourceRef, CheckedRecordValueSource, CheckedRuntimeCallDisposition,
+    CheckedRuntimeValueDisposition, CheckedScopeIdentity, CheckedSelectBranchHead,
+    CheckedSelectResolution, CheckedSelectStatement, CheckedSelectStatementView, CheckedStageLook,
+    CheckedStatement, CheckedStatementPayload, CheckedStructuralExecutionReason,
+    CheckedSuspensionRole, CheckedSuspensionStatement, CheckedTraitConformance,
+    CheckedTraitIdentity, CheckedTrigger, CheckedTriggerView, CheckedTry, CheckedTryBoundary,
+    CheckedTryBoundaryOwner, CheckedTryCallableBoundary, CheckedTryCarrier,
     CheckedTryExpressionBoundary, CheckedTryFunctionSite, CheckedTryOperand,
     CheckedTryOperandAuthorityViolation, CheckedTypeSelection, CheckedTypeValue,
     CheckedTypedBinding, CheckedTypedExpressionResult, CheckedUnsafeAudit, CheckedValueResolution,

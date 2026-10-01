@@ -35,7 +35,7 @@ pub(crate) struct FinalSemanticAnalysisInput {
         BTreeMap<ExprId, Arc<[PhysicalCandidateArgumentEvaluation]>>,
     pub(super) ingress_seal: Option<PreparedExecutableIngressSeal>,
     pub(super) executable_suspensions:
-        BTreeMap<ExprId, super::statement_effects::PreparedExecutableSuspensionRow>,
+        super::execution_regions::PreparedExecutableSuspensionCatalog,
 }
 
 impl FinalSemanticAnalysisInput {
@@ -137,7 +137,7 @@ impl FinalSemanticAnalysisInput {
 
     pub(crate) fn set_executable_suspensions(
         &mut self,
-        rows: BTreeMap<ExprId, super::statement_effects::PreparedExecutableSuspensionRow>,
+        rows: super::execution_regions::PreparedExecutableSuspensionCatalog,
     ) -> Result<(), super::FinalSemanticAnalysisError> {
         if !self.executable_suspensions.is_empty() {
             return Err(super::FinalSemanticAnalysisError::WrongPayloadFamily);

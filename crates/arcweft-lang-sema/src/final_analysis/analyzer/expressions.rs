@@ -3484,6 +3484,7 @@ impl Analyzer<'_, '_, '_> {
             owner,
             target_type,
             Some(base),
+            crate::final_analysis::CheckedFieldReceiver::Binding(base),
             EffectSet::new(),
             &field_name,
         )
@@ -3519,6 +3520,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         target_type: &TypeKind,
         mutable_base: Option<arcweft_lang_hir::identity::LocalId>,
+        receiver: crate::final_analysis::CheckedFieldReceiver,
         effects: EffectSet,
         name: &arcweft_lang_hir::leaf::HirName,
     ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
@@ -3558,6 +3560,7 @@ impl Analyzer<'_, '_, '_> {
                 PreparedExpressionShell::value(ty.clone(), CheckedTypeSelection::Inferred, effects),
                 nominal,
                 mutable_base,
+                receiver,
                 ordinal,
                 ty,
                 name.clone(),
@@ -3620,6 +3623,7 @@ impl Analyzer<'_, '_, '_> {
                         owner,
                         target_type,
                         mutable_base,
+                        crate::final_analysis::CheckedFieldReceiver::Expression(select.target()),
                         target.effects().clone(),
                         name,
                     );
@@ -3635,6 +3639,7 @@ impl Analyzer<'_, '_, '_> {
                         type_name.as_str(),
                         name,
                         owner,
+                        select.target(),
                     )?
                 }
                 TypeKind::AcceptedNominal(nominal) => {
@@ -3660,6 +3665,7 @@ impl Analyzer<'_, '_, '_> {
                         type_name,
                         name,
                         owner,
+                        select.target(),
                     )?
                 }
                 _ => {
@@ -3685,6 +3691,7 @@ impl Analyzer<'_, '_, '_> {
                         type_name,
                         name,
                         owner,
+                        select.target(),
                     )?
                 }
             }
@@ -4622,6 +4629,7 @@ fn checked_environment_field_selection(
     type_name: &str,
     name: &arcweft_lang_hir::leaf::HirName,
     owner: ExprId,
+    receiver: ExprId,
 ) -> Result<(TypeKind, super::CheckedSelectResolution), AnalyzerExpressionError> {
     let field = record
         .field(name.as_str())
@@ -4645,7 +4653,10 @@ fn checked_environment_field_selection(
             field: selection,
         }
     } else {
-        super::CheckedSelectResolution::Field(selection)
+        super::CheckedSelectResolution::Field(crate::final_analysis::CheckedFieldAccess::new(
+            selection,
+            crate::final_analysis::CheckedFieldReceiver::Expression(receiver),
+        ))
     };
     Ok((ty, resolution))
 }

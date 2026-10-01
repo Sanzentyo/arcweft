@@ -41,6 +41,8 @@ use super::{
 #[derive(Clone, Debug)]
 struct PreparedExecutionEffectRow {
     effects: EffectRow,
+    source: Option<HirBodyChild>,
+    children: BTreeSet<HirBodyChild>,
     expressions: BTreeSet<ExprId>,
     statements: BTreeSet<StmtId>,
     direct_suspension: bool,
@@ -50,6 +52,8 @@ impl Default for PreparedExecutionEffectRow {
     fn default() -> Self {
         Self {
             effects: EffectRow::closed(EffectSet::new()),
+            source: None,
+            children: BTreeSet::new(),
             expressions: BTreeSet::new(),
             statements: BTreeSet::new(),
             direct_suspension: false,
@@ -67,38 +71,30 @@ fn body_projection_has_selected_owner(
         .any(|edge| contains(edge.child()))
 }
 
-/// Transaction-local executable row consumed while declaration-default
-/// interfaces are sealed. The expression inventory is the exact eager
-/// selected/body fold; it is not reconstructed from lexical scopes.
+/// A closed execution node from the exact eager selected/body fold. Direct
+/// edges retain shared subtrees without storing each transitive inventory.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedExecutableSuspensionRow {
-    expressions: Box<[ExprId]>,
-    statements: Box<[StmtId]>,
+    children: Box<[HirBodyChild]>,
     suspension: super::CheckedSuspensionRole,
     control: super::CheckedExecutableControlRole,
 }
 
 impl PreparedExecutableSuspensionRow {
     pub(crate) fn new(
-        expressions: Box<[ExprId]>,
-        statements: Box<[StmtId]>,
+        children: Box<[HirBodyChild]>,
         suspension: super::CheckedSuspensionRole,
         control: super::CheckedExecutableControlRole,
     ) -> Self {
         Self {
-            expressions,
-            statements,
+            children,
             suspension,
             control,
         }
     }
 
-    pub(crate) fn expressions(&self) -> &[ExprId] {
-        &self.expressions
-    }
-
-    pub(crate) fn statements(&self) -> &[StmtId] {
-        &self.statements
+    pub(crate) fn children(&self) -> &[HirBodyChild] {
+        &self.children
     }
 
     pub(crate) const fn suspension(&self) -> super::CheckedSuspensionRole {
@@ -112,6 +108,23 @@ impl PreparedExecutableSuspensionRow {
 
 impl PreparedExecutionEffectRow {
     fn union_with(
+        &mut self,
+        other: &Self,
+        control: FinalSemanticAnalysisControl<'_>,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        self.union_dependency(other, control)?;
+        if let Some(source) = other.source {
+            self.children.insert(source);
+        } else {
+            self.children.extend(other.children.iter().copied());
+        }
+        Ok(())
+    }
+
+    /// Cleanup still contributes effects and suspension obligations. Its
+    /// body executes in the captured cleanup frame, so its local reads are
+    /// not fresh eager inputs of the frame that creates the registration.
+    fn union_dependency(
         &mut self,
         other: &Self,
         control: FinalSemanticAnalysisControl<'_>,
@@ -173,6 +186,7 @@ impl PreparedClosureExecutionEffectRow {
 #[derive(Debug)]
 pub(crate) struct PreparedExecutionEffectCatalog {
     expression_rows: BTreeMap<ExprId, PreparedExecutionEffectRow>,
+    statement_rows: BTreeMap<StmtId, PreparedExecutionEffectRow>,
     declarations: BTreeMap<CallableDeclarationKey, PreparedExecutionEffectRow>,
     items: BTreeMap<arcweft_lang_hir::identity::ItemId, PreparedExecutionEffectRow>,
     closures: BTreeMap<CallableDeclarationKey, Box<[PreparedClosureExecutionEffectRow]>>,
@@ -181,15 +195,22 @@ pub(crate) struct PreparedExecutionEffectCatalog {
 impl PreparedExecutionEffectCatalog {
     pub(crate) fn expression_execution_rows(
         &self,
-    ) -> impl Iterator<Item = (ExprId, bool, &BTreeSet<ExprId>, &BTreeSet<StmtId>)> + '_ {
+    ) -> impl Iterator<Item = (ExprId, bool, &BTreeSet<ExprId>, &BTreeSet<HirBodyChild>)> + '_ {
         self.expression_rows.iter().map(|(owner, row)| {
             (
                 *owner,
                 row.direct_suspension,
                 &row.expressions,
-                &row.statements,
+                &row.children,
             )
         })
+    }
+
+    pub(crate) fn statement_execution_edges(&self) -> BTreeMap<StmtId, Box<[HirBodyChild]>> {
+        self.statement_rows
+            .iter()
+            .map(|(&owner, row)| (owner, row.children.iter().copied().collect()))
+            .collect()
     }
     pub(crate) fn declaration_effects(
         &self,
@@ -579,6 +600,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
         }
         Ok(PreparedExecutionEffectCatalog {
             expression_rows: self.expression_rows,
+            statement_rows: self.statement_rows,
             declarations: self.declarations,
             items: self.items,
             closures: closures
@@ -631,6 +653,8 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             .kind();
         let mut row = PreparedExecutionEffectRow {
             effects: EffectRow::closed(fact.effects().clone()),
+            source: Some(HirBodyChild::Expression(owner)),
+            children: BTreeSet::new(),
             expressions: BTreeSet::from([owner]),
             statements: BTreeSet::new(),
             direct_suspension: matches!(kind, HirExprKind::Await(_)),
@@ -638,10 +662,9 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
         if let Some(call_effects) = self.call_effects.get(&owner) {
             row.effects = union_effect_rows(&row.effects, call_effects, self.control)?;
         }
-        let latent_callable = matches!(
-            fact.checked_resolution(),
-            Some(super::CheckedExpressionResolution::ImplicitCallable(_))
-        ) || matches!(kind, HirExprKind::Closure(_));
+        let latent_callable =
+            fact.creates_implicit_callable() || matches!(kind, HirExprKind::Closure(_));
+        let direct_field_place = fact.reads_field_binding();
         let independent_computation = matches!(
             kind,
             HirExprKind::ComputationBlock(expression)
@@ -682,6 +705,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                 }
             }
             if !latent_callable
+                && !direct_field_place
                 && !independent_computation
                 && !matches!(role, HirExpressionChildRole::ClosureBody)
             {
@@ -743,7 +767,16 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             return Err(FinalSemanticAnalysisError::RecoveredOwner);
         }
         let kind = statement.kind();
+        let cleanup = match kind.evaluation_plan() {
+            arcweft_lang_hir::stmt::HirStmtEvaluationPlan::Value {
+                kind: arcweft_lang_hir::stmt::HirStmtValuePlanKind::Defer,
+                expression,
+                ..
+            } => expression,
+            _ => None,
+        };
         let mut row = PreparedExecutionEffectRow::default();
+        row.source = Some(HirBodyChild::Statement(owner));
         row.statements.insert(owner);
         for edge in kind
             .try_child_edges()
@@ -761,7 +794,11 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                 | HirStatementChild::Type(_)
                 | HirStatementChild::Local(_) => continue,
             };
-            row.union_with(&child, self.control)?;
+            if child.source == cleanup.map(HirBodyChild::Expression) {
+                row.union_dependency(&child, self.control)?;
+            } else {
+                row.union_with(&child, self.control)?;
+            }
         }
         for body in kind
             .body_projections()
@@ -1108,6 +1145,7 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
             checked.resolution(),
             super::CheckedExpressionResolution::ImplicitCallable(_)
         ) || matches!(kind, HirExprKind::Closure(_));
+        let direct_field_place = checked.reads_field_binding();
         let independent_computation = matches!(
             kind,
             HirExprKind::ComputationBlock(expression)
@@ -1137,6 +1175,7 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
             if !latent_callable
+                && !direct_field_place
                 && !independent_computation
                 && !matches!(role, HirExpressionChildRole::ClosureBody)
             {

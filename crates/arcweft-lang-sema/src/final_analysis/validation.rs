@@ -533,6 +533,30 @@ pub(super) fn validate_expressions(
             return Err(FinalSemanticAnalysisError::RecoveredOwner);
         }
         let fact_type = fact.value_type();
+        if let CheckedExpressionResolution::Select(CheckedSelectResolution::Field(access)) =
+            fact.resolution()
+        {
+            let receiver_type = match (access.receiver(), expression.kind()) {
+                (super::CheckedFieldReceiver::Binding(local), HirExprKind::Path(_))
+                    if fact
+                        .mutable_place()
+                        .is_some_and(|place| place.local_id() == local) =>
+                {
+                    locals.get(&local).map(CheckedBinding::ty)
+                }
+                (
+                    super::CheckedFieldReceiver::Expression(receiver),
+                    HirExprKind::Select(select),
+                ) if receiver == select.target() => expressions
+                    .get(&receiver)
+                    .and_then(CheckedExpression::value_type),
+                _ => None,
+            }
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+            if receiver_type.semantic_identity_digest()? != access.selection().owner_type() {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+        }
         if let Some(place) = fact.mutable_place()
             && let Some(field_place) = place.nominal_field()
         {
@@ -541,7 +565,7 @@ pub(super) fn validate_expressions(
             else {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             };
-            if selection != field_place.field()
+            if selection.selection() != field_place.field()
                 || locals.get(&place.local_id()).map(CheckedBinding::ty)
                     != Some(&field_place.nominal().ty())
                 || fact_type != Some(field_place.field_type())
@@ -1158,7 +1182,7 @@ fn validate_expression_resolution(
                 expressions,
                 owner,
                 ty,
-                selection,
+                selection.selection(),
             ),
             CheckedSelectResolution::DialogueView { projection, field } => {
                 validate_field_selection(semantic_shapes, modules, expressions, owner, ty, field)?;

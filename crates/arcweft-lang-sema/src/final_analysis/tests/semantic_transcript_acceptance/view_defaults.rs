@@ -69,6 +69,38 @@ fn view_defaults(source: &str) -> (Vec<CheckedDeclarationDefault>, [u8; 32]) {
         for capture in default.captures() {
             assert!(capture.parameter() < *position);
         }
+        let abi = report
+            .checked_expression_input_abi(default.source())
+            .unwrap_or_else(|error| {
+                panic!("general expression input ABI for a default: {error:?}\n{source}")
+            });
+        assert_eq!(abi.coordinate(), path);
+        assert_eq!(abi.result(), checked.value_type().unwrap());
+        assert_eq!(abi.effects(), checked.effects());
+        assert_eq!(abi.suspension(), default.suspension());
+        assert_eq!(abi.control(), default.control());
+        let mut expected = default
+            .captures()
+            .iter()
+            .flat_map(|capture| {
+                capture
+                    .used_locals()
+                    .iter()
+                    .map(|local| (local.local(), local.origin(), local.ty()))
+            })
+            .collect::<Vec<_>>();
+        expected.sort_by(|left, right| left.1.cmp(right.1));
+        assert_eq!(
+            abi.inputs()
+                .iter()
+                .map(|input| {
+                    let binding = input.binding();
+                    assert!(!input.uses().is_empty());
+                    (binding.local(), binding.origin(), binding.ty())
+                })
+                .collect::<Vec<_>>(),
+            expected,
+        );
     }
     (defaults, *facts.interface_digest().as_bytes())
 }

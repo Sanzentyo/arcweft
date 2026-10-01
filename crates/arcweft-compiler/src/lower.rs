@@ -1437,8 +1437,8 @@ fn validate_executable_record_projections(
             continue;
         };
         let selection = match select {
-            CheckedSelectResolution::DialogueView { field, .. }
-            | CheckedSelectResolution::Field(field) => field,
+            CheckedSelectResolution::DialogueView { field, .. } => field,
+            CheckedSelectResolution::Field(field) => field.selection(),
             CheckedSelectResolution::Method(_)
             | CheckedSelectResolution::AgentField { .. }
             | CheckedSelectResolution::ProgressField { .. } => continue,
@@ -5421,6 +5421,7 @@ fn runtime_select_under(
             },
         },
         CheckedSelectResolution::Field(selection) => {
+            let selection = selection.selection();
             if let (Some(owner), Some(field)) = (closed_owner, selection.runtime_field()) {
                 return Ok(Some(RuntimeResolvedSelect::Field { owner, field }));
             }

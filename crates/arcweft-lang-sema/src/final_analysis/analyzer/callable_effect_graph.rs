@@ -299,11 +299,11 @@ impl<'a> CallableEffectGraph<'a> {
         rows: &BTreeMap<CheckedCallableId, bool>,
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<
-        BTreeMap<ExprId, crate::final_analysis::statement_effects::PreparedExecutableSuspensionRow>,
+        crate::final_analysis::execution_regions::PreparedExecutableSuspensionCatalog,
         FinalSemanticAnalysisError,
     > {
         let mut closed = BTreeMap::new();
-        for (owner, direct, expressions, statements) in execution.expression_execution_rows() {
+        for (owner, direct, expressions, children) in execution.expression_execution_rows() {
             control.check()?;
             let suspension = if direct
                 || self.selected_expressions_may_suspend(expressions.iter().copied(), rows)
@@ -313,17 +313,11 @@ impl<'a> CallableEffectGraph<'a> {
                 crate::final_analysis::CheckedSuspensionRole::NonSuspending
             };
             let control_role = self.selected_expressions_control_role(expressions.iter().copied());
-            let expressions = expressions
-                .iter()
-                .copied()
-                .collect::<Vec<_>>()
-                .into_boxed_slice();
             if closed
                 .insert(
                     owner,
                     crate::final_analysis::statement_effects::PreparedExecutableSuspensionRow::new(
-                        expressions,
-                        statements
+                        children
                             .iter()
                             .copied()
                             .collect::<Vec<_>>()
@@ -337,7 +331,12 @@ impl<'a> CallableEffectGraph<'a> {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             }
         }
-        Ok(closed)
+        Ok(
+            crate::final_analysis::execution_regions::PreparedExecutableSuspensionCatalog::new(
+                closed,
+                execution.statement_execution_edges(),
+            ),
+        )
     }
 
     pub(super) fn selected_expressions_control_role(

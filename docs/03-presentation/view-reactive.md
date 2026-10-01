@@ -124,6 +124,18 @@ ABI から parameter、state projection、local、repeat item を型付きで渡
 型不一致、非有限値、budget 超過は structured diagnostic にする。
 placeholder 値を実行値として使わない。context time は mount activation から
 の logical seconds、ordinal は対象内の logical instruction/item index である。
+
+checked root は expression の値生成と callable body の呼び出しを区別する。
+callable を返す default は値生成であり、capture の転送だけをその frame の入力に
+含める。latent body と defer の cleanup body は別の実行境界で、cleanup の効果・
+中断条件は保持する。field access は field identity と receiver の評価元を別々に
+持ち、直接 binding の read と receiver expression の評価を二重に数えない。
+値の Copy/Move/Borrow と place の replacement/mutation はそれぞれの checked
+access 証拠を必要とする。純粋な program への抽出は root 外の place mutation と
+root 外を対象にする制御移動を拒否し、root 内の local mutation と loop exit は
+通常の型付き実行契約で検証する。generic の入力・result・access は同一の宣言・
+HIR 世代・確定済み置換で閉じる。Copy mode だけで深い複製可能性を仮定せず、
+実際に渡す callable/opaque carrier の ingress 条件を検証する。
 glyph-target sampler の ordinal は Fx application ごとに最初の対象 glyph を 0
 として rebase し、文書全体の glyph index や UTF-8 byte offset を渡さない。
 reduce-motion 時は sampler time を 0 に固定する。

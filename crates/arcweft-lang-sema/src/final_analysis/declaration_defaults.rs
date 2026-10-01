@@ -11,10 +11,6 @@ pub(super) fn checked_view_parameter_defaults(
     project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     facts: &crate::callable::CheckedCallableFacts,
-    executable_suspensions: &BTreeMap<
-        ExprId,
-        super::statement_effects::PreparedExecutableSuspensionRow,
-    >,
     coordinates: &crate::semantic_coordinate::SemanticCoordinateIndex<'_, '_>,
     control: FinalSemanticAnalysisControl<'_>,
 ) -> Result<
@@ -79,8 +75,8 @@ pub(super) fn checked_view_parameter_defaults(
         if !checked.effects().is_empty() {
             return Err(FinalSemanticAnalysisError::ViewParameterDefaultEffects { owner: source });
         }
-        let execution = executable_suspensions
-            .get(&source)
+        let execution = analysis
+            .expression_execution_region(source)
             .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
         if execution.suspension() != super::CheckedSuspensionRole::NonSuspending {
             return Err(FinalSemanticAnalysisError::ViewParameterDefaultSuspension {
@@ -92,7 +88,7 @@ pub(super) fn checked_view_parameter_defaults(
             module,
             symbol,
             source,
-            execution,
+            &execution,
             coordinates,
         )?;
         if let Some(capture) = captures
@@ -140,7 +136,7 @@ pub(super) fn checked_declaration_default_captures(
     module: &arcweft_lang_hir::module::HirModule,
     symbol: &arcweft_lang_hir::symbol::CallableSymbol,
     root: ExprId,
-    execution: &super::statement_effects::PreparedExecutableSuspensionRow,
+    execution: &super::execution_regions::CheckedExpressionExecutionRegion,
     coordinates: &crate::semantic_coordinate::SemanticCoordinateIndex<'_, '_>,
 ) -> Result<Box<[crate::callable::CheckedDeclarationDefaultCapture]>, FinalSemanticAnalysisError> {
     use arcweft_lang_hir::item::HirItemKind;

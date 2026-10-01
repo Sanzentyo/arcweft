@@ -1680,8 +1680,15 @@ fn seal_prepared_expression(
             if sealed_record.is_some() {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
-            let (shell, nominal, mutable_base, declaration_ordinal, field_type, diagnostic_name) =
-                prepared.into_parts();
+            let (
+                shell,
+                nominal,
+                mutable_base,
+                receiver,
+                declaration_ordinal,
+                field_type,
+                diagnostic_name,
+            ) = prepared.into_parts();
             let field_type_digest = field_type.semantic_identity_digest()?;
             let semantic_field = project_nominals
                 .get(nominal.identity())
@@ -1745,7 +1752,9 @@ fn seal_prepared_expression(
                 value,
                 effects,
                 CheckedExpressionResolution::Select(
-                    crate::final_analysis::CheckedSelectResolution::Field(selection.clone()),
+                    crate::final_analysis::CheckedSelectResolution::Field(
+                        crate::final_analysis::CheckedFieldAccess::new(selection.clone(), receiver),
+                    ),
                 ),
             );
             let checked = if let Some(base) = mutable_base {

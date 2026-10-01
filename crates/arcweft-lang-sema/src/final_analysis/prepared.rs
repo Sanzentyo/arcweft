@@ -646,6 +646,7 @@ pub(crate) struct PreparedProjectFieldExpression {
     shell: PreparedExpressionShell,
     nominal: CheckedProjectNominal,
     mutable_base: Option<LocalId>,
+    receiver: super::CheckedFieldReceiver,
     declaration_ordinal: u32,
     field_type: TypeKind,
     diagnostic_name: HirName,
@@ -656,6 +657,7 @@ impl PreparedProjectFieldExpression {
         shell: PreparedExpressionShell,
         nominal: CheckedProjectNominal,
         mutable_base: Option<LocalId>,
+        receiver: super::CheckedFieldReceiver,
         declaration_ordinal: u32,
         field_type: TypeKind,
         diagnostic_name: HirName,
@@ -664,6 +666,7 @@ impl PreparedProjectFieldExpression {
             shell,
             nominal,
             mutable_base,
+            receiver,
             declaration_ordinal,
             field_type,
             diagnostic_name,
@@ -676,8 +679,8 @@ impl PreparedProjectFieldExpression {
     pub(crate) const fn nominal(&self) -> &CheckedProjectNominal {
         &self.nominal
     }
-    pub(crate) const fn mutable_base(&self) -> Option<LocalId> {
-        self.mutable_base
+    pub(crate) const fn receiver(&self) -> super::CheckedFieldReceiver {
+        self.receiver
     }
     pub(crate) const fn field_type(&self) -> &TypeKind {
         &self.field_type
@@ -689,6 +692,7 @@ impl PreparedProjectFieldExpression {
         PreparedExpressionShell,
         CheckedProjectNominal,
         Option<LocalId>,
+        super::CheckedFieldReceiver,
         u32,
         TypeKind,
         HirName,
@@ -697,6 +701,7 @@ impl PreparedProjectFieldExpression {
             self.shell,
             self.nominal,
             self.mutable_base,
+            self.receiver,
             self.declaration_ordinal,
             self.field_type,
             self.diagnostic_name,
@@ -1191,6 +1196,37 @@ impl PreparedExpressionFact {
             | Self::ProjectField(_)
             | Self::ProjectRecord(_)
             | Self::ProjectNominalTypeValue(_) => None,
+        }
+    }
+
+    /// Value creation remains latent in both the owner-bound and completed
+    /// phases. Absence of a completed resolution never authorizes execution
+    /// of the implicit callable's body.
+    pub(crate) fn creates_implicit_callable(&self) -> bool {
+        match self {
+            Self::OwnerBound(value) => matches!(
+                value.resolution(),
+                PreparedOwnerBoundResolution::ImplicitCallable(_)
+            ),
+            Self::CompileTimeScalar(value) => value.original().creates_implicit_callable(),
+            _ => matches!(
+                self.checked_resolution(),
+                Some(CheckedExpressionResolution::ImplicitCallable(_))
+            ),
+        }
+    }
+
+    /// A direct nominal field place reads its base through the selected field
+    /// expression. The retained path child is source/type evidence, not a
+    /// second transfer of that same local.
+    pub(crate) fn reads_field_binding(&self) -> bool {
+        match self {
+            Self::ProjectField(field) => {
+                matches!(field.receiver(), super::CheckedFieldReceiver::Binding(_))
+            }
+            Self::Complete(value) => value.reads_field_binding(),
+            Self::CompileTimeScalar(value) => value.original().reads_field_binding(),
+            _ => false,
         }
     }
 

@@ -3699,6 +3699,21 @@ fn write_resolution_payload(
             transcript_update!(hasher, &select.semantic_transcript_tag().to_le_bytes());
             match select {
                 CheckedSelectResolution::Field(selection) => {
+                    let receiver = selection.receiver();
+                    let selection = selection.selection();
+                    match receiver {
+                        super::CheckedFieldReceiver::Binding(local) => {
+                            transcript_update!(hasher, &[0]);
+                            write_bytes(hasher, &coordinates.binding(local)?.canonical_bytes()?)?;
+                        }
+                        super::CheckedFieldReceiver::Expression(expression) => {
+                            transcript_update!(hasher, &[1]);
+                            write_bytes(
+                                hasher,
+                                &coordinates.expression(expression)?.canonical_bytes()?,
+                            )?;
+                        }
+                    }
                     transcript_update!(hasher, selection.owner_type().as_bytes());
                     transcript_update!(hasher, selection.field().as_bytes());
                     transcript_update!(hasher, &selection.declaration_ordinal().to_le_bytes());

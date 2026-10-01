@@ -685,8 +685,11 @@ pub enum CheckedSelectResolution {
     ProgressField {
         field: crate::types::ProgressField,
     },
-    Field(CheckedFieldSelection),
+    Field(CheckedFieldAccess),
 }
+
+mod field_access;
+pub use field_access::{CheckedFieldAccess, CheckedFieldReceiver};
 
 #[path = "model/variant_owner.rs"]
 mod variant_owner;
@@ -2611,16 +2614,22 @@ impl CheckedExpression {
         }
     }
 
+    pub(crate) fn reads_field_binding(&self) -> bool {
+        matches!(self.resolution(),
+            CheckedExpressionResolution::Select(CheckedSelectResolution::Field(access))
+                if matches!(access.receiver(), CheckedFieldReceiver::Binding(_)))
+    }
+
     /// Attaches one sealed direct nominal-field place to its checked select.
     #[must_use]
     pub(crate) fn with_mutable_place(mut self, place: CheckedMutablePlace) -> Option<Self> {
-        let CheckedExpressionResolution::Select(CheckedSelectResolution::Field(selection)) =
+        let CheckedExpressionResolution::Select(CheckedSelectResolution::Field(access)) =
             self.resolution()
         else {
             return None;
         };
         let field = place.nominal_field()?;
-        if field.field() != selection || self.value_type() != Some(field.field_type()) {
+        if field.field() != access.selection() || self.value_type() != Some(field.field_type()) {
             return None;
         }
         self.data.mutable_place = Some(place);

@@ -4,6 +4,8 @@ use super::*;
 mod body_roots;
 #[path = "semantic_transcript_acceptance/expression_corpus.rs"]
 mod expression_corpus;
+#[path = "semantic_transcript_acceptance/expression_inputs.rs"]
+mod expression_inputs;
 #[path = "semantic_transcript_acceptance/expression_shapes.rs"]
 mod expression_shapes;
 #[path = "semantic_transcript_acceptance/generation_invariance.rs"]
