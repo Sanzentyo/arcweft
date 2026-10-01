@@ -684,7 +684,7 @@ impl RuntimeProjectAttachedDefaultCapture {
 pub struct RuntimeProjectAttachedDefaultFunctionFact {
     source: ExprId,
     coordinate: arcweft_lang_sema::semantic_coordinate::StableCheckedValueCoordinate,
-    digest: arcweft_lang_sema::callable::CheckedAttachedContentDefaultExpressionDigest,
+    digest: arcweft_lang_sema::callable::CheckedDeclarationDefaultExpressionDigest,
     result: RuntimeNormalizedType,
     suspension: arcweft_lang_sema::final_analysis::CheckedSuspensionRole,
     control: arcweft_lang_sema::final_analysis::CheckedExecutableControlRole,
@@ -697,7 +697,7 @@ impl RuntimeProjectAttachedDefaultFunctionFact {
     pub fn try_new(
         source: ExprId,
         coordinate: arcweft_lang_sema::semantic_coordinate::StableCheckedValueCoordinate,
-        digest: arcweft_lang_sema::callable::CheckedAttachedContentDefaultExpressionDigest,
+        digest: arcweft_lang_sema::callable::CheckedDeclarationDefaultExpressionDigest,
         result: RuntimeNormalizedType,
         suspension: arcweft_lang_sema::final_analysis::CheckedSuspensionRole,
         control: arcweft_lang_sema::final_analysis::CheckedExecutableControlRole,
@@ -776,7 +776,7 @@ impl RuntimeProjectAttachedDefaultFunctionFact {
 
     pub const fn digest(
         &self,
-    ) -> arcweft_lang_sema::callable::CheckedAttachedContentDefaultExpressionDigest {
+    ) -> arcweft_lang_sema::callable::CheckedDeclarationDefaultExpressionDigest {
         self.digest
     }
 

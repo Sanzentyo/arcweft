@@ -1351,14 +1351,14 @@ impl RuntimeCallableAttachedContentAbi {
 pub struct RuntimeCallableAttachedContentDefault {
     source: ExprId,
     coordinate: arcweft_lang_sema::semantic_coordinate::StableCheckedValueCoordinate,
-    digest: arcweft_lang_sema::callable::CheckedAttachedContentDefaultExpressionDigest,
+    digest: arcweft_lang_sema::callable::CheckedDeclarationDefaultExpressionDigest,
 }
 
 impl RuntimeCallableAttachedContentDefault {
     pub const fn new(
         source: ExprId,
         coordinate: arcweft_lang_sema::semantic_coordinate::StableCheckedValueCoordinate,
-        digest: arcweft_lang_sema::callable::CheckedAttachedContentDefaultExpressionDigest,
+        digest: arcweft_lang_sema::callable::CheckedDeclarationDefaultExpressionDigest,
     ) -> Self {
         Self {
             source,
@@ -1379,7 +1379,7 @@ impl RuntimeCallableAttachedContentDefault {
 
     pub const fn digest(
         &self,
-    ) -> arcweft_lang_sema::callable::CheckedAttachedContentDefaultExpressionDigest {
+    ) -> arcweft_lang_sema::callable::CheckedDeclarationDefaultExpressionDigest {
         self.digest
     }
 }

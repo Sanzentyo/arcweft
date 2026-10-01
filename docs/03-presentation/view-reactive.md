@@ -40,6 +40,22 @@ pub view SettingsPanel(
 }
 ```
 
+## Parameter defaults
+
+View の parameter default は宣言型を expected type として検査する通常の式であり、
+String、nominal、tuple、関数値を scalar へ縮約しない。default が読むことのできる
+parameter は宣言順で先行するものだけで、closure や implicit callable の capture
+にも同じ制約を適用する。自己参照と後続 parameter への参照は拒否する。
+default の評価は外部効果を実行せず、中断しない。純粋な関数呼び出しと local な
+計算は通常の意味論に従う。
+
+呼び出し側の supplied argument は authored order で一度ずつ評価し、parameter は
+宣言順で束縛する。supplied value があればそれを使い、省略された場合だけ default
+を評価する。省略値は先行入力から導く props であり、入力が変われば再計算する。
+同じ program と依存入力 revision の cache は再利用できる。default の checked
+coordinate、型、効果・中断・control row、式 transcript と全 free parameter input
+は宣言の checked callable authority に属し、添付本文 default と同じ型で保持する。
+
 ## Binding
 
 Binding は直接 state を破壊的に書き換えず、lens + event/command。

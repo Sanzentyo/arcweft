@@ -344,7 +344,7 @@ fn checked_match_transcript_commits_nested_statement_body_meaning() {
     assert_ne!(ordered, reversed, "nested statement body order");
 }
 
-fn assert_match_sensitivity_and_source_revision_invariance(
+pub(super) fn assert_match_sensitivity_and_source_revision_invariance(
     root: &str,
     original: &str,
     changed: &str,

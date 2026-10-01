@@ -417,6 +417,15 @@ pub enum FinalSemanticAnalysisError {
     },
     #[error("semantic expression {owner:?} has no admissible final type")]
     ExpressionTypeUnavailable { owner: ExprId },
+    #[error("View parameter default {owner:?} executes external effects")]
+    ViewParameterDefaultEffects { owner: ExprId },
+    #[error("View parameter default {owner:?} may suspend")]
+    ViewParameterDefaultSuspension { owner: ExprId },
+    #[error("View parameter default {owner:?} reads non-prior parameter {parameter:?}")]
+    ViewParameterDefaultForwardInput {
+        owner: ExprId,
+        parameter: crate::callable::CallableParameterCoordinate,
+    },
     #[error("compact numeric sequence {owner:?} element {ordinal} does not fit {item:?}")]
     CompactNumericElementOutOfRange {
         owner: ExprId,

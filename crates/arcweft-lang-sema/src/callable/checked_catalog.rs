@@ -337,14 +337,14 @@ impl CallableInterfaceDigest {
     }
 }
 
-/// Distinct v1 identity of one checked attached-content default expression.
+/// Distinct v1 identity of one checked declaration default expression.
 ///
 /// The generation-local source is retained by the owning row for lowering,
 /// while this digest commits the accepted-rooted acyclic transcript.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CheckedAttachedContentDefaultExpressionDigest([u8; 32]);
+pub struct CheckedDeclarationDefaultExpressionDigest([u8; 32]);
 
-impl CheckedAttachedContentDefaultExpressionDigest {
+impl CheckedDeclarationDefaultExpressionDigest {
     pub(crate) const fn from_bytes(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }
@@ -355,40 +355,40 @@ impl CheckedAttachedContentDefaultExpressionDigest {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedAttachedContentDefault {
+pub struct CheckedDeclarationDefault {
     source: ExprId,
     coordinate: StableCheckedValueCoordinate,
+    expected: SemanticTypeDigest,
     result: SemanticTypeDigest,
     effects: EffectRow,
     suspension: CheckedSuspensionRole,
     control: CheckedExecutableControlRole,
-    expression: CheckedAttachedContentDefaultExpressionDigest,
-    captures: Box<[CheckedAttachedContentDefaultCapture]>,
+    expression: CheckedDeclarationDefaultExpressionDigest,
+    captures: Box<[CheckedDeclarationDefaultCapture]>,
 }
 
-/// One logical ordinary parameter whose pattern must be rebound inside the
-/// attached-default function because the default expression reads at least
-/// one of its locals.
+/// One logical parameter whose pattern supplies free inputs to a declaration
+/// default. The same row covers parameter and attached-content defaults.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedAttachedContentDefaultCapture {
+pub struct CheckedDeclarationDefaultCapture {
     parameter: super::CallableParameterCoordinate,
     pattern: PatternId,
     pattern_digest: CheckedPatternSemanticDigest,
     bindings: Box<[LocalId]>,
-    binding_evidence: Box<[CheckedAttachedContentDefaultCaptureLocal]>,
-    used_locals: Box<[CheckedAttachedContentDefaultCaptureLocal]>,
+    binding_evidence: Box<[CheckedDeclarationDefaultCaptureLocal]>,
+    used_locals: Box<[CheckedDeclarationDefaultCaptureLocal]>,
     binding_type: TypeKind,
 }
 
 /// Exact free-local evidence covered by one logical parameter capture.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedAttachedContentDefaultCaptureLocal {
+pub struct CheckedDeclarationDefaultCaptureLocal {
     local: LocalId,
     origin: StableCheckedBindingCoordinate,
     ty: TypeKind,
 }
 
-impl CheckedAttachedContentDefaultCaptureLocal {
+impl CheckedDeclarationDefaultCaptureLocal {
     pub(crate) const fn new(
         local: LocalId,
         origin: StableCheckedBindingCoordinate,
@@ -410,14 +410,14 @@ impl CheckedAttachedContentDefaultCaptureLocal {
     }
 }
 
-impl CheckedAttachedContentDefaultCapture {
+impl CheckedDeclarationDefaultCapture {
     pub(crate) const fn new(
         parameter: super::CallableParameterCoordinate,
         pattern: PatternId,
         pattern_digest: CheckedPatternSemanticDigest,
         bindings: Box<[LocalId]>,
-        binding_evidence: Box<[CheckedAttachedContentDefaultCaptureLocal]>,
-        used_locals: Box<[CheckedAttachedContentDefaultCaptureLocal]>,
+        binding_evidence: Box<[CheckedDeclarationDefaultCaptureLocal]>,
+        used_locals: Box<[CheckedDeclarationDefaultCaptureLocal]>,
         binding_type: TypeKind,
     ) -> Self {
         Self {
@@ -447,11 +447,11 @@ impl CheckedAttachedContentDefaultCapture {
         &self.bindings
     }
 
-    pub const fn binding_evidence(&self) -> &[CheckedAttachedContentDefaultCaptureLocal] {
+    pub const fn binding_evidence(&self) -> &[CheckedDeclarationDefaultCaptureLocal] {
         &self.binding_evidence
     }
 
-    pub const fn used_locals(&self) -> &[CheckedAttachedContentDefaultCaptureLocal] {
+    pub const fn used_locals(&self) -> &[CheckedDeclarationDefaultCaptureLocal] {
         &self.used_locals
     }
 
@@ -460,21 +460,22 @@ impl CheckedAttachedContentDefaultCapture {
     }
 }
 
-impl CheckedAttachedContentDefault {
+impl CheckedDeclarationDefault {
     pub(crate) const fn new(
         source: ExprId,
         coordinate: StableCheckedValueCoordinate,
-        result: SemanticTypeDigest,
+        types: (SemanticTypeDigest, SemanticTypeDigest),
         effects: EffectRow,
         suspension: CheckedSuspensionRole,
         control: CheckedExecutableControlRole,
-        expression: CheckedAttachedContentDefaultExpressionDigest,
-        captures: Box<[CheckedAttachedContentDefaultCapture]>,
+        expression: CheckedDeclarationDefaultExpressionDigest,
+        captures: Box<[CheckedDeclarationDefaultCapture]>,
     ) -> Self {
         Self {
             source,
             coordinate,
-            result,
+            expected: types.0,
+            result: types.1,
             effects,
             suspension,
             control,
@@ -495,6 +496,10 @@ impl CheckedAttachedContentDefault {
         self.result
     }
 
+    pub const fn expected(&self) -> SemanticTypeDigest {
+        self.expected
+    }
+
     pub const fn effects(&self) -> &EffectRow {
         &self.effects
     }
@@ -507,12 +512,29 @@ impl CheckedAttachedContentDefault {
         self.control
     }
 
-    pub const fn expression(&self) -> CheckedAttachedContentDefaultExpressionDigest {
+    pub const fn expression(&self) -> CheckedDeclarationDefaultExpressionDigest {
         self.expression
     }
 
-    pub const fn captures(&self) -> &[CheckedAttachedContentDefaultCapture] {
+    pub const fn captures(&self) -> &[CheckedDeclarationDefaultCapture] {
         &self.captures
+    }
+
+    fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        for capture in self.captures() {
+            visitor(capture.binding_type())?;
+            for local in capture
+                .binding_evidence()
+                .iter()
+                .chain(capture.used_locals())
+            {
+                visitor(local.ty())?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -527,7 +549,7 @@ pub struct CheckedCallableAttachedContentParameter {
     abi_position: u32,
     binding_type: TypeKind,
     abi_type: TypeKind,
-    default: Option<CheckedAttachedContentDefault>,
+    default: Option<CheckedDeclarationDefault>,
 }
 
 impl CheckedCallableAttachedContentParameter {
@@ -541,7 +563,7 @@ impl CheckedCallableAttachedContentParameter {
         abi_position: u32,
         binding_type: TypeKind,
         abi_type: TypeKind,
-        default: Option<CheckedAttachedContentDefault>,
+        default: Option<CheckedDeclarationDefault>,
     ) -> Self {
         Self {
             group,
@@ -588,7 +610,7 @@ impl CheckedCallableAttachedContentParameter {
         &self.abi_type
     }
 
-    pub const fn default(&self) -> Option<&CheckedAttachedContentDefault> {
+    pub const fn default(&self) -> Option<&CheckedDeclarationDefault> {
         self.default.as_ref()
     }
 }
@@ -604,6 +626,7 @@ pub struct CheckedCallableFacts {
     effects: CheckedCallableEffects,
     inferred_result_schema: Option<CallableResultSchema>,
     attached_content: Option<CheckedCallableAttachedContentParameter>,
+    parameter_defaults: BTreeMap<super::CallableParameterCoordinate, CheckedDeclarationDefault>,
     interface_digest: Option<CallableInterfaceDigest>,
 }
 
@@ -746,6 +769,14 @@ impl CheckedCallableFacts {
         self.attached_content.as_ref()
     }
 
+    /// Declaration-owned defaults, in parameter order. Source owners are
+    /// generation-local lowering handles; coordinates and digests are stable.
+    pub const fn parameter_defaults(
+        &self,
+    ) -> &BTreeMap<super::CallableParameterCoordinate, CheckedDeclarationDefault> {
+        &self.parameter_defaults
+    }
+
     pub const fn actual_row(&self) -> Option<&EffectRow> {
         match &self.effects {
             CheckedCallableEffects::Body { inferred, .. } => Some(inferred),
@@ -814,16 +845,11 @@ impl CheckedCallableFacts {
             visitor(attached.binding_type())?;
             visitor(attached.abi_type())?;
             if let Some(default) = attached.default() {
-                for capture in default.captures() {
-                    visitor(capture.binding_type())?;
-                    for local in capture.binding_evidence() {
-                        visitor(local.ty())?;
-                    }
-                    for local in capture.used_locals() {
-                        visitor(local.ty())?;
-                    }
-                }
+                default.visit_types(visitor)?;
             }
+        }
+        for default in self.parameter_defaults.values() {
+            default.visit_types(visitor)?;
         }
         match &self.execution {
             CheckedCallableExecution::Runtime(CheckedFunctionExecution::StreamFactory {
@@ -984,13 +1010,18 @@ impl CheckedCallableCatalog {
         self.records.values()
     }
 
-    /// Atomically joins the complete checked attached-content row batch and
+    /// Atomically joins the complete parameter/attached-content default batch and
     /// issues every callable interface digest exactly once.
     pub(crate) fn seal_interfaces(
         &mut self,
         mut attached: BTreeMap<CheckedCallableId, Option<CheckedCallableAttachedContentParameter>>,
+        mut defaults: BTreeMap<
+            CheckedCallableId,
+            BTreeMap<super::CallableParameterCoordinate, CheckedDeclarationDefault>,
+        >,
     ) -> Result<(), CheckedCallableCatalogBuildError> {
         if attached.len() != self.records.len()
+            || defaults.len() != self.records.len()
             || self
                 .records
                 .values()
@@ -1004,26 +1035,23 @@ impl CheckedCallableCatalog {
                 .remove(id)
                 .ok_or(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
             validate_attached_content_interface(facts, row.as_ref())?;
-            let digest = interface_digest(
-                facts.record(),
-                facts.execution(),
-                facts.suspension(),
-                facts.control(),
-                facts.exposed_row(),
-                facts.inferred_result_schema(),
-                row.as_ref(),
-            )?;
-            sealed.insert(id.clone(), (row, digest));
+            let parameter_defaults = defaults
+                .remove(id)
+                .ok_or(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
+            validate_parameter_default_interfaces(facts, &parameter_defaults)?;
+            let digest = interface_digest(facts, row.as_ref(), &parameter_defaults)?;
+            sealed.insert(id.clone(), (row, parameter_defaults, digest));
         }
-        if !attached.is_empty() || sealed.len() != self.records.len() {
+        if !attached.is_empty() || !defaults.is_empty() || sealed.len() != self.records.len() {
             return Err(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface);
         }
-        for (id, (row, digest)) in sealed {
+        for (id, (row, defaults, digest)) in sealed {
             let facts = self
                 .records
                 .get_mut(&id)
                 .ok_or(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
             facts.attached_content = row;
+            facts.parameter_defaults = defaults;
             facts.interface_digest = Some(digest);
         }
         Ok(())
@@ -1348,6 +1376,7 @@ pub(crate) enum CheckedCallableCatalogBuildError {
     ForbiddenEffects(EffectSet),
     ForeignClosureOwner,
     InvalidAttachedContentInterface,
+    InvalidParameterDefaultInterface,
     DuplicateInterfaceSeal,
 }
 
@@ -2053,6 +2082,7 @@ impl CheckedCallableCatalogBuilder {
                 effects,
                 inferred_result_schema: pending.inferred_result_schema,
                 attached_content: None,
+                parameter_defaults: BTreeMap::new(),
                 interface_digest: None,
             };
             if records.insert(id, facts).is_some() {
@@ -2445,74 +2475,14 @@ fn validate_attached_content_interface(
         return Err(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface);
     }
     if let Some(default) = attached.default() {
-        let mut previous = None;
-        let mut used_origins = BTreeSet::new();
-        for capture in default.captures() {
-            let group = facts
-                .record()
-                .schema()
-                .group(capture.parameter().group())
-                .ok_or(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
-            let schema_parameter = group
-                .parameters()
-                .get(capture.parameter().parameter().get())
-                .ok_or(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
-            if schema_parameter.index() != capture.parameter().parameter() {
-                return Err(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface);
-            }
-            let abi_type = schema_parameter
-                .declared_type()
-                .ok_or(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
-            let expected_binding_type = schema_parameter
-                .passing()
-                .value_binding_type(abi_type.clone())
-                .ok_or(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
-            let mut binding_locals = BTreeSet::new();
-            let mut binding_origins = BTreeSet::new();
-            let binding_evidence_valid = capture.bindings().len()
-                == capture.binding_evidence().len()
-                && capture
-                    .bindings()
-                    .iter()
-                    .zip(capture.binding_evidence())
-                    .all(|(binding, evidence)| {
-                        binding == &evidence.local()
-                            && binding_locals.insert(*binding)
-                            && binding_origins.insert(evidence.origin().clone())
-                    });
-            let binding_evidence_ordered = capture
-                .binding_evidence()
-                .windows(2)
-                .all(|pair| pair[0].origin() < pair[1].origin());
-            let used_evidence_valid = capture.used_locals().iter().all(|local| {
-                capture.binding_evidence().iter().any(|binding| {
-                    binding.local() == local.local()
-                        && binding.origin() == local.origin()
-                        && binding.ty() == local.ty()
-                }) && used_origins.insert(local.origin().clone())
-            });
-            let used_evidence_ordered = capture
-                .used_locals()
-                .windows(2)
-                .all(|pair| pair[0].origin() < pair[1].origin());
-            if capture.parameter().group().get() > parameter.group().get()
-                || previous.is_some_and(|previous| previous >= capture.parameter())
-                || capture.binding_type() != &expected_binding_type
-                || capture.bindings().is_empty()
-                || capture.used_locals().is_empty()
-                || !binding_evidence_valid
-                || !binding_evidence_ordered
-                || !used_evidence_valid
-                || !used_evidence_ordered
-            {
-                return Err(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface);
-            }
-            previous = Some(capture.parameter());
-        }
+        validate_default_captures(facts, default, |coordinate| {
+            coordinate.group().get() <= parameter.group().get()
+        })?;
     }
     match (parameter.presence(), attached.default()) {
         (CallableParameterPresence::Defaulted, Some(default))
             if default.result() == result.semantic_identity_digest()?
+                && default.expected() == result.semantic_identity_digest()?
                 && default.effects().is_closed() =>
         {
             Ok(())
@@ -2522,22 +2492,144 @@ fn validate_attached_content_interface(
     }
 }
 
+fn validate_default_captures(
+    facts: &CheckedCallableFacts,
+    default: &CheckedDeclarationDefault,
+    permitted: impl Fn(super::CallableParameterCoordinate) -> bool,
+) -> Result<(), CheckedCallableCatalogBuildError> {
+    let mut previous = None;
+    let mut used_origins = BTreeSet::new();
+    for capture in default.captures() {
+        let group = facts
+            .record()
+            .schema()
+            .group(capture.parameter().group())
+            .ok_or(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
+        let schema_parameter = group
+            .parameters()
+            .get(capture.parameter().parameter().get())
+            .ok_or(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
+        if schema_parameter.index() != capture.parameter().parameter() {
+            return Err(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface);
+        }
+        let abi_type = schema_parameter
+            .declared_type()
+            .ok_or(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
+        let expected_binding_type = schema_parameter
+            .passing()
+            .value_binding_type(abi_type.clone())
+            .ok_or(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
+        let mut binding_locals = BTreeSet::new();
+        let mut binding_origins = BTreeSet::new();
+        let binding_evidence_valid = capture.bindings().len() == capture.binding_evidence().len()
+            && capture
+                .bindings()
+                .iter()
+                .zip(capture.binding_evidence())
+                .all(|(binding, evidence)| {
+                    binding == &evidence.local()
+                        && binding_locals.insert(*binding)
+                        && binding_origins.insert(evidence.origin().clone())
+                });
+        let binding_evidence_ordered = capture
+            .binding_evidence()
+            .windows(2)
+            .all(|pair| pair[0].origin() < pair[1].origin());
+        let used_evidence_valid = capture.used_locals().iter().all(|local| {
+            capture.binding_evidence().iter().any(|binding| {
+                binding.local() == local.local()
+                    && binding.origin() == local.origin()
+                    && binding.ty() == local.ty()
+            }) && used_origins.insert(local.origin().clone())
+        });
+        let used_evidence_ordered = capture
+            .used_locals()
+            .windows(2)
+            .all(|pair| pair[0].origin() < pair[1].origin());
+        if !permitted(capture.parameter())
+            || previous.is_some_and(|previous| previous >= capture.parameter())
+            || capture.binding_type() != &expected_binding_type
+            || capture.bindings().is_empty()
+            || capture.used_locals().is_empty()
+            || !binding_evidence_valid
+            || !binding_evidence_ordered
+            || !used_evidence_valid
+            || !used_evidence_ordered
+        {
+            return Err(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface);
+        }
+        previous = Some(capture.parameter());
+    }
+    Ok(())
+}
+
+fn validate_parameter_default_interfaces(
+    facts: &CheckedCallableFacts,
+    defaults: &BTreeMap<super::CallableParameterCoordinate, CheckedDeclarationDefault>,
+) -> Result<(), CheckedCallableCatalogBuildError> {
+    let is_view = matches!(facts.record().id(), CallableCandidateId::Project(declaration)
+        if declaration.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::View);
+    if !is_view {
+        return if defaults.is_empty() {
+            Ok(())
+        } else {
+            Err(CheckedCallableCatalogBuildError::InvalidParameterDefaultInterface)
+        };
+    }
+    let mut expected = 0usize;
+    for group in facts.signature().groups() {
+        for parameter in group.parameters() {
+            let coordinate =
+                super::CallableParameterCoordinate::new(group.index(), parameter.index());
+            let default = defaults.get(&coordinate);
+            if parameter.presence() != CallableParameterPresence::Defaulted {
+                if default.is_some() {
+                    return Err(CheckedCallableCatalogBuildError::InvalidParameterDefaultInterface);
+                }
+                continue;
+            }
+            expected = expected
+                .checked_add(1)
+                .ok_or(CheckedCallableCatalogBuildError::InvalidParameterDefaultInterface)?;
+            let default = default
+                .ok_or(CheckedCallableCatalogBuildError::InvalidParameterDefaultInterface)?;
+            let ty = parameter
+                .declared_type()
+                .ok_or(CheckedCallableCatalogBuildError::InvalidParameterDefaultInterface)?;
+            let StableCheckedValueCoordinate::Expression(path) = default.coordinate() else {
+                return Err(CheckedCallableCatalogBuildError::InvalidParameterDefaultInterface);
+            };
+            if default.expected() != ty.semantic_identity_digest()?
+                || !default.effects().is_empty()
+                || default.suspension() != CheckedSuspensionRole::NonSuspending
+                || !matches!(path.steps(), [crate::semantic_coordinate::CheckedSemanticPathStep::ParameterDefault { group, parameter }]
+                    if usize::try_from(*group).ok() == Some(coordinate.group().get())
+                        && usize::try_from(*parameter).ok() == Some(coordinate.parameter().get()))
+            {
+                return Err(CheckedCallableCatalogBuildError::InvalidParameterDefaultInterface);
+            }
+            validate_default_captures(facts, default, |input| input < coordinate)?;
+        }
+    }
+    if defaults.len() != expected {
+        return Err(CheckedCallableCatalogBuildError::InvalidParameterDefaultInterface);
+    }
+    Ok(())
+}
+
 fn interface_digest(
-    record: &CallableRecord,
-    execution: &CheckedCallableExecution,
-    suspension: CheckedSuspensionRole,
-    control: CheckedExecutableControlRole,
-    exposed: &EffectRow,
-    inferred_result: Option<&CallableResultSchema>,
+    facts: &CheckedCallableFacts,
     attached: Option<&CheckedCallableAttachedContentParameter>,
+    parameter_defaults: &BTreeMap<super::CallableParameterCoordinate, CheckedDeclarationDefault>,
 ) -> Result<CallableInterfaceDigest, CheckedCallableCatalogBuildError> {
+    let record = facts.record();
+    let execution = facts.execution();
+    let suspension = facts.suspension();
+    let control = facts.control();
+    let exposed = facts.exposed_row();
+    let inferred_result = facts.inferred_result_schema();
     let binding_coordinate = attached
         .map(|attached| attached.binding_coordinate().canonical_bytes())
-        .transpose()
-        .map_err(|_| CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
-    let default_coordinate = attached
-        .and_then(CheckedCallableAttachedContentParameter::default)
-        .map(|default| default.coordinate().canonical_bytes())
         .transpose()
         .map_err(|_| CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
     let inferred_result_digest = inferred_result
@@ -2626,61 +2718,77 @@ fn interface_digest(
                     .as_bytes(),
             );
             encoder.bytes(attached.abi_type().semantic_identity_digest()?.as_bytes());
-            match (attached.default(), default_coordinate.as_deref()) {
-                (None, None) => encoder.bool(false),
-                (Some(default), Some(default_coordinate)) => {
-                    encoder.bool(true);
-                    encoder.bytes(default_coordinate);
-                    encoder.bytes(default.result().as_bytes());
-                    encode_row(&mut encoder, default.effects());
-                    encoder.tag(match default.suspension() {
-                        CheckedSuspensionRole::NonSuspending => 0,
-                        CheckedSuspensionRole::MaySuspend => 1,
-                    });
-                    encoder.tag(match default.control() {
-                        CheckedExecutableControlRole::ExpressionCompatible => 0,
-                        CheckedExecutableControlRole::FlowRequired => 1,
-                    });
-                    encoder.bytes(default.expression().as_bytes());
-                    encoder.usize(default.captures().len());
-                    for capture in default.captures() {
-                        encoder.usize(capture.parameter().group().get());
-                        encoder.usize(capture.parameter().parameter().get());
-                        encoder.bytes(capture.pattern_digest().as_bytes());
-                        encoder.bytes(
-                            capture
-                                .binding_type()
-                                .semantic_identity_digest()?
-                                .as_bytes(),
-                        );
-                        encoder.usize(capture.binding_evidence().len());
-                        for binding in capture.binding_evidence() {
-                            let origin = binding.origin().canonical_bytes().map_err(|_| {
-                                CheckedCallableCatalogBuildError::InvalidAttachedContentInterface
-                            })?;
-                            encoder.bytes(&origin);
-                            encoder.bytes(binding.ty().semantic_identity_digest()?.as_bytes());
-                        }
-                        encoder.usize(capture.used_locals().len());
-                        for local in capture.used_locals() {
-                            let origin = local.origin().canonical_bytes().map_err(|_| {
-                                CheckedCallableCatalogBuildError::InvalidAttachedContentInterface
-                            })?;
-                            encoder.bytes(&origin);
-                            encoder.bytes(local.ty().semantic_identity_digest()?.as_bytes());
-                        }
-                    }
-                }
-                _ => {
-                    return Err(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface);
-                }
+            encoder.bool(attached.default().is_some());
+            if let Some(default) = attached.default() {
+                encode_declaration_default(&mut encoder, default)?;
             }
         }
         _ => return Err(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface),
     }
+    encoder.usize(parameter_defaults.len());
+    for (coordinate, default) in parameter_defaults {
+        encoder.usize(coordinate.group().get());
+        encoder.usize(coordinate.parameter().get());
+        encode_declaration_default(&mut encoder, default)?;
+    }
     Ok(CallableInterfaceDigest(
         encoder.finish(b"arcweft.callable-interface.v1\0")?,
     ))
+}
+
+fn encode_declaration_default(
+    encoder: &mut super::digest::CanonicalEncoder,
+    default: &CheckedDeclarationDefault,
+) -> Result<(), CheckedCallableCatalogBuildError> {
+    encoder.bytes(
+        &default
+            .coordinate()
+            .canonical_bytes()
+            .map_err(|_| CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?,
+    );
+    encoder.bytes(default.result().as_bytes());
+    encoder.bytes(default.expected().as_bytes());
+    encode_row(encoder, default.effects());
+    encoder.tag(match default.suspension() {
+        CheckedSuspensionRole::NonSuspending => 0,
+        CheckedSuspensionRole::MaySuspend => 1,
+    });
+    encoder.tag(match default.control() {
+        CheckedExecutableControlRole::ExpressionCompatible => 0,
+        CheckedExecutableControlRole::FlowRequired => 1,
+    });
+    encoder.bytes(default.expression().as_bytes());
+    encoder.usize(default.captures().len());
+    for capture in default.captures() {
+        encoder.usize(capture.parameter().group().get());
+        encoder.usize(capture.parameter().parameter().get());
+        encoder.bytes(capture.pattern_digest().as_bytes());
+        encoder.bytes(
+            capture
+                .binding_type()
+                .semantic_identity_digest()?
+                .as_bytes(),
+        );
+        encoder.usize(capture.binding_evidence().len());
+        for binding in capture.binding_evidence() {
+            let origin = binding
+                .origin()
+                .canonical_bytes()
+                .map_err(|_| CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
+            encoder.bytes(&origin);
+            encoder.bytes(binding.ty().semantic_identity_digest()?.as_bytes());
+        }
+        encoder.usize(capture.used_locals().len());
+        for local in capture.used_locals() {
+            let origin = local
+                .origin()
+                .canonical_bytes()
+                .map_err(|_| CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
+            encoder.bytes(&origin);
+            encoder.bytes(local.ty().semantic_identity_digest()?.as_bytes());
+        }
+    }
+    Ok(())
 }
 
 fn encode_access(encoder: &mut super::digest::CanonicalEncoder, access: &CallableAccess) {

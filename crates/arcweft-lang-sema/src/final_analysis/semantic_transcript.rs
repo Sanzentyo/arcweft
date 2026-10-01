@@ -700,15 +700,14 @@ fn build_checked_match_transaction(
     Ok(product)
 }
 
-/// Issues the distinct acyclic digest for one declaration-owned attached
+/// Issues the acyclic digest for one declaration-owned parameter or attached
 /// content default while the checked callable interfaces are still unsealed.
-pub(crate) fn checked_attached_content_default_expression_digest(
+pub(crate) fn checked_declaration_default_expression_digest(
     analysis: &FinalSemanticAnalysis,
     project: HirAnalysisProjectView<'_>,
     owner: ExprId,
     control: FinalSemanticAnalysisControl<'_>,
-) -> Result<crate::callable::CheckedAttachedContentDefaultExpressionDigest, SemanticTranscriptError>
-{
+) -> Result<crate::callable::CheckedDeclarationDefaultExpressionDigest, SemanticTranscriptError> {
     if analysis
         .checked_callables()
         .records()
@@ -724,7 +723,10 @@ pub(crate) fn checked_attached_content_default_expression_digest(
     let coordinate = coordinates.expression(owner)?;
     if !matches!(
         coordinate.steps().last(),
-        Some(crate::semantic_coordinate::CheckedSemanticPathStep::AttachedContentDefault)
+        Some(
+            crate::semantic_coordinate::CheckedSemanticPathStep::AttachedContentDefault
+                | crate::semantic_coordinate::CheckedSemanticPathStep::ParameterDefault { .. }
+        )
     ) {
         return Err(SemanticTranscriptError::MissingIdentity);
     }
@@ -754,22 +756,18 @@ pub(crate) fn checked_attached_content_default_expression_digest(
     let mut hasher = TranscriptHasher::new(&mut builder.budget);
     transcript_update!(
         hasher,
-        b"arcweft.lang.checked-attached-content-default-expression.v1\0"
+        b"arcweft.lang.checked-declaration-default-expression.v1\0"
     );
     write_bytes(&mut hasher, &coordinate.canonical_bytes()?)?;
     transcript_update!(hasher, expression.as_bytes());
-    Ok(
-        crate::callable::CheckedAttachedContentDefaultExpressionDigest::from_bytes(
-            hasher.finalize(),
-        ),
-    )
+    Ok(crate::callable::CheckedDeclarationDefaultExpressionDigest::from_bytes(hasher.finalize()))
 }
 
 /// Issues the canonical semantic digest of one accepted parameter pattern for
-/// an attached-default capture row. The digest commits stable coordinates,
+/// a declaration-default capture row. The digest commits stable coordinates,
 /// the complete checked pattern tree, and every binding/type child; raw
 /// generation-local pattern IDs never enter an interface digest.
-pub(crate) fn checked_attached_content_default_pattern_digest(
+pub(crate) fn checked_declaration_default_pattern_digest(
     analysis: &FinalSemanticAnalysis,
     module: &HirModule,
     owner: PatternId,

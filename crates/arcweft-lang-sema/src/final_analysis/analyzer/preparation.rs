@@ -906,8 +906,29 @@ impl Analyzer<'_, '_, '_> {
             }
             (
                 arcweft_lang_hir::source_index::HirCallableSourceOwner::ViewItem,
-                HirItemKind::View(_),
-            ) => {}
+                HirItemKind::View(view),
+            ) => {
+                for (index, parameter) in view.parameters().iter().enumerate() {
+                    if let Some(default) = parameter.default() {
+                        let coordinate = crate::callable::CallableParameterCoordinate::new(
+                            crate::callable::CallableGroupIndex::try_from_usize(0)
+                                .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?,
+                            crate::callable::CallableParameterIndex::try_from_usize(index)
+                                .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?,
+                        );
+                        let expected = self
+                            .catalogs
+                            .world
+                            .environment()
+                            .callable_catalog()
+                            .project_record(declaration)
+                            .and_then(|record| record.schema().parameter_type(coordinate))
+                            .cloned()
+                            .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+                        expectations.push((default, expected));
+                    }
+                }
+            }
             _ => return Err(FinalSemanticAnalysisError::InvalidCallableOwner),
         }
         for (owner, expected) in expectations {

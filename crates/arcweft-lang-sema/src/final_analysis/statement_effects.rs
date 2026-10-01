@@ -65,7 +65,7 @@ fn body_projection_has_selected_owner(
         .any(|edge| contains(edge.child()))
 }
 
-/// Transaction-local executable row consumed while attached-default
+/// Transaction-local executable row consumed while declaration-default
 /// interfaces are sealed. The expression inventory is the exact eager
 /// selected/body fold; it is not reconstructed from lexical scopes.
 #[derive(Clone, Debug, Eq, PartialEq)]

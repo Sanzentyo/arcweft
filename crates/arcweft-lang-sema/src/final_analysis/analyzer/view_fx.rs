@@ -467,7 +467,7 @@ fn checked_view_parameters(
         .root();
     let mut output = BTreeMap::new();
     for (index, parameter) in view.parameters().iter().enumerate() {
-        if parameter.default().is_some() || parameter.locals().len() != 1 {
+        if parameter.locals().len() != 1 {
             return Err(AnalyzerExpressionError::rejected(expression));
         }
         let coordinate = ViewParameterCoordinate::try_from_index(index)

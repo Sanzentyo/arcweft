@@ -84,14 +84,14 @@ pub(crate) use checked_application::{
     checked_view_fx_runtime_parameter,
 };
 pub use checked_catalog::{
-    CallableEffectContract, CallableInterfaceDigest, CheckedAttachedContentDefault,
-    CheckedAttachedContentDefaultCapture, CheckedAttachedContentDefaultCaptureLocal,
-    CheckedAttachedContentDefaultExpressionDigest, CheckedCallableAttachedContentParameter,
+    CallableEffectContract, CallableInterfaceDigest, CheckedCallableAttachedContentParameter,
     CheckedCallableCatalog, CheckedCallableCatalogGeneration, CheckedCallableCatalogOrigin,
     CheckedCallableEffects, CheckedCallableExecution, CheckedCallableFacts,
     CheckedCallableLookupError, CheckedCallableSourceCategory, CheckedCallableSourceKey,
-    CheckedClosureExecution, CheckedMethodLookup, EffectClauseSource, EffectContractBuildError,
-    EffectContractOrigin, EffectContractSource, EffectItemSource, EffectPermission,
+    CheckedClosureExecution, CheckedDeclarationDefault, CheckedDeclarationDefaultCapture,
+    CheckedDeclarationDefaultCaptureLocal, CheckedDeclarationDefaultExpressionDigest,
+    CheckedMethodLookup, EffectClauseSource, EffectContractBuildError, EffectContractOrigin,
+    EffectContractSource, EffectItemSource, EffectPermission,
 };
 pub(crate) use checked_catalog::{CheckedCallableCatalogBuildError, CheckedCallableCatalogBuilder};
 pub(crate) use constraints::{

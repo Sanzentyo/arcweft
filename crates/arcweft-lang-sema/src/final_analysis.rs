@@ -47,6 +47,7 @@ mod accounting;
 #[path = "final_analysis/analyzer.rs"]
 mod analyzer;
 mod canonical_literal;
+mod declaration_defaults;
 mod error;
 mod execution_plan;
 mod free_capture;

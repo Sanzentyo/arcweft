@@ -2,6 +2,10 @@
 
 mod variants;
 
+use super::declaration_defaults::{
+    checked_declaration_default_captures, checked_view_parameter_defaults,
+};
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
@@ -1344,8 +1348,8 @@ fn seal_checked_callable_interfaces(
     use crate::{
         callable::{
             CallableAttachedContentExecution, CallableAttachedContentPolicy, CallableCandidateId,
-            CallableParameterPresence, CheckedAttachedContentDefault,
-            CheckedCallableAttachedContentParameter,
+            CallableParameterPresence, CheckedCallableAttachedContentParameter,
+            CheckedDeclarationDefault,
         },
         effect_row::EffectRow,
         semantic_coordinate::{SemanticCoordinateIndex, StableCheckedValueCoordinate},
@@ -1354,9 +1358,22 @@ fn seal_checked_callable_interfaces(
 
     let coordinates = SemanticCoordinateIndex::new(analysis.accepted_root_catalog(), analysis);
     let mut rows = BTreeMap::new();
+    let mut parameter_defaults = BTreeMap::new();
     for facts in analysis.checked_callables().records() {
         control.check()?;
         let id = facts.id().clone();
+        let defaults = checked_view_parameter_defaults(
+            analysis,
+            project,
+            symbols,
+            facts,
+            &executable_suspensions,
+            &coordinates,
+            control,
+        )?;
+        if parameter_defaults.insert(id.clone(), defaults).is_some() {
+            return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+        }
         let row = match (facts.record().id(), facts.signature().attached_content()) {
             (CallableCandidateId::Project(declaration), Some(parameter))
                 if parameter.execution() == CallableAttachedContentExecution::RuntimeContent =>
@@ -1448,7 +1465,7 @@ fn seal_checked_callable_interfaces(
                                 .expression(value)
                                 .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?,
                         );
-                        let expression = super::semantic_transcript::checked_attached_content_default_expression_digest(
+                        let expression = super::semantic_transcript::checked_declaration_default_expression_digest(
                             analysis,
                             project,
                             value,
@@ -1458,7 +1475,7 @@ fn seal_checked_callable_interfaces(
                         let execution = executable_suspensions
                             .get(&value)
                             .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-                        let captures = checked_attached_content_default_captures(
+                        let captures = checked_declaration_default_captures(
                             analysis,
                             module,
                             symbol,
@@ -1466,10 +1483,13 @@ fn seal_checked_callable_interfaces(
                             execution.expressions(),
                             &coordinates,
                         )?;
-                        Some(CheckedAttachedContentDefault::new(
+                        Some(CheckedDeclarationDefault::new(
                             value,
                             coordinate,
-                            result.semantic_identity_digest()?,
+                            (
+                                result.semantic_identity_digest()?,
+                                result.semantic_identity_digest()?,
+                            ),
                             EffectRow::closed(checked.effects().clone()),
                             execution.suspension(),
                             execution.control(),
@@ -1507,197 +1527,8 @@ fn seal_checked_callable_interfaces(
     let catalog = Arc::get_mut(&mut analysis.checked_callables)
         .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
     catalog
-        .seal_interfaces(rows)
+        .seal_interfaces(rows, parameter_defaults)
         .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)
-}
-
-fn checked_attached_content_default_captures(
-    analysis: &FinalSemanticAnalysis,
-    module: &arcweft_lang_hir::module::HirModule,
-    symbol: &arcweft_lang_hir::symbol::CallableSymbol,
-    root: ExprId,
-    executed_expressions: &[ExprId],
-    coordinates: &crate::semantic_coordinate::SemanticCoordinateIndex<'_, '_>,
-) -> Result<Box<[crate::callable::CheckedAttachedContentDefaultCapture]>, FinalSemanticAnalysisError>
-{
-    use arcweft_lang_hir::item::HirItemKind;
-
-    let item = module
-        .resolve_item(symbol.source_item())
-        .map_err(|_| FinalSemanticAnalysisError::InvalidCallableOwner)?;
-    let HirItemKind::Function(function) = item.kind() else {
-        return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
-    };
-    let root_path = coordinates
-        .expression_evidence(root)
-        .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?
-        .into_coordinate();
-    if !executed_expressions.contains(&root)
-        || executed_expressions
-            .windows(2)
-            .any(|pair| pair[0] >= pair[1])
-    {
-        return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
-    }
-    let mut parameters = BTreeMap::new();
-    for (group_index, group) in function.parameter_groups().iter().enumerate() {
-        let group_coordinate = crate::callable::CallableGroupIndex::try_from_usize(group_index)
-            .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
-        for (parameter_index, parameter) in group.parameters().iter().enumerate() {
-            let parameter_coordinate =
-                crate::callable::CallableParameterIndex::try_from_usize(parameter_index)
-                    .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
-            let coordinate = crate::callable::CallableParameterCoordinate::new(
-                group_coordinate,
-                parameter_coordinate,
-            );
-            for local in parameter.locals() {
-                if parameters.insert(*local, (coordinate, parameter)).is_some() {
-                    return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
-                }
-            }
-        }
-    }
-
-    let mut used = BTreeMap::<
-        crate::callable::CallableParameterCoordinate,
-        Vec<crate::callable::CheckedAttachedContentDefaultCaptureLocal>,
-    >::new();
-    let mut captured = BTreeSet::new();
-    for &owner in executed_expressions {
-        let checked = analysis
-            .expression(owner)
-            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
-        let mut local_uses = Vec::new();
-        if let Some(local) = checked.execution_local_use() {
-            let local_ty = analysis
-                .local(local)
-                .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local })?;
-            if checked.source_value_type() != Some(local_ty.ty()) {
-                return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
-            }
-            local_uses.push(local);
-        }
-        match checked.resolution() {
-            CheckedExpressionResolution::Closure(closure) => {
-                for capture in closure.captures() {
-                    let binding = analysis
-                        .capture(capture.capture())
-                        .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-                    let local_ty = analysis.local(capture.local()).ok_or(
-                        FinalSemanticAnalysisError::LocalTypeUnavailable {
-                            owner: capture.local(),
-                        },
-                    )?;
-                    if binding.ty() != local_ty.ty() {
-                        return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
-                    }
-                    local_uses.push(capture.local());
-                }
-            }
-            CheckedExpressionResolution::ImplicitCallable(callable) => {
-                for capture in callable.captures() {
-                    let local_ty = analysis.local(capture.lookup_local()).ok_or(
-                        FinalSemanticAnalysisError::LocalTypeUnavailable {
-                            owner: capture.lookup_local(),
-                        },
-                    )?;
-                    if local_ty.ty().semantic_identity_digest()? != capture.value_type()
-                        || coordinates
-                            .binding(capture.lookup_local())
-                            .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?
-                            != *capture.origin()
-                    {
-                        return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
-                    }
-                    local_uses.push(capture.lookup_local());
-                }
-            }
-            _ => {}
-        }
-        for local in local_uses {
-            let local_ty = analysis
-                .local(local)
-                .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local })?;
-            let origin = coordinates
-                .binding(local)
-                .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-            if !origin.path().is_at_or_below(&root_path) && captured.insert(local) {
-                let (parameter, _) = parameters
-                    .get(&local)
-                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-                used.entry(*parameter).or_default().push(
-                    crate::callable::CheckedAttachedContentDefaultCaptureLocal::new(
-                        local,
-                        origin,
-                        local_ty.ty().clone(),
-                    ),
-                );
-            }
-        }
-    }
-
-    let mut captures = Vec::new();
-    for (group_index, group) in function.parameter_groups().iter().enumerate() {
-        let group_coordinate = crate::callable::CallableGroupIndex::try_from_usize(group_index)
-            .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
-        for (parameter_index, parameter) in group.parameters().iter().enumerate() {
-            let parameter_coordinate =
-                crate::callable::CallableParameterIndex::try_from_usize(parameter_index)
-                    .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
-            let coordinate = crate::callable::CallableParameterCoordinate::new(
-                group_coordinate,
-                parameter_coordinate,
-            );
-            let Some(mut used_locals) = used.remove(&coordinate) else {
-                continue;
-            };
-            used_locals.sort_by(|left, right| left.origin().cmp(right.origin()));
-            let pattern = analysis
-                .pattern(parameter.pattern())
-                .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-            let pattern_digest =
-                super::semantic_transcript::checked_attached_content_default_pattern_digest(
-                    analysis,
-                    module,
-                    parameter.pattern(),
-                )
-                .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-            let binding_evidence = parameter
-                .locals()
-                .iter()
-                .map(|local| {
-                    let checked = analysis.local(*local).ok_or(
-                        FinalSemanticAnalysisError::LocalTypeUnavailable { owner: *local },
-                    )?;
-                    let origin = coordinates
-                        .binding(*local)
-                        .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-                    Ok(
-                        crate::callable::CheckedAttachedContentDefaultCaptureLocal::new(
-                            *local,
-                            origin,
-                            checked.ty().clone(),
-                        ),
-                    )
-                })
-                .collect::<Result<Vec<_>, FinalSemanticAnalysisError>>()?
-                .into_boxed_slice();
-            captures.push(crate::callable::CheckedAttachedContentDefaultCapture::new(
-                coordinate,
-                parameter.pattern(),
-                pattern_digest,
-                parameter.locals().to_vec().into_boxed_slice(),
-                binding_evidence,
-                used_locals.into_boxed_slice(),
-                pattern.ty().clone(),
-            ));
-        }
-    }
-    if !used.is_empty() {
-        return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
-    }
-    Ok(captures.into_boxed_slice())
 }
 
 fn validate_checked_entry_references(

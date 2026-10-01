@@ -996,7 +996,10 @@ fn project_parameters(
                 parameter_source_index,
             )
             .map_err(|_| identity_mismatch(symbol))?;
-            if parameter.default().is_some() && !symbol.is_fx() {
+            if parameter.default().is_some()
+                && !symbol.is_fx()
+                && symbol.owner() != arcweft_lang_hir::symbol::CallableDeclarationOwner::View
+            {
                 let span = parameter_source
                     .default()
                     .cloned()
@@ -1041,7 +1044,7 @@ fn project_parameters(
                     } else {
                         parameter_passing(module, *parameter, symbol)?
                     },
-                    if symbol.is_fx() && parameter.default().is_some() {
+                    if parameter.default().is_some() {
                         CallableParameterPresence::Defaulted
                     } else {
                         CallableParameterPresence::Required

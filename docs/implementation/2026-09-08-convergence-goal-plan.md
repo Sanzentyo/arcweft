@@ -3346,3 +3346,83 @@ scanner による再計測は不要と判断した。
 拒否する View default の producer/consumer 移行を進め、C3/C5 の残る受入条件を照合する。
 retained View .1.4、task-plan .1.3.1、nominal C1-C6、scheduler/restore A-F と
 全体検証は未完のまま保持し、goal は active で継続する。
+
+## Match T06 View roots / declaration defaults — 2026-10-01
+
+Inspected base: `de7aed2d7dc39d8bd7453fe81c9aefb52015f1d7`、既存 `main`、開始時
+clean。今回の変更は semantic default authority と T06 の受入証拠であり、goal 全体と
+retained View `.1.4` の実行接続は未完。
+
+Supersedes: 直前までの「View default は builder が拒否する」という現行状態。
+View は `Defaulted` parameter を登録し、登録済み callable schema の型で default を
+contextual check する。通常 function parameter default の拒否は維持する。raw type
+annotation には omitted function effect row が残るため、登録済み parameter 型を
+expected authority とした。default row は expected/result 型 identity を別々に保持する。
+
+添付本文専用だった checked default 型・capture 型・式 digest を
+`CheckedDeclarationDefault` family に統合した。View parameter defaults は最終
+`CheckedCallableFacts` に parameter coordinate 順で入り、添付本文 row と同じ
+interface sealing transaction で complete batch を検証・公開する。式 digest は
+interface を seal する前の既存 acyclic transcript から導き、default から callable
+interface を再帰的に hash しない。domain/version は `v1`。旧型 alias・旧 reader は
+残さない。RuntimePlan の変更は既存の添付本文 default consumer の型名移行だけで、
+C5 が禁止する新しい View runtime/wire/task-plan consumer は追加していない。
+
+Default の free inputs は既存の selected execution inventory と、明示 closure / implicit
+callable の checked capture から導く。先行 parameter だけを許可し、自己参照と
+後続参照を拒否する。後続参照には既存 lexical lookup で
+`ExpressionTypeUnavailable` になるものもあり、受理した capture の順序検査と区別する。
+View default は外部効果を実行せず、non-suspending とする。Thread を作る default と
+Await default は effects 検査で拒否する。Await のこの witness は effects が先に失敗する
+ため、独立した suspension-only rejection の証明としては扱わない。
+
+`view_roots` の matrix は View parameter pattern と binding、３つの authored View value
+root、Match の位置、handler closure capture を accepted topology と checked coordinate
+で照合する。Fx input または handler capture の参照先変更、View value の順序変更は
+Match digest を変え、隣接 Text の変更、整形と無関係な先行宣言による raw ID/span の
+変更は Match の意味を変えない。`view_defaults` は String、純粋な project call、tuple、
+nominal、contextual enum、明示/暗黙 callable、先行入力の連鎖、default を持つ View の
+Fx binding を受理する。default 内 Match の parameter-default path、式/interface digest
+の意味変化と source-revision invariance、および型不一致・自己/後続/latent forward
+input・効果実行の拒否を実行証拠にした。
+
+構造: production の default derivation と共通 free-input projection を
+`final_analysis/declaration_defaults.rs` にまとめた。これは新しい parallel capture walk
+ではなく、旧 report 内の添付本文 capture producer を移し、View も同じ producer を
+使うもの。331 physical LOC / 14,146 bytes、embedded tests 0、fan-in は report、fan-out
+は既存 HIR/sema typed facts と transcript のみで I/O/dependency 追加なし。
+`checked_catalog.rs` は 2,730 → 2,838 LOC / 104,427 bytes、report は 2,572 → 2,403 LOC /
+96,807 bytes。前者は checked callable/default/interface の単一 authority と transactional
+publication の cohesive owner、後者は final report の assembly owner として保持する。
+test leaf は `view_defaults.rs` 198 LOC / 7,416 bytes、`view_roots.rs` 272 LOC /
+9,667 bytes。いずれも runtime API を広げない。
+
+検証: focused View matrix ６件、最終 source の `cargo check --workspace --all-targets
+--all-features`、同 Clippy、`cargo fmt --all --check`、diff check が合格。
+`just test-workspace` は全 recipe が終了コード 0、sema lib 1,100 件を含めて合格した。
+集計は 308 test suites、7,125 passed / 0 failed / 24 ignored。
+Windows の既知の compiler test stack 条件に合わせ、workspace test に
+`RUST_MIN_STACK=16777216` を指定した。最初の workspace run は追加 fixture の raw
+string 編集ミスで compile 失敗したが、修正後に全 recipe を再実行して合格した。
+Clippy は warnings あり（既存 owner、移した capture producer、大きい共通 error 等）。
+`just structure-audit-gate` は 97 packages、blocking violations 0、review triggers 348。
+その後の小さい検証/fixture 修正は dependency、API、owner/test boundary を変えないため
+構造結果を再利用し、上記の最終 physical LOC/bytes と owner disposition を記録した。
+
+実行側の残り: compiler の default boundary は `ViewLower / compiler.view.lower` で
+fail closed を維持し、２つの compiler fixture を registration rejection から更新した。
+runtime default 評価の合格証拠ではない。ユーザー定義 View call の追加 probe は
+`ProjectItem(View)` に解決され、`CallTargetFacts` は selected application を持たなかった。
+これは `.1.4` の production producer 移行対象であり、その probe を受理テストとして
+残したり、成功として数えたりしない。
+
+次の設計方針: ユーザーの条件付き許可に従い、この難しい layer/value boundary だけ
+fresh-context の `gpt-6-astra` / Max に advice を求めた。advice agent は編集・検証をして
+いない。採用する方向は既存 `RuntimePureProgram` の root/input ABI を checked expression
+と declaration default へ一般化し、View の一般値に既存 `RuntimeValue` / semantic type
+を用いること。Fx evaluator は actual Fx ABI に限定し、View-owned fragment program と
+一般 data slot の役割を分ける。scalar mount storage と named runtime parameter の二重
+authority を消し、supplied/defaulted provenance と依存 revision から省略値を再計算する。
+Need の affine guard は弱めず、Cut-5 の handle/current-owner admission、observer と
+replacement/save transaction を `.1.3.1` と接続する。scalar Await、I32-count Repeat、
+name-based BindLocal は typed operation/slot の consumer が完成した切替で削除する。

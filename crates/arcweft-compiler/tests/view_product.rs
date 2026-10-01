@@ -741,7 +741,7 @@ fn compiler_rejects_well_formed_view_values_without_a_typed_runtime_contract() {
 }
 
 #[test]
-fn compiler_rejects_unsupported_view_defaults_at_registration_with_authored_source() {
+fn compiler_rejects_semantically_checked_view_defaults_at_the_unimplemented_runtime_boundary() {
     let cases = [
         "view Good() { Text(\"ok\") }\n\nview Broken(value: String = \"x\") { Text(\"x\") }\n",
         "fn make_default() -> i32 { 1 }\n\nview Good() { Text(\"ok\") }\n\nview Broken(value: i32 = make_default()) { Text(\"x\") }\n",
@@ -754,23 +754,23 @@ fn compiler_rejects_unsupported_view_defaults_at_registration_with_authored_sour
         );
         let error = fixture
             .compile()
-            .expect_err("schema/default rejection must retain its authored owner");
+            .expect_err("a checked default must fail closed before unsupported runtime lowering");
         assert_eq!(
             error.diagnostics().len(),
             1,
             "unexpected diagnostics: {error:?}"
         );
         let diagnostic = &error.diagnostics()[0];
-        assert_eq!(diagnostic.stage(), ProjectCompileStage::Registration);
+        assert_eq!(diagnostic.stage(), ProjectCompileStage::ViewLower);
         assert_eq!(
             diagnostic
                 .diagnostic()
                 .code()
                 .map(arcweft_source::DiagnosticCode::as_str),
-            Some("aw.callable.parameter_default.unsupported")
+            Some("compiler.view.lower")
         );
-        assert!(diagnostic.source().is_some());
-        assert!(!diagnostic.diagnostic().labels().is_empty());
+        assert!(diagnostic.source().is_none());
+        assert!(diagnostic.diagnostic().labels().is_empty());
     }
 }
 
