@@ -94,7 +94,8 @@ flow から mount された View を root とし、View body 内の nested View 
 `.` である。
 
 名前から導く View の public ID は、final HIR の header projection が canonical module
-と宣言名から一度生成する。明示 ID は authored identity のまま保持する。最終 freeze、
+と宣言名から一度生成する。これは [全宣言familyの共通規則](../01-language/ids-and-references.md)
+であり、明示 ID は authored identity のまま保持する。最終 freeze、
 retained symbol、sema entity/callable join、compiler、bundle は同じ published identity
 を照合・消費し、consumer が module/name から別の ID を再生成しない。
 

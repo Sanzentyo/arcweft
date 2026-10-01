@@ -3731,3 +3731,61 @@ For the touched upper-trigger owners, retain cohesion explicitly: analyzer calls
 Cargo metadata (`--no-deps --all-features`) direct workspace fan-in/out: `arcweft-lang-hir` 11/9, `arcweft-lang-sema` 11/18, `arcweft-runtime-plan` 10/14. Manifests, lockfile, features and dependency direction are unchanged. Syntax/HIR → sema → runtime-plan remains the direction; consumers do not issue semantic local identities.
 
 Remaining goal work: canonical implicit IDs for all declaration families are the next accepted priority; general checked expression/default root ABI and retained RuntimeValue/View execution, UI audit acceptance, .1.3.1, remaining nominal and scheduler/restore work continue afterward. This cut does not establish that the full goal is complete.
+
+### 2026-10-01 — canonical declaration identities: final implementation
+
+Base: `042f5e198b3eb6636c98029df9058be112d0591c`, existing main; that local-input cut was committed and pushed with matching remote HEAD. The current dirty paths belong to the accepted declaration-identity scope extension. Supersedes the View-only policy; the full convergence goal remains active.
+
+`DeclarationIdentityFamily::derive_public_id(namespace, name)` is the sole implicit-ID grammar. The name-only overload, namespace alias and HIR family-switch helper are deleted. Every authored family uses canonical module plus declaration name/path. Explicit IDs retain their accepted values. Asset remains catalog/virtual-path owned.
+
+Actual producers include more than retained headers: Flow now issues and stores its accepted publication on final HIR; symbols and dialogue-line owners borrow it instead of deriving it again. Flow lookup no longer grants a module-local shortened public-ID alias, and all accepted Flow IDs share global collision rejection. Proof now issues an implicit ID, carries it through the existing staged authored-return header into final HIR, and publishes the same value on its callable symbol. Alias/ID lookup joins one callable, visibility remains enforced, and implicit/explicit collisions fail. No independent Proof ID lookup table is added.
+
+Style had a separate reference-based path, not a retained header. It now owns one typed retained PublicId, including origin and complete recovered reference shape/issue. Bare dotted names preserve their declaration path after the canonical module. Source freeze uses the owning projection with the actual module; sema and compiler consume the accepted ID. Their separate Style PublicId readers are deleted. Authored token IDs keep their distinct relative-token meaning. The unused name-only semantic Flow constructor is deleted.
+
+Focused evidence: 60 final-HIR family/module/explicit-ID cases pass; retained family import/re-export and canonical Flow reference/collision cases pass; Proof owner/return tests 28/0 and public-ID alias/visibility/collision 1/0 pass. The compiler project test preserves distinct Character/Style/Flow IDs from root and child in Agent graph, runtime Flow labels, Style sheets and decoded AWBC bindings. Its first AWBC probe had no entry and correctly failed `MissingEntrypoint`; the same fixture now has an explicit entry, and its rerun passes 1/0. Initial matrix fixture failures were invalid Character/View header spellings; fixtures were corrected to their existing grammar without changing acceptance. The final complete workspace recipe passes, as recorded below. No GPU/render-performance claim is made.
+
+Ownership disposition: final_lowering and callable own the existing Proof header/body transaction; final retained/Flow/Style producers own identity issuance, their source projections authenticate it, symbol identity/table/publication own visibility and collision/lookup, and line_identity/sema index/compiler Style consume published IDs. No source-module invention, I/O, dependency change, public API widening for file splitting, duplicate accepted-ID index, legacy reader or fallback was added. The new SIZE001 test-owner trigger (`item_lowering/tests.rs`, 2,558 LOC) remains the shared lowering-fixture and cross-family acceptance owner; its added matrix exercises the same production projection/freeze boundary. Existing larger production owners remain cohesive: final_lowering 1,485, callable 1,345, retained 1,551, item projection 1,444, Flow projection 1,661, symbol identity 1,301 and symbol table 2,083 LOC. `arcweft-id/lib.rs` owns the portable value grammar and shrinks to 755 LOC. No owner grows by 300 LOC. All source is handwritten; no generator, benchmark, example or tool owner changed.
+
+Canonical structure gate: 97 packages, 351 review triggers, 0 blocking violations. Workspace normal dependency fan-in/out: id 32/0, HIR 10/3, sema 8/14, compiler 3/24; development edges respectively 3/0, 1/0, 3/0, 1/9. Manifests, lockfile, features and dependency direction are unchanged. Exact changed-owner measurements follow (base is the full SHA above; bytes and physical LOC are from the current checkout, embedded test LOC from the canonical scanner).
+
+| path / owner | class | bytes | physical LOC (base → current) | embedded test LOC |
+|---|---|---:|---:|---:|
+| `crates/arcweft-compiler/src/project/tests.rs` / arcweft-compiler | test | 81895 | 2269 → 2322 | 0 |
+| `crates/arcweft-compiler/src/style.rs` / arcweft-compiler | production | 13800 | 375 → 372 | 0 |
+| `crates/arcweft-id/src/lib.rs` / arcweft-id | facade | 23796 | 763 → 755 | 192 |
+| `crates/arcweft-lang-hir/src/final_lowering.rs` / arcweft-lang-hir | production | 57939 | 1479 → 1485 | 0 |
+| `crates/arcweft-lang-hir/src/final_lowering/item_lowering/callable.rs` / arcweft-lang-hir | production | 54632 | 1305 → 1345 | 0 |
+| `crates/arcweft-lang-hir/src/final_lowering/item_lowering/flow.rs` / arcweft-lang-hir | production | 39095 | 953 → 954 | 0 |
+| `crates/arcweft-lang-hir/src/final_lowering/item_lowering/retained.rs` / arcweft-lang-hir | production | 18017 | 427 → 434 | 0 |
+| `crates/arcweft-lang-hir/src/final_lowering/item_lowering/style.rs` / arcweft-lang-hir | production | 28015 | 582 → 647 | 0 |
+| `crates/arcweft-lang-hir/src/final_lowering/item_lowering/tests.rs` / arcweft-lang-hir | test | 90616 | 2477 → 2558 | 0 |
+| `crates/arcweft-lang-hir/src/final_lowering/item_lowering/tests/proof.rs` / arcweft-lang-hir | test | 44279 | 1285 → 1285 | 0 |
+| `crates/arcweft-lang-hir/src/final_lowering/item_lowering/tests/style.rs` / arcweft-lang-hir | test | 31560 | 869 → 913 | 0 |
+| `crates/arcweft-lang-hir/src/final_lowering/item_lowering/tests/style_freeze.rs` / arcweft-lang-hir | test | 12598 | 346 → 346 | 0 |
+| `crates/arcweft-lang-hir/src/item/flow.rs` / arcweft-lang-hir | production | 19699 | 594 → 614 | 0 |
+| `crates/arcweft-lang-hir/src/item/flow/tests.rs` / arcweft-lang-hir | test | 19428 | 627 → 639 | 0 |
+| `crates/arcweft-lang-hir/src/item/host.rs` / arcweft-lang-hir | production | 27620 | 997 → 1006 | 0 |
+| `crates/arcweft-lang-hir/src/item/host/tests.rs` / arcweft-lang-hir | test | 18195 | 572 → 589 | 0 |
+| `crates/arcweft-lang-hir/src/item/retained.rs` / arcweft-lang-hir | production | 47639 | 1569 → 1551 | 0 |
+| `crates/arcweft-lang-hir/src/line_identity/sites.rs` / arcweft-lang-hir | production | 12578 | 340 → 339 | 0 |
+| `crates/arcweft-lang-hir/src/source_index/item_projection.rs` / arcweft-lang-hir | production | 56085 | 1437 → 1444 | 0 |
+| `crates/arcweft-lang-hir/src/source_index/item_projection/flow.rs` / arcweft-lang-hir | production | 59028 | 1658 → 1661 | 0 |
+| `crates/arcweft-lang-hir/src/source_index/item_projection/proof.rs` / arcweft-lang-hir | production | 13651 | 434 → 421 | 0 |
+| `crates/arcweft-lang-hir/src/source_index/item_projection/style.rs` / arcweft-lang-hir | production | 41308 | 1134 → 1136 | 0 |
+| `crates/arcweft-lang-hir/src/symbol/identity.rs` / arcweft-lang-hir | production | 41170 | 1290 → 1301 | 73 |
+| `crates/arcweft-lang-hir/src/symbol/table.rs` / arcweft-lang-hir | production | 76917 | 2082 → 2083 | 0 |
+| `crates/arcweft-lang-hir/src/symbol/table/publication.rs` / arcweft-lang-hir | production | 39282 | 1028 → 1046 | 0 |
+| `crates/arcweft-lang-hir/src/symbol/table/retained.rs` / arcweft-lang-hir | production | 16764 | 433 → 433 | 0 |
+| `crates/arcweft-lang-hir/src/symbol/tests/symbol_projection.rs` / arcweft-lang-hir | test | 47899 | 1153 → 1294 | 0 |
+| `crates/arcweft-lang-sema/src/effect_model.rs` / arcweft-lang-sema | production | 10736 | 431 → 426 | 50 |
+| `crates/arcweft-lang-sema/src/project_index/final_projection.rs` / arcweft-lang-sema | production | 30626 | 842 → 813 | 0 |
+| `crates/arcweft-lang-sema/src/final_analysis/tests.rs` / arcweft-lang-sema | test | 355970 | 10226 → 10228 | 0 |
+| `crates/arcweft-lsp/src/session/tests.rs` / arcweft-lsp | test | 68086 | 2030 → 2030 | 0 |
+
+The first full recipe failed on the old same-named Flow fixture: the child still referenced `@flow.opening` and expected both public labels to be equal. The fixture now references `@flow.child.opening`, asserts the two canonical IDs, and preserves both self-goto relation assertions. The 10,228-LOC existing sema test owner grows by 2 LOC; this changes its established project-index identity/relation acceptance case, with no new fixture infrastructure or unrelated test coupling. Its existing shared semantic harness remains the owner; splitting this expectation update would only duplicate that harness. Final recipe rerun uses the complete current source, including Proof/Style authority and the compiler codec case.
+
+The second recipe passes the final HIR (935/0/8 ignored), sema (1,115/0) and compiler cases, then fails the old LSP hover expectation `@character.child_speaker`. Actual hover already consumes the final typed ID `@character.side.child_speaker`. Only that expected literal is migrated; the same selected CharacterDialogue/result and no-root-character assertions remain. The 2,030-LOC LSP session test owner retains its existing accepted-project/hover harness; no protocol, URI, observe, capture, rendering or production LSP path changed. A third complete recipe runs after this expectation repair. Failed recipe logs remain in `%TEMP%/arcweft-1001-canonical-id-workspace-{first,second}-failed.log`.
+
+Final receipt: third `just test-workspace` exits 0, 308 suites, 7,158 passed, 0 failed, 24 ignored, with `RUST_MIN_STACK=16777216`. HIR 935/0/8 ignored and sema 1,115/0 are included. The repaired LSP hover also passes a focused all-feature run 1/0. Workspace check and Clippy (`--all-targets --all-features`) pass; Clippy retains warnings. Format and staged diff checks pass. Structure-gate evidence above is reused for the final literal-only sema/LSP fixture repairs: ownership, dependencies and APIs are unchanged, and their exact measurements are recorded. Logs use `%TEMP%/arcweft-1001-canonical-id-{workspace,check,clippy,structure}.log`; workspace `.exit` is `0`. Tier 2 device/GPU/render/observe/protocol work is outside this identity cut.
+
+The accepted canonical-ID scope is complete. Remaining convergence goal: connect complete checked expression/default input authority to the existing RuntimePureProgram/RuntimeValue ABI, replace scalar View storage/evaluation and finish retained View .1.4 with UI audit acceptance, then .1.3.1, remaining nominal and scheduler/restore acceptance. Read-only preparation confirms `compiler/view.rs::prepare_authored_view` still rejects defaults, and View value inventory/mount state still use scalar Fx schemas; Core already owns typed RuntimePureProgram bindings and Value input/output ABI. These are next implementation boundaries, not completion evidence. The full goal remains active.

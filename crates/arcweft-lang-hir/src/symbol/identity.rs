@@ -73,9 +73,10 @@ pub struct ImplMethodDeclarationId {
 
 /// Publication origin of one accepted Flow identity.
 ///
-/// Name-derived and empty-marker identities remain module-scoped even though
-/// their canonical public spelling is retained. Authored absolute IDs are
-/// project-global and participate in duplicate-public-ID rejection.
+/// Names derive from the canonical module path. Authored absolute and
+/// empty-marker IDs retain their accepted values. Every accepted public ID
+/// is project-global and participates in duplicate-public-ID rejection;
+/// this origin metadata does not grant a shortened lookup alias.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FlowPublicationKind {
     ModuleScoped,
@@ -85,7 +86,7 @@ pub enum FlowPublicationKind {
 /// Structural identity of one accepted Flow execution owner.
 ///
 /// Flow is intentionally not an ordinary callable declaration. The project
-/// transaction derives or validates `public_id` exactly once and retains that
+/// final HIR derives or validates `public_id` exactly once and retains that
 /// typed result together with its module identity for every later consumer.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct FlowDeclarationId {
@@ -216,6 +217,9 @@ impl CallableDeclarationOwner {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallableSymbol {
     pub(super) declaration: CallableDeclarationKey,
+    /// Accepted public identity for an ordinary declaration such as Proof.
+    /// Structural Flow identity remains on its declaration key.
+    pub(super) public_id: Option<PublicId>,
     pub(super) visibility: Option<Visibility>,
     pub(super) fx: bool,
     pub(super) source_snapshot: HirSnapshotId,
@@ -828,6 +832,13 @@ fn digest_len(hasher: &mut blake3::Hasher, length: usize) {
 impl CallableSymbol {
     pub const fn declaration(&self) -> &CallableDeclarationKey {
         &self.declaration
+    }
+
+    pub const fn public_id(&self) -> Option<&PublicId> {
+        match &self.declaration {
+            CallableDeclarationKey::Flow(flow) => Some(flow.public_id()),
+            _ => self.public_id.as_ref(),
+        }
     }
 
     pub const fn visibility(&self) -> Option<Visibility> {

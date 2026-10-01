@@ -616,7 +616,7 @@ fn proof_identity_acceptance_matrix_reaches_final_hir_as_typed_public_id() {
     let module = lower(&mut database, &parsed, &key);
 
     for (ordinal, expected) in [
-        (0, None),
+        (0, Some("proof.bare")),
         (1, Some("proof.explicit")),
         (2, Some("proof.relative")),
         (3, Some("proof.short")),

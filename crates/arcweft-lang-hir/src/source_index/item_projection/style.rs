@@ -166,6 +166,7 @@ impl StagedHirSourceIndex {
 
 pub(super) fn payload_matches(
     index: &HirSourceIndex,
+    module: &arcweft_lang_syntax::ast::module_path::CanonicalModulePath,
     owner: ItemId,
     attached: &AttachedStyleDeclaration,
     item: &HirItem,
@@ -177,7 +178,8 @@ pub(super) fn payload_matches(
     };
     item.members().is_empty()
         && item_prefix_matches(item, attached.prefix(), slots)
-        && id_ref_matches(style.id(), attached.id().reference())
+        && HirStyleItem::project_attached_public_id(module, attached.id())
+            .is_ok_and(|id| &id == style.public_id())
         && style_id_expression_is_unallocated(attached.id(), slots)
         && outer_body_shape_is_consistent(attached.body())
         && style_tokens_match(style.tokens(), attached.body(), slots)

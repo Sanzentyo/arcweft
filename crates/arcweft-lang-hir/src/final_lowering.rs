@@ -68,6 +68,7 @@ use item_lowering::PendingProofDeclaration;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct StagedProofReturnHeader {
     pub(crate) item: ItemId,
+    pub(crate) public_id: Option<arcweft_id::PublicId>,
     pub(crate) return_type: TypeId,
     pub(crate) source: arcweft_source::SourceSpan,
     pub(crate) declaration_source: arcweft_source::SourceSpan,
@@ -134,6 +135,7 @@ impl RetainedProofReturnModule {
             let name_source = retained_item_span(&module, item, HirDeclarationSourceRole::Name)?;
             headers.push(StagedProofReturnHeader {
                 item,
+                public_id: proof.public_id().cloned(),
                 return_type: proof.return_type(),
                 source: result,
                 declaration_source,
@@ -938,6 +940,10 @@ impl<'transaction, 'source> HirProofReturnCallableHeaderRef<'transaction, 'sourc
 
     pub const fn name(self) -> &'transaction crate::item::HirRequiredName {
         &self.header.name
+    }
+
+    pub const fn public_id(self) -> Option<&'transaction arcweft_id::PublicId> {
+        self.header.public_id.as_ref()
     }
 
     pub const fn prefix(self) -> &'transaction crate::item::HirItemPrefix {

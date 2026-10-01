@@ -56,7 +56,8 @@ pub(super) fn payload_matches(
     if members.is_some()
         || !item.members().is_empty()
         || !item_prefix_matches(item, attached.prefix(), slots)
-        || !proof_public_id_matches(proof.public_id(), attached.public_id())
+        || !HirProof::project_attached_public_id(arenas.module, proof.name(), attached.public_id())
+            .is_ok_and(|id| id.as_ref() == proof.public_id())
         || !proof_trust_matches(proof.trust(), attached.trust())
         || !required_name_matches(proof.name(), attached.name())
         || !generic_parameters_match(proof.generic_parameters(), attached.generics(), slots)
@@ -205,20 +206,6 @@ fn proof_trust_matches(retained: &ProofTrust, attached: Option<&ProofTrustSyntax
                 reason: attached, ..
             }),
         ) => retained.as_str() == attached.as_str(),
-        _ => false,
-    }
-}
-
-fn proof_public_id_matches(
-    retained: Option<&arcweft_id::PublicId>,
-    attached: &AttachedDeclarationPublicId,
-) -> bool {
-    match (retained, attached) {
-        (
-            None,
-            AttachedDeclarationPublicId::Derived | AttachedDeclarationPublicId::Recovered { .. },
-        ) => true,
-        (Some(retained), AttachedDeclarationPublicId::Explicit { value, .. }) => retained == value,
         _ => false,
     }
 }

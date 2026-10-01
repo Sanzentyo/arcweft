@@ -1649,7 +1649,7 @@ flow @flow.child_dialogue child_dialogue {
         hover.contains("CharacterDialogue content application"),
         "{hover}"
     );
-    assert!(hover.contains("@character.child_speaker"), "{hover}");
+    assert!(hover.contains("@character.side.child_speaker"), "{hover}");
     assert!(hover.contains("DialogueLine"), "{hover}");
     assert!(!hover.contains("@character.root_speaker"), "{hover}");
 }

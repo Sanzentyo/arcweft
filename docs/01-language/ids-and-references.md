@@ -122,15 +122,38 @@ Code Action:
 
 ## 生成規則の設定
 
+Authored declaration の implicit ID は設定に依存せず、次の一つの規則で生成する。
+
+```text
+<family>.<canonical-module-path>.<declaration-name>
+```
+
+Character、View、Action、Activity、Signal、Metric、Layer、Flow、Proof、Style は
+同じ規則を使う。crate root では空の module 部分を省略する。final HIR が typed
+PublicId を確定し、symbol、sema、compiler、bundle、runtime はその値を消費する。
+import、alias、re-export は同じ宣言を参照し、新しい ID を生成しない。
+同じ ID の衝突は拒否し、自動 suffix や旧短縮 ID の fallback を追加しない。
+Asset は catalog の virtual path が所有し、source module を付加しない。
+Style の bare dotted name は宣言pathとして保持し、module の後へ全 component を
+付ける。例えば `mod ui` の `style theme.dark` は `style.ui.theme.dark` になる。
+
+```text
+mod game.cast: character Alice -> character.game.cast.Alice
+mod dream.cast: character Alice -> character.dream.cast.Alice
+mod game.ui: style Main -> style.game.ui.Main
+mod game.routes: flow opening -> flow.game.routes.opening
+crate root: proof ready -> proof.ready
+```
+
+明示 ID は受理した指定値を保持する。module/name の変更から identity を独立させる
+場合は explicit ID を使う。file の移動だけでは canonical module が変わらない限り
+implicit ID は変わらない。生成した content ID の registry policy は別の所有境界である。
+
 ```toml
 [id]
-case = "snake"
 separator = "."
-collision = "append_hash"
+collision = "error"
 renumber_on_format = false
-
-[id.rules.flow]
-pattern = "flow.{name}"
 
 [id.rules.say]
 pattern = "say.{flow}.{slot:03}"
@@ -344,10 +367,12 @@ the examples above are relative-ID contracts; they remain useful for testing
 normalization and generated round trips, but are not the recommended spelling
 for ordinary authored declarations.
 
-`mod game.routes.opening` is a source/module hierarchy, not automatically part
-of public entity IDs today. This keeps public IDs stable when files move.
-However, projects may choose a policy that requires module paths and entity IDs
-to line up, such as `mod game.routes.opening` containing `@flow.opening`.
+`mod game.routes.opening` participates in implicit declaration identity:
+`flow opening` publishes `flow.game.routes.opening.opening`. An explicit
+`flow @flow.opening` keeps `flow.opening` across module moves. Family-relative
+references omit only the family prefix, so the implicit declaration above is
+referenced as `@flow:.game.routes.opening.opening`; the shorter `@flow.opening`
+does not resolve to it. Visibility still follows the declaration module.
 
 Planned lint policy: add an ID policy lint pass that can compare module path,
 flow ID, named scopes, and generated relative IDs. It should report

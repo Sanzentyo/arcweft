@@ -104,6 +104,13 @@ grouped imports, glob imports, aliases, and `pub use` bind names to that same
 identity; an alias or re-export never creates a second declaration identity.
 This identity is also the input to derived contracts such as `FxId`.
 
+Authored declaration families with a PublicId derive implicit identities from
+the same canonical module and name: `<family>.<module>.<name>`, with the empty
+root module omitted. Explicit IDs retain their accepted value. Imports,
+aliases and re-exports preserve the final HIR-issued PublicId; a module move
+changes an implicit ID and leaves an explicit ID intact. Asset identity belongs
+to the catalog virtual path. See [IDs and references](ids-and-references.md).
+
 If two glob or grouped imports introduce the same unqualified name for
 different callable declarations, the import table retains both candidates and
 an unqualified use is an ambiguity error. A qualified path remains usable to

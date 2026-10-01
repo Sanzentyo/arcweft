@@ -24,6 +24,75 @@ use super::super::id_ref_projection::id_ref;
 use super::super::{StagedHirModuleTransaction, require_limit};
 use super::{LoweredItemProjection, item_state};
 
+impl HirStyleItem {
+    pub(crate) fn project_attached_public_id(
+        module: &arcweft_lang_syntax::ast::module_path::CanonicalModulePath,
+        attached: &AttachedStyleId,
+    ) -> Result<crate::item::HirRetainedPublicId, HirLowerFailure> {
+        use crate::item::{HirPublicIdOrigin, HirRetainedPublicId, HirRetainedPublicIdIssue};
+        use crate::leaf::HirIdRef;
+        use arcweft_id::{DeclarationIdentityFamily, DeclarationName, PublicId};
+        use arcweft_lang_syntax::attachment::StyleIdForm;
+        let reference = id_ref(
+            attached
+                .reference()
+                .ok_or(HirInvariantFailure::InvalidArenaCommit)?,
+        )?;
+        let Some(reference) = reference.as_resolved() else {
+            return Ok(HirRetainedPublicId::Recovered(
+                HirRetainedPublicIdIssue::RecoveredReference(
+                    reference
+                        .recovery()
+                        .ok_or(HirInvariantFailure::InvalidArenaCommit)?
+                        .clone(),
+                ),
+            ));
+        };
+        let (value, origin) = if attached.form() == Some(StyleIdForm::Bare) {
+            let HirIdRef::FamilyRelative(relative) = reference else {
+                return Err(HirInvariantFailure::InvalidArenaCommit.into());
+            };
+            let mut declaration = relative
+                .relative()
+                .suffix()
+                .as_str()
+                .split('.')
+                .collect::<Vec<_>>();
+            let name = DeclarationName::try_new(
+                declaration
+                    .pop()
+                    .ok_or(HirInvariantFailure::InvalidArenaCommit)?,
+            )
+            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+            let namespace = module
+                .segments()
+                .iter()
+                .map(arcweft_lang_syntax::ast::module_path::ModuleSegment::as_str)
+                .chain(declaration);
+            (
+                DeclarationIdentityFamily::Style
+                    .derive_public_id(namespace, &name)
+                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
+                HirPublicIdOrigin::DerivedFromName,
+            )
+        } else if let Some(value) =
+            reference.declaration_public_id(DeclarationIdentityFamily::Style)
+        {
+            (value, HirPublicIdOrigin::Explicit)
+        } else {
+            let issue = match reference {
+                HirIdRef::Absolute(reference) => PublicId::try_new(reference.as_str()).map_or(
+                    HirRetainedPublicIdIssue::Malformed,
+                    HirRetainedPublicIdIssue::WrongFamily,
+                ),
+                _ => HirRetainedPublicIdIssue::Malformed,
+            };
+            return Ok(HirRetainedPublicId::Recovered(issue));
+        };
+        Ok(HirRetainedPublicId::Resolved { value, origin })
+    }
+}
+
 struct LoweredStyleBody {
     items: Box<[HirStyleBodyItem]>,
     has_recovery: bool,
@@ -42,12 +111,8 @@ impl StagedHirModuleTransaction<'_> {
         let prefix = self.lower_item_prefix(attached.prefix(), scope)?;
         preflight_style(&attached)?;
 
-        let retained_id = id_ref(
-            attached
-                .id()
-                .reference()
-                .ok_or(HirInvariantFailure::InvalidArenaCommit)?,
-        )?;
+        let retained_id =
+            HirStyleItem::project_attached_public_id(self.request.key().path(), attached.id())?;
         let mut tokens = Vec::new();
         let body = self.lower_style_body(attached.body(), scope, true, &mut tokens)?;
         let issue = prefix

@@ -31,7 +31,10 @@ use arcweft_source::{
     DiagnosticLabel, DiagnosticLabelStyle, SourceDocument, SourceRange, SourceSetRevision,
     identity::SourceSnapshotId,
 };
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::PathBuf,
+};
 
 fn compilation_state(
     project: &ProjectSources,
@@ -2162,7 +2165,7 @@ flow main() -> Result<i64, String> {
 }
 
 #[test]
-fn agent_project_graph_preserves_same_public_flow_label_across_modules() {
+fn agent_project_graph_preserves_canonical_public_flow_ids_across_modules() {
     let child = CanonicalModulePath::crate_root()
         .join(ModuleSegment::new("child").expect("module segment"));
     let root_document = Arc::new(
@@ -2170,7 +2173,7 @@ fn agent_project_graph_preserves_same_public_flow_label_across_modules() {
             SourceDocumentId::try_new("arcweft-project://agent-flow-identity/src/main.arcw")
                 .expect("root document ID"),
             SourceName::path("src/main.arcw"),
-            "flow opening {\n}\n",
+            "entry cli @entry.main { goto @flow.opening }\npub character Hero {}\nstyle theme {}\nflow opening {\n}\n",
         )
         .expect("root source document"),
     );
@@ -2179,7 +2182,7 @@ fn agent_project_graph_preserves_same_public_flow_label_across_modules() {
             SourceDocumentId::try_new("arcweft-project://agent-flow-identity/src/child.arcw")
                 .expect("child document ID"),
             SourceName::path("src/child.arcw"),
-            "flow opening {\n}\n",
+            "pub character Hero {}\nstyle theme {}\nflow opening {\n}\n",
         )
         .expect("child source document"),
     );
@@ -2241,10 +2244,60 @@ fn agent_project_graph_preserves_same_public_flow_label_across_modules() {
             symbol
                 .public_id
                 .as_ref()
-                .is_some_and(|id| id.as_str() == "flow.opening")
+                .is_some_and(|id| matches!(id.as_str(), "flow.opening" | "flow.child.opening"))
         })
         .collect::<Vec<_>>();
     assert_eq!(flow_symbols.len(), 2);
+    assert_ne!(flow_symbols[0].public_id, flow_symbols[1].public_id);
+    let public_ids = graph
+        .symbols
+        .iter()
+        .filter_map(|symbol| symbol.public_id.as_ref().map(|id| id.as_str()))
+        .collect::<BTreeSet<_>>();
+    for id in [
+        "character.Hero",
+        "character.child.Hero",
+        "style.theme",
+        "style.child.theme",
+    ] {
+        assert!(public_ids.contains(id), "missing published ID {id}");
+    }
+    let runtime_labels = compiled
+        .runtime_plan()
+        .plan
+        .flows()
+        .iter()
+        .map(|flow| flow.id.public_label().into_string())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        runtime_labels,
+        BTreeSet::from(["flow.opening".to_owned(), "flow.child.opening".to_owned()])
+    );
+    let sheets = compiled
+        .style()
+        .resource()
+        .program
+        .sheets()
+        .iter()
+        .map(|sheet| sheet.id().as_str())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(sheets, BTreeSet::from(["style.theme", "style.child.theme"]));
+    let runtime = compiled.runtime_plan();
+    let program = arcweft_runtime_plan::awbc_lower::AwbcLowerer::new(
+        &runtime.plan,
+        &runtime.dialogue_content_catalog,
+        "canonical_ids.arcw",
+    )
+    .lower()
+    .expect("canonical Flow IDs lower to AWBC")
+    .program;
+    let encoded = program.encode_canonical().expect("canonical AWBC");
+    let decoded =
+        arcweft_core::awbc::schema::AwbcProgram::decode_canonical(&encoded, Default::default())
+            .expect("AWBC identity round trip");
+    for flow in runtime.plan.flows() {
+        assert!(decoded.flow_function(&flow.id).is_some());
+    }
     assert!(flow_symbols.iter().all(|symbol| {
         symbol
             .symbol_id

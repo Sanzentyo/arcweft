@@ -371,8 +371,15 @@ impl HirSourceIndex {
                 }
                 (TypedItemNode::Style(style_item), HirItemKind::Style(_)) => {
                     style_item.semantics().is_ok_and(|attached| {
-                        style::payload_matches(self, owner, &attached, item, parsed, slots)
-                            && declaration_members.arena(owner).is_none()
+                        style::payload_matches(
+                            self,
+                            arenas.module,
+                            owner,
+                            &attached,
+                            item,
+                            parsed,
+                            slots,
+                        ) && declaration_members.arena(owner).is_none()
                     })
                 }
                 _ => false,

@@ -12,8 +12,8 @@ use arcweft_source::SourceSpan;
 
 use crate::identity::ItemId;
 use crate::item::{
-    HirCapabilityMember, HirFlowIdentity, HirImplMember, HirItem, HirItemKind, HirItemPrefix,
-    HirTraitMember, HirVisibility,
+    HirCapabilityMember, HirFlowIdentity, HirFlowItem, HirImplMember, HirItem, HirItemKind,
+    HirItemPrefix, HirTraitMember, HirVisibility,
 };
 use crate::module::HirModuleStatus;
 use crate::project::HirProjectView;
@@ -123,7 +123,7 @@ impl ProjectSymbolTable {
                 module,
                 source_item,
                 item,
-                flow.identity(),
+                flow,
                 executable_module && !item.is_poisoned(),
                 diagnostics,
                 work,
@@ -137,20 +137,23 @@ impl ProjectSymbolTable {
                 CallableDeclarationOwner::Function,
                 function.name(),
                 has_fx_attribute(item),
+                None,
             )),
             HirItemKind::Predicate(predicate) => Some((
                 CallableDeclarationOwner::Predicate,
                 predicate.name(),
                 has_fx_attribute(item),
+                None,
             )),
             HirItemKind::Proof(proof) => Some((
                 CallableDeclarationOwner::Proof,
                 proof.name(),
                 has_fx_attribute(item),
+                proof.public_id().cloned(),
             )),
             _ => None,
         };
-        if let Some((declaration_owner, name, fx)) = ordinary
+        if let Some((declaration_owner, name, fx, public_id)) = ordinary
             && let Some(name) = name.resolved()
         {
             let whole = declaration_span(module, source_item, HirDeclarationSourceRole::Whole);
@@ -165,6 +168,7 @@ impl ProjectSymbolTable {
                 declaration_owner,
                 std::iter::empty(),
                 name.as_str(),
+                public_id,
                 ProjectSymbolPath::new(ModulePathRoot::ImplicitCrate, path)
                     .expect("one resolved callable segment is a valid binding"),
                 visibility(item),
@@ -402,6 +406,7 @@ impl ProjectSymbolTable {
                 CallableDeclarationOwner::ExternCapability,
                 [capability_segment.clone()],
                 name.as_str(),
+                None,
                 path,
                 prefix_visibility(function.prefix()).or_else(|| visibility(item)),
                 has_fx_attribute_prefix(function.prefix()),
@@ -427,12 +432,12 @@ impl ProjectSymbolTable {
         module: ProjectSymbolModuleView<'_, '_>,
         source_item: ItemId,
         item: &HirItem,
-        identity: &HirFlowIdentity,
+        flow: &HirFlowItem,
         executable: bool,
         diagnostics: &mut Vec<ProjectSymbolLinkError>,
         work: &mut u64,
     ) -> bool {
-        let Some((public_id, publication, identity_role)) = accepted_flow_identity(identity) else {
+        let Some((public_id, publication, identity_role)) = accepted_flow_identity(flow) else {
             return true;
         };
         let declaration_span = module
@@ -455,16 +460,13 @@ impl ProjectSymbolTable {
             publication,
         ));
 
-        if publication == FlowPublicationKind::AuthoredAbsolute
-            && let Some(first) = self.callable_symbols().find(|symbol| {
-                matches!(
-                    symbol.declaration(),
-                    CallableDeclarationKey::Flow(existing)
-                        if existing.publication() == FlowPublicationKind::AuthoredAbsolute
-                            && existing.public_id() == &public_id
-                )
-            })
-        {
+        if let Some(first) = self.callable_symbols().find(|symbol| {
+            matches!(
+                symbol.declaration(),
+                CallableDeclarationKey::Flow(existing)
+                    if existing.public_id() == &public_id
+            )
+        }) {
             diagnostics.push(ProjectSymbolLinkError::DuplicatePublicId {
                 public_id,
                 first: first.name_span().clone(),
@@ -509,6 +511,7 @@ impl ProjectSymbolTable {
             ProjectDeclarationId::Callable(declaration.clone()),
             ProjectSymbol::Callable(CallableSymbol {
                 declaration,
+                public_id: None,
                 visibility,
                 fx: false,
                 source_snapshot: module.snapshot_id(),
@@ -592,6 +595,7 @@ impl ProjectSymbolTable {
         owner: CallableDeclarationOwner,
         owner_path: impl IntoIterator<Item = ModuleSegment>,
         name: &str,
+        public_id: Option<PublicId>,
         path: ProjectSymbolPath,
         visibility: Option<Visibility>,
         fx: bool,
@@ -610,6 +614,18 @@ impl ProjectSymbolTable {
                 module: module_path.clone(),
                 name: name.to_owned(),
                 source: name_span,
+            });
+            return true;
+        }
+        if let Some(public_id) = &public_id
+            && let Some(first) = self
+                .callable_symbols()
+                .find(|symbol| symbol.public_id() == Some(public_id))
+        {
+            diagnostics.push(ProjectSymbolLinkError::DuplicatePublicId {
+                public_id: public_id.clone(),
+                first: first.name_span().clone(),
+                duplicate: name_span,
             });
             return true;
         }
@@ -662,6 +678,7 @@ impl ProjectSymbolTable {
             ProjectDeclarationId::Callable(declaration.clone()),
             ProjectSymbol::Callable(CallableSymbol {
                 declaration,
+                public_id,
                 visibility,
                 fx,
                 source_snapshot: module.snapshot_id(),
@@ -712,6 +729,7 @@ impl ProjectSymbolTable {
             declaration_id,
             ProjectSymbol::Callable(CallableSymbol {
                 declaration,
+                public_id: None,
                 visibility,
                 fx,
                 source_snapshot: module.snapshot_id(),
@@ -955,17 +973,17 @@ impl ProjectSymbolTable {
 }
 
 fn accepted_flow_identity(
-    identity: &HirFlowIdentity,
+    flow: &HirFlowItem,
 ) -> Option<(PublicId, FlowPublicationKind, HirFlowSourceRole)> {
-    let identity_role = match identity {
+    let identity_role = match flow.identity() {
         HirFlowIdentity::Name { .. } | HirFlowIdentity::PublicIdAndName { .. } => {
             HirFlowSourceRole::Name
         }
         HirFlowIdentity::PublicId { .. } => HirFlowSourceRole::PublicId,
         HirFlowIdentity::Missing => return None,
     };
-    let (public_id, publication) = identity.accepted_publication()?;
-    Some((public_id, publication, identity_role))
+    let (public_id, publication) = flow.accepted_publication()?;
+    Some((public_id.clone(), publication, identity_role))
 }
 
 fn flow_symbol_path(public_id: &PublicId) -> Option<ProjectSymbolPath> {

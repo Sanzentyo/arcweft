@@ -34,6 +34,37 @@ use super::super::{
 };
 use super::{LoweredItemProjection, item_state, project_required_name};
 
+impl HirProof {
+    pub(crate) fn project_attached_public_id(
+        module: &arcweft_lang_syntax::ast::module_path::CanonicalModulePath,
+        name: &crate::item::HirRequiredName,
+        attached: &arcweft_lang_syntax::attachment::AttachedDeclarationPublicId,
+    ) -> Result<Option<arcweft_id::PublicId>, HirInvariantFailure> {
+        use arcweft_id::{DeclarationIdentityFamily, DeclarationName};
+        use arcweft_lang_syntax::attachment::AttachedDeclarationPublicId;
+        match attached {
+            AttachedDeclarationPublicId::Explicit { value, .. } => Ok(Some(value.clone())),
+            AttachedDeclarationPublicId::Derived => {
+                name.resolved()
+                    .map(|name| {
+                        let name = DeclarationName::try_new(name.as_str())
+                            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+                        DeclarationIdentityFamily::Proof
+                            .derive_public_id(
+                                module.segments().iter().map(
+                                    arcweft_lang_syntax::ast::module_path::ModuleSegment::as_str,
+                                ),
+                                &name,
+                            )
+                            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)
+                    })
+                    .transpose()
+            }
+            AttachedDeclarationPublicId::Recovered { .. } => Ok(None),
+        }
+    }
+}
+
 pub(super) struct LoweredFunctionParameterGroups {
     pub(super) groups: Box<[HirFunctionParameterGroup]>,
     pub(super) locals: Box<[LocalId]>,
@@ -85,6 +116,11 @@ impl StagedHirModuleTransaction<'_> {
 
         Ok(Some(StagedProofReturnHeader {
             item: owner,
+            public_id: HirProof::project_attached_public_id(
+                self.request.key().path(),
+                &name.value,
+                attached.public_id(),
+            )?,
             return_type,
             source: authored.ty().syntax().source_span(),
             declaration_source: node.source_span(),
@@ -1072,15 +1108,19 @@ impl StagedHirModuleTransaction<'_> {
             return_type,
         )
         .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-        let public_id = match attached.public_id() {
-            arcweft_lang_syntax::attachment::AttachedDeclarationPublicId::Explicit {
-                value,
-                ..
-            } => Some(value.clone()),
-            arcweft_lang_syntax::attachment::AttachedDeclarationPublicId::Derived
-            | arcweft_lang_syntax::attachment::AttachedDeclarationPublicId::Recovered { .. } => {
-                None
-            }
+        let public_id = if attached.authored_return().is_some() {
+            self.staged_proof_return_headers
+                .iter()
+                .find(|header| header.item == owner)
+                .ok_or(HirInvariantFailure::InvalidArenaCommit)?
+                .public_id
+                .clone()
+        } else {
+            HirProof::project_attached_public_id(
+                self.request.key().path(),
+                &name.value,
+                attached.public_id(),
+            )?
         };
         let declaration = HirProof::try_new(
             name.value,

@@ -336,7 +336,14 @@ impl HirRetainedHeader {
         let public_id = match attached.public_id() {
             AttachedDeclarationPublicId::Derived => match &name {
                 HirRetainedName::Resolved(name) => HirRetainedPublicId::Resolved {
-                    value: Self::derived_public_id(family, module, name)
+                    value: family
+                        .derive_public_id(
+                            module
+                                .segments()
+                                .iter()
+                                .map(arcweft_lang_syntax::ast::module_path::ModuleSegment::as_str),
+                            name,
+                        )
                         .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
                     origin: HirPublicIdOrigin::DerivedFromName,
                 },

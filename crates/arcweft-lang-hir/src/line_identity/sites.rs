@@ -251,9 +251,8 @@ fn source_owner(
         .map_err(|_| DialogueLineBuildFatal::InvalidSourceComponent)?;
     match item.kind() {
         HirItemKind::Flow(flow) => flow
-            .identity()
             .accepted_publication()
-            .map(|(id, _)| HirDialogueFlowOwner::try_new(id))
+            .map(|(id, _)| HirDialogueFlowOwner::try_new(id.clone()))
             .transpose()
             .map_err(|_| DialogueLineBuildFatal::InvalidInternalPrefix)
             .map(|owner| owner.map(HirDialogueLineSourceOwner::Flow)),

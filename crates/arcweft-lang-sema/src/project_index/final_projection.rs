@@ -6,12 +6,11 @@
 
 use std::sync::Arc;
 
-use arcweft_id::{DeclarationIdentityFamily, PublicId};
+use arcweft_id::PublicId;
 use arcweft_lang_hir::{
     expr::HirExprKind,
     identity::ItemId,
     item::HirItemKind,
-    leaf::{HirIdRef, HirIdRefValue},
     module::HirModule,
     project::{
         HirAnalysisProjectView, HirPackageModuleKey, HirProjectItemRef, HirSemanticPathOwnerId,
@@ -231,11 +230,15 @@ fn flow_and_style_entities(
         match item.item().kind() {
             HirItemKind::Flow(_) => index_flow(index, item, symbols, analysis)?,
             HirItemKind::Style(style) => {
-                let id = resolved_public_id(
-                    style.id(),
-                    DeclarationIdentityFamily::Style,
-                    "style declaration",
-                )?;
+                let id = style
+                    .public_id()
+                    .resolved()
+                    .ok_or_else(|| ProjectSemanticIndexError::InvalidEntityIdentity {
+                        id: "<recovered>".to_owned(),
+                        family: "style",
+                        message: "style declaration has a recovered identity".to_owned(),
+                    })?
+                    .clone();
                 index_nonretained_entity(
                     index,
                     item,
@@ -311,38 +314,6 @@ fn index_nonretained_entity(
         index,
         EntitySymbol::new(identity, ty, source, semantic_hash),
     )
-}
-
-fn resolved_public_id(
-    value: &HirIdRefValue,
-    family: DeclarationIdentityFamily,
-    label: &'static str,
-) -> Result<PublicId, ProjectSemanticIndexError> {
-    let reference =
-        value
-            .as_resolved()
-            .ok_or_else(|| ProjectSemanticIndexError::InvalidEntityIdentity {
-                id: "<recovered>".to_owned(),
-                family: family.prefix(),
-                message: format!("{label} has a recovered identity"),
-            })?;
-    absolute_public_id(reference, family, label)
-}
-
-fn absolute_public_id(
-    reference: &HirIdRef,
-    family: DeclarationIdentityFamily,
-    label: &'static str,
-) -> Result<PublicId, ProjectSemanticIndexError> {
-    reference.declaration_public_id(family).ok_or_else(|| {
-        ProjectSemanticIndexError::InvalidEntityIdentity {
-            id: "<relative>".to_owned(),
-            family: family.prefix(),
-            message: format!(
-                "{label} requires an absolute or same-family root declaration identity"
-            ),
-        }
-    })
 }
 
 fn summarize_flow(

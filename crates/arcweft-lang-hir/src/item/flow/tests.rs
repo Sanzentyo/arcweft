@@ -130,6 +130,7 @@ fn flow_contracts_preserve_all_nine_variants_in_one_source_ordered_slice() {
     let result_local = HirFlowResultLocal::new(typed_id(module, 40));
     let declaration = HirFlowItem::try_new(
         owner,
+        &CanonicalModulePath::crate_root(),
         HirFlowIdentity::Name {
             name: name("opening"),
         },
@@ -216,6 +217,7 @@ fn result_local_exists_exactly_when_an_ensures_clause_exists() {
     assert_eq!(
         HirFlowItem::try_new(
             owner,
+            &CanonicalModulePath::crate_root(),
             HirFlowIdentity::Name { name: name("main") },
             Box::new([]),
             Box::new([]),
@@ -232,6 +234,7 @@ fn result_local_exists_exactly_when_an_ensures_clause_exists() {
     assert_eq!(
         HirFlowItem::try_new(
             owner,
+            &CanonicalModulePath::crate_root(),
             HirFlowIdentity::Name { name: name("main") },
             Box::new([]),
             Box::new([]),
@@ -247,6 +250,7 @@ fn result_local_exists_exactly_when_an_ensures_clause_exists() {
     );
     let valid = HirFlowItem::try_new(
         owner,
+        &CanonicalModulePath::crate_root(),
         HirFlowIdentity::Name { name: name("main") },
         Box::new([]),
         Box::new([]),
@@ -292,6 +296,7 @@ fn flow_rejects_callable_parameter_shapes_not_admitted_by_flow() {
         assert_eq!(
             HirFlowItem::try_new(
                 owner,
+                &CanonicalModulePath::crate_root(),
                 HirFlowIdentity::Name { name: name("main") },
                 Box::new([]),
                 Box::new([parameter]),
@@ -321,6 +326,7 @@ fn flow_constructor_rejects_foreign_children_and_scope_collisions() {
     assert_eq!(
         HirFlowItem::try_new(
             owner,
+            &CanonicalModulePath::crate_root(),
             HirFlowIdentity::Name { name: name("main") },
             Box::new([]),
             Box::new([]),
@@ -341,6 +347,7 @@ fn flow_constructor_rejects_foreign_children_and_scope_collisions() {
     assert_eq!(
         HirFlowItem::try_new(
             owner,
+            &CanonicalModulePath::crate_root(),
             HirFlowIdentity::Name { name: name("main") },
             Box::new([]),
             Box::new([]),
@@ -379,6 +386,7 @@ fn flow_poison_retains_canonical_primary_and_requires_item_poison_propagation() 
 
     let declaration = HirFlowItem::try_new(
         owner,
+        &CanonicalModulePath::crate_root(),
         HirFlowIdentity::Name { name: name("main") },
         Box::new([]),
         Box::new([]),
@@ -417,6 +425,7 @@ fn flow_poison_retains_canonical_primary_and_requires_item_poison_propagation() 
 
     let clean_declaration = HirFlowItem::try_new(
         owner,
+        &CanonicalModulePath::crate_root(),
         HirFlowIdentity::Name { name: name("main") },
         Box::new([]),
         Box::new([]),
@@ -533,6 +542,7 @@ fn missing_identity_requires_typed_identity_poison_and_issue_owners_are_bound() 
     assert_eq!(
         HirFlowItem::try_new(
             owner,
+            &CanonicalModulePath::crate_root(),
             HirFlowIdentity::Missing,
             generics,
             parameters,
@@ -557,6 +567,7 @@ fn missing_identity_requires_typed_identity_poison_and_issue_owners_are_bound() 
     assert!(
         HirFlowItem::try_new(
             owner,
+            &CanonicalModulePath::crate_root(),
             HirFlowIdentity::Missing,
             generics,
             parameters,
@@ -581,6 +592,7 @@ fn missing_identity_requires_typed_identity_poison_and_issue_owners_are_bound() 
     assert_eq!(
         HirFlowItem::try_new(
             owner,
+            &CanonicalModulePath::crate_root(),
             HirFlowIdentity::Name { name: name("main") },
             generics,
             parameters,

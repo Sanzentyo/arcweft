@@ -245,6 +245,87 @@ fn action_callable_scope(module: &HirModule, ordinal: usize) -> ScopeId {
     action.callable_scope()
 }
 
+#[test]
+fn declaration_public_ids_follow_canonical_modules_and_preserve_explicit_values() {
+    use arcweft_lang_syntax::ast::module_path::ModuleSegment;
+    for (family, prefix, tail) in [
+        ("character", "character", " {}"),
+        ("view", "view", "() {}"),
+        ("action", "action", "();"),
+        ("activity", "activity", " {}"),
+        ("signal", "signal", ": Watch<i64>"),
+        ("metric", "metric counter", ": u64 {}"),
+        ("layer", "layer", ": custom {}"),
+        ("flow", "flow", " {}"),
+        ("proof", "proof", "() = ()"),
+        ("style", "style", " {}"),
+    ] {
+        for module_name in ["", "game.cast", "dream.cast"] {
+            for explicit in [false, true] {
+                let id = if explicit {
+                    format!("@{family}.stable.Card ")
+                } else {
+                    String::new()
+                };
+                let binding_name = if explicit && matches!(family, "character" | "style") {
+                    ""
+                } else {
+                    "Card"
+                };
+                let source = format!(
+                    "// source revision does not issue identity\n{prefix} {id}{binding_name}{tail}\n"
+                );
+                let parsed = parse(
+                    &format!("arcweft-test://identity/{family}/{module_name}/{explicit}"),
+                    &source,
+                );
+                assert!(
+                    parsed.diagnostics().is_empty(),
+                    "{source}: {:?}",
+                    parsed.diagnostics()
+                );
+                let module_path = CanonicalModulePath::from_segments(
+                    module_name
+                        .split('.')
+                        .filter(|s| !s.is_empty())
+                        .map(|s| ModuleSegment::new(s).unwrap()),
+                );
+                let key = HirModuleKey::new(
+                    module_key(&parsed).package().clone(),
+                    module_path,
+                    parsed.document().identity().clone(),
+                );
+                let mut database = HirDatabase::try_new().unwrap();
+                let module = lower(&mut database, &parsed, &key);
+                let item = resolve_item(&module, 0);
+                assert!(!item.is_poisoned(), "{source}: {:?}", item.state());
+                let public_id = match item.kind() {
+                    HirItemKind::Character(value) => value.header().public_id().resolved(),
+                    HirItemKind::View(value) => value.header().public_id().resolved(),
+                    HirItemKind::Action(value) => value.header().public_id().resolved(),
+                    HirItemKind::Activity(value) => value.header().public_id().resolved(),
+                    HirItemKind::Signal(value) => value.header().public_id().resolved(),
+                    HirItemKind::Metric(value) => value.header().public_id().resolved(),
+                    HirItemKind::Layer(value) => value.header().public_id().resolved(),
+                    HirItemKind::Flow(value) => value.accepted_publication().map(|(id, _)| id),
+                    HirItemKind::Proof(value) => value.public_id(),
+                    HirItemKind::Style(value) => value.public_id().resolved(),
+                    other => panic!("unexpected declaration {other:?}"),
+                }
+                .expect("accepted final HIR publishes its typed ID");
+                let expected = if explicit {
+                    format!("{family}.stable.Card")
+                } else if module_name.is_empty() {
+                    format!("{family}.Card")
+                } else {
+                    format!("{family}.{module_name}.Card")
+                };
+                assert_eq!(public_id.as_str(), expected, "{source}");
+            }
+        }
+    }
+}
+
 fn path_spellings(path: &HirPath) -> Vec<&str> {
     path.segments()
         .iter()

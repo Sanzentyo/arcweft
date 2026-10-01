@@ -127,7 +127,7 @@ fn canonical_style_lowers_typed_payloads_and_exact_child_owners() {
     let (owner, item, style) = style_item(&module, 0);
 
     assert_eq!(item.state(), &HirItemPoisonState::Clean);
-    assert!(style.id().as_resolved().is_some());
+    assert!(style.public_id().resolved().is_some());
     let [token] = style.tokens() else {
         panic!("one retained Style token")
     };
@@ -591,6 +591,40 @@ fn whole_recovered_delimiters_drop_children_but_outer_close_recovery_retains_the
 }
 
 #[test]
+fn dotted_style_names_publish_under_the_canonical_module() {
+    use arcweft_lang_syntax::ast::module_path::ModuleSegment;
+    let parsed = parse(
+        "arcweft-test://style/scoped-dotted-identity",
+        "style theme.dark {}\nstyle @style.stable.dark {}\n",
+    );
+    let key = HirModuleKey::new(
+        module_key(&parsed).package().clone(),
+        CanonicalModulePath::from_segments([ModuleSegment::new("ui").unwrap()]),
+        parsed.document().identity().clone(),
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    assert_eq!(
+        style_item(&module, 0)
+            .2
+            .public_id()
+            .resolved()
+            .unwrap()
+            .as_str(),
+        "style.ui.theme.dark"
+    );
+    assert_eq!(
+        style_item(&module, 1)
+            .2
+            .public_id()
+            .resolved()
+            .unwrap()
+            .as_str(),
+        "style.stable.dark"
+    );
+}
+
+#[test]
 fn style_id_recovery_keeps_parser_owned_shape_without_reparsing() {
     let parsed = parse(
         "arcweft-test://proof/final-hir-style-id-recovery",
@@ -609,7 +643,12 @@ fn style_id_recovery_keeps_parser_owned_shape_without_reparsing() {
         malformed.state(),
         &HirItemPoisonState::Poisoned(HirItemIssue::MalformedHeader)
     );
-    let recovery = broken.id().recovery().expect("invalid dotted Style ID");
+    let crate::item::HirRetainedPublicId::Recovered(
+        crate::item::HirRetainedPublicIdIssue::RecoveredReference(recovery),
+    ) = broken.public_id()
+    else {
+        panic!("invalid dotted Style reference");
+    };
     assert_eq!(
         recovery.shape(),
         HirIdRefShape::Relative {
@@ -627,9 +666,10 @@ fn style_id_recovery_keeps_parser_owned_shape_without_reparsing() {
         missing_item.state(),
         &HirItemPoisonState::Poisoned(HirItemIssue::MissingId)
     );
-    assert_eq!(
-        missing.id().recovery().expect("missing Style ID").shape(),
-        HirIdRefShape::Missing
+    assert!(
+        matches!(missing.public_id(), crate::item::HirRetainedPublicId::Recovered(
+        crate::item::HirRetainedPublicIdIssue::RecoveredReference(recovery)
+    ) if recovery.shape() == HirIdRefShape::Missing)
     );
 
     let (_, wrong_family_item, wrong_family) = style_item(&module, 2);
@@ -637,7 +677,11 @@ fn style_id_recovery_keeps_parser_owned_shape_without_reparsing() {
         wrong_family_item.state(),
         &HirItemPoisonState::Poisoned(HirItemIssue::MalformedHeader)
     );
-    assert!(wrong_family.id().as_resolved().is_some());
+    assert!(
+        matches!(wrong_family.public_id(), crate::item::HirRetainedPublicId::Recovered(
+        crate::item::HirRetainedPublicIdIssue::WrongFamily(id)
+    ) if id.as_str() == "view.foreign")
+    );
 }
 
 #[test]

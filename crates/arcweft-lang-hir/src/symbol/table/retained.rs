@@ -18,9 +18,9 @@ use crate::project::HirProjectView;
 use crate::proof_return::HirProofReturnHeaderProjectView;
 use crate::source_index::{HirDeclarationSourceRole, HirItemSourceRole};
 use crate::symbol::{
-    CallableDeclarationKey, FlowPublicationKind, ProjectDeclarationId,
-    ProjectEntityReferenceLookupError, ProjectRetainedSymbol, ProjectSymbol,
-    ProjectSymbolLinkError, ProjectSymbolTargetId, ResolvedProjectSymbol,
+    CallableDeclarationKey, ProjectDeclarationId, ProjectEntityReferenceLookupError,
+    ProjectRetainedSymbol, ProjectSymbol, ProjectSymbolLinkError, ProjectSymbolTargetId,
+    ResolvedProjectSymbol,
 };
 
 use super::{ImportResolutionError, ProjectSymbolModuleView, ProjectSymbolTable, ScopeBinding};
@@ -234,17 +234,16 @@ impl ProjectSymbolTable {
             }
         }
 
-        for symbol in self.callable_symbols().filter(|symbol| {
-            matches!(
-                symbol.declaration(),
-                CallableDeclarationKey::Flow(flow)
-                    if flow.public_id() == &projection.public_id
-                        && (flow.publication() == FlowPublicationKind::AuthoredAbsolute
-                            || (flow.publication() == FlowPublicationKind::ModuleScoped
-                                && flow.module() == requester))
-            )
-        }) {
-            let target = ProjectSymbolTargetId::StructuralCallable(symbol.declaration().clone());
+        for symbol in self
+            .callable_symbols()
+            .filter(|symbol| symbol.public_id() == Some(&projection.public_id))
+        {
+            let target = match symbol.declaration() {
+                CallableDeclarationKey::Flow(_) => {
+                    ProjectSymbolTargetId::StructuralCallable(symbol.declaration().clone())
+                }
+                _ => ProjectSymbolTargetId::Callable(symbol.declaration().clone()),
+            };
             if symbol.is_visible_from(requester) {
                 candidates.push(target);
             } else {
@@ -266,7 +265,8 @@ impl ProjectSymbolTable {
                         declaration: symbol.declaration_span().clone(),
                     });
                 }
-                if let ProjectSymbolTargetId::StructuralCallable(declaration) = target
+                if let ProjectSymbolTargetId::StructuralCallable(declaration)
+                | ProjectSymbolTargetId::Callable(declaration) = target
                     && let Some(symbol) = self.callable(declaration)
                     && !symbol.is_executable()
                 {

@@ -120,7 +120,7 @@ fn rebuild_style(
 ) -> HirStyleItem {
     HirStyleItem::try_new(
         module,
-        retained.id().clone(),
+        retained.public_id().clone(),
         tokens.into_boxed_slice(),
         body.into_boxed_slice(),
     )
@@ -156,7 +156,7 @@ fn style_freeze_rejects_selector_relation_substitution() {
             );
             HirStyleItem::try_new(
                 module,
-                style.id().clone(),
+                style.public_id().clone(),
                 style.tokens().to_vec().into_boxed_slice(),
                 body.into_boxed_slice(),
             )

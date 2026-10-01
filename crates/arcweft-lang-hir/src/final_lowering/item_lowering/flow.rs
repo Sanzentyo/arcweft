@@ -222,6 +222,7 @@ impl StagedHirModuleTransaction<'_> {
 
         let declaration = HirFlowItem::try_new(
             owner,
+            self.request.key().path(),
             identity,
             generic_parameters,
             parameters,

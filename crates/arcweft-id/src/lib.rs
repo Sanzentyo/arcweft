@@ -251,17 +251,10 @@ impl DeclarationIdentityFamily {
         })
     }
 
-    pub fn derive_public_id(
-        self,
-        local: &DeclarationName,
-    ) -> Result<PublicId, PublicIdFamilyError> {
-        self.derive_public_id_in_namespace(std::iter::empty(), local)
-    }
-
     /// Derives one declaration identity in a canonical publication namespace.
     /// Empty namespaces retain the family/local identity; every namespace
     /// component and the complete result must satisfy the public ID grammar.
-    pub fn derive_public_id_in_namespace<'a>(
+    pub fn derive_public_id<'a>(
         self,
         namespace: impl IntoIterator<Item = &'a str>,
         local: &DeclarationName,
@@ -616,7 +609,7 @@ mod tests {
     fn declaration_family_validates_and_derives_public_identity() {
         let name = DeclarationName::try_new("MainDialogue").expect("declaration name");
         let derived = DeclarationIdentityFamily::View
-            .derive_public_id(&name)
+            .derive_public_id(std::iter::empty(), &name)
             .expect("derived View identity");
         assert_eq!(derived.as_str(), "view.MainDialogue");
         assert_eq!(
@@ -634,32 +627,31 @@ mod tests {
     fn declaration_namespace_identity_uses_one_public_id_grammar() {
         let name = DeclarationName::try_new("Card").unwrap();
         let scoped = DeclarationIdentityFamily::View
-            .derive_public_id_in_namespace(["ui", "mobile"], &name)
+            .derive_public_id(["ui", "mobile"], &name)
             .unwrap();
         assert_eq!(scoped.as_str(), "view.ui.mobile.Card");
         assert_eq!(
             DeclarationIdentityFamily::View
-                .derive_public_id_in_namespace(["std"], &name)
+                .derive_public_id(["std"], &name)
                 .unwrap()
                 .as_str(),
             "view.std.Card"
         );
         assert_eq!(
             DeclarationIdentityFamily::View
-                .derive_public_id_in_namespace(std::iter::empty(), &name)
-                .unwrap(),
-            DeclarationIdentityFamily::View
-                .derive_public_id(&name)
+                .derive_public_id(std::iter::empty(), &name)
                 .unwrap()
+                .as_str(),
+            "view.Card"
         );
         assert!(
             DeclarationIdentityFamily::View
-                .derive_public_id_in_namespace([""], &name)
+                .derive_public_id([""], &name)
                 .is_err()
         );
         assert!(
             DeclarationIdentityFamily::View
-                .derive_public_id_in_namespace(["@ui"], &name)
+                .derive_public_id(["@ui"], &name)
                 .is_err()
         );
     }

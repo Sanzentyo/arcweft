@@ -2,6 +2,7 @@ use super::*;
 use arcweft_id::DeclarationIdentityFamily;
 
 use crate::source_index::HirCallableSourceOwner;
+use crate::symbol::ProjectEntityReferenceLookupError;
 
 fn absolute_entity_reference(value: &str) -> HirIdRef {
     HirIdRef::absolute(
@@ -181,6 +182,138 @@ fn derived_view_ids_separate_same_named_owners_in_distinct_modules() {
 }
 
 #[test]
+fn retained_families_preserve_one_canonical_id_through_imports_and_reexports() {
+    for (family, source) in [
+        ("character", "pub character Card {}\n"),
+        ("view", "pub view Card() {}\n"),
+        ("action", "pub action Card();\n"),
+        ("activity", "pub activity Card {}\n"),
+        ("signal", "pub signal Card: Watch<i64>\n"),
+        ("metric", "pub metric counter Card: u64 {}\n"),
+        ("layer", "pub layer Card: custom {}\n"),
+    ] {
+        let (documents, project) = project_modules(&[
+            (
+                "",
+                "use crate.export.A as Imported\nuse crate.b.Card as B\n",
+            ),
+            ("a", source),
+            ("b", source),
+            ("export", "pub use crate.a.Card as A\n"),
+        ]);
+        let table = ProjectSymbolTable::link(
+            project.view(),
+            &empty_declarations(&documents, "canonical-retained-family"),
+        )
+        .unwrap_or_else(|error| panic!("{family}: {error:#?}"))
+        .into_table();
+        let root = CanonicalModulePath::crate_root();
+        let site = documents[0].span(SourceRange::new(0, 3)).unwrap();
+        for (alias, module_name) in [("Imported", "a"), ("B", "b")] {
+            let ResolvedProjectSymbol::Retained(value) =
+                table.resolve(&root, &symbol_path(alias), &site).unwrap()
+            else {
+                panic!("retained declaration");
+            };
+            let expected = format!("{family}.{module_name}.Card");
+            assert_eq!(value.public_id().as_str(), expected);
+            assert_eq!(value.module(), &module_path(module_name));
+            assert!(matches!(table.resolve_entity_reference(&root,
+                &absolute_entity_reference(&expected), site.clone()),
+                Ok(ResolvedProjectSymbol::Retained(target)) if target == value));
+        }
+        assert!(matches!(
+            table.resolve_entity_reference(
+                &root,
+                &absolute_entity_reference(&format!("{family}.Card")),
+                site
+            ),
+            Err(ProjectEntityReferenceLookupError::Unknown { .. })
+        ));
+    }
+}
+
+#[test]
+fn flow_canonical_ids_resolve_across_modules_and_collide_with_explicit_ids() {
+    let (documents, project) = project_modules(&[
+        ("", "fn root() -> Unit { () }\n"),
+        ("child", "pub flow opening {}\n"),
+    ]);
+    let table = ProjectSymbolTable::link(
+        project.view(),
+        &empty_declarations(&documents, "canonical-flow-visibility"),
+    )
+    .unwrap()
+    .into_table();
+    let site = documents[0].span(SourceRange::new(0, 2)).unwrap();
+    assert!(
+        matches!(table.resolve_entity_reference(&CanonicalModulePath::crate_root(),
+        &absolute_entity_reference("flow.child.opening"), site),
+        Ok(ResolvedProjectSymbol::StructuralCallable(target))
+            if target.declaration().module() == &module_path("child"))
+    );
+    let (documents, project) = project_modules(&[
+        ("", "flow @flow.child.opening {}\n"),
+        ("child", "flow opening {}\n"),
+    ]);
+    let report = ProjectSymbolTable::link(
+        project.view(),
+        &empty_declarations(&documents, "canonical-flow-collision"),
+    )
+    .expect_err("implicit and explicit IDs share one project-wide namespace");
+    assert!(matches!(report.diagnostics(),
+        [ProjectSymbolLinkError::DuplicatePublicId { public_id, .. }]
+            if public_id.as_str() == "flow.child.opening"));
+}
+
+#[test]
+fn proof_public_ids_preserve_aliases_visibility_and_global_collision_rejection() {
+    let (documents, project) = project_modules(&[
+        ("", "use crate.child.Ready as Imported\n"),
+        ("child", "pub proof Ready() = ()\nproof Private() = ()\n"),
+    ]);
+    let table = ProjectSymbolTable::link(
+        project.view(),
+        &empty_declarations(&documents, "canonical-proof-public-id"),
+    )
+    .unwrap()
+    .into_table();
+    let root = CanonicalModulePath::crate_root();
+    let site = documents[0].span(SourceRange::new(0, 3)).unwrap();
+    let alias = table
+        .resolve_callable(&root, &symbol_path("Imported"), &site)
+        .unwrap();
+    assert_eq!(alias.public_id().unwrap().as_str(), "proof.child.Ready");
+    assert!(matches!(table.resolve_entity_reference(&root,
+        &absolute_entity_reference("proof.child.Ready"), site.clone()),
+        Ok(ResolvedProjectSymbol::Callable(target)) if target == alias));
+    assert!(matches!(
+        table.resolve_entity_reference(
+            &root,
+            &absolute_entity_reference("proof.child.Private"),
+            site.clone()
+        ),
+        Err(ProjectEntityReferenceLookupError::Inaccessible { .. })
+    ));
+    assert!(matches!(
+        table.resolve_entity_reference(&root, &absolute_entity_reference("proof.Ready"), site),
+        Err(ProjectEntityReferenceLookupError::Unknown { .. })
+    ));
+    let (documents, project) = project_modules(&[
+        ("", "proof @proof.child.Ready Ready() = ()\n"),
+        ("child", "proof Ready() = ()\n"),
+    ]);
+    let report = ProjectSymbolTable::link(
+        project.view(),
+        &empty_declarations(&documents, "canonical-proof-collision"),
+    )
+    .unwrap_err();
+    assert!(matches!(report.diagnostics(),
+        [ProjectSymbolLinkError::DuplicatePublicId { public_id, .. }]
+            if public_id.as_str() == "proof.child.Ready"));
+}
+
+#[test]
 fn flow_uses_one_structural_symbol_without_entering_the_value_namespace() {
     let (document, project) = project("flow opening {}\n");
     let table = ProjectSymbolTable::link(
@@ -288,17 +421,17 @@ fn name_derived_flow_identity_remains_module_preserving() {
         })
         .collect::<Vec<_>>();
     assert_eq!(flows.len(), 2);
-    assert_eq!(flows[0].1.public_id().as_str(), "flow.opening");
-    assert_eq!(flows[1].1.public_id().as_str(), "flow.opening");
+    assert_eq!(flows[0].1.public_id().as_str(), "flow.left.opening");
+    assert_eq!(flows[1].1.public_id().as_str(), "flow.right.opening");
     assert_ne!(flows[0].1.module(), flows[1].1.module());
 
-    let reference = absolute_entity_reference("flow.opening");
     for (index, module_name) in [(1, "left"), (2, "right")] {
+        let reference = absolute_entity_reference(&format!("flow.{module_name}.opening"));
         let module = module_path(module_name);
         let source = documents[index]
             .span(SourceRange::new(0, "flow opening".len()))
             .expect("reference source");
-        let resolved = table.resolve_entity_reference(&module, &reference, source);
+        let resolved = table.resolve_entity_reference(&module, &reference, source.clone());
         assert!(
             matches!(
                 &resolved,
@@ -307,6 +440,14 @@ fn name_derived_flow_identity_remains_module_preserving() {
             ),
             "module-scoped Flow resolution failed: {resolved:#?}"
         );
+        assert!(matches!(
+            table.resolve_entity_reference(
+                &module,
+                &absolute_entity_reference("flow.opening"),
+                source,
+            ),
+            Err(ProjectEntityReferenceLookupError::Unknown { .. })
+        ));
     }
 }
 

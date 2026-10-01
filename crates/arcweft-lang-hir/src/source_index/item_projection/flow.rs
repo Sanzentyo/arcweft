@@ -125,6 +125,9 @@ pub(super) fn payload_matches(
     let HirItemKind::Flow(flow) = item.kind() else {
         return false;
     };
+    if !flow.publication_matches_module(arenas.module) {
+        return false;
+    }
     let Some(identity_issues) = flow_identity_matches(owner, flow, attached.identity()) else {
         return false;
     };

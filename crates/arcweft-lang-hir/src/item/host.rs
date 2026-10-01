@@ -10,8 +10,8 @@ use super::callable::{
     HirCallableAttachedContentParameter, HirFunctionParameterGroup, HirGenericParameter,
 };
 use super::{
-    HirItemInvariantError, HirItemPrefix, HirRequiredName, validate_expr, validate_exprs,
-    validate_function_parameter_groups, validate_generic_parameters,
+    HirItemInvariantError, HirItemPrefix, HirRequiredName, HirRetainedPublicId, validate_expr,
+    validate_exprs, validate_function_parameter_groups, validate_generic_parameters,
     validate_optional_attached_content, validate_optional_type, validate_scope,
     validate_statements,
 };
@@ -336,7 +336,7 @@ impl HirBenchItem {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirStyleItem {
-    id: HirIdRefValue,
+    public_id: HirRetainedPublicId,
     tokens: Box<[HirStyleToken]>,
     body: Box<[HirStyleBodyItem]>,
 }
@@ -344,17 +344,26 @@ pub struct HirStyleItem {
 impl HirStyleItem {
     pub(crate) fn try_new(
         expected: HirModuleId,
-        id: HirIdRefValue,
+        public_id: HirRetainedPublicId,
         tokens: Box<[HirStyleToken]>,
         body: Box<[HirStyleBodyItem]>,
     ) -> Result<Self, HirItemInvariantError> {
-        let item = Self { id, tokens, body };
+        if let Some(id) = public_id.resolved() {
+            arcweft_id::DeclarationIdentityFamily::Style
+                .validate_public_id(id)
+                .map_err(|_| HirItemInvariantError::RetainedFamilyMismatch)?;
+        }
+        let item = Self {
+            public_id,
+            tokens,
+            body,
+        };
         item.validate_module(expected)?;
         Ok(item)
     }
 
-    pub const fn id(&self) -> &HirIdRefValue {
-        &self.id
+    pub const fn public_id(&self) -> &HirRetainedPublicId {
+        &self.public_id
     }
 
     pub const fn tokens(&self) -> &[HirStyleToken] {
@@ -378,7 +387,7 @@ impl HirStyleItem {
     }
 
     pub(crate) fn has_recovery(&self) -> bool {
-        self.id.is_recovered()
+        self.public_id.resolved().is_none()
             || self.tokens.iter().any(HirStyleToken::has_recovery)
             || self.body.iter().any(HirStyleBodyItem::has_recovery)
     }

@@ -9780,10 +9780,10 @@ fn report_rejects_a_foreign_hir_or_symbol_generation() {
 }
 
 #[test]
-fn project_index_preserves_same_named_module_scoped_flows() {
+fn project_index_preserves_canonical_ids_for_same_named_flows() {
     let fixture = fixture(
         "flow opening {\n    goto @flow.opening\n}\n",
-        Some("flow opening {\n    goto @flow.opening\n}\n"),
+        Some("flow opening {\n    goto @flow.child.opening\n}\n"),
     );
     let analysis = analyze(&fixture).expect("same-named module Flow analysis");
     let index = ProjectSemanticIndex::try_from_final_project(
@@ -9803,10 +9803,12 @@ fn project_index_preserves_same_named_module_scoped_flows() {
         })
         .collect::<Vec<_>>();
     assert_eq!(flows.len(), 2);
-    assert!(
+    assert_eq!(
         flows
             .iter()
-            .all(|(_, declaration)| declaration.public_id().as_str() == "flow.opening")
+            .map(|(_, declaration)| declaration.public_id().as_str())
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["flow.opening", "flow.child.opening"])
     );
     assert_ne!(flows[0].1.module(), flows[1].1.module());
     assert!(flows.iter().all(|(identity, _)| {

@@ -623,6 +623,7 @@ impl ProjectSymbolTable {
                 CallableDeclarationOwner::Proof,
                 std::iter::empty(),
                 name.as_str(),
+                proof.public_id().cloned(),
                 path,
                 publication::prefix_visibility(proof.prefix()),
                 publication::has_fx_attribute_prefix(proof.prefix()),

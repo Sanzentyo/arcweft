@@ -1,6 +1,7 @@
 //! Final semantic payload for one ordinary `flow` declaration.
 
 use arcweft_id::{DeclarationIdentityFamily, DeclarationName, PublicId};
+use arcweft_lang_syntax::ast::module_path::{CanonicalModulePath, ModuleSegment};
 
 use crate::expr::HirThreadBody;
 use crate::identity::{
@@ -48,25 +49,41 @@ impl HirFlowIdentity {
     pub const fn is_missing(&self) -> bool {
         matches!(self, Self::Missing)
     }
+}
 
-    /// Resolves the sole accepted Flow identity without consulting source
-    /// spelling or a project-symbol side table.
-    pub(crate) fn accepted_publication(&self) -> Option<(PublicId, FlowPublicationKind)> {
-        match self {
-            Self::Name { name } => {
+impl HirFlowItem {
+    /// Issues the accepted publication once, while retaining the authored
+    /// identity only as source evidence. Consumers read the stored publication.
+    fn issue_publication(
+        module: &CanonicalModulePath,
+        identity: &HirFlowIdentity,
+    ) -> Option<(PublicId, FlowPublicationKind)> {
+        match identity {
+            HirFlowIdentity::Name { name } => {
                 let name = DeclarationName::try_new(name.as_str()).ok()?;
                 let public_id = DeclarationIdentityFamily::Flow
-                    .derive_public_id(&name)
+                    .derive_public_id(module.segments().iter().map(ModuleSegment::as_str), &name)
                     .ok()?;
                 Some((public_id, FlowPublicationKind::ModuleScoped))
             }
-            Self::PublicId { public_id } => accepted_flow_public_id(public_id),
-            Self::PublicIdAndName { public_id, name } => {
+            HirFlowIdentity::PublicId { public_id } => accepted_flow_public_id(public_id),
+            HirFlowIdentity::PublicIdAndName { public_id, name } => {
                 let (public_id, publication) = accepted_flow_public_id(public_id)?;
                 (public_id.as_str().rsplit('.').next() == Some(name.as_str()))
                     .then_some((public_id, publication))
             }
-            Self::Missing => None,
+            HirFlowIdentity::Missing => None,
+        }
+    }
+
+    pub(crate) fn publication_matches_module(&self, module: &CanonicalModulePath) -> bool {
+        self.publication == Self::issue_publication(module, &self.identity)
+    }
+
+    pub const fn accepted_publication(&self) -> Option<(&PublicId, FlowPublicationKind)> {
+        match &self.publication {
+            Some((id, kind)) => Some((id, *kind)),
+            None => None,
         }
     }
 }
@@ -417,6 +434,7 @@ impl HirFlowPoison {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirFlowItem {
     identity: HirFlowIdentity,
+    publication: Option<(PublicId, FlowPublicationKind)>,
     generic_parameters: Box<[HirGenericParameter]>,
     parameters: Box<[HirParameter]>,
     result: HirFlowReturn,
@@ -434,6 +452,7 @@ impl HirFlowItem {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn try_new(
         owner: ItemId,
+        module: &CanonicalModulePath,
         identity: HirFlowIdentity,
         generic_parameters: Box<[HirGenericParameter]>,
         parameters: Box<[HirParameter]>,
@@ -446,6 +465,7 @@ impl HirFlowItem {
         poison: HirFlowPoison,
     ) -> Result<Self, HirItemInvariantError> {
         let item = Self {
+            publication: Self::issue_publication(module, &identity),
             identity,
             generic_parameters,
             parameters,

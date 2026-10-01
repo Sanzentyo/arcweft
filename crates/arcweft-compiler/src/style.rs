@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use arcweft_bundle::resource_codec::{SourceRangeRef, view::ViewStyleResource};
-use arcweft_id::{DeclarationIdentityFamily, PublicId};
+use arcweft_id::PublicId;
 use arcweft_lang_hir::{
     identity::ItemId,
     item::{
@@ -154,12 +154,9 @@ pub fn lower_project_view_styles(
         };
         let module = item.module();
         let owner = item.id();
-        let reference = style
-            .id()
-            .as_resolved()
-            .ok_or(ViewStyleLowerError::InvalidStyleIdentity { owner })?;
-        let public_id = reference
-            .declaration_public_id(DeclarationIdentityFamily::Style)
+        let public_id = style
+            .public_id()
+            .resolved()
             .ok_or(ViewStyleLowerError::InvalidStyleIdentity { owner })?;
         let sheet_id = ViewStyleSheetId::try_new(public_id.as_str().to_owned())
             .map_err(|_| ViewStyleLowerError::InvalidStyleIdentity { owner })?;

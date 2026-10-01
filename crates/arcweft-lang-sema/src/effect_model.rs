@@ -119,11 +119,6 @@ impl CallableId {
         Self(format!("fn.{name}"))
     }
 
-    /// Semantic effect-graph identity of a source flow.
-    pub fn source_flow(name: &str) -> Self {
-        Self(format!("flow.{name}"))
-    }
-
     /// Canonical effect-graph identity of a registered project function.
     pub fn project_function(declaration: &CallableDeclarationId) -> Self {
         let mut value = "project.function|".to_owned();
