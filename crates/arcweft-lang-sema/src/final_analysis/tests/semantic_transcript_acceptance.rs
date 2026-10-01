@@ -1,5 +1,23 @@
 use super::*;
 
+fn input_abi(
+    report: &FinalSemanticAnalysis,
+    world: &super::Fixture,
+    source: arcweft_lang_hir::identity::ExprId,
+) -> Result<
+    crate::final_analysis::CheckedExpressionInputAbi,
+    crate::final_analysis::CheckedExecutionContextError,
+> {
+    report
+        .checked_execution_context(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            source,
+            None,
+        )?
+        .checked_expression_input_abi(source)
+}
+
 #[path = "semantic_transcript_acceptance/body_roots.rs"]
 mod body_roots;
 #[path = "semantic_transcript_acceptance/expression_corpus.rs"]

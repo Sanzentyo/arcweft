@@ -197,6 +197,41 @@ pub(super) fn implicit_region_inputs(
 }
 
 impl CheckedCaptureExpression {
+    /// Closes the already authenticated sources without reconstructing their
+    /// selection or origin. This temporary map serves only the requested root.
+    pub(super) fn close_input_types(
+        mut self,
+        context: &super::CheckedClosedExecutionContext<'_>,
+        types: &mut std::collections::BTreeMap<LocalId, TypeKind>,
+    ) -> Result<Self, super::CheckedExecutionContextError> {
+        for source in &mut self.sources {
+            let original = context
+                .analysis()
+                .local(source.local)
+                .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable {
+                    owner: source.local,
+                })?
+                .ty();
+            if original
+                .semantic_identity_digest()
+                .map_err(FinalSemanticAnalysisError::from)?
+                != source.ty
+            {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into());
+            }
+            let closed = match types.entry(source.local) {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(context.instantiate_type(original)?)
+                }
+            };
+            source.ty = closed
+                .semantic_identity_digest()
+                .map_err(FinalSemanticAnalysisError::from)?;
+        }
+        Ok(self)
+    }
+
     pub(super) fn from_place(
         owner: ExprId,
         place: &super::CheckedMutablePlace,

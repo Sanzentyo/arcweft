@@ -49,6 +49,7 @@ mod analyzer;
 mod canonical_literal;
 mod declaration_defaults;
 mod error;
+mod execution_context;
 mod execution_plan;
 mod execution_regions;
 pub use execution_regions::CheckedExecutionOperation;
@@ -113,6 +114,7 @@ pub use error::{
     FinalCallSealFailure, FinalCallSealLocation, FinalSemanticAnalysisError,
     FinalSemanticProjectError, RecursiveCallableContractEdge, SemanticFactFamily,
 };
+pub use execution_context::{CheckedClosedExecutionContext, CheckedExecutionContextError};
 pub use expression_inputs::{
     CheckedExpressionInput, CheckedExpressionInputAbi, CheckedExpressionInputUse,
 };

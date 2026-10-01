@@ -259,7 +259,7 @@ pub enum CheckedLocalUseInstantiation<'a> {
 }
 
 impl CheckedLocalUseInstantiation<'_> {
-    fn declaration(self) -> CallableDeclarationKey {
+    pub(super) fn declaration(self) -> CallableDeclarationKey {
         match self {
             Self::ProjectFunction(instance) => instance.declaration().clone(),
             Self::DisplayText(instance) => {
@@ -268,7 +268,7 @@ impl CheckedLocalUseInstantiation<'_> {
         }
     }
 
-    fn instantiate_type(self, ty: &TypeKind) -> Result<TypeKind, CheckedLocalUseError> {
+    pub(super) fn instantiate_type(self, ty: &TypeKind) -> Result<TypeKind, CheckedLocalUseError> {
         match self {
             Self::ProjectFunction(instance) => Ok(instance.instantiate_type(ty)?),
             Self::DisplayText(instance) => Ok(instance.instantiate_type(ty)?),
@@ -297,6 +297,10 @@ pub struct CheckedLocalUseInstanceCatalog {
 }
 
 impl CheckedLocalUseInstanceCatalog {
+    pub(super) const fn catalog(&self) -> &CheckedLocalUseCatalog {
+        &self.catalog
+    }
+
     pub const fn identity(&self) -> &CheckedLocalUseInstanceIdentity {
         &self.identity
     }
@@ -498,10 +502,14 @@ impl CheckedLocalUseCatalog {
         project: HirAnalysisProjectView<'_>,
     ) -> Result<Self, CheckedLocalUseError> {
         let mut result = Self::empty(Arc::clone(analysis.hir_generation()));
-        let effect_sites = effect_capture_sites(analysis)?;
-        let scheduled_sites = selected_scheduled_callback_roots(analysis)?;
-        let in_place_receivers = selected_in_place_receivers(analysis)?;
-        let borrowed_receivers = selected_borrowed_receivers(analysis)?;
+        let effect_sites =
+            effect_capture_sites(analysis, analysis.expressions().map(|(owner, _)| owner))?;
+        let scheduled_sites =
+            selected_scheduled_callback_roots(analysis, analysis.calls().map(|(owner, _)| owner))?;
+        let in_place_receivers =
+            selected_in_place_receivers(analysis, analysis.calls().map(|(owner, _)| owner))?;
+        let borrowed_receivers =
+            selected_borrowed_receivers(analysis, analysis.calls().map(|(owner, _)| owner))?;
         for topology in analysis.hir_topology().modules() {
             let module = project
                 .modules()
@@ -622,10 +630,12 @@ impl CheckedLocalUseCatalog {
             }
         };
         let mut result = Self::empty(Arc::clone(analysis.hir_generation()));
-        let effect_sites = effect_capture_sites(analysis)?;
-        let scheduled_sites = selected_scheduled_callback_roots(analysis)?;
-        let in_place_receivers = selected_in_place_receivers(analysis)?;
-        let borrowed_receivers = selected_borrowed_receivers(analysis)?;
+        let scope = view.body().paths();
+        let effect_sites = effect_capture_sites(analysis, scope.expression_owners())?;
+        let scheduled_sites =
+            selected_scheduled_callback_roots(analysis, scope.expression_owners())?;
+        let in_place_receivers = selected_in_place_receivers(analysis, scope.expression_owners())?;
+        let borrowed_receivers = selected_borrowed_receivers(analysis, scope.expression_owners())?;
         let mut checker = LocalUseChecker::new(
             analysis,
             module.as_ref(),
@@ -640,13 +650,13 @@ impl CheckedLocalUseCatalog {
             &borrowed_receivers,
             Some(instance),
         );
-        for (pattern, _) in analysis.patterns() {
-            if view.body().paths().pattern(pattern).is_some() {
+        for pattern in scope.pattern_owners() {
+            if analysis.pattern(pattern).is_some() {
                 checker.check_pattern_overlap(pattern)?;
             }
         }
-        for (local, _) in analysis.locals() {
-            if view.body().paths().local(local).is_some()
+        for (local, _) in scope.locals() {
+            if analysis.local(local).is_some()
                 && let Some(evidence) =
                     checker.binding_copy_evidence(local, &mut BTreeSet::new())?
             {
@@ -2457,6 +2467,7 @@ impl<'a> LocalUseChecker<'a> {
 
 fn effect_capture_sites(
     analysis: &FinalSemanticAnalysis,
+    owners: impl Iterator<Item = ExprId>,
 ) -> Result<BTreeMap<ExprId, Box<[LocalId]>>, CheckedLocalUseError> {
     fn collect(
         report: &CheckedRichTextReport,
@@ -2488,7 +2499,10 @@ fn effect_capture_sites(
     }
 
     let mut sites = BTreeMap::new();
-    for (_, expression) in analysis.expressions() {
+    for owner in owners {
+        let Some(expression) = analysis.expression(owner) else {
+            continue;
+        };
         if let CheckedExpressionResolution::DialogueApplication { rich_text, .. } =
             expression.resolution()
         {
@@ -2505,9 +2519,13 @@ fn effect_capture_sites(
 /// that callback's lexical boundary.
 fn selected_scheduled_callback_roots(
     analysis: &FinalSemanticAnalysis,
+    owners: impl Iterator<Item = ExprId>,
 ) -> Result<BTreeSet<ExprId>, CheckedLocalUseError> {
     let mut sites = BTreeSet::new();
-    for (_, call) in analysis.calls() {
+    for owner in owners {
+        let Some(call) = analysis.call(owner) else {
+            continue;
+        };
         let Some(application) = call.selected_application() else {
             continue;
         };
@@ -2564,9 +2582,13 @@ fn selected_scheduled_callback_roots(
 /// `capacity_operation` and receiver source to form `RuntimeResolvedMutablePlace`.
 fn selected_in_place_receivers(
     analysis: &FinalSemanticAnalysis,
+    owners: impl Iterator<Item = ExprId>,
 ) -> Result<BTreeSet<ExprId>, CheckedLocalUseError> {
     let mut receivers = BTreeSet::new();
-    for (_, call) in analysis.calls() {
+    for owner in owners {
+        let Some(call) = analysis.call(owner) else {
+            continue;
+        };
         let Some(application) = call.selected_application() else {
             continue;
         };
@@ -2608,9 +2630,13 @@ fn selected_in_place_receivers(
 /// other receiver expressions retain ordinary value-transfer semantics.
 fn selected_borrowed_receivers(
     analysis: &FinalSemanticAnalysis,
+    owners: impl Iterator<Item = ExprId>,
 ) -> Result<BTreeSet<ExprId>, CheckedLocalUseError> {
     let mut receivers = BTreeSet::new();
-    for (_, call) in analysis.calls() {
+    for owner in owners {
+        let Some(call) = analysis.call(owner) else {
+            continue;
+        };
         let Some(application) = call.selected_application() else {
             continue;
         };

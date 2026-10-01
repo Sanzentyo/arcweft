@@ -86,10 +86,7 @@ fn implicit_body_return_uses_the_selected_callable_identity() {
     assert_eq!(*target.1, callable.identity());
     assert_eq!(callable.result(), &TypeKind::I64);
     assert_eq!(
-        report
-            .checked_expression_input_abi(owner)
-            .unwrap()
-            .control(),
+        input_abi(&report, &world, owner).unwrap().control(),
         crate::final_analysis::CheckedExecutableControlRole::ExpressionCompatible
     );
     assert_eq!(

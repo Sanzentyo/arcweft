@@ -887,12 +887,22 @@ impl HirSemanticPathIndex {
         self.expressions.get(&owner)
     }
 
+    /// Exact expression inventory of this root, without a project-wide scan.
+    pub fn expression_owners(&self) -> impl ExactSizeIterator<Item = ExprId> + '_ {
+        self.expressions.keys().copied()
+    }
+
     pub fn statement(&self, owner: StmtId) -> Option<&HirSemanticOwnerPath> {
         self.statements.get(&owner)
     }
 
     pub fn pattern(&self, owner: PatternId) -> Option<&HirSemanticOwnerPath> {
         self.patterns.get(&owner)
+    }
+
+    /// Exact pattern inventory retained by this accepted root.
+    pub fn pattern_owners(&self) -> impl ExactSizeIterator<Item = PatternId> + '_ {
+        self.patterns.keys().copied()
     }
 
     pub fn local(&self, owner: LocalId) -> Option<&HirSemanticOwnerPath> {

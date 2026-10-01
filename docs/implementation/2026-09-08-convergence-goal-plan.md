@@ -4280,3 +4280,117 @@ Full convergence remains unfinished. The app-side goal is still blocked, and the
 pending resume question concerns that external execution state, not permission
 for source work. Subsequent implementation continues at the general closed
 execution context/root, canonical invocation inputs and owned runner boundary.
+
+### 2026-10-02 — Closed execution context and owned input certificates
+
+Continuation observed goal status active. Inspected main
+`7dcab5928b567e5459c619b0132887743e16f4fd` with a clean starting checkout;
+this candidate continues the accepted-instance authority cut. The earlier
+app-side blocked/resume limitation is historical and no longer applies.
+
+FinalSemanticAnalysis now issues an opaque CheckedClosedExecutionContext for
+one accepted lexical owner. It validates the actual project/symbol lease and
+joins the selected frozen instance with the local-use seal internally. Project
+and DisplayText instances must match both the report's authority and the source
+owner. Uninstantiated contexts do not provide global fallback for declaration
+type/const parameters. The context is reusable for value roots within its exact
+owner, and rejects another owner's source.
+
+The existing checked_expression_input_abi report entry is removed; issuance
+belongs to this context. Input/result types close through its environment.
+Requested-root input occurrences, transfer/place certificates and ingress Copy
+requirements are owned snapshots, retaining the callable-authority lease and
+closed instance identity. validate_for rejects exchanging a snapshot between
+instances, declarations or equivalent rebuilds. This avoids borrowing a temporary
+instance catalogue when a caller owns the extracted input proof. No lease address
+or lookup ID is added to canonical identities/encoding; version markers remain 1.
+The existing free-local collector remains the sole origin/containment authority.
+Its temporary requested-root type map closes already authenticated sources and
+stores no persistent duplicate read index.
+
+The value-evaluation context must distinguish latent callback contracts from
+executing a declaration's full body. An initial check of every signature effect
+parameter rejected six valid View callback defaults. Those effects are not
+executed by constructing the default's callback value. Their actual input/result
+types still must close. The callable-Copy ingress fixture genuinely contains a
+free effect parameter, and now explicitly uses its selected closed function
+instance rather than unbound global evidence. This is not an effects admission
+exception: general program admission still must close its actual operational
+effects and prove boundary-relative control. The current ABI remains input proof,
+not permission to execute an extracted program or consume Return.
+
+Instance local-use publication now enumerates the accepted declaration's
+expression/pattern/local inventory instead of scanning all project facts for
+its receiver, scheduled callback, dialogue effect and Copy evidence. HIR exposes
+existing root-owned map keys; selected semantic facts are still required. This
+is an ownership-bounded iteration change, without another HIR walker, resolver
+or side index. Global publication retains the complete selected project scan.
+
+Behavior coverage: closed i64 Copy versus Need<i64> Move for the same source;
+wrong declaration/foreign instance rejection; owner-bound uninstantiated contexts;
+stable input coordinates/results across equivalent rebuilds with distinct
+admission leases; snapshots cannot swap instance Copy proofs. Existing default,
+field/place, capture/cleanup, source revision and repeated-read cases migrate to
+the context. Final sema all-feature library receipt after scoped iteration is
+1,148 passed, 0 failed. The initial context compile rejected an ExprId field named
+source (thiserror treats that name as an error cause); renamed owner. An unintended
+negative-test edit was restored. Intermediate sema runs failed 7 and then 1
+fixtures described above; both are superseded by the final owner pass.
+
+Final validation: workspace check and Clippy all targets/all features, format,
+and complete workspace recipe all exited 0. The complete workspace receipt is
+308 suites, 7,208 passed, 0 failed, 24 ignored. Logs/exit receipts use
+%TEMP%/arcweft-1002-context-{workspace-check,workspace-clippy,test-workspace}.
+Canonical structure gate passed: 97 packages, 351 review triggers, 0 blocking
+violations, 1,470,603 Rust physical LOC; report
+%TEMP%/arcweft-1002-context-structure. No dependency/feature changes.
+
+Still unfinished: EvaluateValue versus InvokeBody opaque root admission,
+canonical invocation formals/destructuring/unused and synthetic/pipe-left slots,
+closed operational effect and relative Return/Loop/Try/Const evidence, replacement
+of closure/CaptureId/u16/PureHelper-specific program facts, the owned general
+runner and retained View/UI consumers. The full convergence goal remains active.
+This candidate is not an assertion that those downstream acceptances are met.
+
+
+Ownership review: the closed context owns only authenticated lexical environment
+and its selected local-use evidence. Requested-root input snapshots own only
+selected certificates/types; the transient closure map is not a stored index.
+HIR path index remains the single body-owner authority. Existing cohesion
+dispositions for semantic_paths, local_use, free_capture and tests remain
+applicable; their changed responsibilities remain within those owners. No Cargo
+dependency/feature, unsafe boundary or contract version marker changes.
+
+| Path / crate | Class | Bytes | Base → final physical LOC | Embedded tests |
+|---|---|---:|---:|---:|
+| crates/arcweft-lang-hir/src/final_project/semantic_paths.rs / arcweft-lang-hir | production | 246256 | 6585 → 6595 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis.rs / arcweft-lang-sema | production | 13917 | 253 → 255 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/expression_inputs.rs / arcweft-lang-sema | production | 11571 | 275 → 306 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/free_capture.rs / arcweft-lang-sema | production | 27503 | 688 → 723 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/local_use.rs / arcweft-lang-sema | production | 112355 | 2850 → 2876 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/tests.rs / arcweft-lang-sema | test | 356084 | 10228 → 10230 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance.rs / arcweft-lang-sema | test | 6320 | 157 → 175 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/expression_inputs.rs / arcweft-lang-sema | test | 12544 | 344 → 354 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/return_boundaries.rs / arcweft-lang-sema | test | 4757 | 133 → 130 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/view_defaults.rs / arcweft-lang-sema | test | 16574 | 430 → 428 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/execution_context.rs / arcweft-lang-sema | production | 6263 | 0 → 156 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/tests/execution_context.rs / arcweft-lang-sema | test | 8408 | 0 → 242 | 0 |
+
+### 2026-10-02 — Rust-compatible move semantics; one-shot Astra consultation
+
+The latest direct user instruction supersedes the earlier terminal-Move policy.
+Whole-place assignment after moving its value is valid, like Rust's
+`let mut x = String::new(); let y = x; x = String::new();`.
+Statically decidable initialization, move and borrow obligations must be solved
+by the checker. Declaration identity and current value availability remain
+distinct; assigning a new value does not revive the consumed value. Existing
+terminal-Move statements and receipts above describe historical implementation,
+not the current target contract. The full convergence goal remains active.
+
+One fresh-context Astra Max consultation is explicitly requested for this
+change. Dispatch marker: task `/root/rust_move_semantics_once_20261002`, state
+`dispatched`, model `gpt-6-astra`, effort `max`, history `none`. This marker
+was written before dispatch and updated with the returned canonical task name. Do not repeat the
+consultation after compaction; reconcile the live agent inventory if dispatch
+outcome is uncertain. The consultation is read-only, with no edits, tests or
+delegation. Root retains implementation and validation ownership.

@@ -69,11 +69,9 @@ fn view_defaults(source: &str) -> (Vec<CheckedDeclarationDefault>, [u8; 32]) {
         for capture in default.captures() {
             assert!(capture.parameter() < *position);
         }
-        let abi = report
-            .checked_expression_input_abi(default.source())
-            .unwrap_or_else(|error| {
-                panic!("general expression input ABI for a default: {error:?}\n{source}")
-            });
+        let abi = input_abi(&report, &world, default.source()).unwrap_or_else(|error| {
+            panic!("general expression input ABI for a default: {error:?}\n{source}")
+        });
         assert_eq!(abi.coordinate(), path);
         assert_eq!(abi.result(), checked.value_type().unwrap());
         assert_eq!(abi.effects(), checked.effects());

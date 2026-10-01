@@ -23,7 +23,7 @@ fn expression_input_abi_distinguishes_place_mutation_from_value_evaluation() {
                 .map(|_| owner)
         })
         .unwrap();
-    let abi = report.checked_expression_input_abi(call).unwrap();
+    let abi = input_abi(&report, &world, call).unwrap();
     let [receiver] = abi.places() else {
         panic!("one addressed receiver")
     };
@@ -51,7 +51,7 @@ fn expression_input_abi_distinguishes_place_mutation_from_value_evaluation() {
     );
     let whole_body = report
         .expressions()
-        .filter_map(|(owner, _)| report.checked_expression_input_abi(owner).ok())
+        .filter_map(|(owner, _)| input_abi(&report, &world, owner).ok())
         .find(|region| !region.statements().is_empty() && region.places().contains(receiver))
         .unwrap();
     assert_eq!(whole_body.inputs().len(), 1);
@@ -76,7 +76,7 @@ fn expression_input_abi_records_replacement_without_reading_the_previous_value()
     let report = super::analyze(&world).unwrap();
     let abi = report
         .expressions()
-        .filter_map(|(owner, _)| report.checked_expression_input_abi(owner).ok())
+        .filter_map(|(owner, _)| input_abi(&report, &world, owner).ok())
         .find(|abi| abi.places().len() == 1 && abi.inputs().len() == 2)
         .unwrap();
     let place = abi.places()[0];
@@ -115,7 +115,19 @@ fn expression_input_abi_retains_callable_copy_ingress_obligations() {
             (expression.execution_local_use() == Some(required_local)).then_some(owner)
         })
         .unwrap();
-    let abi = report.checked_expression_input_abi(source).unwrap();
+    let instance = super::super::project_specialization::selections(&report, "twice")
+        .remove(0)
+        .close_instance(None)
+        .unwrap();
+    let context = report
+        .checked_execution_context(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            source,
+            Some(crate::final_analysis::CheckedLocalUseInstantiation::ProjectFunction(&instance)),
+        )
+        .unwrap();
+    let abi = context.checked_expression_input_abi(source).unwrap();
     let [input] = abi.inputs() else {
         panic!("one callable ingress")
     };
@@ -143,8 +155,8 @@ fn expression_input_abi_does_not_invent_modes_for_an_open_generic_body() {
         .find_map(|(owner, expression)| expression.execution_local_use().map(|_| owner))
         .unwrap();
     assert!(matches!(
-        report.checked_expression_input_abi(owner),
-        Err(FinalSemanticAnalysisError::ExpressionInputAccessUnavailable { .. })
+        input_abi(&report, &world, owner),
+        Err(crate::final_analysis::CheckedExecutionContextError::OpenDeclaration { .. })
     ));
 }
 
@@ -164,7 +176,7 @@ fn expression_input_abi_cleanup_keeps_creation_inputs_outside_the_latent_frame()
         .unwrap();
     let abi = report
         .expressions()
-        .filter_map(|(owner, _)| report.checked_expression_input_abi(owner).ok())
+        .filter_map(|(owner, _)| input_abi(&report, &world, owner).ok())
         .find(|abi| abi.statements().contains(&defer_owner))
         .unwrap();
     let [input] = abi.inputs() else {
@@ -198,9 +210,7 @@ view Main(first: i64, second: i64,
         .records()
         .find_map(|facts| facts.parameter_defaults().values().next())
         .unwrap();
-    let abi = report
-        .checked_expression_input_abi(default.source())
-        .unwrap();
+    let abi = input_abi(&report, &world, default.source()).unwrap();
     assert_eq!(abi.inputs().len(), 2);
     assert!(!abi.statements().is_empty());
     assert_eq!(
@@ -248,9 +258,7 @@ fn expression_input_abi_callable_creation_stops_before_the_latent_body() {
             .records()
             .find_map(|facts| facts.parameter_defaults().values().next())
             .unwrap();
-        let abi = report
-            .checked_expression_input_abi(default.source())
-            .unwrap();
+        let abi = input_abi(&report, &world, default.source()).unwrap();
         assert_eq!(abi.expressions(), [default.source()]);
         assert!(abi.statements().is_empty());
         assert_eq!(abi.inputs().len(), 1);
@@ -283,9 +291,7 @@ fn expression_input_abi_is_stable_across_source_and_arena_revisions() {
             .records()
             .find_map(|facts| facts.parameter_defaults().values().next())
             .unwrap();
-        let abi = report
-            .checked_expression_input_abi(default.source())
-            .unwrap();
+        let abi = input_abi(&report, &world, default.source()).unwrap();
         (
             abi.coordinate().clone(),
             abi.inputs()
@@ -338,7 +344,11 @@ fn expression_input_abi_rejects_a_foreign_generation_owner() {
         })
         .unwrap();
     assert!(matches!(
-        second_report.checked_expression_input_abi(owner),
-        Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { .. })
+        input_abi(&second_report, &second, owner),
+        Err(
+            crate::final_analysis::CheckedExecutionContextError::Semantic(
+                FinalSemanticAnalysisError::InvalidOwner
+            )
+        )
     ));
 }
