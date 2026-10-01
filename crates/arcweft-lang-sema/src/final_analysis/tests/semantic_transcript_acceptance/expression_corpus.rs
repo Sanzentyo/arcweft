@@ -1,5 +1,8 @@
 use super::*;
 
+#[path = "contextual_expressions.rs"]
+mod contextual_expressions;
+
 fn entry_reference_match_source(first: &str, second: &str) -> String {
     format!(
         "flow done() -> String {{ return \"done\" }}\nflow @flow.references references {{\n    let selected = match true {{\n        true => {first}\n        false => {second}\n    }}\n}}\nentry cli @entry.cli.primary {{ goto @flow.done }}\nentry cli @entry.cli.alternate {{ goto @flow.done }}\n"
@@ -95,7 +98,6 @@ fn dialogue_character_field_match_source(character: &str) -> String {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ExpressionCorpusDisposition {
     Accepted,
-    Pending,
     RejectOnly,
     ProvenUnreachable,
 }
@@ -127,9 +129,9 @@ expression_family_inventory!(ExprShapeFamily for HirExprKind, {
     HirExprKind::Unit => Unit => Accepted,
     HirExprKind::Literal(_) => Literal => Accepted,
     HirExprKind::EntityReference(_) => EntityReference => Accepted,
-    HirExprKind::LifetimePath(_) => LifetimePath => Pending,
+    HirExprKind::LifetimePath(_) => LifetimePath => RejectOnly,
     HirExprKind::Path(_) => Path => Accepted,
-    HirExprKind::ShortVariant(_) => ShortVariant => Pending,
+    HirExprKind::ShortVariant(_) => ShortVariant => Accepted,
     HirExprKind::Placeholder(_) => Placeholder => Accepted,
     HirExprKind::Tuple(_) => Tuple => Accepted,
     HirExprKind::BracketSequence(_) => BracketSequence => Accepted,
@@ -140,7 +142,7 @@ expression_family_inventory!(ExprShapeFamily for HirExprKind, {
     HirExprKind::Index(_) => Index => Accepted,
     HirExprKind::Pipe(_) => Pipe => Accepted,
     HirExprKind::Try(_) => Try => Accepted,
-    HirExprKind::Await(_) => Await => Pending,
+    HirExprKind::Await(_) => Await => Accepted,
     HirExprKind::Thread(_) => Thread => Accepted,
     HirExprKind::Choice(_) => Choice => Accepted,
     HirExprKind::Range(_) => Range => Accepted,
@@ -172,29 +174,29 @@ expression_family_inventory!(ExpressionResolutionFamily for CheckedExpressionRes
     CheckedExpressionResolution::Select(_) => Select => Accepted,
     CheckedExpressionResolution::Nominal(_) => Nominal => Accepted,
     CheckedExpressionResolution::Variant(_) => Variant => Accepted,
-    CheckedExpressionResolution::CompileTimeEnum(_) => CompileTimeEnum => Pending,
-    CheckedExpressionResolution::StageLook(_) => StageLook => Pending,
+    CheckedExpressionResolution::CompileTimeEnum(_) => CompileTimeEnum => Accepted,
+    CheckedExpressionResolution::StageLook(_) => StageLook => Accepted,
     CheckedExpressionResolution::Effect(_) => Effect => ProvenUnreachable,
     CheckedExpressionResolution::Call => Call => Accepted,
-    CheckedExpressionResolution::Await(_) => Await => Pending,
+    CheckedExpressionResolution::Await(_) => Await => Accepted,
     CheckedExpressionResolution::Choice(_) => Choice => Accepted,
     CheckedExpressionResolution::Try(_) => Try => Accepted,
-    CheckedExpressionResolution::ImplicitCallable(_) => ImplicitCallable => Pending,
+    CheckedExpressionResolution::ImplicitCallable(_) => ImplicitCallable => Accepted,
     CheckedExpressionResolution::Closure(_) => Closure => Accepted,
-    CheckedExpressionResolution::ImplicitParameter(_) => ImplicitParameter => Pending,
+    CheckedExpressionResolution::ImplicitParameter(_) => ImplicitParameter => Accepted,
     CheckedExpressionResolution::Pipe(_) => Pipe => Accepted,
     CheckedExpressionResolution::PipeLeft(_) => PipeLeft => Accepted,
     CheckedExpressionResolution::ViewCall(_) => ViewCall => Accepted,
     CheckedExpressionResolution::ViewFxApplication(_) => ViewFxApplication => Accepted,
-    CheckedExpressionResolution::StyleValue(_) => StyleValue => Pending,
+    CheckedExpressionResolution::StyleValue(_) => StyleValue => ProvenUnreachable,
     CheckedExpressionResolution::CompileTimeCallee(_) => CompileTimeCallee => Accepted,
-    CheckedExpressionResolution::TypeValue(_) => TypeValue => Pending,
+    CheckedExpressionResolution::TypeValue(_) => TypeValue => Accepted,
     CheckedExpressionResolution::CompileTimeScalar(_) => CompileTimeScalar => Accepted,
-    CheckedExpressionResolution::DialogueLineReference(_) => DialogueLineReference => Pending,
-    CheckedExpressionResolution::DialogueLineCoordinate(_) => DialogueLineCoordinate => Pending,
-    CheckedExpressionResolution::DialogueTextKeyCoordinate(_) => DialogueTextKeyCoordinate => Pending,
-    CheckedExpressionResolution::CharacterDialogueFactory(_) => CharacterDialogueFactory => Pending,
-    CheckedExpressionResolution::CharacterDialogueReconfigure(_) => CharacterDialogueReconfigure => Pending,
+    CheckedExpressionResolution::DialogueLineReference(_) => DialogueLineReference => Accepted,
+    CheckedExpressionResolution::DialogueLineCoordinate(_) => DialogueLineCoordinate => Accepted,
+    CheckedExpressionResolution::DialogueTextKeyCoordinate(_) => DialogueTextKeyCoordinate => Accepted,
+    CheckedExpressionResolution::CharacterDialogueFactory(_) => CharacterDialogueFactory => Accepted,
+    CheckedExpressionResolution::CharacterDialogueReconfigure(_) => CharacterDialogueReconfigure => Accepted,
     CheckedExpressionResolution::DialogueApplication { .. } => DialogueApplication => Accepted,
     CheckedExpressionResolution::ContentApplication(_) => ContentApplication => Accepted,
     CheckedExpressionResolution::PostfixBracket(_) => PostfixBracket => Accepted,
@@ -208,13 +210,13 @@ expression_family_inventory!(ValueResolutionFamily for CheckedValueResolution, {
     CheckedValueResolution::ProjectItem(_) => ProjectItem => Accepted,
     CheckedValueResolution::Entry(_) => Entry => Accepted,
     CheckedValueResolution::Registered(_) => Registered => Accepted,
-    CheckedValueResolution::Constant(_) => Constant => Pending,
+    CheckedValueResolution::Constant(_) => Constant => Accepted,
 });
 
 expression_family_inventory!(SelectResolutionFamily for CheckedSelectResolution, {
     CheckedSelectResolution::Method(_) => Method => Accepted,
     CheckedSelectResolution::DialogueView { .. } => DialogueView => Accepted,
-    CheckedSelectResolution::AgentField { .. } => AgentField => Pending,
+    CheckedSelectResolution::AgentField { .. } => AgentField => Accepted,
     CheckedSelectResolution::ProgressField { .. } => ProgressField => Accepted,
     CheckedSelectResolution::Field(_) => Field => Accepted,
 });
@@ -382,6 +384,7 @@ enum ExpressionCorpusFixture {
     ExternalCharacter,
     CharacterNominal,
     RegisteredI32Pair,
+    RegisteredObservation,
 }
 
 impl ExpressionCorpusFixture {
@@ -396,6 +399,11 @@ impl ExpressionCorpusFixture {
                 TypeCheckEnv::standard()
                     .with_symbol("registered_left", TypeKind::I32)
                     .with_symbol("registered_right", TypeKind::I32),
+            ),
+            Self::RegisteredObservation => super::fixture_with_base_environment(
+                source,
+                None,
+                TypeCheckEnv::standard().with_symbol("observation", TypeKind::Observation),
             ),
         }
     }
@@ -755,6 +763,7 @@ fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
             .into_iter()
             .map(|(row, _)| row),
     );
+    rows.extend(contextual_expressions::contextual_expression_corpus_rows());
     rows
 }
 
