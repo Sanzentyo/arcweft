@@ -16,6 +16,7 @@ mod display_text;
 mod environment_record_pattern_tests;
 #[path = "lower/evaluated_effects.rs"]
 mod evaluated_effects;
+mod executable_types;
 #[path = "lower/fx.rs"]
 pub(crate) mod fx;
 mod nominals;
@@ -7257,79 +7258,14 @@ fn build_runtime_project_function_instance(
     };
     let body = RuntimeProjectFunctionBody::new(*scope, statements.clone(), *tail);
 
-    let semantic_owners = runtime_owners
-        .executable_owners(&HirRuntimeExecutableOwner::Item(callable.owner()))
-        .ok_or_else(|| error("project-function has no exact runtime semantic owner partition"))?;
     let executable = HirRuntimeExecutableOwner::Item(callable.owner());
     let fact_partition = analysis
         .execution_projection()
         .runtime_fact_partition(runtime_owners, &executable)?;
-    let mut type_projection = Vec::new();
-    for expected in fact_partition.expressions() {
-        let owner = expected.owner();
-        if !expected.has_runtime_type() {
-            type_projection
-                .push(RuntimeProjectFunctionTypeProjection::semantic_only_expression(owner));
-            continue;
-        }
-        let checked = analysis
-            .expression(owner)
-            .ok_or_else(|| error("project-function expression has no checked semantic fact"))?;
-        let ty = checked
-            .value_type()
-            .ok_or_else(|| error("runtime expression has no checked value type"))?;
-        let ty = instance_solution.instantiate_type(ty)?;
-        type_projection.push(RuntimeProjectFunctionTypeProjection::value(
-            RuntimeProjectFunctionTypeOwner::Expression(owner),
-            runtime_type(&ty, symbols, world, analysis)?,
-        ));
-    }
-    for owner in semantic_owners.patterns() {
-        let checked = analysis
-            .pattern(owner)
-            .ok_or_else(|| error("project-function pattern has no checked semantic fact"))?;
-        let ty = instance_solution.instantiate_type(checked.ty())?;
-        type_projection.push(RuntimeProjectFunctionTypeProjection::value(
-            RuntimeProjectFunctionTypeOwner::Pattern(owner),
-            runtime_type(&ty, symbols, world, analysis)?,
-        ));
-    }
-    for owner in semantic_owners.locals() {
-        let checked = analysis
-            .local(owner)
-            .ok_or_else(|| error("project-function local has no checked semantic fact"))?;
-        let ty = instance_solution.instantiate_type(checked.ty())?;
-        type_projection.push(RuntimeProjectFunctionTypeProjection::value(
-            RuntimeProjectFunctionTypeOwner::Local(owner),
-            runtime_type(&ty, symbols, world, analysis)?,
-        ));
-    }
-    for owner in semantic_owners.types() {
-        if let Some(parameter) = parameters
-            .iter()
-            .find(|parameter| parameter.source_type() == owner)
-        {
-            // The checked parameter ABI owns inferred callback rows. Its
-            // authored type root may still carry an omitted effect clause.
-            type_projection.push(RuntimeProjectFunctionTypeProjection::value(
-                RuntimeProjectFunctionTypeOwner::Type(owner),
-                parameter.abi_ty().clone(),
-            ));
-            continue;
-        }
-        let checked = analysis.ty(owner).ok_or_else(|| {
-            error(&format!(
-                "project-function type root {owner:?} has no checked semantic fact"
-            ))
-        })?;
-        let ty = instance_solution.instantiate_type(checked)?;
-        type_projection.push(RuntimeProjectFunctionTypeProjection::value(
-            RuntimeProjectFunctionTypeOwner::Type(owner),
-            runtime_type(&ty, symbols, world, analysis)?,
-        ));
-    }
-    type_projection.sort_by_key(RuntimeProjectFunctionTypeProjection::owner);
-
+    let lexical = RuntimeExecutableInstantiation::Project {
+        key: &key,
+        solution: instance_solution,
+    };
     let checked_callable = analysis
         .checked_callables()
         .project_callable(&selection.declaration)
@@ -7361,14 +7297,13 @@ fn build_runtime_project_function_instance(
         world,
         analysis,
     )?;
-    let semantics = runtime_project_function_instance_semantic_facts(
+    let semantics = runtime_executable_semantic_facts(
         origin,
-        RuntimeExecutableInstantiation::Project {
-            key: &key,
-            solution: instance_solution,
-        },
+        lexical,
         fact_partition,
-        type_projection.into_boxed_slice(),
+        parameters
+            .iter()
+            .map(|parameter| (parameter.source_type(), parameter.abi_ty())),
         project,
         symbols,
         world,
@@ -7397,11 +7332,16 @@ fn build_runtime_project_function_instance(
     clippy::too_many_arguments,
     reason = "one closed semantic subcatalog projects every family under the same frozen instance and SCC authority"
 )]
-fn runtime_project_function_instance_semantic_facts(
+fn runtime_executable_semantic_facts<'abi>(
     origin: ProjectInstantiationOrigin,
     lexical: RuntimeExecutableInstantiation<'_>,
     partition: arcweft_lang_sema::final_analysis::CheckedExecutableRuntimeFactPartition,
-    type_projection: Box<[RuntimeProjectFunctionTypeProjection]>,
+    source_type_abis: impl IntoIterator<
+        Item = (
+            arcweft_lang_hir::identity::TypeId,
+            &'abi RuntimeNormalizedType,
+        ),
+    >,
     project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
@@ -7410,6 +7350,14 @@ fn runtime_project_function_instance_semantic_facts(
     dialogue: &RuntimeDialogueProjectionCatalog,
     instances: &mut ProjectInstanceProjection<'_>,
 ) -> Result<RuntimeProjectFunctionInstanceSemanticFacts, RuntimeSemanticProjectionError> {
+    let type_projection = lexical.type_projection(
+        origin,
+        &partition,
+        source_type_abis,
+        symbols,
+        world,
+        analysis,
+    )?;
     let error = |owner: ExprId, reason: &str| RuntimeSemanticProjectionError::Call {
         owner,
         reason: reason.to_owned(),
@@ -8303,13 +8251,6 @@ fn runtime_closure_instance_fact(
         .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
 
     let executable = HirRuntimeExecutableOwner::CallableBody(owner);
-    let semantic_owners = match lexical {
-        RuntimeExecutableInstantiation::Display { selected, .. } => selected.closure_owners(owner),
-        RuntimeExecutableInstantiation::Global | RuntimeExecutableInstantiation::Project { .. } => {
-            runtime_owners.executable_owners(&executable)
-        }
-    }
-    .ok_or_else(|| error("closure has no exact executable semantic partition"))?;
     let partition = match lexical {
         RuntimeExecutableInstantiation::Display { selected, .. } => analysis
             .execution_projection()
@@ -8320,58 +8261,11 @@ fn runtime_closure_instance_fact(
                 .runtime_fact_partition(runtime_owners, &executable)?
         }
     };
-    let mut type_projection = Vec::new();
-    for expected in partition.expressions() {
-        let expression = expected.owner();
-        if !expected.has_runtime_type() {
-            type_projection
-                .push(RuntimeProjectFunctionTypeProjection::semantic_only_expression(expression));
-            continue;
-        }
-        let checked = analysis
-            .expression(expression)
-            .ok_or_else(|| error("closure expression has no checked semantic fact"))?;
-        let ty = checked
-            .value_type()
-            .ok_or_else(|| error("runtime closure expression has no checked value type"))?;
-        type_projection.push(RuntimeProjectFunctionTypeProjection::value(
-            RuntimeProjectFunctionTypeOwner::Expression(expression),
-            runtime_type_under(ty, lexical.types(), symbols, world, analysis)?,
-        ));
-    }
-    for pattern in semantic_owners.patterns() {
-        let checked = analysis
-            .pattern(pattern)
-            .ok_or_else(|| error("closure pattern has no checked semantic fact"))?;
-        type_projection.push(RuntimeProjectFunctionTypeProjection::value(
-            RuntimeProjectFunctionTypeOwner::Pattern(pattern),
-            runtime_type_under(checked.ty(), lexical.types(), symbols, world, analysis)?,
-        ));
-    }
-    for local in semantic_owners.locals() {
-        let checked = analysis
-            .local(local)
-            .ok_or_else(|| error("closure local has no checked semantic fact"))?;
-        type_projection.push(RuntimeProjectFunctionTypeProjection::value(
-            RuntimeProjectFunctionTypeOwner::Local(local),
-            runtime_type_under(checked.ty(), lexical.types(), symbols, world, analysis)?,
-        ));
-    }
-    for ty in semantic_owners.types() {
-        let checked = analysis
-            .ty(ty)
-            .ok_or_else(|| error("closure source type has no checked semantic fact"))?;
-        type_projection.push(RuntimeProjectFunctionTypeProjection::value(
-            RuntimeProjectFunctionTypeOwner::Type(ty),
-            runtime_type_under(checked, lexical.types(), symbols, world, analysis)?,
-        ));
-    }
-    type_projection.sort_by_key(RuntimeProjectFunctionTypeProjection::owner);
-    let semantics = runtime_project_function_instance_semantic_facts(
+    let semantics = runtime_executable_semantic_facts(
         origin,
         lexical,
         partition,
-        type_projection.into_boxed_slice(),
+        [],
         project,
         symbols,
         world,

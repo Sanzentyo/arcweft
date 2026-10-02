@@ -385,61 +385,16 @@ fn build_runtime_display_method(
     let partition = analysis
         .execution_projection()
         .selected_method_fact_partition(&selected)?;
-    let lexical_types = ProjectInstanceTypes::display(owner, conformance);
-    let mut type_projection = Vec::new();
-    for expected in partition.expressions() {
-        let expression = expected.owner();
-        if !expected.has_runtime_type() {
-            type_projection
-                .push(RuntimeProjectFunctionTypeProjection::semantic_only_expression(expression));
-            continue;
-        }
-        let checked = analysis
-            .expression(expression)
-            .and_then(|checked| checked.value_type())
-            .ok_or_else(|| origin.error("selected method expression has no checked value type"))?;
-        type_projection.push(RuntimeProjectFunctionTypeProjection::value(
-            RuntimeProjectFunctionTypeOwner::Expression(expression),
-            runtime_type_under(checked, Some(lexical_types), symbols, world, analysis)?,
-        ));
-    }
-    for pattern in selected.owners().patterns() {
-        let checked = analysis
-            .pattern(pattern)
-            .ok_or_else(|| origin.error("selected method pattern has no checked type"))?;
-        type_projection.push(RuntimeProjectFunctionTypeProjection::value(
-            RuntimeProjectFunctionTypeOwner::Pattern(pattern),
-            runtime_type_under(checked.ty(), Some(lexical_types), symbols, world, analysis)?,
-        ));
-    }
-    for local in selected.owners().locals() {
-        let checked = analysis
-            .local(local)
-            .ok_or_else(|| origin.error("selected method local has no checked type"))?;
-        type_projection.push(RuntimeProjectFunctionTypeProjection::value(
-            RuntimeProjectFunctionTypeOwner::Local(local),
-            runtime_type_under(checked.ty(), Some(lexical_types), symbols, world, analysis)?,
-        ));
-    }
-    for ty in selected.owners().types() {
-        let checked = analysis
-            .ty(ty)
-            .ok_or_else(|| origin.error("selected method type owner has no checked type"))?;
-        type_projection.push(RuntimeProjectFunctionTypeProjection::value(
-            RuntimeProjectFunctionTypeOwner::Type(ty),
-            runtime_type_under(checked, Some(lexical_types), symbols, world, analysis)?,
-        ));
-    }
-    type_projection.sort_by_key(RuntimeProjectFunctionTypeProjection::owner);
-    let semantics = runtime_project_function_instance_semantic_facts(
+    let lexical = RuntimeExecutableInstantiation::Display {
+        key,
+        conformance,
+        selected: &selected,
+    };
+    let semantics = runtime_executable_semantic_facts(
         origin,
-        RuntimeExecutableInstantiation::Display {
-            key,
-            conformance,
-            selected: &selected,
-        },
+        lexical,
         partition,
-        type_projection.into_boxed_slice(),
+        [],
         project,
         symbols,
         world,
