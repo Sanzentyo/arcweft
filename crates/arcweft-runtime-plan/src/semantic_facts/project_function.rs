@@ -20,8 +20,7 @@ use arcweft_lang_sema::callable::{
 use arcweft_lang_sema::final_analysis::{
     CheckedExecutableRuntimeExpressionFactFamily, CheckedExecutableRuntimeFactPartition,
     CheckedExecutableRuntimePatternFactFamily, CheckedExecutableRuntimeStatementFactFamily,
-    CheckedLocalUseCatalog, CheckedLocalUseInstanceCatalog, CheckedLocalUseSite,
-    CheckedLocalValueTransfer, CheckedSyntheticUse,
+    CheckedLocalUseAuthority,
 };
 use thiserror::Error;
 
@@ -1424,109 +1423,12 @@ impl RuntimeClosureInstanceFact {
     }
 }
 
-/// Selected local-use authority for one executable body. Closed instances
-/// carry their own sealed rows; global bodies retain the accepted global seal.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum RuntimeClosedLocalUseCatalog {
-    Global(Arc<CheckedLocalUseCatalog>),
-    Instance(Arc<CheckedLocalUseInstanceCatalog>),
-}
-
-impl RuntimeClosedLocalUseCatalog {
-    pub fn place_access_at(
-        &self,
-        source: ExprId,
-    ) -> Option<&arcweft_lang_sema::final_analysis::CheckedLocalPlaceAccess> {
-        let site = CheckedLocalUseSite::Place(source);
-        match self {
-            Self::Global(catalog) => catalog.access_at(site),
-            Self::Instance(catalog) => catalog.access_at(site),
-        }?
-        .place_access()
-    }
-    pub fn generation(&self) -> &Arc<arcweft_lang_hir::project::AcceptedHirProjectGeneration> {
-        match self {
-            Self::Global(catalog) => catalog.generation(),
-            Self::Instance(catalog) => catalog.generation(),
-        }
-    }
-
-    pub fn value_transfer_at(
-        &self,
-        site: CheckedLocalUseSite,
-    ) -> Option<CheckedLocalValueTransfer> {
-        match self {
-            Self::Global(catalog) => catalog.value_transfer_at(site),
-            Self::Instance(catalog) => catalog.value_transfer_at(site),
-        }
-    }
-
-    pub fn guard_copy_locals(&self, guard: ExprId) -> Vec<LocalId> {
-        match self {
-            Self::Global(catalog) => catalog.guard_copy_locals(guard).collect(),
-            Self::Instance(catalog) => catalog.guard_copy_locals(guard).collect(),
-        }
-    }
-
-    pub fn synthetic_at(&self, expression: ExprId) -> Option<CheckedSyntheticUse> {
-        match self {
-            Self::Global(catalog) => catalog.synthetic_at(expression),
-            Self::Instance(catalog) => catalog.synthetic_at(expression),
-        }
-    }
-
-    pub fn copy_requirement(
-        &self,
-        local: LocalId,
-    ) -> Option<&arcweft_lang_sema::final_analysis::CheckedLocalCopyRequirement> {
-        match self {
-            Self::Global(catalog) => catalog.copy_requirement(local),
-            Self::Instance(catalog) => catalog.copy_requirement(local),
-        }
-    }
-
-    pub fn copy_requirements(
-        &self,
-    ) -> Vec<arcweft_lang_sema::final_analysis::CheckedLocalCopyRequirement> {
-        match self {
-            Self::Global(catalog) => catalog.copy_requirements().cloned().collect(),
-            Self::Instance(catalog) => catalog.copy_requirements().cloned().collect(),
-        }
-    }
-
-    pub fn synthetic_copy_requirement(
-        &self,
-        callable: arcweft_lang_sema::final_analysis::CheckedImplicitCallableIdentity,
-    ) -> Option<arcweft_lang_sema::final_analysis::CheckedSyntheticCopyRequirement> {
-        match self {
-            Self::Global(catalog) => catalog.synthetic_copy_requirement(callable),
-            Self::Instance(catalog) => catalog.synthetic_copy_requirement(callable),
-        }
-    }
-
-    pub fn captures_at(&self, owner: ExprId) -> Vec<CheckedLocalValueTransfer> {
-        match self {
-            Self::Global(catalog) => catalog.captures_at(owner).collect(),
-            Self::Instance(catalog) => catalog.captures_at(owner).collect(),
-        }
-    }
-
-    pub fn instance_identity(
-        &self,
-    ) -> Option<&arcweft_lang_sema::final_analysis::CheckedLocalUseInstanceIdentity> {
-        match self {
-            Self::Global(_) => None,
-            Self::Instance(catalog) => Some(catalog.identity()),
-        }
-    }
-}
-
 /// Complete closed semantic subcatalog for one exact project-function
 /// executable partition. Its local-use authority is selected as a whole.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeProjectFunctionInstanceSemanticFacts {
     partition: CheckedExecutableRuntimeFactPartition,
-    local_uses: RuntimeClosedLocalUseCatalog,
+    local_uses: CheckedLocalUseAuthority,
     type_projection: Box<[RuntimeProjectFunctionTypeProjection]>,
     expressions: Box<[RuntimeProjectFunctionExpressionSemanticFact]>,
     patterns: Box<[RuntimeProjectFunctionPatternSemanticFact]>,
@@ -1537,7 +1439,7 @@ pub struct RuntimeProjectFunctionInstanceSemanticFacts {
 impl RuntimeProjectFunctionInstanceSemanticFacts {
     pub fn try_new(
         partition: CheckedExecutableRuntimeFactPartition,
-        local_uses: RuntimeClosedLocalUseCatalog,
+        local_uses: CheckedLocalUseAuthority,
         type_projection: Box<[RuntimeProjectFunctionTypeProjection]>,
         expressions: Box<[RuntimeProjectFunctionExpressionSemanticFact]>,
         patterns: Box<[RuntimeProjectFunctionPatternSemanticFact]>,
@@ -1690,7 +1592,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         })
     }
 
-    pub const fn local_uses(&self) -> &RuntimeClosedLocalUseCatalog {
+    pub const fn local_uses(&self) -> &CheckedLocalUseAuthority {
         &self.local_uses
     }
 

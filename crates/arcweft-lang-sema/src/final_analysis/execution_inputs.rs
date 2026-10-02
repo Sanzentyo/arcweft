@@ -158,8 +158,7 @@ impl CheckedExecutionInputUse {
 #[derive(Debug)]
 pub struct CheckedExecutionInputAbi {
     topology: std::sync::Arc<arcweft_lang_hir::project::HirProjectEvaluationTopology>,
-    authority: crate::callable::CheckedCallableAuthorityLease,
-    instance: Option<super::CheckedLocalUseInstanceIdentity>,
+    environment: std::sync::Arc<super::CheckedExecutionEnvironment>,
     source: CheckedExecutionSource,
     coordinate: CheckedExecutionCoordinate,
     execution: CheckedExecutionRegion,
@@ -183,10 +182,7 @@ impl CheckedExecutionInputAbi {
         &self,
         project: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
     ) -> Result<(), super::CheckedExecutionContextError> {
-        if !self.authority.admits_hir(project) {
-            return Err(super::CheckedExecutionContextError::ForeignAuthority);
-        }
-        Ok(())
+        self.environment.validate_project(project)
     }
 
     /// Rejects pairing the snapshot with another generation or substitution.
@@ -195,7 +191,7 @@ impl CheckedExecutionInputAbi {
         context: &super::CheckedClosedExecutionContext<'_>,
     ) -> Result<(), super::CheckedExecutionContextError> {
         self.validate_analysis(context.analysis())?;
-        if self.instance.as_ref() != context.instance_identity() {
+        if self.environment.instance_identity() != context.instance_identity() {
             return Err(super::CheckedExecutionContextError::InstanceMismatch);
         }
         context.admit_root(&self.source)
@@ -207,18 +203,19 @@ impl CheckedExecutionInputAbi {
         &self,
         analysis: &super::FinalSemanticAnalysis,
     ) -> Result<(), super::CheckedExecutionContextError> {
-        if !self.authority.admits(analysis.checked_callables()) {
-            return Err(super::CheckedExecutionContextError::ForeignAuthority);
-        }
-        Ok(())
+        self.environment.validate_analysis(analysis)
     }
 
     pub const fn source(&self) -> &CheckedExecutionSource {
         &self.source
     }
 
-    pub const fn instance_identity(&self) -> Option<&super::CheckedLocalUseInstanceIdentity> {
-        self.instance.as_ref()
+    pub fn instance_identity(&self) -> Option<&super::CheckedLocalUseInstanceIdentity> {
+        self.environment.instance_identity()
+    }
+
+    pub const fn environment(&self) -> &std::sync::Arc<super::CheckedExecutionEnvironment> {
+        &self.environment
     }
 
     pub const fn coordinate(&self) -> &CheckedExecutionCoordinate {
@@ -615,8 +612,7 @@ impl super::CheckedClosedExecutionContext<'_> {
         }
         Ok(CheckedExecutionInputAbi {
             topology: std::sync::Arc::clone(analysis.hir_topology()),
-            authority: analysis.checked_callables().authority_lease(),
-            instance: self.instance_identity().cloned(),
+            environment: std::sync::Arc::clone(self.environment()),
             source,
             coordinate,
             execution,

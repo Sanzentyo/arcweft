@@ -25,6 +25,58 @@ fn render(value: RouteInfo) -> Content {{ fmt(value) }}
 const VALID_METHOD: &str = "fn display_text(self, ctx: DisplayContext) -> Result<Content, DisplayError> { Ok(fmt(self.label)) }";
 
 #[test]
+fn display_execution_environment_retains_conformance_after_report_is_dropped() {
+    use crate::final_analysis::{
+        CheckedExecutionBodyOwner, CheckedExecutionSource, CheckedLocalUseInstantiation,
+    };
+    let world = fixture(&source(VALID_METHOD, ""), None);
+    let report = analyze(&world).unwrap();
+    let (abi, declaration, target) = {
+        let conformance = report
+            .calls()
+            .find_map(|(_, call)| {
+                call.selected_application()?
+                    .format_call()?
+                    .witness()
+                    .project_conformance()
+            })
+            .unwrap();
+        let declaration = conformance.method_declaration().clone();
+        let target = conformance.target().clone();
+        let source = CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
+            declaration: arcweft_lang_hir::symbol::CallableDeclarationKey::ImplMethod(
+                declaration.clone(),
+            ),
+            role: arcweft_lang_hir::project::HirDeclarationBodyRootRole::ImplFunctionBody,
+        });
+        let context = report
+            .checked_execution_context(
+                world.project.analysis_view().unwrap(),
+                &world.symbols,
+                source.clone(),
+                Some(CheckedLocalUseInstantiation::DisplayText(conformance)),
+            )
+            .unwrap();
+        (
+            context.checked_execution_input_abi(source).unwrap(),
+            declaration,
+            target,
+        )
+    };
+    drop(report);
+    let Some(CheckedLocalUseInstantiation::DisplayText(conformance)) =
+        abi.environment().instantiation()
+    else {
+        panic!("owned DisplayText environment");
+    };
+    assert_eq!(conformance.method_declaration(), &declaration);
+    assert_eq!(conformance.target(), &target);
+    assert_eq!(abi.environment().instantiate_type(&target).unwrap(), target);
+    abi.validate_project(world.project.analysis_view().unwrap())
+        .unwrap();
+}
+
+#[test]
 fn foreign_display_conformance_cannot_issue_local_use_evidence() {
     let source = source(VALID_METHOD, "");
     let first = fixture(&source, None);

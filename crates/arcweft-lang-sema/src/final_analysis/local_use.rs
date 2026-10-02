@@ -4,6 +4,9 @@
 //! This seal adds path-sensitive availability and distinguishes a deep Copy
 //! carrier from a value which must transfer its one owner.
 
+mod authority;
+pub use authority::CheckedLocalUseAuthority;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,

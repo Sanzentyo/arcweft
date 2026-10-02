@@ -1,5 +1,7 @@
 //! One accepted lexical owner, frozen environment and local-use authority.
 
+use std::sync::Arc;
+
 use arcweft_lang_hir::{
     identity::ExprId,
     project::{HirAnalysisProjectView, HirSemanticPathRoot},
@@ -9,7 +11,7 @@ use arcweft_lang_hir::{
 use crate::types::{TypeKind, constraints::ClosedTypeInstantiation};
 
 use super::{
-    CheckedExecutionBodyOwner, CheckedLocalUseCatalog, CheckedLocalUseInstanceCatalog,
+    CheckedExecutionBodyOwner, CheckedLocalUseAuthority, CheckedLocalUseCatalog,
     CheckedLocalUseInstantiation, FinalSemanticAnalysis, FinalSemanticAnalysisError,
 };
 
@@ -45,9 +47,78 @@ pub enum CheckedExecutionContextError {
     InstanceMismatch,
 }
 
-enum ClosedLocalUseEvidence<'analysis> {
-    Global(&'analysis CheckedLocalUseCatalog),
-    Instance(Box<CheckedLocalUseInstanceCatalog>),
+#[derive(Debug)]
+enum ClosedExecutionInstantiation {
+    ProjectFunction(Arc<crate::callable::CheckedProjectFunctionInstanceSolution>),
+    DisplayText(Arc<crate::checked_rich_text::CheckedDisplayConformance>),
+}
+
+/// Owned snapshot of the exact environment that issued an execution admission.
+/// Its substitution and complete local-use authority are sealed together.
+#[derive(Debug)]
+pub struct CheckedExecutionEnvironment {
+    authority: crate::callable::CheckedCallableAuthorityLease,
+    scope: HirSemanticPathRoot,
+    instance: Option<ClosedExecutionInstantiation>,
+    local_uses: CheckedLocalUseAuthority,
+}
+
+impl CheckedExecutionEnvironment {
+    pub const fn scope(&self) -> &HirSemanticPathRoot {
+        &self.scope
+    }
+
+    pub fn instantiation(&self) -> Option<CheckedLocalUseInstantiation<'_>> {
+        self.instance.as_ref().map(|instance| match instance {
+            ClosedExecutionInstantiation::ProjectFunction(instance) => {
+                CheckedLocalUseInstantiation::ProjectFunction(instance)
+            }
+            ClosedExecutionInstantiation::DisplayText(instance) => {
+                CheckedLocalUseInstantiation::DisplayText(instance)
+            }
+        })
+    }
+
+    pub const fn local_uses(&self) -> &CheckedLocalUseAuthority {
+        &self.local_uses
+    }
+
+    pub fn instance_identity(&self) -> Option<&super::CheckedLocalUseInstanceIdentity> {
+        self.local_uses.instance_identity()
+    }
+
+    pub fn instantiate_type(
+        &self,
+        ty: &TypeKind,
+    ) -> Result<TypeKind, CheckedExecutionContextError> {
+        match self.instantiation() {
+            Some(instance) => Ok(instance.instantiate_type(ty)?),
+            None => ClosedTypeInstantiation::default()
+                .instantiate_type(ty)
+                .map_err(super::CheckedLocalUseError::from)
+                .map_err(CheckedExecutionContextError::from),
+        }
+    }
+
+    pub fn validate_analysis(
+        &self,
+        analysis: &FinalSemanticAnalysis,
+    ) -> Result<(), CheckedExecutionContextError> {
+        if !self.authority.admits(analysis.checked_callables()) {
+            return Err(CheckedExecutionContextError::ForeignAuthority);
+        }
+        Ok(())
+    }
+
+    pub fn validate_project(
+        &self,
+        project: HirAnalysisProjectView<'_>,
+    ) -> Result<(), CheckedExecutionContextError> {
+        if !self.authority.admits_hir(project) {
+            return Err(CheckedExecutionContextError::ForeignAuthority);
+        }
+        Ok(())
+    }
 }
 
 /// Report-issued lexical context for admitting executable roots. The frozen
@@ -59,14 +130,12 @@ enum ClosedLocalUseEvidence<'analysis> {
 pub struct CheckedClosedExecutionContext<'analysis> {
     analysis: &'analysis FinalSemanticAnalysis,
     project: HirAnalysisProjectView<'analysis>,
-    scope: HirSemanticPathRoot,
-    instance: Option<CheckedLocalUseInstantiation<'analysis>>,
-    local_uses: ClosedLocalUseEvidence<'analysis>,
+    environment: Arc<CheckedExecutionEnvironment>,
 }
 
 impl CheckedClosedExecutionContext<'_> {
-    pub const fn scope(&self) -> &HirSemanticPathRoot {
-        &self.scope
+    pub fn scope(&self) -> &HirSemanticPathRoot {
+        self.environment.scope()
     }
 
     /// Projects a semantic type using exactly the environment which issued
@@ -75,13 +144,11 @@ impl CheckedClosedExecutionContext<'_> {
         &self,
         ty: &TypeKind,
     ) -> Result<TypeKind, CheckedExecutionContextError> {
-        match self.instance {
-            Some(instance) => Ok(instance.instantiate_type(ty)?),
-            None => ClosedTypeInstantiation::default()
-                .instantiate_type(ty)
-                .map_err(super::CheckedLocalUseError::from)
-                .map_err(CheckedExecutionContextError::from),
-        }
+        self.environment.instantiate_type(ty)
+    }
+
+    pub const fn environment(&self) -> &Arc<CheckedExecutionEnvironment> {
+        &self.environment
     }
 
     pub(super) const fn analysis(&self) -> &FinalSemanticAnalysis {
@@ -93,17 +160,14 @@ impl CheckedClosedExecutionContext<'_> {
     }
 
     pub(super) fn local_uses(&self) -> &CheckedLocalUseCatalog {
-        match &self.local_uses {
-            ClosedLocalUseEvidence::Global(catalog) => catalog,
-            ClosedLocalUseEvidence::Instance(catalog) => catalog.catalog(),
+        match self.environment.local_uses() {
+            CheckedLocalUseAuthority::Global(catalog) => catalog,
+            CheckedLocalUseAuthority::Instance(catalog) => catalog.catalog(),
         }
     }
 
     pub(super) fn instance_identity(&self) -> Option<&super::CheckedLocalUseInstanceIdentity> {
-        match &self.local_uses {
-            ClosedLocalUseEvidence::Global(_) => None,
-            ClosedLocalUseEvidence::Instance(catalog) => Some(catalog.identity()),
-        }
+        self.environment.instance_identity()
     }
 
     pub(super) fn admit_root(
@@ -111,7 +175,7 @@ impl CheckedClosedExecutionContext<'_> {
         source: &CheckedExecutionSource,
     ) -> Result<(), CheckedExecutionContextError> {
         let scope = self.analysis.execution_root_scope(source)?;
-        if scope != self.scope {
+        if &scope != self.scope() {
             return Err(CheckedExecutionContextError::ScopeMismatch {
                 owner: Box::new(source.clone()),
             });
@@ -180,7 +244,7 @@ impl FinalSemanticAnalysis {
                     owner: Box::new(source),
                 });
             }
-            ClosedLocalUseEvidence::Instance(Box::new(
+            CheckedLocalUseAuthority::Instance(Arc::new(
                 self.checked_local_uses_for_instance(project, symbols, instance)?,
             ))
         } else {
@@ -196,14 +260,25 @@ impl FinalSemanticAnalysis {
                     });
                 }
             }
-            ClosedLocalUseEvidence::Global(self.checked_local_uses())
+            CheckedLocalUseAuthority::Global(Arc::clone(self.checked_local_uses()))
         };
+        let instance = instance.map(|instance| match instance {
+            CheckedLocalUseInstantiation::ProjectFunction(instance) => {
+                ClosedExecutionInstantiation::ProjectFunction(Arc::new(instance.clone()))
+            }
+            CheckedLocalUseInstantiation::DisplayText(instance) => {
+                ClosedExecutionInstantiation::DisplayText(Arc::new(instance.clone()))
+            }
+        });
         Ok(CheckedClosedExecutionContext {
             analysis: self,
             project,
-            scope,
-            instance,
-            local_uses,
+            environment: Arc::new(CheckedExecutionEnvironment {
+                authority: self.checked_callables().authority_lease(),
+                scope,
+                instance,
+                local_uses,
+            }),
         })
     }
 }

@@ -152,6 +152,7 @@ use arcweft_lang_sema::{
     entry::{CheckedCallableRole, CheckedEntryBinding},
     env::nominal::AcceptedNominalSemantics,
     env::nominal::{AcceptedNominalId, AcceptedNominalOrigin, AcceptedNominalOwnerId},
+    final_analysis::CheckedLocalUseAuthority,
     final_analysis::{
         CheckedAssertionDisposition, CheckedAssignment, CheckedCharacterDialogueTarget,
         CheckedCompileTimeScalar, CheckedCompileTimeValue, CheckedContentApplication, CheckedDefer,
@@ -196,20 +197,20 @@ use arcweft_runtime_plan::{
         RuntimeCallParameterCoordinate, RuntimeCallResultShape, RuntimeCallableAttachedContentAbi,
         RuntimeCallableAttachedContentDefault, RuntimeCallableValueSpecialization,
         RuntimeCheckedCapture, RuntimeCheckedTypeProjectionError, RuntimeChoiceFact,
-        RuntimeChoiceGotoFact, RuntimeClosedLocalUseCatalog, RuntimeClosureCaptureFact,
-        RuntimeClosureInstanceFact, RuntimeClosureInstanceKey, RuntimeClosureLexicalOwner,
-        RuntimeClosureParameterFact, RuntimeContentFragmentFact, RuntimeDeferFact,
-        RuntimeDialogueApplication, RuntimeDialogueEffectOperationFact,
-        RuntimeDialogueEffectProgramFact, RuntimeDialogueEffectTrigger, RuntimeDialogueMarkFact,
-        RuntimeDialogueMarkKey, RuntimeDialogueValueExpression, RuntimeDropFadeFact,
-        RuntimeDropPolicyFact, RuntimeEffectFieldFact, RuntimeEvaluatedEffect,
-        RuntimeEvaluatedEffectFact, RuntimeEvaluatedEffectOperandFact,
-        RuntimeExecutableCaptureFact, RuntimeExecutableSemanticScope, RuntimeFormatExecutableScope,
-        RuntimeFormatTemplateFact, RuntimeFormatTemplateKey, RuntimeImplicitCallableFact,
-        RuntimeIteratorFact, RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact,
-        RuntimeLineCallable, RuntimeLogLevel, RuntimeMapKind, RuntimeNominalRecordFactError,
-        RuntimeNormalizedType, RuntimeNormalizedVariantCase, RuntimePipeFact,
-        RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts, RuntimePositionedAttachedContent,
+        RuntimeChoiceGotoFact, RuntimeClosureCaptureFact, RuntimeClosureInstanceFact,
+        RuntimeClosureInstanceKey, RuntimeClosureLexicalOwner, RuntimeClosureParameterFact,
+        RuntimeContentFragmentFact, RuntimeDeferFact, RuntimeDialogueApplication,
+        RuntimeDialogueEffectOperationFact, RuntimeDialogueEffectProgramFact,
+        RuntimeDialogueEffectTrigger, RuntimeDialogueMarkFact, RuntimeDialogueMarkKey,
+        RuntimeDialogueValueExpression, RuntimeDropFadeFact, RuntimeDropPolicyFact,
+        RuntimeEffectFieldFact, RuntimeEvaluatedEffect, RuntimeEvaluatedEffectFact,
+        RuntimeEvaluatedEffectOperandFact, RuntimeExecutableCaptureFact,
+        RuntimeExecutableSemanticScope, RuntimeFormatExecutableScope, RuntimeFormatTemplateFact,
+        RuntimeFormatTemplateKey, RuntimeImplicitCallableFact, RuntimeIteratorFact,
+        RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact, RuntimeLineCallable,
+        RuntimeLogLevel, RuntimeMapKind, RuntimeNominalRecordFactError, RuntimeNormalizedType,
+        RuntimeNormalizedVariantCase, RuntimePipeFact, RuntimePlanSemanticFactInput,
+        RuntimePlanSemanticFacts, RuntimePositionedAttachedContent,
         RuntimeProjectAttachedDefaultCapture, RuntimeProjectAttachedDefaultFunctionFact,
         RuntimeProjectCallable, RuntimeProjectCallableValueTarget, RuntimeProjectContinuationAbi,
         RuntimeProjectFunctionBody, RuntimeProjectFunctionCallInput,
@@ -765,7 +766,7 @@ fn project_runtime_semantic_fact_inventories(
         runtime_expression_type_owners.extend(program_owners.selected_expression_type_owners()?);
     }
     let mut input = RuntimePlanSemanticFactInput::new();
-    input.attach_checked_local_uses(Arc::new(analysis.checked_local_uses().clone()));
+    input.attach_checked_local_uses(Arc::clone(analysis.checked_local_uses()));
     for template in format_templates {
         input.push_format_template(template);
     }
@@ -8163,7 +8164,7 @@ fn runtime_project_function_instance_semantic_facts(
 
     let local_uses = match lexical {
         RuntimeExecutableInstantiation::Global => {
-            RuntimeClosedLocalUseCatalog::Global(Arc::new(analysis.checked_local_uses().clone()))
+            CheckedLocalUseAuthority::Global(Arc::clone(analysis.checked_local_uses()))
         }
         RuntimeExecutableInstantiation::Project { solution, .. } => {
             let checked = analysis
@@ -8177,7 +8178,7 @@ fn runtime_project_function_instance_semantic_facts(
                     ),
                 )
                 .map_err(|error| origin.error(error.to_string()))?;
-            RuntimeClosedLocalUseCatalog::Instance(Arc::new(checked))
+            CheckedLocalUseAuthority::Instance(Arc::new(checked))
         }
         RuntimeExecutableInstantiation::Display { conformance, .. } => {
             let checked = analysis
@@ -8187,7 +8188,7 @@ fn runtime_project_function_instance_semantic_facts(
                     CheckedLocalUseInstantiation::DisplayText(conformance),
                 )
                 .map_err(|error| origin.error(error.to_string()))?;
-            RuntimeClosedLocalUseCatalog::Instance(Arc::new(checked))
+            CheckedLocalUseAuthority::Instance(Arc::new(checked))
         }
     };
     RuntimeProjectFunctionInstanceSemanticFacts::try_new(

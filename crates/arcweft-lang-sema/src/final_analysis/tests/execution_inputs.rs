@@ -341,6 +341,98 @@ fn declaration_body_inputs_close_under_the_same_instance_as_value_transfers() {
 }
 
 #[test]
+fn admission_retains_closed_environment_after_context_and_solution_are_dropped() {
+    use crate::final_analysis::{CheckedLocalReadMode, CheckedLocalUseInstantiation};
+    let world = fixture(
+        "fn identity<T>(value: T) -> T { value }\nfn numeric() -> i64 { identity(1i64) }",
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let source = declaration_body(&report, "identity");
+    let (program, generic, expected_instantiation) = {
+        let instance = super::project_specialization::selections(&report, "identity")
+            .remove(0)
+            .close_instance(None)
+            .unwrap();
+        let expected_instantiation = instance.instantiation();
+        let context = report
+            .checked_execution_context(
+                world.project.analysis_view().unwrap(),
+                &world.symbols,
+                source.clone(),
+                Some(CheckedLocalUseInstantiation::ProjectFunction(&instance)),
+            )
+            .unwrap();
+        let program = context.checked_deterministic_program(source).unwrap();
+        let local = program.input_abi().parameters()[0].bindings()[0];
+        let generic = report.local(local).unwrap().ty().clone();
+        (program, generic, expected_instantiation)
+    };
+    let environment = program.input_abi().environment();
+    assert_eq!(
+        environment.instantiate_type(&generic).unwrap(),
+        TypeKind::I64
+    );
+    let Some(CheckedLocalUseInstantiation::ProjectFunction(instance)) = environment.instantiation()
+    else {
+        panic!("owned function environment");
+    };
+    assert_eq!(instance.instantiation(), expected_instantiation);
+    let input = &program.input_abi().inputs()[0];
+    let transfer = environment
+        .local_uses()
+        .value_transfer_at(input.uses()[0].site())
+        .unwrap();
+    assert_eq!(transfer.mode(), CheckedLocalReadMode::Copy);
+    assert_eq!(transfer, input.uses()[0].access().value_transfer().unwrap());
+}
+
+#[test]
+fn global_admissions_share_the_report_catalog_and_one_context_environment() {
+    use crate::final_analysis::CheckedLocalUseAuthority;
+    use std::sync::Arc;
+    let world = fixture("fn root(value: i64) -> i64 { value }", None);
+    let report = analyze(&world).unwrap();
+    let source = declaration_body(&report, "root");
+    let context = report
+        .checked_execution_context(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            source.clone(),
+            None,
+        )
+        .unwrap();
+    let first = context
+        .checked_deterministic_program(source.clone())
+        .unwrap();
+    let second = context.checked_deterministic_program(source).unwrap();
+    assert!(Arc::ptr_eq(
+        first.input_abi().environment(),
+        second.input_abi().environment()
+    ));
+    let CheckedLocalUseAuthority::Global(catalog) = first.input_abi().environment().local_uses()
+    else {
+        panic!("global authority");
+    };
+    assert!(Arc::ptr_eq(catalog, report.checked_local_uses()));
+    drop(context);
+    first
+        .input_abi()
+        .environment()
+        .validate_analysis(&report)
+        .unwrap();
+    drop(report);
+    assert_eq!(
+        first
+            .input_abi()
+            .environment()
+            .instantiate_type(&TypeKind::I64)
+            .unwrap(),
+        TypeKind::I64
+    );
+}
+
+#[test]
 fn pipe_reads_retain_synthetic_transfer_evidence_without_becoming_formal_parameters() {
     let world = fixture(
         "fn root(value: i64) -> (i64, i64) { value |> (^, ^) }",

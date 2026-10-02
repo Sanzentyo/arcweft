@@ -133,6 +133,11 @@ parameter も formal input に含め、parameter default の評価は本体か�
 compiler と実行 plan は同じ admission を使い、閉じた instance ではその instance
 identity と executable partition に一致する型・所有権 catalog を選ぶ。program
 binding は通常の function frame を参照し、別の scalar helper ABI を作らない。
+admission は閉じた置換と local-use 証拠を一つの所有された environment に保持する。
+元の context、solution、semantic report の破棄後も、その環境から型と転送証拠を
+参照できる。global catalog は report と admission で共有し、root ごとに複製しない。
+実行 catalog の照合では instance identity と、この完全な証拠 authority の双方を
+検証する。元の HIR 世代と登録済み callable authority の検証も維持する。
 callable を返す default は値生成であり、capture の転送だけをその frame の入力に
 含める。latent body と defer の cleanup body は別の実行境界で、cleanup の効果・
 中断条件は保持する。field access は field identity と receiver の評価元を別々に

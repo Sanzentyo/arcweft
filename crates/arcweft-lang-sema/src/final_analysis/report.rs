@@ -71,7 +71,7 @@ pub struct FinalSemanticAnalysis {
     checked_text_proxies: crate::checked_text_proxy::CheckedTextProxyCatalog,
     checked_fx_definitions: super::CheckedFxDefinitionCatalog,
     display_conformances: super::analyzer::display::DisplayConformanceCatalog,
-    local_uses: super::CheckedLocalUseCatalog,
+    local_uses: Arc<super::CheckedLocalUseCatalog>,
     semantic_shapes: AcceptedSemanticShapeCatalog,
     runtime_nominals: RuntimeNominalProjectionCatalog,
     dialogue_lines: arcweft_lang_hir::project::AcceptedDialogueLineInventory,
@@ -1319,9 +1319,9 @@ impl FinalSemanticAnalysisPostEntryDraft {
             checked_text_proxies,
             checked_fx_definitions,
             display_conformances: Default::default(),
-            local_uses: super::CheckedLocalUseCatalog::empty(Arc::clone(
+            local_uses: Arc::new(super::CheckedLocalUseCatalog::empty(Arc::clone(
                 evaluation_topology.generation(),
-            )),
+            ))),
             semantic_shapes,
             runtime_nominals,
             dialogue_lines,
@@ -1343,7 +1343,7 @@ impl FinalSemanticAnalysisPostEntryDraft {
             work,
         };
         seal_checked_callable_interfaces(&mut analysis, project, symbols, control)?;
-        analysis.local_uses = super::CheckedLocalUseCatalog::seal(&analysis, project)?;
+        analysis.local_uses = Arc::new(super::CheckedLocalUseCatalog::seal(&analysis, project)?);
         Ok(analysis)
     }
 }
@@ -1658,7 +1658,7 @@ impl FinalSemanticAnalysis {
 
     /// Source-site local read and capture-transfer modes sealed for this exact
     /// accepted HIR generation.
-    pub const fn checked_local_uses(&self) -> &super::CheckedLocalUseCatalog {
+    pub const fn checked_local_uses(&self) -> &Arc<super::CheckedLocalUseCatalog> {
         &self.local_uses
     }
 

@@ -117,7 +117,8 @@ pub use error::{
     FinalSemanticProjectError, RecursiveCallableContractEdge, SemanticFactFamily,
 };
 pub use execution_context::{
-    CheckedClosedExecutionContext, CheckedExecutionContextError, CheckedExecutionSource,
+    CheckedClosedExecutionContext, CheckedExecutionContextError, CheckedExecutionEnvironment,
+    CheckedExecutionSource,
 };
 pub use execution_inputs::{
     CheckedExecutionCoordinate, CheckedExecutionInput, CheckedExecutionInputAbi,
@@ -140,10 +141,10 @@ pub use local_use::{
     CheckedDisplacedField, CheckedIngressParameterCoordinate, CheckedLocalAccess,
     CheckedLocalCopyEvidence, CheckedLocalCopyIngressOwner, CheckedLocalCopyRequirement,
     CheckedLocalPlace, CheckedLocalPlaceAccess, CheckedLocalPlaceMode, CheckedLocalReadMode,
-    CheckedLocalUseCatalog, CheckedLocalUseError, CheckedLocalUseInstanceCatalog,
-    CheckedLocalUseInstanceIdentity, CheckedLocalUseInstantiation, CheckedLocalValueTransfer,
-    CheckedPlaceDisplacement, CheckedPlaceInitialization, CheckedSyntheticCopyRequirement,
-    CheckedSyntheticUse, CheckedSyntheticUseOwner,
+    CheckedLocalUseAuthority, CheckedLocalUseCatalog, CheckedLocalUseError,
+    CheckedLocalUseInstanceCatalog, CheckedLocalUseInstanceIdentity, CheckedLocalUseInstantiation,
+    CheckedLocalValueTransfer, CheckedPlaceDisplacement, CheckedPlaceInitialization,
+    CheckedSyntheticCopyRequirement, CheckedSyntheticUse, CheckedSyntheticUseOwner,
 };
 pub use match_coverage::{
     CheckedMatchCoverage, CheckedMatchLimitKind, CheckedMatchLimits, CheckedPatternCoordinateStep,

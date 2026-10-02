@@ -113,6 +113,7 @@ pub use scope_continuation::{
 mod project_function;
 mod type_dependencies;
 
+use arcweft_lang_sema::final_analysis::CheckedLocalUseAuthority;
 pub use content::{
     RuntimeContentFragmentFact, RuntimeContentFragmentFactError, RuntimeContentFragmentId,
     RuntimeDialogueEffectCaptureKey, RuntimeDialogueEffectOperationFact,
@@ -125,21 +126,20 @@ pub use evaluated_effect::{
 };
 pub use flow::RuntimeFlowFact;
 pub use project_function::{
-    RuntimeClosedLocalUseCatalog, RuntimeClosureCaptureFact, RuntimeClosureInstanceFact,
-    RuntimeClosureInstanceKey, RuntimeClosureLexicalOwner, RuntimeClosureParameterFact,
-    RuntimeProjectAttachedDefaultCapture, RuntimeProjectAttachedDefaultFunctionFact,
-    RuntimeProjectContinuationAbi, RuntimeProjectFunctionBody, RuntimeProjectFunctionCallInput,
-    RuntimeProjectFunctionCallOutcome, RuntimeProjectFunctionCallPlan,
-    RuntimeProjectFunctionCallSpecialization, RuntimeProjectFunctionExecution,
-    RuntimeProjectFunctionExpressionPayload, RuntimeProjectFunctionExpressionSemanticFact,
-    RuntimeProjectFunctionFactError, RuntimeProjectFunctionInstanceFact,
-    RuntimeProjectFunctionInstanceKey, RuntimeProjectFunctionInstanceSemanticFacts,
-    RuntimeProjectFunctionParameterAbi, RuntimeProjectFunctionParameterMaterialization,
-    RuntimeProjectFunctionParameterSource, RuntimeProjectFunctionPatternPayload,
-    RuntimeProjectFunctionPatternSemanticFact, RuntimeProjectFunctionRootFact,
-    RuntimeProjectFunctionRootRole, RuntimeProjectFunctionStatementPayload,
-    RuntimeProjectFunctionStatementSemanticFact, RuntimeProjectFunctionTypeOwner,
-    RuntimeProjectFunctionTypeProjection, RuntimeResidualValue,
+    RuntimeClosureCaptureFact, RuntimeClosureInstanceFact, RuntimeClosureInstanceKey,
+    RuntimeClosureLexicalOwner, RuntimeClosureParameterFact, RuntimeProjectAttachedDefaultCapture,
+    RuntimeProjectAttachedDefaultFunctionFact, RuntimeProjectContinuationAbi,
+    RuntimeProjectFunctionBody, RuntimeProjectFunctionCallInput, RuntimeProjectFunctionCallOutcome,
+    RuntimeProjectFunctionCallPlan, RuntimeProjectFunctionCallSpecialization,
+    RuntimeProjectFunctionExecution, RuntimeProjectFunctionExpressionPayload,
+    RuntimeProjectFunctionExpressionSemanticFact, RuntimeProjectFunctionFactError,
+    RuntimeProjectFunctionInstanceFact, RuntimeProjectFunctionInstanceKey,
+    RuntimeProjectFunctionInstanceSemanticFacts, RuntimeProjectFunctionParameterAbi,
+    RuntimeProjectFunctionParameterMaterialization, RuntimeProjectFunctionParameterSource,
+    RuntimeProjectFunctionPatternPayload, RuntimeProjectFunctionPatternSemanticFact,
+    RuntimeProjectFunctionRootFact, RuntimeProjectFunctionRootRole,
+    RuntimeProjectFunctionStatementPayload, RuntimeProjectFunctionStatementSemanticFact,
+    RuntimeProjectFunctionTypeOwner, RuntimeProjectFunctionTypeProjection, RuntimeResidualValue,
 };
 
 /// Stable semantic identity for a registered callable or value that is not
@@ -9209,13 +9209,22 @@ impl RuntimePlanSemanticFacts {
         };
         let abi = program.admission().input_abi();
         let Some(identity) = abi.instance_identity() else {
+            if !matches!(abi.environment().local_uses(), CheckedLocalUseAuthority::Global(expected)
+                if self.checked_local_uses.as_ref().is_some_and(|actual| actual == expected))
+            {
+                return Err(RuntimeSemanticFactsError::InvalidPureProgram {
+                    program: program.program(),
+                });
+            }
             return Ok(RuntimeScopedExecutableSemanticFactView::global(self));
         };
         let mut candidates = Vec::new();
         let mut select =
             |scope: RuntimeScopedExecutableSemanticFactView<'facts>,
              semantics: &'facts RuntimeProjectFunctionInstanceSemanticFacts| {
-                if semantics.local_uses().instance_identity() != Some(identity) {
+                if semantics.local_uses().instance_identity() != Some(identity)
+                    || semantics.local_uses() != abi.environment().local_uses()
+                {
                     return;
                 }
                 let owns_root = match program.source() {
@@ -12760,7 +12769,7 @@ fn validate_closure_instance(
         RuntimeExecutableSemanticFactView::Global(facts) => {
             matches!(
                 closure.semantics().local_uses(),
-                RuntimeClosedLocalUseCatalog::Global(catalog)
+                CheckedLocalUseAuthority::Global(catalog)
                     if facts.checked_local_uses.as_ref() == Some(catalog)
             )
         }
