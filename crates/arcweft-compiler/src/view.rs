@@ -96,20 +96,17 @@ pub struct CompiledViewProduct {
 }
 
 /// Compiler-private checked owner of one mount-time View handler program.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub(crate) struct CheckedViewHandlerProgram {
     id: ViewHandlerProgramId,
-    event: arcweft_view::EventKind,
-    closure: ExprId,
-    body: ExprId,
     captures: Box<[CheckedViewHandlerCapture]>,
     result: ViewHandlerResult,
+    admission: Arc<arcweft_lang_sema::final_analysis::CheckedDeterministicProgram>,
 }
 
 /// Join between one checked closure capture and its View parameter coordinate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedViewHandlerCapture {
-    capture: CaptureId,
     local: LocalId,
     schema: ViewHandlerCapture,
 }
@@ -165,6 +162,16 @@ pub(crate) enum ViewProjectLowerError {
     TooManyViewValueInputs { actual: usize },
     #[error("semantic analysis does not belong to the accepted HIR generation")]
     SemanticGenerationMismatch,
+    #[error("View handler {owner:?} has an invalid execution context: {source}")]
+    InvalidHandlerContext {
+        owner: ItemId,
+        source: Box<arcweft_lang_sema::final_analysis::CheckedExecutionContextError>,
+    },
+    #[error("View handler {owner:?} cannot be extracted as a deterministic program: {source}")]
+    InvalidHandlerProgram {
+        owner: ItemId,
+        source: Box<arcweft_lang_sema::final_analysis::CheckedProgramAdmissionError>,
+    },
     #[error("View handler {owner:?} capture {capture:?} is not snapshot-retainable")]
     InvalidViewHandlerCaptureOwnership {
         owner: ItemId,
@@ -225,38 +232,17 @@ impl CompiledViewProduct {
 }
 
 impl CheckedViewHandlerProgram {
+    pub(crate) fn admission(
+        &self,
+    ) -> &Arc<arcweft_lang_sema::final_analysis::CheckedDeterministicProgram> {
+        &self.admission
+    }
     pub(crate) const fn id(&self) -> ViewHandlerProgramId {
         self.id
     }
 
-    pub(crate) const fn closure(&self) -> ExprId {
-        self.closure
-    }
-
-    pub(crate) const fn body(&self) -> ExprId {
-        self.body
-    }
-
-    pub(crate) const fn captures(&self) -> &[CheckedViewHandlerCapture] {
-        &self.captures
-    }
-
     pub(crate) const fn result(&self) -> ViewHandlerResult {
         self.result
-    }
-}
-
-impl CheckedViewHandlerCapture {
-    pub(crate) const fn capture(self) -> CaptureId {
-        self.capture
-    }
-
-    pub(crate) const fn local(self) -> LocalId {
-        self.local
-    }
-
-    pub(crate) const fn schema(self) -> ViewHandlerCapture {
-        self.schema
     }
 }
 
@@ -603,7 +589,14 @@ fn lower_authored_views(
         handlers: Vec::new(),
     };
     for view in &views {
-        lower_authored_view(view, analysis, registered_world, fx_catalog, &mut output)?;
+        lower_authored_view(
+            project,
+            view,
+            analysis,
+            registered_world,
+            fx_catalog,
+            &mut output,
+        )?;
     }
     let program_id = output.definitions.first().map(|first| {
         ViewProgramId::try_new(format!(
@@ -723,6 +716,7 @@ fn prepare_authored_view<'a>(
 }
 
 fn lower_authored_view(
+    project: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
     view: &PreparedAuthoredView<'_>,
     analysis: &FinalSemanticAnalysis,
     registered_world: &RegisteredSemanticWorld,
@@ -740,6 +734,7 @@ fn lower_authored_view(
         .map_err(|_| ViewProjectLowerError::MissingCheckedViewProjection { owner: view.owner })?;
     {
         let mut lowerer = AuthoredViewBodyLowerer {
+            project,
             module: view.module,
             owner: view.owner,
             analysis,
@@ -768,6 +763,7 @@ fn lower_authored_view(
 }
 
 struct AuthoredViewBodyLowerer<'a> {
+    project: arcweft_lang_hir::project::HirAnalysisProjectView<'a>,
     module: &'a HirModule,
     owner: ItemId,
     analysis: &'a FinalSemanticAnalysis,
@@ -1110,7 +1106,7 @@ impl AuthoredViewBodyLowerer<'_> {
         let CheckedExpressionResolution::Closure(closure) = checked_handler.resolution() else {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         };
-        let arcweft_lang_hir::expr::HirExprKind::Closure(hir_closure) = self
+        let arcweft_lang_hir::expr::HirExprKind::Closure(_) = self
             .module
             .resolve_expr(handler_source)
             .map_err(|_| ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?
@@ -1124,6 +1120,29 @@ impl AuthoredViewBodyLowerer<'_> {
         if closure.owner() != handler_source || handler_type != expected_handler {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         }
+        let source = arcweft_lang_sema::final_analysis::CheckedExecutionSource::InvokeBody(
+            arcweft_lang_sema::final_analysis::CheckedExecutionBodyOwner::CallableValue(
+                handler_source,
+            ),
+        );
+        let context = self
+            .analysis
+            .checked_execution_context(
+                self.project,
+                self.registered_world.symbols(),
+                source.clone(),
+                None,
+            )
+            .map_err(|source| ViewProjectLowerError::InvalidHandlerContext {
+                owner: self.owner,
+                source: Box::new(source),
+            })?;
+        let admission = Arc::new(context.checked_deterministic_program(source).map_err(
+            |source| ViewProjectLowerError::InvalidHandlerProgram {
+                owner: self.owner,
+                source: Box::new(source),
+            },
+        )?);
         let captures = closure
             .captures()
             .iter()
@@ -1170,10 +1189,33 @@ impl AuthoredViewBodyLowerer<'_> {
                     });
                 }
                 Ok(CheckedViewHandlerCapture {
-                    capture: capture_id,
                     local: capture.local(),
                     schema: ViewHandlerCapture::new(parameter.coordinate, parameter.value_type),
                 })
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_boxed_slice();
+        let captures_by_local = captures
+            .iter()
+            .map(|capture| (capture.local, *capture))
+            .collect::<BTreeMap<_, _>>();
+        let captures = admission
+            .input_abi()
+            .inputs()
+            .iter()
+            .filter(|input| {
+                matches!(
+                    input.role(),
+                    arcweft_lang_sema::final_analysis::CheckedExecutionInputRole::Free
+                )
+            })
+            .map(|input| {
+                captures_by_local
+                    .get(&input.binding().local())
+                    .copied()
+                    .ok_or(ViewProjectLowerError::MissingCheckedViewProjection {
+                        owner: self.owner,
+                    })
             })
             .collect::<Result<Vec<_>, _>>()?
             .into_boxed_slice();
@@ -1189,10 +1231,8 @@ impl AuthoredViewBodyLowerer<'_> {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         }
         self.output.handlers.push(CheckedViewHandlerProgram {
+            admission,
             id: program_id,
-            event,
-            closure: handler_source,
-            body: hir_closure.body(),
             captures,
             result: ViewHandlerResult::new(
                 handler_result_role,

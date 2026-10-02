@@ -45,7 +45,14 @@ pub enum HirRuntimeEmissionMode {
 pub enum HirRuntimeExecutableOwner {
     Item(ItemId),
     ImplMethod(ImplMethodDeclarationId),
-    Closure(ExprId),
+    DeclarationBody {
+        declaration: CallableDeclarationKey,
+        role: super::HirDeclarationBodyRootRole,
+    },
+    /// Evaluates an expression value; a callable's latent body is a separate owner.
+    Value(ExprId),
+    /// Invokes an explicit or implicit callable expression's body.
+    CallableBody(ExprId),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -60,7 +67,7 @@ pub enum HirRuntimeReachabilityRootKind {
     CheckedFlow,
     CheckedEntry,
     SelectedEntry,
-    CheckedViewValueProgram,
+    CheckedProgram,
 }
 
 /// Exact standard-trait operation selected by one checked `for` witness.
@@ -586,7 +593,7 @@ impl HirRuntimeSemanticReachability<'_> {
         }
         let executable = HirRuntimeExecutableOwner::ImplMethod(method.clone());
         let type_roots = self.project.type_root_projection()?;
-        let index = StructuralIndex::new(self.project, &type_roots);
+        let index = StructuralIndex::new(self.project, &type_roots, topology);
         let owners = self.selected_executable_owners(
             &executable,
             &index,
@@ -611,7 +618,7 @@ impl HirRuntimeSemanticReachability<'_> {
                 continue;
             }
             let selected = self.selected_executable_owners(
-                &HirRuntimeExecutableOwner::Closure(closure),
+                &HirRuntimeExecutableOwner::CallableBody(closure),
                 &index,
                 topology,
                 &mut selected_postfix,
@@ -654,7 +661,12 @@ impl HirRuntimeSemanticReachability<'_> {
     ) -> Result<HirRuntimeExecutableSemanticOwners, HirRuntimeReachabilityError> {
         let (mut structural, execution_roots) = self.project.close_executable(index, executable)?;
         structural.select_regions(topology, selected_postfix)?;
-        let captures = if let HirRuntimeExecutableOwner::Closure(closure) = executable {
+        let captures = if let HirRuntimeExecutableOwner::CallableBody(closure) = executable
+            && index
+                .expression_edges
+                .get(closure)
+                .is_some_and(|(_, _, explicit)| *explicit)
+        {
             topology
                 .module(closure.module())
                 .ok_or(HirRuntimeReachabilityError::UnresolvedExpression {
@@ -838,6 +850,7 @@ struct ScopedOwners {
 }
 
 struct StructuralIndex<'projection> {
+    topology: &'projection super::HirProjectEvaluationTopology,
     scopes: BTreeMap<ScopeId, ScopeEdges>,
     scope_members: BTreeMap<ScopeId, ScopedOwners>,
     local_types: BTreeMap<LocalId, Option<TypeId>>,
@@ -948,6 +961,9 @@ struct HirRuntimeExecutionRoots {
     scopes: Vec<ScopeId>,
     expressions: Vec<ExprId>,
     types: Vec<TypeId>,
+    statements: Vec<StmtId>,
+    patterns: Vec<PatternId>,
+    locals: Vec<LocalId>,
 }
 
 impl HirItemKind {
@@ -1054,9 +1070,9 @@ impl<'project> HirAnalysisProjectView<'project> {
         mut expression_projection: impl FnMut(ExprId) -> Option<HirRuntimeExpressionProjection>,
     ) -> Result<HirRuntimeSemanticReachability<'project>, HirRuntimeReachabilityError> {
         self.validate_reachability_generation(&input, topology)?;
-        validate_roots_and_edges(self, &input)?;
+        validate_roots_and_edges(self, &input, topology)?;
         let type_root_projection = self.type_root_projection()?;
-        let index = StructuralIndex::new(self, &type_root_projection);
+        let index = StructuralIndex::new(self, &type_root_projection, topology);
         let mut reachable_executables = BTreeSet::new();
         let mut first_paths = BTreeMap::new();
         let mut executable_owners = BTreeMap::new();
@@ -1085,7 +1101,12 @@ impl<'project> HirAnalysisProjectView<'project> {
             let (mut structural, execution_expression_roots) =
                 self.close_executable(&index, &owner)?;
             structural.select_regions(topology, &mut selected_postfix)?;
-            let captures = if let HirRuntimeExecutableOwner::Closure(closure) = owner {
+            let captures = if let HirRuntimeExecutableOwner::CallableBody(closure) = owner
+                && index
+                    .expression_edges
+                    .get(&closure)
+                    .is_some_and(|(_, _, explicit)| *explicit)
+            {
                 topology
                     .module(closure.module())
                     .ok_or(HirRuntimeReachabilityError::UnresolvedExpression {
@@ -1266,11 +1287,14 @@ impl<'project> HirAnalysisProjectView<'project> {
         index: &StructuralIndex,
         owner: &HirRuntimeExecutableOwner,
     ) -> Result<(StructuralOwners, Vec<ExprId>), HirRuntimeReachabilityError> {
-        let roots = execution_roots(self, owner)?;
+        let roots = execution_roots(self, index.topology, owner)?;
         let expression_roots = roots.expressions.clone();
         let active_closure = match owner {
-            HirRuntimeExecutableOwner::Closure(expression) => Some(*expression),
-            HirRuntimeExecutableOwner::Item(_) | HirRuntimeExecutableOwner::ImplMethod(_) => None,
+            HirRuntimeExecutableOwner::CallableBody(expression) => Some(*expression),
+            HirRuntimeExecutableOwner::Value(_)
+            | HirRuntimeExecutableOwner::DeclarationBody { .. }
+            | HirRuntimeExecutableOwner::Item(_)
+            | HirRuntimeExecutableOwner::ImplMethod(_) => None,
         };
         index
             .close(roots, active_closure)
@@ -1282,8 +1306,10 @@ impl<'projection> StructuralIndex<'projection> {
     fn new(
         project: HirAnalysisProjectView<'_>,
         type_root_projection: &'projection HirExpressionTypeRootProjection,
+        topology: &'projection super::HirProjectEvaluationTopology,
     ) -> Self {
         let mut index = Self {
+            topology,
             scopes: BTreeMap::new(),
             scope_members: BTreeMap::new(),
             local_types: BTreeMap::new(),
@@ -1398,6 +1424,9 @@ impl<'projection> StructuralIndex<'projection> {
         pending.extend(roots.scopes.into_iter().map(PendingOwner::Scope));
         pending.extend(roots.expressions.into_iter().map(PendingOwner::Expression));
         pending.extend(roots.types.into_iter().map(PendingOwner::Type));
+        pending.extend(roots.statements.into_iter().map(PendingOwner::Statement));
+        pending.extend(roots.patterns.into_iter().map(PendingOwner::Pattern));
+        pending.extend(roots.locals.into_iter().map(PendingOwner::Local));
         let mut owners = StructuralOwners::default();
         let mut scopes = BTreeSet::new();
 
@@ -1532,9 +1561,71 @@ impl<'projection> StructuralIndex<'projection> {
 
 fn execution_roots(
     project: HirAnalysisProjectView<'_>,
+    topology: &super::HirProjectEvaluationTopology,
     owner: &HirRuntimeExecutableOwner,
 ) -> Result<HirRuntimeExecutionRoots, HirRuntimeReachabilityError> {
     match owner {
+        HirRuntimeExecutableOwner::DeclarationBody { declaration, role } => {
+            let view = topology.declaration(declaration).map_err(|_| {
+                HirRuntimeReachabilityError::UnknownRoot {
+                    owner: owner.clone(),
+                }
+            })?;
+            let root = view
+                .body()
+                .roots()
+                .iter()
+                .find(|root| root.role() == *role)
+                .ok_or_else(|| HirRuntimeReachabilityError::UnknownRoot {
+                    owner: owner.clone(),
+                })?;
+            let mut roots = HirRuntimeExecutionRoots::default();
+            for edge in root.projection().children() {
+                match edge.child() {
+                    crate::body_edges::HirBodyChild::Expression(expression) => {
+                        roots.expressions.push(expression);
+                    }
+                    crate::body_edges::HirBodyChild::Statement(statement) => {
+                        roots.statements.push(statement);
+                    }
+                }
+            }
+            roots
+                .patterns
+                .extend(view.body().parameter_roots().iter().filter_map(
+                    |root| match root.child() {
+                        super::HirDeclarationParameterRootChild::Pattern(pattern) => Some(pattern),
+                        super::HirDeclarationParameterRootChild::Expression(_) => None,
+                    },
+                ));
+            roots.locals.extend(
+                view.body()
+                    .attached_content_roots()
+                    .iter()
+                    .filter_map(|root| match root.child() {
+                        super::HirDeclarationAttachedContentRootChild::Binding(local) => {
+                            Some(local)
+                        }
+                        super::HirDeclarationAttachedContentRootChild::Default(_) => None,
+                    }),
+            );
+            Ok(roots)
+        }
+        HirRuntimeExecutableOwner::Value(owner) => {
+            let module = project
+                .modules()
+                .find_map(|(_, module)| {
+                    (module.module_id() == owner.module()).then_some(module.as_ref())
+                })
+                .ok_or(HirRuntimeReachabilityError::UnresolvedExpression { expression: *owner })?;
+            module.resolve_expr(*owner).map_err(|_| {
+                HirRuntimeReachabilityError::UnresolvedExpression { expression: *owner }
+            })?;
+            Ok(HirRuntimeExecutionRoots {
+                expressions: vec![*owner],
+                ..HirRuntimeExecutionRoots::default()
+            })
+        }
         HirRuntimeExecutableOwner::Item(owner) => {
             let kind = resolve_item_kind(project, *owner).ok_or({
                 HirRuntimeReachabilityError::UnknownRoot {
@@ -1551,7 +1642,7 @@ fn execution_roots(
                     owner: HirRuntimeExecutableOwner::Item(*owner),
                 })
         }
-        HirRuntimeExecutableOwner::Closure(owner) => {
+        HirRuntimeExecutableOwner::CallableBody(owner) => {
             let module = project
                 .modules()
                 .find_map(|(_, module)| {
@@ -1561,15 +1652,16 @@ fn execution_roots(
             let expression = module.resolve_expr(*owner).map_err(|_| {
                 HirRuntimeReachabilityError::UnresolvedExpression { expression: *owner }
             })?;
-            let HirExprKind::Closure(closure) = expression.kind() else {
-                return Err(HirRuntimeReachabilityError::UnknownRoot {
-                    owner: HirRuntimeExecutableOwner::Closure(*owner),
-                });
-            };
-            Ok(HirRuntimeExecutionRoots {
-                scopes: vec![closure.scope()],
-                expressions: vec![closure.body()],
-                ..HirRuntimeExecutionRoots::default()
+            Ok(match expression.kind() {
+                HirExprKind::Closure(closure) => HirRuntimeExecutionRoots {
+                    scopes: vec![closure.scope()],
+                    expressions: vec![closure.body()],
+                    ..HirRuntimeExecutionRoots::default()
+                },
+                _ => HirRuntimeExecutionRoots {
+                    expressions: vec![*owner],
+                    ..HirRuntimeExecutionRoots::default()
+                },
             })
         }
         HirRuntimeExecutableOwner::ImplMethod(method) => impl_method_roots(project, method),

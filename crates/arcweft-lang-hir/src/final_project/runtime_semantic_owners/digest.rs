@@ -115,9 +115,28 @@ fn digest_executable(hasher: &mut Sha256, owner: &HirRuntimeExecutableOwner) {
             let declaration = CallableDeclarationKey::ImplMethod(owner.clone());
             hasher.update(declaration.semantic_digest().as_bytes());
         }
-        HirRuntimeExecutableOwner::Closure(owner) => {
+        HirRuntimeExecutableOwner::CallableBody(owner) => {
             hasher.update([2]);
             hasher.update(owner.raw().cache_fingerprint_input());
+        }
+        HirRuntimeExecutableOwner::Value(owner) => {
+            hasher.update([3]);
+            hasher.update(owner.raw().cache_fingerprint_input());
+        }
+        HirRuntimeExecutableOwner::DeclarationBody { declaration, role } => {
+            hasher.update([4]);
+            hasher.update(declaration.semantic_digest().as_bytes());
+            match role {
+                super::super::HirDeclarationBodyRootRole::FunctionBody => hasher.update([0]),
+                super::super::HirDeclarationBodyRootRole::PredicateBody => hasher.update([1]),
+                super::super::HirDeclarationBodyRootRole::ProofBody => hasher.update([2]),
+                super::super::HirDeclarationBodyRootRole::FlowBody => hasher.update([3]),
+                super::super::HirDeclarationBodyRootRole::ImplFunctionBody => hasher.update([4]),
+                super::super::HirDeclarationBodyRootRole::ViewValue { ordinal } => {
+                    hasher.update([5]);
+                    hasher.update(ordinal.to_le_bytes());
+                }
+            }
         }
     }
 }
@@ -219,7 +238,7 @@ const fn root_kind_tag(kind: HirRuntimeReachabilityRootKind) -> u8 {
         HirRuntimeReachabilityRootKind::CheckedFlow => 0,
         HirRuntimeReachabilityRootKind::CheckedEntry => 1,
         HirRuntimeReachabilityRootKind::SelectedEntry => 2,
-        HirRuntimeReachabilityRootKind::CheckedViewValueProgram => 3,
+        HirRuntimeReachabilityRootKind::CheckedProgram => 3,
     }
 }
 

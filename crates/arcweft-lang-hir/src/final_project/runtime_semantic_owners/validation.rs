@@ -16,9 +16,10 @@ use crate::{
 pub(super) fn validate_roots_and_edges(
     project: HirAnalysisProjectView<'_>,
     input: &HirRuntimeSemanticReachabilityInput,
+    topology: &super::super::HirProjectEvaluationTopology,
 ) -> Result<(), HirRuntimeReachabilityError> {
     for root in &input.roots {
-        execution_roots(project, &root.owner).map_err(|_| {
+        execution_roots(project, topology, &root.owner).map_err(|_| {
             HirRuntimeReachabilityError::UnknownRoot {
                 owner: root.owner.clone(),
             }
@@ -35,7 +36,7 @@ pub(super) fn validate_roots_and_edges(
                 kind: Box::new(edge.kind.clone()),
             });
         }
-        execution_roots(project, &edge.target).map_err(|error| match error {
+        execution_roots(project, topology, &edge.target).map_err(|error| match error {
             HirRuntimeReachabilityError::PresentationTarget { .. } => error,
             _ => HirRuntimeReachabilityError::UnknownEdgeTarget {
                 target: edge.target.clone(),
@@ -187,7 +188,7 @@ fn edge_kind_matches_target(
         ) => false,
         (
             HirRuntimeReachabilityEdgeKind::CheckedClosureExecution { closure },
-            HirRuntimeExecutableOwner::Closure(target),
+            HirRuntimeExecutableOwner::CallableBody(target),
         ) => closure == target,
         (HirRuntimeReachabilityEdgeKind::CheckedClosureExecution { .. }, _) => false,
         _ => true,
@@ -273,10 +274,17 @@ fn root_kind_matches(
         ) => resolve_item_kind(project, *owner)
             .is_some_and(|kind| matches!(kind, HirItemKind::Entry(_))),
         (
-            HirRuntimeReachabilityRootKind::CheckedViewValueProgram,
-            HirRuntimeExecutableOwner::Closure(owner),
-        ) => resolve_expression_kind(project, *owner)
-            .is_some_and(|kind| matches!(kind, HirExprKind::Closure(_))),
+            HirRuntimeReachabilityRootKind::CheckedProgram,
+            HirRuntimeExecutableOwner::CallableBody(owner),
+        ) => resolve_expression_kind(project, *owner).is_some(),
+        (
+            HirRuntimeReachabilityRootKind::CheckedProgram,
+            HirRuntimeExecutableOwner::Value(owner),
+        ) => resolve_expression_kind(project, *owner).is_some(),
+        (
+            HirRuntimeReachabilityRootKind::CheckedProgram,
+            HirRuntimeExecutableOwner::DeclarationBody { .. },
+        ) => true,
         _ => false,
     }
 }

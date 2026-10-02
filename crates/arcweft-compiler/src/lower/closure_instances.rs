@@ -28,7 +28,7 @@ pub(super) fn materialize_root_closures(
         caller: None,
     };
     for executable in runtime_owners.reachable_executables() {
-        if matches!(executable, HirRuntimeExecutableOwner::Closure(_))
+        if matches!(executable, HirRuntimeExecutableOwner::CallableBody(_))
             || selected_method_owners.contains(executable)
         {
             continue;

@@ -405,10 +405,10 @@ enum ClosureLexicalParent {
 }
 
 #[derive(Clone)]
-struct ReservedPureProgramDefinition {
-    closure: ExprId,
-    module: HirModuleId,
-    body: ExprId,
+struct ReservedPureProgramDefinition<'facts> {
+    program: &'facts crate::semantic_facts::RuntimePureProgramFact,
+    scope: RuntimeScopedExecutableSemanticFactView<'facts>,
+    parameter_inputs: Box<[RuntimeLocalSeedId]>,
     site: RuntimeFunctionSiteSeedId,
 }
 
@@ -1468,7 +1468,6 @@ pub fn lower_runtime_plan_with_stats(
         &mut errors,
     );
     rust_defaults::lower(facts, &mut builder, &mut errors);
-    let pure_program_definitions = reserve_pure_programs(facts, &locals, &mut builder, &mut errors);
     let (trait_methods, trait_definitions) = reserve_trait_methods(
         project,
         facts,
@@ -1520,6 +1519,8 @@ pub fn lower_runtime_plan_with_stats(
         controller_result_locals: &controller_result_locals,
         specialized_operand_locals: &specialized_operand_locals,
     };
+
+    let pure_program_definitions = reserve_pure_programs(&context, &mut builder, &mut errors);
 
     // Effect callback inputs are known entirely from the checked effect
     // rows. Admit their synthetic destination locals first so the callback
@@ -2960,26 +2961,43 @@ fn reserve_project_default_function_sites<'facts>(
     (sites, definitions)
 }
 
-fn reserve_pure_programs(
-    facts: &RuntimePlanSemanticFacts,
-    locals: &BTreeMap<LocalId, RuntimeLocalSeedId>,
+fn reserve_pure_programs<'facts>(
+    context: &FinalLoweringContext<'_, 'facts>,
     builder: &mut RuntimePlanBuilder,
     errors: &mut Vec<RuntimePlanLowerError>,
-) -> Vec<ReservedPureProgramDefinition> {
+) -> Vec<ReservedPureProgramDefinition<'facts>> {
     let mut definitions = Vec::new();
+    let project = context.project;
+    let facts = context.facts;
     for (_, program) in facts.pure_programs() {
+        let scope = match facts.program_scope(program) {
+            Ok(scope) => scope,
+            Err(error) => {
+                errors.push(RuntimePlanLowerError::new(error.to_string()));
+                continue;
+            }
+        };
+        let locals = match context.executable_locals(scope.scope()) {
+            Ok(locals) => locals,
+            Err(error) => {
+                errors.push(error);
+                continue;
+            }
+        };
         let inputs = program
-            .captures()
-            .iter()
+            .free_inputs()
             .enumerate()
-            .map(|(position, capture)| {
-                let local = locals.get(&capture.local()).cloned().ok_or_else(|| {
-                    RuntimePlanLowerError::new(format!(
-                        "pure program {} capture {:?} has no admitted local",
-                        program.program(),
-                        capture.local()
-                    ))
-                })?;
+            .map(|(position, (input, ty))| {
+                let local = locals
+                    .get(&input.binding().local())
+                    .cloned()
+                    .ok_or_else(|| {
+                        RuntimePlanLowerError::new(format!(
+                            "pure program {} capture {:?} has no admitted local",
+                            program.program(),
+                            input.binding().local()
+                        ))
+                    })?;
                 let position = u32::try_from(position).map_err(|_| {
                     RuntimePlanLowerError::new("pure program input position exceeds u32")
                 })?;
@@ -2987,21 +3005,94 @@ fn reserve_pure_programs(
                     source: RuntimeFunctionInputSource::Capture { position },
                     input_local: local.clone(),
                     pattern: RuntimePatternSeed::new(
-                        capture.value_type(),
+                        ty.identity(),
                         RuntimePatternSeedKind::Bind {
                             mutable: false,
-                            local,
+                            local: local.clone(),
                         },
                     ),
                     ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
-                    unrestricted_bindings: Box::new([]),
+                    unrestricted_bindings: if input.copy_requirement().is_some() {
+                        Box::new([local.clone()])
+                    } else {
+                        Box::new([])
+                    },
                 })
             })
             .collect::<Result<Vec<_>, _>>();
+        let mut parameter_inputs = Vec::new();
+        let parameters = program
+            .parameters()
+            .enumerate()
+            .map(|(position, (parameter, ty))| {
+                let admitted = builder
+                    .admit_type_batch([], [RuntimeLocalDeclarationSeed::new(ty.identity())])
+                    .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
+                let input_local = admitted.local_ids().first().cloned().ok_or_else(|| {
+                    RuntimePlanLowerError::new("program parameter input local is absent")
+                })?;
+                parameter_inputs.push(input_local.clone());
+                let pattern = match parameter.pattern() {
+                    Some(pattern) => {
+                        let module = module_by_id(project, pattern.module()).ok_or_else(|| {
+                            RuntimePlanLowerError::new("program parameter module is absent")
+                        })?;
+                        FinalPatternLowerer::new(module, facts, locals)
+                            .with_semantic_facts(scope.facts())
+                            .lower(pattern)
+                            .map_err(RuntimePlanLowerError::new)?
+                    }
+                    None => RuntimePatternSeed::new(
+                        ty.identity(),
+                        RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: match parameter.bindings() {
+                                [] => input_local.clone(),
+                                [binding] => locals.get(binding).cloned().ok_or_else(|| {
+                                    RuntimePlanLowerError::new("program parameter binding is absent")
+                                })?,
+                                _ => return Err(RuntimePlanLowerError::new(
+                                    "program parameter with multiple bindings requires a pattern",
+                                )),
+                            },
+                        },
+                    ),
+                };
+                let unrestricted_bindings = program.admission().input_abi().inputs().iter()
+                    .filter(|input| matches!(input.role(), arcweft_lang_sema::final_analysis::CheckedExecutionInputRole::Parameter(origin) if origin == parameter.origin())
+                        && input.copy_requirement().is_some())
+                    .map(|input| locals.get(&input.binding().local()).cloned()
+                        .ok_or_else(|| RuntimePlanLowerError::new("program Copy ingress binding is absent")))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let ownership = if let arcweft_lang_sema::final_analysis::CheckedExecutionParameterOrigin::Implicit(callable) = parameter.origin()
+                    && let Some(requirement) = scope.checked_synthetic_copy_requirement(*callable)
+                {
+                    if requirement.ty().as_bytes() != ty.identity().as_bytes() {
+                        return Err(RuntimePlanLowerError::new("program synthetic Copy ingress type disagrees with its formal"));
+                    }
+                    RuntimeFunctionInputOwnershipRequirement::Unrestricted
+                } else { RuntimeFunctionInputOwnershipRequirement::Owned };
+                Ok(RuntimeFunctionInputBindingSeed {
+                    source: RuntimeFunctionInputSource::Parameter {
+                        position: u32::try_from(position).map_err(|_| {
+                            RuntimePlanLowerError::new("program parameter position exceeds u32")
+                        })?,
+                    },
+                    input_local,
+                    pattern,
+                    ownership,
+                    unrestricted_bindings: unrestricted_bindings.into_boxed_slice(),
+                })
+            })
+            .collect::<Result<Vec<_>, RuntimePlanLowerError>>();
+        let inputs = inputs.and_then(|mut inputs| {
+            inputs.extend(parameters?);
+            Ok(inputs)
+        });
         let declaration = inputs.map(|inputs| RuntimeFunctionSiteDeclarationSeed {
             inputs: inputs.into_boxed_slice(),
-            result: program.result(),
-            body_kind: RuntimeFunctionSiteBodyKind::Expression,
+            result: program.result().identity(),
+            body_kind: program.body_kind(),
             effects: RuntimeEffectSet::empty(),
         });
         let site = match declaration.and_then(|declaration| {
@@ -3024,9 +3115,9 @@ fn reserve_pure_programs(
             continue;
         }
         definitions.push(ReservedPureProgramDefinition {
-            closure: program.closure(),
-            module: program.closure().module(),
-            body: program.body(),
+            program,
+            scope,
+            parameter_inputs: parameter_inputs.into_boxed_slice(),
             site,
         });
     }
@@ -3403,31 +3494,202 @@ fn define_project_default_function_sites(
 
 fn define_pure_programs(
     context: &FinalLoweringContext<'_, '_>,
-    definitions: &[ReservedPureProgramDefinition],
+    definitions: &[ReservedPureProgramDefinition<'_>],
     builder: &mut RuntimePlanBuilder,
     errors: &mut Vec<RuntimePlanLowerError>,
 ) {
+    use arcweft_lang_hir::body_edges::{HirBodyChild, HirBodyChildRole, HirBodyKind};
+    use arcweft_lang_sema::final_analysis::{CheckedExecutionBodyOwner, CheckedExecutionSource};
     for definition in definitions {
-        let Some(module) = module_by_id(context.project, definition.module) else {
-            errors.push(RuntimePlanLowerError::new("pure program module is absent"));
-            continue;
-        };
-        let body = context.expr_lowerer(module).lower_function_site_body(
-            definition.closure,
-            definition.body,
-            BTreeMap::new(),
-        );
+        let program = definition.program;
+        let abi = program.admission().input_abi();
+        let body = (|| -> Result<RuntimeFunctionSiteBodySeed, RuntimePlanLowerError> {
+            let module_id = match program.source() {
+                CheckedExecutionSource::EvaluateValue(owner)
+                | CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(
+                    owner,
+                )) => owner.module(),
+                CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
+                    declaration,
+                    ..
+                }) => abi
+                    .hir_topology()
+                    .declaration(declaration)
+                    .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?
+                    .body()
+                    .source_item()
+                    .module(),
+            };
+            let module = module_by_id(context.project, module_id)
+                .ok_or_else(|| RuntimePlanLowerError::new("program body module is absent"))?;
+            let lowerer = context.scoped_expr_lowerer(module, definition.scope)?;
+            let mut flow = FinalFlowLowerer::new(
+                module,
+                context,
+                RuntimeAssertionOwner::Program(program.program()),
+            )
+            .with_executable_scope(
+                definition.scope,
+                context.executable_control_locals(definition.scope.scope())?,
+                context.executable_locals(definition.scope.scope())?,
+                context.executable_specialized_operand_locals(definition.scope.scope())?,
+            );
+            let expression_compatible =
+                program.body_kind() == RuntimeFunctionSiteBodyKind::Expression;
+            let ops = match program.source() {
+                CheckedExecutionSource::EvaluateValue(owner) => {
+                    if expression_compatible {
+                        return lowerer
+                            .lower(*owner)
+                            .map(RuntimeFunctionSiteBodySeed::Expression)
+                            .map_err(RuntimePlanLowerError::new);
+                    }
+                    flow.lower_flow_value(*owner, RuntimeFlowValueContinuation::Return)?
+                }
+                CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(
+                    owner,
+                )) => {
+                    let expression = module
+                        .resolve_expr(*owner)
+                        .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
+                    if let HirExprKind::Closure(closure) = expression.kind() {
+                        if expression_compatible {
+                            return lowerer
+                                .lower_function_site_body(*owner, closure.body(), BTreeMap::new())
+                                .map(RuntimeFunctionSiteBodySeed::Expression)
+                                .map_err(RuntimePlanLowerError::new);
+                        }
+                        flow.lower_flow_value(closure.body(), RuntimeFlowValueContinuation::Return)?
+                    } else {
+                        let callable =
+                            definition.scope.implicit_callable(*owner).ok_or_else(|| {
+                                RuntimePlanLowerError::new("program implicit body is absent")
+                            })?;
+                        let input = definition.parameter_inputs.first().ok_or_else(|| {
+                            RuntimePlanLowerError::new("program implicit input is absent")
+                        })?;
+                        let overrides = callable
+                            .placeholders()
+                            .iter()
+                            .map(|placeholder| {
+                                let use_row = definition
+                                    .scope
+                                    .checked_synthetic_use(*placeholder)
+                                    .ok_or_else(|| {
+                                        RuntimePlanLowerError::new(
+                                            "program synthetic input use is absent",
+                                        )
+                                    })?;
+                                if use_row.owner() != arcweft_lang_sema::final_analysis::CheckedSyntheticUseOwner::ImplicitParameter(callable.identity()) {
+                                    return Err(RuntimePlanLowerError::new("program synthetic use belongs to another callable"));
+                                }
+                                Ok((
+                                    *placeholder,
+                                    RuntimeExprSeed::new(
+                                        callable.parameter().identity(),
+                                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                            input.clone(),
+                                            crate::final_expr::runtime_local_read_mode(
+                                                use_row.mode(),
+                                            ),
+                                        )),
+                                    ),
+                                ))
+                            })
+                            .collect::<Result<BTreeMap<_, _>, RuntimePlanLowerError>>()?;
+                        if expression_compatible {
+                            return lowerer
+                                .lower_implicit_callable_body(*owner, overrides)
+                                .map(RuntimeFunctionSiteBodySeed::Expression)
+                                .map_err(RuntimePlanLowerError::new);
+                        }
+                        flow.expression_overrides = overrides;
+                        flow.implicit_body_root = Some(*owner);
+                        flow.lower_flow_value(*owner, RuntimeFlowValueContinuation::Return)?
+                    }
+                }
+                CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
+                    declaration,
+                    role,
+                }) => {
+                    let declaration = abi
+                        .hir_topology()
+                        .declaration(declaration)
+                        .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
+                    let root = declaration
+                        .body()
+                        .roots()
+                        .iter()
+                        .find(|root| root.role() == *role)
+                        .ok_or_else(|| {
+                            RuntimePlanLowerError::new("program declaration body root is absent")
+                        })?;
+                    let projection = root.projection();
+                    if expression_compatible {
+                        return lowerer
+                            .lower_body_projection(projection)
+                            .map(RuntimeFunctionSiteBodySeed::Expression)
+                            .map_err(RuntimePlanLowerError::new);
+                    }
+                    if projection.kind() == HirBodyKind::Expression {
+                        let [edge] = projection.children() else {
+                            return Err(RuntimePlanLowerError::new(
+                                "expression body has an invalid root arity",
+                            ));
+                        };
+                        let HirBodyChild::Expression(expression) = edge.child() else {
+                            return Err(RuntimePlanLowerError::new(
+                                "expression body has a statement root",
+                            ));
+                        };
+                        flow.lower_flow_value(expression, RuntimeFlowValueContinuation::Return)?
+                    } else {
+                        let mut ops = if matches!(program.result().shape(), RuntimeTypeShape::Unit)
+                        {
+                            vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                                program.result().identity(),
+                                RuntimeExprSeedKind::Value(RuntimeValue::Unit),
+                            ))]
+                        } else {
+                            Vec::new()
+                        };
+                        for edge in projection.children().iter().rev() {
+                            let tail = RuntimeFlowTail::PreparedOps(ops.into_boxed_slice());
+                            ops = match edge.child() {
+                                HirBodyChild::Statement(statement) => {
+                                    flow.lower_statement_ids_with_tail(&[statement], tail)?
+                                }
+                                HirBodyChild::Expression(expression) => {
+                                    let continuation = if edge.role() == HirBodyChildRole::Tail {
+                                        RuntimeFlowValueContinuation::Return
+                                    } else {
+                                        RuntimeFlowValueContinuation::Ignore(tail)
+                                    };
+                                    flow.lower_flow_value(expression, continuation)?
+                                }
+                            };
+                        }
+                        ops
+                    }
+                }
+            };
+            Ok(RuntimeFunctionSiteBodySeed::Executable(
+                RuntimeExecutableBodySeed {
+                    effects: RuntimeEffectSet::empty(),
+                    ops: ops.into_boxed_slice(),
+                },
+            ))
+        })();
         match body.and_then(|body| {
             builder
                 .define_function_site_seed(&definition.site, body)
-                .map_err(|error| error.to_string())
+                .map_err(|error| RuntimePlanLowerError::new(error.to_string()))
         }) {
             Ok(()) => {}
-            Err(error) => errors.push(RuntimePlanLowerError::new(error)),
+            Err(error) => errors.push(error),
         }
     }
 }
-
 fn collect_dialogue_value_capture_specs(
     context: &FinalLoweringContext<'_, '_>,
 ) -> Result<Vec<(RuntimeDialogueValueCaptureKey, RuntimeSemanticTypeId)>, Vec<RuntimePlanLowerError>>
@@ -4788,6 +5050,7 @@ fn validate_unique_assertion_guards(
 }
 
 enum RuntimeAssertionOwner {
+    Program(arcweft_id::runtime_program::RuntimePureProgramId),
     ImplicitCallable(arcweft_lang_sema::final_analysis::CheckedImplicitCallableIdentity),
     Callable(CallableDeclarationId),
     Closure(arcweft_lang_sema::callable::CheckedClosureId),
@@ -4800,6 +5063,7 @@ enum RuntimeAssertionOwner {
 impl RuntimeAssertionOwner {
     fn label(&self) -> String {
         match self {
+            Self::Program(program) => format!("program@{program}"),
             Self::ImplicitCallable(identity) => format!("implicit-callable@{identity:?}"),
             Self::Callable(declaration) => declaration.qualified_name(),
             Self::Closure(closure) => format!(
@@ -4920,6 +5184,7 @@ enum RuntimeFlowValueContinuation {
 enum RuntimeFlowTail {
     #[default]
     None,
+    PreparedOps(Box<[RuntimeFlowOpSeed]>),
     StatementsWithTail {
         statements: Arc<[StmtId]>,
         next: usize,
@@ -7617,6 +7882,7 @@ impl<'a> FinalFlowLowerer<'a> {
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         match tail {
             RuntimeFlowTail::None => Ok(Vec::new()),
+            RuntimeFlowTail::PreparedOps(ops) => Ok(ops.into_vec()),
             RuntimeFlowTail::StatementsWithTail {
                 statements,
                 next,
@@ -7913,6 +8179,16 @@ impl<'a> FinalFlowLowerer<'a> {
                     ))
                 })?;
             let guard = match &self.assertion_owner {
+                RuntimeAssertionOwner::Program(program) => {
+                    crate::assertion_lower::derive_runtime_program_assertion_guard(
+                        self.package,
+                        self.module.key().path(),
+                        *program,
+                        ordinal,
+                        condition_index,
+                        profile,
+                    )
+                }
                 RuntimeAssertionOwner::ImplicitCallable(identity) => {
                     crate::assertion_lower::derive_runtime_implicit_assertion_guard(
                         self.package,

@@ -157,6 +157,7 @@ impl CheckedExecutionInputUse {
 /// Callers cannot manufacture an accepted region.
 #[derive(Debug)]
 pub struct CheckedExecutionInputAbi {
+    topology: std::sync::Arc<arcweft_lang_hir::project::HirProjectEvaluationTopology>,
     authority: crate::callable::CheckedCallableAuthorityLease,
     instance: Option<super::CheckedLocalUseInstanceIdentity>,
     source: CheckedExecutionSource,
@@ -170,6 +171,11 @@ pub struct CheckedExecutionInputAbi {
 }
 
 impl CheckedExecutionInputAbi {
+    pub const fn hir_topology(
+        &self,
+    ) -> &std::sync::Arc<arcweft_lang_hir::project::HirProjectEvaluationTopology> {
+        &self.topology
+    }
     /// Authenticates the accepted HIR allocation before a runtime consumer uses
     /// generation-local owners. Context validation additionally authenticates
     /// the callable registration and closed substitution.
@@ -188,20 +194,31 @@ impl CheckedExecutionInputAbi {
         &self,
         context: &super::CheckedClosedExecutionContext<'_>,
     ) -> Result<(), super::CheckedExecutionContextError> {
-        if !self
-            .authority
-            .admits(context.analysis().checked_callables())
-        {
-            return Err(super::CheckedExecutionContextError::ForeignAuthority);
-        }
+        self.validate_analysis(context.analysis())?;
         if self.instance.as_ref() != context.instance_identity() {
             return Err(super::CheckedExecutionContextError::InstanceMismatch);
         }
         context.admit_root(&self.source)
     }
 
+    /// Authenticates the semantic report and its exact registered callable
+    /// authority before another layer projects this admitted program.
+    pub fn validate_analysis(
+        &self,
+        analysis: &super::FinalSemanticAnalysis,
+    ) -> Result<(), super::CheckedExecutionContextError> {
+        if !self.authority.admits(analysis.checked_callables()) {
+            return Err(super::CheckedExecutionContextError::ForeignAuthority);
+        }
+        Ok(())
+    }
+
     pub const fn source(&self) -> &CheckedExecutionSource {
         &self.source
+    }
+
+    pub const fn instance_identity(&self) -> Option<&super::CheckedLocalUseInstanceIdentity> {
+        self.instance.as_ref()
     }
 
     pub const fn coordinate(&self) -> &CheckedExecutionCoordinate {
@@ -597,6 +614,7 @@ impl super::CheckedClosedExecutionContext<'_> {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into());
         }
         Ok(CheckedExecutionInputAbi {
+            topology: std::sync::Arc::clone(analysis.hir_topology()),
             authority: analysis.checked_callables().authority_lease(),
             instance: self.instance_identity().cloned(),
             source,

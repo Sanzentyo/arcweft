@@ -585,6 +585,58 @@ view Zeta(speed: f32) {
 }
 
 #[test]
+fn handler_capture_abi_uses_canonical_inputs_instead_of_first_use_order() {
+    let fixture = project_view_fixture_with_entry(
+        "entry cli @entry.main { goto @flow.main }\nflow main() -> String { return \"done\" }\nview Main(dialogue: DialogueView, label: String) { Button().on_click { let observed = label; dialogue.primary_action } }\n",
+        "arcweft-test://compiler-view-handler-capture-order",
+    );
+    let compiled = fixture
+        .compile()
+        .expect("mixed capture types follow the admitted ABI");
+    let program = compiled
+        .view_product()
+        .product()
+        .program()
+        .unwrap()
+        .resource();
+    let handler = program
+        .instructions
+        .iter()
+        .find_map(|instruction| match instruction {
+            ViewProgramInstruction::BindHandler { handler, .. } => Some(*handler),
+            _ => None,
+        })
+        .unwrap();
+    let specification = program.handler_ref(handler).unwrap();
+    let coordinates = specification
+        .captures
+        .iter()
+        .map(|capture| capture.parameter().value())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        coordinates,
+        [0, 1],
+        "first body use of label must not reorder the published parameter ABI"
+    );
+    let binding = compiled
+        .runtime_plan()
+        .plan
+        .pure_programs()
+        .iter()
+        .find(|binding| binding.program() == handler)
+        .unwrap();
+    assert_eq!(binding.input_types().len(), 2);
+    assert_ne!(binding.input_types()[0], binding.input_types()[1]);
+    AwbcLowerer::new(
+        &compiled.runtime_plan().plan,
+        &compiled.runtime_plan().dialogue_content_catalog,
+        "capture-order.arcw",
+    )
+    .lower()
+    .expect("both capture types verify through the ordinary AWBC function ABI");
+}
+
+#[test]
 fn compiler_rejects_affine_view_handler_capture_before_bundle_publication() {
     let fixture = project_view_fixture(
         "view Main(dialogue: DialogueView, pending: Need<i64>) {\n\

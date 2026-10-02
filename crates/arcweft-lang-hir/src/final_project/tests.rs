@@ -4485,7 +4485,7 @@ fn checked_closure_execution_edges_own_body_reachability_and_reject_foreign_targ
     let edge = |closure| {
         HirRuntimeReachabilityEdge::new(
             super::HirRuntimeReachabilitySite::Expression(closure),
-            HirRuntimeExecutableOwner::Closure(closure),
+            HirRuntimeExecutableOwner::CallableBody(closure),
             super::HirRuntimeReachabilityEdgeKind::CheckedClosureExecution { closure },
         )
     };
@@ -4517,7 +4517,7 @@ fn checked_closure_execution_edges_own_body_reachability_and_reject_foreign_targ
         .executable_owners(&HirRuntimeExecutableOwner::Item(flow))
         .expect("flow executable owner partition");
     let first_owners = reached
-        .executable_owners(&HirRuntimeExecutableOwner::Closure(*first))
+        .executable_owners(&HirRuntimeExecutableOwner::CallableBody(*first))
         .expect("first closure executable owner partition");
     assert!(flow_owners.expressions().any(|owner| owner == *first));
     assert!(!flow_owners.expressions().any(|owner| owner == *first_body));
@@ -4622,7 +4622,7 @@ fn checked_closure_execution_edges_own_body_reachability_and_reject_foreign_targ
 
     let foreign = HirRuntimeReachabilityEdge::new(
         super::HirRuntimeReachabilitySite::Expression(*first),
-        HirRuntimeExecutableOwner::Closure(*second),
+        HirRuntimeExecutableOwner::CallableBody(*second),
         super::HirRuntimeReachabilityEdgeKind::CheckedClosureExecution { closure: *second },
     );
     assert!(matches!(
@@ -4638,7 +4638,7 @@ fn checked_closure_execution_edges_own_body_reachability_and_reject_foreign_targ
 
     let tampered = HirRuntimeReachabilityEdge::new(
         super::HirRuntimeReachabilitySite::Expression(*first),
-        HirRuntimeExecutableOwner::Closure(*second),
+        HirRuntimeExecutableOwner::CallableBody(*second),
         super::HirRuntimeReachabilityEdgeKind::CheckedClosureExecution { closure: *first },
     );
     let tampered = HirRuntimeSemanticReachabilityInput::try_new(
@@ -4659,6 +4659,115 @@ fn checked_closure_execution_edges_own_body_reachability_and_reject_foreign_targ
         ),
         Err(HirRuntimeReachabilityError::InvalidEdgeTarget { .. })
     ));
+}
+
+#[test]
+fn program_roots_distinguish_value_creation_body_invocation_and_declaration_layout() {
+    let package = package();
+    let path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/program-roots",
+        "program-roots.arcw",
+        "flow root() { let value = || 42i64 }\nfn compute((left, right): (i64, i64), unused: i64) -> i64 { left + right }\n",
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &path);
+    let (closure, body) = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            if let HirExprKind::Closure(closure) = expression.kind() {
+                Some((owner, closure.body()))
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    let unused = module
+        .locals()
+        .find(|(_, local)| local.name().as_str() == "unused")
+        .unwrap()
+        .0;
+    let function = module
+        .items()
+        .find_map(|(owner, item)| matches!(item.kind(), HirItemKind::Function(_)).then_some(owner))
+        .unwrap();
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &path, Arc::clone(&module))],
+    )
+    .unwrap();
+    let executable = project.analysis_view().unwrap();
+    let symbols = symbols_for_project(&project, parsed.document(), "program-roots");
+    let topology = executable
+        .accept_symbol_generation(&symbols)
+        .unwrap()
+        .into_evaluation_topology()
+        .unwrap();
+    let declaration = topology
+        .modules()
+        .iter()
+        .flat_map(|module| module.entries())
+        .filter_map(|entry| entry.body())
+        .find(|body| body.declaration().name() == "compute")
+        .unwrap()
+        .declaration()
+        .clone();
+    let build = |owner| {
+        let input = HirRuntimeSemanticReachabilityInput::try_new(
+            HirRuntimeEmissionMode::CheckAll,
+            topology.generation().symbol_world().clone(),
+            topology.generation().symbol_revision(),
+            vec![HirRuntimeReachabilityRoot::new(
+                HirRuntimeReachabilityRootKind::CheckedProgram,
+                owner,
+            )],
+            Vec::new(),
+        )
+        .unwrap();
+        executable.runtime_semantic_reachability(
+            input,
+            &topology,
+            |_| None,
+            |owner| test_selected_call_inventory(executable, &topology, owner),
+            |_| {
+                Some(HirRuntimeExpressionProjection::Structural {
+                    value: HirRuntimeValueRetention::Retain,
+                })
+            },
+        )
+    };
+    let value = build(HirRuntimeExecutableOwner::Value(closure)).unwrap();
+    assert!(value.contains_expression(closure));
+    assert!(!value.contains_expression(body));
+    let invoked = build(HirRuntimeExecutableOwner::CallableBody(closure)).unwrap();
+    assert!(invoked.contains_expression(body));
+    assert_ne!(value.identity().digest(), invoked.identity().digest());
+    let declared = build(HirRuntimeExecutableOwner::DeclarationBody {
+        declaration: declaration.clone(),
+        role: HirDeclarationBodyRootRole::FunctionBody,
+    })
+    .unwrap();
+    assert!(
+        declared.contains_local(unused),
+        "unused formal binding remains part of the frame layout"
+    );
+    assert!(
+        build(HirRuntimeExecutableOwner::DeclarationBody {
+            declaration,
+            role: HirDeclarationBodyRootRole::FlowBody,
+        })
+        .is_err()
+    );
+    assert!(
+        matches!(
+            build(HirRuntimeExecutableOwner::Item(function)),
+            Err(HirRuntimeReachabilityError::InvalidRootKind { .. })
+        ),
+        "program invocation requires an explicit declaration body role"
+    );
 }
 
 #[test]

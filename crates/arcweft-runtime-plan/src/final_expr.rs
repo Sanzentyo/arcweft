@@ -999,6 +999,54 @@ impl<'hir> FinalExprLowerer<'hir> {
         }
     }
 
+    /// Consumes the admitted declaration layout through the ordinary expression
+    /// lowering path, without constructing another HIR body or interpreter.
+    pub(crate) fn lower_body_projection(
+        &self,
+        body: &arcweft_lang_hir::body_edges::HirBodyProjection,
+    ) -> Result<RuntimeExprSeed, String> {
+        use arcweft_lang_hir::body_edges::{HirBodyChild, HirBodyChildRole, HirBodyKind};
+        match body.kind() {
+            HirBodyKind::Expression => {
+                let [edge] = body.children() else {
+                    return Err("expression body requires exactly one expression".to_owned());
+                };
+                let HirBodyChild::Expression(expression) = edge.child() else {
+                    return Err("expression body contains a statement".to_owned());
+                };
+                self.lower(expression)
+            }
+            HirBodyKind::Ordinary => {
+                let mut statements = Vec::new();
+                let mut tail = None;
+                for edge in body.children() {
+                    match (edge.child(), edge.role()) {
+                        (
+                            HirBodyChild::Statement(statement),
+                            HirBodyChildRole::Statement { .. },
+                        ) => statements.push(statement),
+                        (HirBodyChild::Expression(expression), HirBodyChildRole::Tail) => {
+                            tail = Some(expression)
+                        }
+                        _ => {
+                            return Err(
+                                "ordinary expression body has an incompatible child".to_owned()
+                            );
+                        }
+                    }
+                }
+                self.lower_function_block(
+                    &statements,
+                    tail.ok_or_else(|| "ordinary expression body has no tail".to_owned())?,
+                    PureTryContinuation::Return,
+                )
+            }
+            HirBodyKind::Thread => {
+                Err("Thread body requires executable control transfer".to_owned())
+            }
+        }
+    }
+
     fn lower_function_block(
         &self,
         statements: &[StmtId],

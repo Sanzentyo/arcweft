@@ -25,6 +25,27 @@ impl CheckedDeterministicProgram {
     pub const fn input_abi(&self) -> &CheckedExecutionInputAbi {
         &self.inputs
     }
+
+    /// Projects the admitted execution intent into HIR dependency reachability.
+    /// This selects an owner; the same input proof still owns actual execution.
+    pub fn reachability_owner(&self) -> arcweft_lang_hir::project::HirRuntimeExecutableOwner {
+        use arcweft_lang_hir::project::HirRuntimeExecutableOwner;
+        match self.inputs.source() {
+            CheckedExecutionSource::EvaluateValue(owner) => {
+                HirRuntimeExecutableOwner::Value(*owner)
+            }
+            CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(owner)) => {
+                HirRuntimeExecutableOwner::CallableBody(*owner)
+            }
+            CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
+                declaration,
+                role,
+            }) => HirRuntimeExecutableOwner::DeclarationBody {
+                declaration: declaration.clone(),
+                role: *role,
+            },
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

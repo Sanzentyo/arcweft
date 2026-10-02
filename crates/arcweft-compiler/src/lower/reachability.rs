@@ -218,22 +218,24 @@ pub fn project_runtime_reachability<'project>(
     Ok(reachability)
 }
 
-/// Projects View handler value programs through an execution-owner inventory
-/// that is disjoint from ordinary Flow/Entry roots. Captured View parameters
-/// enter only this transaction and therefore cannot become Flow locals.
-pub(crate) fn project_view_value_program_reachability<'project>(
+/// Projects admitted program boundaries through their own execution inventory,
+/// separate from ordinary Flow/Entry roots. Free inputs enter this transaction
+/// in their canonical ABI order.
+pub(crate) fn project_program_reachability<'project, 'program>(
     project: HirAnalysisProjectView<'project>,
     symbols: &ProjectSymbolTable,
     analysis: &FinalSemanticAnalysis,
-    handler_closures: impl IntoIterator<Item = ExprId>,
+    programs: impl IntoIterator<
+        Item = &'program arcweft_lang_sema::final_analysis::CheckedDeterministicProgram,
+    >,
 ) -> Result<HirRuntimeSemanticReachability<'project>, RuntimeReachabilityProjectionError> {
     analysis.validate_generation(project, symbols)?;
-    let roots = handler_closures
+    let roots = programs
         .into_iter()
-        .map(|closure| {
+        .map(|program| {
             HirRuntimeReachabilityRoot::new(
-                HirRuntimeReachabilityRootKind::CheckedViewValueProgram,
-                HirRuntimeExecutableOwner::Closure(closure),
+                HirRuntimeReachabilityRootKind::CheckedProgram,
+                program.reachability_owner(),
             )
         })
         .collect::<BTreeSet<_>>();
@@ -435,11 +437,17 @@ fn checked_call_edge(
                 method: method.clone(),
             }
         }
-        HirRuntimeExecutableOwner::Item(_) | HirRuntimeExecutableOwner::Closure(_) => {
+        HirRuntimeExecutableOwner::Item(_) | HirRuntimeExecutableOwner::CallableBody(_) => {
             HirRuntimeReachabilityEdgeKind::CheckedProjectCall {
                 call,
                 declaration: declaration.clone(),
             }
+        }
+        HirRuntimeExecutableOwner::Value(_) | HirRuntimeExecutableOwner::DeclarationBody { .. } => {
+            return Err(RuntimeReachabilityProjectionError::MissingCheckedEdge {
+                site: source,
+                expected_target: Box::new(target),
+            });
         }
     };
     Ok(Some(HirRuntimeReachabilityEdge::new(source, target, kind)))
@@ -493,7 +501,7 @@ fn checked_iteration_edges(
 fn checked_closure_execution_edge(source: ExprId, closure: ExprId) -> HirRuntimeReachabilityEdge {
     HirRuntimeReachabilityEdge::new(
         HirRuntimeReachabilitySite::Expression(source),
-        HirRuntimeExecutableOwner::Closure(closure),
+        HirRuntimeExecutableOwner::CallableBody(closure),
         HirRuntimeReachabilityEdgeKind::CheckedClosureExecution { closure },
     )
 }

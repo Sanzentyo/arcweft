@@ -126,6 +126,13 @@ placeholder 値を実行値として使わない。context time は mount activa
 の logical seconds、ordinal は対象内の logical instruction/item index である。
 
 checked root は expression の値生成と callable body の呼び出しを区別する。
+宣言本体の root は宣言 identity と body role を組にして保持し、同じ accepted
+HIR topology の body projection を使う。実行 ABI は正規順の free input と、
+未使用・wildcard・分割 pattern を含む全 formal parameter を保持する。添付本文
+parameter も formal input に含め、parameter default の評価は本体から分離する。
+compiler と実行 plan は同じ admission を使い、閉じた instance ではその instance
+identity と executable partition に一致する型・所有権 catalog を選ぶ。program
+binding は通常の function frame を参照し、別の scalar helper ABI を作らない。
 callable を返す default は値生成であり、capture の転送だけをその frame の入力に
 含める。latent body と defer の cleanup body は別の実行境界で、cleanup の効果・
 中断条件は保持する。field access は field identity と receiver の評価元を別々に

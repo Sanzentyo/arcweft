@@ -1310,7 +1310,7 @@ impl RuntimeClosureInstanceFact {
         if scope.module() != owner.module()
             || body.module() != owner.module()
             || semantics.partition().executable()
-                != &arcweft_lang_hir::project::HirRuntimeExecutableOwner::Closure(owner)
+                != &arcweft_lang_hir::project::HirRuntimeExecutableOwner::CallableBody(owner)
             || semantics.expression_type(body).is_none_or(|body_type| {
                 body_type != result.as_ref()
                     && !matches!(body_type.shape(), RuntimeTypeShape::Never)

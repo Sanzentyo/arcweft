@@ -70,7 +70,6 @@ use arcweft_lang_hir::project::{
     HirRuntimeReachabilityIdentity, HirRuntimeReachabilityRootKind, HirRuntimeReachabilitySite,
     HirRuntimeSemanticReachability,
 };
-use arcweft_lang_hir::scope::CaptureAccess;
 use arcweft_lang_hir::source_index::{
     HirCallableSourceOwner, HirExprSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite,
 };
@@ -4910,99 +4909,82 @@ impl RuntimeCheckedCapture {
     }
 }
 
-/// One closure capture bound to a declaration-ordered domain parameter.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct RuntimePureProgramCaptureFact {
-    capture: CaptureId,
-    local: LocalId,
-    parameter: u16,
-    value_type: RuntimeSemanticTypeId,
-}
-
-impl RuntimePureProgramCaptureFact {
-    #[must_use]
-    pub const fn new(
-        capture: CaptureId,
-        local: LocalId,
-        parameter: u16,
-        value_type: RuntimeSemanticTypeId,
-    ) -> Self {
-        Self {
-            capture,
-            local,
-            parameter,
-            value_type,
-        }
-    }
-
-    pub const fn capture(self) -> CaptureId {
-        self.capture
-    }
-
-    pub const fn local(self) -> LocalId {
-        self.local
-    }
-
-    pub const fn parameter(self) -> u16 {
-        self.parameter
-    }
-
-    pub const fn value_type(self) -> RuntimeSemanticTypeId {
-        self.value_type
-    }
-}
-
-/// Exact mount-only deterministic program rooted at one checked closure.
+/// Runtime type projection of one admitted value or body root's complete ABI.
+/// Free bindings and full formal inputs retain the admission's stable order.
 #[derive(Clone, Debug)]
 pub struct RuntimePureProgramFact {
     program: RuntimePureProgramId,
     admission: Arc<arcweft_lang_sema::final_analysis::CheckedDeterministicProgram>,
-    closure: ExprId,
-    body: ExprId,
-    captures: Box<[RuntimePureProgramCaptureFact]>,
-    result: RuntimeSemanticTypeId,
+    input_types: Box<[RuntimeNormalizedType]>,
+    result: RuntimeNormalizedType,
+    body_kind: arcweft_core::plan::RuntimeFunctionSiteBodyKind,
 }
 
 impl RuntimePureProgramFact {
     pub fn try_new(
         program: RuntimePureProgramId,
-        admission: arcweft_lang_sema::final_analysis::CheckedDeterministicProgram,
-        closure: ExprId,
-        body: ExprId,
-        captures: Box<[RuntimePureProgramCaptureFact]>,
-        result: RuntimeSemanticTypeId,
+        admission: Arc<arcweft_lang_sema::final_analysis::CheckedDeterministicProgram>,
+        input_types: Box<[RuntimeNormalizedType]>,
+        result: RuntimeNormalizedType,
     ) -> Result<Self, RuntimeSemanticFactsError> {
-        use arcweft_lang_sema::final_analysis::{
-            CheckedExecutionBodyOwner, CheckedExecutionSource,
-        };
+        use arcweft_lang_sema::final_analysis::CheckedExecutionInputRole;
         let abi = admission.input_abi();
-        let inputs = abi
+        let expression_body = match abi.source() {
+            arcweft_lang_sema::final_analysis::CheckedExecutionSource::InvokeBody(
+                arcweft_lang_sema::final_analysis::CheckedExecutionBodyOwner::Declaration {
+                    declaration,
+                    role,
+                },
+            ) => {
+                let view = abi
+                    .hir_topology()
+                    .declaration(declaration)
+                    .map_err(|_| RuntimeSemanticFactsError::InvalidPureProgram { program })?;
+                let root = view
+                    .body()
+                    .roots()
+                    .iter()
+                    .find(|root| root.role() == *role)
+                    .ok_or(RuntimeSemanticFactsError::InvalidPureProgram { program })?;
+                root.projection().kind() != arcweft_lang_hir::body_edges::HirBodyKind::Thread
+            }
+            _ => true,
+        };
+        let body_kind = if expression_body && abi.control() == arcweft_lang_sema::final_analysis::CheckedExecutableControlRole::ExpressionCompatible {
+            arcweft_core::plan::RuntimeFunctionSiteBodyKind::Expression
+        } else { arcweft_core::plan::RuntimeFunctionSiteBodyKind::Executable };
+        let free_inputs = abi
             .inputs()
             .iter()
-            .map(|input| input.binding().local())
-            .collect::<BTreeSet<_>>();
-        let capture_locals = captures
-            .iter()
-            .map(|capture| capture.local())
-            .collect::<BTreeSet<_>>();
-        if abi.source()
-            != &CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(
-                closure,
-            ))
-            || !abi.parameters().is_empty()
-            || !abi.contains_expression(body)
-            || inputs != capture_locals
-            || capture_locals.len() != captures.len()
+            .filter(|input| matches!(input.role(), CheckedExecutionInputRole::Free))
+            .count();
+        if free_inputs.checked_add(abi.parameters().len()) != Some(input_types.len())
+            || abi.result().value_type().is_none()
         {
             return Err(RuntimeSemanticFactsError::InvalidPureProgram { program });
         }
+        for (source, projected) in abi
+            .inputs()
+            .iter()
+            .filter(|input| matches!(input.role(), CheckedExecutionInputRole::Free))
+            .map(|input| input.binding().ty())
+            .chain(abi.parameters().iter().map(|parameter| parameter.ty()))
+            .chain(abi.result().value_type())
+            .zip(input_types.iter().chain([&result]))
+        {
+            if !source
+                .semantic_identity_digest()
+                .is_ok_and(|digest| digest.as_bytes() == projected.identity().as_bytes())
+            {
+                return Err(RuntimeSemanticFactsError::InvalidPureProgram { program });
+            }
+        }
         Ok(Self {
             program,
-            admission: Arc::new(admission),
-            closure,
-            body,
-            captures,
+            admission,
+            input_types,
             result,
+            body_kind,
         })
     }
 
@@ -5014,20 +4996,61 @@ impl RuntimePureProgramFact {
         &self.admission
     }
 
-    pub const fn closure(&self) -> ExprId {
-        self.closure
+    pub fn source(&self) -> &arcweft_lang_sema::final_analysis::CheckedExecutionSource {
+        self.admission.input_abi().source()
     }
 
-    pub const fn body(&self) -> ExprId {
-        self.body
+    pub fn reachability_owner(&self) -> HirRuntimeExecutableOwner {
+        self.admission.reachability_owner()
     }
 
-    pub const fn captures(&self) -> &[RuntimePureProgramCaptureFact] {
-        &self.captures
+    pub const fn input_types(&self) -> &[RuntimeNormalizedType] {
+        &self.input_types
     }
 
-    pub const fn result(&self) -> RuntimeSemanticTypeId {
-        self.result
+    pub fn free_inputs(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &arcweft_lang_sema::final_analysis::CheckedExecutionInput,
+            &RuntimeNormalizedType,
+        ),
+    > {
+        self.admission
+            .input_abi()
+            .inputs()
+            .iter()
+            .filter(|input| {
+                matches!(
+                    input.role(),
+                    arcweft_lang_sema::final_analysis::CheckedExecutionInputRole::Free
+                )
+            })
+            .zip(self.input_types.iter())
+    }
+
+    pub fn parameters(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &arcweft_lang_sema::final_analysis::CheckedExecutionParameter,
+            &RuntimeNormalizedType,
+        ),
+    > {
+        let free_count = self.free_inputs().count();
+        self.admission
+            .input_abi()
+            .parameters()
+            .iter()
+            .zip(self.input_types.iter().skip(free_count))
+    }
+
+    pub const fn result(&self) -> &RuntimeNormalizedType {
+        &self.result
+    }
+
+    pub const fn body_kind(&self) -> arcweft_core::plan::RuntimeFunctionSiteBodyKind {
+        self.body_kind
     }
 }
 
@@ -5454,7 +5477,7 @@ pub struct RuntimePlanSemanticFacts {
     expression_specializations: BTreeMap<ExprId, RuntimeCallableValueSpecialization>,
     nominal_definitions: BTreeMap<RuntimeSemanticTypeId, RuntimeNominalDefinition>,
     reachability: HirRuntimeReachabilityIdentity,
-    view_value_reachability: Option<HirRuntimeReachabilityIdentity>,
+    program_reachability: Option<HirRuntimeReachabilityIdentity>,
     runtime_owners: BTreeSet<HirRuntimeExecutableOwner>,
     snapshots: BTreeMap<HirModuleId, HirSnapshotId>,
     local_declaration_order: Box<[LocalId]>,
@@ -6234,8 +6257,8 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
 #[derive(Clone, Copy)]
 struct RuntimeSemanticOwnerSet<'a> {
     runtime: &'a HirRuntimeSemanticReachability<'a>,
-    view_values: Option<&'a HirRuntimeSemanticReachability<'a>>,
-    view_capture_locals: Option<&'a BTreeSet<LocalId>>,
+    programs: Option<&'a HirRuntimeSemanticReachability<'a>>,
+    program_free_locals: Option<&'a BTreeSet<LocalId>>,
 }
 
 /// Borrowed complete executable catalogs. Every consumer keeps the root's
@@ -6282,72 +6305,72 @@ impl<'a> RuntimeSemanticOwnerSet<'a> {
     const fn runtime_only(runtime: &'a HirRuntimeSemanticReachability<'a>) -> Self {
         Self {
             runtime,
-            view_values: None,
-            view_capture_locals: None,
+            programs: None,
+            program_free_locals: None,
         }
     }
 
-    const fn with_view_values(
+    const fn with_programs(
         runtime: &'a HirRuntimeSemanticReachability<'a>,
-        view_values: &'a HirRuntimeSemanticReachability<'a>,
-        view_capture_locals: &'a BTreeSet<LocalId>,
+        programs: &'a HirRuntimeSemanticReachability<'a>,
+        program_free_locals: &'a BTreeSet<LocalId>,
     ) -> Self {
         Self {
             runtime,
-            view_values: Some(view_values),
-            view_capture_locals: Some(view_capture_locals),
+            programs: Some(programs),
+            program_free_locals: Some(program_free_locals),
         }
     }
 
     fn contains_expression(self, owner: ExprId) -> bool {
         self.runtime.contains_expression(owner)
             || self
-                .view_values
+                .programs
                 .is_some_and(|owners| owners.contains_expression(owner))
     }
 
     fn contains_pattern(self, owner: PatternId) -> bool {
         self.runtime.contains_pattern(owner)
             || self
-                .view_values
+                .programs
                 .is_some_and(|owners| owners.contains_pattern(owner))
     }
 
     fn contains_statement(self, owner: StmtId) -> bool {
         self.runtime.contains_statement(owner)
             || self
-                .view_values
+                .programs
                 .is_some_and(|owners| owners.contains_statement(owner))
     }
 
     fn contains_type(self, owner: TypeId) -> bool {
         self.runtime.contains_type(owner)
             || self
-                .view_values
+                .programs
                 .is_some_and(|owners| owners.contains_type(owner))
     }
 
     fn contains_local(self, owner: LocalId) -> bool {
         self.runtime.contains_local(owner)
             || self
-                .view_values
+                .programs
                 .is_some_and(|owners| owners.contains_local(owner))
             || self
-                .view_capture_locals
+                .program_free_locals
                 .is_some_and(|locals| locals.contains(&owner))
     }
 
     fn contains_capture(self, owner: CaptureId) -> bool {
         self.runtime.contains_capture(owner)
             || self
-                .view_values
+                .programs
                 .is_some_and(|owners| owners.contains_capture(owner))
     }
 
     fn contains_runtime_owner(self, owner: &HirRuntimeExecutableOwner) -> bool {
         self.runtime.contains_runtime_owner(owner)
             || self
-                .view_values
+                .programs
                 .is_some_and(|owners| owners.contains_runtime_owner(owner))
     }
 
@@ -6356,7 +6379,7 @@ impl<'a> RuntimeSemanticOwnerSet<'a> {
         owner: &HirRuntimeExecutableOwner,
     ) -> Option<&'a arcweft_lang_hir::project::HirRuntimeExecutableSemanticOwners> {
         self.runtime.executable_owners(owner).or_else(|| {
-            self.view_values
+            self.programs
                 .and_then(|owners| owners.executable_owners(owner))
         })
     }
@@ -6365,7 +6388,7 @@ impl<'a> RuntimeSemanticOwnerSet<'a> {
         self.runtime
             .expressions()
             .chain(
-                self.view_values
+                self.programs
                     .into_iter()
                     .flat_map(HirRuntimeSemanticReachability::expressions),
             )
@@ -6375,13 +6398,9 @@ impl<'a> RuntimeSemanticOwnerSet<'a> {
     fn locals(self) -> BTreeSet<LocalId> {
         self.runtime
             .locals()
+            .chain(self.programs.into_iter().flat_map(|owners| owners.locals()))
             .chain(
-                self.view_values
-                    .into_iter()
-                    .flat_map(|owners| owners.locals()),
-            )
-            .chain(
-                self.view_capture_locals
+                self.program_free_locals
                     .into_iter()
                     .flat_map(|locals| locals.iter().copied()),
             )
@@ -6392,7 +6411,7 @@ impl<'a> RuntimeSemanticOwnerSet<'a> {
         self.runtime
             .reachable_executables()
             .chain(
-                self.view_values
+                self.programs
                     .into_iter()
                     .flat_map(HirRuntimeSemanticReachability::reachable_executables),
             )
@@ -6405,7 +6424,7 @@ impl<'a> RuntimeSemanticOwnerSet<'a> {
         source: HirRuntimeReachabilitySite,
     ) -> impl Iterator<Item = &'a HirRuntimeReachabilityEdge> + 'a {
         self.runtime.edge_from(source).chain(
-            self.view_values
+            self.programs
                 .into_iter()
                 .flat_map(move |owners| owners.edge_from(source)),
         )
@@ -6422,9 +6441,9 @@ impl<'a> RuntimeSemanticOwnerSet<'a> {
                     error,
                 ))
             })?;
-        if let Some(view_values) = self.view_values {
+        if let Some(programs) = self.programs {
             owners.extend(
-                view_values
+                programs
                     .selected_expression_type_owners()
                     .map_err(|error| {
                         RuntimeSemanticFactsError::RuntimeReachability(
@@ -6443,7 +6462,7 @@ impl<'a> RuntimeSemanticOwnerSet<'a> {
         // Each lexical partition owns the runtime child relation, including
         // an empty row for a closure value whose body executes in another
         // partition. The aggregate structural edge map omits those value rows.
-        for reachability in std::iter::once(self.runtime).chain(self.view_values) {
+        for reachability in std::iter::once(self.runtime).chain(self.programs) {
             for executable in reachability.reachable_executables() {
                 let owners = reachability
                     .executable_owners(executable)
@@ -6466,7 +6485,7 @@ impl<'a> RuntimeSemanticOwnerSet<'a> {
         self.runtime
             .patterns()
             .chain(
-                self.view_values
+                self.programs
                     .into_iter()
                     .flat_map(HirRuntimeSemanticReachability::patterns),
             )
@@ -6502,32 +6521,36 @@ impl RuntimePlanSemanticFacts {
         )
     }
 
-    pub fn try_new_with_view_value_programs(
+    pub fn try_new_with_programs(
         project: HirAnalysisProjectView<'_>,
         runtime_owners: &HirRuntimeSemanticReachability<'_>,
-        view_value_owners: &HirRuntimeSemanticReachability<'_>,
+        program_owners: &HirRuntimeSemanticReachability<'_>,
         input: RuntimePlanSemanticFactInput,
     ) -> Result<Self, RuntimeSemanticFactsError> {
         if runtime_owners
             .roots()
-            .any(|root| root.kind() == HirRuntimeReachabilityRootKind::CheckedViewValueProgram)
-            || view_value_owners
+            .any(|root| root.kind() == HirRuntimeReachabilityRootKind::CheckedProgram)
+            || program_owners
                 .roots()
-                .any(|root| root.kind() != HirRuntimeReachabilityRootKind::CheckedViewValueProgram)
+                .any(|root| root.kind() != HirRuntimeReachabilityRootKind::CheckedProgram)
         {
             return Err(RuntimeSemanticFactsError::ReachabilityMismatch);
         }
-        let view_capture_locals = input
+        let program_free_locals = input
             .pure_programs
             .iter()
-            .flat_map(|program| program.captures().iter().map(|capture| capture.local()))
+            .flat_map(|program| {
+                program
+                    .free_inputs()
+                    .map(|(input, _)| input.binding().local())
+            })
             .collect::<BTreeSet<_>>();
         Self::try_new_with_owner_set(
             project,
-            RuntimeSemanticOwnerSet::with_view_values(
+            RuntimeSemanticOwnerSet::with_programs(
                 runtime_owners,
-                view_value_owners,
-                &view_capture_locals,
+                program_owners,
+                &program_free_locals,
             ),
             input,
         )
@@ -6543,7 +6566,7 @@ impl RuntimePlanSemanticFacts {
             .map(|(_, module)| (module.module_id(), module.snapshot_id()))
             .collect::<Box<[_]>>();
         if supplied_snapshots.as_ref() != runtime_owners.runtime.identity().module_snapshots()
-            || runtime_owners.view_values.is_some_and(|owners| {
+            || runtime_owners.programs.is_some_and(|owners| {
                 supplied_snapshots.as_ref() != owners.identity().module_snapshots()
                     || owners.identity().symbol_world()
                         != runtime_owners.runtime.identity().symbol_world()
@@ -8156,7 +8179,7 @@ impl RuntimePlanSemanticFacts {
                 .map_err(|_| RuntimeSemanticFactsError::UnresolvedCapture { capture: id })?;
             require_runtime_capture_owner(runtime_owners, id)?;
             if runtime_owners
-                .executable_owners(&HirRuntimeExecutableOwner::Closure(capture.closure()))
+                .executable_owners(&HirRuntimeExecutableOwner::CallableBody(capture.closure()))
                 .is_none_or(|owners| !owners.capture_plan().contains(checked.projection()))
             {
                 return Err(RuntimeSemanticFactsError::InvalidCaptureProjection { capture: id });
@@ -8175,15 +8198,8 @@ impl RuntimePlanSemanticFacts {
             }
         }
 
-        let pure_programs = validate_pure_programs(
-            project,
-            &modules,
-            runtime_owners,
-            &expression_types,
-            &local_declarations,
-            &captures,
-            input.pure_programs,
-        )?;
+        let pure_programs =
+            validate_pure_programs(project, &modules, runtime_owners, input.pure_programs)?;
         let dialogue_applications = input.dialogue_applications;
         let dialogue_content_fragments = input.dialogue_content_fragments;
         let mut fragment_ids = BTreeSet::new();
@@ -8346,8 +8362,8 @@ impl RuntimePlanSemanticFacts {
             callable_specializations,
             expression_specializations,
             reachability: runtime_owners.runtime.identity().clone(),
-            view_value_reachability: runtime_owners
-                .view_values
+            program_reachability: runtime_owners
+                .programs
                 .map(|owners| owners.identity().clone()),
             runtime_owners: runtime_owners.reachable_executables(),
             snapshots,
@@ -8399,6 +8415,24 @@ impl RuntimePlanSemanticFacts {
             character_dialogue_policy_types,
             character_dialogue_generation,
         };
+        for program in facts.pure_programs.values() {
+            let scope = facts.program_scope(program)?;
+            for (input, ty) in program.free_inputs() {
+                if scope.local_type(input.binding().local()) != Some(ty) {
+                    return Err(RuntimeSemanticFactsError::InvalidPureProgram {
+                        program: program.program(),
+                    });
+                }
+            }
+            if let arcweft_lang_sema::final_analysis::CheckedExecutionSource::EvaluateValue(root) =
+                program.source()
+                && scope.expression_type(*root) != Some(program.result())
+            {
+                return Err(RuntimeSemanticFactsError::InvalidPureProgram {
+                    program: program.program(),
+                });
+            }
+        }
         display::validate_selected_format_catalog(&facts, runtime_owners)?;
         for owner in facts.expression_types.keys() {
             if matches!(resolve_expr(&modules, *owner)?, HirExprKind::Closure(_))
@@ -8885,6 +8919,10 @@ impl RuntimePlanSemanticFacts {
             scope.append_normalized_types(&mut roots);
         }
         roots.extend(self.captures.values().map(RuntimeCheckedCapture::ty));
+        for program in self.pure_programs.values() {
+            roots.extend(program.input_types());
+            roots.push(program.result());
+        }
         for call in self.calls.values() {
             call.append_normalized_types(&mut roots);
         }
@@ -9159,6 +9197,83 @@ impl RuntimePlanSemanticFacts {
         self.trait_methods.values()
     }
 
+    /// Selects the sole closed semantic catalog certified by this program's ABI.
+    /// A monomorphic proof explicitly selects global evidence; closed proofs
+    /// must match both their instance identity and executable partition.
+    pub(crate) fn program_scope<'facts>(
+        &'facts self,
+        program: &RuntimePureProgramFact,
+    ) -> Result<RuntimeScopedExecutableSemanticFactView<'facts>, RuntimeSemanticFactsError> {
+        use arcweft_lang_sema::final_analysis::{
+            CheckedExecutionBodyOwner, CheckedExecutionSource,
+        };
+        let abi = program.admission().input_abi();
+        let Some(identity) = abi.instance_identity() else {
+            return Ok(RuntimeScopedExecutableSemanticFactView::global(self));
+        };
+        let mut candidates = Vec::new();
+        let mut select =
+            |scope: RuntimeScopedExecutableSemanticFactView<'facts>,
+             semantics: &'facts RuntimeProjectFunctionInstanceSemanticFacts| {
+                if semantics.local_uses().instance_identity() != Some(identity) {
+                    return;
+                }
+                let owns_root = match program.source() {
+                    CheckedExecutionSource::EvaluateValue(root) => {
+                        semantics.expression(*root).is_some()
+                    }
+                    CheckedExecutionSource::InvokeBody(
+                        CheckedExecutionBodyOwner::CallableValue(root),
+                    ) => {
+                        semantics.partition().executable()
+                            == &HirRuntimeExecutableOwner::CallableBody(*root)
+                            || semantics.implicit_callable(*root).is_some()
+                    }
+                    CheckedExecutionSource::InvokeBody(
+                        CheckedExecutionBodyOwner::Declaration { declaration, .. },
+                    ) => {
+                        let owner = match declaration {
+                            CallableDeclarationKey::ImplMethod(method) => {
+                                HirRuntimeExecutableOwner::ImplMethod(method.clone())
+                            }
+                            _ => match abi.hir_topology().declaration(declaration) {
+                                Ok(view) => {
+                                    HirRuntimeExecutableOwner::Item(view.body().source_item())
+                                }
+                                Err(_) => return,
+                            },
+                        };
+                        semantics.partition().executable() == &owner
+                    }
+                };
+                if owns_root {
+                    candidates.push(scope);
+                }
+            };
+        for (scope, semantics) in instance_semantic_roots(
+            self.project_function_instances.values(),
+            self.root_closures.values(),
+            self.trait_methods.values(),
+        ) {
+            select(scope, semantics);
+            semantics.visit_closure_instances(&mut |closure| {
+                select(
+                    RuntimeScopedExecutableSemanticFactView::closure(
+                        closure.key(),
+                        closure.semantics(),
+                    ),
+                    closure.semantics(),
+                );
+            });
+        }
+        match candidates.as_slice() {
+            [scope] => Ok(*scope),
+            _ => Err(RuntimeSemanticFactsError::InvalidPureProgram {
+                program: program.program(),
+            }),
+        }
+    }
+
     pub fn trait_method(
         &self,
         key: &RuntimeTraitMethodInstanceKey,
@@ -9240,13 +9355,13 @@ impl RuntimePlanSemanticFacts {
     }
 
     pub fn is_pure_program_closure(&self, closure: ExprId) -> bool {
-        self.pure_programs
-            .values()
-            .any(|program| program.closure() == closure)
+        self.pure_programs.values().any(|program| {
+            program.reachability_owner() == HirRuntimeExecutableOwner::CallableBody(closure)
+        })
     }
 
-    pub const fn view_value_reachability(&self) -> Option<&HirRuntimeReachabilityIdentity> {
-        self.view_value_reachability.as_ref()
+    pub const fn program_reachability(&self) -> Option<&HirRuntimeReachabilityIdentity> {
+        self.program_reachability.as_ref()
     }
 
     pub fn dialogue_application(&self, expression: ExprId) -> Option<&RuntimeDialogueApplication> {
@@ -9412,104 +9527,54 @@ fn validate_pure_programs(
     project: HirAnalysisProjectView<'_>,
     modules: &BTreeMap<HirModuleId, &HirModule>,
     owners: RuntimeSemanticOwnerSet<'_>,
-    expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
-    local_declarations: &BTreeMap<LocalId, RuntimeNormalizedType>,
-    checked_captures: &BTreeMap<CaptureId, RuntimeCheckedCapture>,
     staged: Vec<RuntimePureProgramFact>,
 ) -> Result<BTreeMap<RuntimePureProgramId, RuntimePureProgramFact>, RuntimeSemanticFactsError> {
-    let expected_closures = owners
-        .view_values
+    let expected = owners
+        .programs
         .into_iter()
         .flat_map(HirRuntimeSemanticReachability::roots)
-        .filter_map(|root| match root.owner() {
-            HirRuntimeExecutableOwner::Closure(closure)
-                if root.kind() == HirRuntimeReachabilityRootKind::CheckedViewValueProgram =>
-            {
-                Some(*closure)
-            }
-            HirRuntimeExecutableOwner::Item(_)
-            | HirRuntimeExecutableOwner::ImplMethod(_)
-            | HirRuntimeExecutableOwner::Closure(_) => None,
-        })
+        .filter(|root| root.kind() == HirRuntimeReachabilityRootKind::CheckedProgram)
+        .map(|root| root.owner().clone())
         .collect::<BTreeSet<_>>();
     let mut programs = BTreeMap::new();
-    let mut closures = BTreeSet::new();
+    let mut supplied = BTreeSet::new();
+    let mut instances = BTreeSet::new();
     for fact in staged {
         let program = fact.program();
-        fact.admission()
-            .input_abi()
-            .validate_project(project)
+        let abi = fact.admission().input_abi();
+        abi.validate_project(project)
             .map_err(|_| RuntimeSemanticFactsError::InvalidPureProgram { program })?;
-        if programs.contains_key(&program) {
+        if abi.hir_topology().generation().symbol_world()
+            != owners.runtime.identity().symbol_world()
+            || abi.hir_topology().generation().symbol_revision()
+                != owners.runtime.identity().symbol_revision()
+        {
+            return Err(RuntimeSemanticFactsError::InvalidPureProgram { program });
+        }
+        let owner = fact.reachability_owner();
+        if !expected.contains(&owner)
+            || !instances.insert((owner.clone(), abi.instance_identity().cloned()))
+        {
+            return Err(RuntimeSemanticFactsError::InvalidPureProgram { program });
+        }
+        supplied.insert(owner);
+        validate_normalized_type(modules, fact.result())?;
+        for ty in fact.input_types() {
+            validate_normalized_type(modules, ty)?;
+        }
+        if programs.insert(program, fact).is_some() {
             return Err(RuntimeSemanticFactsError::DuplicateFact {
                 family: RuntimeSemanticFactFamily::PureProgram,
             });
         }
-        if !expected_closures.contains(&fact.closure()) || !closures.insert(fact.closure()) {
-            return Err(RuntimeSemanticFactsError::InvalidPureProgram { program });
-        }
-        let HirExprKind::Closure(closure) = resolve_expr(modules, fact.closure())? else {
-            return Err(RuntimeSemanticFactsError::InvalidPureProgram { program });
-        };
-        let expected_captures = owners
-            .executable_owners(&HirRuntimeExecutableOwner::Closure(fact.closure()))
-            .ok_or(RuntimeSemanticFactsError::InvalidPureProgram { program })?
-            .capture_plan();
-        // The closure expression belongs to the presentation owner. Its
-        // executable body and checked capture contract enter through this
-        // pure-program fact, so no runtime expression type is published for
-        // the presentation-owned closure value itself.
-        if !closure.parameters().is_empty()
-            || closure.body() != fact.body()
-            || expression_types
-                .get(&fact.body())
-                .is_none_or(|body| body.identity() != fact.result())
-            || expected_captures.len() != fact.captures().len()
-        {
-            return Err(RuntimeSemanticFactsError::InvalidPureProgram { program });
-        }
-        let module = module_for(modules, fact.closure().module())?;
-        let mut parameters = BTreeSet::new();
-        let mut locals = BTreeSet::new();
-        for (expected_capture, capture) in expected_captures
-            .iter()
-            .copied()
-            .zip(fact.captures().iter().copied())
-        {
-            let hir_capture = module.resolve_capture(capture.capture()).map_err(|_| {
-                RuntimeSemanticFactsError::UnresolvedCapture {
-                    capture: capture.capture(),
-                }
-            })?;
-            let checked = checked_captures.get(&capture.capture());
-            let local_type = local_declarations.get(&capture.local());
-            if expected_capture.capture() != capture.capture()
-                || hir_capture.closure() != fact.closure()
-                || hir_capture.local() != capture.local()
-                || expected_capture.local() != capture.local()
-                || expected_capture.mode() != CaptureAccess::Read
-                || !parameters.insert(capture.parameter())
-                || !locals.insert(capture.local())
-                || checked.is_none_or(|checked| {
-                    checked.capture() != capture.capture()
-                        || checked.ty().identity() != capture.value_type()
-                })
-                || local_type.is_none_or(|ty| ty.identity() != capture.value_type())
-            {
-                return Err(RuntimeSemanticFactsError::InvalidPureProgram { program });
-            }
-        }
-        programs.insert(program, fact);
     }
-    if let Some(closure) = expected_closures
-        .iter()
-        .find(|closure| !closures.contains(closure))
-    {
-        return Err(RuntimeSemanticFactsError::MissingPureProgram { closure: *closure });
+    if let Some(owner) = expected.iter().find(|owner| !supplied.contains(*owner)) {
+        return Err(RuntimeSemanticFactsError::MissingPureProgram {
+            owner: Box::new(owner.clone()),
+        });
     }
     Ok(programs)
 }
-
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeSemanticFactsError {
     #[error("checked local use at {site:?} does not belong to the accepted HIR generation")]
@@ -9551,10 +9616,12 @@ pub enum RuntimeSemanticFactsError {
     DuplicateFact { family: RuntimeSemanticFactFamily },
     #[error("residual runtime value for {expression:?} is not a checked Color call result")]
     InvalidResidualValue { expression: ExprId },
-    #[error("runtime pure program {program} does not match its checked View closure root")]
+    #[error("runtime pure program {program} does not match its admitted root and input ABI")]
     InvalidPureProgram { program: RuntimePureProgramId },
-    #[error("checked View closure root {closure:?} has no exact runtime pure-program fact")]
-    MissingPureProgram { closure: ExprId },
+    #[error("checked program root {owner:?} has no exact runtime pure-program fact")]
+    MissingPureProgram {
+        owner: Box<HirRuntimeExecutableOwner>,
+    },
     #[error("accepted runtime semantic facts omit expression type {expression:?}")]
     MissingExpressionType { expression: ExprId },
     #[error(
@@ -11871,7 +11938,8 @@ fn validate_project_function_semantic_catalog(
         && (!matches!(parent_key, Some(RuntimeClosureLexicalOwner::TraitMethod(_)))
             || !matches!(
                 partition.executable(),
-                HirRuntimeExecutableOwner::ImplMethod(_) | HirRuntimeExecutableOwner::Closure(_)
+                HirRuntimeExecutableOwner::ImplMethod(_)
+                    | HirRuntimeExecutableOwner::CallableBody(_)
             ))
     {
         return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
@@ -12708,7 +12776,7 @@ fn validate_closure_instance(
     };
     let module = module_for(modules, owner.module())?;
     let expected_captures = if let Some(owners) =
-        runtime_owners.executable_owners(&HirRuntimeExecutableOwner::Closure(owner))
+        runtime_owners.executable_owners(&HirRuntimeExecutableOwner::CallableBody(owner))
     {
         owners
             .capture_plan()

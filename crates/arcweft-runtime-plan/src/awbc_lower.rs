@@ -193,7 +193,16 @@ impl<'a> AwbcLowerer<'a> {
 
         if options.verify {
             program
-                .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+                .verify(
+                    AwbcVerifyBudget::default(),
+                    AwbcVerifyContext {
+                        // An admitted program binding is a callable library root.
+                        // Selected-entry products still require their entry table.
+                        require_entrypoint: self.entry.is_some()
+                            || self.plan.pure_programs().is_empty(),
+                        ..AwbcVerifyContext::default()
+                    },
+                )
                 .map_err(AwbcLowerError::Verify)?;
         }
         let stats = AwbcLowerStats::from_program(&program);

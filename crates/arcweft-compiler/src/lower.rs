@@ -19,6 +19,7 @@ mod evaluated_effects;
 #[path = "lower/fx.rs"]
 pub(crate) mod fx;
 mod nominals;
+pub(crate) mod programs;
 mod project_instances;
 #[path = "lower/reachability.rs"]
 mod reachability;
@@ -55,7 +56,7 @@ fn runtime_scope_identity(
     }
 }
 
-pub(crate) use reachability::project_view_value_program_reachability;
+pub(crate) use reachability::project_program_reachability;
 pub use reachability::{
     RuntimeEmissionMode, RuntimeReachabilityProjectionError, project_runtime_reachability,
     validate_reachable_runtime_callables,
@@ -222,23 +223,23 @@ use arcweft_runtime_plan::{
         RuntimeProjectFunctionRootFact, RuntimeProjectFunctionRootRole,
         RuntimeProjectFunctionStatementPayload, RuntimeProjectFunctionStatementSemanticFact,
         RuntimeProjectFunctionTypeOwner, RuntimeProjectFunctionTypeProjection, RuntimeProjectItem,
-        RuntimePureProgramCaptureFact, RuntimePureProgramFact, RuntimeRecordExpressionFact,
-        RuntimeRecordExpressionField, RuntimeRecordExpressionSource, RuntimeRecordPatternFact,
-        RuntimeRecordPatternField, RuntimeRecordPatternRest, RuntimeRecordPatternSource,
-        RuntimeRecordPlanError, RuntimeRecordTypeField, RuntimeReductionConstructor,
-        RuntimeRegisteredValueId, RuntimeResidualValue, RuntimeResolvedAttachedContent,
-        RuntimeResolvedCall, RuntimeResolvedCallDispatch, RuntimeResolvedCallMutation,
-        RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
-        RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
-        RuntimeResolvedCallOperandSource, RuntimeResolvedFormatCall, RuntimeResolvedHostCall,
-        RuntimeResolvedMutablePlace, RuntimeResolvedNeedProducer, RuntimeResolvedNominal,
-        RuntimeResolvedNominalRecord, RuntimeResolvedSelect, RuntimeResolvedSpreadContainer,
-        RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeResolvedVariant,
-        RuntimeSemanticFactsError, RuntimeSemanticTypeId, RuntimeSequenceKind,
-        RuntimeStandardMapCall, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
-        RuntimeTraitIdentity, RuntimeTraitMethodFact, RuntimeTraitMethodInstanceKey,
-        RuntimeTraitMethodInstanceUse, RuntimeTraitMethodUseScope, RuntimeTriggerAdmission,
-        RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeProjectionPath,
+        RuntimePureProgramFact, RuntimeRecordExpressionFact, RuntimeRecordExpressionField,
+        RuntimeRecordExpressionSource, RuntimeRecordPatternFact, RuntimeRecordPatternField,
+        RuntimeRecordPatternRest, RuntimeRecordPatternSource, RuntimeRecordPlanError,
+        RuntimeRecordTypeField, RuntimeReductionConstructor, RuntimeRegisteredValueId,
+        RuntimeResidualValue, RuntimeResolvedAttachedContent, RuntimeResolvedCall,
+        RuntimeResolvedCallDispatch, RuntimeResolvedCallMutation, RuntimeResolvedCallOperand,
+        RuntimeResolvedCallOperandBinding, RuntimeResolvedCallOperandOrigin,
+        RuntimeResolvedCallOperandProjection, RuntimeResolvedCallOperandSource,
+        RuntimeResolvedFormatCall, RuntimeResolvedHostCall, RuntimeResolvedMutablePlace,
+        RuntimeResolvedNeedProducer, RuntimeResolvedNominal, RuntimeResolvedNominalRecord,
+        RuntimeResolvedSelect, RuntimeResolvedSpreadContainer, RuntimeResolvedStaticCallTarget,
+        RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeSemanticFactsError,
+        RuntimeSemanticTypeId, RuntimeSequenceKind, RuntimeStandardMapCall,
+        RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder, RuntimeTraitIdentity,
+        RuntimeTraitMethodFact, RuntimeTraitMethodInstanceKey, RuntimeTraitMethodInstanceUse,
+        RuntimeTraitMethodUseScope, RuntimeTriggerAdmission, RuntimeTryBoundaryOwner,
+        RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeProjectionPath,
         RuntimeTypeProjectionStep, RuntimeTypeShape,
     },
 };
@@ -508,14 +509,14 @@ pub fn project_runtime_semantic_facts(
 
 /// Projects runtime facts and the presentation-owned Fx definitions emitted
 /// by accepted RichText effects in the same lowering transaction.
-pub(crate) fn project_runtime_semantic_facts_with_view_value_programs_and_fx(
+pub(crate) fn project_runtime_semantic_facts_with_programs_and_fx(
     project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
-    view_value_owners: &HirRuntimeSemanticReachability<'_>,
-    pure_programs: &[crate::view::CheckedViewHandlerProgram],
+    program_owners: &HirRuntimeSemanticReachability<'_>,
+    pure_programs: &[RuntimePureProgramFact],
     dialogue_profile: Option<&CheckedDialogueProfile>,
     fx_catalog: &crate::fx_catalog::CompiledFxCatalog,
     instantiation_control: &ProjectInstantiationControl,
@@ -526,7 +527,7 @@ pub(crate) fn project_runtime_semantic_facts_with_view_value_programs_and_fx(
         world,
         analysis,
         runtime_owners,
-        Some(view_value_owners),
+        Some(program_owners),
         pure_programs,
         dialogue_profile,
         fx_catalog,
@@ -540,19 +541,16 @@ fn project_runtime_semantic_fact_inventories(
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
-    view_value_owners: Option<&HirRuntimeSemanticReachability<'_>>,
-    pure_programs: &[crate::view::CheckedViewHandlerProgram],
+    program_owners: Option<&HirRuntimeSemanticReachability<'_>>,
+    pure_programs: &[RuntimePureProgramFact],
     dialogue_profile: Option<&CheckedDialogueProfile>,
     fx_catalog: &crate::fx_catalog::CompiledFxCatalog,
     instantiation_control: &ProjectInstantiationControl,
 ) -> Result<RuntimePlanSemanticFacts, RuntimeSemanticProjectionError> {
     analysis.validate_generation(project, symbols)?;
     let execution_projection = analysis.execution_projection();
-    let mut instance_owned_expression_owners = ordinary_function_runtime_expression_owners(
-        project,
-        runtime_owners,
-        &execution_projection,
-    )?;
+    let mut instance_owned_expression_owners =
+        ordinary_function_runtime_expression_owners(project, runtime_owners, analysis)?;
     instance_owned_expression_owners.extend(
         runtime_owners
             .reachable_executables()
@@ -569,11 +567,11 @@ fn project_runtime_semantic_fact_inventories(
             .filter_map(|owner| runtime_owners.executable_owners(owner))
             .flat_map(|owners| owners.expressions()),
     );
-    if let Some(view_value_owners) = view_value_owners {
+    if let Some(program_owners) = program_owners {
         instance_owned_expression_owners.extend(ordinary_function_runtime_expression_owners(
             project,
-            view_value_owners,
-            &execution_projection,
+            program_owners,
+            analysis,
         )?);
     }
     let mut instance_discovery = ProjectInstantiationSession::new(instantiation_control.clone());
@@ -588,7 +586,7 @@ fn project_runtime_semantic_fact_inventories(
     let mut runtime_calls = BTreeMap::new();
     for (owner, _) in analysis.expressions() {
         if (runtime_owners.contains_expression(owner)
-            || view_value_owners.is_some_and(|owners| owners.contains_expression(owner)))
+            || program_owners.is_some_and(|owners| owners.contains_expression(owner)))
             && !instance_owned_expression_owners.contains(&owner)
         {
             instance_projection
@@ -603,9 +601,9 @@ fn project_runtime_semantic_fact_inventories(
         analysis,
         &mut instance_projection,
     )?;
-    if let Some(view_value_owners) = view_value_owners {
+    if let Some(program_owners) = program_owners {
         runtime_callable_values.extend(callable_values::discover_roots(
-            view_value_owners,
+            program_owners,
             &instance_owned_expression_owners,
             symbols,
             world,
@@ -615,7 +613,7 @@ fn project_runtime_semantic_fact_inventories(
     }
     for (owner, call) in analysis.calls() {
         if (!runtime_owners.contains_expression(owner)
-            && !view_value_owners.is_some_and(|owners| owners.contains_expression(owner)))
+            && !program_owners.is_some_and(|owners| owners.contains_expression(owner)))
             || instance_owned_expression_owners.contains(&owner)
         {
             continue;
@@ -743,11 +741,11 @@ fn project_runtime_semantic_fact_inventories(
         runtime_owners,
         &closed_instance_type_owners,
     )?;
-    if let Some(view_value_owners) = view_value_owners {
+    if let Some(program_owners) = program_owners {
         validate_executable_record_projections(
             world,
             analysis,
-            view_value_owners,
+            program_owners,
             &closed_instance_type_owners,
         )?;
     }
@@ -763,8 +761,8 @@ fn project_runtime_semantic_fact_inventories(
         &dialogue_projection,
     )?;
     let mut runtime_expression_type_owners = runtime_owners.selected_expression_type_owners()?;
-    if let Some(view_value_owners) = view_value_owners {
-        runtime_expression_type_owners.extend(view_value_owners.selected_expression_type_owners()?);
+    if let Some(program_owners) = program_owners {
+        runtime_expression_type_owners.extend(program_owners.selected_expression_type_owners()?);
     }
     let mut input = RuntimePlanSemanticFactInput::new();
     input.attach_checked_local_uses(Arc::new(analysis.checked_local_uses().clone()));
@@ -788,15 +786,15 @@ fn project_runtime_semantic_fact_inventories(
     let runtime_locals = runtime_owners
         .locals()
         .chain(
-            view_value_owners
+            program_owners
                 .into_iter()
                 .flat_map(|owners| owners.locals()),
         )
-        .chain(
-            pure_programs
-                .iter()
-                .flat_map(|program| program.captures().iter().map(|capture| capture.local())),
-        )
+        .chain(pure_programs.iter().flat_map(|program| {
+            program
+                .free_inputs()
+                .map(|(input, _)| input.binding().local())
+        }))
         .collect::<BTreeSet<_>>();
     for owner in runtime_locals {
         if closed_instance_type_owners.contains(&RuntimeProjectFunctionTypeOwner::Local(owner)) {
@@ -805,10 +803,17 @@ fn project_runtime_semantic_fact_inventories(
         let local = analysis
             .local(owner)
             .ok_or(RuntimeSemanticProjectionError::MissingLocalSemanticFact { local: owner })?;
-        input.push_local_declaration(owner, runtime_type(local.ty(), symbols, world, analysis)?);
+        input.push_local_declaration(
+            owner,
+            runtime_type(local.ty(), symbols, world, analysis).map_err(|error| {
+                RuntimeSemanticProjectionError::Type {
+                    reason: format!("runtime local {owner:?}: {error}"),
+                }
+            })?,
+        );
     }
 
-    let iteration_methods = runtime_iteration_methods(analysis, runtime_owners, view_value_owners)?;
+    let iteration_methods = runtime_iteration_methods(analysis, runtime_owners, program_owners)?;
     let mut method_declarations = BTreeMap::new();
     for (conformance, self_type) in &iteration_methods {
         let declaration = conformance.declaration().clone();
@@ -851,18 +856,25 @@ fn project_runtime_semantic_fact_inventories(
 
     for (owner, ty) in analysis.types() {
         if runtime_owners.contains_type(owner)
-            || view_value_owners.is_some_and(|owners| owners.contains_type(owner))
+            || program_owners.is_some_and(|owners| owners.contains_type(owner))
         {
             if closed_instance_type_owners.contains(&RuntimeProjectFunctionTypeOwner::Type(owner)) {
                 continue;
             }
-            input.push_type(owner, runtime_type(ty, symbols, world, analysis)?);
+            input.push_type(
+                owner,
+                runtime_type(ty, symbols, world, analysis).map_err(|error| {
+                    RuntimeSemanticProjectionError::Type {
+                        reason: format!("runtime type annotation {owner:?}: {error}"),
+                    }
+                })?,
+            );
         }
     }
 
     for (owner, expression) in analysis.expressions() {
         if !runtime_owners.contains_expression(owner)
-            && !view_value_owners.is_some_and(|owners| owners.contains_expression(owner))
+            && !program_owners.is_some_and(|owners| owners.contains_expression(owner))
         {
             continue;
         }
@@ -883,7 +895,10 @@ fn project_runtime_semantic_fact_inventories(
                     symbols,
                     world,
                     analysis,
-                )?,
+                )
+                .map_err(|error| RuntimeSemanticProjectionError::Type {
+                    reason: format!("runtime expression {owner:?}: {error}"),
+                })?,
             );
         }
         if let Some(specialization) = discovered_instances.root_value_specialization(owner)? {
@@ -905,7 +920,7 @@ fn project_runtime_semantic_fact_inventories(
                     .ok_or(RuntimeSemanticProjectionError::MissingModule { owner })?;
                 let eligible = |id| {
                     runtime_owners.contains_expression(id)
-                        || view_value_owners.is_some_and(|owners| owners.contains_expression(id))
+                        || program_owners.is_some_and(|owners| owners.contains_expression(id))
                 };
                 input.push_expression_scope(
                     owner,
@@ -1236,14 +1251,21 @@ fn project_runtime_semantic_fact_inventories(
 
     for (owner, pattern) in analysis.patterns() {
         if !runtime_owners.contains_pattern(owner)
-            && !view_value_owners.is_some_and(|owners| owners.contains_pattern(owner))
+            && !program_owners.is_some_and(|owners| owners.contains_pattern(owner))
         {
             continue;
         }
         if closed_instance_type_owners.contains(&RuntimeProjectFunctionTypeOwner::Pattern(owner)) {
             continue;
         }
-        input.push_pattern_type(owner, runtime_type(pattern.ty(), symbols, world, analysis)?);
+        input.push_pattern_type(
+            owner,
+            runtime_type(pattern.ty(), symbols, world, analysis).map_err(|error| {
+                RuntimeSemanticProjectionError::Type {
+                    reason: format!("runtime pattern {owner:?}: {error}"),
+                }
+            })?,
+        );
         match pattern.resolution() {
             CheckedPatternResolution::Literal(literal) => {
                 input.push_pattern_literal(
@@ -1274,7 +1296,7 @@ fn project_runtime_semantic_fact_inventories(
 
     for (owner, statement) in analysis.statements() {
         if !runtime_owners.contains_statement(owner)
-            && !view_value_owners.is_some_and(|owners| owners.contains_statement(owner))
+            && !program_owners.is_some_and(|owners| owners.contains_statement(owner))
         {
             continue;
         }
@@ -1293,7 +1315,7 @@ fn project_runtime_semantic_fact_inventories(
                     })?;
                 let eligible = |id| {
                     runtime_owners.contains_expression(id)
-                        || view_value_owners.is_some_and(|owners| owners.contains_expression(id))
+                        || program_owners.is_some_and(|owners| owners.contains_expression(id))
                 };
                 input.push_statement_scope(
                     owner,
@@ -1351,7 +1373,7 @@ fn project_runtime_semantic_fact_inventories(
 
     for (owner, capture) in analysis.captures() {
         if !runtime_owners.contains_capture(owner)
-            && !view_value_owners.is_some_and(|owners| owners.contains_capture(owner))
+            && !program_owners.is_some_and(|owners| owners.contains_capture(owner))
         {
             continue;
         }
@@ -1385,52 +1407,22 @@ fn project_runtime_semantic_fact_inventories(
     }
 
     for program in pure_programs {
-        let source = arcweft_lang_sema::final_analysis::CheckedExecutionSource::InvokeBody(
-            arcweft_lang_sema::final_analysis::CheckedExecutionBodyOwner::CallableValue(
-                program.closure(),
-            ),
-        );
-        let context = analysis
-            .checked_execution_context(project, symbols, source.clone(), None)
-            .map_err(Box::new)?;
-        let admission = context.checked_deterministic_program(source)?;
-        input.push_pure_program(RuntimePureProgramFact::try_new(
-            program.id(),
-            admission,
-            program.closure(),
-            program.body(),
-            program
-                .captures()
-                .iter()
-                .copied()
-                .map(|capture| {
-                    RuntimePureProgramCaptureFact::new(
-                        capture.capture(),
-                        capture.local(),
-                        capture.schema().parameter().value(),
-                        capture.schema().value_type(),
-                    )
-                })
-                .collect::<Vec<_>>()
-                .into_boxed_slice(),
-            program.result().value_type(),
-        )?);
+        input.push_pure_program(program.clone());
     }
-
     attach_dialogue_and_trigger_semantic_facts(
         analysis,
         runtime_owners,
-        view_value_owners,
+        program_owners,
         &closed_instance_statement_owners,
         &closed_instance_type_owners,
         &mut input,
         &dialogue_projection,
     )?;
-    let facts = match view_value_owners {
-        Some(view_value_owners) => RuntimePlanSemanticFacts::try_new_with_view_value_programs(
+    let facts = match program_owners {
+        Some(program_owners) => RuntimePlanSemanticFacts::try_new_with_programs(
             project,
             runtime_owners,
-            view_value_owners,
+            program_owners,
             input,
         )?,
         None => RuntimePlanSemanticFacts::try_new(project, runtime_owners, input)?,
@@ -2198,7 +2190,7 @@ fn collect_runtime_project_executable_expression_owners(
         expressions.insert(row.owner());
         if row.family() == CheckedExecutableRuntimeExpressionFactFamily::Closure {
             collect_runtime_project_executable_expression_owners(
-                &HirRuntimeExecutableOwner::Closure(row.owner()),
+                &HirRuntimeExecutableOwner::CallableBody(row.owner()),
                 analysis,
                 runtime_owners,
                 visited,
@@ -2212,7 +2204,7 @@ fn collect_runtime_project_executable_expression_owners(
 fn attach_dialogue_and_trigger_semantic_facts(
     analysis: &FinalSemanticAnalysis,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
-    view_value_owners: Option<&HirRuntimeSemanticReachability<'_>>,
+    program_owners: Option<&HirRuntimeSemanticReachability<'_>>,
     instance_statement_owners: &BTreeSet<StmtId>,
     instance_type_owners: &BTreeSet<RuntimeProjectFunctionTypeOwner>,
     input: &mut RuntimePlanSemanticFactInput,
@@ -2239,7 +2231,7 @@ fn attach_dialogue_and_trigger_semantic_facts(
     )?;
     for (owner, statement) in analysis.statements() {
         if !runtime_owners.contains_statement(owner)
-            && !view_value_owners.is_some_and(|owners| owners.contains_statement(owner))
+            && !program_owners.is_some_and(|owners| owners.contains_statement(owner))
         {
             continue;
         }
@@ -5933,7 +5925,7 @@ fn runtime_iteration_under(
 fn runtime_iteration_methods(
     analysis: &FinalSemanticAnalysis,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
-    view_value_owners: Option<&HirRuntimeSemanticReachability<'_>>,
+    program_owners: Option<&HirRuntimeSemanticReachability<'_>>,
 ) -> Result<BTreeMap<CheckedTraitConformance, TypeKind>, RuntimeSemanticProjectionError> {
     let mut methods = BTreeMap::new();
     let mut insert = |conformance: &CheckedTraitConformance, self_type: &TypeKind| match methods
@@ -5946,7 +5938,7 @@ fn runtime_iteration_methods(
     };
     for (owner, statement) in analysis.statements() {
         if !runtime_owners.contains_statement(owner)
-            && !view_value_owners.is_some_and(|owners| owners.contains_statement(owner))
+            && !program_owners.is_some_and(|owners| owners.contains_statement(owner))
         {
             continue;
         }
@@ -6040,12 +6032,25 @@ fn runtime_project_function_roots(
 fn ordinary_function_runtime_expression_owners(
     project: HirAnalysisProjectView<'_>,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
-    execution: &arcweft_lang_sema::final_analysis::FinalAnalysisExecutionProjection<'_>,
+    analysis: &FinalSemanticAnalysis,
 ) -> Result<BTreeSet<ExprId>, RuntimeSemanticProjectionError> {
+    let execution = analysis.execution_projection();
     let mut calls = BTreeSet::new();
     for executable in runtime_owners.reachable_executables() {
-        let HirRuntimeExecutableOwner::Item(owner) = executable else {
-            continue;
+        let owner = match executable {
+            HirRuntimeExecutableOwner::Item(owner) => *owner,
+            HirRuntimeExecutableOwner::DeclarationBody {
+                declaration,
+                role: arcweft_lang_hir::project::HirDeclarationBodyRootRole::FunctionBody,
+            } => analysis
+                .hir_topology()
+                .declaration(declaration)
+                .map_err(|error| RuntimeSemanticProjectionError::Type {
+                    reason: error.to_string(),
+                })?
+                .body()
+                .source_item(),
+            _ => continue,
         };
         let module = project
             .modules()
@@ -6055,7 +6060,7 @@ fn ordinary_function_runtime_expression_owners(
             })?;
         let item =
             module
-                .resolve_item(*owner)
+                .resolve_item(owner)
                 .map_err(|_| RuntimeSemanticProjectionError::Type {
                     reason: "runtime executable owner item is absent".to_owned(),
                 })?;
@@ -6070,7 +6075,7 @@ fn ordinary_function_runtime_expression_owners(
                     continue;
                 }
                 if row.family() == CheckedExecutableRuntimeExpressionFactFamily::Closure {
-                    pending.insert(HirRuntimeExecutableOwner::Closure(row.owner()));
+                    pending.insert(HirRuntimeExecutableOwner::CallableBody(row.owner()));
                 }
             }
         }
@@ -7064,7 +7069,7 @@ fn discover_runtime_project_executable_dependencies(
                     }
                 }
                 CheckedExecutableRuntimeExpressionFactFamily::Closure => {
-                    pending.insert(HirRuntimeExecutableOwner::Closure(row.owner()));
+                    pending.insert(HirRuntimeExecutableOwner::CallableBody(row.owner()));
                 }
                 CheckedExecutableRuntimeExpressionFactFamily::Value => {
                     let owner = row.owner();
@@ -8296,7 +8301,7 @@ fn runtime_closure_instance_fact(
         })
         .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
 
-    let executable = HirRuntimeExecutableOwner::Closure(owner);
+    let executable = HirRuntimeExecutableOwner::CallableBody(owner);
     let semantic_owners = match lexical {
         RuntimeExecutableInstantiation::Display { selected, .. } => selected.closure_owners(owner),
         RuntimeExecutableInstantiation::Global | RuntimeExecutableInstantiation::Project { .. } => {

@@ -472,7 +472,7 @@ impl FinalAnalysisExecutionProjection<'_> {
         selected: &HirRuntimeSelectedMethodOwners<'_>,
         owner: ExprId,
     ) -> Result<CheckedExecutableRuntimeFactPartition, FinalAnalysisExecutionProjectionError> {
-        let executable = HirRuntimeExecutableOwner::Closure(owner);
+        let executable = HirRuntimeExecutableOwner::CallableBody(owner);
         let owners = selected.closure_owners(owner).ok_or_else(|| {
             FinalAnalysisExecutionProjectionError::MissingExecutablePartition {
                 executable: executable.clone(),

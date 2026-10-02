@@ -871,14 +871,24 @@ where
                     [error.diagnostic()],
                 )
             })?;
-            let view_value_reachability = lower::project_view_value_program_reachability(
+            let pure_programs = view_product.handler_programs().iter().map(|program| {
+                let fact = lower::programs::project(program.id(), Arc::clone(program.admission()),
+                    registered_world.symbols(), registered_world, final_analysis)?;
+                if fact.result().identity().as_bytes() != program.result().value_type().as_bytes() {
+                    return Err(lower::RuntimeSemanticProjectionError::Facts(Box::new(
+                        arcweft_runtime_plan::semantic_facts::RuntimeSemanticFactsError::InvalidPureProgram { program: program.id() },
+                    )));
+                }
+                Ok(fact)
+            }).collect::<Result<Vec<_>, lower::RuntimeSemanticProjectionError>>().map_err(|error| {
+                linked_error(ProjectCompileStage::RuntimePlanLower,
+                    [Diagnostic::new(DiagnosticSeverity::Error, error.to_string()).with_code(error.diagnostic_code())])
+            })?;
+            let program_reachability = lower::project_program_reachability(
                 executable,
                 registered_world.symbols(),
                 final_analysis.as_ref(),
-                view_product
-                    .handler_programs()
-                    .iter()
-                    .map(view::CheckedViewHandlerProgram::closure),
+                pure_programs.iter().map(|program| program.admission()),
             )
             .and_then(|reachability| {
                 lower::validate_reachable_runtime_callables(
@@ -936,14 +946,14 @@ where
                     [error.diagnostic()],
                 )
             })?;
-            let runtime_facts = lower::project_runtime_semantic_facts_with_view_value_programs_and_fx(
+            let runtime_facts = lower::project_runtime_semantic_facts_with_programs_and_fx(
                 executable,
                 registered_world.symbols(),
                 registered_world,
                 final_analysis,
                 &runtime_reachability,
-                &view_value_reachability,
-                view_product.handler_programs(),
+                &program_reachability,
+                &pure_programs,
                 Some(&dialogue_profile),
                 &fx_catalog,
                 context.instantiation_control(),

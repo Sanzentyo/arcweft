@@ -225,6 +225,29 @@ fn finish_guard(hasher: blake3::Hasher) -> RuntimeAssertionGuardId {
     RuntimeAssertionGuardId::try_from_bytes(bytes)
         .expect("runtime assertion guard derivation replaces the reserved zero value")
 }
+
+pub(crate) fn derive_runtime_program_assertion_guard(
+    package: &CallablePackageId,
+    module: &CanonicalModulePath,
+    program: arcweft_id::runtime_program::RuntimePureProgramId,
+    assertion_ordinal: u32,
+    condition: AssertionConditionIndex,
+    profile: RuntimeAssertionProfile,
+) -> RuntimeAssertionGuardId {
+    let mut hasher = blake3::Hasher::new_derive_key(RUNTIME_ASSERTION_GUARD_CONTEXT);
+    hasher.update(&RUNTIME_ASSERTION_GUARD_SCHEMA.to_le_bytes());
+    hash_text(&mut hasher, package.as_str());
+    hash_module(&mut hasher, module);
+    hash_text(&mut hasher, "program");
+    hasher.update(&program.as_bytes());
+    hasher.update(&assertion_ordinal.to_le_bytes());
+    hasher.update(&[condition.get()]);
+    hasher.update(&[match profile {
+        RuntimeAssertionProfile::Always => 0,
+        RuntimeAssertionProfile::DebugOnly => 1,
+    }]);
+    finish_guard(hasher)
+}
 fn hash_callable(hasher: &mut blake3::Hasher, callable: &CallableDeclarationId) {
     hash_text(hasher, callable.package().as_str());
     hash_module(hasher, callable.module());
