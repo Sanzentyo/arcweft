@@ -18,8 +18,8 @@ use crate::task::RuntimeProgramOwner;
 use crate::time::LogicalDuration;
 use crate::value::ownership::{RuntimeOwnedSlotId, RuntimeValuePath};
 use crate::value::{
-    RuntimeHandleKind, RuntimeLocalBinding, RuntimeOpaquePersistence, RuntimeOpaqueValue,
-    RuntimeOpaqueValueClass, RuntimeValue,
+    RuntimeHandleKind, RuntimeLocalBinding, RuntimeLocalSlot, RuntimeOpaquePersistence,
+    RuntimeOpaqueValue, RuntimeOpaqueValueClass, RuntimePlaceStorage, RuntimeValue,
 };
 use arcweft_character::id::CharacterId;
 use serde::{Deserialize, Serialize};
@@ -548,13 +548,8 @@ impl<T> RuntimeDialogueActivationState<T> {
             }
         }
         for scheduled in &self.scheduled {
-            let captures = match &scheduled.custody {
-                RuntimeScheduledCaptureCustody::Packet(captures)
-                | RuntimeScheduledCaptureCustody::LineScope(captures) => captures,
-                RuntimeScheduledCaptureCustody::ChildFiber(_) => continue,
-            };
-            for binding in captures.iter() {
-                crate::value::visit_runtime_value_graph(&binding.value, |nested| visitor(nested))?;
+            for value in scheduled.custody.values() {
+                crate::value::visit_runtime_value_graph(value, |nested| visitor(nested))?;
             }
         }
         Ok(())
@@ -632,7 +627,7 @@ struct AwbcRuntimeLocalBindingSnapshot {
 enum AwbcRuntimeScheduledCaptureCustodySnapshot {
     Packet(Vec<AwbcRuntimeLocalBindingSnapshot>),
     ChildFiber(Vec<RuntimeLocalDeclarationId>),
-    LineScope(Vec<AwbcRuntimeLocalBindingSnapshot>),
+    LineScope(Vec<RuntimeLocalSlot<crate::value::AwbcRuntimeValueSnapshot>>),
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1309,17 +1304,9 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                 RuntimeScheduledCaptureCustody::ChildFiber(_) => None,
             };
             if let Some(expected_owner) = expected_capture_owner {
-                let captures = match &scheduled.custody {
-                    RuntimeScheduledCaptureCustody::Packet(captures)
-                    | RuntimeScheduledCaptureCustody::LineScope(captures) => captures,
-                    RuntimeScheduledCaptureCustody::ChildFiber(_) => {
-                        return Err(LineRuntimeError::InvalidRestoredScheduledState);
-                    }
-                };
                 let mut expected_tokens = std::collections::BTreeSet::new();
-                for capture in captures {
+                for capture in scheduled.custody.values() {
                     for handle in capture
-                        .value
                         .affine_line_handles()
                         .map_err(|_| LineRuntimeError::InvalidRestoredScheduledState)?
                     {
@@ -1706,7 +1693,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
     pub(crate) fn admit_scheduled_child_bindings(
         &mut self,
         token: &RuntimeLineHandleToken,
-        bindings: Box<[RuntimeLocalBinding]>,
+        bindings: Box<[RuntimeLocalSlot]>,
         terminal: RuntimeScheduledState,
     ) -> Result<(), LineRuntimeError> {
         let proof = self.inspect_scheduled_child_bindings(token, &bindings, terminal)?;
@@ -1717,12 +1704,12 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
     pub(crate) fn inspect_scheduled_child_bindings(
         &self,
         token: &RuntimeLineHandleToken,
-        bindings: &[RuntimeLocalBinding],
+        bindings: &[RuntimeLocalSlot],
         terminal: RuntimeScheduledState,
     ) -> Result<RuntimeScheduledChildAdmissionProof, LineRuntimeError> {
         let references = bindings
             .iter()
-            .map(|binding| (binding.local, &binding.value))
+            .map(|binding| (binding.local(), binding.storage()))
             .collect::<Vec<_>>();
         self.inspect_scheduled_child_binding_refs(token, &references, terminal)
     }
@@ -1730,7 +1717,10 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
     pub(crate) fn inspect_scheduled_child_binding_refs(
         &self,
         token: &RuntimeLineHandleToken,
-        bindings: &[(RuntimeLocalDeclarationId, &RuntimeValue)],
+        bindings: &[(
+            RuntimeLocalDeclarationId,
+            &RuntimePlaceStorage<RuntimeValue>,
+        )],
         terminal: RuntimeScheduledState,
     ) -> Result<RuntimeScheduledChildAdmissionProof, LineRuntimeError> {
         let packet = self
@@ -1749,12 +1739,12 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
     pub(crate) fn admit_scheduled_child_bindings_prepared(
         &mut self,
         proof: RuntimeScheduledChildAdmissionProof,
-        bindings: Box<[RuntimeLocalBinding]>,
+        bindings: Box<[RuntimeLocalSlot]>,
     ) {
         assert_eq!(
             bindings
                 .iter()
-                .map(|binding| binding.local)
+                .map(|binding| binding.local())
                 .collect::<Vec<_>>(),
             proof.locals,
             "scheduled child bindings must match their borrowed admission proof"
@@ -1887,7 +1877,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             packet
                 .line_scope_captures()?
                 .iter()
-                .map(|binding| &binding.value),
+                .flat_map(|binding| binding.storage().values()),
         )?;
         stage.packets.push(RuntimeScheduledPacketTransition::Work {
             token: token.clone(),
@@ -1900,13 +1890,13 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         &self,
         stage: &mut RuntimeScheduledCompletionStage,
         proof: &RuntimeScheduledChildAdmissionProof,
-        bindings: &[RuntimeLocalBinding],
+        bindings: &[RuntimeLocalSlot],
         failed: bool,
         cancelled: bool,
     ) -> Result<(), LineRuntimeError> {
         let references = bindings
             .iter()
-            .map(|binding| (binding.local, &binding.value))
+            .map(|binding| (binding.local(), binding.storage()))
             .collect::<Vec<_>>();
         self.stage_scheduled_child_work_completion_refs(
             stage,
@@ -1921,7 +1911,10 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         &self,
         stage: &mut RuntimeScheduledCompletionStage,
         proof: &RuntimeScheduledChildAdmissionProof,
-        bindings: &[(RuntimeLocalDeclarationId, &RuntimeValue)],
+        bindings: &[(
+            RuntimeLocalDeclarationId,
+            &RuntimePlaceStorage<RuntimeValue>,
+        )],
         failed: bool,
         cancelled: bool,
     ) -> Result<(), LineRuntimeError> {
@@ -1947,7 +1940,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             &mut stage.ledger,
             packet,
             terminal,
-            bindings.iter().map(|(_, value)| *value),
+            bindings.iter().flat_map(|(_, storage)| storage.values()),
         )?;
         stage.packets.push(RuntimeScheduledPacketTransition::Work {
             token: proof.token.clone(),
@@ -3215,9 +3208,16 @@ impl AwbcRuntimeScheduledCaptureCustodySnapshot {
                 Self::Packet(snapshot_local_bindings(bindings, owner)?)
             }
             RuntimeScheduledCaptureCustody::ChildFiber(locals) => Self::ChildFiber(locals.to_vec()),
-            RuntimeScheduledCaptureCustody::LineScope(bindings) => {
-                Self::LineScope(snapshot_local_bindings(bindings, owner)?)
-            }
+            RuntimeScheduledCaptureCustody::LineScope(bindings) => Self::LineScope(
+                bindings
+                    .iter()
+                    .map(|binding| {
+                        binding.try_map_ref(&mut |value| {
+                            snapshot_runtime_value_for_owner(value, owner)
+                        })
+                    })
+                    .collect::<Result<_, _>>()?,
+            ),
         })
     }
 
@@ -3232,9 +3232,23 @@ impl AwbcRuntimeScheduledCaptureCustodySnapshot {
             Self::ChildFiber(locals) => {
                 RuntimeScheduledCaptureCustody::ChildFiber(locals.into_boxed_slice())
             }
-            Self::LineScope(bindings) => {
-                RuntimeScheduledCaptureCustody::LineScope(live_local_bindings(bindings, owner)?)
-            }
+            Self::LineScope(bindings) => RuntimeScheduledCaptureCustody::LineScope(
+                bindings
+                    .into_iter()
+                    .map(|binding| {
+                        let binding = binding
+                            .try_map(&mut |value| value.into_runtime_value_for_program(owner))?;
+                        binding
+                            .storage()
+                            .validate_record_headers(owner)
+                            .map_err(|message| {
+                                crate::value::AwbcRuntimeValueSnapshotError::Message { message }
+                            })?;
+                        Ok(binding)
+                    })
+                    .collect::<Result<Vec<_>, crate::value::AwbcRuntimeValueSnapshotError>>()?
+                    .into_boxed_slice(),
+            ),
         })
     }
 }
@@ -4210,7 +4224,27 @@ pub enum RuntimeScheduledState {
 enum RuntimeScheduledCaptureCustody {
     Packet(Box<[RuntimeLocalBinding]>),
     ChildFiber(Box<[RuntimeLocalDeclarationId]>),
-    LineScope(Box<[RuntimeLocalBinding]>),
+    LineScope(Box<[RuntimeLocalSlot]>),
+}
+
+impl RuntimeScheduledCaptureCustody {
+    fn values(&self) -> impl Iterator<Item = &RuntimeValue> {
+        let (packet, slots) = match self {
+            Self::Packet(bindings) => (Some(bindings.as_ref()), None),
+            Self::LineScope(slots) => (None, Some(slots.as_ref())),
+            Self::ChildFiber(_) => (None, None),
+        };
+        packet
+            .into_iter()
+            .flatten()
+            .map(|binding| &binding.value)
+            .chain(
+                slots
+                    .into_iter()
+                    .flatten()
+                    .flat_map(|slot| slot.storage().values()),
+            )
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -4449,7 +4483,7 @@ impl RuntimeScheduledLineTask {
 
     pub(crate) fn admit_child_fiber_bindings(
         &mut self,
-        bindings: Box<[RuntimeLocalBinding]>,
+        bindings: Box<[RuntimeLocalSlot]>,
         terminal: RuntimeScheduledState,
     ) -> Result<(), LineRuntimeError> {
         self.inspect_child_fiber_bindings(&bindings, terminal)?;
@@ -4463,7 +4497,7 @@ impl RuntimeScheduledLineTask {
         let mut returned = bindings
             .into_vec()
             .into_iter()
-            .map(|binding| (binding.local, binding))
+            .map(|binding| (binding.local(), binding))
             .collect::<BTreeMap<_, _>>();
         let ordered = original_locals
             .iter()
@@ -4477,19 +4511,22 @@ impl RuntimeScheduledLineTask {
 
     fn inspect_child_fiber_bindings(
         &self,
-        bindings: &[RuntimeLocalBinding],
+        bindings: &[RuntimeLocalSlot],
         terminal: RuntimeScheduledState,
     ) -> Result<(), LineRuntimeError> {
         let references = bindings
             .iter()
-            .map(|binding| (binding.local, &binding.value))
+            .map(|binding| (binding.local(), binding.storage()))
             .collect::<Vec<_>>();
         self.inspect_child_fiber_binding_refs(&references, terminal)
     }
 
     fn inspect_child_fiber_binding_refs(
         &self,
-        bindings: &[(RuntimeLocalDeclarationId, &RuntimeValue)],
+        bindings: &[(
+            RuntimeLocalDeclarationId,
+            &RuntimePlaceStorage<RuntimeValue>,
+        )],
         terminal: RuntimeScheduledState,
     ) -> Result<(), LineRuntimeError> {
         if !matches!(
@@ -4543,7 +4580,14 @@ impl RuntimeScheduledLineTask {
         );
         match custody {
             RuntimeScheduledCaptureCustody::Packet(bindings) => {
-                self.custody = RuntimeScheduledCaptureCustody::LineScope(bindings);
+                self.custody = RuntimeScheduledCaptureCustody::LineScope(
+                    bindings
+                        .into_vec()
+                        .into_iter()
+                        .map(RuntimeLocalSlot::from)
+                        .collect::<Vec<_>>()
+                        .into_boxed_slice(),
+                );
                 self.state = terminal;
                 Ok(())
             }
@@ -4554,7 +4598,7 @@ impl RuntimeScheduledLineTask {
         }
     }
 
-    pub(crate) fn line_scope_captures(&self) -> Result<&[RuntimeLocalBinding], LineRuntimeError> {
+    pub(crate) fn line_scope_captures(&self) -> Result<&[RuntimeLocalSlot], LineRuntimeError> {
         self.validate_custody()?;
         match &self.custody {
             RuntimeScheduledCaptureCustody::LineScope(bindings) => Ok(bindings),
@@ -4676,9 +4720,9 @@ const fn is_terminal_scheduled_state(state: RuntimeScheduledState) -> bool {
 
 fn custody_values_are_well_formed(custody: &RuntimeScheduledCaptureCustody) -> bool {
     match custody {
-        RuntimeScheduledCaptureCustody::Packet(bindings)
-        | RuntimeScheduledCaptureCustody::LineScope(bindings) => {
-            local_bindings_are_unique(bindings)
+        RuntimeScheduledCaptureCustody::Packet(bindings) => local_bindings_are_unique(bindings),
+        RuntimeScheduledCaptureCustody::LineScope(slots) => {
+            local_ids_are_unique(slots.iter().map(RuntimeLocalSlot::local))
         }
         RuntimeScheduledCaptureCustody::ChildFiber(locals) => {
             local_ids_are_unique(locals.iter().copied())
@@ -4957,10 +5001,12 @@ pub enum LineRuntimeError {
 #[cfg(test)]
 mod tests {
     use super::{
-        AwbcRuntimeDialogueActivationSnapshot, LineRuntimeError, RuntimeCueLease, RuntimeCueOrigin,
-        RuntimeDeferUnwindStep, RuntimeDialogueActivationState, RuntimeDialogueResultState,
-        RuntimeHandleLease, RuntimeHandleLeaseState, RuntimeHandleOwnerSlot, RuntimeHandleResource,
-        RuntimeLineDeferredRegistration, RuntimeScheduledLineTask, ScopeExit,
+        AwbcRuntimeDialogueActivationSnapshot, AwbcRuntimeScheduledCaptureCustodySnapshot,
+        LineRuntimeError, RuntimeCueLease, RuntimeCueOrigin, RuntimeDeferUnwindStep,
+        RuntimeDialogueActivationState, RuntimeDialogueResultState, RuntimeHandleLease,
+        RuntimeHandleLeaseState, RuntimeHandleOwnerSlot, RuntimeHandleResource,
+        RuntimeLineDeferredRegistration, RuntimeScheduledCaptureCustody, RuntimeScheduledLineTask,
+        ScopeExit,
     };
     use crate::awbc::schema::{
         AwbcAgentTypeShape, AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcTypeId,
@@ -5468,6 +5514,75 @@ mod tests {
         }
         state.ledger.issuance_by_site.insert(site, 2);
         (activation, state)
+    }
+
+    #[test]
+    fn partial_child_slot_returns_once_and_retains_every_remaining_owner_in_snapshot() {
+        let (_, mut state) = scheduled_state();
+        let local = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
+        let record = RuntimeValue::try_record(
+            ["moved", "first", "second"]
+                .into_iter()
+                .map(|name| {
+                    (
+                        name.to_owned(),
+                        RuntimeValue::Need(crate::task::NeedId(name.to_owned())),
+                    )
+                })
+                .collect(),
+        )
+        .unwrap();
+        let packet = &mut state.scheduled[0];
+        packet.custody = RuntimeScheduledCaptureCustody::Packet(Box::new([RuntimeLocalBinding {
+            local,
+            value: record,
+        }]));
+        packet.state = RuntimeScheduledState::Running;
+        let bindings = packet.take_packet_for_child_fiber().unwrap();
+        let mut env = crate::value::RuntimeEnv::default();
+        for binding in bindings {
+            env.set(binding.local, binding.value);
+        }
+        let read = crate::value::RuntimeLocalRead::from_admitted_place(
+            local,
+            crate::value::RuntimeLocalReadMode::Move,
+            vec![crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap()]
+                .into_boxed_slice(),
+        );
+        assert_eq!(
+            env.read(&read).unwrap(),
+            RuntimeValue::Need(crate::task::NeedId("moved".into()))
+        );
+        let slots = env.into_slots().into_boxed_slice();
+        assert_eq!(slots.len(), 1);
+        assert_eq!(slots[0].storage().values().count(), 2);
+        assert!(matches!(
+            packet.inspect_child_fiber_bindings(
+                &[slots[0].clone(), slots[0].clone()],
+                RuntimeScheduledState::Completed
+            ),
+            Err(LineRuntimeError::InvalidScheduledCaptureTransition)
+        ));
+        packet
+            .admit_child_fiber_bindings(slots, RuntimeScheduledState::Completed)
+            .unwrap();
+        assert_eq!(packet.line_scope_captures().unwrap().len(), 1);
+        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(AwbcProgram::default()));
+        let snapshot =
+            AwbcRuntimeScheduledCaptureCustodySnapshot::from_live(&packet.custody, Some(&owner))
+                .unwrap();
+        let bytes = serde_json::to_vec(&snapshot).unwrap();
+        let snapshot: AwbcRuntimeScheduledCaptureCustodySnapshot =
+            serde_json::from_slice(&bytes).unwrap();
+        let restored = snapshot.into_live(&owner).unwrap();
+        assert_eq!(restored, packet.custody);
+        assert_eq!(
+            restored.values().collect::<Vec<_>>(),
+            vec![
+                &RuntimeValue::Need(crate::task::NeedId("first".into())),
+                &RuntimeValue::Need(crate::task::NeedId("second".into())),
+            ]
+        );
     }
 
     #[test]

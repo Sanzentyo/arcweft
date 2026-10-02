@@ -2471,7 +2471,12 @@ impl Engine {
             RuntimeDropPolicyExpr::Detach => RuntimeDropPolicy::Detach,
         };
         let source_local = match target.kind() {
-            RuntimeExprKind::Local(read) => Some(read.local()),
+            RuntimeExprKind::Local(read)
+                if read.mode() == crate::value::RuntimeLocalReadMode::Move
+                    && read.fields().is_empty() =>
+            {
+                Some(read.local())
+            }
             _ => None,
         };
         let target = match source_local {

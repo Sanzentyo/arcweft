@@ -1704,6 +1704,12 @@ impl Analyzer<'_, '_, '_> {
                     owner,
                     checked,
                     |local| self.facts.locals().get(&local).cloned(),
+                    |child| {
+                        self.facts
+                            .expressions()
+                            .get(&child)
+                            .and_then(PreparedExpressionFact::local_place_source)
+                    },
                     self.topology
                         .module(owner.module())
                         .and_then(|module| module.expression_uses().row(owner))

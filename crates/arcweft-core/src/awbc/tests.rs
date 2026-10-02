@@ -453,7 +453,7 @@ fn forged_repeat_sequence_rejects_runtime_length_mismatch_for_fixed_array() {
     assert!(trap.message.as_deref().is_some_and(|message| {
         message.contains("repeat Array length 3 differs from its destination length 2")
     }));
-    assert_eq!(fiber.frames[0].registers[2], None);
+    assert_eq!(fiber.frames[0].registers[2].as_ref().cloned(), None);
 }
 
 fn sequence_pop_front_program() -> AwbcProgram {
@@ -828,15 +828,15 @@ fn vec_push_and_pop_roundtrip_verify_and_mutate_local_places() {
     };
     assert_eq!(sequence.len(), 0);
     assert_eq!(
-        fiber.frames[0].registers[3],
+        fiber.frames[0].registers[3].as_ref().cloned(),
         Some(RuntimeValue::option_some(RuntimeValue::Bool(true)))
     );
     assert_eq!(
-        fiber.frames[0].registers[4],
+        fiber.frames[0].registers[4].as_ref().cloned(),
         Some(RuntimeValue::option_some(RuntimeValue::Bool(false)))
     );
     assert_eq!(
-        fiber.frames[0].registers[5],
+        fiber.frames[0].registers[5].as_ref().cloned(),
         Some(RuntimeValue::option_none())
     );
     let returned = super::vm::step(
@@ -936,11 +936,11 @@ fn vec_push_and_pop_roundtrip_verify_and_mutate_nominal_field_places() {
     assert_eq!(sequence.len(), 1);
     assert_eq!(sequence.value_at(0), RuntimeValue::Bool(false));
     assert_eq!(
-        fiber.frames[0].registers[4],
+        fiber.frames[0].registers[4].as_ref().cloned(),
         Some(RuntimeValue::option_some(RuntimeValue::Bool(true)))
     );
     assert_eq!(
-        fiber.frames[0].registers[5],
+        fiber.frames[0].registers[5].as_ref().cloned(),
         Some(RuntimeValue::option_some(RuntimeValue::Bool(false)))
     );
     let returned = super::vm::step(
@@ -1020,8 +1020,8 @@ fn sequence_pop_front_roundtrips_verifies_moves_rows_and_survives_restore() {
         .validate_for_program(&decoded)
         .expect("restored Vec registers validate");
     assert_eq!(
-        restored.frames[0].registers[2],
-        fiber.frames[0].registers[2]
+        restored.frames[0].registers[2].as_ref().cloned(),
+        fiber.frames[0].registers[2].as_ref().cloned()
     );
 
     let rest = super::vm::step(
@@ -1165,7 +1165,7 @@ fn sequence_next_moves_affine_item_and_initializes_only_nonempty_edge() {
     )
     .expect("sequence next moves first item");
     assert_eq!(output.exit, super::vm::VmExit::Running);
-    assert_eq!(fiber.frames[0].registers[1], Some(first));
+    assert_eq!(fiber.frames[0].registers[1].as_ref().cloned(), Some(first));
     let Some(RuntimeValue::Seq(remainder)) = fiber.frames[0].registers[0].as_ref() else {
         panic!("owned sequence stays in its register");
     };
@@ -1192,7 +1192,7 @@ fn sequence_next_moves_affine_item_and_initializes_only_nonempty_edge() {
     .expect("sequence next follows empty edge");
     assert_eq!(output.exit, super::vm::VmExit::Running);
     assert_eq!(empty.cursor.block, AwbcBlockId(2));
-    assert_eq!(empty.frames[0].registers[1], None);
+    assert_eq!(empty.frames[0].registers[1].as_ref().cloned(), None);
 }
 
 #[test]
@@ -2757,6 +2757,7 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         (AwbcOpcode::SequencePopFront, 0x16, Value),
         (AwbcOpcode::VecPush, 0x17, Value),
         (AwbcOpcode::VecPop, 0x18, Value),
+        (AwbcOpcode::ReadPlace, 0x19, Value),
         (AwbcOpcode::CallPureHelper, 0x20, CallTask),
         (AwbcOpcode::CallIntrinsic, 0x21, CallTask),
         (AwbcOpcode::CallTraitMethod, 0x22, CallTask),
@@ -6741,6 +6742,30 @@ fn verifier_rejects_variant_constant_with_obsolete_nominal_type() {
 #[test]
 fn fiber_checkpoint_and_serde_preserve_cleanup_stacks() {
     let mut program = minimal_program();
+    program
+        .strings
+        .extend(["info".to_owned(), "cleanup".to_owned()]);
+    program.constants = vec![
+        AwbcConstant::String(AwbcStringId(1)),
+        AwbcConstant::String(AwbcStringId(2)),
+    ];
+    let cleanup_type = AwbcTypeId(program.runtime_types.len() as u32);
+    program
+        .runtime_types
+        .push(runtime_type(91, AwbcRuntimeTypeShape::String));
+    program.signatures.push(AwbcSignature {
+        params: vec![cleanup_type],
+        result: None,
+        effects: AwbcEffectSetId(0),
+    });
+    program.effect_plans.push(AwbcEffectPlan {
+        kind: AwbcEffectKind::Log,
+        signature: AwbcSignatureId(1),
+        capability: None,
+        audio: None,
+        static_args: vec![AwbcConstantId(0), AwbcConstantId(1)],
+        resources: Vec::new(),
+    });
     program.frame_layouts[0].scopes = vec![AwbcScopeDefinition {
         parent: None,
         identity: crate::scope::RuntimeScopeIdentity::Anonymous,
@@ -6755,6 +6780,10 @@ fn fiber_checkpoint_and_serde_preserve_cleanup_stacks() {
         },
     ];
     program.blocks[0].instructions = AwbcTableRange::new(0, 2);
+    program.canonicalize_string_table();
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("cleanup fixture has admitted scope and effect schemas");
     let mut fiber =
         FiberState::for_entry(&program, AwbcEntryId(0), 7, 64).expect("fiber initializes");
     super::vm::step(
@@ -6781,6 +6810,10 @@ fn fiber_checkpoint_and_serde_preserve_cleanup_stacks() {
             effect: AwbcEffectPlanId(0),
             args: vec![RuntimeValue::String("scope".to_owned())],
         });
+
+    fiber
+        .validate_for_program(&program)
+        .expect("cleanup state belongs to its admitted program");
 
     let checkpoint = fiber
         .checkpoint()

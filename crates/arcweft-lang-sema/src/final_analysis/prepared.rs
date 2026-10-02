@@ -1226,14 +1226,24 @@ impl PreparedExpressionFact {
     /// A direct nominal field place reads its base through the selected field
     /// expression. The retained path child is source/type evidence, not a
     /// second transfer of that same local.
-    pub(crate) fn reads_field_binding(&self) -> bool {
+    pub(crate) fn local_place_source(&self) -> Option<super::CheckedFieldReceiver> {
         match self {
-            Self::ProjectField(field) => {
-                matches!(field.receiver(), super::CheckedFieldReceiver::Binding(_))
-            }
-            Self::Complete(value) => value.reads_field_binding(),
-            Self::CompileTimeScalar(value) => value.original().reads_field_binding(),
-            _ => false,
+            Self::ProjectField(field) => Some(field.receiver()),
+            Self::Complete(value) => value.local_place_source(),
+            Self::CompileTimeScalar(value) => value.original().local_place_source(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn field_root(
+        &self,
+        source: impl Fn(ExprId) -> Option<super::CheckedFieldReceiver>,
+    ) -> Option<LocalId> {
+        match self {
+            Self::ProjectField(field) => field.receiver().local_root(source),
+            Self::Complete(value) => value.field_root(source),
+            Self::CompileTimeScalar(value) => value.original().field_root(source),
+            _ => None,
         }
     }
 

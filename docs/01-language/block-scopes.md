@@ -43,14 +43,30 @@ let items = Vec<Content>::with_capacity(0usize) // new declaration
 
 The assignment target is a place, not a value read. The right-hand side is
 evaluated first, so `items = identity(items)` may move the old value and then
-initialize the same place with the result. Field/in-place mutation requires its
-existing owner to remain initialized. Active receiver loans prohibit consuming
-or changing their owner during operand evaluation. Initialization and borrow
+initialize the same place with the result. In-place mutation requires the
+selected value to remain initialized. Active receiver loans prohibit consuming
+or changing an overlapping place during operand evaluation. Initialization and borrow
 obligations are checked statically, including control-flow joins and backedges.
 An assignment transfers an existing old value to the owning runtime's cleanup
 transaction exactly once. If the old value was moved, there is no old value to
 clean up; when incoming paths differ, the retained slot's occupancy is the drop
 flag, not a runtime decision about whether the source operation is legal.
+
+A local-rooted record field is its own place, selected by the admitted field
+schema. Copy classification uses the selected field type. Moving a field leaves
+its siblings initialized; a read or borrow of the whole record requires all its
+children initialized. Field assignment can reinitialize a moved child of an
+existing aggregate. It cannot initialize a child of a whole aggregate that was
+moved away. Whole-record assignment replaces the remaining initialized children
+and passes those owners to cleanup exactly once. A receiver reservation overlaps
+its ancestors and descendants, while disjoint sibling places remain independent.
+Opaque producer values retain their indivisible storage contract.
+
+Native declaration slots and AWBC registers retain partial record storage
+separately from complete values. Rollback and AWBC snapshots preserve the record
+header, defining field order and child initialization states. No missing child is
+represented by Unit or a malformed value. Runtime occupancy elaborates cleanup;
+availability is decided by the static ownership flow.
 
 ## Expression block
 

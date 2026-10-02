@@ -39,7 +39,10 @@ impl Engine {
     ) -> Result<RuntimeEvaluatedEffectOutcome, RuntimeEffectExecutionError> {
         if let RuntimeEffectExpr::Drop { target, policy } = effect {
             let local = match target.kind() {
-                crate::value::RuntimeExprKind::Local(read) => {
+                crate::value::RuntimeExprKind::Local(read)
+                    if read.mode() == crate::value::RuntimeLocalReadMode::Move
+                        && read.fields().is_empty() =>
+                {
                     let local = read.local();
                     self.fiber
                         .env

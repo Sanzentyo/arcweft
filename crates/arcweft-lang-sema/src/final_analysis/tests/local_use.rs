@@ -48,6 +48,80 @@ fn closed_instance_from_an_equivalent_rebuild_cannot_issue_local_use_evidence() 
 }
 
 #[test]
+fn field_transfers_preserve_initialized_siblings() {
+    for source in [
+        "struct Pair { style: RichTextStyle, other: i64 }\nfn inspect(pair: Pair) -> (i64, RichTextStyle) { (pair.other, pair.style) }",
+        "struct Pair { style: RichTextStyle, other: i64 }\nfn inspect(pair: Pair) -> (RichTextStyle, i64) { (pair.style, pair.other) }",
+    ] {
+        let fixture = fixture(source, None);
+        analyze(&fixture).expect("a field transfer preserves initialized siblings");
+    }
+}
+
+#[test]
+fn moved_field_assignment_restores_its_aggregate() {
+    let fixture = fixture(
+        r#"
+struct Pair { style: RichTextStyle, other: i64 }
+fn replace(first: RichTextStyle, second: RichTextStyle) -> Pair {
+    let mut pair = Pair { style: first, other: 42i64 }
+    let moved = pair.style
+    pair.style = second
+    pair
+}
+
+"#,
+        None,
+    );
+    analyze(&fixture).expect("field assignment restores the moved child before whole-place use");
+}
+
+#[test]
+fn mutable_field_receiver_allows_moving_a_disjoint_sibling_operand() {
+    let fixture = fixture(
+        r#"
+struct Pair { items: Vec<RichTextStyle>, other: RichTextStyle }
+fn push(input: Pair) -> Option<RichTextStyle> {
+    let mut pair = input
+    pair.items.push(value=pair.other)
+    pair.items.pop()
+}
+"#,
+        None,
+    );
+    analyze(&fixture)
+        .expect("the receiver reservation protects its field while siblings remain independent");
+}
+
+#[test]
+fn partial_move_rejects_whole_use_and_reading_the_moved_child() {
+    for tail in ["pair", "pair.style"] {
+        let result = if tail == "pair" {
+            "Pair"
+        } else {
+            "RichTextStyle"
+        };
+        let source = format!(
+            r#"
+struct Pair {{ style: RichTextStyle, other: i64 }}
+fn consume(first: RichTextStyle) -> {result} {{
+    let pair = Pair {{ style: first, other: 42i64 }}
+    let moved = pair.style
+    {tail}
+}}
+"#
+        );
+        let fixture = fixture(&source, None);
+        assert!(matches!(
+            analyze(&fixture),
+            Err(FinalSemanticAnalysisError::LocalUse(
+                CheckedLocalUseError::Unavailable { .. }
+            ))
+        ));
+    }
+}
+
+#[test]
 fn indexing_requires_a_copyable_selected_item() {
     let copyable = fixture(
         r#"

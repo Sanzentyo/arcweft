@@ -740,6 +740,11 @@ fn prepare_callable_seed(
                 expression,
                 fact,
                 |local| local_types.get(&local).cloned(),
+                |child| {
+                    expressions
+                        .get(&child)
+                        .and_then(PreparedExpressionFact::local_place_source)
+                },
                 access,
             )
         },

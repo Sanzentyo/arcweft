@@ -82,8 +82,8 @@ use crate::task::{
 };
 use crate::time::LogicalDuration;
 use crate::value::{
-    RuntimeCallableValue, RuntimeEnv, RuntimeFlowParameterBinding, RuntimeLocalBinding,
-    RuntimePayload, RuntimeValue, runtime_sequence_values, runtime_value_label,
+    RuntimeCallableValue, RuntimeEnv, RuntimeFlowParameterBinding, RuntimePayload, RuntimeValue,
+    runtime_sequence_values, runtime_value_label,
 };
 use arcweft_interaction_model::audio::{AudioCommandEnvelope, AudioDispatchId};
 use arcweft_need::Need;
@@ -4978,7 +4978,7 @@ impl AwbcProductStepExecutor {
                 line::product_fiber_handle_tokens(self.facade_fiber.execution, child)?
             };
             let locals = transaction.line().scheduled_child_locals(&token)?;
-            let values = child.take_function_argument_values(&self.program)?;
+            let values = child.take_function_argument_storage(&self.program)?;
             if values.len() != locals.len() {
                 return Err(
                     crate::line_task::LineRuntimeError::InvalidScheduledCaptureGraph.into(),
@@ -4987,10 +4987,13 @@ impl AwbcProductStepExecutor {
             let mut returned_bindings = Vec::new();
             let mut returned = BTreeSet::new();
             for (local, value) in locals.into_vec().into_iter().zip(values) {
-                let Some(value) = value else {
-                    continue;
-                };
-                let handles = line::unique_line_handles(&value)?;
+                let handles = value
+                    .values()
+                    .map(line::unique_line_handles)
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>();
                 if handles
                     .iter()
                     .any(|handle| selected_tokens.contains(handle.token()))
@@ -5002,7 +5005,7 @@ impl AwbcProductStepExecutor {
                     continue;
                 }
                 returned.extend(handles.into_iter().map(|handle| handle.token().clone()));
-                returned_bindings.push(RuntimeLocalBinding { local, value });
+                returned_bindings.push(crate::value::RuntimeLocalSlot::new(local, value));
             }
             let returned_bindings = returned_bindings.into_boxed_slice();
             let live = live

@@ -828,7 +828,8 @@ fn compile_aot_i64_expr(
             format!("literal {value:?} is not an i64 integer"),
         )),
         RuntimeExprKind::Local(read) => {
-            if read.mode() == crate::value::RuntimeLocalReadMode::Move {
+            if read.mode() == crate::value::RuntimeLocalReadMode::Move || !read.fields().is_empty()
+            {
                 return Err(unsupported_aot(helper_name, "consuming local read"));
             }
             ctx.local_slot(read.local())
@@ -952,7 +953,8 @@ fn compile_aot_scalar_expr(
                 )
             }),
         RuntimeExprKind::Local(read) => {
-            if read.mode() == crate::value::RuntimeLocalReadMode::Move {
+            if read.mode() == crate::value::RuntimeLocalReadMode::Move || !read.fields().is_empty()
+            {
                 return Err(unsupported_aot(helper_name, "consuming local read"));
             }
             ctx.local_slot(read.local())

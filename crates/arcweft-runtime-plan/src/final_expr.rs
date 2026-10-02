@@ -476,6 +476,35 @@ impl<'hir> FinalExprLowerer<'hir> {
         if let Some(value) = self.overrides.get(&id) {
             return Ok(value.clone());
         }
+        if let Some(transfer) = self
+            .semantic_facts
+            .checked_local_value_transfer(CheckedLocalUseSite::Expression(id))
+            && !transfer.fields().is_empty()
+        {
+            return Ok(RuntimeExprSeed::new(
+                self.expression_source_type(id)?,
+                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new_place(
+                    self.local(transfer.local())?,
+                    runtime_local_read_mode(transfer.mode()),
+                    transfer
+                        .fields()
+                        .iter()
+                        .map(|field| {
+                            field
+                                .runtime_field()
+                                .map(|field| {
+                                    RuntimeRecordFieldSeedId::from_zero_based(field.zero_based())
+                                })
+                                .ok_or_else(|| {
+                                    "selected local field lacks an executable storage coordinate"
+                                        .to_owned()
+                                })
+                        })
+                        .collect::<Result<Vec<_>, _>>()?
+                        .into_boxed_slice(),
+                )),
+            ));
+        }
         if self.implicit_body_root != Some(id) && self.implicit_callable(id).is_some() {
             let callable = self
                 .implicit_callable(id)
@@ -1636,7 +1665,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         let place = assignment.place().projection();
         let mode = match place {
             RuntimeResolvedMutablePlace::Local(_) => CheckedLocalPlaceMode::Assign,
-            RuntimeResolvedMutablePlace::NominalField { .. } => CheckedLocalPlaceMode::Mutate,
+            RuntimeResolvedMutablePlace::NominalField { .. } => CheckedLocalPlaceMode::Assign,
         };
         self.checked_place_seed(*target, place, mode)
     }

@@ -9,8 +9,13 @@ use super::{
 use arcweft_core::value::{RuntimeLocalRead, RuntimeLocalReadMode};
 
 fn copy_local_id(
-    read: RuntimeLocalRead,
+    read: &RuntimeLocalRead,
 ) -> Result<RuntimeLocalDeclarationId, CraneliftCodegenError> {
+    if !read.fields().is_empty() {
+        return Err(CraneliftCodegenError::UnsupportedExpr(
+            "record place projection is outside the scalar JIT subset".into(),
+        ));
+    }
     match read.mode() {
         RuntimeLocalReadMode::Copy => Ok(read.local()),
         RuntimeLocalReadMode::Move => Err(CraneliftCodegenError::UnsupportedExpr(format!(
@@ -300,7 +305,7 @@ pub(super) fn lower_expr(
             "literal {value:?} is not an i64-compatible integer"
         ))),
         RuntimeExprKind::Local(read) => {
-            let name = copy_local_id(*read)?;
+            let name = copy_local_id(read)?;
             match bindings.get(&name) {
                 Some(LoweredIntBinding::Const(value)) => {
                     Ok(builder.ins().iconst(types::I64, *value))
@@ -390,7 +395,7 @@ pub(super) fn lower_i32_expr(
             "literal {value:?} is not an i32 integer"
         ))),
         RuntimeExprKind::Local(read) => {
-            let name = copy_local_id(*read)?;
+            let name = copy_local_id(read)?;
             match bindings.get(&name) {
                 Some(LoweredIntBinding::Const(value)) => {
                     Ok(builder.ins().iconst(types::I32, *value))
@@ -487,7 +492,7 @@ pub(super) fn lower_small_int_expr(
                 ))
             }),
         RuntimeExprKind::Local(read) => {
-            let name = copy_local_id(*read)?;
+            let name = copy_local_id(read)?;
             match bindings.get(&name) {
                 Some(LoweredSmallIntBinding::Const(value)) => {
                     Ok(small_int_const(builder, kind, *value))
@@ -625,7 +630,7 @@ pub(super) fn lower_u32_expr(
             "literal {value:?} is not an u32 integer"
         ))),
         RuntimeExprKind::Local(read) => {
-            let name = copy_local_id(*read)?;
+            let name = copy_local_id(read)?;
             match bindings.get(&name) {
                 Some(LoweredIntBinding::Const(value)) => {
                     Ok(builder.ins().iconst(types::I32, *value))
@@ -713,7 +718,7 @@ pub(super) fn lower_u64_expr(
             "literal {value:?} is not an u64-compatible integer"
         ))),
         RuntimeExprKind::Local(read) => {
-            let name = copy_local_id(*read)?;
+            let name = copy_local_id(read)?;
             match bindings.get(&name) {
                 Some(LoweredIntBinding::Const(value)) => {
                     Ok(builder.ins().iconst(types::I64, *value))
@@ -796,7 +801,7 @@ pub(super) fn lower_f32_expr(
             "literal {value:?} is not an f32 value"
         ))),
         RuntimeExprKind::Local(read) => {
-            let name = copy_local_id(*read)?;
+            let name = copy_local_id(read)?;
             match bindings.get(&name) {
                 Some(LoweredF32Binding::Const(value)) => Ok(builder.ins().f32const(*value)),
                 Some(LoweredF32Binding::Value(value)) => Ok(*value),
@@ -881,7 +886,7 @@ pub(super) fn lower_f64_expr(
             "literal {value:?} is not an f64 value"
         ))),
         RuntimeExprKind::Local(read) => {
-            let name = copy_local_id(*read)?;
+            let name = copy_local_id(read)?;
             match bindings.get(&name) {
                 Some(LoweredF64Binding::Const(value)) => Ok(builder.ins().f64const(*value)),
                 Some(LoweredF64Binding::Value(value)) => Ok(*value),

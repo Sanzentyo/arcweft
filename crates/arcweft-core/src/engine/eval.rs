@@ -132,7 +132,7 @@ impl Engine {
                 .then(|| value.clone())
                 .ok_or(RuntimeEvalError::AffineLiteralCopy),
             RuntimeExprKind::Agent(agent) => self.evaluate_agent_expr(agent, pure_backend),
-            RuntimeExprKind::Local(read) => self.fiber.env.read(*read),
+            RuntimeExprKind::Local(read) => self.fiber.env.read(read),
             RuntimeExprKind::SequencePopFront { place } => {
                 self.fiber.env.pop_sequence_front(*place).map(|value| {
                     value.map_or_else(RuntimeValue::option_none, RuntimeValue::option_some)

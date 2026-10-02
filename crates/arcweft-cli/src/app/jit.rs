@@ -1451,11 +1451,13 @@ fn julia_i64_expr(
 ) -> Result<String, String> {
     match expr.kind() {
         RuntimeExprKind::Value(RuntimeValue::Int(value)) => Ok(value.to_string()),
-        RuntimeExprKind::Local(read) if read.mode() == RuntimeLocalReadMode::Copy => {
+        RuntimeExprKind::Local(read)
+            if read.mode() == RuntimeLocalReadMode::Copy && read.fields().is_empty() =>
+        {
             julia_local_identifier(read.local(), inputs, input_labels)
         }
         RuntimeExprKind::Local(read) => Err(format!(
-            "move local read `{}` is outside the Julia i64 subset",
+            "consuming or projected local read `{}` is outside the Julia i64 subset",
             read.local()
         )),
         RuntimeExprKind::Let {

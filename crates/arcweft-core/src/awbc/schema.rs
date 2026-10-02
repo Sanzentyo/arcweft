@@ -1632,6 +1632,7 @@ pub enum AwbcOpcode {
     SequencePopFront = 0x16,
     VecPush = 0x17,
     VecPop = 0x18,
+    ReadPlace = 0x19,
     CallPureHelper = 0x20,
     CallIntrinsic = 0x21,
     CallTraitMethod = 0x22,
@@ -1707,6 +1708,7 @@ impl AwbcOpcode {
         Self::SequencePopFront,
         Self::VecPush,
         Self::VecPop,
+        Self::ReadPlace,
         Self::CallPureHelper,
         Self::CallIntrinsic,
         Self::CallTraitMethod,
@@ -1806,6 +1808,7 @@ impl AwbcOpcode {
             | Self::ProjectTuple
             | Self::ProjectRecord
             | Self::ProjectField
+            | Self::ReadPlace
             | Self::Assign
             | Self::TestPattern
             | Self::Unary
@@ -1991,6 +1994,13 @@ pub enum AwbcInstruction {
         dst: AwbcRegisterId,
         target: AwbcRegisterId,
         field: AwbcFieldProjection,
+    },
+    /// Reads an initialized record child while retaining its sibling owners.
+    ReadPlace {
+        dst: AwbcRegisterId,
+        root: AwbcRegisterId,
+        fields: Vec<RuntimeRecordFieldId>,
+        mode: AwbcPlaceReadMode,
     },
     Unary {
         dst: AwbcRegisterId,
@@ -2213,6 +2223,7 @@ impl AwbcInstruction {
             Self::ProjectTuple { .. } => AwbcOpcode::ProjectTuple,
             Self::ProjectRecord { .. } => AwbcOpcode::ProjectRecord,
             Self::ProjectField { .. } => AwbcOpcode::ProjectField,
+            Self::ReadPlace { .. } => AwbcOpcode::ReadPlace,
             Self::Unary { .. } => AwbcOpcode::Unary,
             Self::Binary { .. } => AwbcOpcode::Binary,
             Self::CallPureHelper { .. } => AwbcOpcode::CallPureHelper,
@@ -2268,6 +2279,13 @@ awbc_u8_enum! {
         Owned = 0,
         SharedRef = 1,
         MutRef = 2,
+    }
+}
+
+awbc_u8_enum! {
+    pub enum AwbcPlaceReadMode {
+        Copy = 0,
+        Move = 1,
     }
 }
 

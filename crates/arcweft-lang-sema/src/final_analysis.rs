@@ -132,11 +132,11 @@ pub use fx_application::{
 pub(crate) use input::FinalSemanticAnalysisInput;
 pub use local_use::{
     CheckedIngressParameterCoordinate, CheckedLocalAccess, CheckedLocalCopyEvidence,
-    CheckedLocalCopyIngressOwner, CheckedLocalCopyRequirement, CheckedLocalPlaceAccess,
-    CheckedLocalPlaceMode, CheckedLocalReadMode, CheckedLocalUseCatalog, CheckedLocalUseError,
-    CheckedLocalUseInstanceCatalog, CheckedLocalUseInstanceIdentity, CheckedLocalUseInstantiation,
-    CheckedLocalValueTransfer, CheckedSyntheticCopyRequirement, CheckedSyntheticUse,
-    CheckedSyntheticUseOwner,
+    CheckedLocalCopyIngressOwner, CheckedLocalCopyRequirement, CheckedLocalPlace,
+    CheckedLocalPlaceAccess, CheckedLocalPlaceMode, CheckedLocalReadMode, CheckedLocalUseCatalog,
+    CheckedLocalUseError, CheckedLocalUseInstanceCatalog, CheckedLocalUseInstanceIdentity,
+    CheckedLocalUseInstantiation, CheckedLocalValueTransfer, CheckedSyntheticCopyRequirement,
+    CheckedSyntheticUse, CheckedSyntheticUseOwner,
 };
 pub use match_coverage::{
     CheckedMatchCoverage, CheckedMatchLimitKind, CheckedMatchLimits, CheckedPatternCoordinateStep,

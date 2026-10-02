@@ -933,9 +933,14 @@ flow main() -> String {
         let output = engine
             .step(RuntimeStepInput::default(), RuntimeStepOptions::default())
             .output;
-        for binding in engine.fiber().env.bindings_snapshot() {
-            if let Ok(content) = RuntimeDialogueContentValue::try_from_runtime_value(&binding.value)
-            {
+        for value in engine
+            .fiber()
+            .env
+            .bindings_snapshot()
+            .into_iter()
+            .flat_map(|binding| binding.into_values())
+        {
+            if let Ok(content) = RuntimeDialogueContentValue::try_from_runtime_value(&value) {
                 actual.insert(content_text(&content));
             }
         }
@@ -1048,11 +1053,15 @@ flow main() -> String {
         let output = engine
             .step(RuntimeStepInput::default(), RuntimeStepOptions::default())
             .output;
-        for binding in engine.fiber().env.bindings_snapshot() {
-            observed_style |=
-                matches!(&binding.value, RuntimeValue::String(text) if text == "number");
-            let Ok(content) = RuntimeDialogueContentValue::try_from_runtime_value(&binding.value)
-            else {
+        for value in engine
+            .fiber()
+            .env
+            .bindings_snapshot()
+            .into_iter()
+            .flat_map(|binding| binding.into_values())
+        {
+            observed_style |= matches!(&value, RuntimeValue::String(text) if text == "number");
+            let Ok(content) = RuntimeDialogueContentValue::try_from_runtime_value(&value) else {
                 continue;
             };
             let [RuntimeDialogueContentBinding::Formatted { value, .. }] = content.bindings()

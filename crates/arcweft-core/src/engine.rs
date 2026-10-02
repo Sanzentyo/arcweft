@@ -3389,7 +3389,7 @@ impl Engine {
                         self.complete_deferred_line_child(&owner.tag, &live_tokens, output)?;
                     } else {
                         let returned_bindings = std::mem::take(&mut child.env)
-                            .into_bindings()
+                            .into_slots()
                             .into_boxed_slice();
                         self.complete_line_task_work(
                             &owner.tag,
@@ -3420,7 +3420,7 @@ impl Engine {
                         self.complete_deferred_line_child(&owner.tag, &live_tokens, output)?;
                     } else {
                         let returned_bindings = std::mem::take(&mut child.env)
-                            .into_bindings()
+                            .into_slots()
                             .into_boxed_slice();
                         self.complete_line_task_work(
                             &owner.tag,
@@ -3498,7 +3498,7 @@ impl Engine {
     fn complete_line_task_work(
         &mut self,
         tag: &LineTaskWorkTag,
-        returned_bindings: Box<[RuntimeLocalBinding]>,
+        returned_bindings: Box<[crate::value::RuntimeLocalSlot]>,
         live_tokens: &BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
         selected_result: Option<RuntimeValue>,
         failed: bool,
@@ -3588,9 +3588,18 @@ impl Engine {
             let mut returned_tokens = BTreeSet::new();
             let mut surviving_bindings = Vec::new();
             for binding in returned_bindings {
-                let handles = binding.value.affine_line_handles().map_err(|_| {
-                    crate::line_task::LineRuntimeError::InvalidScheduledCaptureGraph
-                })?;
+                let handles = binding
+                    .storage()
+                    .values()
+                    .map(|value| {
+                        value.affine_line_handles().map_err(|_| {
+                            crate::line_task::LineRuntimeError::InvalidScheduledCaptureGraph
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>();
                 if handles
                     .iter()
                     .any(|handle| selected_tokens.contains(handle.token()))

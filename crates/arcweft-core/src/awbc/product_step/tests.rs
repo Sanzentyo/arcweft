@@ -750,7 +750,7 @@ fn line_activation_register_defer_commits_captures_and_cursor() {
     };
     assert_eq!(fiber.cursor.instruction_offset, 2);
     assert_eq!(
-        fiber.active_frame().unwrap().registers[0],
+        fiber.active_frame().unwrap().registers[0].as_ref().cloned(),
         None,
         "a reached RegisterDefer transfers its capture out of the source register"
     );
@@ -962,7 +962,7 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
         assert!(matches!(voice_value, RuntimeValue::Opaque(_)));
         let token = crate::line_task::RuntimeLineHandleLedger::token_from_value(voice_value)
             .expect("captured voice handle token");
-        assert!(fiber.active_frame().expect("activation frame").registers[2].is_none());
+        assert!(fiber.active_frame().expect("activation frame").registers[2].is_vacant());
         assert_eq!(
             transaction
                 .line()
@@ -2304,7 +2304,7 @@ fn invalid_schedule_capture_restores_observation_before_failure_close() {
     let frame = fiber.active_frame().expect("activation frame remains live");
     for register in [AwbcRegisterId(0), AwbcRegisterId(3), AwbcRegisterId(5)] {
         assert!(
-            frame.registers[register.index()].is_some(),
+            frame.registers[register.index()].as_ref().is_some(),
             "Schedule source register {} is restored",
             register.0
         );
@@ -2412,7 +2412,7 @@ fn activation_effect_moves_affine_handle_through_effect_observation_and_default_
             .active_frame()
             .expect("activation frame remains live")
             .registers[0]
-            .is_none()
+            .is_vacant()
     );
     let lease = transaction
         .line()

@@ -82,6 +82,22 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 });
                 let ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
                 let destination = self.frame.temp(ty);
+                if !read.fields().is_empty() {
+                    self.inventory.push_instruction(AwbcInstruction::ReadPlace {
+                        dst: destination,
+                        root: source,
+                        fields: read.fields().to_vec(),
+                        mode: match read.mode() {
+                            RuntimeLocalReadMode::Copy => {
+                                arcweft_core::awbc::schema::AwbcPlaceReadMode::Copy
+                            }
+                            RuntimeLocalReadMode::Move => {
+                                arcweft_core::awbc::schema::AwbcPlaceReadMode::Move
+                            }
+                        },
+                    });
+                    return destination;
+                }
                 self.inventory.push_instruction(match read.mode() {
                     RuntimeLocalReadMode::Copy => AwbcInstruction::CopyValue {
                         dst: destination,

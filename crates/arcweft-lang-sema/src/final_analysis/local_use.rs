@@ -57,7 +57,9 @@ use super::{
 
 mod access;
 mod flow;
-pub use access::{CheckedLocalAccess, CheckedLocalPlaceAccess, CheckedLocalPlaceMode};
+pub use access::{
+    CheckedLocalAccess, CheckedLocalPlace, CheckedLocalPlaceAccess, CheckedLocalPlaceMode,
+};
 use flow::{Availability, Event, NodeId, OwnershipFlow, Violation};
 
 /// A builder-issued runtime local with no HIR LocalId. The checked semantic
@@ -107,10 +109,11 @@ pub enum CheckedLocalReadMode {
     Borrow,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedLocalValueTransfer {
     local: LocalId,
     mode: CheckedLocalReadMode,
+    fields: Box<[super::CheckedFieldSelection]>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -175,11 +178,17 @@ impl CheckedLocalCopyEvidence {
 }
 
 impl CheckedLocalValueTransfer {
-    pub const fn local(self) -> LocalId {
+    pub const fn local(&self) -> LocalId {
         self.local
     }
-    pub const fn mode(self) -> CheckedLocalReadMode {
+    pub const fn mode(&self) -> CheckedLocalReadMode {
         self.mode
+    }
+    pub fn place(&self) -> CheckedLocalPlace {
+        CheckedLocalPlace::new(self.local, self.fields.clone())
+    }
+    pub fn fields(&self) -> &[super::CheckedFieldSelection] {
+        &self.fields
     }
 }
 
@@ -688,7 +697,7 @@ struct LocalUseChecker<'a> {
     scheduled_callback_roots: &'a BTreeSet<ExprId>,
     in_place_receivers: &'a BTreeSet<ExprId>,
     borrowed_receivers: &'a BTreeSet<ExprId>,
-    active_receiver_loans: Vec<(LocalId, ExprId)>,
+    active_receiver_loans: Vec<(CheckedLocalPlace, ExprId)>,
     callback_local_uses: Vec<BTreeSet<LocalId>>,
     instance: Option<CheckedLocalUseInstantiation<'a>>,
     flow: OwnershipFlow,
@@ -1004,21 +1013,29 @@ impl<'a> LocalUseChecker<'a> {
         };
         if state.reachable
             && mode == CheckedLocalReadMode::Move
-            && let Some(&(_, receiver)) = self
+            && let Some((_, receiver)) = self
                 .active_receiver_loans
                 .iter()
                 .rev()
-                .find(|(loan, _)| *loan == local)
+                .find(|(loan, _)| loan.local() == local)
         {
             return Err(CheckedLocalUseError::BorrowedReceiverInvalidation {
-                receiver,
+                receiver: *receiver,
                 local,
                 site,
             });
         }
         if self
             .rows
-            .insert(site, CheckedLocalValueTransfer { local, mode }.into())
+            .insert(
+                site,
+                CheckedLocalValueTransfer {
+                    local,
+                    mode,
+                    fields: Box::new([]),
+                }
+                .into(),
+            )
             .is_some()
         {
             return Err(CheckedLocalUseError::DuplicateSite { site });
@@ -1046,6 +1063,7 @@ impl<'a> LocalUseChecker<'a> {
                 CheckedLocalValueTransfer {
                     local,
                     mode: CheckedLocalReadMode::Borrow,
+                    fields: Box::new([]),
                 }
                 .into(),
             )
@@ -1066,14 +1084,17 @@ impl<'a> LocalUseChecker<'a> {
         let site = CheckedLocalUseSite::Place(expression);
         let local = place.local_id();
         if state.reachable
-            && let Some(&(_, receiver)) = self
-                .active_receiver_loans
-                .iter()
-                .rev()
-                .find(|(loan, receiver)| *loan == local && *receiver != expression)
+            && let Some((_, receiver)) =
+                self.active_receiver_loans
+                    .iter()
+                    .rev()
+                    .find(|(loan, receiver)| {
+                        loan.overlaps(&CheckedLocalPlace::from_mutable(&place))
+                            && *receiver != expression
+                    })
         {
             return Err(CheckedLocalUseError::BorrowedReceiverInvalidation {
-                receiver,
+                receiver: *receiver,
                 local,
                 site,
             });
@@ -1848,6 +1869,63 @@ impl<'a> LocalUseChecker<'a> {
         owner: ExprId,
         state: &mut Availability,
     ) -> Result<(), CheckedLocalUseError> {
+        if let Some(place) =
+            CheckedLocalPlace::from_field(owner, |owner| self.analysis.expression(owner))
+        {
+            let checked = self
+                .analysis
+                .expression(owner)
+                .ok_or(CheckedLocalUseError::InvalidTopology)?;
+            let ty = checked
+                .value_type()
+                .ok_or(CheckedLocalUseError::InvalidTopology)?;
+            let local = place.local();
+            let mode = if self.copy_requirements.contains_key(&local)
+                || self.type_is_copy(&self.closed_type(ty)?)?
+            {
+                CheckedLocalReadMode::Copy
+            } else {
+                CheckedLocalReadMode::Move
+            };
+            let site = CheckedLocalUseSite::Expression(owner);
+            if state.reachable
+                && mode == CheckedLocalReadMode::Move
+                && let Some((_, receiver)) = self
+                    .active_receiver_loans
+                    .iter()
+                    .rev()
+                    .find(|(loan, _)| loan.overlaps(&place))
+            {
+                return Err(CheckedLocalUseError::BorrowedReceiverInvalidation {
+                    receiver: *receiver,
+                    local,
+                    site,
+                });
+            }
+            if state.reachable {
+                self.require_guard_copy(site, local)?;
+            }
+            if let Some(callback) = self.callback_local_uses.last_mut() {
+                callback.insert(local);
+            }
+            if self
+                .rows
+                .insert(
+                    site,
+                    CheckedLocalValueTransfer {
+                        local,
+                        mode,
+                        fields: place.into_fields(),
+                    }
+                    .into(),
+                )
+                .is_some()
+            {
+                return Err(CheckedLocalUseError::DuplicateSite { site });
+            }
+            self.flow.append(state, Event::Access(site));
+            return Ok(());
+        }
         let expression = self
             .module
             .resolve_expr(owner)
@@ -2181,7 +2259,11 @@ impl<'a> LocalUseChecker<'a> {
                             .map(|place| place.local_id())
                             .or_else(|| checked.execution_local_use())
                             .ok_or(CheckedLocalUseError::InvalidTopology)?;
-                        self.active_receiver_loans.push((local, receiver));
+                        let place = checked
+                            .mutable_place()
+                            .map(|place| CheckedLocalPlace::from_mutable(&place))
+                            .unwrap_or_else(|| CheckedLocalPlace::new(local, Box::new([])));
+                        self.active_receiver_loans.push((place, receiver));
                     }
                     for child in children {
                         if let Err(error) = self.expression(child, state) {
@@ -2316,12 +2398,7 @@ impl<'a> LocalUseChecker<'a> {
                     .expression(first)
                     .and_then(super::CheckedExpression::mutable_place)
                     .ok_or(CheckedLocalUseError::InvalidTopology)?;
-                let mode = if place.nominal_field().is_some() {
-                    CheckedLocalPlaceMode::Mutate
-                } else {
-                    CheckedLocalPlaceMode::Assign
-                };
-                self.access_place(first, place, mode, state)?;
+                self.access_place(first, place, CheckedLocalPlaceMode::Assign, state)?;
             }
             HirStmtEvaluationPlan::Value {
                 kind: arcweft_lang_hir::stmt::HirStmtValuePlanKind::Defer,

@@ -880,7 +880,7 @@ fn execute_instruction(
                             | super::schema::AwbcFrameSlotRole::RuntimeState
                     )
                 {
-                    *register = None;
+                    *register = Default::default();
                 }
             }
             if let Some(trap) = defer_failure {
@@ -1026,7 +1026,7 @@ fn execute_instruction(
             match frame
                 .registers
                 .get_mut(sequence.index())
-                .and_then(Option::as_mut)
+                .and_then(crate::value::RuntimePlaceStorage::as_mut)
             {
                 Some(RuntimeValue::Seq(RuntimeSeq::Values(values))) => values.push(value),
                 Some(value_ref) => {
@@ -1062,7 +1062,7 @@ fn execute_instruction(
                 let Some(value) = frame
                     .registers
                     .get_mut(base.index())
-                    .and_then(Option::as_mut)
+                    .and_then(crate::value::RuntimePlaceStorage::as_mut)
                 else {
                     return Err(FiberStateError::RegisterOutOfBounds {
                         register: base.0,
@@ -1193,6 +1193,33 @@ fn execute_instruction(
             }
             let value = items.remove(*ordinal as usize);
             fiber.active_frame_mut()?.set_register(*dst, value)?;
+        }
+        AwbcInstruction::ReadPlace {
+            dst,
+            root,
+            fields,
+            mode,
+        } => {
+            let frame = fiber.active_frame_mut()?;
+            let storage = frame.registers.get_mut(root.index()).ok_or(
+                FiberStateError::RegisterOutOfBounds {
+                    register: root.0,
+                    layout: frame.layout.0,
+                },
+            )?;
+            let value = match mode {
+                super::schema::AwbcPlaceReadMode::Copy => {
+                    let value = storage.field(fields).ok_or(FiberStateError::InvalidFrame)?;
+                    if !value.ownership().permits_copy() {
+                        return Err(VmError::Runtime("affine place cannot be copied".into()));
+                    }
+                    value.clone()
+                }
+                super::schema::AwbcPlaceReadMode::Move => storage
+                    .take_field(fields)
+                    .ok_or(FiberStateError::InvalidFrame)?,
+            };
+            frame.set_register(*dst, value)?;
         }
         AwbcInstruction::ProjectRecord {
             dst,
@@ -1339,8 +1366,16 @@ fn execute_instruction(
                         .into());
                     }
                 }
-                AwbcMutablePlace::NominalField { .. } => {
-                    register(fiber, base)?;
+                AwbcMutablePlace::NominalField { field, .. } => {
+                    let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(*field as usize)
+                        .map_err(|error| VmError::Runtime(error.to_string()))?;
+                    let slot = fiber
+                        .active_frame()?
+                        .registers
+                        .get(base.index())
+                        .ok_or(FiberStateError::InvalidFrame)?;
+                    slot.values_at(&[field])
+                        .ok_or(FiberStateError::InvalidFrame)?;
                 }
             }
             let value = fiber.active_frame_mut()?.take_register(*value)?;
@@ -1358,28 +1393,32 @@ fn execute_instruction(
                     base: target,
                     field,
                 } => {
-                    let Some(target_value) = frame
-                        .registers
-                        .get_mut(target.index())
-                        .and_then(Option::as_mut)
-                    else {
+                    let Some(target_value) = frame.registers.get_mut(target.index()) else {
                         return Err(FiberStateError::RegisterOutOfBounds {
                             register: target.0,
                             layout: frame.layout.0,
                         }
                         .into());
                     };
-                    Some(replace_record_field_value(target_value, *field, value)?)
+                    let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(*field as usize)
+                        .map_err(|error| VmError::Runtime(error.to_string()))?;
+                    target_value.assign_field(&[field], value).map_err(|_| {
+                        VmError::Runtime("field assignment requires an existing aggregate".into())
+                    })?
                 }
             };
-            if let Some(displaced) = displaced {
+            let mut discarded = false;
+            for displaced in displaced {
                 let handles = displaced
                     .affine_line_handles()
                     .map_err(|error| VmError::Runtime(error.to_string()))?;
                 if !handles.is_empty() {
                     observations.push(VmObservation::DiscardedValue(displaced));
-                    return Ok(InstructionControl::YieldAdvanced);
+                    discarded = true;
                 }
+            }
+            if discarded {
+                return Ok(InstructionControl::YieldAdvanced);
             }
         }
         AwbcInstruction::CallTraitMethod {
@@ -1758,7 +1797,7 @@ fn execute_instruction(
                         .get(result_register.index())
                         .ok_or(FiberStateError::InvalidFrame)?
                         .clone();
-                    if completed_result.is_some() {
+                    if completed_result.as_ref().is_some() {
                         let method = program
                             .trait_methods
                             .get(method_id.index())
@@ -2626,18 +2665,6 @@ fn complete_context_callback_return(
     Ok(())
 }
 
-fn replace_record_field_value(
-    target: &mut RuntimeValue,
-    field: u32,
-    value: RuntimeValue,
-) -> Result<RuntimeValue, VmError> {
-    let identity = crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(field as usize)
-        .map_err(|error| VmError::Runtime(error.to_string()))?;
-    target
-        .replace_record_field(identity, value)
-        .map_err(|_| VmError::Runtime(format!("record assignment has no field ordinal {field}")))
-}
-
 #[allow(
     clippy::too_many_lines,
     reason = "AWBC terminator dispatch keeps the shared fiber/suspension state machine in one match"
@@ -2686,14 +2713,18 @@ fn execute_terminator(
             if frame
                 .registers
                 .get(item.index())
-                .is_none_or(Option::is_some)
+                .is_none_or(|storage| !storage.is_vacant())
             {
                 return Err(VmError::Runtime(
                     "sequence next requires a vacant item register".to_owned(),
                 ));
             }
-            let popped = match frame.registers.get_mut(sequence.index()) {
-                Some(Some(RuntimeValue::Seq(values))) => values.pop_front(),
+            let popped = match frame
+                .registers
+                .get_mut(sequence.index())
+                .and_then(crate::value::RuntimePlaceStorage::as_mut)
+            {
+                Some(RuntimeValue::Seq(values)) => values.pop_front(),
                 _ => {
                     return Err(VmError::Runtime(
                         "sequence next requires an owned sequence".to_owned(),
@@ -3678,10 +3709,17 @@ fn mutable_vec_sequence<'a>(
     operation: &str,
 ) -> Result<&'a mut RuntimeSeq, VmError> {
     let base = mutable_place_base(place);
+    let path = match place {
+        AwbcMutablePlace::Local(_) => Vec::new(),
+        AwbcMutablePlace::NominalField { field, .. } => vec![
+            RuntimeRecordFieldId::try_from_zero_based_ordinal(*field as usize)
+                .map_err(|error| VmError::Runtime(error.to_string()))?,
+        ],
+    };
     let Some(receiver) = frame
         .registers
         .get_mut(base.index())
-        .and_then(Option::as_mut)
+        .and_then(|storage| storage.field_mut(&path))
     else {
         return Err(FiberStateError::RegisterOutOfBounds {
             register: base.0,
@@ -3689,22 +3727,10 @@ fn mutable_vec_sequence<'a>(
         }
         .into());
     };
-    match (place, receiver) {
-        (AwbcMutablePlace::Local(_), RuntimeValue::Seq(sequence)) => Ok(sequence),
-        (AwbcMutablePlace::NominalField { field, .. }, RuntimeValue::NominalRecord(record)) => {
-            let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(*field as usize)
-                .map_err(|_| {
-                    VmError::Runtime(format!("{operation} has an invalid nominal field identity"))
-                })?;
-            record
-                .sequence_field_mut(field)
-                .map_err(|error| VmError::Runtime(error.to_string()))
-        }
-        (AwbcMutablePlace::Local(_), _) => Err(VmError::Runtime(format!(
+    match receiver {
+        RuntimeValue::Seq(sequence) => Ok(sequence),
+        _ => Err(VmError::Runtime(format!(
             "{operation} expected a Vec value"
-        ))),
-        (AwbcMutablePlace::NominalField { .. }, _) => Err(VmError::Runtime(format!(
-            "{operation} expected a nominal record receiver"
         ))),
     }
 }

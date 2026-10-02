@@ -2537,10 +2537,32 @@ impl CheckedExpression {
         }
     }
 
-    pub(crate) fn reads_field_binding(&self) -> bool {
-        matches!(self.resolution(),
+    pub(crate) fn local_place_source(&self) -> Option<CheckedFieldReceiver> {
+        match self.resolution() {
+            CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) => {
+                Some(CheckedFieldReceiver::Binding(*local))
+            }
             CheckedExpressionResolution::Select(CheckedSelectResolution::Field(access))
-                if matches!(access.receiver(), CheckedFieldReceiver::Binding(_)))
+                if access.selection().runtime_field().is_some() =>
+            {
+                Some(access.receiver())
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn field_root(
+        &self,
+        source: impl Fn(ExprId) -> Option<CheckedFieldReceiver>,
+    ) -> Option<LocalId> {
+        match self.resolution() {
+            CheckedExpressionResolution::Select(CheckedSelectResolution::Field(access))
+                if access.selection().runtime_field().is_some() =>
+            {
+                access.receiver().local_root(source)
+            }
+            _ => None,
+        }
     }
 
     /// Attaches one sealed direct nominal-field place to its checked select.

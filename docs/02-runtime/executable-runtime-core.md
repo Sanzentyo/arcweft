@@ -379,11 +379,16 @@ not copy numeric values into feature-local tables.
 |  | `0e` | `ProjectTuple { dst, target, ordinal }` | checked tuple projection |
 |  | `0f` | `ProjectRecord { dst, target, ordinal }` | checked layout projection |
 |  | `10` | `ProjectField { dst, target, field }` | checked named projection |
-|  | `11` | `Assign { place, value }` | typed local assignment initializes even a moved slot; nominal-field mutation requires its owner value; discard an old value only when present |
+|  | `11` | `Assign { place, value }` | initializes a local or a child of an existing aggregate; discard only remaining initialized owners |
 |  | `12` | `TestPattern { dst, pattern, value }` | test without binding |
 |  | `13` | `Unary { dst, op, src }` | `Not` or `Neg` |
 |  | `14` | `Binary { dst, op, lhs, rhs }` | typed binary operation |
-|  | `15..1f` | unassigned | reject |
+|  | `15` | `SpecializeCallable { ... }` | exact checked callable specialization |
+|  | `16` | `SequencePopFront { dst, place }` | mutate an initialized Vec place |
+|  | `17` | `VecPush { place, value }` | append to an initialized Vec place |
+|  | `18` | `VecPop { dst, place }` | remove from an initialized Vec place |
+|  | `19` | `ReadPlace { dst, root, fields, mode }` | Copy or Move one initialized schema-selected record child while retaining siblings |
+|  | `1a..1f` | unassigned | reject |
 | Call/task | `20` | `CallPureHelper { dst, helper, args }` | deterministic helper call |
 |  | `21` | `CallIntrinsic { dst?, intrinsic, args }` | typed registry intrinsic |
 |  | `22` | `CallTraitMethod { dst?, method, args }` | exact trait dispatch |
@@ -827,10 +832,30 @@ struct FiberFrame {
         resume: AwbcResumePointId,
         destination: Option<AwbcRegisterId>,
     }>,
-    registers: Vec<Option<RuntimeValue>>,
+    registers: Vec<RuntimePlaceStorage<RuntimeValue>>,
     scopes: Vec<{ id, depth }>,
 }
 ```
+
+Each register's storage distinguishes vacant, complete initialized value, and
+partial record with an immutable nominal/structural header and defining-order
+child cells. Complete runtime values never contain vacant fields. `ReadPlace`
+projects only separable record schemas; its mode is a typed Copy/Move tag and
+its path uses `RuntimeRecordFieldId` coordinates. The verifier tracks child
+availability at joins and blocks whole reads of partial records. Field assignment
+restores that child; whole assignment cleans up the remaining child inventory.
+Ownership walks visit all surviving child values. Version-1 snapshots map the
+same storage tree to inert value snapshots, and restore checks each partial
+header, layout, field count and initialized child against its immutable frame
+type. Native rollback uses the same tree; this does not establish public native
+session persistence.
+
+Child completion and cancellation transfer one `RuntimeLocalSlot` per retained
+declaration, including vacant and partial storage. Completed line-scope custody
+and its inert snapshot preserve that slot tree; remaining fields are not exported
+as repeated bindings of the same declaration. Incoming capture packets still
+contain complete values. Parameter-storage extraction validates the full typed
+inventory before moving any register, without cloning the frame.
 
 Suspension reasons are dialogue, choice, await, await-many, host call, and
 budget yield. Await-many state contains plan, optional bind pattern, input

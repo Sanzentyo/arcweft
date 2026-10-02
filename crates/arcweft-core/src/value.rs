@@ -48,6 +48,7 @@ mod nominal_record_expr;
 mod opaque;
 mod option_value;
 pub mod ownership;
+mod place_storage;
 mod range;
 mod record;
 mod record_id;
@@ -140,6 +141,8 @@ pub use opaque::{
 pub use option_value::{
     evaluate_core_option_is_some_intrinsic, evaluate_core_option_unwrap_intrinsic,
 };
+pub(crate) use place_storage::RecordHeader as RuntimePlaceRecordHeader;
+pub use place_storage::RuntimePlaceStorage;
 pub use range::{RuntimeIterator, RuntimeRange, RuntimeRangeIterator};
 pub use record::{RuntimeFieldValue, RuntimeRecordAdmissionError, RuntimeRecordValue};
 pub use record_id::{RuntimeRecordFieldId, RuntimeRecordFieldIdError};
@@ -309,26 +312,6 @@ impl RuntimeValue {
             Self::NominalRecord(record) => record.fields().get(ordinal),
             Self::Record(fields) => fields.get(ordinal).map(RuntimeFieldValue::value),
             _ => None,
-        }
-    }
-
-    /// Replaces one admitted record field by its typed ordinal. Both physical
-    /// record representations share this mutation boundary; callers validate
-    /// the owning schema and replacement type before invoking it.
-    pub(crate) fn replace_record_field(
-        &mut self,
-        field: RuntimeRecordFieldId,
-        value: RuntimeValue,
-    ) -> Result<RuntimeValue, RuntimeValue> {
-        match self {
-            Self::NominalRecord(record) => record.replace_field(field, value),
-            Self::Record(fields) => {
-                let Some(target) = fields.field_value_mut(field) else {
-                    return Err(value);
-                };
-                Ok(std::mem::replace(target, value))
-            }
-            _ => Err(value),
         }
     }
 
@@ -1335,28 +1318,48 @@ pub enum RuntimeLocalReadMode {
 
 /// One plan-owned local read. The semantic producer selects its transfer mode;
 /// runtime execution never infers a move from the current value alone.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct RuntimeLocalRead {
     local: RuntimeLocalDeclarationId,
     mode: RuntimeLocalReadMode,
+    fields: Box<[RuntimeRecordFieldId]>,
 }
 
 impl RuntimeLocalRead {
-    pub(crate) const fn from_admitted_parts(
+    pub(crate) fn from_admitted_parts(
         local: RuntimeLocalDeclarationId,
         mode: RuntimeLocalReadMode,
     ) -> Self {
-        Self { local, mode }
+        Self {
+            local,
+            mode,
+            fields: Box::new([]),
+        }
+    }
+
+    pub(crate) const fn from_admitted_place(
+        local: RuntimeLocalDeclarationId,
+        mode: RuntimeLocalReadMode,
+        fields: Box<[RuntimeRecordFieldId]>,
+    ) -> Self {
+        Self {
+            local,
+            mode,
+            fields,
+        }
     }
 
     #[must_use]
-    pub const fn local(self) -> RuntimeLocalDeclarationId {
+    pub const fn local(&self) -> RuntimeLocalDeclarationId {
         self.local
     }
 
     #[must_use]
-    pub const fn mode(self) -> RuntimeLocalReadMode {
+    pub const fn mode(&self) -> RuntimeLocalReadMode {
         self.mode
+    }
+    pub fn fields(&self) -> &[RuntimeRecordFieldId] {
+        &self.fields
     }
 }
 
@@ -2168,10 +2171,54 @@ struct RuntimeScope {
     slots: Vec<RuntimeLocalSlot>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-struct RuntimeLocalSlot {
+/// One declaration identity and its current complete or partial place storage.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeLocalSlot<T = RuntimeValue> {
     local: RuntimeLocalDeclarationId,
-    value: Option<RuntimeValue>,
+    value: RuntimePlaceStorage<T>,
+}
+
+impl<T> RuntimeLocalSlot<T> {
+    pub(crate) const fn new(
+        local: RuntimeLocalDeclarationId,
+        value: RuntimePlaceStorage<T>,
+    ) -> Self {
+        Self { local, value }
+    }
+    pub const fn local(&self) -> RuntimeLocalDeclarationId {
+        self.local
+    }
+    pub const fn storage(&self) -> &RuntimePlaceStorage<T> {
+        &self.value
+    }
+    pub fn into_values(self) -> Vec<T> {
+        self.value.into_values()
+    }
+    pub(crate) fn try_map<U, E>(
+        self,
+        mapper: &mut impl FnMut(T) -> Result<U, E>,
+    ) -> Result<RuntimeLocalSlot<U>, E> {
+        Ok(RuntimeLocalSlot::new(
+            self.local,
+            self.value.try_map(mapper)?,
+        ))
+    }
+    pub(crate) fn try_map_ref<U, E>(
+        &self,
+        mapper: &mut impl FnMut(&T) -> Result<U, E>,
+    ) -> Result<RuntimeLocalSlot<U>, E> {
+        Ok(RuntimeLocalSlot::new(
+            self.local,
+            self.value.try_map_ref(mapper)?,
+        ))
+    }
+}
+
+impl From<RuntimeLocalBinding> for RuntimeLocalSlot {
+    fn from(binding: RuntimeLocalBinding) -> Self {
+        Self::new(binding.local, binding.value.into())
+    }
 }
 
 /// Pure runtime program consumed by the minimal Sans I/O engine.

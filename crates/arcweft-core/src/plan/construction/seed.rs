@@ -1950,12 +1950,30 @@ pub struct RuntimeExprSeed {
 pub struct RuntimeLocalReadSeed {
     local: RuntimeLocalSeedId,
     mode: RuntimeLocalReadMode,
+    fields: Box<[RuntimeRecordFieldSeedId]>,
 }
 
 impl RuntimeLocalReadSeed {
     #[must_use]
-    pub const fn new(local: RuntimeLocalSeedId, mode: RuntimeLocalReadMode) -> Self {
-        Self { local, mode }
+    pub fn new(local: RuntimeLocalSeedId, mode: RuntimeLocalReadMode) -> Self {
+        Self {
+            local,
+            mode,
+            fields: Box::new([]),
+        }
+    }
+
+    #[must_use]
+    pub const fn new_place(
+        local: RuntimeLocalSeedId,
+        mode: RuntimeLocalReadMode,
+        fields: Box<[RuntimeRecordFieldSeedId]>,
+    ) -> Self {
+        Self {
+            local,
+            mode,
+            fields,
+        }
     }
 
     #[must_use]
@@ -1968,8 +1986,14 @@ impl RuntimeLocalReadSeed {
         self.mode
     }
 
-    pub(super) fn into_parts(self) -> (RuntimeLocalSeedId, RuntimeLocalReadMode) {
-        (self.local, self.mode)
+    pub(super) fn into_parts(
+        self,
+    ) -> (
+        RuntimeLocalSeedId,
+        RuntimeLocalReadMode,
+        Box<[RuntimeRecordFieldSeedId]>,
+    ) {
+        (self.local, self.mode, self.fields)
     }
 }
 

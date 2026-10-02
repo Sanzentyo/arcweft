@@ -498,7 +498,7 @@ impl AwbcProductStepExecutor {
                     frame
                         .registers
                         .get(register.index())
-                        .is_some_and(Option::is_none)
+                        .is_some_and(crate::value::RuntimePlaceStorage::is_vacant)
                 })
             });
             if !vacant {
@@ -909,7 +909,7 @@ impl AwbcProductStepExecutor {
                         !frame
                             .registers
                             .get(register.index())
-                            .is_some_and(Option::is_none)
+                            .is_some_and(crate::value::RuntimePlaceStorage::is_vacant)
                     }) {
                         return Err(ProductStepError::Internal(
                             "AwaitMany binding destination register is occupied".to_owned(),
@@ -1327,7 +1327,7 @@ impl AwbcProductStepExecutor {
                         frame
                             .registers
                             .get(destination.index())
-                            .is_some_and(Option::is_none)
+                            .is_some_and(crate::value::RuntimePlaceStorage::is_vacant)
                     });
                     if !vacant {
                         self.fail_with_trap(
@@ -1715,7 +1715,7 @@ impl AwbcProductStepExecutor {
                             frame
                                 .registers
                                 .get(register.index())
-                                .is_some_and(Option::is_none)
+                                .is_some_and(crate::value::RuntimePlaceStorage::is_vacant)
                         })
                     });
                     if !vacant {
@@ -1878,7 +1878,7 @@ impl AwbcProductStepExecutor {
                         frame
                             .registers
                             .get(destination.index())
-                            .is_some_and(Option::is_none)
+                            .is_some_and(crate::value::RuntimePlaceStorage::is_vacant)
                     });
                     if !vacant {
                         mark_child_trapped(
@@ -2256,7 +2256,7 @@ impl AwbcProductStepExecutor {
                         frame
                             .registers
                             .get(register.index())
-                            .is_some_and(Option::is_none)
+                            .is_some_and(crate::value::RuntimePlaceStorage::is_vacant)
                     })
                 });
                 if !vacant {

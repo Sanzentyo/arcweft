@@ -519,7 +519,7 @@ fn verified_defaulted_context_callback_restores_both_stages_and_writes_result_on
         fiber.frames[1].return_to.as_ref().unwrap().continuation,
         FiberReturnContinuation::ContextCallbackDefault { .. }
     ));
-    assert!(fiber.frames[0].registers[2].is_none());
+    assert!(fiber.frames[0].registers[2].is_vacant());
 
     fiber.budget.remaining = 0;
     assert!(matches!(
@@ -557,7 +557,7 @@ fn verified_defaulted_context_callback_restores_both_stages_and_writes_result_on
     ));
     assert_eq!(restored.cursor.function, AwbcFunctionId(1));
     assert_eq!(restored.frames.len(), 2);
-    assert!(restored.frames[0].registers[2].is_none());
+    assert!(restored.frames[0].registers[2].is_vacant());
     assert!(matches!(
         restored.frames[1].return_to.as_ref().unwrap().continuation,
         FiberReturnContinuation::ContextCallbackInvoke {

@@ -1918,7 +1918,7 @@ impl<'a> PureEvaluator<'a> {
                 .then(|| value.clone())
                 .ok_or(RuntimeEvalError::AffineLiteralCopy),
             RuntimeExprKind::Agent(agent) => self.evaluate_agent_expr(agent),
-            RuntimeExprKind::Local(read) => self.evaluate_local(*read),
+            RuntimeExprKind::Local(read) => self.evaluate_local(read),
             RuntimeExprKind::SequencePopFront { place } => {
                 self.env.pop_sequence_front(*place).map(|value| {
                     value.map_or_else(RuntimeValue::option_none, RuntimeValue::option_some)
@@ -2408,7 +2408,10 @@ impl<'a> PureEvaluator<'a> {
             .map(collect)
     }
 
-    fn evaluate_local(&mut self, read: RuntimeLocalRead) -> Result<RuntimeValue, RuntimeEvalError> {
+    fn evaluate_local(
+        &mut self,
+        read: &RuntimeLocalRead,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
         self.env.read(read)
     }
 
@@ -2825,7 +2828,7 @@ impl<'a> PureEvaluator<'a> {
             RuntimeExprKind::Value(RuntimeValue::UInt(value)) => Ok(runtime_uint_as_scalar(*value)),
             RuntimeExprKind::Value(RuntimeValue::F32(value)) => Ok(RuntimePureScalar::F32(*value)),
             RuntimeExprKind::Value(RuntimeValue::F64(value)) => Ok(RuntimePureScalar::F64(*value)),
-            RuntimeExprKind::Local(read) => match self.env.read(*read) {
+            RuntimeExprKind::Local(read) => match self.env.read(read) {
                 Ok(value) => runtime_value_as_scalar(&value)
                     .ok_or_else(|| RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
                 Err(error) => Err(error),
@@ -2955,6 +2958,7 @@ impl<'a> PureEvaluator<'a> {
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         if let RuntimeExprKind::Local(read) = source.kind()
             && read.mode() == RuntimeLocalReadMode::Copy
+            && read.fields().is_empty()
             && let Some(sum) = self.evaluate_i64_local_sequence_sum(read.local())?
         {
             return Ok(RuntimeValue::i64(sum));

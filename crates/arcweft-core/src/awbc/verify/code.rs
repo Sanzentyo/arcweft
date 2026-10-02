@@ -46,6 +46,7 @@ mod index_tests;
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct FlowState {
     initialized: Vec<bool>,
+    moved_fields: BTreeSet<(AwbcRegisterId, Vec<crate::value::RuntimeRecordFieldId>)>,
     copy_proofs: Vec<CopyProof>,
     scopes: Vec<AwbcScopeId>,
     format_attempts: Vec<format::FormatAttemptFlowState>,
@@ -272,6 +273,7 @@ fn verify_function(
     let mut states = vec![None::<FlowState>; program.blocks.len()];
     let mut initial = FlowState {
         initialized: vec![false; layout.slots.len()],
+        moved_fields: BTreeSet::new(),
         copy_proofs: layout
             .slots
             .iter()
@@ -668,6 +670,9 @@ fn merge_state(
                 });
             }
             let mut changed = false;
+            let field_count = current.moved_fields.len();
+            current.moved_fields.extend(incoming.moved_fields);
+            changed |= field_count != current.moved_fields.len();
             for (current, incoming) in current.initialized.iter_mut().zip(incoming.initialized) {
                 let merged = *current && incoming;
                 changed |= merged != *current;
@@ -708,7 +713,14 @@ fn vec_place_item_type(
             (*sequence, *item)
         }
         AwbcMutablePlace::NominalField { base, field } => {
-            let record_ty = read_register(verifier, function, block, *base, state)?;
+            let field_id =
+                crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(*field as usize)
+                    .map_err(|_| AwbcVerifyError::InvalidInvariant {
+                        at: at.into(),
+                        message: "invalid Vec field coordinate".into(),
+                    })?;
+            let record_ty = read_aggregate_root(verifier, function, block, *base, state)?;
+            read_place_type(verifier, function, block, *base, &[field_id], state)?;
             let Some(AwbcRuntimeTypeShape::NominalRecord { fields, .. }) =
                 runtime_shape(program, record_ty)
             else {
@@ -1212,6 +1224,20 @@ fn apply_instruction(
                 verifier, function, block, *dst, *target, *ordinal, false, state, &at,
             )?;
         }
+        AwbcInstruction::ReadPlace {
+            dst, root, fields, ..
+        } => {
+            if dst == root || fields.is_empty() {
+                return invalid_type(
+                    &at,
+                    "place read requires a distinct destination and selected child",
+                );
+            }
+            let selected = read_place_type(verifier, function, block, *root, fields, state)?;
+            let destination = register_type(verifier, function, block, *dst)?;
+            require_compatible(program, destination, selected, "place read result")?;
+            write_register(verifier, function, block, *dst, state)?;
+        }
         AwbcInstruction::ProjectField { dst, target, field } => match field {
             crate::awbc::schema::AwbcFieldProjection::Named(field) => {
                 check_string(program, *field, &at)?;
@@ -1411,7 +1437,7 @@ fn apply_instruction(
                     register_type(verifier, function, block, *target)?
                 }
                 AwbcMutablePlace::NominalField { base, field } => {
-                    let target_ty = read_register(verifier, function, block, *base, state)?;
+                    let target_ty = read_aggregate_root(verifier, function, block, *base, state)?;
                     let Some(AwbcRuntimeTypeShape::NominalRecord { fields, .. }) =
                         runtime_shape(program, target_ty)
                     else {
@@ -2302,6 +2328,36 @@ fn apply_instruction_copy_and_move_effects(
                     .unwrap_or_else(|| base_copy_proof(program, dst_ty)),
             );
         }
+        AwbcInstruction::ReadPlace {
+            dst,
+            root,
+            fields,
+            mode,
+        } => {
+            let mut proof = state.copy_proofs[root.index()].clone();
+            let mut selected = register_type(verifier, function, block, *root)?;
+            for field in fields {
+                selected = record_child_type(program, selected, *field, at)?;
+                proof = proof
+                    .element(field.zero_based() as usize)
+                    .unwrap_or_else(|| base_copy_proof(program, selected));
+            }
+            match mode {
+                crate::awbc::schema::AwbcPlaceReadMode::Copy => {
+                    if !proof.permits_copy() {
+                        return invalid_type(at, "copied place has no unrestricted proof");
+                    }
+                }
+                crate::awbc::schema::AwbcPlaceReadMode::Move => {
+                    state.moved_fields.retain(|(register, child)| {
+                        *register != *root || !child.starts_with(fields)
+                    });
+                    state.moved_fields.insert((*root, fields.clone()));
+                }
+            }
+            outputs.push(*dst);
+            output_proof = Some(proof);
+        }
         AwbcInstruction::ProjectField { dst, target, field } => {
             consumed.push(*target);
             outputs.push(*dst);
@@ -2490,6 +2546,16 @@ fn apply_instruction_copy_and_move_effects(
                     base: target,
                     field,
                 } => {
+                    let field = crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(
+                        *field as usize,
+                    )
+                    .map_err(|_| AwbcVerifyError::InvalidInvariant {
+                        at: at.into(),
+                        message: "invalid assigned field".into(),
+                    })?;
+                    state.moved_fields.retain(|(register, path)| {
+                        *register != *target || !path.starts_with(&[field])
+                    });
                     mutated.push(*target);
                     let record_ty = register_type(verifier, function, block, *target)?;
                     let field_count = match runtime_shape(program, record_ty) {
@@ -2498,7 +2564,7 @@ fn apply_instruction_copy_and_move_effects(
                     };
                     mutated_proof = Some(update_record_proof_field(
                         &state.copy_proofs[target.index()],
-                        *field as usize,
+                        field.zero_based() as usize,
                         field_count,
                         |_| value_proof,
                     ));
@@ -2551,6 +2617,9 @@ fn apply_instruction_copy_and_move_effects(
     }
     for output in outputs {
         state.initialized[output.index()] = true;
+        state
+            .moved_fields
+            .retain(|(register, _)| *register != output);
     }
     for (output, proof) in extra_output_proofs {
         state.copy_proofs[output.index()] = proof;
@@ -4927,6 +4996,73 @@ fn project_ordinal(
     write_register(verifier, function, block, dst, state)
 }
 
+fn record_child_type(
+    program: &AwbcProgram,
+    owner: AwbcTypeId,
+    field: crate::value::RuntimeRecordFieldId,
+    at: &str,
+) -> Result<AwbcTypeId, AwbcVerifyError> {
+    match runtime_shape(program, owner) {
+        Some(
+            AwbcRuntimeTypeShape::Record { fields, .. }
+            | AwbcRuntimeTypeShape::NominalRecord { fields, .. },
+        ) => fields
+            .get(field.zero_based() as usize)
+            .filter(|entry| entry.field == field)
+            .map(|entry| entry.ty)
+            .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                at: at.into(),
+                message: "selected record child does not exist".into(),
+            }),
+        _ => Err(AwbcVerifyError::InvalidInvariant {
+            at: at.into(),
+            message: "place projection requires a separable record schema".into(),
+        }),
+    }
+}
+
+fn read_aggregate_root(
+    verifier: &Verifier<'_, '_>,
+    function: usize,
+    block: usize,
+    root: AwbcRegisterId,
+    state: &FlowState,
+) -> Result<AwbcTypeId, AwbcVerifyError> {
+    let ty = register_type(verifier, function, block, root)?;
+    if !state.initialized[root.index()] {
+        return Err(AwbcVerifyError::UninitializedRegister {
+            function,
+            block,
+            register: root.0,
+        });
+    }
+    Ok(ty)
+}
+
+fn read_place_type(
+    verifier: &Verifier<'_, '_>,
+    function: usize,
+    block: usize,
+    root: AwbcRegisterId,
+    fields: &[crate::value::RuntimeRecordFieldId],
+    state: &FlowState,
+) -> Result<AwbcTypeId, AwbcVerifyError> {
+    let mut ty = read_aggregate_root(verifier, function, block, root, state)?;
+    if state.moved_fields.iter().any(|(register, path)| {
+        *register == root && (path.starts_with(fields) || fields.starts_with(path))
+    }) {
+        return Err(AwbcVerifyError::UninitializedRegister {
+            function,
+            block,
+            register: root.0,
+        });
+    }
+    for field in fields {
+        ty = record_child_type(verifier.program, ty, *field, "local place")?;
+    }
+    Ok(ty)
+}
+
 fn read_register(
     verifier: &Verifier<'_, '_>,
     function: usize,
@@ -4935,7 +5071,9 @@ fn read_register(
     state: &FlowState,
 ) -> Result<AwbcTypeId, AwbcVerifyError> {
     let ty = register_type(verifier, function, block, register)?;
-    if !state.initialized[register.index()] {
+    if !state.initialized[register.index()]
+        || state.moved_fields.iter().any(|(root, _)| *root == register)
+    {
         return Err(AwbcVerifyError::UninitializedRegister {
             function,
             block,
@@ -4954,6 +5092,7 @@ fn write_register(
 ) -> Result<(), AwbcVerifyError> {
     let ty = register_type(verifier, function, block, register)?;
     state.initialized[register.index()] = true;
+    state.moved_fields.retain(|(root, _)| *root != register);
     state.copy_proofs[register.index()] = base_copy_proof(verifier.program, ty);
     Ok(())
 }
@@ -4967,6 +5106,7 @@ fn clear_register(
 ) -> Result<(), AwbcVerifyError> {
     register_type(verifier, function, block, register)?;
     state.initialized[register.index()] = false;
+    state.moved_fields.retain(|(root, _)| *root != register);
     state.copy_proofs[register.index()] = CopyProof::Affine;
     Ok(())
 }

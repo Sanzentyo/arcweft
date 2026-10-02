@@ -450,17 +450,17 @@ impl super::AwbcProductStepExecutor {
             return Ok(None);
         };
         let locals = line.scheduled_child_locals(&token)?;
-        let values = child.fiber.function_argument_values(&self.program)?;
+        let values = child.fiber.function_argument_storage(&self.program)?;
         if locals.len() != values.len() {
             return Err(LineRuntimeError::InvalidScheduledCaptureGraph.into());
         }
         let references = locals
             .iter()
             .zip(values)
-            .filter_map(|(local, value)| value.map(|value| (*local, value)))
+            .map(|(local, storage)| (*local, storage))
             .collect::<Vec<_>>();
         let mut returned = BTreeSet::new();
-        for (_, value) in &references {
+        for value in references.iter().flat_map(|(_, storage)| storage.values()) {
             returned.extend(
                 unique_line_handles(value)?
                     .into_iter()
@@ -849,15 +849,13 @@ impl super::AwbcProductStepExecutor {
                     .expect("preflighted scheduled child retains its local layout");
                 let values = child
                     .fiber
-                    .take_function_argument_values(&self.program)
+                    .take_function_argument_storage(&self.program)
                     .expect("preflighted scheduled child retains its input frame");
                 let bindings = locals
                     .into_vec()
                     .into_iter()
                     .zip(values)
-                    .filter_map(|(local, value)| {
-                        value.map(|value| RuntimeLocalBinding { local, value })
-                    })
+                    .map(|(local, storage)| crate::value::RuntimeLocalSlot::new(local, storage))
                     .collect::<Vec<_>>()
                     .into_boxed_slice();
                 transaction
@@ -1752,7 +1750,7 @@ impl super::AwbcProductStepExecutor {
                     if !frame
                         .registers
                         .get(destination.index())
-                        .is_some_and(Option::is_none)
+                        .is_some_and(crate::value::RuntimePlaceStorage::is_vacant)
                     {
                         return Err(LineRuntimeError::InvalidActivationOperation.into());
                     }
@@ -2345,7 +2343,11 @@ impl super::AwbcProductStepExecutor {
             {
                 return Err(LineRuntimeError::InvalidActivationOperation.into());
             }
-            if frame.registers.get(register.index()) != Some(&None) {
+            if !frame
+                .registers
+                .get(register.index())
+                .is_some_and(crate::value::RuntimePlaceStorage::is_vacant)
+            {
                 return Err(LineRuntimeError::InvalidActivationOperation.into());
             }
             for handle in unique_line_handles(value)? {
@@ -2438,7 +2440,10 @@ impl super::AwbcProductStepExecutor {
         let mut capture_tokens = BTreeSet::new();
         for ((register, value), expected) in captures.iter().zip(&signature.params) {
             if !seen_registers.insert(*register)
-                || frame.registers.get(register.index()) != Some(&None)
+                || !frame
+                    .registers
+                    .get(register.index())
+                    .is_some_and(crate::value::RuntimePlaceStorage::is_vacant)
                 || !runtime_value_matches_type(&self.program, value, *expected, 0)
             {
                 return Err(LineRuntimeError::InvalidActivationOperation.into());
@@ -3696,7 +3701,7 @@ fn pop_activation_scope(
                     | crate::awbc::schema::AwbcFrameSlotRole::RuntimeState
             )
         {
-            *register = None;
+            *register = Default::default();
         }
     }
     Ok((scope.cleanups, scope.defer_failure))
@@ -3755,10 +3760,12 @@ fn activation_fiber_handle_owners(
 ) -> Result<BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>, ProductStepError> {
     let mut owners = BTreeMap::new();
     for frame in &fiber.frames {
-        for (index, value) in frame.registers.iter().enumerate() {
-            let Some(value) = value else {
-                continue;
-            };
+        for (index, value) in frame
+            .registers
+            .iter()
+            .enumerate()
+            .flat_map(|(index, storage)| storage.values().map(move |value| (index, value)))
+        {
             let register = u32::try_from(index)
                 .map(crate::awbc::schema::AwbcRegisterId)
                 .map_err(|_| LineRuntimeError::OwnedSlotOverflow)?;
@@ -3832,10 +3839,12 @@ fn parent_fiber_handle_owners(
 ) -> Result<BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>, ProductStepError> {
     let mut owners = BTreeMap::new();
     for frame in &fiber.frames {
-        for (index, value) in frame.registers.iter().enumerate() {
-            let Some(value) = value else {
-                continue;
-            };
+        for (index, value) in frame
+            .registers
+            .iter()
+            .enumerate()
+            .flat_map(|(index, storage)| storage.values().map(move |value| (index, value)))
+        {
             let register = u32::try_from(index)
                 .map(crate::awbc::schema::AwbcRegisterId)
                 .map_err(|_| LineRuntimeError::OwnedSlotOverflow)?;
@@ -3879,10 +3888,12 @@ pub(super) fn product_fiber_handle_owners(
 ) -> Result<BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>, ProductStepError> {
     let mut owners = BTreeMap::new();
     for frame in &fiber.frames {
-        for (index, value) in frame.registers.iter().enumerate() {
-            let Some(value) = value else {
-                continue;
-            };
+        for (index, value) in frame
+            .registers
+            .iter()
+            .enumerate()
+            .flat_map(|(index, storage)| storage.values().map(move |value| (index, value)))
+        {
             let register = u32::try_from(index)
                 .map(crate::awbc::schema::AwbcRegisterId)
                 .map_err(|_| LineRuntimeError::OwnedSlotOverflow)?;

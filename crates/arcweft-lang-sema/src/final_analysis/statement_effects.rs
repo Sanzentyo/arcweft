@@ -749,7 +749,13 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             row.effects = EffectRow::closed(EffectSet::new());
             row.direct_suspension = false;
         }
-        let direct_field_place = fact.reads_field_binding();
+        let direct_field_place = fact
+            .field_root(|child| {
+                self.expression_facts
+                    .get(&child)
+                    .and_then(|fact| fact.local_place_source())
+            })
+            .is_some();
         let accepted_closure = matches!(fact, PreparedExpressionFact::Complete(expression)
             if matches!(expression.resolution(), super::CheckedExpressionResolution::Closure(_)));
         let independent_computation = matches!(
@@ -1300,7 +1306,14 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
             checked.resolution(),
             super::CheckedExpressionResolution::ImplicitCallable(_)
         ) || matches!(kind, HirExprKind::Closure(_));
-        let direct_field_place = checked.reads_field_binding();
+        let direct_field_place = checked
+            .field_root(|child| {
+                self.expressions
+                    .get(&child)
+                    .or_else(|| self.pending_expressions.get(&child))
+                    .and_then(CheckedExpression::local_place_source)
+            })
+            .is_some();
         let independent_computation = matches!(
             kind,
             HirExprKind::ComputationBlock(expression)

@@ -23,7 +23,7 @@ use crate::value::{
     AwbcRuntimeValueSnapshot, RuntimeArcErrorContextKind, RuntimeArcErrorContextPending,
     RuntimeBinding, RuntimeCallablePendingGroup, RuntimeCallablePendingGroupParts,
     RuntimeCallableValue, RuntimeCallableZeroArgInvocationProof, RuntimeFlowParameterBinding,
-    RuntimeFormatContext, RuntimeIterator, RuntimeSeq, RuntimeValue,
+    RuntimeFormatContext, RuntimeIterator, RuntimePlaceStorage, RuntimeSeq, RuntimeValue,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -117,7 +117,7 @@ pub struct FiberFrame {
     pub function: AwbcFunctionId,
     pub layout: AwbcFrameLayoutId,
     pub return_to: Option<FiberReturnPoint>,
-    pub registers: Vec<Option<RuntimeValue>>,
+    pub registers: Vec<RuntimePlaceStorage<RuntimeValue>>,
     /// Source-order formatter operands staged at the exact instruction site.
     pub format: Option<FiberFormatState>,
     /// Nested source-ordered Flow formatter transactions owned by this frame.
@@ -474,7 +474,7 @@ pub struct AwbcFiberFrameSnapshot {
     pub function: AwbcFunctionId,
     pub layout: AwbcFrameLayoutId,
     pub return_to: Option<AwbcFiberReturnPointSnapshot>,
-    pub registers: Vec<Option<AwbcRuntimeValueSnapshot>>,
+    pub registers: Vec<RuntimePlaceStorage<AwbcRuntimeValueSnapshot>>,
     pub format: Option<AwbcFiberFormatStateSnapshot>,
     pub format_attempts: Vec<AwbcFiberFormatAttemptStateSnapshot>,
     pub root_cleanups: Vec<AwbcFiberScopeCleanupSnapshot>,
@@ -683,7 +683,7 @@ impl AwbcFiberStateSnapshot {
     ) -> Result<Vec<crate::runtime_id::RuntimeLineHandleToken>, String> {
         let mut tokens = Vec::new();
         for frame in &self.frames {
-            for value in frame.registers.iter().flatten() {
+            for value in frame.registers.iter().flat_map(RuntimePlaceStorage::values) {
                 extend_snapshot_line_handle_tokens(value, &mut tokens)?;
             }
             if let Some(format) = &frame.format {
@@ -788,7 +788,7 @@ impl AwbcFiberStateSnapshot {
         if let Some(terminal) = &self.terminal {
             match terminal {
                 AwbcFiberTerminalSnapshot::Returned(value) => {
-                    if let Some(value) = value {
+                    if let Some(value) = value.as_ref() {
                         extend_snapshot_line_handle_tokens(value, &mut tokens)?;
                     }
                 }
@@ -924,12 +924,7 @@ impl AwbcFiberFrameSnapshot {
             registers: frame
                 .registers
                 .iter()
-                .map(|value| {
-                    value
-                        .as_ref()
-                        .map(AwbcRuntimeValueSnapshot::from_runtime_value)
-                        .transpose()
-                })
+                .map(|value| value.try_map_ref(&mut AwbcRuntimeValueSnapshot::from_runtime_value))
                 .collect::<Result<_, _>>()?,
             format: frame
                 .format
@@ -972,11 +967,14 @@ impl AwbcFiberFrameSnapshot {
                 .registers
                 .into_iter()
                 .map(|value| {
-                    value
-                        .map(|value| value.into_runtime_value_for_program(owner))
-                        .transpose()
+                    let value =
+                        value.try_map(&mut |value| value.into_runtime_value_for_program(owner))?;
+                    value.validate_record_headers(owner).map_err(|message| {
+                        crate::value::AwbcRuntimeValueSnapshotError::Message { message }
+                    })?;
+                    Ok(value)
                 })
-                .collect::<Result<_, _>>()?,
+                .collect::<AwbcSaveResult<_>>()?,
             format: self
                 .format
                 .map(|value| value.into_live(owner))
@@ -1834,7 +1832,7 @@ impl FiberState {
         mut visitor: impl FnMut(&RuntimeValue) -> Result<(), E>,
     ) -> Result<(), E> {
         for frame in &self.frames {
-            for value in frame.registers.iter().flatten() {
+            for value in frame.registers.iter().flat_map(RuntimePlaceStorage::values) {
                 visit_value_graph(value, &mut visitor)?;
             }
             if let Some(format) = &frame.format {
@@ -1947,14 +1945,14 @@ impl FiberState {
         for frame in &self.frames {
             if let Some(format) = &frame.format {
                 for (ordinal, value) in format.values.iter().enumerate() {
-                    if let Some(value) = value {
+                    if let Some(value) = value.as_ref() {
                         visitor(frame.instance, format.site, ordinal, value)?;
                     }
                 }
             }
             for attempt in &frame.format_attempts {
                 for (ordinal, value) in attempt.values().iter().enumerate() {
-                    if let Some(value) = value {
+                    if let Some(value) = value.as_ref() {
                         visitor(frame.instance, attempt.site(), ordinal, value)?;
                     }
                 }
@@ -2142,7 +2140,7 @@ impl FiberState {
         .expect("prepared function input binding validated the AWBC frame");
         let registers = &mut fiber.frames[0].registers;
         for (register, value) in prepared.parameter_registers.into_iter().zip(args) {
-            registers[register.index()] = Some(value);
+            registers[register.index()] = value.into();
         }
         fiber
     }
@@ -2243,24 +2241,23 @@ impl FiberState {
             .bind_positional_arguments_owned(program, values)
     }
 
-    /// Atomically removes the root function's current parameter values in
-    /// sealed positional order. Missing values represent parameters consumed
-    /// by the child and are preserved as such for the custody reducer.
-    pub(crate) fn take_function_argument_values(
+    /// Atomically removes current parameter storage in sealed positional order,
+    /// retaining vacancies and partial owners for the custody reducer.
+    pub(crate) fn take_function_argument_storage(
         &mut self,
         program: &AwbcProgram,
-    ) -> Result<Vec<Option<RuntimeValue>>, FiberStateError> {
-        self.active_frame_mut()?.take_positional_arguments(program)
+    ) -> Result<Vec<RuntimePlaceStorage<RuntimeValue>>, FiberStateError> {
+        self.active_frame_mut()?
+            .take_positional_argument_storage(program)
     }
 
     /// Borrows the current function's positional argument slots in the exact
-    /// order used by `take_function_argument_values`, preserving consumed
-    /// slots as `None` for custody preflight.
-    pub(crate) fn function_argument_values<'a>(
+    /// order used by `take_function_argument_storage`, including partial cells.
+    pub(crate) fn function_argument_storage<'a>(
         &'a self,
         program: &AwbcProgram,
-    ) -> Result<Vec<Option<&'a RuntimeValue>>, FiberStateError> {
-        self.active_frame()?.positional_argument_values(program)
+    ) -> Result<Vec<&'a RuntimePlaceStorage<RuntimeValue>>, FiberStateError> {
+        self.active_frame()?.positional_argument_storage(program)
     }
 
     fn bind_active_frame_arguments(
@@ -2370,7 +2367,7 @@ impl FiberState {
         }
         let mut register_values = frame.registers.clone();
         for (register, value) in argument_values.into_iter().flatten() {
-            register_values[register] = Some(value.clone());
+            register_values[register] = value.clone().into();
         }
         self.active_frame_mut()?.registers = register_values;
         Ok(())
@@ -2438,7 +2435,7 @@ impl FiberState {
                     actual: runtime_value_type_label(&binding.value),
                 });
             }
-            register_values[register] = Some(binding.value.clone());
+            register_values[register] = binding.value.clone().into();
         }
         self.active_frame_mut()?.registers = register_values;
         Ok(())
@@ -2463,24 +2460,11 @@ impl FiberState {
         snapshot: AwbcFiberStateSnapshot,
         owner: &RuntimeProgramOwner,
     ) -> Result<(), FiberStateError> {
-        let shell = Self {
-            instance: self.instance,
-            next_frame_instance: self.next_frame_instance,
-            next_await_many_ordinal: self.next_await_many_ordinal,
-            generation: self.generation,
-            entry: self.entry,
-            cursor: self.cursor,
-            frames: Vec::new(),
-            status: FiberStatus::Cancelled,
-            suspension: None,
-            terminal: Some(FiberTerminalValue::Cancelled),
-            return_summary: None,
-            budget: self.budget,
-            line_cursor: self.line_cursor,
-            streams: Vec::new(),
-        };
-        drop(std::mem::replace(self, shell));
-        *self = snapshot.into_live_for_program(owner)?;
+        let candidate = snapshot.into_live_for_program(owner)?;
+        if let RuntimeProgramOwner::Awbc(program) = owner {
+            candidate.validate_for_program(program)?;
+        }
+        *self = candidate;
         Ok(())
     }
 
@@ -2809,7 +2793,7 @@ impl FiberState {
                     register: register.0,
                     layout: frame.layout.0,
                 })?;
-        if slot.is_some() {
+        if !slot.is_vacant() {
             return Err(FiberStateError::RegisterAlreadyInitialized {
                 register: register.0,
                 layout: frame.layout.0,
@@ -2837,10 +2821,10 @@ impl FiberState {
             .get_mut(prepared.register.index())
             .expect("prepared yielded register write retains its destination");
         assert!(
-            slot.is_none(),
+            slot.is_vacant(),
             "prepared destination register remains vacant"
         );
-        *slot = Some(value);
+        *slot = value.into();
         self.cursor.instruction_offset = prepared.instruction.next_offset;
     }
 
@@ -2900,7 +2884,7 @@ impl FiberState {
                     layout: frame.layout.0,
                 },
             )?;
-            if live_slot.is_some() {
+            if !live_slot.is_vacant() {
                 return Err(FiberStateError::RegisterAlreadyInitialized {
                     register: register.0,
                     layout: frame.layout.0,
@@ -2962,8 +2946,8 @@ impl FiberState {
                 .registers
                 .get_mut(register.index())
                 .expect("prepared operand restore retains its source register");
-            assert!(slot.is_none(), "prepared source register remains vacant");
-            *slot = Some(value);
+            assert!(slot.is_vacant(), "prepared source register remains vacant");
+            *slot = value.into();
         }
     }
 
@@ -3141,10 +3125,10 @@ impl FiberState {
             .get_mut(handle.index())
             .expect("validated Await handle register exists");
         assert!(
-            slot.is_none(),
+            slot.is_vacant(),
             "validated Await handle register stays vacant"
         );
-        *slot = Some(RuntimeValue::Need(id));
+        *slot = RuntimeValue::Need(id).into();
         Ok(())
     }
 
@@ -3908,7 +3892,7 @@ fn validate_format_state(
             }
             continue;
         }
-        if let Some(value) = value {
+        if let Some(value) = value.as_ref() {
             let result = format_operand_type_at_site(program, state.site, ordinal)?;
             validate_runtime_value_at(
                 program,
@@ -3940,12 +3924,12 @@ fn validate_format_state(
                 && frame
                     .registers
                     .get(result_register.index())
-                    .is_some_and(Option::is_some))
+                    .is_some_and(|storage| !storage.is_vacant()))
             || (state.first_recoverable.is_some()
                 && frame
                     .registers
                     .get(result_register.index())
-                    .is_some_and(Option::is_some))
+                    .is_some_and(|storage| !storage.is_vacant()))
         {
             return Err(FiberStateError::InvalidFrame);
         }
@@ -3988,18 +3972,16 @@ fn validate_frame(
         return Err(FiberStateError::InvalidFrame);
     }
     for (index, value) in frame.registers.iter().enumerate() {
-        let Some(value) = value else {
-            continue;
-        };
         let slot = layout
             .slots
             .get(index)
             .ok_or(FiberStateError::InvalidFrame)?;
-        validate_runtime_value_at(
+        validate_place_storage_at(
             program,
             value,
-            Some(slot.ty),
+            slot.ty,
             format!("{path}.registers[{index}]"),
+            0,
         )?;
     }
     if let Some(format) = &frame.format {
@@ -4124,6 +4106,90 @@ fn validate_deferred(
             capture,
             Some(signature.params[index]),
             format!("{path}.captures[{index}]"),
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_place_storage_at(
+    program: &AwbcProgram,
+    storage: &RuntimePlaceStorage<RuntimeValue>,
+    expected: AwbcTypeId,
+    path: String,
+    depth: usize,
+) -> Result<(), FiberStateError> {
+    if depth > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH {
+        return Err(FiberStateError::InvalidFrame);
+    }
+    if let Some(value) = storage.as_ref() {
+        return validate_runtime_value_at(program, value, Some(expected), path);
+    }
+    if storage.is_vacant() {
+        return Ok(());
+    }
+    let (header, children) = storage
+        .record_parts()
+        .ok_or(FiberStateError::InvalidFrame)?;
+    let ty = program
+        .runtime_types
+        .get(expected.index())
+        .ok_or(FiberStateError::InvalidFrame)?;
+    let fields = match (header, ty.shape()) {
+        (
+            crate::value::RuntimePlaceRecordHeader::Nominal {
+                nominal,
+                semantic_identity,
+                layout,
+            },
+            AwbcRuntimeTypeShape::NominalRecord {
+                public_id,
+                layout: expected_layout,
+                fields,
+                ..
+            },
+        ) if program
+            .strings
+            .get(public_id.index())
+            .is_some_and(|name| name == nominal.as_str())
+            && *semantic_identity == ty.semantic_identity()
+            && *layout == crate::entry::TypeLayoutHash::from_bytes(*expected_layout) =>
+        {
+            fields
+        }
+        (
+            crate::value::RuntimePlaceRecordHeader::Structural { names },
+            AwbcRuntimeTypeShape::Record { fields, .. },
+        ) if names.len() == fields.len()
+            && names.iter().zip(fields).all(|(name, field)| {
+                field
+                    .name
+                    .and_then(|name| program.strings.get(name.index()))
+                    == Some(name)
+            }) =>
+        {
+            fields
+        }
+        _ => {
+            return Err(FiberStateError::InvalidRuntimeValue {
+                path,
+                reason: "partial place header does not match its exact admitted record schema"
+                    .into(),
+            });
+        }
+    };
+    if children.len() != fields.len() {
+        return Err(FiberStateError::InvalidFrame);
+    }
+    for (ordinal, (child, field)) in children.iter().zip(fields).enumerate() {
+        if field.field.zero_based() as usize != ordinal {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        validate_place_storage_at(
+            program,
+            child,
+            field.ty,
+            format!("{path}.fields[{ordinal}]"),
+            depth + 1,
         )?;
     }
     Ok(())
@@ -5046,12 +5112,12 @@ fn validate_project_call_stage_values(
     if caller
         .registers
         .get(call.callee.index())
-        .is_none_or(Option::is_some)
+        .is_none_or(|storage| !storage.is_vacant())
         || call.operands.iter().any(|operand| {
             caller
                 .registers
                 .get(operand.value.index())
-                .is_none_or(Option::is_some)
+                .is_none_or(|storage| !storage.is_vacant())
         })
     {
         return Err(FiberStateError::InvalidFrame);
@@ -5318,7 +5384,10 @@ fn validate_await_suspension(
                 .frame_layouts
                 .get(frame.layout.index())
                 .and_then(|layout| layout.slots.get(handle.index()));
-            let register_value = frame.registers.get(handle.index()).and_then(Option::as_ref);
+            let register_value = frame
+                .registers
+                .get(handle.index())
+                .and_then(RuntimePlaceStorage::as_ref);
             let matches_source = layout_slot.is_some_and(|slot| {
                 matches!(
                     program.runtime_types.get(slot.ty.index()).map(AwbcRuntimeType::shape),
@@ -5602,7 +5671,7 @@ impl FiberFrame {
             function,
             layout: function_record.frame_layout,
             return_to,
-            registers: vec![None; layout.slots.len()],
+            registers: vec![RuntimePlaceStorage::default(); layout.slots.len()],
             format: None,
             format_attempts: Vec::new(),
             root_cleanups: Vec::new(),
@@ -5675,7 +5744,7 @@ impl FiberFrame {
                     actual: runtime_value_type_label(value),
                 });
             }
-            next[*register] = Some(value.clone());
+            next[*register] = value.clone().into();
         }
         self.registers = next;
         Ok(())
@@ -5730,51 +5799,38 @@ impl FiberFrame {
             })?;
         let mut next = self.registers.clone();
         for ((register, _), value) in parameters.into_iter().zip(args) {
-            next[register] = Some(value);
+            next[register] = value.into();
         }
         self.registers = next;
         Ok(())
     }
 
-    pub(crate) fn take_positional_arguments(
+    pub(crate) fn take_positional_argument_storage(
         &mut self,
         program: &AwbcProgram,
-    ) -> Result<Vec<Option<RuntimeValue>>, FiberStateError> {
-        let function = program
-            .functions
-            .get(self.function.index())
-            .ok_or(FiberStateError::UnknownFunction(self.function.0))?;
-        let signature = program
-            .signatures
-            .get(function.signature.index())
-            .ok_or(FiberStateError::InvalidFrame)?;
-        let layout = program
-            .frame_layouts
-            .get(self.layout.index())
-            .ok_or(FiberStateError::UnknownFrameLayout(self.layout.0))?;
-        let parameters = layout
-            .slots
-            .iter()
-            .enumerate()
-            .filter(|(_, slot)| slot.role == AwbcFrameSlotRole::Parameter)
-            .map(|(register, _)| register)
-            .collect::<Vec<_>>();
-        if parameters.len() != signature.params.len() {
-            return Err(FiberStateError::InvalidFrame);
-        }
-        let mut next = self.registers.clone();
-        let values = parameters
+    ) -> Result<Vec<RuntimePlaceStorage<RuntimeValue>>, FiberStateError> {
+        let registers = self.validated_positional_argument_registers(program)?;
+        Ok(registers
             .into_iter()
-            .map(|register| next[register].take())
-            .collect();
-        self.registers = next;
-        Ok(values)
+            .map(|register| std::mem::take(&mut self.registers[register.index()]))
+            .collect())
     }
 
-    pub(crate) fn positional_argument_values<'a>(
+    pub(crate) fn positional_argument_storage<'a>(
         &'a self,
         program: &AwbcProgram,
-    ) -> Result<Vec<Option<&'a RuntimeValue>>, FiberStateError> {
+    ) -> Result<Vec<&'a RuntimePlaceStorage<RuntimeValue>>, FiberStateError> {
+        Ok(self
+            .validated_positional_argument_registers(program)?
+            .into_iter()
+            .map(|register| &self.registers[register.index()])
+            .collect())
+    }
+
+    fn validated_positional_argument_registers(
+        &self,
+        program: &AwbcProgram,
+    ) -> Result<Vec<AwbcRegisterId>, FiberStateError> {
         let function = program
             .functions
             .get(self.function.index())
@@ -5798,43 +5854,36 @@ impl FiberFrame {
         }
         parameters
             .into_iter()
-            .zip(signature.params.iter())
-            .enumerate()
-            .map(|(position, ((register, slot), expected))| {
+            .zip(&signature.params)
+            .map(|((index, slot), expected)| {
                 if slot.ty != *expected {
                     return Err(FiberStateError::InvalidFrame);
                 }
-                let register_id = u32::try_from(register)
+                let register = u32::try_from(index)
                     .map(AwbcRegisterId)
                     .map_err(|_| FiberStateError::InvalidFrame)?;
-                let value =
+                let storage =
                     self.registers
-                        .get(register)
+                        .get(index)
                         .ok_or(FiberStateError::RegisterOutOfBounds {
-                            register: register_id.0,
+                            register: register.0,
                             layout: self.layout.0,
                         })?;
-                if let Some(value) = value
-                    && !runtime_value_matches_type(program, value, *expected, 0)
-                {
-                    return Err(FiberStateError::ArgumentType {
-                        name: slot
-                            .name
-                            .and_then(|name| program.strings.get(name.index()).cloned())
-                            .unwrap_or_else(|| format!("${position}")),
-                        expected: runtime_type_label(program, *expected),
-                        actual: runtime_value_type_label(value),
-                    });
-                }
-                Ok(value.as_ref())
+                validate_place_storage_at(
+                    program,
+                    storage,
+                    *expected,
+                    format!("parameter_storage[{index}]"),
+                    0,
+                )?;
+                Ok(register)
             })
             .collect()
     }
-
     pub fn register(&self, register: AwbcRegisterId) -> Result<&RuntimeValue, FiberStateError> {
         self.registers
             .get(register.index())
-            .and_then(Option::as_ref)
+            .and_then(RuntimePlaceStorage::as_ref)
             .ok_or(FiberStateError::RegisterOutOfBounds {
                 register: register.0,
                 layout: self.layout.0,
@@ -5852,7 +5901,7 @@ impl FiberFrame {
                 layout: self.layout.0,
             },
         )?;
-        *slot = Some(value);
+        *slot = value.into();
         Ok(())
     }
 
@@ -5863,7 +5912,7 @@ impl FiberFrame {
                 layout: self.layout.0,
             },
         )?;
-        *slot = None;
+        *slot = RuntimePlaceStorage::default();
         Ok(())
     }
 
@@ -6178,7 +6227,7 @@ mod tests {
             .expect("fixture fiber starts");
         fiber.frames[0]
             .registers
-            .push(Some(RuntimeValue::Tuple(vec![bundle_image_handle_value()])));
+            .push(RuntimeValue::Tuple(vec![bundle_image_handle_value()]).into());
         let mut roles = Vec::new();
 
         fiber
@@ -6326,7 +6375,7 @@ mod tests {
 
         assert_eq!(
             fiber.active_frame().unwrap().registers,
-            vec![Some(RuntimeValue::Unit)]
+            vec![RuntimePlaceStorage::from(RuntimeValue::Unit)]
         );
     }
 
@@ -6571,7 +6620,7 @@ mod tests {
     fn format_operand_results_survive_snapshot_and_visit() {
         let program = format_entry_program();
         let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
-        fiber.frames[0].registers[0] = Some(RuntimeValue::Unit);
+        fiber.frames[0].registers[0] = RuntimeValue::Unit.into();
         let site = fiber.cursor;
         fiber
             .begin_format_content(&program, &RuntimeFormatContext::default())
@@ -6651,7 +6700,7 @@ mod tests {
     fn format_operand_recovery_unwinds_nested_call_without_consuming_another_operand() {
         let program = format_entry_program();
         let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
-        fiber.frames[0].registers[0] = Some(RuntimeValue::Unit);
+        fiber.frames[0].registers[0] = RuntimeValue::Unit.into();
         let site = fiber.cursor;
         fiber
             .begin_format_content(&program, &RuntimeFormatContext::default())
@@ -6704,7 +6753,7 @@ mod tests {
     fn format_operand_recovery_preserves_pending_cleanup_for_normal_unwind() {
         let program = format_entry_program();
         let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
-        fiber.frames[0].registers[0] = Some(RuntimeValue::Unit);
+        fiber.frames[0].registers[0] = RuntimeValue::Unit.into();
         let site = fiber.cursor;
         fiber
             .begin_format_content(&program, &RuntimeFormatContext::default())
@@ -6747,7 +6796,7 @@ mod tests {
     fn format_snapshot_rejects_wrong_site_ordinal_function_capture_and_value_type() {
         let program = format_entry_program();
         let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
-        fiber.frames[0].registers[0] = Some(RuntimeValue::Unit);
+        fiber.frames[0].registers[0] = RuntimeValue::Unit.into();
         let site = fiber.cursor;
         fiber
             .begin_format_content(&program, &RuntimeFormatContext::default())

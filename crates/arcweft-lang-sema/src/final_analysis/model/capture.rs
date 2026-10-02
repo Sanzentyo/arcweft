@@ -692,6 +692,11 @@ impl CheckedImplicitCallable {
                     fact,
                     fields,
                     &local_type,
+                    |child| {
+                        expressions
+                            .get(&child)
+                            .and_then(CheckedExpression::local_place_source)
+                    },
                     access,
                 )
             },

@@ -32,10 +32,7 @@ impl RuntimePlaceWriteError {
 #[derive(Clone, Debug, PartialEq)]
 struct RuntimeScopeRollbackImage {
     identity: RuntimeScopeIdentity,
-    slots: Vec<(
-        RuntimeLocalDeclarationId,
-        Option<super::AwbcRuntimeValueSnapshot>,
-    )>,
+    slots: Vec<RuntimeLocalSlot<super::AwbcRuntimeValueSnapshot>>,
 }
 
 impl Default for RuntimeEnv {
@@ -81,13 +78,12 @@ impl RuntimeEnv {
                             .slots
                             .iter()
                             .map(|binding| {
-                                Ok((
-                                    binding.local,
-                                    binding.value.as_ref().map(|value|
-                                        super::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
-                                            .map_err(|error| error.to_string())
-                                    ).transpose()?,
-                                ))
+                                binding.try_map_ref(&mut |value| {
+                                    super::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                                        value, owner,
+                                    )
+                                    .map_err(|error| error.to_string())
+                                })
                             })
                             .collect::<Result<_, String>>()?,
                     })
@@ -110,17 +106,14 @@ impl RuntimeEnv {
                         slots: scope
                             .slots
                             .into_iter()
-                            .map(|(local, value)| {
-                                Ok(RuntimeLocalSlot {
-                                    local,
-                                    value: value
-                                        .map(|value| {
-                                            value
-                                                .into_runtime_value_for_program(owner)
-                                                .map_err(|error| error.to_string())
-                                        })
-                                        .transpose()?,
-                                })
+                            .map(|binding| {
+                                let binding = binding.try_map(&mut |value| {
+                                    value
+                                        .into_runtime_value_for_program(owner)
+                                        .map_err(|error| error.to_string())
+                                })?;
+                                binding.value.validate_record_headers(owner)?;
+                                Ok(binding)
                             })
                             .collect::<Result<_, String>>()?,
                     })
@@ -245,7 +238,7 @@ impl RuntimeEnv {
     /// ownership before any copy. A moved binding is absent for later reads.
     pub(crate) fn read(
         &mut self,
-        read: RuntimeLocalRead,
+        read: &RuntimeLocalRead,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let slot = self
             .slot_mut(read.local())
@@ -254,7 +247,7 @@ impl RuntimeEnv {
             RuntimeLocalReadMode::Copy => {
                 let value = slot
                     .value
-                    .as_ref()
+                    .field(read.fields())
                     .ok_or(RuntimeEvalError::UninitializedLocal(read.local()))?;
                 if !value.ownership().permits_copy() {
                     return Err(RuntimeEvalError::AffineLocalCopy(read.local()));
@@ -263,7 +256,7 @@ impl RuntimeEnv {
             }
             RuntimeLocalReadMode::Move => slot
                 .value
-                .take()
+                .take_field(read.fields())
                 .ok_or(RuntimeEvalError::UninitializedLocal(read.local())),
         }
     }
@@ -305,23 +298,19 @@ impl RuntimeEnv {
         let binding = self
             .slot_mut(local)
             .ok_or(RuntimeEvalError::UnknownLocal(local))?;
+        let path = match place {
+            RuntimeMutablePlace::Local(_) => Vec::new(),
+            RuntimeMutablePlace::NominalField { field, .. } => vec![field],
+        };
         let value = binding
             .value
-            .as_mut()
+            .field_mut(&path)
             .ok_or(RuntimeEvalError::UninitializedLocal(local))?;
-        match place {
-            RuntimeMutablePlace::Local(_) => match value {
-                RuntimeValue::Seq(sequence) => Ok(sequence),
-                value => Err(RuntimeEvalError::ExpectedSequence(runtime_value_label(
-                    value,
-                ))),
-            },
-            RuntimeMutablePlace::NominalField { field, .. } => match value {
-                RuntimeValue::NominalRecord(record) => record.sequence_field_mut(field),
-                value => Err(RuntimeEvalError::ExpectedSequence(runtime_value_label(
-                    value,
-                ))),
-            },
+        match value {
+            RuntimeValue::Seq(sequence) => Ok(sequence),
+            value => Err(RuntimeEvalError::ExpectedSequence(runtime_value_label(
+                value,
+            ))),
         }
     }
 
@@ -335,32 +324,32 @@ impl RuntimeEnv {
         &mut self,
         place: RuntimeMutablePlace,
         value: RuntimeValue,
-    ) -> Result<Option<RuntimeValue>, RuntimePlaceWriteError> {
+    ) -> Result<Vec<RuntimeValue>, RuntimePlaceWriteError> {
         let inspected = (|| {
             let slot = self
                 .slot(place.local())
                 .ok_or(RuntimeEvalError::UnknownLocal(place.local()))?;
             match place {
-                RuntimeMutablePlace::Local(_) => Ok(slot.value.as_ref()),
-                RuntimeMutablePlace::NominalField { field, .. } => {
-                    let base = slot
-                        .value
-                        .as_ref()
-                        .ok_or(RuntimeEvalError::UninitializedLocal(place.local()))?;
-                    base.record_field(field).map(Some).ok_or_else(|| {
-                        RuntimeEvalError::InvalidFieldAssignment {
-                            field: field.zero_based().to_string(),
-                            value: runtime_value_label(base),
-                        }
-                    })
-                }
+                RuntimeMutablePlace::Local(_) => Ok(slot.value.values().collect::<Vec<_>>()),
+                RuntimeMutablePlace::NominalField { field, .. } => slot
+                    .value
+                    .values_at(&[field])
+                    .ok_or_else(|| RuntimeEvalError::InvalidFieldAssignment {
+                        field: field.zero_based().to_string(),
+                        value: "uninitialized record place".into(),
+                    }),
             }
         })();
-        let handles = inspected.and_then(|displaced| match displaced {
-            Some(value) => value
-                .affine_line_handles()
-                .map_err(|_| RuntimeEvalError::InvalidDiscardGraph),
-            None => Ok(Vec::new()),
+        let handles = inspected.and_then(|displaced| {
+            displaced
+                .into_iter()
+                .map(|value| {
+                    value
+                        .affine_line_handles()
+                        .map_err(|_| RuntimeEvalError::InvalidDiscardGraph)
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(|handles| handles.into_iter().flatten().collect())
         });
         let handles = match handles {
             Ok(handles) => handles,
@@ -383,13 +372,12 @@ impl RuntimeEnv {
                 .expect("inspected local remains in the exclusive environment")
                 .value
                 .replace(value),
-            RuntimeMutablePlace::NominalField { base, field } => Some(
-                self.slot_mut(base)
-                    .and_then(|slot| slot.value.as_mut())
-                    .expect("inspected field owner remains initialized")
-                    .replace_record_field(field, value)
-                    .expect("inspected field retains its defining-order coordinate"),
-            ),
+            RuntimeMutablePlace::NominalField { base, field } => self
+                .slot_mut(base)
+                .expect("inspected field owner remains declared")
+                .value
+                .assign_field(&[field], value)
+                .expect("inspected field retains its defining-order coordinate"),
         };
         Ok(displaced)
     }
@@ -400,19 +388,17 @@ impl RuntimeEnv {
         std::mem::take(&mut self.assignment_discards)
     }
 
-    pub fn bindings_snapshot(&self) -> Vec<RuntimeLocalBinding> {
-        self.bindings()
-            .map(|(local, value)| RuntimeLocalBinding {
-                local,
-                value: value.clone(),
-            })
+    pub fn bindings_snapshot(&self) -> Vec<RuntimeLocalSlot> {
+        self.scopes
+            .iter()
+            .flat_map(|scope| scope.slots.iter().cloned())
             .collect()
     }
 
-    pub(crate) fn into_bindings(self) -> Vec<RuntimeLocalBinding> {
+    pub(crate) fn into_slots(self) -> Vec<RuntimeLocalSlot> {
         self.scopes
             .into_iter()
-            .flat_map(|mut scope| scope.take_bindings())
+            .flat_map(|scope| scope.slots)
             .collect()
     }
 
@@ -509,11 +495,11 @@ impl RuntimeScope {
 
     fn set(&mut self, local: RuntimeLocalDeclarationId, value: RuntimeValue) {
         if let Some(binding) = self.slot_mut(local) {
-            binding.value = Some(value);
+            binding.value = value.into();
         } else {
             self.slots.push(RuntimeLocalSlot {
                 local,
-                value: Some(value),
+                value: value.into(),
             });
         }
     }
@@ -539,17 +525,20 @@ impl RuntimeScope {
     fn bindings(&self) -> impl Iterator<Item = (RuntimeLocalDeclarationId, &RuntimeValue)> {
         self.slots
             .iter()
-            .filter_map(|slot| slot.value.as_ref().map(|value| (slot.local, value)))
+            .flat_map(|slot| slot.value.values().map(move |value| (slot.local, value)))
     }
 
     fn take_bindings(&mut self) -> Vec<RuntimeLocalBinding> {
         std::mem::take(&mut self.slots)
             .into_iter()
-            .filter_map(|slot| {
-                slot.value.map(|value| RuntimeLocalBinding {
-                    local: slot.local,
-                    value,
-                })
+            .flat_map(|slot| {
+                slot.value
+                    .into_values()
+                    .into_iter()
+                    .map(move |value| RuntimeLocalBinding {
+                        local: slot.local,
+                        value,
+                    })
             })
             .collect()
     }
@@ -570,7 +559,7 @@ impl RuntimeScope {
             return false;
         }
         for (current, next) in self.slots.iter_mut().zip(bindings) {
-            current.value = Some(next.value.clone());
+            current.value = next.value.clone().into();
         }
         true
     }
@@ -598,20 +587,91 @@ mod tests {
 
         let copy_affine = RuntimeLocalRead::from_admitted_parts(affine, RuntimeLocalReadMode::Copy);
         assert_eq!(
-            env.read(copy_affine),
+            env.read(&copy_affine),
             Err(RuntimeEvalError::AffineLocalCopy(affine))
         );
         assert_eq!(env.get(affine), Some(&need));
 
         let copy_scalar = RuntimeLocalRead::from_admitted_parts(scalar, RuntimeLocalReadMode::Copy);
-        assert_eq!(env.read(copy_scalar), Ok(RuntimeValue::Bool(true)));
-        assert_eq!(env.read(copy_scalar), Ok(RuntimeValue::Bool(true)));
+        assert_eq!(env.read(&copy_scalar), Ok(RuntimeValue::Bool(true)));
+        assert_eq!(env.read(&copy_scalar), Ok(RuntimeValue::Bool(true)));
 
         let move_affine = RuntimeLocalRead::from_admitted_parts(affine, RuntimeLocalReadMode::Move);
-        assert_eq!(env.read(move_affine), Ok(need));
+        assert_eq!(env.read(&move_affine), Ok(need));
         assert_eq!(
-            env.read(move_affine),
+            env.read(&move_affine),
             Err(RuntimeEvalError::UninitializedLocal(affine))
+        );
+    }
+
+    #[test]
+    fn partial_field_move_preserves_siblings_and_rollback_then_restores_the_slot() {
+        let source = local(1);
+        let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap();
+        let other = RuntimeRecordFieldId::try_from_zero_based_ordinal(1).unwrap();
+        let mut env = RuntimeEnv::default();
+        env.set(
+            source,
+            RuntimeValue::try_record(vec![
+                (
+                    "owner".into(),
+                    RuntimeValue::Need(crate::task::NeedId("need.first".into())),
+                ),
+                ("other".into(), RuntimeValue::Bool(true)),
+            ])
+            .unwrap(),
+        );
+        let move_field = RuntimeLocalRead::from_admitted_place(
+            source,
+            RuntimeLocalReadMode::Move,
+            vec![field].into_boxed_slice(),
+        );
+        let copy_other = RuntimeLocalRead::from_admitted_place(
+            source,
+            RuntimeLocalReadMode::Copy,
+            vec![other].into_boxed_slice(),
+        );
+        assert_eq!(
+            env.read(&move_field),
+            Ok(RuntimeValue::Need(crate::task::NeedId("need.first".into())))
+        );
+        assert_eq!(env.read(&copy_other), Ok(RuntimeValue::Bool(true)));
+        assert!(env.get(source).is_none());
+        assert_eq!(env.bindings().count(), 1);
+        assert_eq!(env.bindings_snapshot().len(), 1);
+        assert!(!env.bindings_snapshot()[0].storage().is_vacant());
+        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(
+            crate::awbc::schema::AwbcProgram::default(),
+        ));
+        let image = env.inert_rollback_image(&owner).unwrap();
+        let mut restored = RuntimeEnv::from_rollback_image(image, &owner).unwrap();
+        assert_eq!(
+            restored.read(&move_field),
+            Err(RuntimeEvalError::UninitializedLocal(source))
+        );
+        assert_eq!(restored.read(&copy_other), Ok(RuntimeValue::Bool(true)));
+        assert!(
+            restored
+                .assign_place(
+                    RuntimeMutablePlace::NominalField {
+                        base: source,
+                        field
+                    },
+                    RuntimeValue::Need(crate::task::NeedId("need.second".into()))
+                )
+                .unwrap()
+                .is_empty()
+        );
+        assert!(restored.get(source).is_some());
+        let displaced = restored
+            .assign_place(
+                RuntimeMutablePlace::Local(source),
+                RuntimeValue::Bool(false),
+            )
+            .unwrap();
+        assert_eq!(displaced.len(), 1);
+        assert!(
+            matches!(&displaced[0], RuntimeValue::Record(record) if matches!(record.fields()[0].value(), RuntimeValue::Need(need) if need.0 == "need.second"))
         );
     }
 
@@ -626,14 +686,20 @@ mod tests {
             crate::awbc::schema::AwbcProgram::default(),
         ));
         let image = env.inert_rollback_image(&owner).unwrap();
-        assert_eq!(image.scopes[0].slots, [(outer, None)]);
+        assert_eq!(
+            image.scopes[0].slots,
+            [RuntimeLocalSlot::new(
+                outer,
+                super::super::RuntimePlaceStorage::default()
+            )]
+        );
         let mut restored = RuntimeEnv::from_rollback_image(image, &owner).unwrap();
         restored.push_scope();
         restored.set(inner, RuntimeValue::Bool(false));
         let displaced = restored
             .assign_place(RuntimeMutablePlace::Local(outer), RuntimeValue::Bool(true))
             .unwrap();
-        assert_eq!(displaced, None);
+        assert!(displaced.is_empty());
         restored.pop_scope();
         assert_eq!(restored.get(outer), Some(&RuntimeValue::Bool(true)));
         assert!(restored.get(inner).is_none());
@@ -651,13 +717,13 @@ mod tests {
         assert!(env.take(source).is_none());
         let read = RuntimeLocalRead::from_admitted_parts(source, RuntimeLocalReadMode::Copy);
         assert_eq!(
-            env.read(read),
+            env.read(&read),
             Err(RuntimeEvalError::UninitializedLocal(source))
         );
         let displaced = env
             .assign_place(RuntimeMutablePlace::Local(source), RuntimeValue::Bool(true))
             .unwrap();
-        assert_eq!(displaced, None);
+        assert!(displaced.is_empty());
         assert_eq!(env.get(source), Some(&RuntimeValue::Bool(true)));
         env.pop_scope();
         assert_eq!(env.get(source), Some(&RuntimeValue::Bool(false)));
@@ -699,13 +765,13 @@ mod tests {
         assert_eq!(
             env.bindings_snapshot(),
             vec![
-                RuntimeLocalBinding {
+                RuntimeLocalSlot {
                     local: root,
-                    value: RuntimeValue::Bool(true),
+                    value: RuntimeValue::Bool(true).into(),
                 },
-                RuntimeLocalBinding {
+                RuntimeLocalSlot {
                     local: shadow,
-                    value: RuntimeValue::String("inner".to_owned()),
+                    value: RuntimeValue::String("inner".to_owned()).into(),
                 },
             ]
         );
@@ -754,7 +820,7 @@ mod tests {
                 RuntimeMutablePlace::NominalField { base: local, field },
                 RuntimeValue::String("new".to_owned())
             ),
-            Ok(Some(RuntimeValue::String("old".to_owned())))
+            Ok(vec![RuntimeValue::String("old".to_owned())])
         );
         let Some(RuntimeValue::NominalRecord(record)) = env.get(local) else {
             panic!("nominal record remains bound");

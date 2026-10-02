@@ -254,6 +254,7 @@ impl CheckedCaptureExpression {
         checked: &CheckedExpression,
         record_fields: &[super::CheckedExpressionRecordField],
         local_type: impl Fn(LocalId) -> Option<TypeKind>,
+        source: impl Fn(ExprId) -> Option<super::CheckedFieldReceiver>,
         access: CaptureAccess,
     ) -> Result<Self, FinalSemanticAnalysisError> {
         let mut value = Self {
@@ -282,10 +283,7 @@ impl CheckedCaptureExpression {
                 access,
             )?;
         }
-        if let CheckedExpressionResolution::Select(super::CheckedSelectResolution::Field(field)) =
-            checked.resolution()
-            && let super::CheckedFieldReceiver::Binding(local) = field.receiver()
-        {
+        if let Some(local) = checked.field_root(&source) {
             let ty = local_type(local)
                 .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local })?;
             value.push_typed(
@@ -294,6 +292,7 @@ impl CheckedCaptureExpression {
                 Some(&ty),
                 access,
             )?;
+            value.descends = false;
         }
         for field in record_fields {
             if let CheckedRecordValueSource::Binding(source) = field.source() {
@@ -317,6 +316,7 @@ impl CheckedCaptureExpression {
         owner: ExprId,
         checked: &PreparedExpressionFact,
         local_type: impl Fn(LocalId) -> Option<TypeKind>,
+        source: impl Fn(ExprId) -> Option<super::CheckedFieldReceiver>,
         access: CaptureAccess,
     ) -> Result<Self, FinalSemanticAnalysisError> {
         if let PreparedExpressionFact::Complete(checked) = checked {
@@ -328,7 +328,7 @@ impl CheckedCaptureExpression {
                 // joined to C2. A completed record requires that final plan.
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
-            return Self::from_checked(owner, checked, &[], local_type, access);
+            return Self::from_checked(owner, checked, &[], local_type, source, access);
         }
         let mut value = Self {
             sources: Vec::new(),
@@ -360,9 +360,7 @@ impl CheckedCaptureExpression {
                 }
             }
         }
-        if let PreparedExpressionFact::ProjectField(field) = checked
-            && let super::CheckedFieldReceiver::Binding(local) = field.receiver()
-        {
+        if let Some(local) = checked.field_root(source) {
             let ty = local_type(local)
                 .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local })?;
             value.push_typed(
@@ -371,6 +369,7 @@ impl CheckedCaptureExpression {
                 Some(&ty),
                 access,
             )?;
+            value.descends = false;
         }
         if let Some(resolution) = checked.checked_resolution() {
             value.include_resolution(owner, resolution, local_type)?;
@@ -717,6 +716,10 @@ impl super::FinalSemanticAnalysis {
             checked,
             fields,
             |local| self.local(local).map(|binding| binding.ty().clone()),
+            |child| {
+                self.expression(child)
+                    .and_then(CheckedExpression::local_place_source)
+            },
             access,
         )
     }

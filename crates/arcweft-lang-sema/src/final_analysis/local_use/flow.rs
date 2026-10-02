@@ -6,7 +6,41 @@ use super::{
     CheckedLocalAccess, CheckedLocalPlaceMode, CheckedLocalReadMode, CheckedLocalUseError,
     CheckedLocalUseSite, CheckedSyntheticUse, CheckedSyntheticUseOwner, ExprId, LocalId,
 };
+use crate::record_field::CheckedRecordFieldSemanticId;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct MovePath {
+    root: LocalId,
+    fields: Box<[CheckedRecordFieldSemanticId]>,
+}
+
+impl From<&CheckedLocalAccess> for MovePath {
+    fn from(access: &CheckedLocalAccess) -> Self {
+        let fields = match access {
+            CheckedLocalAccess::ValueTransfer(transfer) => transfer
+                .fields()
+                .iter()
+                .map(|field| field.field())
+                .collect(),
+            CheckedLocalAccess::PlaceAccess(access) => access
+                .place()
+                .nominal_field()
+                .map(|field| vec![field.field().field()].into_boxed_slice())
+                .unwrap_or_default(),
+        };
+        Self {
+            root: access.local(),
+            fields,
+        }
+    }
+}
+
+impl MovePath {
+    fn contains(&self, child: &Self) -> bool {
+        self.root == child.root && child.fields.starts_with(&self.fields)
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) struct NodeId(usize);
@@ -101,7 +135,7 @@ impl Default for LocalInitialization {
 
 #[derive(Clone, Default, Eq, PartialEq)]
 struct Initialization {
-    locals: BTreeMap<LocalId, LocalInitialization>,
+    locals: BTreeMap<MovePath, LocalInitialization>,
     synthetic: BTreeMap<CheckedSyntheticUseOwner, BTreeSet<ExprId>>,
 }
 
@@ -113,28 +147,32 @@ impl Initialization {
         synthetic: &BTreeMap<ExprId, CheckedSyntheticUse>,
     ) -> Result<(), CheckedLocalUseError> {
         match event {
-            Event::Access(site) => match rows
-                .get(site)
-                .ok_or(CheckedLocalUseError::InvalidTopology)?
-            {
-                CheckedLocalAccess::ValueTransfer(row)
-                    if row.mode == CheckedLocalReadMode::Move =>
-                {
-                    self.locals.insert(
-                        row.local,
-                        LocalInitialization {
-                            state: InitializationState::Uninitialized,
-                            moves: BTreeSet::from([*site]),
-                        },
-                    );
+            Event::Access(site) => {
+                let access = rows
+                    .get(site)
+                    .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                let path = MovePath::from(access);
+                match access {
+                    CheckedLocalAccess::ValueTransfer(row)
+                        if row.mode == CheckedLocalReadMode::Move =>
+                    {
+                        self.locals.retain(|child, _| !path.contains(child));
+                        self.locals.insert(
+                            path,
+                            LocalInitialization {
+                                state: InitializationState::Uninitialized,
+                                moves: BTreeSet::from([*site]),
+                            },
+                        );
+                    }
+                    CheckedLocalAccess::PlaceAccess(access)
+                        if access.mode() == CheckedLocalPlaceMode::Assign =>
+                    {
+                        self.locals.retain(|child, _| !path.contains(child));
+                    }
+                    _ => {}
                 }
-                CheckedLocalAccess::PlaceAccess(access)
-                    if access.mode() == CheckedLocalPlaceMode::Assign =>
-                {
-                    self.locals.remove(&access.place().local_id());
-                }
-                _ => {}
-            },
+            }
             Event::Synthetic(expression) => {
                 let row = synthetic
                     .get(expression)
@@ -146,7 +184,7 @@ impl Initialization {
             }
             Event::Bind(locals) => {
                 for local in locals {
-                    self.locals.remove(local);
+                    self.locals.retain(|path, _| path.root != *local);
                 }
             }
             Event::BindSynthetic(owner) => {
@@ -164,7 +202,7 @@ impl Initialization {
             .locals
             .keys()
             .chain(other.locals.keys())
-            .copied()
+            .cloned()
             .collect::<BTreeSet<_>>();
         for local in keys {
             let left = self.locals.get(&local).cloned().unwrap_or_default();
@@ -265,13 +303,19 @@ impl OwnershipFlow {
                     let row = rows
                         .get(&site)
                         .ok_or(CheckedLocalUseError::InvalidTopology)?;
-                    let needs_value = !row
+                    let assignment = row
                         .place_access()
                         .is_some_and(|access| access.mode() == CheckedLocalPlaceMode::Assign);
-                    if needs_value
-                        && let Some(fact) = state.locals.get(&row.local())
-                        && fact.state != InitializationState::Initialized
-                    {
+                    let path = MovePath::from(row);
+                    let unavailable = state.locals.iter().filter(|(changed, fact)| {
+                        fact.state != InitializationState::Initialized
+                            && if assignment {
+                                changed.fields.len() < path.fields.len() && changed.contains(&path)
+                            } else {
+                                changed.contains(&path) || path.contains(changed)
+                            }
+                    });
+                    for (_, fact) in unavailable {
                         violations.push(Violation::Local {
                             local: row.local(),
                             site,

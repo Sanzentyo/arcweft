@@ -4512,3 +4512,273 @@ follow; the convergence goal remains active after this coherent cut.
 | crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/expression_inputs.rs / arcweft-lang-sema | test | 12543 | 354 → 354 | 0 |
 | crates/arcweft-runtime-plan/src/final_expr.rs / arcweft-runtime-plan | production | 135942 | 3337 → 3342 | 0 |
 | crates/arcweft-runtime-plan/src/final_flow.rs / arcweft-runtime-plan | production | 358534 | 8648 → 8665 | 398 |
+
+Delivery receipt: `4b076ec754b45a86a28a6fa185131ccd9ef49136` committed the
+explicitly reviewed 16-path candidate and pushed non-forced to origin/main.
+The full remote SHA matched and the checkout was observed clean before this
+documentation update. Final 7,218-pass workspace, 1,154-pass sema, check/Clippy,
+format and structure receipts apply to those exact source bytes. The requested
+one-shot Astra consultation is completed and committed in this record; do not
+repeat it after compaction. This cut closes whole-local initialization and its
+static control-flow foundation, not the full convergence or partial-field goal.
+
+### 2026-10-02 — Partial place migration in progress (uncommitted)
+
+Base main/origin is `4b076ec754b45a86a28a6fa185131ccd9ef49136`.
+The checkout contains this in-scope migration and the previous delivery receipt;
+no new commit/push is claimed. The one-shot Astra consultation above remains
+**completed**; do not dispatch it again after compaction.
+
+A new field regression reproduced `pair.other` consuming an affine aggregate
+and rejecting the later sibling. It now passes (1/1 sema owner test). A separate
+negative regression rejects whole-place use and moved-child use after a partial
+move (1/1 pass). Source uses admitted `RichTextStyle` fields; no unsupported
+resource leaf is smuggled into the project nominal schema.
+
+WIP adds schema-selected local move paths to the existing local-use authority
+and temporary ownership CFG, leaf Copy classification, prefix overlap for
+receiver loans, and field assignment initialization. Runtime local reads carry
+that path through plan construction; storage is a shared typed tree of complete
+values, vacant cells, and partial record headers/children. Native declaration
+slots, AWBC registers, rollback and inert snapshots are being migrated together.
+`ReadPlace` is added to version-1 AWBC with typed mode/field IDs; its verifier
+tracks moved child paths, and the VM retains siblings. Ownership inventories
+include surviving children. Public environment snapshots preserve slot storage.
+Old field-write helpers have been removed. Scalar AOT/JIT and compiled AWBC
+regions explicitly exclude projected place reads until their actual scalar
+subset supports them.
+
+Validation is not complete: core all-target/all-feature check passed before the
+latest new tests; workspace check identified codegen/JIT consumer repairs, now
+edited but not rerun. New AWBC regression initially failed to compile because
+it used guessed `Named`/`snapshot` APIs; `Record` is corrected and the snapshot
+API repair remains to finish. No workspace suite/lint/structure gate pass is
+claimed for these bytes. Full owner tests, codec/partial snapshot corruption and
+resource cleanup coverage, native/decoded compiler coverage, final validation,
+maintained contract updates and staged review/delivery remain required.
+
+Rust reference evidence: [Partial moves](https://doc.rust-lang.org/rust-by-example/scope/move/partial_move.html)
+confirms that initialized fields survive a partial move and whole use is blocked;
+indivisible destruction owners do not admit partial moves. The implementation
+retains opaque producer storage as indivisible.
+2026-10-02 12:25 JST continuation: the partial migration remains uncommitted.
+The latest full sema run passed 1,157/1,157 after repairing View default input
+projection. A subsequently added disjoint sibling/receiver-loan regression passed
+1/1; its first insertion accidentally landed inside another raw fixture and was
+corrected before rerunning. The shared prepared/final effect fold and free-input
+collector now derive the same typed local/record-address root, so a View default
+field receiver is not evaluated as a second whole-parent transfer.
+
+Core `partial` owner selection passed 13/13, including actual StageActor cleanup
+reconciliation, inert codec/snapshot/checkpoint replay, malformed partial shapes,
+and atomic rejection of corrupt headers/child types. A focused native + decoded
+AWBC compiler field-read case passed 1/1. These passes precede the latest common
+address-factory/move-path owner cleanup and initialized-field assignment fast
+path, so final required checks are still pending. The complete sema/partial/core
+logs and `.exit` files are under `%TEMP%/arcweft-1002-partial-*`.
+
+Workspace checks exposed and repaired the codegen/JIT subset admission, a
+runtime-plan test's register inventory, and two compiler snapshot-test uses of
+old Option-register APIs. The last workspace run failed on those last two tests;
+there is no workspace pass for the current bytes yet. Maintained block-scope and
+AWBC storage/opcode contracts have been updated in place at version 1. Never
+publish this WIP or mark the convergence/Rust parity goal complete until its
+remaining owner/integration checks and review are closed. The one-shot Astra
+consultation is still completed; do not repeat it.
+
+### 2026-10-02 — Partial-place candidate review and structure evidence
+
+Inspected base remains `4b076ec754b45a86a28a6fa185131ccd9ef49136` on
+existing main; 51 tracked paths and the new place_storage owner are in-scope dirty
+changes. This supersedes the earlier WIP statements about unresolved API compile
+repairs: workspace check all targets/all features and Clippy all targets/all
+features now exit 0. Format and diff checks exit 0. The complete workspace test
+run is still pending, so no final delivery or full Rust parity is claimed.
+
+Reviewed the complete production/test/contract diff, including the untracked
+storage module. `RuntimePlaceStorage` owns the shared initialized/partial storage
+state, mapping to inert snapshots, separable record projection/restoration and
+remaining-owner inventory. Its private record header and state enum retain the
+complete-value invariant. Public read-only slot snapshots preserve declaration
+identity and partial state; no alternate copied availability authority is stored.
+The semantic `MovePath` is temporary CFG state keyed by admitted field identities.
+The existing local-use catalog is the sole published read/write certificate.
+The common typed field-address grammar feeds prepared/final effects, free-input
+projection and transfer issuance; no consumer reconstructs paths from spelling.
+
+Cohesion disposition for touched upper-trigger owners: AWBC schema/codec own one
+instruction/wire algebra; verifier owns fixed-point type/ownership admission;
+VM owns instruction execution; fiber owns live/rollback/snapshot state and exact
+program admission. Product line/suspension owners retain their respective handle
+custody and resume transactions. Value and plan seed/lower own the admitted value
+algebra and seed-to-executable conversion. Pure/engine evaluators and scalar
+codegen retain their existing execution responsibilities; scalar subsets reject
+unsupported projected reads explicitly. Sema local-use owns CFG/loan issuance;
+model/prepared/capture retain their phase-specific contracts; analyzer call,
+expression and evaluated-effect owners issue those contracts; statement effects
+fold the selected graph. Runtime-plan final-expression and AWBC-expression
+owners consume the final certificates. New storage tests follow storage, schema,
+cleanup and atomic restore boundaries. Existing tests remain with their execution
+owners. No new dependencies, features, I/O, unsafe, generated source, facade split
+or API widening solely for file size was introduced. The new 511-LOC storage owner
+is a cohesive state boundary; all other owners grow less than 300 physical LOC.
+
+Canonical structure gate exits 0: 97 packages, 351 review triggers, 0 blocking
+violations, 1,472,982 Rust physical LOC, 2,554 Rust files and 2,684 scanned files.
+A non-source report retained under `%TEMP%/arcweft-1002-partial-structure-review`
+provides exact file/embedded-test metrics and Cargo graph measurements. Normal
+fan-in/out: core 30/7, sema 8/14, runtime-plan 5/10, compiler 3/24,
+runtime-codegen 1/1, JIT 2/1, CLI 0/53. Development fan-in/out respectively:
+3/5, 3/0, 5/0, 1/9, 0/0, 0/0, 0/3. Dependency/package metric SHA256 remain
+7ED2CD7BDA7DC6A879DD5684072D06357883E1B185C6A00343A7D7C27CB7AC42 and
+6242C34313F5C79FA7B8ADC1EE1732C9319F02BDDEBD5FB78054B0A8B6A0DFE7.
+
+Exact current measurements below use the scanner's embedded-test calculation;
+base LOC is the complete file at the inspected SHA, not diff additions.
+
+| Path / owning crate | Class | Bytes | Base → candidate physical LOC | Embedded test LOC |
+|---|---|---:|---:|---:|
+| crates/arcweft-cli/src/app/jit.rs / arcweft-cli | production | 58644 | 1638 → 1640 | 0 |
+| crates/arcweft-compiler/src/project/tests.rs / arcweft-compiler | test | 82081 | 2322 → 2331 | 0 |
+| crates/arcweft-compiler/tests/callable_execution.rs / arcweft-compiler | test | 35768 | 1299 → 1314 | 0 |
+| crates/arcweft-core/src/awbc/codec/code.rs / arcweft-core | production | 85654 | 2263 → 2297 | 359 |
+| crates/arcweft-core/src/awbc/fiber.rs / arcweft-core | production | 257034 | 6834 → 6904 | 877 |
+| crates/arcweft-core/src/awbc/product_step/line.rs / arcweft-core | production | 177679 | 4173 → 4186 | 74 |
+| crates/arcweft-core/src/awbc/product_step/suspension.rs / arcweft-core | production | 114982 | 2824 → 2824 | 0 |
+| crates/arcweft-core/src/awbc/product_step/tests.rs / arcweft-core | test | 203624 | 5335 → 5335 | 0 |
+| crates/arcweft-core/src/awbc/schema.rs / arcweft-core | production | 113257 | 3545 → 3563 | 0 |
+| crates/arcweft-core/src/awbc/tests.rs / arcweft-core | test | 283165 | 7890 → 7891 | 0 |
+| crates/arcweft-core/src/awbc/verify/code.rs / arcweft-core | production | 230135 | 5759 → 5899 | 0 |
+| crates/arcweft-core/src/awbc/vm.rs / arcweft-core | production | 219307 | 5306 → 5332 | 0 |
+| crates/arcweft-core/src/engine/dialogue/store.rs / arcweft-core | production | 69794 | 1757 → 1846 | 670 |
+| crates/arcweft-core/src/engine/dialogue.rs / arcweft-core | production | 145695 | 3376 → 3381 | 721 |
+| crates/arcweft-core/src/engine/eval.rs / arcweft-core | production | 63687 | 1568 → 1568 | 124 |
+| crates/arcweft-core/src/plan/construction/lower.rs / arcweft-core | production | 242356 | 5692 → 5704 | 269 |
+| crates/arcweft-core/src/plan/construction/seed.rs / arcweft-core | production | 91556 | 2870 → 2894 | 0 |
+| crates/arcweft-core/src/pure.rs / arcweft-core | production | 129325 | 3416 → 3420 | 134 |
+| crates/arcweft-core/src/value/place_storage.rs / arcweft-core | production | 17425 | 0 → 511 | 105 |
+| crates/arcweft-core/src/value.rs / arcweft-core | production | 138864 | 3802 → 3818 | 0 |
+| crates/arcweft-lang-jit-cranelift/src/lower.rs / arcweft-lang-jit-cranelift | production | 61266 | 1511 → 1516 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/analyzer/calls.rs / arcweft-lang-sema | production | 252825 | 5803 → 5809 | 156 |
+| crates/arcweft-lang-sema/src/final_analysis/analyzer/evaluated_effects.rs / arcweft-lang-sema | production | 101015 | 2190 → 2196 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs / arcweft-lang-sema | production | 216556 | 4997 → 5003 | 88 |
+| crates/arcweft-lang-sema/src/final_analysis/local_use.rs / arcweft-lang-sema | production | 123115 | 3038 → 3115 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/model/capture.rs / arcweft-lang-sema | production | 47504 | 1268 → 1273 | 381 |
+| crates/arcweft-lang-sema/src/final_analysis/model.rs / arcweft-lang-sema | production | 103143 | 3086 → 3108 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/prepared.rs / arcweft-lang-sema | production | 55016 | 1646 → 1656 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/statement_effects.rs / arcweft-lang-sema | production | 61715 | 1565 → 1578 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/tests/local_use.rs / arcweft-lang-sema | test | 49625 | 1456 → 1530 | 0 |
+| crates/arcweft-runtime-plan/src/awbc_lower/expr.rs / arcweft-runtime-plan | production | 91778 | 2369 → 2385 | 0 |
+| crates/arcweft-runtime-plan/src/awbc_lower/tests.rs / arcweft-runtime-plan | test | 74699 | 2059 → 2059 | 0 |
+| crates/arcweft-runtime-plan/src/final_expr.rs / arcweft-runtime-plan | production | 137230 | 3342 → 3371 | 0 |
+
+The first full partial-place workspace run stopped after 89 suites: 1,017 passed,
+1 failed, 0 ignored, exit 1. `nominal_field_awbc_roundtrip_rejects_wrong_ordinals_and_replacement_types`
+still searched for the replaced `ProjectRecord` instruction, so its corruption
+fixture could not find the read. It now corrupts the admitted `ReadPlace` field
+path and requires typed rejection of the nonexistent child; wrong-write and
+wrong-value rejection assertions remain. The focused repair and final full rerun
+are pending. This failure is not counted as a complete-workspace pass.
+
+The second workspace rerun reached 110 suites: 1,957 passed, 1 failed,
+0 ignored, exit 1. `fiber_checkpoint_and_serde_preserve_cleanup_stacks`
+constructed cleanup entries for effect 0 without any effect plan. Atomic restore's
+program admission correctly rejected that invalid fixture. The test now supplies
+an admitted Log effect/signature/String type and validates both its program and
+live cleanup state before snapshotting. Focused iterations exposed missing Log
+static arguments and the default Unit type occupying ordinal 0; those fixture
+errors were corrected, rather than weakening restore validation. The final focused
+cleanup/checkpoint test passes 1/1, exit 0. The compiler ordinal corruption repair
+also passes 1/1. Third full rerun is in progress; its latest Clippy and format
+checks exit 0. Original failures are retained as failed evidence.
+
+### 2026-10-02 — Close partial storage across scheduled child custody (WIP)
+
+Base remains `4b076ec754b45a86a28a6fa185131ccd9ef49136`; no commit/push
+has occurred. The reviewed 52-path candidate was explicitly staged. Its third
+full workspace run passed 308 suites / 7,232 tests, 0 failed, 24 ignored, exit 0;
+check/Clippy/format/structure also passed. Those receipts apply to that candidate,
+not the subsequent custody repair. Its final structure had 1,473,015 Rust physical
+LOC, with compiler callable_execution 35,895 bytes / 1,315 LOC and core AWBC tests
+284,292 bytes / 7,923 LOC after the two fixture repairs.
+
+Final consumer inspection disproved the earlier assumption that every flat
+`RuntimeLocalBinding` forest was cleanup-only. Native child completion passed
+`env.into_bindings()` to scheduled custody, whose typed admission requires unique
+declaration IDs. A partial root with two surviving fields became two bindings
+with the same ID and was rejected. AWBC completion/cancellation extracted only
+complete parameter values, omitting partial parameter owners. This is an in-scope
+producer/consumer defect, not a deferred follow-up or external blocker.
+
+The current repair retains declaration identity and the shared storage tree in
+`RuntimeLocalSlot<T>` for live and inert images. Native child completion exports
+slots, and AWBC exposes borrowed/owned parameter storage in sealed positional
+order. One helper validates every parameter's exact schema before any transfer;
+owned extraction uses mem::take and no longer clones the frame. Incoming capture
+packets remain complete bindings; terminal LineScope custody, its snapshot,
+completion preflight/commit, ownership walks and cancellation all use returned
+slots. Native rollback also maps the same slot carrier. The obsolete flat export
+and Option-parameter extraction APIs are removed. Contract versions remain 1;
+no legacy reader or malformed value placeholder is introduced.
+
+The two new regressions cover unique-ID custody admission with two surviving Need
+owners and snapshot replay, plus verified AWBC partial-parameter borrow/transfer.
+The core `partial` selection passes 15/15 on the latest bytes. Initial test builds
+failed on missing explicit private-test imports and a guessed ownership enum;
+the real AwbcFunctionInputOwnership is a struct and its default admits Owned.
+Those test-only failures were repaired and remain recorded as failures. The
+previous core compile pass precedes the latest Env rollback/test changes; current
+workspace check, Clippy, full suite and structure evidence is being rerun under
+`%TEMP%/arcweft-1002-slot-custody-*`. Current source is frozen for those runs.
+
+Reviewed the complete eight-owner custody diff. The scheduled handle owner keeps
+its existing Packet/ChildFiber/LineScope state machine, token custody, typed
+preflight/commit and inert codec boundaries; its tests mutate those same states.
+Engine and product-step remain the native/AWBC reducers, not new storage owners.
+The generic slot is a shared declaration carrier with private fields and controlled
+mapping; its API is required by transport/snapshot roles, not file splitting.
+The parameter extraction helper owns exact input-storage admission and mutation.
+No new dependency, feature, I/O or unsafe boundary is added. Structural gate
+passes: 97 packages, 351 review triggers, 0 blocking violations, 1,473,184 Rust
+physical LOC / 2,554 Rust files / 2,684 scanned files. Production owners grow
+less than 300 LOC apart from the already justified new storage owner. The
+local_assignment test owner grows 322 LOC (203 to 525): it remains the cohesive
+whole/field assignment, child availability, typed parameter custody and
+codec/checkpoint rejection fixture boundary, within the ordinary module size
+range. No unrelated test infrastructure or state cluster was added. Exact metrics:
+
+| Path (all arcweft-core) | Class | Bytes | Base → current physical LOC | Embedded tests |
+|---|---|---:|---:|---:|
+| crates/arcweft-core/src/awbc/fiber.rs | production | 256047 | 6834 → 6883 | 877 |
+| crates/arcweft-core/src/awbc/product_step/line.rs | production | 177645 | 4173 → 4184 | 74 |
+| crates/arcweft-core/src/awbc/product_step.rs | production | 210182 | 5212 → 5215 | 0 |
+| crates/arcweft-core/src/awbc/tests/local_assignment.rs | test | 18990 | 203 → 525 | 0 |
+| crates/arcweft-core/src/engine.rs | production | 155371 | 3951 → 3960 | 62 |
+| crates/arcweft-core/src/line_task/handle.rs | production | 221151 | 5622 → 5737 | 737 |
+| crates/arcweft-core/src/value/env.rs | production | 33652 | 875 → 941 | 374 |
+| crates/arcweft-core/src/value.rs | production | 139765 | 3802 → 3849 | 0 |
+
+The one-shot Astra consultation remains completed; do not repeat after compaction. Static after-RHS previous-value disposition and the full general execution-root/UI convergence remain pending. This record does not claim complete Rust move/borrow parity or native public-session save support.
+
+2026-10-02 14:18 JST final custody candidate receipts: complete
+`just test-workspace` passes 308 suites, 7,234 passed, 0 failed, 24 ignored,
+exit 0. Workspace all-target/all-feature check and Clippy, format check,
+canonical structure gate and cached diff check exit 0. The latest
+slot-custody-workspace logs/exit files apply to the current frozen source;
+the earlier 7,232-pass candidate is superseded. Clippy/test builds retain
+warnings; no warning-free claim is made. Matching device/GPU, stdio/MCP,
+readback/auxiliary attachment and production-limit paths were not changed;
+no new Tier-2 or performance measurement is claimed for this storage cut.
+
+All 55 in-scope paths are explicitly staged and match the reviewed working
+files, including the new storage module. Full diff review covers the initial
+record-place migration and the additional custody repair. Fetch confirms
+HEAD/origin/main both remain `4b076ec754b45a86a28a6fa185131ccd9ef49136`
+before committing. The structure graph hashes remain the two recorded hashes;
+final source has 1,473,184 Rust physical LOC with 351 review triggers and no
+blocking violation. This closes the record-local partial storage/custody cut.
+Static after-RHS old-value dispositions, complete general execution roots and
+owned input/runner migration, precise synthetic/capture boundaries, and the
+retained View/runtime-plan/scheduler convergence remain active acceptance.
+Do not mark the full goal or complete Rust parity achieved. The requested
+one-shot Astra consultation is completed; never dispatch it again after compaction.

@@ -13,15 +13,15 @@ use crate::awbc::schema::{
     AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
     AwbcHostCallId, AwbcInstruction, AwbcIntrinsicId, AwbcLineOperationId, AwbcMatchArm,
     AwbcMutablePlace, AwbcOpcode, AwbcOpcodeClass, AwbcPattern, AwbcPatternId, AwbcPatternRest,
-    AwbcProjectCall, AwbcProjectCallAttachedMaterialization, AwbcProjectCallAttachedPresence,
-    AwbcProjectCallOperand, AwbcProjectCallOperandMode, AwbcProjectCallOrdinaryMaterialization,
-    AwbcPureHelperId, AwbcRecordPatternField, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
-    AwbcSafePointKind, AwbcScopeId, AwbcSignatureId, AwbcSourceMapId, AwbcStreamPlanId,
-    AwbcStringId, AwbcTableRange, AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode,
-    AwbcTypeId, AwbcUnaryOp,
+    AwbcPlaceReadMode, AwbcProjectCall, AwbcProjectCallAttachedMaterialization,
+    AwbcProjectCallAttachedPresence, AwbcProjectCallOperand, AwbcProjectCallOperandMode,
+    AwbcProjectCallOrdinaryMaterialization, AwbcPureHelperId, AwbcRecordPatternField,
+    AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcSafePointKind, AwbcScopeId,
+    AwbcSignatureId, AwbcSourceMapId, AwbcStreamPlanId, AwbcStringId, AwbcTableRange,
+    AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp,
 };
 use crate::runtime_id::{RuntimeCallableSpecializationId, RuntimeCallableStateId};
-use crate::value::{RuntimeAgentConstructor, RuntimeFmtParameterId};
+use crate::value::{RuntimeAgentConstructor, RuntimeFmtParameterId, RuntimeRecordFieldId};
 use arcweft_interaction_model::dialogue::{
     CharacterDialogueCustomFieldId, CharacterDialogueFieldCoordinate, CharacterDialogueOperation,
     CharacterDialoguePatchField, CharacterDialoguePatchOperation,
@@ -639,6 +639,17 @@ impl Wire for AwbcInstruction {
                 target.write_wire(writer)?;
                 field.write_wire(writer)?;
             }
+            Self::ReadPlace {
+                dst,
+                root,
+                fields,
+                mode,
+            } => {
+                dst.write_wire(writer)?;
+                root.write_wire(writer)?;
+                fields.write_wire(writer)?;
+                mode.write_wire(writer)?;
+            }
             Self::Unary { dst, op, src } => {
                 dst.write_wire(writer)?;
                 op.write_wire(writer)?;
@@ -951,6 +962,12 @@ impl Wire for AwbcInstruction {
                 dst: AwbcRegisterId::read_wire(reader)?,
                 target: AwbcRegisterId::read_wire(reader)?,
                 field: AwbcFieldProjection::read_wire(reader)?,
+            },
+            AwbcOpcode::ReadPlace => Self::ReadPlace {
+                dst: AwbcRegisterId::read_wire(reader)?,
+                root: AwbcRegisterId::read_wire(reader)?,
+                fields: Vec::<RuntimeRecordFieldId>::read_wire(reader)?,
+                mode: AwbcPlaceReadMode::read_wire(reader)?,
             },
             AwbcOpcode::Unary => Self::Unary {
                 dst: AwbcRegisterId::read_wire(reader)?,
@@ -1572,6 +1589,7 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::ProjectTuple
             | AwbcOpcode::ProjectRecord
             | AwbcOpcode::ProjectField
+            | AwbcOpcode::ReadPlace
             | AwbcOpcode::Unary
             | AwbcOpcode::Binary
             | AwbcOpcode::CallPureHelper
@@ -1617,6 +1635,22 @@ impl Wire for AwbcAwaitObserverResume {
         Ok(Self {
             destination: AwbcRegisterId::read_wire(reader)?,
             resume: AwbcResumePointId::read_wire(reader)?,
+        })
+    }
+}
+
+impl Wire for AwbcPlaceReadMode {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "place read mode",
+            tag,
+            offset,
         })
     }
 }

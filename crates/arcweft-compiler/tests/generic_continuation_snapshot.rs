@@ -66,8 +66,8 @@ flow main() -> i64 {
             } = instruction
             {
                 let frame = fiber.frames.last().unwrap();
-                assert!(frame.registers[target.index()].is_some());
-                assert!(frame.registers[value.index()].is_some());
+                assert!(frame.registers[target.index()].as_ref().is_some());
+                assert!(frame.registers[value.index()].as_ref().is_some());
                 let save = session.export_session_save_bytes().unwrap();
                 let mut restored = session_from_bytes(&bytes);
                 restored
@@ -135,7 +135,8 @@ fn native_generic_continuation_keeps_its_scheme_origin_position_and_prefix() {
             .env
             .bindings_snapshot()
             .into_iter()
-            .find_map(|binding| match binding.value {
+            .flat_map(|binding| binding.into_values())
+            .find_map(|value| match value {
                 RuntimeValue::Callable(value) if is_i64_prefix(&value) => Some(value),
                 _ => None,
             });
@@ -365,7 +366,12 @@ fn find_awbc_prefix<'a>(
     fiber
         .frames
         .iter()
-        .flat_map(|frame| frame.registers.iter().flatten())
+        .flat_map(|frame| {
+            frame
+                .registers
+                .iter()
+                .flat_map(arcweft_core::value::RuntimePlaceStorage::values)
+        })
         .filter_map(|value| match value {
             AwbcRuntimeValueSnapshot::Callable(callable) => Some(callable),
             _ => None,

@@ -11,6 +11,20 @@ pub enum CheckedFieldReceiver {
     Expression(ExprId),
 }
 
+impl CheckedFieldReceiver {
+    /// Follows only typed local/record-address sources. Computed receivers
+    /// remain value evaluations. Selected expression graphs are acyclic.
+    pub(crate) fn local_root(self, source: impl Fn(ExprId) -> Option<Self>) -> Option<LocalId> {
+        let mut receiver = self;
+        loop {
+            match receiver {
+                Self::Binding(local) => return Some(local),
+                Self::Expression(owner) => receiver = source(owner)?,
+            }
+        }
+    }
+}
+
 /// One field expression's accepted schema selection and evaluation source.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedFieldAccess {

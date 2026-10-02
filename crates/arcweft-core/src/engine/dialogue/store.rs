@@ -1672,6 +1672,94 @@ mod tests {
     }
 
     #[test]
+    fn partial_record_replacement_drops_only_remaining_handles() {
+        let mut store = DialogueActivationStore::default();
+        let (remaining, execution) = publish_stage_actor(&mut store, &activation(51));
+        let (moved, _) = publish_stage_actor(&mut store, &activation(52));
+        let (new, _) = publish_stage_actor(&mut store, &activation(53));
+        let token = |value: &RuntimeValue| {
+            crate::line_task::RuntimeLineHandleLedger::token_from_value(value).unwrap()
+        };
+        let remaining_token = token(&remaining);
+        let moved_token = token(&moved);
+        let new_token = token(&new);
+        let local = |ordinal| {
+            RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::new(ordinal).unwrap())
+        };
+        let destination_local = local(23);
+        let incoming_local = local(24);
+        let moved_local = local(25);
+        let destination = RuntimeOwnedSlotId::environment_local(execution, destination_local);
+        let incoming = RuntimeOwnedSlotId::environment_local(execution, incoming_local);
+        let moved_destination = RuntimeOwnedSlotId::environment_local(execution, moved_local);
+        let original = BTreeMap::from([
+            (remaining_token.clone(), destination),
+            (moved_token.clone(), destination),
+            (new_token.clone(), destination),
+        ]);
+        let before = BTreeMap::from([
+            (remaining_token.clone(), destination),
+            (moved_token.clone(), moved_destination),
+            (new_token.clone(), incoming),
+        ]);
+        store
+            .reconcile_parent_fiber(execution, &original, &before, &Default::default())
+            .unwrap();
+        let mut env = crate::value::RuntimeEnv::default();
+        env.set(
+            destination_local,
+            RuntimeValue::try_record(vec![
+                ("remaining".into(), remaining),
+                ("moved".into(), moved),
+            ])
+            .unwrap(),
+        );
+        env.set(incoming_local, new);
+        let read = crate::value::RuntimeLocalRead::from_admitted_place(
+            destination_local,
+            crate::value::RuntimeLocalReadMode::Move,
+            vec![crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(1).unwrap()]
+                .into_boxed_slice(),
+        );
+        let moved = env.read(&read).unwrap();
+        env.set(moved_local, moved);
+        assert!(env.get(destination_local).is_none());
+        let new = env.take(incoming_local).unwrap();
+        let discarded = env
+            .assign_place(
+                crate::value::RuntimeMutablePlace::Local(destination_local),
+                new,
+            )
+            .unwrap();
+        assert_eq!(discarded.len(), 1);
+        assert_eq!(
+            discarded[0].affine_line_handles().unwrap()[0].token(),
+            &remaining_token
+        );
+        let drops = env.take_assignment_discard_authorization();
+        assert_eq!(
+            drops.policy_for(&remaining_token),
+            Some(RuntimeDropPolicy::Default)
+        );
+        assert!(drops.policy_for(&moved_token).is_none());
+        assert!(drops.policy_for(&new_token).is_none());
+        let after = BTreeMap::from([
+            (moved_token.clone(), moved_destination),
+            (new_token.clone(), destination),
+        ]);
+        let commands = store
+            .reconcile_parent_fiber(execution, &before, &after, &drops)
+            .unwrap()
+            .into_commands();
+        assert_eq!(commands.len(), 1);
+        assert!(
+            matches!(&commands[0], crate::presentation::RuntimeLineHostCommand::Stage(
+            crate::presentation::RuntimeStageCommand::ReleaseActor { actor, .. }) if actor == &remaining_token)
+        );
+        assert_eq!(token(env.get(moved_local).unwrap()), moved_token);
+    }
+
+    #[test]
     fn replacement_discards_only_the_old_nested_graph_and_transfers_the_new_owner() {
         let mut store = DialogueActivationStore::default();
         let (old, execution) = publish_stage_actor(&mut store, &activation(41));
@@ -1714,6 +1802,7 @@ mod tests {
             .unwrap();
         assert!(
             !displaced
+                .first()
                 .expect("live assignment displaces the old owner")
                 .affine_line_handles()
                 .unwrap()

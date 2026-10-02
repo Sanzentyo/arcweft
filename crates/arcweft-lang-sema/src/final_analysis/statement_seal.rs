@@ -617,6 +617,11 @@ impl CheckedStatementPayloadSealer for CheckedStatementSeal<'_, '_, '_> {
                             checked,
                             fields,
                             |local| self.locals.get(&local).map(|binding| binding.ty().clone()),
+                            |owner| {
+                                expressions
+                                    .get(&owner)
+                                    .and_then(super::CheckedExpression::local_place_source)
+                            },
                             arcweft_lang_hir::scope::CaptureAccess::Read,
                         )
                     },

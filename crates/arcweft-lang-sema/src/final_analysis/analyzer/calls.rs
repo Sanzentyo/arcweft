@@ -4452,6 +4452,12 @@ impl Analyzer<'_, '_, '_> {
                 expression,
                 fact,
                 |local| self.facts.locals().get(&local).cloned(),
+                |child| {
+                    self.facts
+                        .expressions()
+                        .get(&child)
+                        .and_then(super::super::PreparedExpressionFact::local_place_source)
+                },
                 row.capture_access(),
             )
             .map_err(AnalyzerExpressionError::fatal)?;

@@ -1817,7 +1817,7 @@ fn while_let_reevaluates_its_mutating_scrutinee_until_exhausted() {
             .expect("active loop frame")
             .registers
             .iter()
-            .flatten()
+            .flat_map(arcweft_core::value::RuntimePlaceStorage::values)
             .any(|value| matches!(value, RuntimeValue::Seq(sequence) if sequence.len() == 1));
         if fiber.cursor.block == loop_header && sequence_has_one_item {
             at_between_iterations = true;

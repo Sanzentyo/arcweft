@@ -226,11 +226,23 @@ impl RuntimePlanBuilder {
                 RuntimeExprKind::Agent(self.lower_agent_expression(ty, agent)?)
             }
             RuntimeExprSeedKind::Local(local) => {
-                let (local_seed, mode) = local.into_parts();
+                let (local_seed, mode, fields) = local.into_parts();
                 let (local, local_ty) = self.resolve_local(&local_seed)?;
-                require_same("local expression", ty, local_ty)?;
-                RuntimeExprKind::Local(crate::value::RuntimeLocalRead::from_admitted_parts(
-                    local, mode,
+                let mut selected_ty = local_ty;
+                let fields = fields
+                    .into_vec()
+                    .into_iter()
+                    .map(|field| {
+                        let (field, field_ty) = self.resolve_record_field(selected_ty, field)?;
+                        selected_ty = field_ty;
+                        Ok(field)
+                    })
+                    .collect::<Result<Vec<_>, RuntimePlanBuildError>>()?;
+                require_same("local place expression", ty, selected_ty)?;
+                RuntimeExprKind::Local(crate::value::RuntimeLocalRead::from_admitted_place(
+                    local,
+                    mode,
+                    fields.into_boxed_slice(),
                 ))
             }
             RuntimeExprSeedKind::SequencePopFront { place } => {

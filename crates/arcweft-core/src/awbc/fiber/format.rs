@@ -246,7 +246,7 @@ impl FiberState {
             let value = frame
                 .registers
                 .get(value_register.index())
-                .and_then(Option::as_ref)
+                .and_then(crate::value::RuntimePlaceStorage::as_ref)
                 .ok_or(FiberStateError::RegisterOutOfBounds {
                     register: value_register.0,
                     layout: frame.layout.0,

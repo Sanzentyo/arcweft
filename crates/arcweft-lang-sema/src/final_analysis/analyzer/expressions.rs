@@ -991,6 +991,12 @@ impl Analyzer<'_, '_, '_> {
             expression,
             fact,
             |local| self.facts.locals().get(&local).cloned(),
+            |child| {
+                self.facts
+                    .expressions()
+                    .get(&child)
+                    .and_then(PreparedExpressionFact::local_place_source)
+            },
             access,
         )?;
         for input in inputs.sources() {

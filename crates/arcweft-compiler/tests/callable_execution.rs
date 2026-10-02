@@ -18,6 +18,21 @@ use execution::{
 };
 
 #[test]
+fn record_field_reads_preserve_the_owner_in_native_and_decoded_awbc() {
+    const SOURCE: &str = r#"
+entry cli @entry.main { goto @flow.main }
+struct Pair { first: i64, second: i64 }
+fn sum(pair: Pair) -> i64 { pair.first + pair.second }
+flow main() -> i64 {
+    let pair = Pair { first: 20i64, second: 22i64 }
+    return sum(pair)
+}
+"#;
+    assert_native_return(SOURCE, "42");
+    assert_awbc_return(SOURCE, RuntimeValue::i64(42));
+}
+
+#[test]
 fn copied_index_item_executes_in_native_and_decoded_awbc() {
     const SOURCE: &str = r#"
 entry cli @entry.main { goto @flow.main }
@@ -1286,14 +1301,15 @@ flow main() -> i64 {
     let read = wrong_read
         .instructions
         .iter_mut()
-        .find(|instruction| matches!(instruction, AwbcInstruction::ProjectRecord { .. }))
-        .expect("ordinal projection instruction");
-    let AwbcInstruction::ProjectRecord { ordinal, .. } = read else {
+        .find(|instruction| matches!(instruction, AwbcInstruction::ReadPlace { .. }))
+        .expect("schema-selected place read instruction");
+    let AwbcInstruction::ReadPlace { fields, .. } = read else {
         unreachable!()
     };
-    *ordinal = 1;
+    fields[0] = arcweft_core::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(1)
+        .expect("representable but nonexistent field");
     assert!(matches!(
         wrong_read.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
-        Err(AwbcVerifyError::IndexOutOfBounds { .. })
+        Err(AwbcVerifyError::InvalidInvariant { .. })
     ));
 }
