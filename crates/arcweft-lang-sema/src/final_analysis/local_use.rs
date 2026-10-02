@@ -56,7 +56,9 @@ use super::{
 };
 
 mod access;
+mod flow;
 pub use access::{CheckedLocalAccess, CheckedLocalPlaceAccess, CheckedLocalPlaceMode};
+use flow::{Availability, Event, NodeId, OwnershipFlow, Violation};
 
 /// A builder-issued runtime local with no HIR LocalId. The checked semantic
 /// identity prevents two placeholders with the same spelling from aliasing.
@@ -577,6 +579,7 @@ impl CheckedLocalUseCatalog {
                     }
                 }
             }
+            checker.solve_flow()?;
         }
         Ok(result)
     }
@@ -664,46 +667,11 @@ impl CheckedLocalUseCatalog {
             }
         }
         checker.declaration(view.body())?;
+        checker.solve_flow()?;
         Ok(CheckedLocalUseInstanceCatalog {
             identity,
             catalog: result,
         })
-    }
-}
-
-/// Definite unavailability is the union of moves on all reachable incoming
-/// paths. Source bindings are arena-unique; a new local never revives an older
-/// binding merely because it has the same written name.
-#[derive(Clone, Default)]
-struct Availability {
-    moved: BTreeMap<LocalId, BTreeSet<CheckedLocalUseSite>>,
-    moved_synthetic: BTreeMap<CheckedSyntheticUseOwner, BTreeSet<ExprId>>,
-    reachable: bool,
-}
-
-impl Availability {
-    fn root() -> Self {
-        Self {
-            reachable: true,
-            ..Self::default()
-        }
-    }
-
-    fn join(mut self, other: Self) -> Self {
-        match (self.reachable, other.reachable) {
-            (true, true) => {
-                for (local, sites) in other.moved {
-                    self.moved.entry(local).or_default().extend(sites);
-                }
-                for (owner, sites) in other.moved_synthetic {
-                    self.moved_synthetic.entry(owner).or_default().extend(sites);
-                }
-                self
-            }
-            (false, true) => other,
-            (true, false) => self,
-            (false, false) => self,
-        }
     }
 }
 
@@ -723,8 +691,17 @@ struct LocalUseChecker<'a> {
     active_receiver_loans: Vec<(LocalId, ExprId)>,
     callback_local_uses: Vec<BTreeSet<LocalId>>,
     instance: Option<CheckedLocalUseInstantiation<'a>>,
-    repeated_loop: Vec<BTreeSet<LocalId>>,
+    flow: OwnershipFlow,
+    loops: Vec<OwnershipLoop>,
+    carriers: Vec<(ExprId, NodeId)>,
+    outputs: Vec<(ExprId, NodeId)>,
     guard_bindings: Vec<(ExprId, BTreeSet<LocalId>)>,
+}
+
+struct OwnershipLoop {
+    body: crate::semantic_coordinate::StableCheckedBodyCoordinate,
+    header: NodeId,
+    exit: NodeId,
 }
 
 impl<'a> LocalUseChecker<'a> {
@@ -760,7 +737,10 @@ impl<'a> LocalUseChecker<'a> {
             active_receiver_loans: Vec::new(),
             callback_local_uses: Vec::new(),
             instance,
-            repeated_loop: Vec::new(),
+            flow: OwnershipFlow::default(),
+            loops: Vec::new(),
+            carriers: Vec::new(),
+            outputs: Vec::new(),
             guard_bindings: Vec::new(),
         }
     }
@@ -772,8 +752,180 @@ impl<'a> LocalUseChecker<'a> {
         }
     }
 
+    fn solve_flow(&mut self) -> Result<(), CheckedLocalUseError> {
+        loop {
+            let violations = self.flow.violations(self.rows, self.synthetic_rows)?;
+            if violations.is_empty() {
+                return Ok(());
+            }
+            let mut changed = false;
+            let mut rejected = None;
+            for violation in violations {
+                match violation {
+                    Violation::Local {
+                        local,
+                        site,
+                        repeated,
+                    } => {
+                        if let Some(requirement) = self.ingress_copy_requirement(local)? {
+                            self.copy_requirements
+                                .insert(requirement.local(), requirement);
+                            for row in self.rows.values_mut() {
+                                if let CheckedLocalAccess::ValueTransfer(row) = row
+                                    && row.local == local
+                                    && row.mode == CheckedLocalReadMode::Move
+                                {
+                                    row.mode = CheckedLocalReadMode::Copy;
+                                    changed = true;
+                                }
+                            }
+                        }
+                        if rejected.is_none() {
+                            rejected = Some(if repeated {
+                                CheckedLocalUseError::RepeatedLoopMove { local, site }
+                            } else {
+                                CheckedLocalUseError::Unavailable { local, site }
+                            });
+                        }
+                    }
+                    Violation::Synthetic { owner, expression } => {
+                        let checked = self
+                            .analysis
+                            .expression(expression)
+                            .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                        let ty = match (owner, checked.resolution()) {
+                            (
+                                CheckedSyntheticUseOwner::ImplicitParameter(identity),
+                                CheckedExpressionResolution::ImplicitCallable(callable),
+                            ) if callable.identity() == identity => callable.parameter(),
+                            _ => checked
+                                .value_type()
+                                .ok_or(CheckedLocalUseError::InvalidTopology)?,
+                        };
+                        let closed = self.closed_type(ty)?;
+                        if let CheckedSyntheticUseOwner::ImplicitParameter(callable) = owner
+                            && matches!(
+                                closed,
+                                TypeKind::Function { .. } | TypeKind::CharacterDialogue(_)
+                            )
+                        {
+                            let ty = closed
+                                .semantic_identity_digest()
+                                .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
+                            self.synthetic_copy_requirements
+                                .insert(callable, CheckedSyntheticCopyRequirement { callable, ty });
+                            for row in self.synthetic_rows.values_mut() {
+                                if row.owner == owner && row.mode == CheckedLocalReadMode::Move {
+                                    row.mode = CheckedLocalReadMode::Copy;
+                                    changed = true;
+                                }
+                            }
+                        }
+                        if rejected.is_none() {
+                            rejected = Some(CheckedLocalUseError::SyntheticUnavailable {
+                                owner,
+                                expression,
+                            });
+                        }
+                    }
+                }
+            }
+            if !changed {
+                return Err(rejected.ok_or(CheckedLocalUseError::InvalidTopology)?);
+            }
+        }
+    }
+
+    fn begin_loop(
+        &mut self,
+        state: &mut Availability,
+        owner: arcweft_lang_hir::project::HirSemanticBodyOwner,
+    ) -> Result<(), CheckedLocalUseError> {
+        use crate::semantic_coordinate::SemanticCoordinateIndex;
+        use arcweft_lang_hir::project::HirSemanticBodyLocator;
+        let source = match (owner.expression_owner(), owner.statement_owner()) {
+            (Some(expression), _) => HirSemanticPathOwnerId::Expression(expression),
+            (_, Some(statement)) => HirSemanticPathOwnerId::Statement(statement),
+            _ => return Err(CheckedLocalUseError::InvalidTopology),
+        };
+        let location = self
+            .analysis
+            .hir_topology()
+            .semantic_path(source)
+            .map_err(|_| CheckedLocalUseError::InvalidTopology)?
+            .ok_or(CheckedLocalUseError::InvalidTopology)?;
+        let locator = HirSemanticBodyLocator::new(location.root().clone(), owner);
+        let body =
+            SemanticCoordinateIndex::new(self.analysis.accepted_root_catalog(), self.analysis)
+                .body(&locator)
+                .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
+        let header = self.flow.append(state, Event::Join);
+        let exit = self.flow.detached();
+        self.loops.push(OwnershipLoop { body, header, exit });
+        Ok(())
+    }
+
+    fn end_loop(&mut self, state: &mut Availability) -> Result<(), CheckedLocalUseError> {
+        let frame = self
+            .loops
+            .pop()
+            .ok_or(CheckedLocalUseError::InvalidTopology)?;
+        self.flow.connect(state, frame.header);
+        *state = Availability::at(frame.exit);
+        Ok(())
+    }
+
+    fn loop_exit(
+        &mut self,
+        owner: StmtId,
+        state: &mut Availability,
+        continues: bool,
+    ) -> Result<(), CheckedLocalUseError> {
+        let super::CheckedStatementPayload::ControlTransfer(target) = self
+            .analysis
+            .statement(owner)
+            .ok_or(CheckedLocalUseError::InvalidTopology)?
+            .payload()
+        else {
+            return Err(CheckedLocalUseError::InvalidTopology);
+        };
+        let target = target
+            .loop_target()
+            .ok_or(CheckedLocalUseError::InvalidTopology)?;
+        let frame = self
+            .loops
+            .iter()
+            .rev()
+            .find(|frame| &frame.body == target.body())
+            .ok_or(CheckedLocalUseError::InvalidTopology)?;
+        self.flow
+            .connect(state, if continues { frame.header } else { frame.exit });
+        state.terminate();
+        Ok(())
+    }
+
     fn type_is_copy(&self, ty: &TypeKind) -> Result<bool, CheckedLocalUseError> {
         definitely_copy(ty, self.analysis, self.instance, &mut BTreeSet::new())
+    }
+
+    fn callable_body(
+        &mut self,
+        body: impl FnOnce(&mut Self, &mut Availability) -> Result<(), CheckedLocalUseError>,
+    ) -> Result<(), CheckedLocalUseError> {
+        // Creation captures have already been checked in the enclosing frame.
+        // The latent body owns its transferred inputs and its control/loan scopes.
+        let loans = std::mem::take(&mut self.active_receiver_loans);
+        let loops = std::mem::take(&mut self.loops);
+        let carriers = std::mem::take(&mut self.carriers);
+        let outputs = std::mem::take(&mut self.outputs);
+        let guards = std::mem::take(&mut self.guard_bindings);
+        let result = body(self, &mut Availability::root());
+        self.active_receiver_loans = loans;
+        self.loops = loops;
+        self.carriers = carriers;
+        self.outputs = outputs;
+        self.guard_bindings = guards;
+        result
     }
 
     fn use_synthetic(
@@ -816,60 +968,11 @@ impl<'a> LocalUseChecker<'a> {
             // site, so a source-specific initializer proof does not exist.
             CheckedSyntheticUseOwner::ImplicitParameter(_) => false,
         };
-        let mut mode = if self.type_is_copy(ty)?
-            || selected_copy
-            || matches!(owner, CheckedSyntheticUseOwner::ImplicitParameter(callable) if self.synthetic_copy_requirements.contains_key(&callable))
-        {
+        let mode = if self.type_is_copy(ty)? || selected_copy {
             CheckedLocalReadMode::Copy
         } else {
             CheckedLocalReadMode::Move
         };
-        if !state.reachable {
-            if self
-                .synthetic_rows
-                .insert(expression, CheckedSyntheticUse { owner, mode })
-                .is_some()
-            {
-                return Err(CheckedLocalUseError::InvalidTopology);
-            }
-            return Ok(());
-        }
-        if mode == CheckedLocalReadMode::Move {
-            let prior = state.moved_synthetic.get(&owner).cloned();
-            if let Some(prior) = prior {
-                let closed = self.closed_type(ty)?;
-                if let CheckedSyntheticUseOwner::ImplicitParameter(callable) = owner
-                    && matches!(
-                        closed,
-                        TypeKind::Function { .. } | TypeKind::CharacterDialogue(_)
-                    )
-                {
-                    let ty = closed
-                        .semantic_identity_digest()
-                        .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
-                    self.synthetic_copy_requirements
-                        .insert(callable, CheckedSyntheticCopyRequirement { callable, ty });
-                    state.moved_synthetic.remove(&owner);
-                    for previous in prior {
-                        let row = self
-                            .synthetic_rows
-                            .get_mut(&previous)
-                            .ok_or(CheckedLocalUseError::InvalidTopology)?;
-                        row.mode = CheckedLocalReadMode::Copy;
-                    }
-                    mode = CheckedLocalReadMode::Copy;
-                } else {
-                    return Err(CheckedLocalUseError::SyntheticUnavailable { owner, expression });
-                }
-            }
-            if mode == CheckedLocalReadMode::Move {
-                state
-                    .moved_synthetic
-                    .entry(owner)
-                    .or_default()
-                    .insert(expression);
-            }
-        }
         if self
             .synthetic_rows
             .insert(expression, CheckedSyntheticUse { owner, mode })
@@ -877,6 +980,7 @@ impl<'a> LocalUseChecker<'a> {
         {
             return Err(CheckedLocalUseError::InvalidTopology);
         }
+        self.flow.append(state, Event::Synthetic(expression));
         Ok(())
     }
 
@@ -889,28 +993,8 @@ impl<'a> LocalUseChecker<'a> {
         if let Some(callback) = self.callback_local_uses.last_mut() {
             callback.insert(local);
         }
-        if !state.reachable {
-            // Lowering still visits dead source after a definite exit. Seal a
-            // read mode for it without issuing an availability obligation or
-            // making its transfers reachable at a later join.
-            let mode = if self.copy_requirements.contains_key(&local)
-                || self.binding_is_copy(local, &mut BTreeSet::new())?
-            {
-                CheckedLocalReadMode::Copy
-            } else {
-                CheckedLocalReadMode::Move
-            };
-            if self
-                .rows
-                .insert(site, CheckedLocalValueTransfer { local, mode }.into())
-                .is_some()
-            {
-                return Err(CheckedLocalUseError::DuplicateSite { site });
-            }
-            return Ok(());
-        }
-        let guard_copy = self.require_guard_copy(site, local)?;
-        let mut mode = if guard_copy
+        let guard_copy = state.reachable && self.require_guard_copy(site, local)?;
+        let mode = if guard_copy
             || self.copy_requirements.contains_key(&local)
             || self.binding_is_copy(local, &mut BTreeSet::new())?
         {
@@ -918,7 +1002,8 @@ impl<'a> LocalUseChecker<'a> {
         } else {
             CheckedLocalReadMode::Move
         };
-        if mode == CheckedLocalReadMode::Move
+        if state.reachable
+            && mode == CheckedLocalReadMode::Move
             && let Some(&(_, receiver)) = self
                 .active_receiver_loans
                 .iter()
@@ -931,53 +1016,6 @@ impl<'a> LocalUseChecker<'a> {
                 site,
             });
         }
-        if mode == CheckedLocalReadMode::Copy {
-            if let Some(prior) = state.moved.remove(&local) {
-                for previous in prior {
-                    let CheckedLocalAccess::ValueTransfer(row) = self
-                        .rows
-                        .get_mut(&previous)
-                        .ok_or(CheckedLocalUseError::InvalidTopology)?
-                    else {
-                        return Err(CheckedLocalUseError::InvalidTopology);
-                    };
-                    row.mode = CheckedLocalReadMode::Copy;
-                }
-            }
-        }
-        if mode == CheckedLocalReadMode::Move {
-            let prior = state.moved.get(&local).cloned();
-            let repeated = self
-                .repeated_loop
-                .iter()
-                .any(|fresh| !fresh.contains(&local));
-            if prior.is_some() || repeated {
-                if let Some(requirement) = self.ingress_copy_requirement(local)? {
-                    self.copy_requirements
-                        .insert(requirement.local(), requirement);
-                    if let Some(prior) = state.moved.remove(&local) {
-                        for previous in prior {
-                            let CheckedLocalAccess::ValueTransfer(row) = self
-                                .rows
-                                .get_mut(&previous)
-                                .ok_or(CheckedLocalUseError::InvalidTopology)?
-                            else {
-                                return Err(CheckedLocalUseError::InvalidTopology);
-                            };
-                            row.mode = CheckedLocalReadMode::Copy;
-                        }
-                    }
-                    mode = CheckedLocalReadMode::Copy;
-                } else if prior.is_some() {
-                    return Err(CheckedLocalUseError::Unavailable { local, site });
-                } else {
-                    return Err(CheckedLocalUseError::RepeatedLoopMove { local, site });
-                }
-            }
-            if mode == CheckedLocalReadMode::Move {
-                state.moved.entry(local).or_default().insert(site);
-            }
-        }
         if self
             .rows
             .insert(site, CheckedLocalValueTransfer { local, mode }.into())
@@ -985,6 +1023,7 @@ impl<'a> LocalUseChecker<'a> {
         {
             return Err(CheckedLocalUseError::DuplicateSite { site });
         }
+        self.flow.append(state, Event::Access(site));
         Ok(())
     }
 
@@ -997,26 +1036,8 @@ impl<'a> LocalUseChecker<'a> {
         if let Some(callback) = self.callback_local_uses.last_mut() {
             callback.insert(local);
         }
-        if !state.reachable {
-            if self
-                .rows
-                .insert(
-                    site,
-                    CheckedLocalValueTransfer {
-                        local,
-                        mode: CheckedLocalReadMode::Borrow,
-                    }
-                    .into(),
-                )
-                .is_some()
-            {
-                return Err(CheckedLocalUseError::DuplicateSite { site });
-            }
-            return Ok(());
-        }
-        self.require_guard_copy(site, local)?;
-        if state.moved.contains_key(&local) {
-            return Err(CheckedLocalUseError::Unavailable { local, site });
+        if state.reachable {
+            self.require_guard_copy(site, local)?;
         }
         if self
             .rows
@@ -1032,9 +1053,9 @@ impl<'a> LocalUseChecker<'a> {
         {
             return Err(CheckedLocalUseError::DuplicateSite { site });
         }
+        self.flow.append(state, Event::Access(site));
         Ok(())
     }
-
     fn access_place(
         &mut self,
         expression: ExprId,
@@ -1049,7 +1070,7 @@ impl<'a> LocalUseChecker<'a> {
                 .active_receiver_loans
                 .iter()
                 .rev()
-                .find(|(loan, _)| *loan == local)
+                .find(|(loan, receiver)| *loan == local && *receiver != expression)
         {
             return Err(CheckedLocalUseError::BorrowedReceiverInvalidation {
                 receiver,
@@ -1063,9 +1084,6 @@ impl<'a> LocalUseChecker<'a> {
         if let Some(guard) = self.guard_for_local(local) {
             return Err(CheckedLocalUseError::GuardBoundMutation { guard, local, site });
         }
-        if state.reachable && state.moved.contains_key(&local) {
-            return Err(CheckedLocalUseError::Unavailable { local, site });
-        }
         if self
             .rows
             .insert(
@@ -1078,6 +1096,7 @@ impl<'a> LocalUseChecker<'a> {
         {
             return Err(CheckedLocalUseError::DuplicateSite { site });
         }
+        self.flow.append(state, Event::Access(site));
         Ok(())
     }
 
@@ -1327,10 +1346,8 @@ impl<'a> LocalUseChecker<'a> {
         Ok(true)
     }
 
-    fn bind(&mut self, locals: &[LocalId]) {
-        if let Some(fresh) = self.repeated_loop.last_mut() {
-            fresh.extend(locals.iter().copied());
-        }
+    fn bind(&mut self, locals: &[LocalId], state: &mut Availability) {
+        self.flow.append(state, Event::Bind(locals.into()));
     }
 
     fn pattern_bound_locals(
@@ -1739,14 +1756,11 @@ impl<'a> LocalUseChecker<'a> {
         state: &mut Availability,
         body: impl FnOnce(&mut Self, &mut Availability) -> Result<(), CheckedLocalUseError>,
     ) -> Result<(), CheckedLocalUseError> {
+        let header = self.flow.append(state, Event::Join);
         let mut iteration = state.clone();
-        self.repeated_loop.push(BTreeSet::new());
-        let result = body(self, &mut iteration);
-        self.repeated_loop.pop();
-        result?;
-        for (local, sites) in iteration.moved {
-            state.moved.entry(local).or_default().extend(sites);
-        }
+        body(self, &mut iteration)?;
+        self.flow.connect(&iteration, header);
+        *state = Availability::at(header);
         Ok(())
     }
 
@@ -1794,7 +1808,7 @@ impl<'a> LocalUseChecker<'a> {
             for input in captures.sources() {
                 self.use_local(input.site(), input.local(), state)?;
             }
-            return self.expression_inner(owner, &mut Availability::root());
+            return self.callable_body(|this, state| this.expression_inner(owner, state));
         }
         if self.scheduled_callback_roots.contains(&owner)
             && !matches!(
@@ -1806,7 +1820,7 @@ impl<'a> LocalUseChecker<'a> {
             )
         {
             self.callback_local_uses.push(BTreeSet::new());
-            let result = self.expression_inner(owner, &mut Availability::root());
+            let result = self.callable_body(|this, state| this.expression_inner(owner, state));
             let locals = self
                 .callback_local_uses
                 .pop()
@@ -1824,8 +1838,7 @@ impl<'a> LocalUseChecker<'a> {
             // The effect body runs later in its own callback frame. Its HIR
             // expression reads still receive modes, but cannot consume the
             // outer scope a second time after the capture packet is moved.
-            let mut callback_state = Availability::root();
-            return self.expression_inner(owner, &mut callback_state);
+            return self.callable_body(|this, state| this.expression_inner(owner, state));
         }
         self.expression_inner(owner, state)
     }
@@ -1886,10 +1899,32 @@ impl<'a> LocalUseChecker<'a> {
                 self.expression(value.operand(), state)?;
                 for branch in value.branches() {
                     self.repeat(state, |this, iteration| {
-                        this.bind(branch.locals());
+                        this.bind(branch.locals(), iteration);
                         this.contextual_body(branch.body(), iteration)
                     })?;
                 }
+            }
+            HirExprKind::Pipe(_) => {
+                let pipe = match self
+                    .analysis
+                    .expression(owner)
+                    .map(super::CheckedExpression::resolution)
+                {
+                    Some(CheckedExpressionResolution::Pipe(pipe)) => pipe,
+                    Some(CheckedExpressionResolution::ImplicitCallable(callable)) => {
+                        match callable.body() {
+                            super::CheckedImplicitCallableBody::Pipe(pipe) => pipe,
+                            _ => return Err(CheckedLocalUseError::InvalidTopology),
+                        }
+                    }
+                    _ => return Err(CheckedLocalUseError::InvalidTopology),
+                };
+                self.expression(pipe.lookup_left(), state)?;
+                self.flow.append(
+                    state,
+                    Event::BindSynthetic(CheckedSyntheticUseOwner::Pipe(pipe.binding_identity())),
+                );
+                self.expression(pipe.lookup_right(), state)?;
             }
             HirExprKind::If(value) => {
                 self.expression(value.condition(), state)?;
@@ -1904,6 +1939,8 @@ impl<'a> LocalUseChecker<'a> {
                 let incoming = state.clone();
                 let mut matched = incoming.clone();
                 let mut unmatched = incoming;
+                let locals = self.pattern_bound_locals(value.pattern())?;
+                self.bind(&locals.iter().copied().collect::<Vec<_>>(), &mut matched);
                 if let Some(guard) = value.guard() {
                     let locals = self.pattern_bound_locals(value.pattern())?;
                     self.guard_expression(guard, locals, &mut matched)?;
@@ -1919,6 +1956,7 @@ impl<'a> LocalUseChecker<'a> {
                 let mut fallthrough = state.clone();
                 for arm in value.arms() {
                     let mut arm_state = fallthrough.clone();
+                    self.bind(arm.locals(), &mut arm_state);
                     if let Some(guard) = arm.guard() {
                         self.guard_expression(guard, arm.locals().iter().copied(), &mut arm_state)?;
                         fallthrough = fallthrough.join(arm_state.clone());
@@ -1952,10 +1990,58 @@ impl<'a> LocalUseChecker<'a> {
                 self.expression(value.tail(), state)?;
             }
             HirExprKind::ComputationBlock(value) => {
+                let catches = matches!(
+                    value.kind(),
+                    arcweft_lang_hir::expr::HirComputationBlockKind::Result
+                        | arcweft_lang_hir::expr::HirComputationBlockKind::Option
+                );
+                let exit = if catches {
+                    self.flow.append(state, Event::Join);
+                    let exit = self.flow.detached();
+                    self.carriers.push((owner, exit));
+                    Some(exit)
+                } else {
+                    None
+                };
                 for statement in value.statements() {
                     self.statement(*statement, state)?;
                 }
                 self.expression(value.tail(), state)?;
+                if let Some(exit) = exit {
+                    self.carriers
+                        .pop()
+                        .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                    self.flow.connect(state, exit);
+                    *state = Availability::at(exit);
+                }
+            }
+            HirExprKind::Try(value) => {
+                self.expression(value.operand(), state)?;
+                let checked = match self
+                    .analysis
+                    .expression(owner)
+                    .map(super::CheckedExpression::resolution)
+                {
+                    Some(CheckedExpressionResolution::Try(checked)) => checked,
+                    Some(CheckedExpressionResolution::ImplicitCallable(callable)) => {
+                        match callable.body() {
+                            super::CheckedImplicitCallableBody::Try(checked) => checked,
+                            _ => return Err(CheckedLocalUseError::InvalidTopology),
+                        }
+                    }
+                    _ => return Err(CheckedLocalUseError::InvalidTopology),
+                };
+                if let super::CheckedTryBoundaryOwner::CarrierBlock(boundary) =
+                    checked.boundary().owner()
+                {
+                    let (_, exit) = self
+                        .carriers
+                        .iter()
+                        .rev()
+                        .find(|(owner, _)| *owner == boundary.lookup_owner())
+                        .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                    self.flow.connect(state, *exit);
+                }
             }
             HirExprKind::NamedBlock(value) => {
                 for statement in value.statements() {
@@ -1964,12 +2050,15 @@ impl<'a> LocalUseChecker<'a> {
                 self.expression(value.tail(), state)?;
             }
             HirExprKind::Loop(value) => {
-                self.repeat(state, |this, state| {
-                    for statement in value.statements() {
-                        this.statement(*statement, state)?;
-                    }
-                    this.expression(value.tail(), state)
-                })?;
+                self.begin_loop(
+                    state,
+                    arcweft_lang_hir::project::HirSemanticBodyOwner::direct_expression(owner),
+                )?;
+                for statement in value.statements() {
+                    self.statement(*statement, state)?;
+                }
+                self.expression(value.tail(), state)?;
+                self.end_loop(state)?;
             }
             HirExprKind::Closure(value) => {
                 let Some(CheckedExpressionResolution::Closure(_)) = self
@@ -1983,11 +2072,10 @@ impl<'a> LocalUseChecker<'a> {
                     .analysis
                     .checked_capture_inputs(owner)
                     .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
-                let mut body_state = Availability::root();
                 for input in captures.sources() {
                     self.use_local(input.site(), input.local(), state)?;
                 }
-                self.expression(value.body(), &mut body_state)?;
+                self.callable_body(|this, state| this.expression(value.body(), state))?;
             }
             HirExprKind::Record(_) | HirExprKind::RecordLiteral(_) => {
                 let Ok(edges) = self.analysis.checked_expression_edge_fact(owner) else {
@@ -2079,13 +2167,19 @@ impl<'a> LocalUseChecker<'a> {
                 if let Ok(edges) = self.analysis.checked_expression_edge_fact(owner) {
                     let children = edges.child_expressions().collect::<Vec<_>>();
                     let loans_before = self.active_receiver_loans.len();
-                    if let Some(receiver) = self.selected_receiver_source(owner)
-                        && self.borrowed_receivers.contains(&receiver)
+                    let receiver = self.selected_receiver_source(owner);
+                    if let Some(receiver) = receiver
+                        && (self.borrowed_receivers.contains(&receiver)
+                            || self.in_place_receivers.contains(&receiver))
                     {
-                        let local = self
+                        let checked = self
                             .analysis
                             .expression(receiver)
-                            .and_then(super::CheckedExpression::execution_local_use)
+                            .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                        let local = checked
+                            .mutable_place()
+                            .map(|place| place.local_id())
+                            .or_else(|| checked.execution_local_use())
                             .ok_or(CheckedLocalUseError::InvalidTopology)?;
                         self.active_receiver_loans.push((local, receiver));
                     }
@@ -2096,22 +2190,11 @@ impl<'a> LocalUseChecker<'a> {
                         }
                     }
                     self.active_receiver_loans.truncate(loans_before);
-                    if state.reachable
-                        && let Some(receiver) = self.selected_receiver_source(owner)
+                    if let Some(receiver) = receiver
                         && self.in_place_receivers.contains(&receiver)
                     {
-                        let place = self
-                            .analysis
-                            .expression(receiver)
-                            .and_then(super::CheckedExpression::mutable_place)
-                            .ok_or(CheckedLocalUseError::InvalidTopology)?;
-                        let local = place.local_id();
-                        if state.moved.contains_key(&local) {
-                            return Err(CheckedLocalUseError::Unavailable {
-                                local,
-                                site: CheckedLocalUseSite::Place(receiver),
-                            });
-                        }
+                        self.flow
+                            .append(state, Event::Access(CheckedLocalUseSite::Place(receiver)));
                     }
                 } else if !matches!(
                     self.analysis
@@ -2135,6 +2218,9 @@ impl<'a> LocalUseChecker<'a> {
                         Some(CheckedExpressionResolution::DialogueApplication { .. })
                     )
                 ) {
+                    self.flow.append(state, Event::Join);
+                    let exit = self.flow.detached();
+                    self.outputs.push((owner, exit));
                     for edge in expression
                         .kind()
                         .expression_owned_child_edges()
@@ -2161,6 +2247,11 @@ impl<'a> LocalUseChecker<'a> {
                             HirExpressionOwnedChild::Pattern(_) => {}
                         }
                     }
+                    self.outputs
+                        .pop()
+                        .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                    self.flow.connect(state, exit);
+                    *state = Availability::at(exit);
                 }
             }
         }
@@ -2209,7 +2300,7 @@ impl<'a> LocalUseChecker<'a> {
         match statement.kind().evaluation_plan() {
             HirStmtEvaluationPlan::Binding { input, locals, .. } => {
                 self.expression(input, state)?;
-                self.bind(locals);
+                self.bind(locals, state);
             }
             HirStmtEvaluationPlan::OrderedPair {
                 kind: HirStmtOrderedPairPlanKind::Assign,
@@ -2228,7 +2319,7 @@ impl<'a> LocalUseChecker<'a> {
                 let mode = if place.nominal_field().is_some() {
                     CheckedLocalPlaceMode::Mutate
                 } else {
-                    CheckedLocalPlaceMode::Replace
+                    CheckedLocalPlaceMode::Assign
                 };
                 self.access_place(first, place, mode, state)?;
             }
@@ -2253,7 +2344,7 @@ impl<'a> LocalUseChecker<'a> {
                 for input in captures.sources() {
                     self.use_local(input.site(), input.local(), state)?;
                 }
-                self.expression(body, &mut Availability::root())?;
+                self.callable_body(|this, state| this.expression(body, state))?;
             }
             HirStmtEvaluationPlan::If {
                 condition,
@@ -2279,7 +2370,7 @@ impl<'a> LocalUseChecker<'a> {
                 let incoming = state.clone();
                 let mut matched = incoming.clone();
                 let mut unmatched = incoming;
-                self.bind(branch_locals);
+                self.bind(branch_locals, &mut matched);
                 if let Some(guard) = guard {
                     self.guard_expression(guard, branch_locals.iter().copied(), &mut matched)?;
                     unmatched = unmatched.join(matched.clone());
@@ -2294,7 +2385,7 @@ impl<'a> LocalUseChecker<'a> {
                 let mut fallthrough = state.clone();
                 for arm in arms {
                     let mut arm_state = fallthrough.clone();
-                    self.bind(arm.locals());
+                    self.bind(arm.locals(), &mut arm_state);
                     if let Some(guard) = arm.guard() {
                         self.guard_expression(guard, arm.locals().iter().copied(), &mut arm_state)?;
                         fallthrough = fallthrough.join(arm_state.clone());
@@ -2328,13 +2419,26 @@ impl<'a> LocalUseChecker<'a> {
                 }
                 // The failed pattern branch is required to diverge. Its
                 // moves cannot poison the successful continuation.
-                self.bind(success_locals);
+                self.bind(success_locals, state);
             }
             HirStmtEvaluationPlan::While { condition, body } => {
-                self.repeat(state, |this, state| {
-                    this.expression(condition, state)?;
-                    this.contextual_body(body, state)
-                })?;
+                self.begin_loop(
+                    state,
+                    arcweft_lang_hir::project::HirSemanticBodyOwner::statement_body(
+                        owner,
+                        arcweft_lang_hir::stmt::HirStatementBodyRole::While,
+                    ),
+                )?;
+                self.expression(condition, state)?;
+                self.flow.connect(
+                    state,
+                    self.loops
+                        .last()
+                        .ok_or(CheckedLocalUseError::InvalidTopology)?
+                        .exit,
+                );
+                self.contextual_body(body, state)?;
+                self.end_loop(state)?;
             }
             HirStmtEvaluationPlan::WhileLet {
                 scrutinee,
@@ -2343,14 +2447,27 @@ impl<'a> LocalUseChecker<'a> {
                 body,
                 ..
             } => {
-                self.repeat(state, |this, state| {
-                    this.expression(scrutinee, state)?;
-                    this.bind(branch_locals);
-                    if let Some(guard) = guard {
-                        this.guard_expression(guard, branch_locals.iter().copied(), state)?;
-                    }
-                    this.contextual_body(body, state)
-                })?;
+                self.begin_loop(
+                    state,
+                    arcweft_lang_hir::project::HirSemanticBodyOwner::statement_body(
+                        owner,
+                        arcweft_lang_hir::stmt::HirStatementBodyRole::WhileLet,
+                    ),
+                )?;
+                self.expression(scrutinee, state)?;
+                let exit = self
+                    .loops
+                    .last()
+                    .ok_or(CheckedLocalUseError::InvalidTopology)?
+                    .exit;
+                self.flow.connect(state, exit);
+                self.bind(branch_locals, state);
+                if let Some(guard) = guard {
+                    self.guard_expression(guard, branch_locals.iter().copied(), state)?;
+                    self.flow.connect(state, exit);
+                }
+                self.contextual_body(body, state)?;
+                self.end_loop(state)?;
             }
             HirStmtEvaluationPlan::For {
                 source,
@@ -2362,11 +2479,24 @@ impl<'a> LocalUseChecker<'a> {
             } => {
                 self.expression(source, state)?;
                 self.expression(iterator, state)?;
+                self.begin_loop(
+                    state,
+                    arcweft_lang_hir::project::HirSemanticBodyOwner::statement_body(
+                        owner,
+                        arcweft_lang_hir::stmt::HirStatementBodyRole::For,
+                    ),
+                )?;
                 self.expression(next_value, state)?;
-                self.repeat(state, |this, state| {
-                    this.bind(branch_locals);
-                    this.contextual_body(body, state)
-                })?;
+                self.flow.connect(
+                    state,
+                    self.loops
+                        .last()
+                        .ok_or(CheckedLocalUseError::InvalidTopology)?
+                        .exit,
+                );
+                self.bind(branch_locals, state);
+                self.contextual_body(body, state)?;
+                self.end_loop(state)?;
             }
             HirStmtEvaluationPlan::Select { plan, .. } => match plan {
                 HirStmtSelectEvaluationPlan::Operand { expression } => {
@@ -2382,7 +2512,7 @@ impl<'a> LocalUseChecker<'a> {
                             }
                             HirStmtSelectHeadEvaluation::Frame { locals, .. }
                             | HirStmtSelectHeadEvaluation::Event { locals, .. } => {
-                                self.bind(locals)
+                                self.bind(locals, &mut branch_state)
                             }
                             HirStmtSelectHeadEvaluation::Recovered => {}
                         }
@@ -2410,10 +2540,42 @@ impl<'a> LocalUseChecker<'a> {
                 if let Some(expression) = expression {
                     self.expression(expression, state)?;
                 }
-                state.reachable = false;
+                if kind == HirStmtValuePlanKind::Break {
+                    self.loop_exit(owner, state, false)?;
+                } else {
+                    state.terminate();
+                }
             }
             HirStmtEvaluationPlan::Continue { .. } => {
-                state.reachable = false;
+                self.loop_exit(owner, state, true)?;
+            }
+            HirStmtEvaluationPlan::Value {
+                kind: HirStmtValuePlanKind::Out,
+                expression,
+                ..
+            } => {
+                if let Some(expression) = expression {
+                    self.expression(expression, state)?;
+                }
+                let super::CheckedStatementPayload::ControlTransfer(target) = self
+                    .analysis
+                    .statement(owner)
+                    .ok_or(CheckedLocalUseError::InvalidTopology)?
+                    .payload()
+                else {
+                    return Err(CheckedLocalUseError::InvalidTopology);
+                };
+                let target = target
+                    .output()
+                    .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                let (_, exit) = self
+                    .outputs
+                    .iter()
+                    .rev()
+                    .find(|(owner, _)| *owner == target.application())
+                    .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                self.flow.connect(state, *exit);
+                state.terminate();
             }
             other => {
                 let mut steps = Vec::new();
@@ -2443,7 +2605,7 @@ impl<'a> LocalUseChecker<'a> {
                         arcweft_lang_hir::stmt::HirStmtEvaluationStep::Publication {
                             locals,
                             ..
-                        } => self.bind(locals),
+                        } => self.bind(locals, state),
                         _ => {}
                     }
                 }

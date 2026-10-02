@@ -112,6 +112,39 @@ macro_rules! callable_case {
 }
 
 callable_case!(
+    moved_local_reinitializes_and_accepts_rhs_self_transfer,
+    r#"
+fn identity(input: Vec<Content>) -> Vec<Content> { input }
+flow main() -> i64 {
+    let mut items = Vec<Content>::with_capacity(0usize)
+    let moved = items
+    let ignored = { let marker = 0i64; items = Vec<Content>::with_capacity(0usize); () }
+    items = identity(items)
+    let current = items
+    return 42i64
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    maybe_moved_local_initializes_at_a_branch_join,
+    r#"
+fn run(enabled: bool) -> i64 {
+    let mut items = Vec<Content>::with_capacity(0usize)
+    let ignored = if enabled { let moved = items; () } else { () }
+    items = Vec<Content>::with_capacity(0usize)
+    let current = items
+    21i64
+}
+flow main() -> i64 { return run(true) + run(false) }
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
     closure_terminal_return_uses_its_own_frame,
     r#"
 flow main() -> i64 {

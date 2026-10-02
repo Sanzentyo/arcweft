@@ -1328,7 +1328,21 @@ fn execute_instruction(
                     *base
                 }
             };
-            register(fiber, base)?;
+            match place {
+                AwbcMutablePlace::Local(_) => {
+                    let frame = fiber.active_frame()?;
+                    if base.index() >= frame.registers.len() {
+                        return Err(FiberStateError::RegisterOutOfBounds {
+                            register: base.0,
+                            layout: frame.layout.0,
+                        }
+                        .into());
+                    }
+                }
+                AwbcMutablePlace::NominalField { .. } => {
+                    register(fiber, base)?;
+                }
+            }
             let value = fiber.active_frame_mut()?.take_register(*value)?;
             let frame = fiber.active_frame_mut()?;
             let displaced = match place {
@@ -1339,8 +1353,7 @@ fn execute_instruction(
                         register: target.0,
                         layout: frame.layout.0,
                     })?
-                    .replace(value)
-                    .expect("assignment requires a live target"),
+                    .replace(value),
                 AwbcMutablePlace::NominalField {
                     base: target,
                     field,
@@ -1356,15 +1369,17 @@ fn execute_instruction(
                         }
                         .into());
                     };
-                    replace_record_field_value(target_value, *field, value)?
+                    Some(replace_record_field_value(target_value, *field, value)?)
                 }
             };
-            let handles = displaced
-                .affine_line_handles()
-                .map_err(|error| VmError::Runtime(error.to_string()))?;
-            if !handles.is_empty() {
-                observations.push(VmObservation::DiscardedValue(displaced));
-                return Ok(InstructionControl::YieldAdvanced);
+            if let Some(displaced) = displaced {
+                let handles = displaced
+                    .affine_line_handles()
+                    .map_err(|error| VmError::Runtime(error.to_string()))?;
+                if !handles.is_empty() {
+                    observations.push(VmObservation::DiscardedValue(displaced));
+                    return Ok(InstructionControl::YieldAdvanced);
+                }
             }
         }
         AwbcInstruction::CallTraitMethod {

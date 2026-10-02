@@ -135,20 +135,18 @@ fn local_assignment_rejects_source_alias_and_incompatible_type() {
 }
 
 #[test]
-fn assignment_after_move_is_rejected_by_verifier_and_runtime_after_restore() {
+fn assignment_after_move_reinitializes_after_codec_restore_and_checkpoint() {
     let mut program = replacement_program();
     program.instructions[1] = AwbcInstruction::Move {
         dst: AwbcRegisterId(1),
         src: AwbcRegisterId(0),
     };
-    assert!(
-        program
-            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
-            .is_err()
-    );
-
-    // Exercise the VM's own guard independently of static admission. The
-    // malformed program is never published as an executable product.
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .unwrap();
+    let bytes = program.encode_canonical().unwrap();
+    let program = AwbcProgram::decode_canonical(&bytes, AwbcDecodeBudget::default()).unwrap();
+    assert_eq!(program.encode_canonical().unwrap(), bytes);
     let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).unwrap();
     super::super::vm::step(
         &program,
@@ -178,22 +176,28 @@ fn assignment_after_move_is_rejected_by_verifier_and_runtime_after_restore() {
     let snapshot: AwbcFiberStateSnapshot = serde_json::from_slice(&bytes).unwrap();
     let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
     let mut restored = snapshot.into_live_for_program(&owner).unwrap();
+    restored.validate_for_program(&program).unwrap();
     let checkpoint = restored.checkpoint().unwrap();
     for _ in 0..2 {
         let result = super::super::vm::step(
             &program,
             &mut restored,
             super::super::vm::VmStepOptions {
-                max_instructions: 1,
+                max_instructions: 4,
             },
         )
         .unwrap();
-        assert!(matches!(result.exit, super::super::vm::VmExit::Trapped(_)));
-        assert!(restored.frames[0].registers[0].is_none());
         assert_eq!(
-            restored.frames[0].registers[2],
-            Some(RuntimeValue::Bool(false))
+            result.exit,
+            super::super::vm::VmExit::Returned(Some(RuntimeValue::Bool(false)))
+        );
+        assert!(restored.frames[0].registers[0].is_none());
+        assert_eq!(restored.frames[0].registers[2], None);
+        assert_eq!(
+            restored.frames[0].registers[1],
+            Some(RuntimeValue::Bool(true))
         );
         restored.restore(checkpoint.clone(), &owner).unwrap();
+        restored.validate_for_program(&program).unwrap();
     }
 }

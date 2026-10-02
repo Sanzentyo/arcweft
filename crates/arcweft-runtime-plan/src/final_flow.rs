@@ -4861,6 +4861,9 @@ enum RuntimeFlowValueContinuation {
         pattern: RuntimePatternSeed,
         tail: RuntimeFlowTail,
     },
+    Assign {
+        statement: StmtId,
+    },
     Return,
     ExitScope {
         owner: ExprId,
@@ -5653,11 +5656,20 @@ impl<'a> FinalFlowLowerer<'a> {
                     }])
                 }
             }
-            HirStmtKind::Assign { value, .. } => Ok(vec![
-                self.expr_lowerer()
-                    .lower_flow_assignment(id, *value)
-                    .map_err(RuntimePlanLowerError::new)?,
-            ]),
+            HirStmtKind::Assign { value, .. } => {
+                if self.contains_flow_value_expression(*value)? {
+                    self.lower_flow_value(
+                        *value,
+                        RuntimeFlowValueContinuation::Assign { statement: id },
+                    )
+                } else {
+                    Ok(vec![
+                        self.expr_lowerer()
+                            .lower_flow_assignment(id, *value)
+                            .map_err(RuntimePlanLowerError::new)?,
+                    ])
+                }
+            }
             HirStmtKind::LetElse {
                 pattern: owner,
                 initializer,
@@ -7273,6 +7285,11 @@ impl<'a> FinalFlowLowerer<'a> {
                 ops.extend(self.lower_flow_tail(tail)?);
                 ops
             }
+            RuntimeFlowValueContinuation::Assign { statement } => vec![
+                self.expr_lowerer()
+                    .lower_flow_assignment_value(statement, value)
+                    .map_err(RuntimePlanLowerError::new)?,
+            ],
             RuntimeFlowValueContinuation::Return => vec![RuntimeFlowOpSeed::ReturnExpr(value)],
             RuntimeFlowValueContinuation::ScopeSuccess { owner } => {
                 return self.complete_scope_success(owner, value);

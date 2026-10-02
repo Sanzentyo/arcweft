@@ -1712,7 +1712,13 @@ mod tests {
                 value,
             )
             .unwrap();
-        assert!(!displaced.affine_line_handles().unwrap().is_empty());
+        assert!(
+            !displaced
+                .expect("live assignment displaces the old owner")
+                .affine_line_handles()
+                .unwrap()
+                .is_empty()
+        );
         let drops = env.take_assignment_discard_authorization();
         let after = BTreeMap::from([(new_token.clone(), destination)]);
         assert_eq!(

@@ -1,11 +1,12 @@
 use super::{CheckedLocalValueTransfer, LocalId};
 use crate::final_analysis::CheckedMutablePlace;
 
-/// A writable operation does not produce a value carrier. Replacement and
-/// mutation both require a live owner; move ends the declaration's availability.
+/// A writable operation does not produce a value carrier. Whole-place
+/// assignment initializes the declaration after evaluating its new value;
+/// mutation requires the existing value to remain available.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CheckedLocalPlaceMode {
-    Replace,
+    Assign,
     Mutate,
 }
 

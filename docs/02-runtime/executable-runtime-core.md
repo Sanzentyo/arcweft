@@ -379,7 +379,7 @@ not copy numeric values into feature-local tables.
 |  | `0e` | `ProjectTuple { dst, target, ordinal }` | checked tuple projection |
 |  | `0f` | `ProjectRecord { dst, target, ordinal }` | checked layout projection |
 |  | `10` | `ProjectField { dst, target, field }` | checked named projection |
-|  | `11` | `Assign { place, value }` | live typed local replacement or nominal-field mutation; moved targets are rejected |
+|  | `11` | `Assign { place, value }` | typed local assignment initializes even a moved slot; nominal-field mutation requires its owner value; discard an old value only when present |
 |  | `12` | `TestPattern { dst, pattern, value }` | test without binding |
 |  | `13` | `Unary { dst, op, src }` | `Not` or `Neg` |
 |  | `14` | `Binary { dst, op, lhs, rhs }` | typed binary operation |

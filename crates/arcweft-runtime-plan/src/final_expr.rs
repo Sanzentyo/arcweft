@@ -1608,11 +1608,16 @@ impl<'hir> FinalExprLowerer<'hir> {
         statement: StmtId,
         value: ExprId,
     ) -> Result<RuntimeFlowOpSeed, String> {
+        self.lower_flow_assignment_value(statement, self.lower(value)?)
+    }
+
+    pub(crate) fn lower_flow_assignment_value(
+        &self,
+        statement: StmtId,
+        value: RuntimeExprSeed,
+    ) -> Result<RuntimeFlowOpSeed, String> {
         let place = self.assignment_place(statement)?;
-        Ok(RuntimeFlowOpSeed::Assign {
-            place,
-            value: self.lower(value)?,
-        })
+        Ok(RuntimeFlowOpSeed::Assign { place, value })
     }
 
     fn assignment_place(&self, statement: StmtId) -> Result<RuntimeMutablePlaceSeed, String> {
@@ -1630,7 +1635,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         };
         let place = assignment.place().projection();
         let mode = match place {
-            RuntimeResolvedMutablePlace::Local(_) => CheckedLocalPlaceMode::Replace,
+            RuntimeResolvedMutablePlace::Local(_) => CheckedLocalPlaceMode::Assign,
             RuntimeResolvedMutablePlace::NominalField { .. } => CheckedLocalPlaceMode::Mutate,
         };
         self.checked_place_seed(*target, place, mode)

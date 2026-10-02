@@ -4389,8 +4389,126 @@ not the current target contract. The full convergence goal remains active.
 
 One fresh-context Astra Max consultation is explicitly requested for this
 change. Dispatch marker: task `/root/rust_move_semantics_once_20261002`, state
-`dispatched`, model `gpt-6-astra`, effort `max`, history `none`. This marker
+`completed`, model `gpt-6-astra`, effort `max`, history `none`. This marker
 was written before dispatch and updated with the returned canonical task name. Do not repeat the
 consultation after compaction; reconcile the live agent inventory if dispatch
 outcome is uncertain. The consultation is read-only, with no edits, tests or
 delegation. Root retains implementation and validation ownership.
+
+Consultation completed once. Its read-only advice confirms whole-place Assign
+and optional displaced values, and requires a temporary ownership CFG issued
+by the existing checked evaluation traversal. Solve initialization and eligible
+Copy obligations over typed events to a fixed point; retain actual condition,
+backedge, Break and Continue destinations. Do not rerun the HIR traversal to
+simulate iterations. Protect in-place receiver reservations against operand
+move/assignment even if an operand restores initialization before the call.
+Field reads currently consume their aggregate and remain a real Rust-parity gap:
+canonical move paths and partial place storage must preserve initialized
+siblings, complete-value admission and exact remaining-value cleanup. No new
+syntax for arbitrary dereference/indexed/nested writable places is implied.
+Derive old-value disposition after RHS (absent/present/conditional); conditional
+occupancy is a drop flag, not a runtime source-legality decision. Keep all
+contracts at 1. Native rollback is supported; public native session persistence
+remains unsupported. Full Rust Move parity is not yet claimed.
+
+The preceding context/input cut was delivered as
+`8cedccd53b4e58369c5e5b0ea778946544137f8a`; origin/main matched it and the
+checkout was clean before Rust-move edits. Current Rust-move WIP preserves
+declaration slots, allows whole-local assignment, returns optional displaced
+values and updates native/AWBC restore evidence. Narrow tests passed: sema local
+use 44, AWBC assignment 3, native environment 10. Initial core test compilation
+exposed one stale mandatory-displaced test consumer; migrated it. Shared final
+validation and ownership CFG/receiver/partial-path implementation remain pending.
+
+Current candidate extends the same selected evaluation fold with a transient
+ownership CFG (`local_use/flow.rs`). Each occurrence is issued once, then typed
+Access/Bind/Synthetic events are solved by a worklist. Local initialization uses
+Initialized/Uninitialized/MaybeInitialized independently of move-site diagnostic
+provenance. Copy ingress demands grow monotonically and final rows are published
+only after re-solving the event graph. The old unconditional repeated-loop move
+ban and freshness sets are deleted. Loop frames are keyed by the existing checked
+body coordinate, not source labels. While/WhileLet/For exits and real Break and
+Continue edges are retained; Loop has no artificial zero-iteration exit. Fresh
+pattern and pipe bindings are explicit initialization events. Carrier-block Try
+residuals and dialogue Out use their exact checked owner exits; callable residuals
+leave their frame and do not poison the successful write. Implicit Try/Pipe bodies
+use their retained selected body payload, not their callable-creation shell.
+
+Receiver reservations cover both selected borrowed and in-place receivers through
+operand evaluation. The owning receiver admission is distinguished from another
+overlapping mutation; operand move-and-restore does not erase a reservation.
+Assignment with an executable RHS now uses the existing FinalFlowLowerer value
+continuation and writes only after the call result is returned. This fixes the
+previous missing flow-owned projection for `items = identity(items)`.
+
+Evidence before the final initialization-enum cleanup: sema all-feature library
+1,153 passed, 0 failed; compiler native/decoded-AWBC reinitialization cases 4 passed;
+native environment 10 and AWBC assignment/restore 3 passed. Earlier fixture runs
+used unsupported ordinary-fn While lowering, unnamed block arguments, or an
+ambiguous unparenthesized block condition; final loop fixtures exercise the existing
+Flow surface, named capacity operands and parenthesized condition. Ordinary-fn
+While admission remains an existing downstream language gap, not new evidence.
+The flow-event extraction had one compile error from an unreplaced `state` receiver;
+corrected. A first Try event implementation missed the retained implicit-callable
+Try body; corrected with its typed payload. No broad source fallback is introduced.
+
+The first whole-workspace recipe failed at REPL `api_compile`: trybuild reported
+that the private-source-module fixture compiled successfully. No REPL source or
+fixture was changed. Its isolated rerun passed (1 test, E0603 fixture accepted as
+compile-fail). Cause is not established; do not call it a known baseline issue.
+Final whole-workspace rerun session 86044 uses
+%TEMP%/arcweft-1002-rust-move-final-workspace.{log,exit}. Final check/Clippy session
+46100 uses final-check/final-clippy receipts. These started before the equivalent
+initialization-enum cleanup; reconcile final bytes and actual exits before claiming
+acceptance. Current final sema session 45228 retains rust-move-sema receipts.
+Latest source is still uncommitted; no Rust-move delivery is claimed.
+
+Structure gate before the final residual/event refinements passed: 97 packages,
+351 review triggers, 0 blocking, 1,471,063 Rust physical LOC. Dependency-edge and
+package metrics hashes match the prior cut. Re-measure final changed owners.
+The new flow module owns only temporary static dataflow, not another HIR walker,
+runtime resolver, persisted index or public CFG. Existing local-use/effect/lowering,
+VM/verifier and environment cohesion dispositions remain applicable. Source
+certificates remain generation/instance-bound; no dependency, feature, unsafe or
+contract version changes. The one-shot consultation remains completed; do not
+dispatch another Astra after compaction. Remaining Rust parity includes canonical
+field move paths/shared partial storage and statically derived old-value
+dispositions. Full general program/root/owned-runner/UI convergence remains active.
+
+Final candidate also isolates each latent callable body from the enclosing
+receiver reservations, Loop/Carrier/Output targets and guard scopes. Creation
+captures are checked before entering that separate frame. Its owned Copy capture
+can mutate its own frame without invalidating the caller's receiver. The added
+regression and full sema library pass: 1,154 passed, 0 failed.
+
+Final-byte validation receipts (rust-move-delivery logs/exit files under %TEMP%):
+workspace check all targets/all features, workspace Clippy all targets/all
+features, format and canonical structure gate all exited 0. Complete
+`just test-workspace`: 308 suites, 7,218 passed, 0 failed, 24 ignored, exit 0.
+The previous full rerun passed 7,217 before the added callable-frame regression;
+the delivery run supersedes it. REPL compile-fail passed in both reruns; its first
+failure remains recorded above rather than silently counted as a pass.
+
+Final structure: 97 packages, 351 review triggers, 0 blocking violations,
+1,471,233 Rust physical LOC. Dependency edges/package metrics retain SHA256
+7ED2CD7BDA7DC6A879DD5684072D06357883E1B185C6A00343A7D7C27CB7AC42 and
+6242C34313F5C79FA7B8ADC1EE1732C9319F02BDDEBD5FB78054B0A8B6A0DFE7.
+This is static ownership/source/runtime/codec evidence, not GPU/performance
+or full Rust field-move acceptance. Explicit staged review and main delivery
+follow; the convergence goal remains active after this coherent cut.
+
+| Path / crate | Class | Bytes | Base → final physical LOC | Embedded tests |
+|---|---|---:|---:|---:|
+| crates/arcweft-compiler/tests/callable_execution.rs / arcweft-compiler | test | 35324 | 1266 → 1299 | 0 |
+| crates/arcweft-core/src/awbc/tests/local_assignment.rs / arcweft-core | test | 7248 | 199 → 203 | 0 |
+| crates/arcweft-core/src/awbc/verify/code.rs / arcweft-core | production | 224591 | 5759 → 5759 | 0 |
+| crates/arcweft-core/src/awbc/vm.rs / arcweft-core | production | 218120 | 5291 → 5306 | 0 |
+| crates/arcweft-core/src/engine/dialogue/store.rs / arcweft-core | production | 65938 | 1751 → 1757 | 581 |
+| crates/arcweft-core/src/value/env.rs / arcweft-core | production | 31175 | 886 → 875 | 297 |
+| crates/arcweft-lang-sema/src/final_analysis/local_use.rs / arcweft-lang-sema | production | 120315 | 2876 → 3038 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/local_use/access.rs / arcweft-lang-sema | production | 2095 | 68 → 69 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/local_use/flow.rs / arcweft-lang-sema | production | 9249 | 0 → 298 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/tests/local_use.rs / arcweft-lang-sema | test | 47466 | 1356 → 1456 | 0 |
+| crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/expression_inputs.rs / arcweft-lang-sema | test | 12543 | 354 → 354 | 0 |
+| crates/arcweft-runtime-plan/src/final_expr.rs / arcweft-runtime-plan | production | 135942 | 3337 → 3342 | 0 |
+| crates/arcweft-runtime-plan/src/final_flow.rs / arcweft-runtime-plan | production | 358534 | 8648 → 8665 | 398 |

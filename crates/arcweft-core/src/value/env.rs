@@ -335,22 +335,19 @@ impl RuntimeEnv {
         &mut self,
         place: RuntimeMutablePlace,
         value: RuntimeValue,
-    ) -> Result<RuntimeValue, RuntimePlaceWriteError> {
+    ) -> Result<Option<RuntimeValue>, RuntimePlaceWriteError> {
         let inspected = (|| {
             let slot = self
                 .slot(place.local())
                 .ok_or(RuntimeEvalError::UnknownLocal(place.local()))?;
             match place {
-                RuntimeMutablePlace::Local(_) => slot
-                    .value
-                    .as_ref()
-                    .ok_or(RuntimeEvalError::UninitializedLocal(place.local())),
+                RuntimeMutablePlace::Local(_) => Ok(slot.value.as_ref()),
                 RuntimeMutablePlace::NominalField { field, .. } => {
                     let base = slot
                         .value
                         .as_ref()
                         .ok_or(RuntimeEvalError::UninitializedLocal(place.local()))?;
-                    base.record_field(field).ok_or_else(|| {
+                    base.record_field(field).map(Some).ok_or_else(|| {
                         RuntimeEvalError::InvalidFieldAssignment {
                             field: field.zero_based().to_string(),
                             value: runtime_value_label(base),
@@ -359,10 +356,11 @@ impl RuntimeEnv {
                 }
             }
         })();
-        let handles = inspected.and_then(|displaced| {
-            displaced
+        let handles = inspected.and_then(|displaced| match displaced {
+            Some(value) => value
                 .affine_line_handles()
-                .map_err(|_| RuntimeEvalError::InvalidDiscardGraph)
+                .map_err(|_| RuntimeEvalError::InvalidDiscardGraph),
+            None => Ok(Vec::new()),
         });
         let handles = match handles {
             Ok(handles) => handles,
@@ -384,14 +382,14 @@ impl RuntimeEnv {
                 .slot_mut(local)
                 .expect("inspected local remains in the exclusive environment")
                 .value
-                .replace(value)
-                .expect("replacement requires an initialized declaration"),
-            RuntimeMutablePlace::NominalField { base, field } => self
-                .slot_mut(base)
-                .and_then(|slot| slot.value.as_mut())
-                .expect("inspected field owner remains initialized")
-                .replace_record_field(field, value)
-                .expect("inspected field retains its defining-order coordinate"),
+                .replace(value),
+            RuntimeMutablePlace::NominalField { base, field } => Some(
+                self.slot_mut(base)
+                    .and_then(|slot| slot.value.as_mut())
+                    .expect("inspected field owner remains initialized")
+                    .replace_record_field(field, value)
+                    .expect("inspected field retains its defining-order coordinate"),
+            ),
         };
         Ok(displaced)
     }
@@ -618,7 +616,7 @@ mod tests {
     }
 
     #[test]
-    fn moved_declaration_remains_unwritable_after_rollback() {
+    fn moved_declaration_reinitializes_in_its_original_scope_after_rollback() {
         let outer = local(1);
         let inner = local(2);
         let mut env = RuntimeEnv::default();
@@ -632,18 +630,12 @@ mod tests {
         let mut restored = RuntimeEnv::from_rollback_image(image, &owner).unwrap();
         restored.push_scope();
         restored.set(inner, RuntimeValue::Bool(false));
-        let error = restored
+        let displaced = restored
             .assign_place(RuntimeMutablePlace::Local(outer), RuntimeValue::Bool(true))
-            .unwrap_err();
-        assert_eq!(
-            error.into_parts(),
-            (
-                RuntimeEvalError::UninitializedLocal(outer),
-                RuntimeValue::Bool(true)
-            )
-        );
+            .unwrap();
+        assert_eq!(displaced, None);
         restored.pop_scope();
-        assert!(restored.get(outer).is_none());
+        assert_eq!(restored.get(outer), Some(&RuntimeValue::Bool(true)));
         assert!(restored.get(inner).is_none());
     }
 
@@ -662,14 +654,11 @@ mod tests {
             env.read(read),
             Err(RuntimeEvalError::UninitializedLocal(source))
         );
-        let error = env
+        let displaced = env
             .assign_place(RuntimeMutablePlace::Local(source), RuntimeValue::Bool(true))
-            .unwrap_err();
-        assert_eq!(
-            error.into_parts().0,
-            RuntimeEvalError::UninitializedLocal(source)
-        );
-        assert!(env.get(source).is_none());
+            .unwrap();
+        assert_eq!(displaced, None);
+        assert_eq!(env.get(source), Some(&RuntimeValue::Bool(true)));
         env.pop_scope();
         assert_eq!(env.get(source), Some(&RuntimeValue::Bool(false)));
     }
@@ -765,7 +754,7 @@ mod tests {
                 RuntimeMutablePlace::NominalField { base: local, field },
                 RuntimeValue::String("new".to_owned())
             ),
-            Ok(RuntimeValue::String("old".to_owned()))
+            Ok(Some(RuntimeValue::String("old".to_owned())))
         );
         let Some(RuntimeValue::NominalRecord(record)) = env.get(local) else {
             panic!("nominal record remains bound");

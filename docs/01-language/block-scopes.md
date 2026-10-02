@@ -18,20 +18,22 @@ let x = {
 
 Each binding introduces a distinct local declaration and generation. Shadowing
 with another `let` introduces a new declaration; assignment updates the existing
-declaration only while it is live and permits replacement (`let mut`).
+declaration when it permits assignment (`let mut`).
 
-Move ends the availability of that declaration on the affected path. Reading,
-borrowing, replacing, and mutating it afterward are errors. Assignment does not
-undo a move. If any reachable incoming branch has moved the owner, a subsequent
-place operation is rejected. Explicit drop also ends the binding's lifetime.
+Move transfers the current value and makes that place uninitialized on the
+affected path. Reading, borrowing, or mutating the missing value is an error.
+Whole-place assignment initializes the existing declaration with a new value,
+as in Rust. A subsequent read requires initialization on every reachable
+incoming path. Consuming a value with drop has the same availability effect as
+other moves; it does not destroy the declaration's assignable place.
 
 ```arcw
 let mut items = Vec<Content>::with_capacity(0usize)
 let moved = items
-items = Vec<Content>::with_capacity(0usize) // error: assignment after move
+items = Vec<Content>::with_capacity(0usize) // initializes the existing place
 ```
 
-Use a new binding when a new owner is intended:
+Shadowing remains a distinct operation:
 
 ```arcw
 let items = Vec<Content>::with_capacity(0usize)
@@ -39,12 +41,16 @@ let moved = items
 let items = Vec<Content>::with_capacity(0usize) // new declaration
 ```
 
-The assignment target is a place, not a value read. Both whole-local replacement
-and field/in-place mutation nevertheless require a live owner. The right-hand
-side is evaluated first; consuming the target there does not permit writing it
-back. Active receiver loans also prohibit consuming or changing their owner
-during operand evaluation. A successful replacement transfers the previous live
-value to the owning runtime's cleanup transaction exactly once.
+The assignment target is a place, not a value read. The right-hand side is
+evaluated first, so `items = identity(items)` may move the old value and then
+initialize the same place with the result. Field/in-place mutation requires its
+existing owner to remain initialized. Active receiver loans prohibit consuming
+or changing their owner during operand evaluation. Initialization and borrow
+obligations are checked statically, including control-flow joins and backedges.
+An assignment transfers an existing old value to the owning runtime's cleanup
+transaction exactly once. If the old value was moved, there is no old value to
+clean up; when incoming paths differ, the retained slot's occupancy is the drop
+flag, not a runtime decision about whether the source operation is legal.
 
 ## Expression block
 

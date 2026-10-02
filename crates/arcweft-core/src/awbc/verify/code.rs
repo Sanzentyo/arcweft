@@ -1408,7 +1408,7 @@ fn apply_instruction(
             let value_ty = read_register(verifier, function, block, *value, state)?;
             let expected = match place {
                 AwbcMutablePlace::Local(target) => {
-                    read_register(verifier, function, block, *target, state)?
+                    register_type(verifier, function, block, *target)?
                 }
                 AwbcMutablePlace::NominalField { base, field } => {
                     let target_ty = read_register(verifier, function, block, *base, state)?;

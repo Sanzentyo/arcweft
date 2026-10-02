@@ -761,7 +761,7 @@ fn mutation_requires_the_affine_owner_to_remain_available() {
 }
 
 #[test]
-fn whole_local_replacement_requires_a_live_owner() {
+fn whole_local_assignment_initializes_and_mutation_requires_a_live_owner() {
     let world = fixture(
         "fn root(input: Vec<Need<i64>>, replacement: Vec<Need<i64>>) -> Option<Need<i64>> { let mut items = input; items = replacement; items.pop() }",
         None,
@@ -775,14 +775,14 @@ fn whole_local_replacement_requires_a_live_owner() {
     assert_eq!(
         modes,
         [
-            crate::final_analysis::CheckedLocalPlaceMode::Replace,
+            crate::final_analysis::CheckedLocalPlaceMode::Assign,
             crate::final_analysis::CheckedLocalPlaceMode::Mutate
         ]
     );
 }
 
 #[test]
-fn replacement_cannot_revive_a_moved_declaration_on_any_reachable_path() {
+fn assignment_reinitializes_after_move_and_reachable_branch_joins() {
     for body in [
         "let moved = items; items = replacement; ()",
         "let moved = items; let ignored = { let marker = 0i64; items = replacement; () }; ()",
@@ -793,18 +793,13 @@ fn replacement_cannot_revive_a_moved_declaration_on_any_reachable_path() {
             "fn identity(input: Vec<Need<i64>>) -> Vec<Need<i64>> {{ input }}\nfn root(input: Vec<Need<i64>>, replacement: Vec<Need<i64>>, condition: bool) {{ let mut items = input; {body} }}"
         );
         let world = fixture(&source, None);
-        assert!(
-            matches!(
-                analyze(&world),
-                Err(FinalSemanticAnalysisError::LocalUse(
-                    CheckedLocalUseError::Unavailable {
-                        site: CheckedLocalUseSite::Place(_),
-                        ..
-                    }
-                ))
-            ),
-            "assignment after move must fail: {source}"
-        );
+        let report = analyze(&world)
+            .unwrap_or_else(|error| panic!("Rust-compatible initialization: {source}: {error:?}"));
+        assert!(report.checked_local_uses().rows().any(|(_, access)| {
+            access.place_access().is_some_and(|access| {
+                access.mode() == crate::final_analysis::CheckedLocalPlaceMode::Assign
+            })
+        }));
     }
 }
 
@@ -846,7 +841,7 @@ fn generic_place_access_is_issued_only_by_the_selected_closed_instance() {
 }
 
 #[test]
-fn closed_generic_instance_rejects_replacement_after_affine_transfer() {
+fn closed_generic_instance_initializes_after_affine_transfer() {
     let world = fixture(
         "fn root<T>(input: Vec<T>, replacement: Vec<T>) { let mut items = input; let moved = items; items = replacement; () }\nfn caller(input: Vec<Need<i64>>, replacement: Vec<Need<i64>>) { root(input, replacement); () }",
         None,
@@ -855,17 +850,20 @@ fn closed_generic_instance_rejects_replacement_after_affine_transfer() {
         analyze(&world).expect("the open body defers local access until its selected instance");
     let selection = super::project_specialization::selections(&report, "root").remove(0);
     let instance = selection.close_instance(None).unwrap();
-    assert!(matches!(
-        report.checked_local_uses_for_instance(
+    let catalog = report
+        .checked_local_uses_for_instance(
             world.project.analysis_view().unwrap(),
             &world.symbols,
             CheckedLocalUseInstantiation::ProjectFunction(&instance),
-        ),
-        Err(CheckedLocalUseError::Unavailable {
-            site: CheckedLocalUseSite::Place(_),
-            ..
-        })
-    ));
+        )
+        .expect("closed affine instance initializes the existing declaration");
+    assert!(
+        catalog
+            .rows()
+            .any(|(_, access)| access.place_access().is_some_and(
+                |access| access.mode() == crate::final_analysis::CheckedLocalPlaceMode::Assign
+            ))
+    );
 }
 
 #[test]
@@ -877,12 +875,114 @@ fn in_place_call_rechecks_owner_after_its_value_operands() {
     assert!(matches!(
         analyze(&world),
         Err(FinalSemanticAnalysisError::LocalUse(
-            CheckedLocalUseError::Unavailable {
-                site: CheckedLocalUseSite::Place(_),
-                ..
-            }
+            CheckedLocalUseError::BorrowedReceiverInvalidation { .. }
         ))
     ));
+}
+
+#[test]
+fn mutable_receiver_reservation_survives_operand_move_and_restoration() {
+    for operand in [
+        "{ let taken = items; items = taken; item }",
+        "{ let marker = 0i64; items = replacement; item }",
+    ] {
+        let source = format!(
+            "fn root(input: Vec<Need<i64>>, replacement: Vec<Need<i64>>, item: Need<i64>) {{ let mut items = input; items.push(value={operand}); () }}"
+        );
+        assert!(
+            matches!(
+                analyze(&fixture(&source, None)),
+                Err(FinalSemanticAnalysisError::LocalUse(
+                    CheckedLocalUseError::BorrowedReceiverInvalidation { .. }
+                ))
+            ),
+            "receiver reservation: {source}"
+        );
+    }
+}
+
+#[test]
+fn latent_callable_body_has_its_own_loan_and_control_frame() {
+    let source = "fn root(input: Vec<i64>) { let mut items = input; items.push(value=(|| { items.pop(); 0i64 })()); () }";
+    analyze(&fixture(source, None)).expect("a Copy capture is owned by the callback frame; mutating that copy does not invalidate the caller's reservation");
+}
+
+#[test]
+fn initialization_is_solved_over_real_loop_backedges_and_exits() {
+    for body in [
+        "while condition { items = identity(items); }
+return items.pop()",
+        "while condition { items = identity(items); continue }
+return items.pop()",
+        "let ignored = loop { let moved = items; break }
+items = replacement; return items.pop()",
+        "let ignored = loop { items = identity(items); break }
+return items.pop()",
+        "while ({ let marker = 0i64; items = identity(items); condition }) { }
+return items.pop()",
+        "while condition { let ignored = loop { items = identity(items); break }; }
+return items.pop()",
+    ] {
+        let source = format!(
+            "fn identity(input: Vec<Need<i64>>) -> Vec<Need<i64>> {{ input }}\nflow root(input: Vec<Need<i64>>, replacement: Vec<Need<i64>>, condition: bool) -> Option<Need<i64>> {{ \nlet mut items = input\n{body}\n }}"
+        );
+        analyze(&fixture(&source, None))
+            .unwrap_or_else(|error| panic!("valid loop initialization: {source}: {error:?}"));
+    }
+}
+
+#[test]
+fn missing_restoration_on_continue_break_or_zero_iteration_is_rejected() {
+    for body in [
+        "while condition { let moved = items; continue
+items = replacement; }
+return items.pop()",
+        "let ignored = loop { let moved = items; break }
+return items.pop()",
+        "let moved = items; while condition { items = replacement; break }
+return items.pop()",
+        "while condition { let moved = items; if condition { continue }
+items = replacement; }
+return items.pop()",
+        "while condition { let moved = items; if condition { break }
+items = replacement; }
+return items.pop()",
+    ] {
+        let source = format!(
+            "flow root(input: Vec<Need<i64>>, replacement: Vec<Need<i64>>, condition: bool) -> Option<Need<i64>> {{ \nlet mut items = input\n{body}\n }}"
+        );
+        assert!(
+            matches!(
+                analyze(&fixture(&source, None)),
+                Err(FinalSemanticAnalysisError::LocalUse(
+                    CheckedLocalUseError::Unavailable { .. }
+                        | CheckedLocalUseError::RepeatedLoopMove { .. }
+                ))
+            ),
+            "uninitialized reachable path: {source}"
+        );
+    }
+}
+
+#[test]
+fn try_residual_cannot_skip_required_initialization_in_a_carrier_block() {
+    let source = "fn root(input: Vec<Need<i64>>, candidate: Option<Vec<Need<i64>>>) -> Option<Need<i64>> { let mut items = input; let moved = items; let ignored: Option<Unit> = option { let restored = try candidate; items = restored; () }; items.pop() }";
+    assert!(matches!(
+        analyze(&fixture(source, None)),
+        Err(FinalSemanticAnalysisError::LocalUse(
+            CheckedLocalUseError::Unavailable { .. }
+        ))
+    ));
+    let restored = source.replace("}; items.pop()", "}; items = moved; items.pop()");
+    analyze(&fixture(&restored, None))
+        .expect("unconditional assignment restores both carrier exits");
+}
+
+#[test]
+fn callable_try_exit_does_not_poison_its_successful_initialization_path() {
+    let source = "fn root(input: Vec<Need<i64>>, candidate: Option<Vec<Need<i64>>>) -> Option<Need<i64>> { let mut items = input; let moved = items; items = try candidate; items.pop() }";
+    analyze(&fixture(source, None))
+        .expect("residual returns from the callable; only success continues to the write");
 }
 
 #[test]

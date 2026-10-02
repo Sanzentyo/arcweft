@@ -90,7 +90,7 @@ fn expression_input_abi_records_replacement_without_reading_the_previous_value()
     let access = usage.access().place_access().unwrap();
     assert_eq!(
         access.mode(),
-        crate::final_analysis::CheckedLocalPlaceMode::Replace
+        crate::final_analysis::CheckedLocalPlaceMode::Assign
     );
     assert!(access.place().nominal_field().is_none());
     assert!(usage.access().value_transfer().is_none());
