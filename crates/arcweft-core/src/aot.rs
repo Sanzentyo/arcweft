@@ -55,7 +55,7 @@ pub(crate) enum AotLinearOp {
         expr: RuntimeExpr,
     },
     Assign {
-        place: crate::value::RuntimeMutablePlace,
+        place: crate::value::RuntimeAssignment,
         value: RuntimeExpr,
     },
     Return(String),
@@ -91,7 +91,7 @@ impl AotLinearOp {
                 expr: expr.clone(),
             }),
             FlowOp::Assign { place, value } => Some(Self::Assign {
-                place: *place,
+                place: place.clone(),
                 value: value.clone(),
             }),
             FlowOp::Return(value) => Some(Self::Return(value.clone())),

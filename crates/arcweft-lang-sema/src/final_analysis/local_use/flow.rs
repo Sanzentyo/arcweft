@@ -3,8 +3,9 @@
 //! created once. This graph is discarded before the local-use seal publishes.
 
 use super::{
-    CheckedLocalAccess, CheckedLocalPlaceMode, CheckedLocalReadMode, CheckedLocalUseError,
-    CheckedLocalUseSite, CheckedSyntheticUse, CheckedSyntheticUseOwner, ExprId, LocalId,
+    CheckedDisplacedField, CheckedLocalAccess, CheckedLocalPlaceMode, CheckedLocalReadMode,
+    CheckedLocalUseError, CheckedLocalUseSite, CheckedPlaceDisplacement,
+    CheckedPlaceInitialization, CheckedSyntheticUse, CheckedSyntheticUseOwner, ExprId, LocalId,
 };
 use crate::record_field::CheckedRecordFieldSemanticId;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -115,6 +116,13 @@ enum InitializationState {
 }
 
 impl InitializationState {
+    fn checked(self) -> CheckedPlaceInitialization {
+        match self {
+            Self::Initialized => CheckedPlaceInitialization::Initialized,
+            Self::Uninitialized => CheckedPlaceInitialization::Uninitialized,
+            Self::MaybeInitialized => CheckedPlaceInitialization::Conditional,
+        }
+    }
     fn join(self, incoming: Self) -> Self {
         if self == incoming {
             self
@@ -230,6 +238,11 @@ pub(super) enum Violation {
     },
 }
 
+pub(super) struct OwnershipFlowSolution {
+    pub(super) violations: Vec<Violation>,
+    pub(super) displacements: BTreeMap<CheckedLocalUseSite, CheckedPlaceDisplacement>,
+}
+
 impl OwnershipFlow {
     pub(super) fn append(&mut self, state: &mut Availability, event: Event) -> NodeId {
         let id = NodeId(self.nodes.len());
@@ -264,11 +277,11 @@ impl OwnershipFlow {
         }
     }
 
-    pub(super) fn violations(
+    pub(super) fn solve(
         &self,
         rows: &BTreeMap<CheckedLocalUseSite, CheckedLocalAccess>,
         synthetic: &BTreeMap<ExprId, CheckedSyntheticUse>,
-    ) -> Result<Vec<Violation>, CheckedLocalUseError> {
+    ) -> Result<OwnershipFlowSolution, CheckedLocalUseError> {
         let mut incoming = vec![None; self.nodes.len()];
         let mut queue = VecDeque::new();
         for (index, node) in self.nodes.iter().enumerate() {
@@ -296,8 +309,19 @@ impl OwnershipFlow {
             }
         }
         let mut violations = Vec::new();
+        let mut displacements = BTreeMap::new();
         for (node, state) in self.nodes.iter().zip(incoming) {
-            let Some(state) = state else { continue };
+            let Some(state) = state else {
+                if let Event::Access(site) = node.event
+                    && rows
+                        .get(&site)
+                        .and_then(CheckedLocalAccess::place_access)
+                        .is_some_and(|access| access.mode() == CheckedLocalPlaceMode::Assign)
+                {
+                    displacements.insert(site, CheckedPlaceDisplacement::Unreachable);
+                }
+                continue;
+            };
             match node.event {
                 Event::Access(site) => {
                     let row = rows
@@ -307,6 +331,52 @@ impl OwnershipFlow {
                         .place_access()
                         .is_some_and(|access| access.mode() == CheckedLocalPlaceMode::Assign);
                     let path = MovePath::from(row);
+                    if assignment {
+                        let initialization = state
+                            .locals
+                            .get(&path)
+                            .cloned()
+                            .unwrap_or_default()
+                            .state
+                            .checked();
+                        let mut fields = Vec::new();
+                        for (changed, fact) in &state.locals {
+                            if changed.fields.len() <= path.fields.len()
+                                || !path.contains(changed)
+                                || fact.state == InitializationState::Initialized
+                            {
+                                continue;
+                            }
+                            let evidence = fact
+                                .moves
+                                .iter()
+                                .find_map(|site| {
+                                    let access = rows.get(site)?;
+                                    (MovePath::from(access) == *changed)
+                                        .then(|| access.value_transfer())
+                                        .flatten()
+                                })
+                                .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                            fields.push(CheckedDisplacedField::new(
+                                evidence.fields()[path.fields.len()..]
+                                    .to_vec()
+                                    .into_boxed_slice(),
+                                fact.state.checked(),
+                            ));
+                        }
+                        if displacements
+                            .insert(
+                                site,
+                                CheckedPlaceDisplacement::Reachable {
+                                    initialization,
+                                    fields: fields.into_boxed_slice(),
+                                },
+                            )
+                            .is_some()
+                        {
+                            return Err(CheckedLocalUseError::InvalidTopology);
+                        }
+                    }
                     let unavailable = state.locals.iter().filter(|(changed, fact)| {
                         fact.state != InitializationState::Initialized
                             && if assignment {
@@ -337,6 +407,9 @@ impl OwnershipFlow {
                 _ => {}
             }
         }
-        Ok(violations)
+        Ok(OwnershipFlowSolution {
+            violations,
+            displacements,
+        })
     }
 }

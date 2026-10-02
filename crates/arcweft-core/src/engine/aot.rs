@@ -139,7 +139,7 @@ impl Engine {
             }
             AotLinearOp::Assign { place, value } => {
                 match self.evaluate_expr_with_backend(value, pure_backend) {
-                    Ok(value) => match self.fiber.env.assign_place(*place, value) {
+                    Ok(value) => match self.fiber.env.assign_place(place, value) {
                         Ok(_) => self.advance_aot_linear_cursor(next_op_index),
                         Err(error) => self.fail_eval(error.into_parts().0, output),
                     },

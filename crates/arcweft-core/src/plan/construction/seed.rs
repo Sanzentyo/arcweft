@@ -420,7 +420,7 @@ pub enum RuntimeFlowOpSeed {
         else_ops: Vec<Self>,
     },
     Assign {
-        place: RuntimeMutablePlaceSeed,
+        place: RuntimeAssignmentSeed,
         value: RuntimeExprSeed,
     },
     Dialogue {
@@ -1911,6 +1911,19 @@ pub enum RuntimeMutablePlaceSeed {
     },
 }
 
+/// Construction-only assignment and its checked post-RHS cleanup contour.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeAssignmentSeed {
+    pub place: RuntimeMutablePlaceSeed,
+    pub displacement: crate::value::RuntimePlaceDisplacement<RuntimeRecordFieldSeedId>,
+}
+
+impl RuntimeAssignmentSeed {
+    pub const fn local(&self) -> &RuntimeLocalSeedId {
+        self.place.local()
+    }
+}
+
 impl RuntimeMutablePlaceSeed {
     pub const fn local(&self) -> &RuntimeLocalSeedId {
         match self {
@@ -2213,7 +2226,7 @@ pub enum RuntimeExprSeedKind {
         field: RuntimeRecordFieldSeedId,
     },
     Assign {
-        place: RuntimeMutablePlaceSeed,
+        place: RuntimeAssignmentSeed,
         expr: Box<RuntimeExprSeed>,
         body: Box<RuntimeExprSeed>,
     },

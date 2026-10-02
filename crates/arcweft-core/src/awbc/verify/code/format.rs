@@ -310,7 +310,7 @@ pub(super) fn apply_instruction(
                         register_type(verifier, function, block, *result_register)?;
                     if result_register_type != result
                         || *result_register == *destination
-                        || state.initialized[result_register.index()]
+                        || !state.initialized[result_register.index()].is_uninitialized()
                     {
                         return invalid_type(&at, "FormatContent project result temporary");
                     }

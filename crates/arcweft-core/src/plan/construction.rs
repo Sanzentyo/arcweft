@@ -25,10 +25,10 @@ mod nominal_domains_tests;
 use lower::{function_input_scope, require_same};
 use seed::RuntimePlanConstructionIssuer;
 pub use seed::{
-    RuntimeAgentExprSeed, RuntimeAudioCommandSeed, RuntimeAwaitManyTargetSeed,
-    RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed, RuntimeBorrowedLocalSeed,
-    RuntimeBuiltinIteratorEvidenceSeed, RuntimeCallArgumentSeed, RuntimeCallableExecutableSeed,
-    RuntimeCallableExecutableSeedCode, RuntimeChoiceOptionSeed,
+    RuntimeAgentExprSeed, RuntimeAssignmentSeed, RuntimeAudioCommandSeed,
+    RuntimeAwaitManyTargetSeed, RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed,
+    RuntimeBorrowedLocalSeed, RuntimeBuiltinIteratorEvidenceSeed, RuntimeCallArgumentSeed,
+    RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode, RuntimeChoiceOptionSeed,
     RuntimeDialogueContentEffectBindingSeed, RuntimeDialogueContentEffectSlotSeed,
     RuntimeDialogueContentPlanSeed, RuntimeDialogueContentPlanSeedId,
     RuntimeDialogueContentSlotSeed, RuntimeDialogueContentTemplateManifestSeed,

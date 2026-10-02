@@ -1,0 +1,355 @@
+//! Intent, complete formal layout and body-relative input acceptance.
+
+use arcweft_lang_hir::project::HirDeclarationBodyRootRole;
+
+use crate::final_analysis::{
+    CheckedExecutionBodyOwner, CheckedExecutionContextError, CheckedExecutionCoordinate,
+    CheckedExecutionInputRole, CheckedExecutionOperation, CheckedExecutionParameterOrigin,
+    CheckedExecutionSource, CheckedExpressionResolution, FinalSemanticAnalysis,
+};
+use crate::types::TypeKind;
+
+use super::{analyze, fixture};
+
+fn declaration_body(report: &FinalSemanticAnalysis, name: &str) -> CheckedExecutionSource {
+    let body = report
+        .hir_topology()
+        .modules()
+        .iter()
+        .flat_map(|module| module.entries())
+        .filter_map(|entry| entry.body())
+        .find(|body| body.declaration().name() == name)
+        .unwrap();
+    let [root] = body.roots() else {
+        panic!("one declaration body")
+    };
+    CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
+        declaration: body.declaration().clone(),
+        role: root.role(),
+    })
+}
+
+#[test]
+fn empty_body_has_an_authenticated_root_without_an_expression_anchor() {
+    let world = fixture("flow empty() {}\nfn other() -> i64 { 42i64 }", None);
+    let report = analyze(&world).unwrap();
+    let source = declaration_body(&report, "empty");
+    let context = report
+        .checked_execution_context(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            source.clone(),
+            None,
+        )
+        .unwrap();
+    let abi = context.checked_execution_input_abi(source.clone()).unwrap();
+    abi.validate_for(&context).unwrap();
+    assert_eq!(abi.source(), &source);
+    assert_eq!(abi.result().value_type(), Some(&TypeKind::Unit));
+    assert!(matches!(
+        abi.coordinate(),
+        CheckedExecutionCoordinate::DeclarationBody(_)
+    ));
+    assert!(abi.expressions().is_empty());
+    assert!(abi.statements().is_empty());
+    assert!(abi.parameters().is_empty());
+    assert!(abi.inputs().is_empty());
+    assert!(abi.effects().is_empty());
+    assert!(matches!(
+        abi.operations(),
+        [CheckedExecutionOperation::Body(_)]
+    ));
+    assert!(matches!(
+        context.checked_execution_input_abi(declaration_body(&report, "other")),
+        Err(CheckedExecutionContextError::ScopeMismatch { .. })
+    ));
+    let CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
+        declaration,
+        ..
+    }) = source
+    else {
+        unreachable!()
+    };
+    assert!(
+        context
+            .checked_execution_input_abi(CheckedExecutionSource::InvokeBody(
+                CheckedExecutionBodyOwner::Declaration {
+                    declaration,
+                    role: HirDeclarationBodyRootRole::PredicateBody
+                }
+            ))
+            .is_err()
+    );
+}
+
+#[test]
+fn body_parameters_keep_unused_arity_and_destructuring() {
+    let world = fixture(
+        "fn root((left, right): (i64, i64), unused: i64) -> i64 { left + right }",
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let source = declaration_body(&report, "root");
+    let context = report
+        .checked_execution_context(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            source.clone(),
+            None,
+        )
+        .unwrap();
+    let abi = context.checked_execution_input_abi(source.clone()).unwrap();
+    let [pair, unused] = abi.parameters() else {
+        panic!("complete two-parameter arity")
+    };
+    assert_eq!(
+        pair.ty(),
+        &TypeKind::Tuple(vec![TypeKind::I64, TypeKind::I64])
+    );
+    assert_eq!(pair.bindings().len(), 2);
+    assert!(pair.pattern().is_some());
+    assert_eq!(unused.ty(), &TypeKind::I64);
+    assert_eq!(unused.bindings().len(), 1);
+    assert!(unused.pattern().is_some());
+    assert_eq!(abi.inputs().len(), 3);
+    assert!(abi.inputs().iter().all(|input| matches!(
+        input.role(),
+        CheckedExecutionInputRole::Parameter(CheckedExecutionParameterOrigin::Declaration(_))
+    )));
+    let unused_input = abi
+        .inputs()
+        .iter()
+        .find(|input| unused.bindings().contains(&input.binding().local()))
+        .unwrap();
+    assert!(unused_input.uses().is_empty());
+    assert!(
+        abi.inputs()
+            .iter()
+            .filter(|input| pair.bindings().contains(&input.binding().local()))
+            .all(|input| !input.uses().is_empty())
+    );
+    assert_eq!(abi.result().value_type(), Some(&TypeKind::I64));
+}
+
+#[test]
+fn invoking_a_view_body_excludes_its_parameter_default_phase() {
+    let world = fixture("view Main(first: i64 = 41i64) { Text(\"value\") }", None);
+    let report = analyze(&world).unwrap();
+    let source = declaration_body(&report, "Main");
+    let context = report
+        .checked_execution_context(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            source.clone(),
+            None,
+        )
+        .unwrap();
+    let abi = context.checked_execution_input_abi(source).unwrap();
+    let default = report
+        .checked_callables()
+        .records()
+        .find_map(|callable| callable.parameter_defaults().values().next())
+        .unwrap();
+    assert!(!abi.expressions().contains(&default.source()));
+    assert_eq!(abi.parameters().len(), 1);
+    assert_eq!(abi.inputs().len(), 1);
+    assert!(abi.inputs()[0].uses().is_empty());
+}
+
+#[test]
+fn creation_and_invocation_have_distinct_regions_and_complete_callback_parameters() {
+    for callback in ["|unused: i64| first", "_ + first"] {
+        let source = format!(
+            "view Main(first: i64, callback: i64 -> i64 = {callback}) {{ Text(\"value\") }}"
+        );
+        let world = fixture(&source, None);
+        let report = analyze(&world).unwrap();
+        let owner = report
+            .checked_callables()
+            .records()
+            .find_map(|callable| callable.parameter_defaults().values().next())
+            .unwrap()
+            .source();
+        let context = report
+            .checked_execution_context(
+                world.project.analysis_view().unwrap(),
+                &world.symbols,
+                owner,
+                None,
+            )
+            .unwrap();
+        let creation = context.checked_execution_input_abi(owner).unwrap();
+        let body = context
+            .checked_execution_input_abi(CheckedExecutionSource::InvokeBody(
+                CheckedExecutionBodyOwner::CallableValue(owner),
+            ))
+            .unwrap();
+        assert!(matches!(
+            creation.coordinate(),
+            CheckedExecutionCoordinate::Value(_)
+        ));
+        assert!(matches!(
+            body.coordinate(),
+            CheckedExecutionCoordinate::CallableBody(_)
+        ));
+        assert_eq!(creation.coordinate().path(), body.coordinate().path());
+        assert_eq!(creation.expressions(), [owner]);
+        assert!(creation.parameters().is_empty());
+        assert!(creation.synthetic_uses().is_empty());
+        assert_eq!(creation.inputs().len(), 1);
+        assert_eq!(body.result().value_type(), Some(&TypeKind::I64));
+        assert_eq!(body.parameters().len(), 1);
+        assert_eq!(body.parameters()[0].ty(), &TypeKind::I64);
+        assert_eq!(
+            body.inputs()
+                .iter()
+                .filter(|input| matches!(input.role(), CheckedExecutionInputRole::Free))
+                .count(),
+            1
+        );
+        match report.expression(owner).unwrap().resolution() {
+            CheckedExpressionResolution::Closure(_) => {
+                assert!(body.parameters()[0].pattern().is_some());
+                let unused = body
+                    .inputs()
+                    .iter()
+                    .find(|input| matches!(input.role(), CheckedExecutionInputRole::Parameter(_)))
+                    .unwrap();
+                assert!(unused.uses().is_empty());
+            }
+            CheckedExpressionResolution::ImplicitCallable(_) => {
+                assert!(body.parameters()[0].pattern().is_none());
+                assert!(body.parameters()[0].bindings().is_empty());
+                assert!(matches!(
+                    body.parameters()[0].origin(),
+                    CheckedExecutionParameterOrigin::Implicit(_)
+                ));
+                assert!(!body.synthetic_uses().is_empty());
+                assert!(body.synthetic_uses().iter().all(|usage| matches!(
+                    usage.access().owner(),
+                    crate::final_analysis::CheckedSyntheticUseOwner::ImplicitParameter(_)
+                )));
+            }
+            _ => panic!("callback source"),
+        }
+    }
+}
+
+#[test]
+fn invocation_preserves_latent_effects_that_creation_does_not_execute() {
+    let source = "fn writer(value: i64) -> i64 effects { fs.write } { value }\nfn ignore(callback: i64 -> i64, value: i64) -> i64 { value }\nflow main() -> i64 { return ignore(|value: i64| writer(value), 42i64) }";
+    let world = fixture(source, None);
+    let report = analyze(&world).unwrap();
+    let owner = report
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(
+                expression.resolution(),
+                CheckedExpressionResolution::Closure(_)
+            )
+            .then_some(owner)
+        })
+        .unwrap();
+    let context = report
+        .checked_execution_context(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            owner,
+            None,
+        )
+        .unwrap();
+    let creation = context.checked_execution_input_abi(owner).unwrap();
+    let body = context
+        .checked_execution_input_abi(CheckedExecutionSource::InvokeBody(
+            CheckedExecutionBodyOwner::CallableValue(owner),
+        ))
+        .unwrap();
+    assert!(creation.effects().is_empty());
+    assert!(!body.effects().is_empty());
+    assert!(
+        body.expressions()
+            .iter()
+            .any(|owner| report.call(*owner).is_some())
+    );
+}
+
+#[test]
+fn declaration_body_inputs_close_under_the_same_instance_as_value_transfers() {
+    use crate::final_analysis::{CheckedLocalReadMode, CheckedLocalUseInstantiation};
+    let world = fixture(
+        "fn identity<T>(value: T) -> T { value }\nfn numeric() -> i64 { identity(1i64) }\nfn pending(value: Need<i64>) -> Need<i64> { identity(value) }",
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let source = declaration_body(&report, "identity");
+    assert!(matches!(
+        report.checked_execution_context(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            source.clone(),
+            None
+        ),
+        Err(CheckedExecutionContextError::OpenDeclaration { .. })
+    ));
+    let instances = super::project_specialization::selections(&report, "identity")
+        .into_iter()
+        .map(|selection| selection.close_instance(None).unwrap())
+        .collect::<Vec<_>>();
+    for instance in &instances {
+        let context = report
+            .checked_execution_context(
+                world.project.analysis_view().unwrap(),
+                &world.symbols,
+                source.clone(),
+                Some(CheckedLocalUseInstantiation::ProjectFunction(instance)),
+            )
+            .unwrap();
+        let abi = context.checked_execution_input_abi(source.clone()).unwrap();
+        abi.validate_for(&context).unwrap();
+        let [parameter] = abi.parameters() else {
+            panic!("one full formal")
+        };
+        let [input] = abi.inputs() else {
+            panic!("one formal binding")
+        };
+        assert_eq!(parameter.ty(), input.binding().ty());
+        assert_eq!(abi.result().value_type(), Some(parameter.ty()));
+        let [usage] = input.uses() else {
+            panic!("one use")
+        };
+        assert_eq!(
+            usage.access().value_transfer().unwrap().mode(),
+            if parameter.ty() == &TypeKind::I64 {
+                CheckedLocalReadMode::Copy
+            } else {
+                CheckedLocalReadMode::Move
+            }
+        );
+    }
+}
+
+#[test]
+fn pipe_reads_retain_synthetic_transfer_evidence_without_becoming_formal_parameters() {
+    let world = fixture(
+        "fn root(value: i64) -> (i64, i64) { value |> (^, ^) }",
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let source = declaration_body(&report, "root");
+    let context = report
+        .checked_execution_context(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            source.clone(),
+            None,
+        )
+        .unwrap();
+    let abi = context.checked_execution_input_abi(source).unwrap();
+    assert_eq!(abi.parameters().len(), 1);
+    assert_eq!(abi.synthetic_uses().len(), 2);
+    assert!(abi.synthetic_uses().iter().all(|usage| matches!(
+        usage.access().owner(),
+        crate::final_analysis::CheckedSyntheticUseOwner::Pipe(_)
+    ) && usage.access().mode()
+        == crate::final_analysis::CheckedLocalReadMode::Copy));
+}

@@ -85,7 +85,7 @@ pub struct FinalSemanticAnalysis {
     items: BTreeMap<ItemId, CheckedItem>,
     calls: BTreeMap<ExprId, CallTargetFacts>,
     selected_call_inventories: BTreeMap<ExprId, HirSelectedCallExpressionInventory>,
-    expression_execution_regions: super::execution_regions::CheckedExpressionExecutionCatalog,
+    expression_execution_regions: super::execution_regions::CheckedExecutionCatalog,
     pub(super) edge_facts: BTreeMap<
         ExprId,
         Result<super::CheckedExpressionEdgeFact, super::CheckedExpressionEdgeError>,
@@ -1303,9 +1303,13 @@ impl FinalSemanticAnalysisPostEntryDraft {
             return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
         }
         control.check()?;
+        let expression_execution_regions = executable_suspensions.publish(
+            &expressions,
+            &statements,
+            &evaluation_topology,
+            &selected_expressions,
+        )?;
         let selected_call_inventories = selected_expressions.into_selected_call_inventories();
-        let expression_execution_regions =
-            executable_suspensions.publish(&expressions, &statements)?;
         let mut analysis = FinalSemanticAnalysis {
             authority,
             checked_callables,
@@ -1577,8 +1581,42 @@ impl FinalSemanticAnalysis {
     pub(super) fn expression_execution_region(
         &self,
         owner: ExprId,
-    ) -> Option<super::execution_regions::CheckedExpressionExecutionRegion> {
-        self.expression_execution_regions.region(owner)
+    ) -> Option<super::execution_regions::CheckedExecutionRegion> {
+        self.expression_execution_regions
+            .region(super::CheckedExecutionOperation::Value(owner))
+    }
+
+    pub(super) fn body_execution_region(
+        &self,
+        owner: &super::CheckedExecutionBodyOwner,
+    ) -> Option<super::execution_regions::CheckedExecutionRegion> {
+        self.expression_execution_regions
+            .region(super::CheckedExecutionOperation::Body(Arc::new(
+                owner.clone(),
+            )))
+    }
+
+    pub(super) fn has_execution_body(&self, owner: &super::CheckedExecutionBodyOwner) -> bool {
+        self.expression_execution_regions.contains_body(owner)
+    }
+
+    pub(super) fn body_execution_effects(
+        &self,
+        owner: &super::CheckedExecutionBodyOwner,
+    ) -> Option<crate::effects::EffectSet> {
+        if let super::CheckedExecutionBodyOwner::CallableValue(owner) = owner
+            && matches!(
+                self.expression(*owner)?.resolution(),
+                CheckedExpressionResolution::ImplicitCallable(_)
+            )
+        {
+            let TypeKind::Function { effects, .. } = self.expression(*owner)?.value_type()? else {
+                return None;
+            };
+            return effects.constant_effects().ok();
+        }
+        self.expression_execution_regions
+            .body_effects(owner, &self.expressions, &self.statements)
     }
 
     /// A plain accepted opaque carrier may be copied only after the exact

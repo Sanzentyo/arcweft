@@ -43,11 +43,31 @@ pub(super) fn verify_program(
     context: AwbcVerifyContext<'_>,
 ) -> Result<(), AwbcVerifyError> {
     let verifier = prepare_verifier(program, budget, context)?;
-    super::code::verify_code(&verifier)?;
+    super::code::verify_code(&verifier, &mut super::code::AssignmentAdmission::Sealed)?;
     verify_entry_runtime_contracts(&verifier)?;
     verify_entries(&verifier)?;
     verify_maps_and_resources(&verifier)?;
     Ok(())
+}
+
+pub(super) fn assignment_displacement_updates(
+    program: &AwbcProgram,
+    budget: AwbcVerifyBudget,
+    context: AwbcVerifyContext<'_>,
+) -> Result<
+    Vec<(
+        usize,
+        crate::value::RuntimePlaceDisplacement<crate::value::RuntimeRecordFieldId>,
+    )>,
+    AwbcVerifyError,
+> {
+    let verifier = prepare_verifier(program, budget, context)?;
+    let mut updates = Vec::new();
+    super::code::verify_code(
+        &verifier,
+        &mut super::code::AssignmentAdmission::Prepared(&mut updates),
+    )?;
+    Ok(updates)
 }
 
 pub(super) fn prepare_verifier<'program, 'context>(

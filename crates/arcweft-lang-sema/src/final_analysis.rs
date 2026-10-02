@@ -52,8 +52,8 @@ mod error;
 mod execution_context;
 mod execution_plan;
 mod execution_regions;
-pub use execution_regions::CheckedExecutionOperation;
-mod expression_inputs;
+pub use execution_regions::{CheckedExecutionBodyOwner, CheckedExecutionOperation};
+mod execution_inputs;
 mod free_capture;
 pub use free_capture::CheckedLocalUseSite;
 pub(crate) use model::CheckedRecordFieldSlot;
@@ -114,9 +114,13 @@ pub use error::{
     FinalCallSealFailure, FinalCallSealLocation, FinalSemanticAnalysisError,
     FinalSemanticProjectError, RecursiveCallableContractEdge, SemanticFactFamily,
 };
-pub use execution_context::{CheckedClosedExecutionContext, CheckedExecutionContextError};
-pub use expression_inputs::{
-    CheckedExpressionInput, CheckedExpressionInputAbi, CheckedExpressionInputUse,
+pub use execution_context::{
+    CheckedClosedExecutionContext, CheckedExecutionContextError, CheckedExecutionSource,
+};
+pub use execution_inputs::{
+    CheckedExecutionCoordinate, CheckedExecutionInput, CheckedExecutionInputAbi,
+    CheckedExecutionInputRole, CheckedExecutionInputUse, CheckedExecutionParameter,
+    CheckedExecutionParameterOrigin, CheckedExecutionSyntheticUse,
 };
 pub use fx_application::{
     CheckedContentFxApplication, CheckedContentFxBinding, CheckedFxApplicationOrdinal,
@@ -131,11 +135,12 @@ pub use fx_application::{
 };
 pub(crate) use input::FinalSemanticAnalysisInput;
 pub use local_use::{
-    CheckedIngressParameterCoordinate, CheckedLocalAccess, CheckedLocalCopyEvidence,
-    CheckedLocalCopyIngressOwner, CheckedLocalCopyRequirement, CheckedLocalPlace,
-    CheckedLocalPlaceAccess, CheckedLocalPlaceMode, CheckedLocalReadMode, CheckedLocalUseCatalog,
-    CheckedLocalUseError, CheckedLocalUseInstanceCatalog, CheckedLocalUseInstanceIdentity,
-    CheckedLocalUseInstantiation, CheckedLocalValueTransfer, CheckedSyntheticCopyRequirement,
+    CheckedDisplacedField, CheckedIngressParameterCoordinate, CheckedLocalAccess,
+    CheckedLocalCopyEvidence, CheckedLocalCopyIngressOwner, CheckedLocalCopyRequirement,
+    CheckedLocalPlace, CheckedLocalPlaceAccess, CheckedLocalPlaceMode, CheckedLocalReadMode,
+    CheckedLocalUseCatalog, CheckedLocalUseError, CheckedLocalUseInstanceCatalog,
+    CheckedLocalUseInstanceIdentity, CheckedLocalUseInstantiation, CheckedLocalValueTransfer,
+    CheckedPlaceDisplacement, CheckedPlaceInitialization, CheckedSyntheticCopyRequirement,
     CheckedSyntheticUse, CheckedSyntheticUseOwner,
 };
 pub use match_coverage::{

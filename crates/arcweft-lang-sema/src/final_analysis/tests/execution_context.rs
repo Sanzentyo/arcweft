@@ -55,13 +55,13 @@ fn context_closes_types_and_transfers_under_one_exact_instance() {
                 Some(CheckedLocalUseInstantiation::ProjectFunction(instance)),
             )
             .unwrap();
-        context.admit_source(source).unwrap();
+        context.admit_root(&source.into()).unwrap();
         let closed = context
             .instantiate_type(report.expression(source).unwrap().value_type().unwrap())
             .unwrap();
-        let abi = context.checked_expression_input_abi(source).unwrap();
+        let abi = context.checked_execution_input_abi(source).unwrap();
         abi.validate_for(&context).unwrap();
-        assert_eq!(abi.result(), &closed);
+        assert_eq!(abi.result().value_type(), Some(&closed));
         assert_eq!(abi.inputs().len(), 1);
         assert_eq!(abi.inputs()[0].binding().ty(), &closed);
         modes.push(match closed {
@@ -103,7 +103,7 @@ fn context_closes_types_and_transfers_under_one_exact_instance() {
             Some(CheckedLocalUseInstantiation::ProjectFunction(&instances[1])),
         )
         .unwrap();
-    let abi = first.checked_expression_input_abi(source).unwrap();
+    let abi = first.checked_execution_input_abi(source).unwrap();
     assert!(matches!(
         abi.validate_for(&second),
         Err(CheckedExecutionContextError::InstanceMismatch)
@@ -172,12 +172,12 @@ fn monomorphic_context_is_bound_to_one_lexical_owner() {
             None,
         )
         .unwrap();
-    context.admit_source(sources[0]).unwrap();
+    context.admit_root(&sources[0].into()).unwrap();
     assert!(matches!(
-        context.admit_source(sources[1]),
+        context.admit_root(&sources[1].into()),
         Err(CheckedExecutionContextError::ScopeMismatch { .. })
     ));
-    let abi = context.checked_expression_input_abi(sources[0]).unwrap();
+    let abi = context.checked_execution_input_abi(sources[0]).unwrap();
     let other = report
         .checked_execution_context(
             world.project.analysis_view().unwrap(),
@@ -228,10 +228,10 @@ fn input_snapshot_rejects_an_equivalent_rebuilds_context() {
         )
         .unwrap();
     let abi = first_context
-        .checked_expression_input_abi(first_source)
+        .checked_execution_input_abi(first_source)
         .unwrap();
     let second_abi = second_context
-        .checked_expression_input_abi(second_source)
+        .checked_execution_input_abi(second_source)
         .unwrap();
     assert_eq!(abi.coordinate(), second_abi.coordinate());
     assert_eq!(abi.result(), second_abi.result());

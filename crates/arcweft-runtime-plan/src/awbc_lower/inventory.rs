@@ -27,16 +27,14 @@ use arcweft_core::line_task::{
 };
 use arcweft_core::pattern::{RuntimeCheckedType, RuntimeSemanticTypeId, RuntimeVariantIdentity};
 use arcweft_core::plan::{
-    FlowRuntimeId, RuntimeCallableAttachedContract, RuntimeCallableInputSource,
-    RuntimeCallablePosition, RuntimeCallableRetainedInput, RuntimeCallableRetainedRole,
-    RuntimeCallableStateDefinition, RuntimeCallableTransition,
-    RuntimeDialogueContentApplicationKey, RuntimeDialogueValueRole, RuntimeEffectSet,
-    RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimeFunctionInputBinding,
-    RuntimeFunctionSiteBody, RuntimeHostCallTarget, RuntimePlan, RuntimeTraitMethodId,
+    FlowRuntimeId, RuntimeDialogueContentApplicationKey, RuntimeDialogueValueRole,
+    RuntimeEffectSet, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
+    RuntimeFunctionInputBinding, RuntimeFunctionSiteBody, RuntimeHostCallTarget, RuntimePlan,
+    RuntimeTraitMethodId,
 };
 use arcweft_core::runtime_id::{
-    RuntimeCallableStateId, RuntimeDialogueContentTemplateId, RuntimeFunctionSiteId,
-    RuntimeLocalDeclarationId, RuntimePlanTypeId,
+    RuntimeDialogueContentTemplateId, RuntimeFunctionSiteId, RuntimeLocalDeclarationId,
+    RuntimePlanTypeId,
 };
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::stream::StreamRuntimeId;
@@ -157,10 +155,17 @@ pub struct AwbcInventory {
     trait_methods: BTreeMap<RuntimeTraitMethodId, AwbcTraitMethodId>,
     function_sites: BTreeMap<RuntimeFunctionSiteId, AwbcFunctionId>,
     pending_closures: Vec<PendingAwbcClosure>,
-    pending_callable_states: Vec<(
-        RuntimeCallableStateId,
-        RuntimeCallableStateDefinition<AwbcTypeId, AwbcFunctionId>,
-    )>,
+    block_emission: Option<BlockEmission>,
+}
+
+/// The sole open instruction range for the function currently being emitted.
+/// Nested value control shares this range and its lexical frame.
+#[derive(Clone, Debug)]
+struct BlockEmission {
+    owner: AwbcFunctionId,
+    entry: AwbcBlockId,
+    entry_safe_point: AwbcSafePointKind,
+    instruction_start: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -171,15 +176,6 @@ pub(crate) enum PendingAwbcClosure {
     FunctionSite {
         function: AwbcFunctionId,
         inputs: Box<[RuntimeFunctionInputBinding]>,
-        result: RuntimePlanTypeId,
-        body: RuntimeFunctionSiteBody,
-        path: String,
-    },
-    /// A compiler-generated AWBC control-expression thunk. It is not a
-    /// RuntimeFunctionSite and therefore has no checked input-pattern ABI.
-    Control {
-        function: AwbcFunctionId,
-        captures: Box<[RuntimeLocalDeclarationId]>,
         result: RuntimePlanTypeId,
         body: RuntimeFunctionSiteBody,
         path: String,
@@ -243,7 +239,7 @@ impl AwbcInventory {
             trait_methods: BTreeMap::new(),
             function_sites: BTreeMap::new(),
             pending_closures: Vec::new(),
-            pending_callable_states: Vec::new(),
+            block_emission: None,
         };
         this.intern_string(source_label);
         this
@@ -281,16 +277,6 @@ impl AwbcInventory {
                 )),
             }
         }
-        for (expected_id, state) in std::mem::take(&mut self.pending_callable_states) {
-            if expected_id.index() != states.len() {
-                self.diagnostic(AwbcLowerDiagnostic::error(
-                    format!("callable_state.{expected_id}"),
-                    "synthetic callable state table identity is not contiguous",
-                ));
-                continue;
-            }
-            states.push(state);
-        }
         self.program.callable_states = states;
         for (index, definition) in plan.callable_specializations().iter().enumerate() {
             let mapped = definition.clone().try_map(
@@ -308,102 +294,6 @@ impl AwbcInventory {
                 )),
             }
         }
-    }
-
-    pub(crate) fn intern_control_callable_type(
-        &mut self,
-        result: AwbcTypeId,
-    ) -> Result<AwbcTypeId, AwbcLowerDiagnostic> {
-        let semantic = self
-            .program
-            .runtime_types
-            .get(result.index())
-            .map(AwbcRuntimeType::semantic_identity)
-            .ok_or_else(|| {
-                AwbcLowerDiagnostic::error(
-                    format!("callable_type.{result:?}"),
-                    "synthetic control callable result type is absent",
-                )
-            })?;
-        let mut identity = arcweft_core::pattern::RuntimeSemanticTypeIdentityEncoder::new();
-        identity.write_tag(0xff05);
-        identity.write_len(0);
-        identity.write_bytes(semantic.as_bytes());
-        self.intern_semantic_type(
-            identity.finish(),
-            AwbcRuntimeTypeShape::Function {
-                contract: Default::default(),
-                parameters: Vec::new(),
-                result,
-            },
-        )
-    }
-
-    pub(crate) fn reserve_control_callable_state(
-        &mut self,
-        plan_state_count: usize,
-        function_type: AwbcTypeId,
-        result: AwbcTypeId,
-        function: AwbcFunctionId,
-        capture_types: &[AwbcTypeId],
-    ) -> Result<RuntimeCallableStateId, AwbcLowerDiagnostic> {
-        let index = plan_state_count
-            .checked_add(self.pending_callable_states.len())
-            .ok_or_else(|| {
-                AwbcLowerDiagnostic::error(
-                    "callable_state",
-                    "synthetic callable state table length overflowed",
-                )
-            })?;
-        let state = RuntimeCallableStateId::from_zero_based(index).ok_or_else(|| {
-            AwbcLowerDiagnostic::error(
-                "callable_state",
-                "synthetic callable state table exceeds the identity domain",
-            )
-        })?;
-        let retained = capture_types
-            .iter()
-            .copied()
-            .enumerate()
-            .map(|(position, ty)| {
-                Ok(RuntimeCallableRetainedInput {
-                    role: RuntimeCallableRetainedRole::Capture {
-                        position: u32::try_from(position).map_err(|_| {
-                            AwbcLowerDiagnostic::error(
-                                "callable_state",
-                                "synthetic callable capture count exceeds u32",
-                            )
-                        })?,
-                    },
-                    ty,
-                })
-            })
-            .collect::<Result<Box<[_]>, AwbcLowerDiagnostic>>()?;
-        self.pending_callable_states.push((
-            state,
-            RuntimeCallableStateDefinition {
-                function_type,
-                origin: state,
-                position: RuntimeCallablePosition::Unapplied,
-                retained,
-                parameters: Box::new([]),
-                result,
-                attached: RuntimeCallableAttachedContract::None,
-                transition: RuntimeCallableTransition::Invoke {
-                    function,
-                    captures: (0..capture_types.len())
-                        .map(|position| RuntimeCallableInputSource::Retained {
-                            position: u32::try_from(position)
-                                .expect("capture position was checked above"),
-                        })
-                        .collect::<Vec<_>>()
-                        .into_boxed_slice(),
-                    arguments: Box::new([]),
-                },
-                partials: Box::new([]),
-            },
-        ));
-        Ok(state)
     }
 
     pub fn lower_pure_program_bindings(&mut self, plan: &RuntimePlan) {
@@ -1496,6 +1386,58 @@ impl AwbcInventory {
         let id = AwbcBlockId(table_index(self.program.blocks.len()));
         self.program.blocks.push(block);
         id
+    }
+
+    pub(crate) fn begin_function_blocks(
+        &mut self,
+        owner: AwbcFunctionId,
+        entry_safe_point: AwbcSafePointKind,
+    ) -> AwbcBlockId {
+        let entry = AwbcBlockId(table_index(self.program.blocks.len()));
+        self.block_emission = Some(BlockEmission {
+            owner,
+            entry,
+            entry_safe_point,
+            instruction_start: table_index(self.program.instructions.len()),
+        });
+        entry
+    }
+
+    pub(crate) fn close_function_block(
+        &mut self,
+        terminator: AwbcTerminator,
+        safe_point: AwbcSafePointKind,
+    ) -> AwbcBlockId {
+        let emission = self
+            .block_emission
+            .as_mut()
+            .expect("function block context is established");
+        let id = AwbcBlockId(table_index(self.program.blocks.len()));
+        let end = table_index(self.program.instructions.len());
+        let block = AwbcBlock {
+            owner: emission.owner,
+            instructions: AwbcTableRange::new(
+                emission.instruction_start,
+                end - emission.instruction_start,
+            ),
+            terminator,
+            safe_point: if id == emission.entry {
+                emission.entry_safe_point
+            } else {
+                safe_point
+            },
+            source_map: None,
+        };
+        emission.instruction_start = end;
+        self.push_block(block)
+    }
+
+    pub(crate) fn reopen_function_block(&mut self) -> AwbcBlockId {
+        self.block_emission
+            .as_mut()
+            .expect("function block context is established")
+            .instruction_start = table_index(self.program.instructions.len());
+        AwbcBlockId(table_index(self.program.blocks.len()))
     }
 
     pub fn push_resume_point(&mut self, resume: AwbcResumePoint) -> AwbcResumePointId {

@@ -9,9 +9,23 @@ use arcweft_lang_hir::{
 use crate::types::{TypeKind, constraints::ClosedTypeInstantiation};
 
 use super::{
-    CheckedLocalUseCatalog, CheckedLocalUseInstanceCatalog, CheckedLocalUseInstantiation,
-    FinalSemanticAnalysis, FinalSemanticAnalysisError,
+    CheckedExecutionBodyOwner, CheckedLocalUseCatalog, CheckedLocalUseInstanceCatalog,
+    CheckedLocalUseInstantiation, FinalSemanticAnalysis, FinalSemanticAnalysisError,
 };
+
+/// Selects the value-creation or body-invocation boundary. Acceptance remains
+/// report/context issued; constructing this selector does not admit execution.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedExecutionSource {
+    EvaluateValue(ExprId),
+    InvokeBody(CheckedExecutionBodyOwner),
+}
+
+impl From<ExprId> for CheckedExecutionSource {
+    fn from(source: ExprId) -> Self {
+        Self::EvaluateValue(source)
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum CheckedExecutionContextError {
@@ -23,8 +37,8 @@ pub enum CheckedExecutionContextError {
     OpenDeclaration {
         declaration: Box<CallableDeclarationKey>,
     },
-    #[error("expression {owner:?} is outside the execution context's lexical owner")]
-    ScopeMismatch { owner: ExprId },
+    #[error("source {owner:?} is outside the execution context's lexical owner")]
+    ScopeMismatch { owner: Box<CheckedExecutionSource> },
     #[error("execution input evidence belongs to another callable authority")]
     ForeignAuthority,
     #[error("execution input evidence belongs to another closed instance")]
@@ -44,6 +58,7 @@ enum ClosedLocalUseEvidence<'analysis> {
 /// owner's signature; its actual input/result types still must close.
 pub struct CheckedClosedExecutionContext<'analysis> {
     analysis: &'analysis FinalSemanticAnalysis,
+    project: HirAnalysisProjectView<'analysis>,
     scope: HirSemanticPathRoot,
     instance: Option<CheckedLocalUseInstantiation<'analysis>>,
     local_uses: ClosedLocalUseEvidence<'analysis>,
@@ -73,6 +88,10 @@ impl CheckedClosedExecutionContext<'_> {
         self.analysis
     }
 
+    pub(super) const fn project(&self) -> HirAnalysisProjectView<'_> {
+        self.project
+    }
+
     pub(super) fn local_uses(&self) -> &CheckedLocalUseCatalog {
         match &self.local_uses {
             ClosedLocalUseEvidence::Global(catalog) => catalog,
@@ -87,16 +106,46 @@ impl CheckedClosedExecutionContext<'_> {
         }
     }
 
-    pub(super) fn admit_source(&self, source: ExprId) -> Result<(), CheckedExecutionContextError> {
-        let scope = self.analysis.execution_source_scope(source)?;
+    pub(super) fn admit_root(
+        &self,
+        source: &CheckedExecutionSource,
+    ) -> Result<(), CheckedExecutionContextError> {
+        let scope = self.analysis.execution_root_scope(source)?;
         if scope != self.scope {
-            return Err(CheckedExecutionContextError::ScopeMismatch { owner: source });
+            return Err(CheckedExecutionContextError::ScopeMismatch {
+                owner: Box::new(source.clone()),
+            });
         }
         Ok(())
     }
 }
 
 impl FinalSemanticAnalysis {
+    fn execution_root_scope(
+        &self,
+        source: &CheckedExecutionSource,
+    ) -> Result<HirSemanticPathRoot, FinalSemanticAnalysisError> {
+        match source {
+            CheckedExecutionSource::EvaluateValue(source) => self.execution_source_scope(*source),
+            CheckedExecutionSource::InvokeBody(owner) => {
+                if !self.has_execution_body(owner) {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+                match owner {
+                    CheckedExecutionBodyOwner::CallableValue(source) => {
+                        self.execution_source_scope(*source)
+                    }
+                    CheckedExecutionBodyOwner::Declaration { declaration, .. } => {
+                        let scope = HirSemanticPathRoot::Declaration(declaration.clone());
+                        self.accepted_root_catalog()
+                            .root_for_hir(&scope)
+                            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+                        Ok(scope)
+                    }
+                }
+            }
+        }
+    }
     fn execution_source_scope(
         &self,
         source: ExprId,
@@ -117,16 +166,19 @@ impl FinalSemanticAnalysis {
     /// report's callable authority and the source's lexical declaration.
     pub fn checked_execution_context<'analysis>(
         &'analysis self,
-        project: HirAnalysisProjectView<'_>,
+        project: HirAnalysisProjectView<'analysis>,
         symbols: &ProjectSymbolTable,
-        source: ExprId,
+        source: impl Into<CheckedExecutionSource>,
         instance: Option<CheckedLocalUseInstantiation<'analysis>>,
     ) -> Result<CheckedClosedExecutionContext<'analysis>, CheckedExecutionContextError> {
         self.validate_generation(project, symbols)?;
-        let scope = self.execution_source_scope(source)?;
+        let source = source.into();
+        let scope = self.execution_root_scope(&source)?;
         let local_uses = if let Some(instance) = instance {
             if scope != HirSemanticPathRoot::Declaration(instance.declaration()) {
-                return Err(CheckedExecutionContextError::ScopeMismatch { owner: source });
+                return Err(CheckedExecutionContextError::ScopeMismatch {
+                    owner: Box::new(source),
+                });
             }
             ClosedLocalUseEvidence::Instance(Box::new(
                 self.checked_local_uses_for_instance(project, symbols, instance)?,
@@ -148,6 +200,7 @@ impl FinalSemanticAnalysis {
         };
         Ok(CheckedClosedExecutionContext {
             analysis: self,
+            project,
             scope,
             instance,
             local_uses,

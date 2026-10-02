@@ -87,6 +87,34 @@ executor selection          region metadata/cache/ABI
 do not gain syntax, HIR, sema, compiler, verifier-front-end, CLI, or LSP
 artifacts.
 
+### Compiler-side execution input evidence
+
+Final sema issues a closed execution context for an accepted lexical owner and
+the exact callable instance which supplies its type and local-use evidence.
+`CheckedExecutionSource` distinguishes evaluating a value from invoking a
+callable or declaration body. A body root is retained in the shared selected
+execution DAG, including a Flow body with no expression anchor. Its stable
+coordinate retains the invocation intent and accepted body role; arena IDs are
+lookup handles rather than semantic identities. Declaration parameter defaults
+remain separate phases and are not eager children of body invocation.
+
+The context-issued input ABI retains the complete formal layout, patterns,
+unused binding slots, attached content and implicit parameters. Incoming locals
+carry accepted binding coordinates, closed types and exact selected transfer or
+place-access occurrences. Synthetic `_` and pipe reads retain their own access
+and Copy ingress evidence. Occurrences inside a latent body are not evaluated
+when constructing its callable value. Formal layout projection authenticates
+the final HIR parameter owner against the same generation; it does not build
+another execution traversal or stored local-use index.
+
+Input evidence alone does not admit an extracted executable program. Program
+admission must bind the actual owning runtime boundary, check its relative
+control and suspension contract, discharge Copy ingress obligations against
+supplied values, and retain inputs on failed preflight. Body-result metadata
+preserves value and content-emission roles rather than inventing a value type
+for a semantic operation. The compiler-side evidence and native/AWBC execution
+consumers must agree before that program is published.
+
 ## 3. Canonical AWBC v1 payload
 
 ### 3.1 Envelope
@@ -379,7 +407,7 @@ not copy numeric values into feature-local tables.
 |  | `0e` | `ProjectTuple { dst, target, ordinal }` | checked tuple projection |
 |  | `0f` | `ProjectRecord { dst, target, ordinal }` | checked layout projection |
 |  | `10` | `ProjectField { dst, target, field }` | checked named projection |
-|  | `11` | `Assign { place, value }` | initializes a local or a child of an existing aggregate; discard only remaining initialized owners |
+|  | `11` | `Assign { place, value, displacement }` | sealed post-RHS cleanup contour; initializes a local or a child of an existing aggregate and discards remaining initialized owners |
 |  | `12` | `TestPattern { dst, pattern, value }` | test without binding |
 |  | `13` | `Unary { dst, op, src }` | `Not` or `Neg` |
 |  | `14` | `Binary { dst, op, lhs, rhs }` | typed binary operation |
@@ -414,7 +442,7 @@ not copy numeric values into feature-local tables.
 |  | `43` | `Drop { register }` | deterministic drop/uninitialize |
 |  | `44` | `EnterScope { scope }` | push lexical scope |
 |  | `45` | `ExitScope { scope }` | pop scope and clear deeper locals |
-|  | `46` | `BindPattern { pattern, value, mode }` | declare/assign bindings |
+|  | `46` | `BindPattern { pattern, value, mode }` | declare/assign owned bindings or materialize proven Copy guard bindings without consuming the candidate |
 |  | `47` | `RegisterCleanup { ... }` | register cleanup ownership |
 |  | `48` | `CancelCleanup { ... }` | cancel registered cleanup |
 |  | `49..7f` | unassigned | reject |

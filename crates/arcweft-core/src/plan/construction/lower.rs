@@ -870,7 +870,7 @@ impl RuntimePlanBuilder {
                 }
             }
             RuntimeExprSeedKind::Assign { place, expr, body } => {
-                let (place, place_ty) = self.lower_mutable_place(place, "assignment place")?;
+                let (place, place_ty) = self.lower_assignment_place(place, "assignment place")?;
                 let expr = self.lower_expression(*expr)?;
                 let body = self.lower_expression(*body)?;
                 require_same("assigned place", place_ty, expr.ty())?;
@@ -1606,6 +1606,63 @@ impl RuntimePlanBuilder {
                 actual,
             })
         }
+    }
+
+    fn lower_assignment_place(
+        &self,
+        assignment: super::seed::RuntimeAssignmentSeed,
+        context: &'static str,
+    ) -> Result<(crate::value::RuntimeAssignment, RuntimePlanTypeId), RuntimePlanBuildError> {
+        let (place, place_type) = self.lower_mutable_place(assignment.place, context)?;
+        let displacement = match assignment.displacement {
+            crate::value::RuntimePlaceDisplacement::Unreachable => {
+                crate::value::RuntimePlaceDisplacement::Unreachable
+            }
+            crate::value::RuntimePlaceDisplacement::Reachable {
+                initialization,
+                fields,
+            } => {
+                let mut fields = fields
+                    .into_vec()
+                    .into_iter()
+                    .map(|path| {
+                        if path.fields.is_empty() {
+                            return invalid_projection(context, place_type);
+                        }
+                        let mut current = place_type;
+                        let fields = path
+                            .fields
+                            .into_vec()
+                            .into_iter()
+                            .map(|field| {
+                                let (field, ty) = self.resolve_record_field(current, field)?;
+                                current = ty;
+                                Ok(field)
+                            })
+                            .collect::<Result<Box<[_]>, RuntimePlanBuildError>>()?;
+                        Ok(crate::value::RuntimeDisplacedField {
+                            fields,
+                            initialization: path.initialization,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, RuntimePlanBuildError>>()?;
+                fields.sort_by(|left, right| left.fields.cmp(&right.fields));
+                if fields
+                    .windows(2)
+                    .any(|pair| pair[0].fields == pair[1].fields)
+                {
+                    return invalid_projection(context, place_type);
+                }
+                crate::value::RuntimePlaceDisplacement::Reachable {
+                    initialization,
+                    fields: fields.into_boxed_slice(),
+                }
+            }
+        };
+        Ok((
+            crate::value::RuntimeAssignment::new(place, displacement),
+            place_type,
+        ))
     }
 
     fn lower_mutable_place(
@@ -3265,7 +3322,8 @@ impl RuntimePlanBuilder {
                 }
             }
             RuntimeFlowOpSeed::Assign { place, value } => {
-                let (place, place_ty) = self.lower_mutable_place(place, "flow assignment place")?;
+                let (place, place_ty) =
+                    self.lower_assignment_place(place, "flow assignment place")?;
                 let value = self.lower_expression(value)?;
                 require_same("flow assignment value", place_ty, value.ty())?;
                 FlowOp::Assign { place, value }

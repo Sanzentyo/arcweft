@@ -322,13 +322,24 @@ impl RuntimeEnv {
 
     pub(crate) fn assign_place(
         &mut self,
-        place: RuntimeMutablePlace,
+        assignment: &super::RuntimeAssignment,
         value: RuntimeValue,
     ) -> Result<Vec<RuntimeValue>, RuntimePlaceWriteError> {
+        let place = assignment.place();
         let inspected = (|| {
             let slot = self
                 .slot(place.local())
                 .ok_or(RuntimeEvalError::UnknownLocal(place.local()))?;
+            let path = match place {
+                RuntimeMutablePlace::Local(_) => Vec::new(),
+                RuntimeMutablePlace::NominalField { field, .. } => vec![field],
+            };
+            if !slot
+                .value
+                .matches_displacement(&path, assignment.displacement())
+            {
+                return Err(RuntimeEvalError::UninitializedLocal(place.local()));
+            }
             match place {
                 RuntimeMutablePlace::Local(_) => Ok(slot.value.values().collect::<Vec<_>>()),
                 RuntimeMutablePlace::NominalField { field, .. } => slot
@@ -380,6 +391,19 @@ impl RuntimeEnv {
                 .expect("inspected field retains its defining-order coordinate"),
         };
         Ok(displaced)
+    }
+
+    /// Runtime-owned destinations have dynamic occupancy, unlike a checked
+    /// source assignment with its sealed post-RHS initialization contour.
+    pub(crate) fn assign_runtime_place(
+        &mut self,
+        place: RuntimeMutablePlace,
+        value: RuntimeValue,
+    ) -> Result<Vec<RuntimeValue>, RuntimePlaceWriteError> {
+        self.assign_place(
+            &super::RuntimeAssignment::new(place, super::RuntimePlaceDisplacement::conditional()),
+            value,
+        )
     }
 
     pub(crate) fn take_assignment_discard_authorization(
@@ -572,6 +596,47 @@ mod tests {
     use crate::value::{RuntimeNominalRecordValue, RuntimeSeq};
     use std::num::NonZeroU32;
 
+    #[test]
+    fn checked_assignment_rejects_wrong_old_value_evidence_without_losing_input() {
+        use super::super::{
+            RuntimeAssignment, RuntimePlaceDisplacement, RuntimePlaceInitialization,
+        };
+        let source = local(1);
+        let mut env = RuntimeEnv::default();
+        env.set(source, RuntimeValue::Bool(true));
+        let absent = RuntimeAssignment::new(
+            RuntimeMutablePlace::Local(source),
+            RuntimePlaceDisplacement::Reachable {
+                initialization: RuntimePlaceInitialization::Uninitialized,
+                fields: Box::new([]),
+            },
+        );
+        let rejected = env
+            .assign_place(&absent, RuntimeValue::Bool(false))
+            .unwrap_err();
+        assert_eq!(
+            rejected.into_parts(),
+            (
+                RuntimeEvalError::UninitializedLocal(source),
+                RuntimeValue::Bool(false)
+            )
+        );
+        assert_eq!(env.get(source), Some(&RuntimeValue::Bool(true)));
+        let moved = env
+            .read(&RuntimeLocalRead::from_admitted_parts(
+                source,
+                RuntimeLocalReadMode::Move,
+            ))
+            .unwrap();
+        assert_eq!(moved, RuntimeValue::Bool(true));
+        assert!(
+            env.assign_place(&absent, RuntimeValue::Bool(false))
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(env.get(source), Some(&RuntimeValue::Bool(false)));
+    }
+
     fn local(ordinal: u32) -> RuntimeLocalDeclarationId {
         RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::new(ordinal).unwrap())
     }
@@ -602,6 +667,73 @@ mod tests {
             env.read(&move_affine),
             Err(RuntimeEvalError::UninitializedLocal(affine))
         );
+    }
+
+    #[test]
+    fn whole_partial_assignment_requires_child_evidence_and_displaces_only_remaining_owners() {
+        use crate::value::{
+            RuntimeAssignment, RuntimeDisplacedField, RuntimePlaceDisplacement,
+            RuntimePlaceInitialization,
+        };
+        let source = local(1);
+        let first = RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap();
+        let mut env = RuntimeEnv::default();
+        env.set(
+            source,
+            RuntimeValue::try_record(vec![
+                (
+                    "first".into(),
+                    RuntimeValue::Need(crate::task::NeedId("moved".into())),
+                ),
+                (
+                    "second".into(),
+                    RuntimeValue::Need(crate::task::NeedId("remaining".into())),
+                ),
+            ])
+            .unwrap(),
+        );
+        let moved = env
+            .read(&RuntimeLocalRead::from_admitted_place(
+                source,
+                RuntimeLocalReadMode::Move,
+                vec![first].into_boxed_slice(),
+            ))
+            .unwrap();
+        assert_eq!(
+            moved,
+            RuntimeValue::Need(crate::task::NeedId("moved".into()))
+        );
+        let assignment = |fields| {
+            RuntimeAssignment::new(
+                RuntimeMutablePlace::Local(source),
+                RuntimePlaceDisplacement::Reachable {
+                    initialization: RuntimePlaceInitialization::Initialized,
+                    fields,
+                },
+            )
+        };
+        let rejected = env
+            .assign_place(&assignment(Box::new([])), RuntimeValue::Bool(false))
+            .unwrap_err();
+        assert_eq!(rejected.into_parts().1, RuntimeValue::Bool(false));
+        assert_eq!(env.bindings_snapshot()[0].storage().values().count(), 1);
+        let displaced = env
+            .assign_place(
+                &assignment(
+                    vec![RuntimeDisplacedField {
+                        fields: vec![first].into_boxed_slice(),
+                        initialization: RuntimePlaceInitialization::Uninitialized,
+                    }]
+                    .into_boxed_slice(),
+                ),
+                RuntimeValue::Bool(false),
+            )
+            .unwrap();
+        assert_eq!(
+            displaced,
+            vec![RuntimeValue::Need(crate::task::NeedId("remaining".into()))]
+        );
+        assert_eq!(env.get(source), Some(&RuntimeValue::Bool(false)));
     }
 
     #[test]
@@ -652,7 +784,7 @@ mod tests {
         assert_eq!(restored.read(&copy_other), Ok(RuntimeValue::Bool(true)));
         assert!(
             restored
-                .assign_place(
+                .assign_runtime_place(
                     RuntimeMutablePlace::NominalField {
                         base: source,
                         field
@@ -664,7 +796,7 @@ mod tests {
         );
         assert!(restored.get(source).is_some());
         let displaced = restored
-            .assign_place(
+            .assign_runtime_place(
                 RuntimeMutablePlace::Local(source),
                 RuntimeValue::Bool(false),
             )
@@ -697,7 +829,7 @@ mod tests {
         restored.push_scope();
         restored.set(inner, RuntimeValue::Bool(false));
         let displaced = restored
-            .assign_place(RuntimeMutablePlace::Local(outer), RuntimeValue::Bool(true))
+            .assign_runtime_place(RuntimeMutablePlace::Local(outer), RuntimeValue::Bool(true))
             .unwrap();
         assert!(displaced.is_empty());
         restored.pop_scope();
@@ -721,7 +853,7 @@ mod tests {
             Err(RuntimeEvalError::UninitializedLocal(source))
         );
         let displaced = env
-            .assign_place(RuntimeMutablePlace::Local(source), RuntimeValue::Bool(true))
+            .assign_runtime_place(RuntimeMutablePlace::Local(source), RuntimeValue::Bool(true))
             .unwrap();
         assert!(displaced.is_empty());
         assert_eq!(env.get(source), Some(&RuntimeValue::Bool(true)));
@@ -736,7 +868,7 @@ mod tests {
         env.set(target, RuntimeValue::Bool(false));
         let input = RuntimeValue::Need(crate::task::NeedId("need.rejected-write".to_owned()));
         let error = env
-            .assign_place(RuntimeMutablePlace::Local(local(2)), input)
+            .assign_runtime_place(RuntimeMutablePlace::Local(local(2)), input)
             .unwrap_err();
         let (cause, retained) = error.into_parts();
         assert_eq!(cause, RuntimeEvalError::UnknownLocal(local(2)));
@@ -816,7 +948,7 @@ mod tests {
         );
 
         assert_eq!(
-            env.assign_place(
+            env.assign_runtime_place(
                 RuntimeMutablePlace::NominalField { base: local, field },
                 RuntimeValue::String("new".to_owned())
             ),

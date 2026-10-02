@@ -5,7 +5,10 @@
 //! constructs each checked statement exactly once from typed child/body
 //! edges. Scope membership and source placement never participate.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use arcweft_lang_hir::{
     body_edges::{HirBodyChild, HirBodyProjection},
@@ -31,7 +34,7 @@ use crate::{
     effects::{EffectId, EffectSet},
 };
 
-use super::execution_regions::CheckedExecutionOperation;
+use super::execution_regions::{CheckedExecutionBodyOwner, CheckedExecutionOperation};
 use super::{
     CheckedExpression, CheckedStatement, CheckedStatementPayload, FinalSemanticAnalysisControl,
     FinalSemanticAnalysisError, PreparedExpressionFact, PreparedStatementPayload,
@@ -138,10 +141,10 @@ impl PreparedExecutionEffectRow {
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         self.union_dependency(other, control)?;
-        if let Some(source) = other.source {
-            self.children.insert(source);
+        if let Some(source) = &other.source {
+            self.children.insert(source.clone());
         } else {
-            self.children.extend(other.children.iter().copied());
+            self.children.extend(other.children.iter().cloned());
         }
         Ok(())
     }
@@ -214,7 +217,7 @@ impl PreparedClosureExecutionEffectRow {
 /// the same roots from sealed calls and compares their complete rows.
 #[derive(Debug)]
 pub(crate) struct PreparedExecutionEffectCatalog {
-    bodies: BTreeMap<ExprId, PreparedExecutionEffectRow>,
+    bodies: BTreeMap<Arc<CheckedExecutionBodyOwner>, PreparedExecutionEffectRow>,
     expression_rows: BTreeMap<ExprId, PreparedExecutionEffectRow>,
     statement_rows: BTreeMap<StmtId, PreparedExecutionEffectRow>,
     declarations: BTreeMap<CallableDeclarationKey, PreparedExecutionEffectRow>,
@@ -254,7 +257,7 @@ impl PreparedExecutionEffectCatalog {
         &self,
     ) -> impl Iterator<
         Item = (
-            ExprId,
+            Arc<CheckedExecutionBodyOwner>,
             bool,
             &BTreeSet<ExprId>,
             &BTreeSet<CheckedExecutionOperation>,
@@ -263,7 +266,7 @@ impl PreparedExecutionEffectCatalog {
     > + '_ {
         self.bodies.iter().map(|(owner, row)| {
             (
-                *owner,
+                owner.clone(),
                 row.direct_suspension,
                 &row.expressions,
                 &row.children,
@@ -277,7 +280,7 @@ impl PreparedExecutionEffectCatalog {
     ) -> BTreeMap<StmtId, Box<[CheckedExecutionOperation]>> {
         self.statement_rows
             .iter()
-            .map(|(&owner, row)| (owner, row.children.iter().copied().collect()))
+            .map(|(&owner, row)| (owner, row.children.iter().cloned().collect()))
             .collect()
     }
     pub(crate) fn declaration_effects(
@@ -447,7 +450,7 @@ impl PreparedEffectSelection<'_> {
 }
 
 struct PreparedExecutionEffectSealer<'a> {
-    bodies: BTreeMap<ExprId, PreparedExecutionEffectRow>,
+    bodies: BTreeMap<Arc<CheckedExecutionBodyOwner>, PreparedExecutionEffectRow>,
     modules: &'a BTreeMap<HirModuleId, &'a HirModule>,
     topology: &'a HirProjectEvaluationTopology,
     selected: PreparedEffectSelection<'a>,
@@ -636,11 +639,21 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                 }
                 HirDeclarationEvaluationPhase::Body(root) => {
                     if !selected_body_only
+                        || root.projection().children().is_empty()
                         || body_projection_has_selected_owner(root.projection(), |owner| {
                             self.selected.contains_body_owner(owner)
                         })
                     {
-                        row.union_with(&self.fold_body(root.projection())?, self.control)?;
+                        let owner = Arc::new(CheckedExecutionBodyOwner::Declaration {
+                            declaration: body.declaration().clone(),
+                            role: root.role(),
+                        });
+                        let mut invocation = self.fold_body(root.projection())?;
+                        invocation.source = Some(CheckedExecutionOperation::Body(owner.clone()));
+                        row.union_with(&invocation, self.control)?;
+                        if self.bodies.insert(owner, invocation).is_some() {
+                            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                        }
                     }
                 }
             }
@@ -742,7 +755,9 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             fact.creates_implicit_callable() || matches!(kind, HirExprKind::Closure(_));
         let mut implicit_body = fact.creates_implicit_callable().then(|| {
             let mut body = row.clone();
-            body.source = Some(CheckedExecutionOperation::Body(owner));
+            body.source = Some(CheckedExecutionOperation::Body(Arc::new(
+                CheckedExecutionBodyOwner::CallableValue(owner),
+            )));
             body
         });
         if latent_callable {
@@ -813,9 +828,18 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             {
                 if accepted_closure {
                     let mut body = PreparedExecutionEffectRow::default();
-                    body.source = Some(CheckedExecutionOperation::Body(owner));
+                    body.source = Some(CheckedExecutionOperation::Body(Arc::new(
+                        CheckedExecutionBodyOwner::CallableValue(owner),
+                    )));
                     body.union_with(&child_row, self.control)?;
-                    if self.bodies.insert(owner, body).is_some() {
+                    if self
+                        .bodies
+                        .insert(
+                            Arc::new(CheckedExecutionBodyOwner::CallableValue(owner)),
+                            body,
+                        )
+                        .is_some()
+                    {
                         return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                     }
                 }
@@ -885,7 +909,13 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             }
         }
         if let Some(body) = implicit_body
-            && self.bodies.insert(owner, body).is_some()
+            && self
+                .bodies
+                .insert(
+                    Arc::new(CheckedExecutionBodyOwner::CallableValue(owner)),
+                    body,
+                )
+                .is_some()
         {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }

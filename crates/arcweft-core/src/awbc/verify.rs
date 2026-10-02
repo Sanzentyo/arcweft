@@ -203,6 +203,30 @@ pub enum AwbcVerifyError {
 }
 
 impl AwbcProgram {
+    /// Seals post-lowering cleanup contours with this program's own fixed-point
+    /// CFG facts. Conditional source facts may narrow after continuation
+    /// distribution; definite facts cannot change. Structural/code validation
+    /// completes before any annotation is changed. Full product admission uses
+    /// `verify` after construction.
+    pub fn seal_assignment_displacements(
+        &mut self,
+        budget: AwbcVerifyBudget,
+        context: AwbcVerifyContext<'_>,
+    ) -> Result<(), AwbcVerifyError> {
+        let updates = structure::assignment_displacement_updates(self, budget, context)?;
+        for (instruction, displacement) in updates {
+            let super::schema::AwbcInstruction::Assign {
+                displacement: target,
+                ..
+            } = &mut self.instructions[instruction]
+            else {
+                unreachable!("validated assignment instruction retains its identity");
+            };
+            *target = displacement;
+        }
+        Ok(())
+    }
+
     pub fn verify(
         &self,
         budget: AwbcVerifyBudget,

@@ -21,7 +21,10 @@ use crate::awbc::schema::{
     AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp,
 };
 use crate::runtime_id::{RuntimeCallableSpecializationId, RuntimeCallableStateId};
-use crate::value::{RuntimeAgentConstructor, RuntimeFmtParameterId, RuntimeRecordFieldId};
+use crate::value::{
+    RuntimeAgentConstructor, RuntimeDisplacedField, RuntimeFmtParameterId,
+    RuntimePlaceDisplacement, RuntimePlaceInitialization, RuntimeRecordFieldId,
+};
 use arcweft_interaction_model::dialogue::{
     CharacterDialogueCustomFieldId, CharacterDialogueFieldCoordinate, CharacterDialogueOperation,
     CharacterDialoguePatchField, CharacterDialoguePatchOperation,
@@ -53,6 +56,79 @@ impl Wire for AwbcMutablePlace {
             }),
             tag => Err(AwbcCodecError::UnknownTag {
                 kind: "mutable place",
+                tag,
+                offset,
+            }),
+        }
+    }
+}
+
+impl Wire for RuntimePlaceInitialization {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(match self {
+            Self::Initialized => 0,
+            Self::Uninitialized => 1,
+            Self::Conditional => 2,
+        });
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => Ok(Self::Initialized),
+            1 => Ok(Self::Uninitialized),
+            2 => Ok(Self::Conditional),
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "place initialization",
+                tag,
+                offset,
+            }),
+        }
+    }
+}
+
+impl Wire for RuntimeDisplacedField<RuntimeRecordFieldId> {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_table(&self.fields)?;
+        self.initialization.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self {
+            fields: Vec::<RuntimeRecordFieldId>::read_wire(reader)?.into_boxed_slice(),
+            initialization: RuntimePlaceInitialization::read_wire(reader)?,
+        })
+    }
+}
+
+impl Wire for RuntimePlaceDisplacement<RuntimeRecordFieldId> {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::Unreachable => writer.write_u8(0),
+            Self::Reachable {
+                initialization,
+                fields,
+            } => {
+                writer.write_u8(1);
+                initialization.write_wire(writer)?;
+                writer.write_table(fields)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => Ok(Self::Unreachable),
+            1 => Ok(Self::Reachable {
+                initialization: RuntimePlaceInitialization::read_wire(reader)?,
+                fields: Vec::<RuntimeDisplacedField<RuntimeRecordFieldId>>::read_wire(reader)?
+                    .into_boxed_slice(),
+            }),
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "place displacement",
                 tag,
                 offset,
             }),
@@ -768,9 +844,14 @@ impl Wire for AwbcInstruction {
                 args.write_wire(writer)?;
             }
             Self::CommitDialogueResult { source } => source.write_wire(writer)?,
-            Self::Assign { place, value } => {
+            Self::Assign {
+                place,
+                value,
+                displacement,
+            } => {
                 place.write_wire(writer)?;
                 value.write_wire(writer)?;
+                displacement.write_wire(writer)?;
             }
             Self::CallTraitMethod {
                 dst,
@@ -1084,6 +1165,7 @@ impl Wire for AwbcInstruction {
             AwbcOpcode::Assign => Self::Assign {
                 place: AwbcMutablePlace::read_wire(reader)?,
                 value: AwbcRegisterId::read_wire(reader)?,
+                displacement: RuntimePlaceDisplacement::read_wire(reader)?,
             },
             AwbcOpcode::CallTraitMethod => Self::CallTraitMethod {
                 dst: AwbcRegisterId::read_wire(reader)?,

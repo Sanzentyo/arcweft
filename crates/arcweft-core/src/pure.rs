@@ -1993,7 +1993,7 @@ impl<'a> PureEvaluator<'a> {
                 self.evaluate_project_record_expr(target, *ordinal)
             }
             RuntimeExprKind::Assign { place, expr, body } => {
-                self.evaluate_assign_expr(*place, expr, body)
+                self.evaluate_assign_expr(place, expr, body)
             }
             RuntimeExprKind::Call { callee, args }
                 if callee.as_intrinsic().is_none() && self.external.is_some() =>
@@ -2565,7 +2565,7 @@ impl<'a> PureEvaluator<'a> {
 
     fn evaluate_assign_expr(
         &mut self,
-        place: crate::value::RuntimeMutablePlace,
+        place: &crate::value::RuntimeAssignment,
         expr: &RuntimeExpr,
         body: &RuntimeExpr,
     ) -> Result<RuntimeValue, RuntimeEvalError> {

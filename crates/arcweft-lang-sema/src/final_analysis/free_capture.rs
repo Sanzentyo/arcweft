@@ -572,16 +572,25 @@ impl<'a, 'coordinate, F: Fn(LocalId) -> Option<TypeKind>>
         coordinates: &'a SemanticCoordinateIndex<'coordinate, 'coordinate>,
         local_type: F,
     ) -> Result<Self, FinalSemanticAnalysisError> {
-        Ok(Self {
-            root: coordinates
-                .expression_evidence(root)
-                .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?
-                .into_coordinate(),
+        let root = coordinates
+            .expression_evidence(root)
+            .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?
+            .into_coordinate();
+        Ok(Self::at_path(root, coordinates, local_type))
+    }
+
+    pub(super) fn at_path(
+        root: CheckedSemanticPath,
+        coordinates: &'a SemanticCoordinateIndex<'coordinate, 'coordinate>,
+        local_type: F,
+    ) -> Self {
+        Self {
+            root,
             coordinates,
             local_type,
             captured: BTreeSet::new(),
             captures: Vec::new(),
-        })
+        }
     }
 
     pub(super) fn include(

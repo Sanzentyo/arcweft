@@ -5,7 +5,7 @@ fn input_abi(
     world: &super::Fixture,
     source: arcweft_lang_hir::identity::ExprId,
 ) -> Result<
-    crate::final_analysis::CheckedExpressionInputAbi,
+    crate::final_analysis::CheckedExecutionInputAbi,
     crate::final_analysis::CheckedExecutionContextError,
 > {
     report
@@ -15,7 +15,7 @@ fn input_abi(
             source,
             None,
         )?
-        .checked_expression_input_abi(source)
+        .checked_execution_input_abi(source)
 }
 
 #[path = "semantic_transcript_acceptance/body_roots.rs"]

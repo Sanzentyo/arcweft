@@ -181,6 +181,16 @@ impl<'a> AwbcLowerer<'a> {
         }
         program.canonicalize_string_table();
 
+        program
+            .seal_assignment_displacements(
+                AwbcVerifyBudget::default(),
+                AwbcVerifyContext {
+                    require_entrypoint: false,
+                    ..AwbcVerifyContext::default()
+                },
+            )
+            .map_err(AwbcLowerError::Verify)?;
+
         if options.verify {
             program
                 .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())

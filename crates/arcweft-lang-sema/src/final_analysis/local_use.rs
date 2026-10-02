@@ -58,7 +58,8 @@ use super::{
 mod access;
 mod flow;
 pub use access::{
-    CheckedLocalAccess, CheckedLocalPlace, CheckedLocalPlaceAccess, CheckedLocalPlaceMode,
+    CheckedDisplacedField, CheckedLocalAccess, CheckedLocalPlace, CheckedLocalPlaceAccess,
+    CheckedLocalPlaceMode, CheckedPlaceDisplacement, CheckedPlaceInitialization,
 };
 use flow::{Availability, Event, NodeId, OwnershipFlow, Violation};
 
@@ -763,13 +764,20 @@ impl<'a> LocalUseChecker<'a> {
 
     fn solve_flow(&mut self) -> Result<(), CheckedLocalUseError> {
         loop {
-            let violations = self.flow.violations(self.rows, self.synthetic_rows)?;
-            if violations.is_empty() {
+            let solution = self.flow.solve(self.rows, self.synthetic_rows)?;
+            if solution.violations.is_empty() {
+                for (site, displacement) in solution.displacements {
+                    let Some(CheckedLocalAccess::PlaceAccess(access)) = self.rows.get_mut(&site)
+                    else {
+                        return Err(CheckedLocalUseError::InvalidTopology);
+                    };
+                    access.seal_displacement(displacement)?;
+                }
                 return Ok(());
             }
             let mut changed = false;
             let mut rejected = None;
-            for violation in violations {
+            for violation in solution.violations {
                 match violation {
                     Violation::Local {
                         local,

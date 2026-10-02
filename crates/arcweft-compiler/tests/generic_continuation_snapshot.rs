@@ -63,6 +63,7 @@ flow main() -> i64 {
             if let AwbcInstruction::Assign {
                 place: AwbcMutablePlace::Local(target),
                 value,
+                ..
             } = instruction
             {
                 let frame = fiber.frames.last().unwrap();

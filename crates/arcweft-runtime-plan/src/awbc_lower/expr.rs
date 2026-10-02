@@ -5,7 +5,7 @@ use crate::awbc_lower::pattern::{
 };
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
-    AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcDialogueContentEffectBinding,
+    AwbcBinaryOp, AwbcBindMode, AwbcBlockId, AwbcDialogueContentEffectBinding,
     AwbcDialogueValueBinding, AwbcDialogueValueRole, AwbcEffectSetId, AwbcFieldProjection,
     AwbcFormatAttemptOperand, AwbcFormatOperand, AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags,
     AwbcFunctionInputOwnership, AwbcFunctionKind, AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId,
@@ -28,6 +28,8 @@ use arcweft_interaction_model::dialogue::{
     CharacterDialoguePatchField, CharacterDialoguePatchOperation,
 };
 use std::collections::BTreeSet;
+
+mod value_control;
 
 /// Expression lowerer used by flow/source/stream builders.
 pub struct AwbcExprLowerer<'a, 'b, 'plan> {
@@ -859,73 +861,6 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
         dst
     }
 
-    fn lower_value_control_expr(&mut self, expr: &RuntimeExpr) -> AwbcRegisterId {
-        let captures = self.control_expr_captures(expr);
-        let captures = self.materialize_control_expr_captures(captures);
-        let function = self.inventory.reserve_function_slot();
-        self.inventory
-            .push_pending_closure(PendingAwbcClosure::Control {
-                function,
-                captures: captures.iter().map(|capture| capture.local).collect(),
-                result: expr.ty(),
-                body: RuntimeFunctionSiteBody::Expression(expr.clone()),
-                path: format!("{}.control.{}", self.path, function.0),
-            });
-
-        let capture_types: Vec<_> = captures
-            .iter()
-            .map(|capture| {
-                admitted_plan_type(
-                    self.inventory,
-                    self.plan,
-                    local_type(self.plan, capture.local),
-                )
-            })
-            .collect();
-        let result = admitted_plan_type(self.inventory, self.plan, expr.ty());
-        let function_type = self
-            .inventory
-            .intern_control_callable_type(result)
-            .unwrap_or_else(|diagnostic| {
-                panic!(
-                    "cannot lower synthetic callable at {}: {}",
-                    self.path, diagnostic.message
-                )
-            });
-        let state = self
-            .inventory
-            .reserve_control_callable_state(
-                self.plan.callable_states().len(),
-                function_type,
-                result,
-                function,
-                &capture_types,
-            )
-            .unwrap_or_else(|diagnostic| {
-                panic!(
-                    "cannot lower synthetic callable state at {}: {}",
-                    self.path, diagnostic.message
-                )
-            });
-        let callee = self.frame.temp(function_type);
-        self.inventory
-            .push_instruction(AwbcInstruction::MakeCallable {
-                dst: callee,
-                state,
-                captures: captures.iter().map(|capture| capture.register).collect(),
-            });
-        let dst = self
-            .frame
-            .temp(admitted_plan_type(self.inventory, self.plan, expr.ty()));
-        self.inventory
-            .push_instruction(AwbcInstruction::ApplyGroup {
-                dst,
-                callee,
-                args: Vec::new(),
-            });
-        dst
-    }
-
     fn control_expr_captures(&self, expr: &RuntimeExpr) -> Vec<FrameCaptureSlot> {
         expr.evaluation_free_local_reads(self.plan)
             .unwrap_or_else(|error| {
@@ -992,11 +927,18 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
         dst
     }
 
-    pub(super) fn lower_assignment(&mut self, place: &RuntimeMutablePlace, value: &RuntimeExpr) {
-        let place = self.lower_mutable_place(place, "assignment");
+    pub(super) fn lower_assignment(
+        &mut self,
+        assignment: &arcweft_core::value::RuntimeAssignment,
+        value: &RuntimeExpr,
+    ) {
+        let place = self.lower_mutable_place(&assignment.place(), "assignment");
         let value = self.lower(value);
-        self.inventory
-            .push_instruction(AwbcInstruction::Assign { place, value });
+        self.inventory.push_instruction(AwbcInstruction::Assign {
+            place,
+            value,
+            displacement: assignment.displacement().clone(),
+        });
     }
 
     fn lower_mutable_place(
@@ -1149,56 +1091,6 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                     },
                 );
             }
-            PendingAwbcClosure::Control {
-                function,
-                captures,
-                result,
-                body: RuntimeFunctionSiteBody::Expression(expression),
-                path,
-            } => {
-                let mut frame = FrameBuilder::new();
-                for local in &captures {
-                    let name = inventory.local_name(*local);
-                    frame.named_parameter(
-                        *local,
-                        admitted_plan_type(inventory, plan, local_type(plan, *local)),
-                        name,
-                    );
-                }
-
-                let mut body = ExprBodyBuilder::new(inventory, function);
-                lower_closure_body(inventory, &mut frame, plan, &mut body, &expression, &path);
-                let layout = inventory.intern_frame_layout(format!("{path}:frame"), frame.finish());
-                let block = body.block_start;
-                let block_len = table_range_len(block.0, inventory.program.blocks.len());
-                let params = captures
-                    .iter()
-                    .map(|local| admitted_plan_type(inventory, plan, local_type(plan, *local)))
-                    .collect();
-                let result = admitted_plan_type(inventory, plan, result);
-                let signature =
-                    inventory.intern_signature(params, Some(result), AwbcEffectSetId(0));
-                inventory.replace_function(
-                    function,
-                    AwbcFunction {
-                        public_id: None,
-                        kind: AwbcFunctionKind::Ordinary,
-                        signature,
-                        input_ownership: vec![
-                            AwbcFunctionInputOwnership::default();
-                            captures.len()
-                        ],
-                        frame_layout: layout,
-                        blocks: AwbcTableRange::new(block.0, block_len),
-                        entry_block: block,
-                        flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
-                    },
-                );
-            }
-            PendingAwbcClosure::Control {
-                body: RuntimeFunctionSiteBody::Executable(_),
-                ..
-            } => unreachable!("control-expression thunks cannot have executable bodies"),
             PendingAwbcClosure::FormatOperand {
                 function,
                 captures,
@@ -1286,19 +1178,19 @@ fn local_type(
 }
 
 struct ExprBodyBuilder {
-    owner: arcweft_core::awbc::schema::AwbcFunctionId,
     block_start: AwbcBlockId,
-    instruction_start: u32,
     terminated: bool,
 }
 
 impl ExprBodyBuilder {
-    fn new(inventory: &AwbcInventory, owner: arcweft_core::awbc::schema::AwbcFunctionId) -> Self {
-        let block_start = AwbcBlockId(table_index(inventory.program.blocks.len()));
+    fn new(
+        inventory: &mut AwbcInventory,
+        owner: arcweft_core::awbc::schema::AwbcFunctionId,
+    ) -> Self {
+        let block_start =
+            inventory.begin_function_blocks(owner, AwbcSafePointKind::CallableBoundary);
         Self {
-            owner,
             block_start,
-            instruction_start: table_index(inventory.program.instructions.len()),
             terminated: false,
         }
     }
@@ -1309,25 +1201,12 @@ impl ExprBodyBuilder {
         terminator: AwbcTerminator,
         safe_point: AwbcSafePointKind,
     ) -> AwbcBlockId {
-        let block = AwbcBlockId(table_index(inventory.program.blocks.len()));
-        let instruction_len =
-            table_range_len(self.instruction_start, inventory.program.instructions.len());
-        inventory.push_block(AwbcBlock {
-            owner: self.owner,
-            instructions: AwbcTableRange::new(self.instruction_start, instruction_len),
-            terminator,
-            safe_point,
-            source_map: None,
-        });
-        self.instruction_start = table_index(inventory.program.instructions.len());
-        block
+        inventory.close_function_block(terminator, safe_point)
     }
 
-    fn reopen_after_terminated_branch(&mut self, inventory: &AwbcInventory) -> AwbcBlockId {
-        let block = AwbcBlockId(table_index(inventory.program.blocks.len()));
-        self.instruction_start = table_index(inventory.program.instructions.len());
+    fn reopen_after_terminated_branch(&mut self, inventory: &mut AwbcInventory) -> AwbcBlockId {
         self.terminated = false;
-        block
+        inventory.reopen_function_block()
     }
 
     fn terminate(
@@ -1392,25 +1271,6 @@ fn lower_closure_body(
         RuntimeExprKind::Match { scrutinee, arms } => {
             lower_match_value_expr(inventory, frame, plan, body, scrutinee, arms, path);
         }
-        RuntimeExprKind::StandardMap {
-            family,
-            order,
-            mapping,
-            source,
-        } => lower_standard_map_value_expr(
-            inventory,
-            frame,
-            plan,
-            body,
-            StandardMapValueExprInput {
-                family: *family,
-                order: *order,
-                mapping,
-                source,
-                result: expr,
-                path,
-            },
-        ),
         _ => terminate_return_expr(inventory, frame, plan, body, expr, path, None),
     }
 }
@@ -1432,13 +1292,12 @@ struct StandardMapPlanTypes {
     residual: Option<arcweft_core::runtime_id::RuntimePlanTypeId>,
 }
 
-fn lower_standard_map_value_expr(
+fn lower_standard_map_value(
     inventory: &mut AwbcInventory,
     frame: &mut FrameBuilder,
     plan: &RuntimePlan,
-    body: &mut ExprBodyBuilder,
     input: StandardMapValueExprInput<'_>,
-) {
+) -> AwbcRegisterId {
     let (mapping, source) = match input.order {
         RuntimeStandardMapOperandOrder::MappingThenReceiver => (
             AwbcExprLowerer::new(inventory, frame, format!("{}.mapping", input.path), plan)
@@ -1465,7 +1324,6 @@ fn lower_standard_map_value_expr(
             inventory,
             frame,
             plan,
-            body,
             input.result.ty(),
             types,
             mapping_ty,
@@ -1476,7 +1334,6 @@ fn lower_standard_map_value_expr(
             inventory,
             frame,
             plan,
-            body,
             input.source.ty(),
             input.result.ty(),
             types,
@@ -1489,14 +1346,13 @@ fn lower_standard_map_value_expr(
                 inventory,
                 frame,
                 plan,
-                body,
                 input.family,
                 input.source.ty(),
                 input.result.ty(),
                 types,
                 mapping,
                 source,
-            );
+            )
         }
     }
 }
@@ -1608,14 +1464,13 @@ fn lower_standard_sequence_map(
     inventory: &mut AwbcInventory,
     frame: &mut FrameBuilder,
     plan: &RuntimePlan,
-    body: &mut ExprBodyBuilder,
     result_ty: arcweft_core::runtime_id::RuntimePlanTypeId,
     types: StandardMapPlanTypes,
     mapping_ty: arcweft_core::awbc::schema::AwbcTypeId,
     mapping: AwbcRegisterId,
     source: AwbcRegisterId,
-) {
-    let result = frame.runtime_state(admitted_plan_type(inventory, plan, result_ty));
+) -> AwbcRegisterId {
+    let result = frame.temp(admitted_plan_type(inventory, plan, result_ty));
     inventory.push_instruction(AwbcInstruction::MakeSequence {
         dst: result,
         items: Vec::new(),
@@ -1623,15 +1478,13 @@ fn lower_standard_sequence_map(
     let header = AwbcBlockId(table_index(
         inventory.program.blocks.len().saturating_add(1),
     ));
-    body.close_block(
-        inventory,
+    inventory.close_function_block(
         AwbcTerminator::Jump { target: header },
         AwbcSafePointKind::CallableBoundary,
     );
     let item = frame.temp(admitted_plan_type(inventory, plan, types.input));
     let loop_body = AwbcBlockId(header.0.saturating_add(1));
-    let next = body.close_block(
-        inventory,
+    let next = inventory.close_function_block(
         AwbcTerminator::SequenceNext {
             sequence: source,
             item,
@@ -1656,20 +1509,13 @@ fn lower_standard_sequence_map(
         sequence: result,
         value: mapped,
     });
-    body.close_block(
-        inventory,
+    inventory.close_function_block(
         AwbcTerminator::Jump { target: header },
         AwbcSafePointKind::LoopBackedge,
     );
     let exit = AwbcBlockId(table_index(inventory.program.blocks.len()));
     patch_sequence_next_none_block(inventory, next, exit);
-    body.terminate(
-        inventory,
-        AwbcTerminator::Return {
-            value: Some(result),
-        },
-        AwbcSafePointKind::CallableBoundary,
-    );
+    result
 }
 
 #[allow(
@@ -1680,14 +1526,13 @@ fn lower_standard_array_map(
     inventory: &mut AwbcInventory,
     frame: &mut FrameBuilder,
     plan: &RuntimePlan,
-    body: &mut ExprBodyBuilder,
     source_ty: arcweft_core::runtime_id::RuntimePlanTypeId,
     result_ty: arcweft_core::runtime_id::RuntimePlanTypeId,
     types: StandardMapPlanTypes,
     mapping_ty: arcweft_core::awbc::schema::AwbcTypeId,
     mapping: AwbcRegisterId,
     source: AwbcRegisterId,
-) {
+) -> AwbcRegisterId {
     let RuntimePlanTypeProjection::Array { length, .. } = plan_type_projection(plan, source_ty)
     else {
         unreachable!("admitted array map source is an Array")
@@ -1739,13 +1584,7 @@ fn lower_standard_array_map(
         dst: result,
         items: mapped_items,
     });
-    body.terminate(
-        inventory,
-        AwbcTerminator::Return {
-            value: Some(result),
-        },
-        AwbcSafePointKind::CallableBoundary,
-    );
+    result
 }
 
 #[allow(
@@ -1756,14 +1595,13 @@ fn lower_standard_variant_map(
     inventory: &mut AwbcInventory,
     frame: &mut FrameBuilder,
     plan: &RuntimePlan,
-    body: &mut ExprBodyBuilder,
     family: RuntimeStandardMapFamily,
     source_ty: arcweft_core::runtime_id::RuntimePlanTypeId,
     result_ty: arcweft_core::runtime_id::RuntimePlanTypeId,
     types: StandardMapPlanTypes,
     mapping: AwbcRegisterId,
     source: AwbcRegisterId,
-) {
+) -> AwbcRegisterId {
     let success_case = match family {
         RuntimeStandardMapFamily::Option => RuntimeBuiltinVariantCaseIdentity::OptionSome,
         RuntimeStandardMapFamily::Result => RuntimeBuiltinVariantCaseIdentity::ResultOk,
@@ -1786,8 +1624,7 @@ fn lower_standard_variant_map(
     let then_block = AwbcBlockId(table_index(
         inventory.program.blocks.len().saturating_add(1),
     ));
-    let branch = body.close_block(
-        inventory,
+    let branch = inventory.close_function_block(
         AwbcTerminator::Branch {
             condition: matched,
             then_block,
@@ -1814,15 +1651,19 @@ fn lower_standard_variant_map(
         success_case,
         Some((types.output, mapped)),
     );
-    body.terminate(
-        inventory,
-        AwbcTerminator::Return {
-            value: Some(success),
+    let result = frame.temp(admitted_plan_type(inventory, plan, result_ty));
+    inventory.push_instruction(AwbcInstruction::Move {
+        dst: result,
+        src: success,
+    });
+    let success_jump = inventory.close_function_block(
+        AwbcTerminator::Jump {
+            target: AwbcBlockId::default(),
         },
-        AwbcSafePointKind::CallableBoundary,
+        AwbcSafePointKind::None,
     );
 
-    let else_block = body.reopen_after_terminated_branch(inventory);
+    let else_block = inventory.reopen_function_block();
     patch_branch_else_block(inventory, branch, else_block);
     let residual = match family {
         RuntimeStandardMapFamily::Option => standard_map_make_variant(
@@ -1859,13 +1700,20 @@ fn lower_standard_variant_map(
         }
         _ => unreachable!("only Option and Result use variant map lowering"),
     };
-    body.terminate(
-        inventory,
-        AwbcTerminator::Return {
-            value: Some(residual),
+    inventory.push_instruction(AwbcInstruction::Move {
+        dst: result,
+        src: residual,
+    });
+    let residual_jump = inventory.close_function_block(
+        AwbcTerminator::Jump {
+            target: AwbcBlockId::default(),
         },
-        AwbcSafePointKind::CallableBoundary,
+        AwbcSafePointKind::None,
     );
+    let join = inventory.reopen_function_block();
+    patch_jump_target(inventory, success_jump, join);
+    patch_jump_target(inventory, residual_jump, join);
+    result
 }
 
 fn standard_map_variant_pattern(
@@ -2087,7 +1935,7 @@ fn lower_if_let_value_expr(
     );
 
     if let Some(guard) = input.guard {
-        let scope = enter_pattern_scope(inventory, frame, pattern, value);
+        let scope = enter_guard_pattern_scope(inventory, plan, frame, pattern, value, guard);
         let guard = AwbcExprLowerer::new(inventory, frame, format!("{}.guard", input.path), plan)
             .lower(guard);
         let then_block = AwbcBlockId(table_index(
@@ -2102,6 +1950,9 @@ fn lower_if_let_value_expr(
             },
             AwbcSafePointKind::CallableBoundary,
         );
+        inventory.push_instruction(AwbcInstruction::ExitScope { scope });
+        frame.exit_scope();
+        let body_scope = enter_pattern_scope(inventory, frame, pattern, value);
         terminate_return_expr(
             inventory,
             frame,
@@ -2109,7 +1960,7 @@ fn lower_if_let_value_expr(
             body,
             input.then_expr,
             &format!("{}.then", input.path),
-            Some(scope),
+            Some(body_scope),
         );
         let guard_false_block = body.reopen_after_terminated_branch(inventory);
         patch_branch_else_block(inventory, guard_branch_block, guard_false_block);
@@ -2190,7 +2041,8 @@ fn lower_match_value_expr(
         );
 
         if let Some(guard) = arm.guard() {
-            let scope = enter_pattern_scope(inventory, frame, pattern, scrutinee);
+            let scope =
+                enter_guard_pattern_scope(inventory, plan, frame, pattern, scrutinee, guard);
             let guard =
                 AwbcExprLowerer::new(inventory, frame, format!("{path}.arm.{index}.guard"), plan)
                     .lower(guard);
@@ -2206,6 +2058,9 @@ fn lower_match_value_expr(
                 },
                 AwbcSafePointKind::CallableBoundary,
             );
+            inventory.push_instruction(AwbcInstruction::ExitScope { scope });
+            frame.exit_scope();
+            let body_scope = enter_pattern_scope(inventory, frame, pattern, scrutinee);
             terminate_return_expr(
                 inventory,
                 frame,
@@ -2213,7 +2068,7 @@ fn lower_match_value_expr(
                 body,
                 arm.value(),
                 &format!("{path}.arm.{index}.value"),
-                Some(scope),
+                Some(body_scope),
             );
             let guard_false_block = body.reopen_after_terminated_branch(inventory);
             patch_branch_else_block(inventory, guard_branch_block, guard_false_block);
@@ -2306,6 +2161,35 @@ fn enter_pattern_scope(
         pattern,
         value,
         mode: AwbcBindMode::Declare,
+    });
+    scope
+}
+
+pub(super) fn enter_guard_pattern_scope(
+    inventory: &mut AwbcInventory,
+    plan: &RuntimePlan,
+    frame: &mut FrameBuilder,
+    pattern: AwbcPatternId,
+    value: AwbcRegisterId,
+    guard: &RuntimeExpr,
+) -> AwbcScopeId {
+    let used = guard
+        .evaluation_free_local_reads(plan)
+        .expect("checked guard has authenticated free-local occurrences")
+        .into_iter()
+        .map(|(local, _)| {
+            frame
+                .register_for_local(local)
+                .expect("checked guard local has a frame register")
+        })
+        .collect();
+    let pattern = crate::awbc_lower::pattern::guard_pattern(inventory, pattern, &used);
+    let scope = frame.enter_scope();
+    inventory.push_instruction(AwbcInstruction::EnterScope { scope });
+    inventory.push_instruction(AwbcInstruction::BindPattern {
+        pattern,
+        value,
+        mode: AwbcBindMode::Guard,
     });
     scope
 }

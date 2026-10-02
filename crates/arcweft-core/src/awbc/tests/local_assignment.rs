@@ -44,6 +44,10 @@ fn replacement_program() -> AwbcProgram {
         AwbcInstruction::Assign {
             place: AwbcMutablePlace::Local(AwbcRegisterId(0)),
             value: AwbcRegisterId(2),
+            displacement: crate::value::RuntimePlaceDisplacement::Reachable {
+                initialization: crate::value::RuntimePlaceInitialization::Initialized,
+                fields: Box::new([]),
+            },
         },
         AwbcInstruction::ExitScope {
             scope: AwbcScopeId(0),
@@ -125,6 +129,10 @@ fn partial_record_program() -> AwbcProgram {
                 field: 0,
             },
             value: AwbcRegisterId(3),
+            displacement: crate::value::RuntimePlaceDisplacement::Reachable {
+                initialization: crate::value::RuntimePlaceInitialization::Uninitialized,
+                fields: Box::new([]),
+            },
         },
     ];
     program.blocks[0].instructions = AwbcTableRange::new(0, 6);
@@ -288,6 +296,10 @@ fn mutable_record_field_remains_usable_after_moving_its_sibling() {
                 field: 1,
             },
             value: AwbcRegisterId(3),
+            displacement: crate::value::RuntimePlaceDisplacement::Reachable {
+                initialization: crate::value::RuntimePlaceInitialization::Uninitialized,
+                fields: Box::new([]),
+            },
         },
     ];
     program.blocks[0].instructions = AwbcTableRange::new(0, program.instructions.len() as u32);
@@ -435,6 +447,7 @@ fn local_assignment_rejects_source_alias_and_incompatible_type() {
     aliased.instructions[4] = AwbcInstruction::Assign {
         place: AwbcMutablePlace::Local(AwbcRegisterId(2)),
         value: AwbcRegisterId(2),
+        displacement: crate::value::RuntimePlaceDisplacement::conditional(),
     };
     assert!(
         aliased
@@ -462,6 +475,13 @@ fn assignment_after_move_reinitializes_after_codec_restore_and_checkpoint() {
     program.instructions[1] = AwbcInstruction::Move {
         dst: AwbcRegisterId(1),
         src: AwbcRegisterId(0),
+    };
+    let AwbcInstruction::Assign { displacement, .. } = &mut program.instructions[4] else {
+        panic!("replacement fixture assignment");
+    };
+    *displacement = crate::value::RuntimePlaceDisplacement::Reachable {
+        initialization: crate::value::RuntimePlaceInitialization::Uninitialized,
+        fields: Box::new([]),
     };
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
@@ -521,5 +541,301 @@ fn assignment_after_move_reinitializes_after_codec_restore_and_checkpoint() {
         );
         restored.restore(checkpoint.clone(), &owner).unwrap();
         restored.validate_for_program(&program).unwrap();
+    }
+}
+
+#[test]
+fn assignment_codec_verifier_rejects_forged_cleanup_initialization() {
+    use crate::value::{RuntimePlaceDisplacement, RuntimePlaceInitialization};
+    let program = replacement_program();
+    for displacement in [
+        RuntimePlaceDisplacement::Unreachable,
+        RuntimePlaceDisplacement::conditional(),
+        RuntimePlaceDisplacement::Reachable {
+            initialization: RuntimePlaceInitialization::Uninitialized,
+            fields: Box::new([]),
+        },
+    ] {
+        let mut malformed = program.clone();
+        let AwbcInstruction::Assign {
+            displacement: actual,
+            ..
+        } = &mut malformed.instructions[4]
+        else {
+            panic!("replacement fixture assignment");
+        };
+        *actual = displacement;
+        let bytes = malformed.encode_canonical().unwrap();
+        let decoded = AwbcProgram::decode_canonical(&bytes, AwbcDecodeBudget::default()).unwrap();
+        assert!(
+            decoded
+                .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+                .is_err()
+        );
+    }
+    let mut malformed = partial_record_program();
+    let AwbcInstruction::Assign { displacement, .. } = &mut malformed.instructions[5] else {
+        panic!("partial fixture assignment");
+    };
+    *displacement = RuntimePlaceDisplacement::Reachable {
+        initialization: RuntimePlaceInitialization::Initialized,
+        fields: Box::new([]),
+    };
+    assert!(
+        malformed
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .is_err()
+    );
+}
+
+#[test]
+fn whole_record_assignment_roundtrips_its_partial_cleanup_contour() {
+    use crate::value::{
+        RuntimeDisplacedField, RuntimePlaceDisplacement, RuntimePlaceInitialization,
+        RuntimeRecordFieldId,
+    };
+    let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap();
+    let mut program = partial_record_program();
+    program.frame_layouts[0].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: AwbcTypeId(1),
+        role: AwbcFrameSlotRole::Temporary,
+        scope_depth: 0,
+    });
+    program.instructions.truncate(5);
+    program.instructions.extend([
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(1),
+            constant: AwbcConstantId(1),
+        },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(2),
+            constant: AwbcConstantId(0),
+        },
+        AwbcInstruction::MakeRecord {
+            dst: AwbcRegisterId(5),
+            ty: AwbcTypeId(1),
+            fields: vec![AwbcRegisterId(1), AwbcRegisterId(2)],
+        },
+        AwbcInstruction::Assign {
+            place: AwbcMutablePlace::Local(AwbcRegisterId(0)),
+            value: AwbcRegisterId(5),
+            displacement: RuntimePlaceDisplacement::Reachable {
+                initialization: RuntimePlaceInitialization::Initialized,
+                fields: vec![RuntimeDisplacedField {
+                    fields: vec![field].into_boxed_slice(),
+                    initialization: RuntimePlaceInitialization::Uninitialized,
+                }]
+                .into_boxed_slice(),
+            },
+        },
+    ]);
+    program.blocks[0].instructions = AwbcTableRange::new(0, program.instructions.len() as u32);
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .unwrap();
+    let mut missing_child = program.clone();
+    let AwbcInstruction::Assign { displacement, .. } =
+        missing_child.instructions.last_mut().unwrap()
+    else {
+        unreachable!();
+    };
+    *displacement = RuntimePlaceDisplacement::Reachable {
+        initialization: RuntimePlaceInitialization::Initialized,
+        fields: Box::new([]),
+    };
+    assert!(
+        missing_child
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .is_err()
+    );
+    let bytes = program.encode_canonical().unwrap();
+    let program = AwbcProgram::decode_canonical(&bytes, AwbcDecodeBudget::default()).unwrap();
+    assert_eq!(program.encode_canonical().unwrap(), bytes);
+    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).unwrap();
+    let result = super::super::vm::step(
+        &program,
+        &mut fiber,
+        super::super::vm::VmStepOptions {
+            max_instructions: 64,
+        },
+    )
+    .unwrap();
+    let super::super::vm::VmExit::Returned(Some(RuntimeValue::NominalRecord(record))) = result.exit
+    else {
+        panic!("whole replacement returns a complete record");
+    };
+    assert_eq!(
+        record.fields(),
+        &[RuntimeValue::Bool(false), RuntimeValue::Bool(true)]
+    );
+}
+
+#[test]
+fn assignment_sealing_narrows_conditional_facts_and_is_atomic_on_later_failure() {
+    use crate::value::{RuntimePlaceDisplacement, RuntimePlaceInitialization};
+    let mut program = replacement_program();
+    let AwbcInstruction::Assign { displacement, .. } = &mut program.instructions[4] else {
+        unreachable!();
+    };
+    *displacement = RuntimePlaceDisplacement::conditional();
+    let prepared = program.clone();
+    program
+        .seal_assignment_displacements(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .unwrap();
+    let AwbcInstruction::Assign { displacement, .. } = &program.instructions[4] else {
+        unreachable!();
+    };
+    assert!(matches!(
+        displacement,
+        RuntimePlaceDisplacement::Reachable {
+            initialization: RuntimePlaceInitialization::Initialized,
+            ..
+        }
+    ));
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .unwrap();
+    let mut rejected = prepared;
+    rejected.instructions.splice(
+        5..5,
+        [
+            AwbcInstruction::LoadConst {
+                dst: AwbcRegisterId(2),
+                constant: AwbcConstantId(0),
+            },
+            AwbcInstruction::Assign {
+                place: AwbcMutablePlace::Local(AwbcRegisterId(0)),
+                value: AwbcRegisterId(2),
+                displacement: RuntimePlaceDisplacement::Reachable {
+                    initialization: RuntimePlaceInitialization::Uninitialized,
+                    fields: Box::new([]),
+                },
+            },
+        ],
+    );
+    rejected.blocks[0].instructions.len = rejected.instructions.len() as u32;
+    let before = rejected.clone();
+    assert!(
+        rejected
+            .seal_assignment_displacements(
+                AwbcVerifyBudget::default(),
+                AwbcVerifyContext::default()
+            )
+            .is_err()
+    );
+    assert_eq!(rejected, before);
+}
+
+#[test]
+fn sequence_output_cannot_overwrite_a_conditionally_initialized_slot() {
+    for clear_before_join in [false, true] {
+        let mut program = minimal_program();
+        program.runtime_types = vec![
+            runtime_type(111, AwbcRuntimeTypeShape::Unit),
+            runtime_type(112, AwbcRuntimeTypeShape::Need(AwbcTypeId(0))),
+            runtime_type(
+                113,
+                AwbcRuntimeTypeShape::Sequence {
+                    kind: crate::plan::RuntimePlanSequenceKind::Seq,
+                    item: AwbcTypeId(1),
+                },
+            ),
+            runtime_type(114, AwbcRuntimeTypeShape::Bool),
+        ];
+        program.signatures[0].params = vec![AwbcTypeId(2), AwbcTypeId(3), AwbcTypeId(1)];
+        program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::default(); 3];
+        program.functions[0].blocks = AwbcTableRange::new(0, 6);
+        program.frame_layouts[0].slots = [2, 3, 1, 1, 1]
+            .into_iter()
+            .enumerate()
+            .map(|(index, ty)| AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(ty),
+                role: if index < 3 {
+                    AwbcFrameSlotRole::Parameter
+                } else {
+                    AwbcFrameSlotRole::Temporary
+                },
+                scope_depth: 0,
+            })
+            .collect();
+        program.instructions = vec![AwbcInstruction::Move {
+            dst: AwbcRegisterId(3),
+            src: AwbcRegisterId(2),
+        }];
+        if clear_before_join {
+            program.instructions.push(AwbcInstruction::Move {
+                dst: AwbcRegisterId(4),
+                src: AwbcRegisterId(3),
+            });
+        }
+        let end = program.instructions.len() as u32;
+        let block = |start, len, terminator, safe_point| AwbcBlock {
+            owner: AwbcFunctionId(0),
+            instructions: AwbcTableRange::new(start, len),
+            terminator,
+            safe_point,
+            source_map: None,
+        };
+        program.blocks = vec![
+            block(
+                0,
+                0,
+                AwbcTerminator::Branch {
+                    condition: AwbcRegisterId(1),
+                    then_block: AwbcBlockId(1),
+                    else_block: AwbcBlockId(2),
+                },
+                AwbcSafePointKind::FlowEntry,
+            ),
+            block(
+                0,
+                end,
+                AwbcTerminator::Jump {
+                    target: AwbcBlockId(3),
+                },
+                AwbcSafePointKind::CallableBoundary,
+            ),
+            block(
+                end,
+                0,
+                AwbcTerminator::Jump {
+                    target: AwbcBlockId(3),
+                },
+                AwbcSafePointKind::CallableBoundary,
+            ),
+            block(
+                end,
+                0,
+                AwbcTerminator::SequenceNext {
+                    sequence: AwbcRegisterId(0),
+                    item: AwbcRegisterId(3),
+                    some_block: AwbcBlockId(4),
+                    none_block: AwbcBlockId(5),
+                },
+                AwbcSafePointKind::CallableBoundary,
+            ),
+            block(
+                end,
+                0,
+                AwbcTerminator::Return { value: None },
+                AwbcSafePointKind::CallableBoundary,
+            ),
+            block(
+                end,
+                0,
+                AwbcTerminator::Return { value: None },
+                AwbcSafePointKind::CallableBoundary,
+            ),
+        ];
+        let result = program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default());
+        if clear_before_join {
+            result.expect("both incoming paths leave the item destination vacant");
+        } else {
+            assert!(
+                matches!(result, Err(AwbcVerifyError::InvalidInvariant { message, .. }) if message == "sequence next item destination is vacant")
+            );
+        }
     }
 }

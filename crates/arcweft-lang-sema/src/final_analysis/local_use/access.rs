@@ -10,6 +10,50 @@ pub enum CheckedLocalPlaceMode {
     Mutate,
 }
 
+/// Initialization at the write boundary, after the RHS has executed.
+/// Descendant facts refine a record container independently of its root.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CheckedPlaceInitialization {
+    Initialized,
+    Uninitialized,
+    Conditional,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedDisplacedField {
+    fields: Box<[crate::final_analysis::CheckedFieldSelection]>,
+    initialization: CheckedPlaceInitialization,
+}
+
+impl CheckedDisplacedField {
+    pub(super) fn new(
+        fields: Box<[crate::final_analysis::CheckedFieldSelection]>,
+        initialization: CheckedPlaceInitialization,
+    ) -> Self {
+        Self {
+            fields,
+            initialization,
+        }
+    }
+    pub const fn fields(&self) -> &[crate::final_analysis::CheckedFieldSelection] {
+        &self.fields
+    }
+    pub const fn initialization(&self) -> CheckedPlaceInitialization {
+        self.initialization
+    }
+}
+
+/// Static cleanup contour of the replaced place. Conditional states require
+/// drop flags; they never defer source availability or borrow legality.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedPlaceDisplacement {
+    Unreachable,
+    Reachable {
+        initialization: CheckedPlaceInitialization,
+        fields: Box<[CheckedDisplacedField]>,
+    },
+}
+
 /// One local-rooted place, selected entirely from admitted field schemas.
 /// Empty projections denote the whole declaration. Diagnostic field names
 /// never participate in overlap or availability.
@@ -87,11 +131,16 @@ impl CheckedLocalPlace {
 pub struct CheckedLocalPlaceAccess {
     place: CheckedMutablePlace,
     mode: CheckedLocalPlaceMode,
+    displacement: Option<CheckedPlaceDisplacement>,
 }
 
 impl CheckedLocalPlaceAccess {
     pub(super) const fn new(place: CheckedMutablePlace, mode: CheckedLocalPlaceMode) -> Self {
-        Self { place, mode }
+        Self {
+            place,
+            mode,
+            displacement: None,
+        }
     }
 
     pub const fn place(&self) -> &CheckedMutablePlace {
@@ -100,6 +149,21 @@ impl CheckedLocalPlaceAccess {
 
     pub const fn mode(&self) -> CheckedLocalPlaceMode {
         self.mode
+    }
+
+    pub const fn displacement(&self) -> Option<&CheckedPlaceDisplacement> {
+        self.displacement.as_ref()
+    }
+
+    pub(super) fn seal_displacement(
+        &mut self,
+        displacement: CheckedPlaceDisplacement,
+    ) -> Result<(), super::CheckedLocalUseError> {
+        if self.mode != CheckedLocalPlaceMode::Assign || self.displacement.is_some() {
+            return Err(super::CheckedLocalUseError::InvalidTopology);
+        }
+        self.displacement = Some(displacement);
+        Ok(())
     }
 }
 

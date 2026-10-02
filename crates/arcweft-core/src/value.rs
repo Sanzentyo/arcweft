@@ -48,6 +48,7 @@ mod nominal_record_expr;
 mod opaque;
 mod option_value;
 pub mod ownership;
+mod place_displacement;
 mod place_storage;
 mod range;
 mod record;
@@ -140,6 +141,9 @@ pub use opaque::{
 };
 pub use option_value::{
     evaluate_core_option_is_some_intrinsic, evaluate_core_option_unwrap_intrinsic,
+};
+pub use place_displacement::{
+    RuntimeAssignment, RuntimeDisplacedField, RuntimePlaceDisplacement, RuntimePlaceInitialization,
 };
 pub(crate) use place_storage::RecordHeader as RuntimePlaceRecordHeader;
 pub use place_storage::RuntimePlaceStorage;
@@ -1735,7 +1739,7 @@ pub enum RuntimeExprKind {
         ordinal: usize,
     },
     Assign {
-        place: RuntimeMutablePlace,
+        place: RuntimeAssignment,
         expr: Box<RuntimeExpr>,
         body: Box<RuntimeExpr>,
     },

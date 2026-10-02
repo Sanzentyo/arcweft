@@ -1,5 +1,5 @@
 use super::*;
-use crate::final_analysis::{CheckedExpressionInput, CheckedLocalReadMode, CheckedLocalUseSite};
+use crate::final_analysis::{CheckedExecutionInput, CheckedLocalReadMode, CheckedLocalUseSite};
 
 #[test]
 fn expression_input_abi_distinguishes_place_mutation_from_value_evaluation() {
@@ -84,7 +84,7 @@ fn expression_input_abi_records_replacement_without_reading_the_previous_value()
     let usage = abi
         .inputs()
         .iter()
-        .flat_map(CheckedExpressionInput::uses)
+        .flat_map(CheckedExecutionInput::uses)
         .find(|usage| usage.site() == CheckedLocalUseSite::Place(place))
         .unwrap();
     let access = usage.access().place_access().unwrap();
@@ -127,7 +127,7 @@ fn expression_input_abi_retains_callable_copy_ingress_obligations() {
             Some(crate::final_analysis::CheckedLocalUseInstantiation::ProjectFunction(&instance)),
         )
         .unwrap();
-    let abi = context.checked_expression_input_abi(source).unwrap();
+    let abi = context.checked_execution_input_abi(source).unwrap();
     let [input] = abi.inputs() else {
         panic!("one callable ingress")
     };
@@ -223,7 +223,7 @@ view Main(first: i64, second: i64,
     assert_eq!(
         abi.inputs()
             .iter()
-            .flat_map(CheckedExpressionInput::uses)
+            .flat_map(CheckedExecutionInput::uses)
             .filter(|usage| {
                 matches!(
                     usage.site(),
@@ -239,7 +239,7 @@ view Main(first: i64, second: i64,
     assert!(
         abi.inputs()
             .iter()
-            .flat_map(CheckedExpressionInput::uses)
+            .flat_map(CheckedExecutionInput::uses)
             .all(|usage| {
                 usage.access().value_transfer().unwrap().mode() == CheckedLocalReadMode::Copy
             })
@@ -293,7 +293,7 @@ fn expression_input_abi_is_stable_across_source_and_arena_revisions() {
             .unwrap();
         let abi = input_abi(&report, &world, default.source()).unwrap();
         (
-            abi.coordinate().clone(),
+            abi.coordinate().path().clone(),
             abi.inputs()
                 .iter()
                 .map(|input| {

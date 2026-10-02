@@ -97,6 +97,8 @@ mod evaluated_effects;
 mod executable_ingress;
 #[path = "tests/execution_context.rs"]
 mod execution_context;
+#[path = "tests/execution_inputs.rs"]
+mod execution_inputs;
 #[path = "tests/generic_calls.rs"]
 mod generic_calls;
 #[path = "tests/higher_order_effects.rs"]

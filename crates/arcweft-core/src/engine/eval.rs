@@ -344,7 +344,7 @@ impl Engine {
                 self.evaluate_project_record_expr(target, *ordinal, pure_backend)
             }
             RuntimeExprKind::Assign { place, expr, body } => {
-                self.evaluate_assign_expr(*place, expr, body, pure_backend)
+                self.evaluate_assign_expr(place, expr, body, pure_backend)
             }
             _ => unreachable!("data expression helper received non-data expression"),
         }
@@ -1131,7 +1131,7 @@ impl Engine {
 
     fn evaluate_assign_expr(
         &mut self,
-        place: crate::value::RuntimeMutablePlace,
+        place: &crate::value::RuntimeAssignment,
         expr: &RuntimeExpr,
         body: &RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,

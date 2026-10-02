@@ -11,7 +11,7 @@ use crate::awbc_lower::pattern::{
 };
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
-    AwbcAwaitObserverResume, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcChoiceOption,
+    AwbcAwaitObserverResume, AwbcBindMode, AwbcBlockId, AwbcChoiceId, AwbcChoiceOption,
     AwbcDialogueContentEffectBinding, AwbcDialogueResultTarget, AwbcDialogueValueBinding,
     AwbcDialogueValueRole, AwbcDropPolicy, AwbcEffectPlanId, AwbcEffectSetId, AwbcFrameLayoutId,
     AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionId,
@@ -52,9 +52,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// terminators to split the instruction stream into verified resume blocks.
 struct FlowBodyBuilder {
     owner: AwbcFunctionId,
-    entry_safe_point: AwbcSafePointKind,
     block_start: u32,
-    instruction_start: u32,
     resume_points: Vec<AwbcResumePointId>,
     terminated: bool,
     returns_value: bool,
@@ -137,15 +135,13 @@ impl BranchJoin {
 
 impl FlowBodyBuilder {
     fn new(
-        inventory: &AwbcInventory,
+        inventory: &mut AwbcInventory,
         owner: AwbcFunctionId,
         entry_safe_point: AwbcSafePointKind,
     ) -> Self {
         Self {
             owner,
-            entry_safe_point,
-            block_start: table_index(inventory.program.blocks.len()),
-            instruction_start: table_index(inventory.program.instructions.len()),
+            block_start: inventory.begin_function_blocks(owner, entry_safe_point).0,
             resume_points: Vec::new(),
             terminated: false,
             returns_value: false,
@@ -170,17 +166,7 @@ impl FlowBodyBuilder {
             frame_layout: AwbcFrameLayoutId::default(),
             kind,
         });
-        let instruction_len =
-            table_range_len(self.instruction_start, inventory.program.instructions.len());
-        let safe_point = self.current_block_safe_point(inventory, kind);
-        inventory.push_block(AwbcBlock {
-            owner: self.owner,
-            instructions: AwbcTableRange::new(self.instruction_start, instruction_len),
-            terminator: terminator(resume),
-            safe_point,
-            source_map: None,
-        });
-        self.instruction_start = table_index(inventory.program.instructions.len());
+        inventory.close_function_block(terminator(resume), kind);
         self.resume_points.push(resume);
     }
 
@@ -190,26 +176,12 @@ impl FlowBodyBuilder {
         terminator: AwbcTerminator,
         safe_point: AwbcSafePointKind,
     ) -> AwbcBlockId {
-        let block = AwbcBlockId(table_index(inventory.program.blocks.len()));
-        let instruction_len =
-            table_range_len(self.instruction_start, inventory.program.instructions.len());
-        let safe_point = self.current_block_safe_point(inventory, safe_point);
-        inventory.push_block(AwbcBlock {
-            owner: self.owner,
-            instructions: AwbcTableRange::new(self.instruction_start, instruction_len),
-            terminator,
-            safe_point,
-            source_map: None,
-        });
-        self.instruction_start = table_index(inventory.program.instructions.len());
-        block
+        inventory.close_function_block(terminator, safe_point)
     }
 
-    fn reopen_after_terminated_branch(&mut self, inventory: &AwbcInventory) -> AwbcBlockId {
-        let block = AwbcBlockId(table_index(inventory.program.blocks.len()));
-        self.instruction_start = table_index(inventory.program.instructions.len());
+    fn reopen_after_terminated_branch(&mut self, inventory: &mut AwbcInventory) -> AwbcBlockId {
         self.terminated = false;
-        block
+        inventory.reopen_function_block()
     }
 
     fn terminate(
@@ -223,29 +195,8 @@ impl FlowBodyBuilder {
         }
         self.returns_value |= matches!(terminator, AwbcTerminator::Return { value: Some(_) });
         self.has_dynamic_target |= matches!(terminator, AwbcTerminator::GotoDynamic { .. });
-        let instruction_len =
-            table_range_len(self.instruction_start, inventory.program.instructions.len());
-        let safe_point = self.current_block_safe_point(inventory, safe_point);
-        inventory.push_block(AwbcBlock {
-            owner: self.owner,
-            instructions: AwbcTableRange::new(self.instruction_start, instruction_len),
-            terminator,
-            safe_point,
-            source_map: None,
-        });
+        inventory.close_function_block(terminator, safe_point);
         self.terminated = true;
-    }
-
-    fn current_block_safe_point(
-        &self,
-        inventory: &AwbcInventory,
-        safe_point: AwbcSafePointKind,
-    ) -> AwbcSafePointKind {
-        if table_index(inventory.program.blocks.len()) == self.block_start {
-            self.entry_safe_point
-        } else {
-            safe_point
-        }
     }
 
     fn finish(mut self, inventory: &mut AwbcInventory) -> FlowBody {
@@ -440,7 +391,9 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             frame.parameter(*input, ty);
             parameter_types.push(ty);
         }
-        let instruction_start = table_index(self.inventory.program.instructions.len());
+        let block_start = self
+            .inventory
+            .begin_function_blocks(owner, AwbcSafePointKind::CallableBoundary);
         let value = AwbcExprLowerer::new(
             self.inventory,
             &mut frame,
@@ -448,18 +401,14 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             self.plan,
         )
         .lower(&helper.expr);
-        let instruction_len =
-            table_range_len(instruction_start, self.inventory.program.instructions.len());
         let layout = self
             .inventory
             .intern_frame_layout(format!("pure.{}:frame", helper.name), frame.finish());
-        let block = self.inventory.push_block(AwbcBlock {
-            owner,
-            instructions: AwbcTableRange::new(instruction_start, instruction_len),
-            terminator: AwbcTerminator::Return { value: Some(value) },
-            safe_point: AwbcSafePointKind::CallableBoundary,
-            source_map: None,
-        });
+        self.inventory.close_function_block(
+            AwbcTerminator::Return { value: Some(value) },
+            AwbcSafePointKind::Return,
+        );
+        let block_len = table_range_len(block_start.0, self.inventory.program.blocks.len());
         let public_id = self.inventory.intern_string(&helper.name);
         let result_type = crate::awbc_lower::pattern::admitted_plan_type(
             self.inventory,
@@ -482,8 +431,8 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     helper.input_locals.len()
                 ],
                 frame_layout: layout,
-                blocks: AwbcTableRange::new(block.0, 1),
-                entry_block: block,
+                blocks: AwbcTableRange::new(block_start.0, block_len),
+                entry_block: block_start,
                 flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
             },
         );
@@ -2903,15 +2852,27 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             outer_scope_depth,
             outer_scopes,
         } = input;
-        let scope = frame.enter_scope();
-        self.inventory
-            .push_instruction(AwbcInstruction::EnterScope { scope });
-        self.inventory
-            .push_instruction(AwbcInstruction::BindPattern {
-                pattern: *pattern,
-                value: *value,
-                mode: AwbcBindMode::Declare,
-            });
+        let scope = if let Some(guard) = *guard {
+            crate::awbc_lower::expr::enter_guard_pattern_scope(
+                self.inventory,
+                self.plan,
+                frame,
+                *pattern,
+                *value,
+                guard,
+            )
+        } else {
+            let scope = frame.enter_scope();
+            self.inventory
+                .push_instruction(AwbcInstruction::EnterScope { scope });
+            self.inventory
+                .push_instruction(AwbcInstruction::BindPattern {
+                    pattern: *pattern,
+                    value: *value,
+                    mode: AwbcBindMode::Declare,
+                });
+            scope
+        };
         self.loop_targets.push(LoopLoweringTarget {
             header: *header,
             exit_jumps: Vec::new(),
@@ -2938,10 +2899,22 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 AwbcSafePointKind::None,
             );
 
+            self.inventory
+                .push_instruction(AwbcInstruction::ExitScope { scope });
+            frame.exit_scope();
+            let body_scope = frame.enter_scope();
+            self.inventory
+                .push_instruction(AwbcInstruction::EnterScope { scope: body_scope });
+            self.inventory
+                .push_instruction(AwbcInstruction::BindPattern {
+                    pattern: *pattern,
+                    value: *value,
+                    mode: AwbcBindMode::Declare,
+                });
             self.lower_ops(frame, body, ops, &format!("{path}.body"));
             if !body.terminated {
                 self.inventory
-                    .push_instruction(AwbcInstruction::ExitScope { scope });
+                    .push_instruction(AwbcInstruction::ExitScope { scope: body_scope });
                 frame.exit_scope();
                 body.close_block(
                     self.inventory,
@@ -3143,15 +3116,14 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         path: &str,
     ) -> GuardedCandidate {
         let restored_scopes = frame.scope_checkpoint();
-        let scope = frame.enter_scope();
-        self.inventory
-            .push_instruction(AwbcInstruction::EnterScope { scope });
-        self.inventory
-            .push_instruction(AwbcInstruction::BindPattern {
-                pattern,
-                value,
-                mode: AwbcBindMode::Declare,
-            });
+        let scope = crate::awbc_lower::expr::enter_guard_pattern_scope(
+            self.inventory,
+            self.plan,
+            frame,
+            pattern,
+            value,
+            guard,
+        );
         let guard = AwbcExprLowerer::new(self.inventory, frame, format!("{path}.guard"), self.plan)
             .lower(guard);
         let body_block = AwbcBlockId(table_index(
@@ -3167,10 +3139,22 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             AwbcSafePointKind::None,
         );
 
+        self.inventory
+            .push_instruction(AwbcInstruction::ExitScope { scope });
+        frame.exit_scope();
+        let body_scope = frame.enter_scope();
+        self.inventory
+            .push_instruction(AwbcInstruction::EnterScope { scope: body_scope });
+        self.inventory
+            .push_instruction(AwbcInstruction::BindPattern {
+                pattern,
+                value,
+                mode: AwbcBindMode::Declare,
+            });
         self.lower_ops(frame, body, ops, &format!("{path}.then"));
         if !body.terminated {
             self.inventory
-                .push_instruction(AwbcInstruction::ExitScope { scope });
+                .push_instruction(AwbcInstruction::ExitScope { scope: body_scope });
             frame.exit_scope();
         }
         frame.restore_scopes_after_branch(restored_scopes);

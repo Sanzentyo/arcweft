@@ -1649,7 +1649,10 @@ impl<'hir> FinalExprLowerer<'hir> {
         Ok(RuntimeFlowOpSeed::Assign { place, value })
     }
 
-    fn assignment_place(&self, statement: StmtId) -> Result<RuntimeMutablePlaceSeed, String> {
+    fn assignment_place(
+        &self,
+        statement: StmtId,
+    ) -> Result<arcweft_core::plan::RuntimeAssignmentSeed, String> {
         let assignment = self.assignment(statement).ok_or_else(|| {
             format!("checked assignment fact is missing for statement {statement:?}")
         })?;
@@ -1667,7 +1670,69 @@ impl<'hir> FinalExprLowerer<'hir> {
             RuntimeResolvedMutablePlace::Local(_) => CheckedLocalPlaceMode::Assign,
             RuntimeResolvedMutablePlace::NominalField { .. } => CheckedLocalPlaceMode::Assign,
         };
-        self.checked_place_seed(*target, place, mode)
+        let place = self.checked_place_seed(*target, place, mode)?;
+        let access = self
+            .semantic_facts
+            .checked_local_place_access(*target)
+            .ok_or_else(|| format!("checked assignment access is missing for {target:?}"))?;
+        let initialization = |state| match state {
+            arcweft_lang_sema::final_analysis::CheckedPlaceInitialization::Initialized => {
+                arcweft_core::value::RuntimePlaceInitialization::Initialized
+            }
+            arcweft_lang_sema::final_analysis::CheckedPlaceInitialization::Uninitialized => {
+                arcweft_core::value::RuntimePlaceInitialization::Uninitialized
+            }
+            arcweft_lang_sema::final_analysis::CheckedPlaceInitialization::Conditional => {
+                arcweft_core::value::RuntimePlaceInitialization::Conditional
+            }
+        };
+        let displacement = match access
+            .displacement()
+            .ok_or_else(|| format!("checked post-RHS displacement is missing for {target:?}"))?
+        {
+            arcweft_lang_sema::final_analysis::CheckedPlaceDisplacement::Unreachable => {
+                arcweft_core::value::RuntimePlaceDisplacement::Unreachable
+            }
+            arcweft_lang_sema::final_analysis::CheckedPlaceDisplacement::Reachable {
+                initialization: state,
+                fields,
+            } => {
+                let fields = fields
+                    .iter()
+                    .map(|path| {
+                        let fields = path
+                            .fields()
+                            .iter()
+                            .map(|field| {
+                                field
+                                    .runtime_field()
+                                    .map(|field| {
+                                        RuntimeRecordFieldSeedId::from_zero_based(
+                                            field.zero_based(),
+                                        )
+                                    })
+                                    .ok_or_else(|| {
+                                        "displaced child lacks an executable field coordinate"
+                                            .to_owned()
+                                    })
+                            })
+                            .collect::<Result<Box<[_]>, _>>()?;
+                        Ok(arcweft_core::value::RuntimeDisplacedField {
+                            fields,
+                            initialization: initialization(path.initialization()),
+                        })
+                    })
+                    .collect::<Result<Box<[_]>, String>>()?;
+                arcweft_core::value::RuntimePlaceDisplacement::Reachable {
+                    initialization: initialization(*state),
+                    fields,
+                }
+            }
+        };
+        Ok(arcweft_core::plan::RuntimeAssignmentSeed {
+            place,
+            displacement,
+        })
     }
 
     fn checked_place_seed(

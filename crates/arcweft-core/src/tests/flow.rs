@@ -900,9 +900,15 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
         RuntimeExprSeed::new(
             u32_ty,
             RuntimeExprSeedKind::Assign {
-                place: crate::plan::RuntimeMutablePlaceSeed::NominalField {
-                    base: local.clone(),
-                    field,
+                place: crate::plan::RuntimeAssignmentSeed {
+                    place: crate::plan::RuntimeMutablePlaceSeed::NominalField {
+                        base: local.clone(),
+                        field,
+                    },
+                    displacement: crate::value::RuntimePlaceDisplacement::Reachable {
+                        initialization: crate::value::RuntimePlaceInitialization::Initialized,
+                        fields: Box::new([]),
+                    },
                 },
                 expr: Box::new(RuntimeExprSeed::new(
                     u32_ty,

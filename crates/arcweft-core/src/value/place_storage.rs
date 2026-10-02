@@ -200,6 +200,124 @@ impl<T> Default for PlaceState<T> {
 }
 
 impl RuntimePlaceStorage<RuntimeValue> {
+    /// Checks the sealed cleanup contour against drop flags. A record header
+    /// counts as an initialized container even when a child has been moved.
+    /// This is artifact/state validation; source access legality is static.
+    pub(crate) fn matches_displacement(
+        &self,
+        target: &[RuntimeRecordFieldId],
+        displacement: &super::RuntimePlaceDisplacement<RuntimeRecordFieldId>,
+    ) -> bool {
+        use super::{RuntimePlaceDisplacement, RuntimePlaceInitialization};
+        let RuntimePlaceDisplacement::Reachable {
+            initialization,
+            fields,
+        } = displacement
+        else {
+            return false;
+        };
+        let accepts = |expected, actual| match (expected, actual) {
+            (RuntimePlaceInitialization::Conditional, Some(_)) => true,
+            (RuntimePlaceInitialization::Initialized, Some(true))
+            | (RuntimePlaceInitialization::Uninitialized, Some(false)) => true,
+            _ => false,
+        };
+        if !accepts(*initialization, self.container_initialized_at(target)) {
+            return false;
+        }
+        for field in fields {
+            if field.fields.is_empty() {
+                return false;
+            }
+            let path: Vec<_> = target.iter().chain(field.fields.iter()).copied().collect();
+            if !accepts(field.initialization, self.container_initialized_at(&path)) {
+                return false;
+            }
+        }
+        // Conditional containers use their persisted drop flags. A definite
+        // initialized container must account for every absent child owner.
+        *initialization != RuntimePlaceInitialization::Initialized
+            || self.displacement_holes_covered(target, fields)
+    }
+
+    fn container_initialized_at(&self, path: &[RuntimeRecordFieldId]) -> Option<bool> {
+        let mut storage = self;
+        let mut path = path;
+        loop {
+            match &storage.state {
+                PlaceState::Vacant => return Some(false),
+                PlaceState::Record { fields, .. } => match path.split_first() {
+                    None => return Some(true),
+                    Some((field, rest)) => {
+                        storage = fields.get(field.zero_based() as usize)?;
+                        path = rest;
+                    }
+                },
+                PlaceState::Initialized(value) => {
+                    let mut value = value;
+                    for field in path {
+                        value = value.record_field(*field)?;
+                    }
+                    return Some(true);
+                }
+            }
+        }
+    }
+
+    fn displacement_holes_covered(
+        &self,
+        target: &[RuntimeRecordFieldId],
+        contour: &[super::RuntimeDisplacedField<RuntimeRecordFieldId>],
+    ) -> bool {
+        if self.record_parts().is_none() {
+            return true;
+        }
+        enum Visit<'a> {
+            Storage(
+                &'a RuntimePlaceStorage<RuntimeValue>,
+                Option<RuntimeRecordFieldId>,
+            ),
+            Leave,
+        }
+        let mut path = Vec::new();
+        let mut pending = vec![Visit::Storage(self, None)];
+        while let Some(visit) = pending.pop() {
+            let Visit::Storage(storage, ordinal) = visit else {
+                path.pop();
+                continue;
+            };
+            if let Some(ordinal) = ordinal {
+                path.push(ordinal);
+                pending.push(Visit::Leave);
+            }
+            match &storage.state {
+                PlaceState::Vacant => {
+                    if path.starts_with(target)
+                        && !contour.iter().any(|field| {
+                            field.initialization != super::RuntimePlaceInitialization::Initialized
+                                && path[target.len()..].starts_with(&field.fields)
+                        })
+                    {
+                        return false;
+                    }
+                }
+                PlaceState::Initialized(_) => {}
+                PlaceState::Record { fields, .. } => {
+                    for (ordinal, child) in fields.iter().enumerate().rev() {
+                        pending.push(Visit::Storage(
+                            child,
+                            Some(
+                                RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)
+                                    .expect("admitted record field ordinal"),
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+        true
+    }
+
     pub(crate) fn validate_record_headers(
         &self,
         owner: &crate::task::RuntimeProgramOwner,

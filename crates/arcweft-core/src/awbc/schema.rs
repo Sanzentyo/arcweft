@@ -2119,6 +2119,7 @@ pub enum AwbcInstruction {
     Assign {
         place: AwbcMutablePlace,
         value: AwbcRegisterId,
+        displacement: crate::value::RuntimePlaceDisplacement<crate::value::RuntimeRecordFieldId>,
     },
     CallTraitMethod {
         dst: AwbcRegisterId,
@@ -2293,6 +2294,7 @@ awbc_u8_enum! {
     pub enum AwbcBindMode {
         Declare = 0,
         Assign = 1,
+        Guard = 2,
     }
 }
 

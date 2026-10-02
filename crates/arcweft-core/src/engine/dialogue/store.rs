@@ -1726,7 +1726,7 @@ mod tests {
         assert!(env.get(destination_local).is_none());
         let new = env.take(incoming_local).unwrap();
         let discarded = env
-            .assign_place(
+            .assign_runtime_place(
                 crate::value::RuntimeMutablePlace::Local(destination_local),
                 new,
             )
@@ -1795,7 +1795,7 @@ mod tests {
         );
         let value = env.take(incoming_local).unwrap();
         let displaced = env
-            .assign_place(
+            .assign_runtime_place(
                 crate::value::RuntimeMutablePlace::Local(destination_local),
                 value,
             )

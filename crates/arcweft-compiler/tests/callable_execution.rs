@@ -173,6 +173,22 @@ flow main() -> i64 {
 );
 
 callable_case!(
+    conditional_rhs_consumption_preserves_static_cleanup_and_reinitializes,
+    r#"
+fn identity(input: Vec<Content>) -> Vec<Content> { input }
+fn run(enabled: bool) -> i64 {
+    let mut items = Vec<Content>::with_capacity(0usize)
+    items = if enabled { identity(items) } else { Vec<Content>::with_capacity(0usize) }
+    let current = items
+    21i64
+}
+flow main() -> i64 { return run(true) + run(false) }
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
     implicit_terminal_return_uses_its_own_frame,
     r#"
 flow main() -> i64 {
@@ -180,6 +196,23 @@ flow main() -> i64 {
     let value = callback(41i64)
     return value
 }
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    affine_match_guard_borrows_copy_fields_and_moves_only_the_selected_arm,
+    r#"
+fn run(enabled: bool) -> i64 {
+    let input = (Vec<Content>::with_capacity(0usize), enabled)
+    let result = match input {
+        (items, flag) when flag => { let moved = items; 21i64 }
+        (items, _) => { let moved = items; 21i64 }
+    }
+    result
+}
+flow main() -> i64 { return run(true) + run(false) }
 "#,
     RuntimeValue::i64(42),
     "42"
@@ -1287,6 +1320,7 @@ flow main() -> i64 {
     let AwbcInstruction::Assign {
         place: arcweft_core::awbc::schema::AwbcMutablePlace::NominalField { base: target, .. },
         value,
+        ..
     } = write
     else {
         unreachable!()

@@ -888,13 +888,38 @@ fn execute_instruction(
                 return Ok(InstructionControl::YieldAdvanced);
             }
         }
-        AwbcInstruction::BindPattern { pattern, value, .. } => {
+        AwbcInstruction::BindPattern {
+            pattern,
+            value,
+            mode,
+        } => {
             let value_ref = register(fiber, *value)?;
             if !test_pattern(program, *pattern, value_ref)? {
                 return Err(VmError::PatternMismatch);
             }
-            let value = fiber.active_frame_mut()?.take_register(*value)?;
-            bind_tested_pattern_owned(program, fiber, *pattern, value)?;
+            if *mode == crate::awbc::schema::AwbcBindMode::Guard {
+                prepare_pattern_binding(program, fiber, *pattern, value_ref)?;
+                let mut bindings = Vec::new();
+                visit_pattern_bindings_view(
+                    program,
+                    *pattern,
+                    value_ref.view(),
+                    0,
+                    &mut |target, value| {
+                        let value = value.copy_unrestricted().ok_or_else(|| {
+                            VmError::Runtime("guard binding cannot copy an affine value".into())
+                        })?;
+                        bindings.push((target, value));
+                        Ok(())
+                    },
+                )?;
+                for (target, value) in bindings {
+                    fiber.active_frame_mut()?.set_register(target, value)?;
+                }
+            } else {
+                let value = fiber.active_frame_mut()?.take_register(*value)?;
+                bind_tested_pattern_owned(program, fiber, *pattern, value)?;
+            }
         }
         AwbcInstruction::TestPattern {
             dst,
@@ -1349,7 +1374,11 @@ fn execute_instruction(
                 return Ok(InstructionControl::Transferred);
             }
         }
-        AwbcInstruction::Assign { place, value } => {
+        AwbcInstruction::Assign {
+            place,
+            value,
+            displacement,
+        } => {
             let base = match place {
                 AwbcMutablePlace::Local(base) | AwbcMutablePlace::NominalField { base, .. } => {
                     *base
@@ -1377,6 +1406,27 @@ fn execute_instruction(
                     slot.values_at(&[field])
                         .ok_or(FiberStateError::InvalidFrame)?;
                 }
+            }
+            let path = match place {
+                AwbcMutablePlace::Local(_) => Vec::new(),
+                AwbcMutablePlace::NominalField { field, .. } => vec![
+                    RuntimeRecordFieldId::try_from_zero_based_ordinal(*field as usize)
+                        .map_err(|error| VmError::Runtime(error.to_string()))?,
+                ],
+            };
+            let slot = fiber
+                .active_frame()?
+                .registers
+                .get(base.index())
+                .ok_or(FiberStateError::InvalidFrame)?;
+            if !slot.matches_displacement(&path, displacement) {
+                return Err(VmError::Runtime(
+                    "assignment cleanup contour does not match place storage".into(),
+                ));
+            }
+            for old in slot.values_at(&path).ok_or(FiberStateError::InvalidFrame)? {
+                old.affine_line_handles()
+                    .map_err(|error| VmError::Runtime(error.to_string()))?;
             }
             let value = fiber.active_frame_mut()?.take_register(*value)?;
             let frame = fiber.active_frame_mut()?;

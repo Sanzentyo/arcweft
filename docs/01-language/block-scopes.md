@@ -52,6 +52,23 @@ transaction exactly once. If the old value was moved, there is no old value to
 clean up; when incoming paths differ, the retained slot's occupancy is the drop
 flag, not a runtime decision about whether the source operation is legal.
 
+The final ownership CFG seals an assignment's old-value cleanup contour after
+the RHS: definite initialization, definite absence, or conditional initialization,
+with schema-selected child paths for partial moves. The executable assignment
+carries this same contour through the native plan and AWBC wire format. When
+lowering distributes a continuation into branches, AWBC construction narrows
+conditional source facts using its fixed-point CFG; definite facts cannot change.
+The published artifact verifies exact initialization before admission;
+runtime storage checks persisted drop flags before transferring the new value.
+Only conditional facts require a dynamic drop decision. Definite source facts
+must not be replaced by a conditional annotation.
+
+Value-producing control executes in its enclosing frame. A pattern guard
+borrows the candidate and materializes only its used, proven Copy bindings;
+the successful arm subsequently moves the candidate into its actual bindings.
+Guard fallthrough retains the candidate for later arms. Synthetic control
+closures must not eagerly capture an enclosing owner before branch selection.
+
 A local-rooted record field is its own place, selected by the admitted field
 schema. Copy classification uses the selected field type. Moving a field leaves
 its siblings initialized; a read or borrow of the whole record requires all its

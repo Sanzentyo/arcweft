@@ -15,6 +15,75 @@ use arcweft_core::plan::{
 };
 use arcweft_core::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 
+/// Restricts a guard's borrowed pattern projection to its actual free locals.
+/// The original matching pattern remains the authority for the later move.
+pub(super) fn guard_pattern(
+    inventory: &mut AwbcInventory,
+    pattern: AwbcPatternId,
+    used: &std::collections::BTreeSet<arcweft_core::awbc::schema::AwbcRegisterId>,
+) -> AwbcPatternId {
+    let row = inventory.program.patterns[pattern.index()].clone();
+    let rest = |rest| match rest {
+        AwbcPatternRest::Bind(target) if !used.contains(&target) => AwbcPatternRest::Ignore,
+        rest => rest,
+    };
+    let row = match row {
+        AwbcPattern::Bind { target, .. } if !used.contains(&target) => AwbcPattern::Discard,
+        AwbcPattern::Whole { target, inner } => {
+            let inner = guard_pattern(inventory, inner, used);
+            if used.contains(&target) {
+                AwbcPattern::Whole { target, inner }
+            } else {
+                return inner;
+            }
+        }
+        AwbcPattern::Tuple(items) => AwbcPattern::Tuple(
+            items
+                .into_iter()
+                .map(|item| guard_pattern(inventory, item, used))
+                .collect(),
+        ),
+        AwbcPattern::Record {
+            ty,
+            fields,
+            rest: remainder,
+        } => AwbcPattern::Record {
+            ty,
+            fields: fields
+                .into_iter()
+                .map(|field| AwbcRecordPatternField {
+                    field: field.field,
+                    pattern: guard_pattern(inventory, field.pattern, used),
+                })
+                .collect(),
+            rest: rest(remainder),
+        },
+        AwbcPattern::Sequence {
+            items,
+            rest: remainder,
+        } => AwbcPattern::Sequence {
+            items: items
+                .into_iter()
+                .map(|item| guard_pattern(inventory, item, used))
+                .collect(),
+            rest: rest(remainder),
+        },
+        AwbcPattern::Variant {
+            ty,
+            case,
+            case_name,
+            payload,
+        } => AwbcPattern::Variant {
+            ty,
+            case,
+            case_name,
+            payload: payload.map(|payload| guard_pattern(inventory, payload, used)),
+        },
+        row => row,
+    };
+    inventory.intern_pattern(row)
+}
+
 /// Projects the checked function-input transfer rule onto its exact lowered
 /// pattern bindings. The VM validates this row before the input enters a frame.
 pub(crate) fn function_input_ownership(

@@ -136,7 +136,7 @@ pub(super) fn checked_declaration_default_captures(
     module: &arcweft_lang_hir::module::HirModule,
     symbol: &arcweft_lang_hir::symbol::CallableSymbol,
     root: ExprId,
-    execution: &super::execution_regions::CheckedExpressionExecutionRegion,
+    execution: &super::execution_regions::CheckedExecutionRegion,
     coordinates: &crate::semantic_coordinate::SemanticCoordinateIndex<'_, '_>,
 ) -> Result<Box<[crate::callable::CheckedDeclarationDefaultCapture]>, FinalSemanticAnalysisError> {
     use arcweft_lang_hir::item::HirItemKind;

@@ -3,6 +3,8 @@
     reason = "AWBC verifier walks complete instruction and terminator families with shared dataflow state"
 )]
 
+mod assignment;
+pub(super) use assignment::AssignmentAdmission;
 mod format;
 
 use super::AwbcVerifyError;
@@ -31,12 +33,12 @@ use crate::value::{
     RuntimeAgentField, RuntimeAgentFieldResult, RuntimeAgentFieldValue, RuntimeAgentSignatureError,
     RuntimeAgentTypeContext, RuntimeAgentTypeOperand, RuntimeCapacityFamily,
     RuntimeCapacityOperation, RuntimeCharacterDialogueProducerId, RuntimeDialogueOpaqueRole,
-    RuntimeIntrinsic, RuntimeReductionProducer,
+    RuntimeIntrinsic, RuntimePlaceInitialization, RuntimeReductionProducer,
 };
 use arcweft_interaction_model::dialogue::{
     CharacterDialogueOperation, CharacterDialoguePatchOperation,
 };
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 #[cfg(test)]
 mod capacity_tests;
@@ -45,8 +47,11 @@ mod index_tests;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct FlowState {
-    initialized: Vec<bool>,
-    moved_fields: BTreeSet<(AwbcRegisterId, Vec<crate::value::RuntimeRecordFieldId>)>,
+    initialized: Vec<RuntimePlaceInitialization>,
+    moved_fields: BTreeMap<
+        (AwbcRegisterId, Vec<crate::value::RuntimeRecordFieldId>),
+        RuntimePlaceInitialization,
+    >,
     copy_proofs: Vec<CopyProof>,
     scopes: Vec<AwbcScopeId>,
     format_attempts: Vec<format::FormatAttemptFlowState>,
@@ -139,10 +144,13 @@ fn block_index_to_u32(index: usize) -> u32 {
     u32::try_from(index).expect("AWBC block indices originate from u32 ids")
 }
 
-pub(super) fn verify_code(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {
+pub(super) fn verify_code(
+    verifier: &Verifier<'_, '_>,
+    admission: &mut AssignmentAdmission<'_>,
+) -> Result<(), AwbcVerifyError> {
     let attempts = format::format_attempt_catalog(verifier.program)?;
     for function in 0..verifier.program.functions.len() {
-        verify_function(verifier, function, None, &attempts)?;
+        verify_function(verifier, function, None, &attempts, admission)?;
     }
     Ok(())
 }
@@ -259,6 +267,7 @@ fn verify_function(
     function_index: usize,
     scope_query: Option<(usize, u32)>,
     attempts: &format::FormatAttemptCatalog<'_>,
+    admission: &mut AssignmentAdmission<'_>,
 ) -> Result<Option<Vec<AwbcScopeId>>, AwbcVerifyError> {
     let program = verifier.program;
     let function = &program.functions[function_index];
@@ -272,8 +281,8 @@ fn verify_function(
     )?;
     let mut states = vec![None::<FlowState>; program.blocks.len()];
     let mut initial = FlowState {
-        initialized: vec![false; layout.slots.len()],
-        moved_fields: BTreeSet::new(),
+        initialized: vec![RuntimePlaceInitialization::Uninitialized; layout.slots.len()],
+        moved_fields: BTreeMap::new(),
         copy_proofs: layout
             .slots
             .iter()
@@ -289,10 +298,14 @@ fn verify_function(
         format_attempts: Vec::new(),
     };
     for (slot, initialized) in layout.slots.iter().zip(&mut initial.initialized) {
-        *initialized = matches!(
+        *initialized = if matches!(
             slot.role,
             AwbcFrameSlotRole::Parameter | AwbcFrameSlotRole::RuntimeState
-        );
+        ) {
+            RuntimePlaceInitialization::Initialized
+        } else {
+            RuntimePlaceInitialization::Uninitialized
+        };
     }
     for (row, parameter) in function
         .input_ownership
@@ -377,12 +390,56 @@ fn verify_function(
         }
     }
 
+    // Cleanup annotations are checked only after the initialization lattice
+    // reaches its fixed point. Early visits may still have a definite fact
+    // that becomes conditional when another predecessor/backedge arrives.
     for block_index in block_range {
         if states[block_index].is_none() {
             return Err(AwbcVerifyError::UnreachableBlock {
                 function: function_index,
                 block: block_index,
             });
+        }
+        steps = steps.saturating_add(1);
+        if steps > verifier.budget.dataflow_steps {
+            return Err(AwbcVerifyError::BudgetExceeded {
+                budget: "dataflow_steps",
+            });
+        }
+        let mut state = states[block_index].clone().expect("reachable block");
+        let block = &program.blocks[block_index];
+        let instruction_range = checked_range(
+            block.instructions,
+            program.instructions.len(),
+            "instructions",
+            &format!("block {block_index}"),
+        )?;
+        for instruction_index in instruction_range {
+            if let AwbcInstruction::Assign {
+                place,
+                displacement,
+                ..
+            } = &program.instructions[instruction_index]
+            {
+                assignment::verify_displacement(
+                    verifier,
+                    function_index,
+                    block_index,
+                    instruction_index,
+                    place,
+                    displacement,
+                    &state,
+                    admission,
+                )?;
+            }
+            apply_instruction(
+                verifier,
+                function_index,
+                block_index,
+                instruction_index,
+                &mut state,
+                attempts,
+            )?;
         }
     }
     Ok(queried_scopes)
@@ -593,11 +650,16 @@ pub(super) fn scope_stack_at(
         });
     }
     let attempts = format::format_attempt_catalog(verifier.program)?;
-    verify_function(verifier, function, Some((block, offset)), &attempts)?.ok_or_else(|| {
-        AwbcVerifyError::InvalidInvariant {
-            at: "scope resume coordinate".to_owned(),
-            message: "scope resume offset is outside the selected block".to_owned(),
-        }
+    verify_function(
+        verifier,
+        function,
+        Some((block, offset)),
+        &attempts,
+        &mut AssignmentAdmission::Sealed,
+    )?
+    .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+        at: "scope resume coordinate".to_owned(),
+        message: "scope resume offset is outside the selected block".to_owned(),
     })
 }
 
@@ -670,11 +732,33 @@ fn merge_state(
                 });
             }
             let mut changed = false;
-            let field_count = current.moved_fields.len();
-            current.moved_fields.extend(incoming.moved_fields);
-            changed |= field_count != current.moved_fields.len();
+            let keys = current
+                .moved_fields
+                .keys()
+                .chain(incoming.moved_fields.keys())
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            for key in keys {
+                let previous = current
+                    .moved_fields
+                    .get(&key)
+                    .copied()
+                    .unwrap_or(RuntimePlaceInitialization::Initialized);
+                let other = incoming
+                    .moved_fields
+                    .get(&key)
+                    .copied()
+                    .unwrap_or(RuntimePlaceInitialization::Initialized);
+                let merged = previous.join(other);
+                changed |= merged != previous;
+                if merged == RuntimePlaceInitialization::Initialized {
+                    current.moved_fields.remove(&key);
+                } else {
+                    current.moved_fields.insert(key, merged);
+                }
+            }
             for (current, incoming) in current.initialized.iter_mut().zip(incoming.initialized) {
-                let merged = *current && incoming;
+                let merged = current.join(incoming);
                 changed |= merged != *current;
                 *current = merged;
             }
@@ -854,7 +938,7 @@ fn apply_instruction(
                         AwbcFrameSlotRole::Parameter | AwbcFrameSlotRole::RuntimeState
                     )
                 {
-                    state.initialized[index] = false;
+                    state.initialized[index] = RuntimePlaceInitialization::Uninitialized;
                     state.copy_proofs[index] = CopyProof::Affine;
                 }
             }
@@ -899,7 +983,19 @@ fn apply_instruction(
                 0,
             )?;
             assign_input_pattern_copy_proofs(verifier, function, block, instruction_index, state);
-            clear_register(verifier, function, block, *value, state)?;
+            if *mode == AwbcBindMode::Guard {
+                if binding_targets
+                    .iter()
+                    .any(|target| !state.copy_proofs[target.index()].permits_copy())
+                {
+                    return invalid_type(
+                        &at,
+                        "guard bindings require producer-proven unrestricted values",
+                    );
+                }
+            } else {
+                clear_register(verifier, function, block, *value, state)?;
+            }
         }
         AwbcInstruction::TestPattern {
             dst,
@@ -1430,7 +1526,7 @@ fn apply_instruction(
                 &format!("pure helper {}", helper.public_id.0),
             )?;
         }
-        AwbcInstruction::Assign { place, value } => {
+        AwbcInstruction::Assign { place, value, .. } => {
             let value_ty = read_register(verifier, function, block, *value, state)?;
             let expected = match place {
                 AwbcMutablePlace::Local(target) => {
@@ -2038,7 +2134,7 @@ fn apply_instruction(
                     }
                 }
             }
-            if state.initialized[dst.index()] {
+            if !state.initialized[dst.index()].is_uninitialized() {
                 return Err(AwbcVerifyError::InvalidInvariant {
                     at: at.clone(),
                     message: "line-operation destination must be vacant after operand transfer"
@@ -2349,10 +2445,13 @@ fn apply_instruction_copy_and_move_effects(
                     }
                 }
                 crate::awbc::schema::AwbcPlaceReadMode::Move => {
-                    state.moved_fields.retain(|(register, child)| {
+                    state.moved_fields.retain(|(register, child), _| {
                         *register != *root || !child.starts_with(fields)
                     });
-                    state.moved_fields.insert((*root, fields.clone()));
+                    state.moved_fields.insert(
+                        (*root, fields.clone()),
+                        RuntimePlaceInitialization::Uninitialized,
+                    );
                 }
             }
             outputs.push(*dst);
@@ -2534,7 +2633,7 @@ fn apply_instruction_copy_and_move_effects(
             }
         }
         AwbcInstruction::CommitDialogueResult { source } => consumed.push(*source),
-        AwbcInstruction::Assign { place, value } => {
+        AwbcInstruction::Assign { place, value, .. } => {
             consumed.push(*value);
             let value_proof = state.copy_proofs[value.index()].clone();
             match place {
@@ -2553,7 +2652,7 @@ fn apply_instruction_copy_and_move_effects(
                         at: at.into(),
                         message: "invalid assigned field".into(),
                     })?;
-                    state.moved_fields.retain(|(register, path)| {
+                    state.moved_fields.retain(|(register, path), _| {
                         *register != *target || !path.starts_with(&[field])
                     });
                     mutated.push(*target);
@@ -2616,10 +2715,10 @@ fn apply_instruction_copy_and_move_effects(
         }
     }
     for output in outputs {
-        state.initialized[output.index()] = true;
+        state.initialized[output.index()] = RuntimePlaceInitialization::Initialized;
         state
             .moved_fields
-            .retain(|(register, _)| *register != output);
+            .retain(|(register, _), _| *register != output);
     }
     for (output, proof) in extra_output_proofs {
         state.copy_proofs[output.index()] = proof;
@@ -2838,7 +2937,7 @@ fn apply_terminator(
             }
             let dst_ty = register_type(verifier, function, block, *item)?;
             require_compatible(program, dst_ty, *item_ty, &at)?;
-            if state.initialized[item.index()] {
+            if !state.initialized[item.index()].is_uninitialized() {
                 return invalid_type(&at, "sequence next item destination is vacant");
             }
             let mut nonempty = state.clone();
@@ -3541,8 +3640,7 @@ fn apply_terminator_copy_and_move_effects(
                     && state
                         .initialized
                         .get(register.index())
-                        .copied()
-                        .unwrap_or(false)
+                        .is_some_and(|state| state.is_initialized())
             })
             .copied()
             .collect::<BTreeSet<_>>();
@@ -3551,15 +3649,14 @@ fn apply_terminator_copy_and_move_effects(
                 && state
                     .initialized
                     .get(source.index())
-                    .copied()
-                    .unwrap_or(false)
+                    .is_some_and(|state| state.is_initialized())
             {
                 clear_register(verifier, function, block, *source, state)?;
             }
         }
         for output in restored_outputs {
             let ty = register_type(verifier, function, block, output)?;
-            state.initialized[output.index()] = true;
+            state.initialized[output.index()] = RuntimePlaceInitialization::Initialized;
             state.copy_proofs[output.index()] = base_copy_proof(verifier.program, ty);
         }
     }
@@ -4341,7 +4438,7 @@ fn validate_pattern(
                 require_compatible(program, *expected, value_ty, "typed pattern")?;
             }
             match mode {
-                Some(AwbcBindMode::Declare) => {
+                Some(AwbcBindMode::Declare | AwbcBindMode::Guard) => {
                     write_register(verifier, function, block, *target, state)?;
                 }
                 Some(AwbcBindMode::Assign) => {
@@ -4460,7 +4557,7 @@ fn validate_pattern(
                 let rest_ty = register_type(verifier, function, block, *rest)?;
                 require_compatible(program, rest_ty, value_ty, "record rest binding")?;
                 match mode {
-                    Some(AwbcBindMode::Declare) => {
+                    Some(AwbcBindMode::Declare | AwbcBindMode::Guard) => {
                         write_register(verifier, function, block, *rest, state)?;
                     }
                     Some(AwbcBindMode::Assign) => {
@@ -4516,7 +4613,7 @@ fn validate_pattern(
                 let rest_ty = register_type(verifier, function, block, *rest)?;
                 require_compatible(program, rest_ty, value_ty, "sequence rest binding")?;
                 match mode {
-                    Some(AwbcBindMode::Declare) => {
+                    Some(AwbcBindMode::Declare | AwbcBindMode::Guard) => {
                         write_register(verifier, function, block, *rest, state)?;
                     }
                     Some(AwbcBindMode::Assign) => {
@@ -4582,7 +4679,7 @@ fn validate_pattern(
                 depth + 1,
             )?;
             match mode {
-                Some(AwbcBindMode::Declare) => {
+                Some(AwbcBindMode::Declare | AwbcBindMode::Guard) => {
                     write_register(verifier, function, block, *target, state)?;
                 }
                 Some(AwbcBindMode::Assign) => {
@@ -5029,7 +5126,7 @@ fn read_aggregate_root(
     state: &FlowState,
 ) -> Result<AwbcTypeId, AwbcVerifyError> {
     let ty = register_type(verifier, function, block, root)?;
-    if !state.initialized[root.index()] {
+    if !state.initialized[root.index()].is_initialized() {
         return Err(AwbcVerifyError::UninitializedRegister {
             function,
             block,
@@ -5048,7 +5145,7 @@ fn read_place_type(
     state: &FlowState,
 ) -> Result<AwbcTypeId, AwbcVerifyError> {
     let mut ty = read_aggregate_root(verifier, function, block, root, state)?;
-    if state.moved_fields.iter().any(|(register, path)| {
+    if state.moved_fields.keys().any(|(register, path)| {
         *register == root && (path.starts_with(fields) || fields.starts_with(path))
     }) {
         return Err(AwbcVerifyError::UninitializedRegister {
@@ -5071,8 +5168,8 @@ fn read_register(
     state: &FlowState,
 ) -> Result<AwbcTypeId, AwbcVerifyError> {
     let ty = register_type(verifier, function, block, register)?;
-    if !state.initialized[register.index()]
-        || state.moved_fields.iter().any(|(root, _)| *root == register)
+    if !state.initialized[register.index()].is_initialized()
+        || state.moved_fields.keys().any(|(root, _)| *root == register)
     {
         return Err(AwbcVerifyError::UninitializedRegister {
             function,
@@ -5091,8 +5188,8 @@ fn write_register(
     state: &mut FlowState,
 ) -> Result<(), AwbcVerifyError> {
     let ty = register_type(verifier, function, block, register)?;
-    state.initialized[register.index()] = true;
-    state.moved_fields.retain(|(root, _)| *root != register);
+    state.initialized[register.index()] = RuntimePlaceInitialization::Initialized;
+    state.moved_fields.retain(|(root, _), _| *root != register);
     state.copy_proofs[register.index()] = base_copy_proof(verifier.program, ty);
     Ok(())
 }
@@ -5105,8 +5202,8 @@ fn clear_register(
     state: &mut FlowState,
 ) -> Result<(), AwbcVerifyError> {
     register_type(verifier, function, block, register)?;
-    state.initialized[register.index()] = false;
-    state.moved_fields.retain(|(root, _)| *root != register);
+    state.initialized[register.index()] = RuntimePlaceInitialization::Uninitialized;
+    state.moved_fields.retain(|(root, _), _| *root != register);
     state.copy_proofs[register.index()] = CopyProof::Affine;
     Ok(())
 }

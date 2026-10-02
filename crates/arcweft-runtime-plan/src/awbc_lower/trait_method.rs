@@ -101,17 +101,15 @@ struct TraitMethodBody {
 }
 
 struct TraitMethodBodyBuilder {
-    owner: AwbcFunctionId,
     block_start: u32,
-    instruction_start: u32,
 }
 
 impl TraitMethodBodyBuilder {
-    fn new(inventory: &AwbcInventory, owner: AwbcFunctionId) -> Self {
+    fn new(inventory: &mut AwbcInventory, owner: AwbcFunctionId) -> Self {
         Self {
-            owner,
-            block_start: table_index(inventory.program.blocks.len()),
-            instruction_start: table_index(inventory.program.instructions.len()),
+            block_start: inventory
+                .begin_function_blocks(owner, AwbcSafePointKind::CallableBoundary)
+                .0,
         }
     }
 
@@ -202,23 +200,7 @@ impl TraitMethodBodyBuilder {
         terminator: AwbcTerminator,
         safe_point: AwbcSafePointKind,
     ) -> AwbcBlockId {
-        let block = AwbcBlockId(table_index(inventory.program.blocks.len()));
-        let instruction_len =
-            table_range_len(self.instruction_start, inventory.program.instructions.len());
-        let safe_point = if block.0 == self.block_start {
-            AwbcSafePointKind::CallableBoundary
-        } else {
-            safe_point
-        };
-        inventory.push_block(AwbcBlock {
-            owner: self.owner,
-            instructions: AwbcTableRange::new(self.instruction_start, instruction_len),
-            terminator,
-            safe_point,
-            source_map: None,
-        });
-        self.instruction_start = table_index(inventory.program.instructions.len());
-        block
+        inventory.close_function_block(terminator, safe_point)
     }
 
     fn finish(self, inventory: &mut AwbcInventory) -> TraitMethodBody {

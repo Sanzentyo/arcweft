@@ -328,7 +328,7 @@ impl<'a> CallableEffectGraph<'a> {
                     crate::final_analysis::statement_effects::PreparedExecutableSuspensionRow::new(
                         children
                             .iter()
-                            .copied()
+                            .cloned()
                             .collect::<Vec<_>>()
                             .into_boxed_slice(),
                         suspension,
@@ -355,7 +355,7 @@ impl<'a> CallableEffectGraph<'a> {
             bodies.insert(
                 owner,
                 crate::final_analysis::statement_effects::PreparedExecutableSuspensionRow::new(
-                    children.iter().copied().collect(),
+                    children.iter().cloned().collect(),
                     suspension,
                     control_role,
                 ),

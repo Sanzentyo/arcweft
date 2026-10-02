@@ -857,11 +857,26 @@ fn whole_local_assignment_initializes_and_mutation_requires_a_live_owner() {
 
 #[test]
 fn assignment_reinitializes_after_move_and_reachable_branch_joins() {
-    for body in [
-        "let moved = items; items = replacement; ()",
-        "let moved = items; let ignored = { let marker = 0i64; items = replacement; () }; ()",
-        "let ignored = if condition { let moved = items; () } else { () }; items = replacement; ()",
-        "items = identity(items); ()",
+    use crate::final_analysis::{CheckedPlaceDisplacement, CheckedPlaceInitialization as Init};
+    for (body, expected) in [
+        ("items = replacement; ()", Init::Initialized),
+        (
+            "let moved = items; items = replacement; ()",
+            Init::Uninitialized,
+        ),
+        (
+            "let moved = items; let ignored = { let marker = 0i64; items = replacement; () }; ()",
+            Init::Uninitialized,
+        ),
+        (
+            "let ignored = if condition { let moved = items; () } else { () }; items = replacement; ()",
+            Init::Conditional,
+        ),
+        ("items = identity(items); ()", Init::Uninitialized),
+        (
+            "items = if condition { identity(items) } else { replacement }; ()",
+            Init::Conditional,
+        ),
     ] {
         let source = format!(
             "fn identity(input: Vec<Need<i64>>) -> Vec<Need<i64>> {{ input }}\nfn root(input: Vec<Need<i64>>, replacement: Vec<Need<i64>>, condition: bool) {{ let mut items = input; {body} }}"
@@ -869,11 +884,24 @@ fn assignment_reinitializes_after_move_and_reachable_branch_joins() {
         let world = fixture(&source, None);
         let report = analyze(&world)
             .unwrap_or_else(|error| panic!("Rust-compatible initialization: {source}: {error:?}"));
-        assert!(report.checked_local_uses().rows().any(|(_, access)| {
-            access.place_access().is_some_and(|access| {
-                access.mode() == crate::final_analysis::CheckedLocalPlaceMode::Assign
-            })
-        }));
+        let assignments = report
+            .checked_local_uses()
+            .rows()
+            .filter_map(|(_, access)| access.place_access())
+            .filter(|access| access.mode() == crate::final_analysis::CheckedLocalPlaceMode::Assign)
+            .collect::<Vec<_>>();
+        let [assignment] = assignments.as_slice() else {
+            panic!("one write boundary")
+        };
+        let Some(CheckedPlaceDisplacement::Reachable {
+            initialization,
+            fields,
+        }) = assignment.displacement()
+        else {
+            panic!("sealed post-RHS cleanup contour")
+        };
+        assert_eq!(*initialization, expected, "{source}");
+        assert!(fields.is_empty());
     }
 }
 
@@ -1527,4 +1555,37 @@ flow main() -> i64 {
             "unsupported receiver {index} must not poison final local-use topology: {actual:?}"
         );
     }
+}
+
+#[test]
+fn whole_record_replacement_retains_static_moved_child_cleanup_contours() {
+    use crate::final_analysis::{CheckedPlaceDisplacement, CheckedPlaceInitialization};
+    let world = fixture(
+        "struct Pair { style: RichTextStyle, other: i64 }\nfn root(input: Pair, replacement: Pair) { let mut pair = input; let moved = pair.style; pair = replacement; () }",
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let assignment = report
+        .checked_local_uses()
+        .rows()
+        .filter_map(|(_, access)| access.place_access())
+        .find(|access| access.mode() == crate::final_analysis::CheckedLocalPlaceMode::Assign)
+        .unwrap();
+    let Some(CheckedPlaceDisplacement::Reachable {
+        initialization,
+        fields,
+    }) = assignment.displacement()
+    else {
+        panic!("post-RHS contour")
+    };
+    assert_eq!(*initialization, CheckedPlaceInitialization::Initialized);
+    let [field] = fields.as_ref() else {
+        panic!("one moved child")
+    };
+    assert_eq!(
+        field.initialization(),
+        CheckedPlaceInitialization::Uninitialized
+    );
+    assert_eq!(field.fields().len(), 1);
+    assert_eq!(field.fields()[0].runtime_field().unwrap().zero_based(), 0);
 }

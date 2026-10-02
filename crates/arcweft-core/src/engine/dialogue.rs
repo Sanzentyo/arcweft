@@ -968,7 +968,7 @@ impl Engine {
                 let value = self.evaluate_dialogue_expr(frame, &value, pure_backend)?;
                 frame
                     .locals
-                    .assign_place(place, value)
+                    .assign_place(&place, value)
                     .map_err(|error| error.into_parts().0)?;
             }
             FlowOp::HostCall { binding, target } => {
@@ -3324,7 +3324,7 @@ mod tests {
             .unwrap();
         frame
             .locals
-            .assign_place(crate::value::RuntimeMutablePlace::Local(destination), value)
+            .assign_runtime_place(crate::value::RuntimeMutablePlace::Local(destination), value)
             .unwrap();
         engine
             .commit_activation_assignment_discards(&id, &mut frame, &mut line, &before)
