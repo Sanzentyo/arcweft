@@ -102,6 +102,18 @@ impl CheckedCallableAuthorityLease {
     pub(crate) fn admits(&self, catalog: &CheckedCallableCatalog) -> bool {
         self == &catalog.authority_lease()
     }
+
+    pub(crate) fn admits_hir(
+        &self,
+        project: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
+    ) -> bool {
+        match &self.generation.origin {
+            CheckedCallableCatalogOrigin::RegisteredProject { hir, .. } => {
+                hir.validate_analysis_lease(project).is_ok()
+            }
+            CheckedCallableCatalogOrigin::Detached { .. } => false,
+        }
+    }
 }
 
 /// Runtime disposition frozen after semantic role checking.

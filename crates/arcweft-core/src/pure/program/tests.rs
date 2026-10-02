@@ -2,8 +2,9 @@ use super::*;
 use crate::{
     entry::RuntimeCallableId,
     plan::{
-        RuntimeExprSeed, RuntimeExprSeedKind, RuntimePlanBuilder, RuntimePlanTypeSeed,
-        RuntimePureHelperOrigin, RuntimePureHelperSeed, RuntimePureProgramBindingSeed,
+        RuntimeExprSeed, RuntimeExprSeedKind, RuntimeLocalDeclarationSeed, RuntimePlanBuilder,
+        RuntimePlanTypeSeed, RuntimePureHelperOrigin, RuntimePureHelperSeed,
+        RuntimePureProgramBindingSeed,
     },
 };
 
@@ -112,6 +113,108 @@ fn pure_program_external_calls_keep_selected_owner_and_validate_results() {
         backend.external.calls, 2,
         "bad bindings and arity do not reach the external implementation"
     );
+}
+
+#[test]
+fn borrowed_program_inputs_reject_nested_affine_values_before_execution() {
+    use crate::pattern::{RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId};
+    use crate::task::NeedId;
+
+    let boolean = RuntimeSemanticTypeId::from_bytes([37; 32]);
+    let owner = RuntimeOpaqueTypeOwner::exact(
+        RuntimeOpaqueTypeProducerId::try_new("fixture.program-input").unwrap(),
+        RuntimeSemanticTypeId::from_bytes([39; 32]),
+    );
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(boolean, RuntimePlanTypeProjection::Bool),
+                RuntimePlanTypeSeed::new(
+                    owner.semantic_identity(),
+                    RuntimePlanTypeProjection::Opaque {
+                        producer: owner.producer().clone(),
+                        admission: owner.admission(),
+                        value_class: owner.value_class(),
+                        persistence: owner.persistence(),
+                        arguments: Box::new([]),
+                    },
+                ),
+            ],
+            [
+                RuntimeLocalDeclarationSeed::new(boolean),
+                RuntimeLocalDeclarationSeed::new(owner.semantic_identity()),
+            ],
+        )
+        .unwrap();
+    let target = RuntimeCallTarget::callable(RuntimeCallableId::from_checked_digest([44; 32]));
+    let helper = builder
+        .push_pure_helper_seed(RuntimePureHelperSeed {
+            name: "borrowed.inputs".to_owned(),
+            inputs: admission.local_ids().to_vec().into_boxed_slice(),
+            input_abi: vec![RuntimePureInputType::Value; 2],
+            output_abi: RuntimePureOutputType::Value,
+            body: RuntimeExprSeed::new(
+                boolean,
+                RuntimeExprSeedKind::Call {
+                    callee: target.clone(),
+                    args: Box::new([]),
+                },
+            ),
+            scalar_eval_supported: false,
+            origin: RuntimePureHelperOrigin::Inferred,
+        })
+        .unwrap();
+    let program = RuntimePureProgramId::from_checked_digest([40; 32]);
+    builder
+        .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed { program, helper })
+        .unwrap();
+    let plan = Arc::new(builder.finish().unwrap());
+    let mut backend = VmRuntimePureCallBackend::default().with_external_calls(External {
+        plan: Arc::clone(&plan),
+        target,
+        value: RuntimeValue::Bool(true),
+        calls: 0,
+    });
+    let args = [
+        RuntimeValue::Bool(false),
+        owner
+            .try_wrap(RuntimeValue::Tuple(vec![RuntimeValue::Need(NeedId(
+                "need.borrowed-input".to_owned(),
+            ))]))
+            .unwrap(),
+    ];
+    let binding = &plan.pure_programs()[0];
+    let local = resolve_validated_pure_helper(&plan, binding.helper())
+        .unwrap()
+        .input_locals[1];
+    assert_eq!(
+        evaluate_pure_program_with_backend(&plan, program, &args, &mut backend),
+        Err(RuntimeEvalError::AffineLocalCopy(local))
+    );
+    let RuntimeValue::Opaque(value) = &args[1] else {
+        panic!("caller retains the original opaque input")
+    };
+    assert_eq!(
+        value.payload(),
+        &RuntimeValue::Tuple(vec![RuntimeValue::Need(NeedId(
+            "need.borrowed-input".to_owned()
+        ))])
+    );
+    assert_eq!(backend.external.calls, 0);
+
+    let copy_args = [
+        RuntimeValue::Bool(false),
+        owner
+            .try_wrap(RuntimeValue::Tuple(vec![RuntimeValue::Bool(true)]))
+            .unwrap(),
+    ];
+    assert_eq!(
+        evaluate_pure_program_with_backend(&plan, program, &copy_args, &mut backend).unwrap(),
+        RuntimeValue::Bool(true)
+    );
+    assert_eq!(backend.external.calls, 1);
+    assert!(matches!(copy_args[1], RuntimeValue::Opaque(_)));
 }
 
 struct DialogueExternal {

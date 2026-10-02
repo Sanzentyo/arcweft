@@ -9,6 +9,10 @@ use arcweft_interaction_model::dialogue::CharacterDialoguePatchOperation;
 #[cfg(test)]
 mod tests;
 
+/// Evaluates a program from borrowed inputs. Every input must have the selected
+/// type and a transitively unrestricted value graph. All inputs are checked
+/// before materialization or execution; rejection retains the caller's values
+/// and does not invoke the backend.
 pub fn evaluate_pure_program_with_backend(
     plan: &Arc<RuntimePlan>,
     program: RuntimePureProgramId,
@@ -51,7 +55,19 @@ pub fn evaluate_pure_program_with_backend(
             return Err(error("pure program input disagrees with its helper local"));
         }
     }
-    let bindings = prepare_helper_bindings(plan, helper, args.iter().cloned())?;
+    validate_helper_arguments(plan, helper, args)?;
+    for (&local, value) in helper.input_locals.iter().zip(args) {
+        if !value.ownership().permits_copy() {
+            return Err(RuntimeEvalError::AffineLocalCopy(local));
+        }
+    }
+    let bindings = helper
+        .input_locals
+        .iter()
+        .copied()
+        .zip(args.iter().cloned())
+        .map(|(local, value)| RuntimeLocalBinding { local, value })
+        .collect::<Vec<_>>();
     let mut evaluator = PureEvaluator::new_ref(plan, &bindings);
     evaluator.external = Some(backend);
     validate_helper_result(plan, helper, evaluator.evaluate_expr(&helper.expr))

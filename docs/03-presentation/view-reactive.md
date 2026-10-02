@@ -130,8 +130,12 @@ callable を返す default は値生成であり、capture の転送だけをそ
 含める。latent body と defer の cleanup body は別の実行境界で、cleanup の効果・
 中断条件は保持する。field access は field identity と receiver の評価元を別々に
 持ち、直接 binding の read と receiver expression の評価を二重に数えない。
-Move は同じ local generation の availability を終了し、代入では復活しない。
-replacement/mutation は live owner を必須とし、借用中の owner の消費・置換を拒否する。
+move した値の読み取り・借用は未初期化として拒否する。whole-local への代入は
+同じ宣言を再初期化できる。部分 move は field ごとに追跡し、その field への
+代入で復元できるが、owner 全体が未初期化のときは部分更新を拒否する。RHS 後の
+旧値の状態を静的に求め、残っている所有値だけを cleanup する。mutation は
+初期化済みの対象を必要とし、借用中の owner の消費・置換を拒否する。詳細は
+[block scopes](../01-language/block-scopes.md) の所有権・部分 move 契約に従う。
 shadowing は新しい local generation の初期化として扱う。
 値の Copy/Move/Borrow と place の replacement/mutation はそれぞれの checked
 access 証拠を必要とする。純粋な program への抽出は root 外の place mutation と

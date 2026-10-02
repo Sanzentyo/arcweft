@@ -155,6 +155,7 @@ impl CheckedExecutionInputUse {
 /// shared eager DAG. The context closes input/result types and issues an owned
 /// snapshot of its selected local-use certificates.
 /// Callers cannot manufacture an accepted region.
+#[derive(Debug)]
 pub struct CheckedExecutionInputAbi {
     authority: crate::callable::CheckedCallableAuthorityLease,
     instance: Option<super::CheckedLocalUseInstanceIdentity>,
@@ -169,6 +170,19 @@ pub struct CheckedExecutionInputAbi {
 }
 
 impl CheckedExecutionInputAbi {
+    /// Authenticates the accepted HIR allocation before a runtime consumer uses
+    /// generation-local owners. Context validation additionally authenticates
+    /// the callable registration and closed substitution.
+    pub fn validate_project(
+        &self,
+        project: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
+    ) -> Result<(), super::CheckedExecutionContextError> {
+        if !self.authority.admits_hir(project) {
+            return Err(super::CheckedExecutionContextError::ForeignAuthority);
+        }
+        Ok(())
+    }
+
     /// Rejects pairing the snapshot with another generation or substitution.
     pub fn validate_for(
         &self,
@@ -196,6 +210,11 @@ impl CheckedExecutionInputAbi {
 
     pub fn expressions(&self) -> &[ExprId] {
         self.execution.expressions()
+    }
+
+    /// Queries the selected DAG's sorted membership without another index.
+    pub fn contains_expression(&self, owner: ExprId) -> bool {
+        self.execution.expressions().binary_search(&owner).is_ok()
     }
 
     pub fn statements(&self) -> &[StmtId] {

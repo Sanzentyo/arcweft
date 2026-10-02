@@ -266,6 +266,10 @@ pub enum RuntimeRecordExecutableOwner {
 #[derive(Debug, Error)]
 pub enum RuntimeSemanticProjectionError {
     #[error(transparent)]
+    ProgramAdmission(#[from] arcweft_lang_sema::final_analysis::CheckedProgramAdmissionError),
+    #[error(transparent)]
+    ExecutionContext(#[from] Box<arcweft_lang_sema::final_analysis::CheckedExecutionContextError>),
+    #[error(transparent)]
     TypeInstantiation(#[from] arcweft_lang_sema::types::TypeInstantiationError),
     #[error(transparent)]
     GenericScope(#[from] arcweft_lang_sema::types::GenericScopeError),
@@ -1381,8 +1385,18 @@ fn project_runtime_semantic_fact_inventories(
     }
 
     for program in pure_programs {
-        input.push_pure_program(RuntimePureProgramFact::new(
+        let source = arcweft_lang_sema::final_analysis::CheckedExecutionSource::InvokeBody(
+            arcweft_lang_sema::final_analysis::CheckedExecutionBodyOwner::CallableValue(
+                program.closure(),
+            ),
+        );
+        let context = analysis
+            .checked_execution_context(project, symbols, source.clone(), None)
+            .map_err(Box::new)?;
+        let admission = context.checked_deterministic_program(source)?;
+        input.push_pure_program(RuntimePureProgramFact::try_new(
             program.id(),
+            admission,
             program.closure(),
             program.body(),
             program
@@ -1400,7 +1414,7 @@ fn project_runtime_semantic_fact_inventories(
                 .collect::<Vec<_>>()
                 .into_boxed_slice(),
             program.result().value_type(),
-        ));
+        )?);
     }
 
     attach_dialogue_and_trigger_semantic_facts(

@@ -4953,9 +4953,10 @@ impl RuntimePureProgramCaptureFact {
 }
 
 /// Exact mount-only deterministic program rooted at one checked closure.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct RuntimePureProgramFact {
     program: RuntimePureProgramId,
+    admission: Arc<arcweft_lang_sema::final_analysis::CheckedDeterministicProgram>,
     closure: ExprId,
     body: ExprId,
     captures: Box<[RuntimePureProgramCaptureFact]>,
@@ -4963,25 +4964,54 @@ pub struct RuntimePureProgramFact {
 }
 
 impl RuntimePureProgramFact {
-    #[must_use]
-    pub const fn new(
+    pub fn try_new(
         program: RuntimePureProgramId,
+        admission: arcweft_lang_sema::final_analysis::CheckedDeterministicProgram,
         closure: ExprId,
         body: ExprId,
         captures: Box<[RuntimePureProgramCaptureFact]>,
         result: RuntimeSemanticTypeId,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, RuntimeSemanticFactsError> {
+        use arcweft_lang_sema::final_analysis::{
+            CheckedExecutionBodyOwner, CheckedExecutionSource,
+        };
+        let abi = admission.input_abi();
+        let inputs = abi
+            .inputs()
+            .iter()
+            .map(|input| input.binding().local())
+            .collect::<BTreeSet<_>>();
+        let capture_locals = captures
+            .iter()
+            .map(|capture| capture.local())
+            .collect::<BTreeSet<_>>();
+        if abi.source()
+            != &CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(
+                closure,
+            ))
+            || !abi.parameters().is_empty()
+            || !abi.contains_expression(body)
+            || inputs != capture_locals
+            || capture_locals.len() != captures.len()
+        {
+            return Err(RuntimeSemanticFactsError::InvalidPureProgram { program });
+        }
+        Ok(Self {
             program,
+            admission: Arc::new(admission),
             closure,
             body,
             captures,
             result,
-        }
+        })
     }
 
     pub const fn program(&self) -> RuntimePureProgramId {
         self.program
+    }
+
+    pub fn admission(&self) -> &arcweft_lang_sema::final_analysis::CheckedDeterministicProgram {
+        &self.admission
     }
 
     pub const fn closure(&self) -> ExprId {
@@ -8146,6 +8176,7 @@ impl RuntimePlanSemanticFacts {
         }
 
         let pure_programs = validate_pure_programs(
+            project,
             &modules,
             runtime_owners,
             &expression_types,
@@ -9378,6 +9409,7 @@ impl RuntimePlanSemanticFacts {
 }
 
 fn validate_pure_programs(
+    project: HirAnalysisProjectView<'_>,
     modules: &BTreeMap<HirModuleId, &HirModule>,
     owners: RuntimeSemanticOwnerSet<'_>,
     expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
@@ -9404,6 +9436,10 @@ fn validate_pure_programs(
     let mut closures = BTreeSet::new();
     for fact in staged {
         let program = fact.program();
+        fact.admission()
+            .input_abi()
+            .validate_project(project)
+            .map_err(|_| RuntimeSemanticFactsError::InvalidPureProgram { program })?;
         if programs.contains_key(&program) {
             return Err(RuntimeSemanticFactsError::DuplicateFact {
                 family: RuntimeSemanticFactFamily::PureProgram,

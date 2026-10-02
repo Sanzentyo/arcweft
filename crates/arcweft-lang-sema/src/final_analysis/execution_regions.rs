@@ -331,6 +331,7 @@ impl CheckedExecutionCatalog {
     }
 }
 
+#[derive(Debug)]
 pub(super) struct CheckedExecutionRegion {
     expressions: Box<[ExprId]>,
     places: Box<[ExprId]>,

@@ -1325,6 +1325,21 @@ fn prepare_helper_bindings(
     values: impl IntoIterator<Item = RuntimeValue>,
 ) -> Result<Vec<RuntimeLocalBinding>, RuntimeEvalError> {
     let values = values.into_iter().collect::<Vec<_>>();
+    validate_helper_arguments(plan, helper, &values)?;
+    Ok(helper
+        .input_locals
+        .iter()
+        .copied()
+        .zip(values)
+        .map(|(local, value)| RuntimeLocalBinding { local, value })
+        .collect())
+}
+
+fn validate_helper_arguments(
+    plan: &RuntimePlan,
+    helper: &RuntimePureHelper,
+    values: &[RuntimeValue],
+) -> Result<(), RuntimeEvalError> {
     if values.len() != helper.input_locals.len() {
         return Err(RuntimeEvalError::TooManyPureArgs {
             helper: helper.name.clone(),
@@ -1337,17 +1352,16 @@ fn prepare_helper_bindings(
         .iter()
         .copied()
         .zip(values)
-        .map(|(local, value)| {
+        .try_for_each(|(local, value)| {
             let declaration = plan
                 .local_declarations()
                 .get(local)
                 .ok_or(RuntimeEvalError::UnknownLocal(local))?;
-            if !plan.value_matches_type(declaration.ty(), &value)? {
+            if !plan.value_matches_type(declaration.ty(), value)? {
                 return Err(RuntimeEvalError::InvalidExpressionType(declaration.ty()));
             }
-            Ok(RuntimeLocalBinding { local, value })
+            Ok(())
         })
-        .collect()
 }
 
 fn validate_helper_result(
