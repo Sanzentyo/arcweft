@@ -162,7 +162,13 @@ fn run_function_with_host(
     context: VmExecutionContext,
     host: &mut impl VmHost,
 ) -> Result<RuntimeValue, VmError> {
-    let mut fiber = FiberState::for_function(program, AwbcEntryId(0), function, 0, 1_000_000)?;
+    let mut fiber = FiberState::for_function(
+        program,
+        crate::awbc::fiber::AwbcFiberRoot::Function(function),
+        function,
+        0,
+        1_000_000,
+    )?;
     fiber
         .active_frame_mut()?
         .bind_positional_arguments_owned(program, args)?;

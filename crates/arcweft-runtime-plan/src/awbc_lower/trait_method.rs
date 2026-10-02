@@ -1,11 +1,11 @@
 use crate::awbc_lower::expr::AwbcExprLowerer;
 use crate::awbc_lower::frame::FrameBuilder;
 use crate::awbc_lower::inventory::{AwbcInventory, AwbcLowerDiagnostic};
-use crate::awbc_lower::pattern::admitted_local_type;
+use crate::awbc_lower::pattern::{admitted_local_type, admitted_plan_type};
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
-    AwbcBlock, AwbcBlockId, AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionId,
-    AwbcFunctionInputOwnership, AwbcFunctionKind, AwbcInstruction, AwbcRegisterId,
+    AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags,
+    AwbcFunctionId, AwbcFunctionInputOwnership, AwbcFunctionKind, AwbcInstruction, AwbcRegisterId,
     AwbcSafePointKind, AwbcTableRange, AwbcTerminator, AwbcTraitMethod, AwbcTraitMethodId,
     AwbcTraitReceiverMode,
 };
@@ -44,9 +44,11 @@ impl<'a, 'plan> AwbcTraitMethodLowerer<'a, 'plan> {
         let public_label = trait_method_label(method);
         let owner = self.inventory.reserve_function_slot();
         let mut frame = FrameBuilder::new();
+        let mut parameters = Vec::with_capacity(method.input_locals.len());
         for input in &method.input_locals {
             let ty = admitted_local_type(self.inventory, self.plan, *input);
             frame.parameter(*input, ty);
+            parameters.push(ty);
         }
 
         let mut body = TraitMethodBodyBuilder::new(self.inventory, owner);
@@ -63,9 +65,10 @@ impl<'a, 'plan> AwbcTraitMethodLowerer<'a, 'plan> {
             frame.finish(),
         );
         let public_id = self.inventory.intern_string(&public_label);
-        let signature = self
-            .inventory
-            .intern_dynamic_value_signature(method.input_locals.len());
+        let result = admitted_plan_type(self.inventory, self.plan, method.body.ty());
+        let signature =
+            self.inventory
+                .intern_signature(parameters, Some(result), AwbcEffectSetId(0));
         let function = self.inventory.replace_function(
             owner,
             AwbcFunction {

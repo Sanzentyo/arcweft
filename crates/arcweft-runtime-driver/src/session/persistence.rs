@@ -431,7 +431,23 @@ impl BundleSession {
             }
         })?;
         let old_image = self.executor.product_inert_rollback_image()?;
-        let old_entry = old_image.product.fiber.entry;
+        let old_entry =
+            old_image
+                .product
+                .fiber
+                .root
+                .entry()
+                .ok_or_else(|| BundleSessionSaveError::Fiber {
+                    message: "foreground session restore requires an entry origin".to_owned(),
+                })?;
+        let restored_entry =
+            state
+                .fiber
+                .root
+                .entry()
+                .ok_or_else(|| BundleSessionSaveError::Fiber {
+                    message: "foreground session snapshot requires an entry origin".to_owned(),
+                })?;
         drop(
             self.executor
                 .take_product_for_restore()
@@ -443,7 +459,7 @@ impl BundleSession {
                 .get(active_generation)
                 .expect("validated active generation has a runtime image")
                 .runtime()
-                .spawn_executor_for_entry(state.fiber.entry)
+                .spawn_executor_for_entry(restored_entry)
                 .map_err(|error| BundleSessionSaveError::Fiber {
                     message: error.to_string(),
                 })?;

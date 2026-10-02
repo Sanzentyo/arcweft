@@ -849,14 +849,6 @@ impl AwbcInventory {
         self.intern_signature(Vec::new(), None, AwbcEffectSetId(0))
     }
 
-    pub fn intern_dynamic_value_signature(&mut self, arity: usize) -> AwbcSignatureId {
-        self.intern_signature(
-            vec![self.dynamic_ty(); arity],
-            Some(self.dynamic_ty()),
-            AwbcEffectSetId(0),
-        )
-    }
-
     pub fn intern_frame_layout(
         &mut self,
         key: String,

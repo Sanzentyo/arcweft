@@ -2522,7 +2522,7 @@ impl AwbcProductStepExecutor {
         };
         match FiberState::for_function_with_instance(
             &self.program,
-            self.fiber.entry,
+            crate::awbc::fiber::AwbcFiberRoot::Function(function),
             function,
             fiber_instance,
             self.next_generation,

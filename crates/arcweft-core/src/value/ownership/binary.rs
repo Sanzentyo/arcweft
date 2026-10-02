@@ -41,6 +41,10 @@ pub(super) fn encode_owned_slot(slot: RuntimeOwnedSlotId) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.push(slot.canonical_tag());
     match slot {
+        RuntimeOwnedSlotId::ProgramResult { execution, fiber } => {
+            push_u64(&mut bytes, execution.get());
+            bytes.extend_from_slice(&fiber.get().to_le_bytes());
+        }
         RuntimeOwnedSlotId::EnvironmentLocal { execution, local } => {
             push_u64(&mut bytes, execution.get());
             push_u64(&mut bytes, local.get());
@@ -235,11 +239,15 @@ pub(super) fn decode_owned_slot(
 ) -> Result<RuntimeOwnedSlotId, RuntimeOwnershipBinaryError> {
     let mut reader = Reader::new(bytes);
     let tag = reader.u8()?;
-    if tag > 15 {
+    if tag > 16 {
         return Err(RuntimeOwnershipBinaryError::UnknownOwnedSlotTag { tag });
     }
     let execution = ExecutionInstanceId::from_allocated(reader.nonzero_u64()?);
     let slot = match tag {
+        16 => RuntimeOwnedSlotId::ProgramResult {
+            execution,
+            fiber: RuntimePersistentFiberId::from_allocated(reader.u64()?),
+        },
         0 => RuntimeOwnedSlotId::EnvironmentLocal {
             execution,
             local: RuntimeLocalSlotId::from_allocated(reader.nonzero_u64()?),
@@ -612,6 +620,15 @@ mod tests {
             assert_eq!(hex(&encoded), expected);
             assert_eq!(decode_owned_slot(&encoded).unwrap(), slot);
         }
+        let result: RuntimeOwnedSlotId =
+            self::json(r#"{"kind":"program_result","execution":"1","fiber":0}"#);
+        let bytes = encode_owned_slot(result);
+        assert_eq!(hex(&bytes), "1001000000000000000000000000000000");
+        assert_eq!(decode_owned_slot(&bytes).unwrap(), result);
+        assert_eq!(
+            serde_json::to_string(&result).unwrap(),
+            r#"{"kind":"program_result","execution":"1","fiber":0}"#
+        );
     }
 
     #[test]
@@ -640,8 +657,8 @@ mod tests {
     #[test]
     fn binary_decoders_reject_unknown_zero_truncated_and_trailing_forms() {
         assert!(matches!(
-            decode_owned_slot(&[16]),
-            Err(RuntimeOwnershipBinaryError::UnknownOwnedSlotTag { tag: 16 })
+            decode_owned_slot(&[17]),
+            Err(RuntimeOwnershipBinaryError::UnknownOwnedSlotTag { tag: 17 })
         ));
         let mut invalid_cleanup_scope = encode_owned_slot(self::json(
             r#"{"kind":"awbc_cleanup_arg","execution":"1","fiber":"2","frame":"3","scope":null,"cleanup_ordinal":4,"arg_ordinal":5}"#,

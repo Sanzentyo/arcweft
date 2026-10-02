@@ -57,8 +57,14 @@ fn execute(program: &AwbcProgram, operands: &[RuntimeValue]) -> RuntimeValue {
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .unwrap();
-    let mut fiber =
-        FiberState::for_function(program, AwbcEntryId(0), AwbcFunctionId(0), 1, 64).unwrap();
+    let mut fiber = FiberState::for_function(
+        program,
+        crate::awbc::fiber::AwbcFiberRoot::Function(AwbcFunctionId(0)),
+        AwbcFunctionId(0),
+        1,
+        64,
+    )
+    .unwrap();
     fiber
         .bind_function_argument_values(program, operands)
         .unwrap();
@@ -290,8 +296,14 @@ fn an_unsized_empty_collection_rejects_when_its_cardinality_is_known() {
         program
             .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
             .unwrap();
-        let mut fiber =
-            FiberState::for_function(&program, AwbcEntryId(0), AwbcFunctionId(0), 1, 64).unwrap();
+        let mut fiber = FiberState::for_function(
+            &program,
+            crate::awbc::fiber::AwbcFiberRoot::Function(AwbcFunctionId(0)),
+            AwbcFunctionId(0),
+            1,
+            64,
+        )
+        .unwrap();
         fiber
             .bind_function_argument_values(&program, &[runtime_sequence_values(Vec::new())])
             .unwrap();

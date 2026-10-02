@@ -162,6 +162,14 @@ impl FinalAnalysisClosureExecution {
 /// Failure to project one checked expression into execution.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum FinalAnalysisExecutionProjectionError {
+    #[error("program source {owner:?} belongs to another callable authority")]
+    ForeignProgramCallableAuthority {
+        owner: super::CheckedExecutionSource,
+    },
+    #[error("program source {owner:?} belongs to another HIR authority")]
+    ForeignProgramHirAuthority {
+        owner: super::CheckedExecutionSource,
+    },
     #[error("checked expression {owner:?} is absent from the final analysis")]
     MissingExpression { owner: ExprId },
     #[error("checked pattern {owner:?} is absent from the final analysis")]
@@ -337,6 +345,7 @@ pub struct CheckedExecutableRuntimeFactPartition {
     patterns: Box<[CheckedExecutableRuntimePatternFactOwner]>,
     statements: Box<[CheckedExecutableRuntimeStatementFactOwner]>,
     locals: Box<[LocalId]>,
+    input_locals: Box<[LocalId]>,
     types: Box<[TypeId]>,
     captures: Box<[CaptureId]>,
 }
@@ -366,6 +375,11 @@ impl CheckedExecutableRuntimeFactPartition {
         &self.locals
     }
 
+    /// Ingress bindings belong to this frame without redeclaring their source local.
+    pub const fn input_locals(&self) -> &[LocalId] {
+        &self.input_locals
+    }
+
     pub const fn types(&self) -> &[TypeId] {
         &self.types
     }
@@ -376,6 +390,35 @@ impl CheckedExecutableRuntimeFactPartition {
 }
 
 impl FinalAnalysisExecutionProjection<'_> {
+    pub fn runtime_program_fact_partition(
+        &self,
+        reachability: &HirRuntimeSemanticReachability<'_>,
+        program: &super::CheckedDeterministicProgram,
+    ) -> Result<CheckedExecutableRuntimeFactPartition, FinalAnalysisExecutionProjectionError> {
+        let abi = program.input_abi();
+        abi.validate_analysis(self.analysis).map_err(|_| {
+            FinalAnalysisExecutionProjectionError::ForeignProgramCallableAuthority {
+                owner: abi.source().clone(),
+            }
+        })?;
+        abi.validate_project(reachability.project()).map_err(|_| {
+            FinalAnalysisExecutionProjectionError::ForeignProgramHirAuthority {
+                owner: abi.source().clone(),
+            }
+        })?;
+        let mut partition =
+            self.runtime_fact_partition(reachability, &program.reachability_owner())?;
+        partition.input_locals = abi
+            .inputs()
+            .iter()
+            .filter(|input| matches!(input.role(), super::CheckedExecutionInputRole::Free))
+            .map(|input| input.binding().local())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        Ok(partition)
+    }
+
     /// Projects one closure through its typed source-bound callable identity
     /// and completed effect/suspension/control row.
     pub fn closure_execution(
@@ -743,6 +786,7 @@ impl FinalAnalysisExecutionProjection<'_> {
             patterns: patterns.into_boxed_slice(),
             statements: statements.into_boxed_slice(),
             locals: owners.locals().collect(),
+            input_locals: Box::new([]),
             types: owners.types().collect(),
             captures: owners.captures().collect(),
         })

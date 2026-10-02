@@ -273,7 +273,10 @@ impl RuntimeClosureInstanceFact {
 }
 
 impl RuntimeProjectFunctionInstanceSemanticFacts {
-    fn append_normalized_types<'a>(&'a self, roots: &mut Vec<&'a RuntimeNormalizedType>) {
+    pub(super) fn append_normalized_types<'a>(
+        &'a self,
+        roots: &mut Vec<&'a RuntimeNormalizedType>,
+    ) {
         roots.extend(
             self.type_projection()
                 .iter()

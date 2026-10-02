@@ -19,6 +19,10 @@ use std::{cmp::Ordering, fmt};
 /// This enum is evidence only. Storage remains in each owning runtime domain.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum RuntimeOwnedSlotId {
+    ProgramResult {
+        execution: ExecutionInstanceId,
+        fiber: RuntimePersistentFiberId,
+    },
     EnvironmentLocal {
         execution: ExecutionInstanceId,
         local: RuntimeLocalSlotId,
@@ -150,6 +154,7 @@ impl RuntimeOwnedSlotId {
             Self::AwbcLineObservationArg { .. } => 13,
             Self::AwbcDialogueResultObservation { .. } => 14,
             Self::AwbcEffectObservationArg { .. } => 15,
+            Self::ProgramResult { .. } => 16,
         }
     }
 
@@ -157,6 +162,7 @@ impl RuntimeOwnedSlotId {
     pub const fn execution(self) -> ExecutionInstanceId {
         match self {
             Self::EnvironmentLocal { execution, .. }
+            | Self::ProgramResult { execution, .. }
             | Self::ClosureCapture { execution, .. }
             | Self::AwbcRegister { execution, .. }
             | Self::AwbcFrameLocal { execution, .. }
@@ -179,6 +185,9 @@ impl RuntimeOwnedSlotId {
     pub fn render_canonical(self) -> String {
         let execution = self.execution().get().get();
         match self {
+            Self::ProgramResult { fiber, .. } => {
+                format!("exec/{execution}/fiber/{}/program-result", fiber.get())
+            }
             Self::EnvironmentLocal { local, .. } => {
                 format!("exec/{execution}/env/{}", local.get())
             }
@@ -376,6 +385,22 @@ impl Ord for RuntimeOwnedSlotId {
             13 => cmp_awbc_line_observation_arg(*self, *other),
             14 => cmp_awbc_dialogue_result_observation(*self, *other),
             15 => cmp_awbc_effect_observation_arg(*self, *other),
+            16 => {
+                let (
+                    Self::ProgramResult {
+                        execution: left_execution,
+                        fiber: left_fiber,
+                    },
+                    Self::ProgramResult {
+                        execution: right_execution,
+                        fiber: right_fiber,
+                    },
+                ) = (*self, *other)
+                else {
+                    unreachable!("equal canonical tags select the same variant")
+                };
+                (left_execution, left_fiber).cmp(&(right_execution, right_fiber))
+            }
             _ => unreachable!("canonical owned-slot tags are exhaustive"),
         }
     }
@@ -821,6 +846,10 @@ impl PartialOrd for RuntimeOwnedSlotId {
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum HumanOwnedSlot {
+    ProgramResult {
+        execution: ExecutionInstanceId,
+        fiber: RuntimePersistentFiberId,
+    },
     EnvironmentLocal {
         execution: ExecutionInstanceId,
         local: RuntimeLocalSlotId,
@@ -924,6 +953,10 @@ enum HumanOwnedSlot {
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum HumanOwnedSlotInput {
+    ProgramResult {
+        execution: ExecutionInstanceId,
+        fiber: RuntimePersistentFiberId,
+    },
     EnvironmentLocal {
         execution: ExecutionInstanceId,
         local: RuntimeLocalSlotId,
@@ -1027,6 +1060,9 @@ enum HumanOwnedSlotInput {
 impl From<RuntimeOwnedSlotId> for HumanOwnedSlot {
     fn from(slot: RuntimeOwnedSlotId) -> Self {
         match slot {
+            RuntimeOwnedSlotId::ProgramResult { execution, fiber } => {
+                Self::ProgramResult { execution, fiber }
+            }
             RuntimeOwnedSlotId::EnvironmentLocal { execution, local } => {
                 Self::EnvironmentLocal { execution, local }
             }
@@ -1210,6 +1246,9 @@ impl From<RuntimeOwnedSlotId> for HumanOwnedSlot {
 impl From<HumanOwnedSlotInput> for RuntimeOwnedSlotId {
     fn from(slot: HumanOwnedSlotInput) -> Self {
         match slot {
+            HumanOwnedSlotInput::ProgramResult { execution, fiber } => {
+                Self::ProgramResult { execution, fiber }
+            }
             HumanOwnedSlotInput::EnvironmentLocal { execution, local } => {
                 Self::EnvironmentLocal { execution, local }
             }

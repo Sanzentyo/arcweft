@@ -385,7 +385,7 @@ fn evaluate_context(
     let function = AwbcFunctionId(intrinsic_id.0 + 1);
     let mut fiber = crate::awbc::fiber::FiberState::for_function(
         &fixture.program,
-        crate::awbc::schema::AwbcEntryId(0),
+        crate::awbc::fiber::AwbcFiberRoot::Function(function),
         function,
         1,
         64,

@@ -379,6 +379,81 @@ enum ProjectFunctionFrameLocal {
     SpecializedOperand { owner: ExprId, source_index: u32 },
 }
 
+impl ProjectFunctionFrameLocals {
+    fn admit_catalog(
+        semantics: &RuntimeProjectFunctionInstanceSemanticFacts,
+        builder: &mut RuntimePlanBuilder,
+    ) -> Result<Self, RuntimePlanLowerError> {
+        let mut rows = semantics
+            .type_projection()
+            .iter()
+            .filter_map(|projection| match projection {
+                RuntimeProjectFunctionTypeProjection::Value {
+                    owner: RuntimeProjectFunctionTypeOwner::Local(local),
+                    ty,
+                } => Some((ProjectFunctionFrameLocal::Hir(*local), ty.identity())),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        for expression in semantics.expressions() {
+            let Some(call) = semantics.call(expression.owner()) else {
+                continue;
+            };
+            if !call.requires_specialized_operand_anf() {
+                continue;
+            }
+            for (position, operand) in call.operands().iter().enumerate() {
+                let source_index = u32::try_from(position).map_err(|_| {
+                    RuntimePlanLowerError::new(
+                        "program source operand coordinate exceeds checked limits",
+                    )
+                })?;
+                rows.push((
+                    ProjectFunctionFrameLocal::SpecializedOperand {
+                        owner: expression.owner(),
+                        source_index,
+                    },
+                    operand.ty().identity(),
+                ));
+            }
+        }
+        let admitted = builder
+            .admit_type_batch(
+                [],
+                rows.iter()
+                    .map(|(_, ty)| RuntimeLocalDeclarationSeed::new(*ty)),
+            )
+            .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
+        let mut frame = Self::default();
+        for ((owner, _), local) in rows.into_iter().zip(admitted.local_ids()) {
+            match owner {
+                ProjectFunctionFrameLocal::Hir(owner) => {
+                    frame.hir.insert(owner, local.clone());
+                }
+                ProjectFunctionFrameLocal::SpecializedOperand {
+                    owner,
+                    source_index,
+                } => {
+                    frame
+                        .specialized_operands
+                        .insert((owner, source_index), local.clone());
+                }
+                ProjectFunctionFrameLocal::ParameterInput { .. }
+                | ProjectFunctionFrameLocal::AttachedAbi => {
+                    return Err(RuntimePlanLowerError::new(
+                        "program catalog contains a declaration parameter input",
+                    ));
+                }
+            }
+        }
+        frame.control = ControlLocals::admit(
+            crate::semantic_facts::RuntimeExecutableSemanticFactView::project_instance(semantics),
+            builder,
+        )?;
+        Ok(frame)
+    }
+}
+
 #[derive(Clone, Default)]
 struct ClosureFrameLocals {
     control: ControlLocals,
@@ -399,6 +474,7 @@ enum ClosureFrameLocal {
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ClosureLexicalParent {
     Global,
+    Program(arcweft_id::runtime_program::RuntimePureProgramId),
     ProjectFunction(RuntimeProjectFunctionInstanceKey),
     TraitMethod(RuntimeTraitMethodInstanceKey),
     Closure(RuntimeClosureInstanceKey),
@@ -410,6 +486,7 @@ struct ReservedPureProgramDefinition<'facts> {
     scope: RuntimeScopedExecutableSemanticFactView<'facts>,
     parameter_inputs: Box<[RuntimeLocalSeedId]>,
     site: RuntimeFunctionSiteSeedId,
+    body_kind: RuntimeFunctionSiteBodyKind,
 }
 
 #[derive(Clone)]
@@ -474,6 +551,10 @@ struct FinalLoweringContext<'project, 'data> {
         &'data BTreeMap<RuntimeProjectFunctionInstanceKey, RuntimeFunctionSiteSeedId>,
     project_function_locals:
         &'data BTreeMap<RuntimeProjectFunctionInstanceKey, ProjectFunctionFrameLocals>,
+    program_locals: &'data BTreeMap<
+        arcweft_id::runtime_program::RuntimePureProgramId,
+        ProjectFunctionFrameLocals,
+    >,
     closure_sites: &'data BTreeMap<RuntimeClosureInstanceKey, RuntimeFunctionSiteSeedId>,
     closure_locals: &'data BTreeMap<RuntimeClosureInstanceKey, ClosureFrameLocals>,
     trait_methods: &'data BTreeMap<RuntimeTraitMethodInstanceKey, RuntimeTraitMethodSeedId>,
@@ -571,6 +652,11 @@ impl FinalLoweringContext<'_, '_> {
     ) -> Result<&ControlLocals, RuntimePlanLowerError> {
         match scope {
             RuntimeExecutableSemanticScope::Global => Ok(self.control),
+            RuntimeExecutableSemanticScope::Program(program) => self
+                .program_locals
+                .get(&program)
+                .map(|frame| &frame.control)
+                .ok_or_else(|| RuntimePlanLowerError::new("program has no control local frame")),
             RuntimeExecutableSemanticScope::ProjectFunction(key) => self
                 .project_function_locals
                 .get(key)
@@ -601,6 +687,11 @@ impl FinalLoweringContext<'_, '_> {
     ) -> Result<&BTreeMap<LocalId, RuntimeLocalSeedId>, RuntimePlanLowerError> {
         match scope {
             RuntimeExecutableSemanticScope::Global => Ok(self.locals),
+            RuntimeExecutableSemanticScope::Program(program) => self
+                .program_locals
+                .get(&program)
+                .map(|frame| &frame.hir)
+                .ok_or_else(|| RuntimePlanLowerError::new("program has no admitted local frame")),
             RuntimeExecutableSemanticScope::ProjectFunction(key) => self
                 .project_function_locals
                 .get(key)
@@ -639,6 +730,9 @@ impl FinalLoweringContext<'_, '_> {
     ) -> Result<&BTreeMap<(ExprId, u32), RuntimeLocalSeedId>, RuntimePlanLowerError> {
         match scope {
             RuntimeExecutableSemanticScope::Global => Ok(self.specialized_operand_locals),
+            RuntimeExecutableSemanticScope::Program(program) => self.program_locals.get(&program)
+                .map(|frame| &frame.specialized_operands)
+                .ok_or_else(|| RuntimePlanLowerError::new("program has no specialized operand frame")),
             RuntimeExecutableSemanticScope::ProjectFunction(key) => self
                 .project_function_locals
                 .get(key)
@@ -1280,6 +1374,16 @@ pub fn lower_runtime_plan_with_stats(
             )]);
         }
     }
+    let program_locals = facts
+        .pure_program_semantics()
+        .map(|(program, semantics)| {
+            Ok((
+                *program,
+                ProjectFunctionFrameLocals::admit_catalog(semantics, &mut builder)?,
+            ))
+        })
+        .collect::<Result<BTreeMap<_, _>, RuntimePlanLowerError>>()
+        .map_err(|error| vec![error])?;
     let mut closure_locals: BTreeMap<RuntimeClosureInstanceKey, ClosureFrameLocals> =
         BTreeMap::new();
     for (key, rows) in &closure_local_specs {
@@ -1339,6 +1443,9 @@ pub fn lower_runtime_plan_with_stats(
         let parent_hir: Option<&BTreeMap<LocalId, RuntimeLocalSeedId>> =
             match closure_parents.get(key) {
                 Some(ClosureLexicalParent::Global) => Some(&locals),
+                Some(ClosureLexicalParent::Program(program)) => {
+                    program_locals.get(program).map(|frame| &frame.hir)
+                }
                 Some(ClosureLexicalParent::ProjectFunction(parent)) => {
                     project_instance_locals.get(parent).map(|frame| &frame.hir)
                 }
@@ -1424,6 +1531,7 @@ pub fn lower_runtime_plan_with_stats(
         &project_instance_locals,
         &closure_locals,
         &trait_method_locals,
+        &program_locals,
         &implicit_parameters,
         &implicit_capture_input_locals,
         &mut builder,
@@ -1501,6 +1609,7 @@ pub fn lower_runtime_plan_with_stats(
         callable_specialization_targets: &callable_specialization_targets,
         project_function_sites: &project_function_sites,
         project_function_locals: &project_instance_locals,
+        program_locals: &program_locals,
         closure_sites: &closure_sites,
         closure_locals: &closure_locals,
         trait_methods: &trait_methods,
@@ -2086,6 +2195,16 @@ fn collect_closure_instances<'facts>(
             &mut line_schedule_callbacks,
         )?;
     }
+    for (program, semantics) in facts.pure_program_semantics() {
+        collect_closure_instances_from_semantics(
+            semantics,
+            &mut instances,
+            &mut order,
+            ClosureLexicalParent::Program(*program),
+            &mut parents,
+            &mut line_schedule_callbacks,
+        )?;
+    }
     Ok((order, parents, line_schedule_callbacks))
 }
 
@@ -2147,6 +2266,10 @@ fn reserve_function_sites<'facts>(
     project_locals: &BTreeMap<RuntimeProjectFunctionInstanceKey, ProjectFunctionFrameLocals>,
     closure_locals: &BTreeMap<RuntimeClosureInstanceKey, ClosureFrameLocals>,
     trait_locals: &BTreeMap<RuntimeTraitMethodInstanceKey, ProjectFunctionFrameLocals>,
+    program_locals: &BTreeMap<
+        arcweft_id::runtime_program::RuntimePureProgramId,
+        ProjectFunctionFrameLocals,
+    >,
     implicit_parameters: &BTreeMap<RuntimeImplicitCallableSiteKey, RuntimeLocalSeedId>,
     implicit_capture_input_locals: &BTreeMap<
         (RuntimeImplicitCallableSiteKey, u32),
@@ -2167,6 +2290,7 @@ fn reserve_function_sites<'facts>(
         project_locals,
         closure_locals,
         trait_locals,
+        program_locals,
         implicit_parameters,
         implicit_capture_input_locals,
         builder,
@@ -2182,6 +2306,10 @@ fn reserve_implicit_function_sites<'facts>(
     project_locals: &BTreeMap<RuntimeProjectFunctionInstanceKey, ProjectFunctionFrameLocals>,
     closure_locals: &BTreeMap<RuntimeClosureInstanceKey, ClosureFrameLocals>,
     trait_locals: &BTreeMap<RuntimeTraitMethodInstanceKey, ProjectFunctionFrameLocals>,
+    program_locals: &BTreeMap<
+        arcweft_id::runtime_program::RuntimePureProgramId,
+        ProjectFunctionFrameLocals,
+    >,
     implicit_parameters: &BTreeMap<RuntimeImplicitCallableSiteKey, RuntimeLocalSeedId>,
     implicit_capture_input_locals: &BTreeMap<
         (RuntimeImplicitCallableSiteKey, u32),
@@ -2203,6 +2331,9 @@ fn reserve_implicit_function_sites<'facts>(
         let key = RuntimeImplicitCallableSiteKey::new(scope.scope(), owner);
         let selected_locals = match scope.scope() {
             RuntimeExecutableSemanticScope::Global => Some(locals),
+            RuntimeExecutableSemanticScope::Program(program) => {
+                program_locals.get(&program).map(|frame| &frame.hir)
+            }
             RuntimeExecutableSemanticScope::ProjectFunction(instance) => {
                 project_locals.get(instance).map(|frame| &frame.hir)
             }
@@ -3089,10 +3220,23 @@ fn reserve_pure_programs<'facts>(
             inputs.extend(parameters?);
             Ok(inputs)
         });
+        let mut body_kind = program.body_kind();
+        if let Some(semantics) = facts
+            .pure_program_semantics()
+            .find_map(|(id, semantics)| (*id == program.program()).then_some(semantics))
+        {
+            semantics.visit_calls(&mut |_, call| {
+                if matches!(call.dispatch(), RuntimeResolvedCallDispatch::Value { .. })
+                    || call.project_function().and_then(|call| call.outcome().instance()).is_some_and(|key| facts.project_function_instance(key).is_some_and(|instance| instance.execution() == crate::semantic_facts::RuntimeProjectFunctionExecution::ExecutableFunctionSite))
+                {
+                    body_kind = RuntimeFunctionSiteBodyKind::Executable;
+                }
+            });
+        }
         let declaration = inputs.map(|inputs| RuntimeFunctionSiteDeclarationSeed {
             inputs: inputs.into_boxed_slice(),
             result: program.result().identity(),
-            body_kind: program.body_kind(),
+            body_kind,
             effects: RuntimeEffectSet::empty(),
         });
         let site = match declaration.and_then(|declaration| {
@@ -3119,6 +3263,7 @@ fn reserve_pure_programs<'facts>(
             scope,
             parameter_inputs: parameter_inputs.into_boxed_slice(),
             site,
+            body_kind,
         });
     }
     definitions
@@ -3535,7 +3680,7 @@ fn define_pure_programs(
                 context.executable_specialized_operand_locals(definition.scope.scope())?,
             );
             let expression_compatible =
-                program.body_kind() == RuntimeFunctionSiteBodyKind::Expression;
+                definition.body_kind == RuntimeFunctionSiteBodyKind::Expression;
             let ops = match program.source() {
                 CheckedExecutionSource::EvaluateValue(owner) => {
                     if expression_compatible {

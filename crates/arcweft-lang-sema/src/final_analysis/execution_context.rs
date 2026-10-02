@@ -31,6 +31,10 @@ impl From<ExprId> for CheckedExecutionSource {
 
 #[derive(Debug, thiserror::Error)]
 pub enum CheckedExecutionContextError {
+    #[error("callable {declaration:?} is outside the execution environment's lexical owner")]
+    ForeignCallableOwner {
+        declaration: Box<crate::callable::CheckedCallableDeclaration>,
+    },
     #[error(transparent)]
     Semantic(#[from] FinalSemanticAnalysisError),
     #[error(transparent)]
@@ -64,6 +68,34 @@ pub struct CheckedExecutionEnvironment {
 }
 
 impl CheckedExecutionEnvironment {
+    pub fn validate_callable_owner(
+        &self,
+        id: &crate::callable::CheckedCallableId,
+        topology: &arcweft_lang_hir::project::HirProjectEvaluationTopology,
+    ) -> Result<(), CheckedExecutionContextError> {
+        if !self.authority.admits_generation(topology.generation())
+            || !self.authority.admits_callable_id(id)
+        {
+            return Err(CheckedExecutionContextError::ForeignAuthority);
+        }
+        let crate::callable::CheckedCallableDeclaration::Project(declaration) = id.declaration()
+        else {
+            return Err(CheckedExecutionContextError::ForeignAuthority);
+        };
+        let owns = match self.scope() {
+            HirSemanticPathRoot::Declaration(expected) => expected == declaration,
+            HirSemanticPathRoot::Item { item, .. } => topology
+                .declaration(declaration)
+                .is_ok_and(|view| view.body().source_item() == *item),
+        };
+        if !owns {
+            return Err(CheckedExecutionContextError::ForeignCallableOwner {
+                declaration: Box::new(id.declaration().clone()),
+            });
+        }
+        Ok(())
+    }
+
     pub const fn scope(&self) -> &HirSemanticPathRoot {
         &self.scope
     }

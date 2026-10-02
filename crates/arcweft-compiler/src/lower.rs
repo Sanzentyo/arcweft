@@ -224,24 +224,23 @@ use arcweft_runtime_plan::{
         RuntimeProjectFunctionPatternPayload, RuntimeProjectFunctionPatternSemanticFact,
         RuntimeProjectFunctionRootFact, RuntimeProjectFunctionRootRole,
         RuntimeProjectFunctionStatementPayload, RuntimeProjectFunctionStatementSemanticFact,
-        RuntimeProjectFunctionTypeOwner, RuntimeProjectFunctionTypeProjection, RuntimeProjectItem,
-        RuntimePureProgramFact, RuntimeRecordExpressionFact, RuntimeRecordExpressionField,
-        RuntimeRecordExpressionSource, RuntimeRecordPatternFact, RuntimeRecordPatternField,
-        RuntimeRecordPatternRest, RuntimeRecordPatternSource, RuntimeRecordPlanError,
-        RuntimeRecordTypeField, RuntimeReductionConstructor, RuntimeRegisteredValueId,
-        RuntimeResidualValue, RuntimeResolvedAttachedContent, RuntimeResolvedCall,
-        RuntimeResolvedCallDispatch, RuntimeResolvedCallMutation, RuntimeResolvedCallOperand,
-        RuntimeResolvedCallOperandBinding, RuntimeResolvedCallOperandOrigin,
-        RuntimeResolvedCallOperandProjection, RuntimeResolvedCallOperandSource,
-        RuntimeResolvedFormatCall, RuntimeResolvedHostCall, RuntimeResolvedMutablePlace,
-        RuntimeResolvedNeedProducer, RuntimeResolvedNominal, RuntimeResolvedNominalRecord,
-        RuntimeResolvedSelect, RuntimeResolvedSpreadContainer, RuntimeResolvedStaticCallTarget,
-        RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeSemanticFactsError,
-        RuntimeSemanticTypeId, RuntimeSequenceKind, RuntimeStandardMapCall,
-        RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder, RuntimeTraitIdentity,
-        RuntimeTraitMethodFact, RuntimeTraitMethodInstanceKey, RuntimeTraitMethodInstanceUse,
-        RuntimeTraitMethodUseScope, RuntimeTriggerAdmission, RuntimeTryBoundaryOwner,
-        RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeProjectionPath,
+        RuntimeProjectFunctionTypeOwner, RuntimeProjectItem, RuntimePureProgramFact,
+        RuntimeRecordExpressionFact, RuntimeRecordExpressionField, RuntimeRecordExpressionSource,
+        RuntimeRecordPatternFact, RuntimeRecordPatternField, RuntimeRecordPatternRest,
+        RuntimeRecordPatternSource, RuntimeRecordPlanError, RuntimeRecordTypeField,
+        RuntimeReductionConstructor, RuntimeRegisteredValueId, RuntimeResidualValue,
+        RuntimeResolvedAttachedContent, RuntimeResolvedCall, RuntimeResolvedCallDispatch,
+        RuntimeResolvedCallMutation, RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
+        RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
+        RuntimeResolvedCallOperandSource, RuntimeResolvedFormatCall, RuntimeResolvedHostCall,
+        RuntimeResolvedMutablePlace, RuntimeResolvedNeedProducer, RuntimeResolvedNominal,
+        RuntimeResolvedNominalRecord, RuntimeResolvedSelect, RuntimeResolvedSpreadContainer,
+        RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeResolvedVariant,
+        RuntimeSemanticFactsError, RuntimeSemanticTypeId, RuntimeSequenceKind,
+        RuntimeStandardMapCall, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
+        RuntimeTraitIdentity, RuntimeTraitMethodFact, RuntimeTraitMethodInstanceKey,
+        RuntimeTraitMethodInstanceUse, RuntimeTraitMethodUseScope, RuntimeTriggerAdmission,
+        RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeProjectionPath,
         RuntimeTypeProjectionStep, RuntimeTypeShape,
     },
 };
@@ -268,6 +267,11 @@ pub enum RuntimeRecordExecutableOwner {
 /// fact vocabulary.
 #[derive(Debug, Error)]
 pub enum RuntimeSemanticProjectionError {
+    #[error("runtime program {program} projection failed: {reason}")]
+    Program {
+        program: arcweft_id::runtime_program::RuntimePureProgramId,
+        reason: String,
+    },
     #[error(transparent)]
     ProgramAdmission(#[from] arcweft_lang_sema::final_analysis::CheckedProgramAdmissionError),
     #[error(transparent)]
@@ -575,8 +579,26 @@ fn project_runtime_semantic_fact_inventories(
             program_owners,
             analysis,
         )?);
+        for program in pure_programs {
+            let partition = analysis
+                .execution_projection()
+                .runtime_program_fact_partition(program_owners, program.admission())?;
+            instance_owned_expression_owners.extend(
+                partition
+                    .expressions()
+                    .iter()
+                    .map(|row| row.owner())
+                    .filter(|owner| !runtime_owners.contains_expression(*owner)),
+            );
+        }
     }
     let mut instance_discovery = ProjectInstantiationSession::new(instantiation_control.clone());
+    for program in pure_programs {
+        instance_discovery.admit_program(
+            program.program(),
+            Arc::clone(program.admission().input_abi().environment()),
+        )?;
+    }
     let mut instance_projection = ProjectInstanceProjection::Discover(&mut instance_discovery);
     let project_function_roots = runtime_project_function_roots(
         symbols,
@@ -640,11 +662,31 @@ fn project_runtime_semantic_fact_inventories(
             });
         }
     }
+    if let Some(owners) = program_owners {
+        for program in pure_programs {
+            let environment = program.admission().input_abi().environment();
+            let enclosing = match environment.instantiation() {
+                Some(CheckedLocalUseInstantiation::ProjectFunction(solution)) => Some(solution),
+                Some(CheckedLocalUseInstantiation::DisplayText(_)) | None => None,
+            };
+            discover_runtime_project_executable_dependencies(
+                &program.reachability_owner(),
+                enclosing,
+                symbols,
+                world,
+                analysis,
+                owners,
+                &mut instance_projection,
+                &mut BTreeSet::new(),
+            )?;
+        }
+    }
     discover_runtime_project_function_instances(
         symbols,
         world,
         analysis,
         runtime_owners,
+        program_owners,
         &mut instance_discovery,
     )?;
     let discovered_instances = instance_discovery.seal()?;
@@ -661,6 +703,8 @@ fn project_runtime_semantic_fact_inventories(
         dialogue_profile,
         character_dialogue_generation.as_deref(),
         runtime_owners,
+        program_owners,
+        pure_programs,
         &discovered_instances,
         fx_catalog,
     )?;
@@ -670,6 +714,7 @@ fn project_runtime_semantic_fact_inventories(
         world,
         analysis,
         runtime_owners,
+        program_owners,
         &dialogue_projection,
         &discovered_instances,
     )?;
@@ -682,6 +727,23 @@ fn project_runtime_semantic_fact_inventories(
         &dialogue_projection,
         &discovered_instances,
     )?;
+    let mut closed_instance_type_owners = BTreeSet::new();
+    let mut closed_instance_capture_owners = BTreeSet::new();
+    let mut closed_instance_statement_owners = BTreeSet::new();
+    let program_semantics = if let Some(owners) = program_owners {
+        programs::materialize(
+            project,
+            symbols,
+            world,
+            analysis,
+            owners,
+            pure_programs,
+            &dialogue_projection,
+            &discovered_instances,
+        )?
+    } else {
+        Vec::new()
+    };
     let trait_methods = display_text::materialize_runtime_display_methods(
         project,
         symbols,
@@ -691,12 +753,40 @@ fn project_runtime_semantic_fact_inventories(
         &runtime_calls,
         &project_function_instances,
         &root_closures,
+        &program_semantics,
         &dialogue_projection,
         &discovered_instances,
     )?;
-    let mut closed_instance_type_owners = BTreeSet::new();
-    let mut closed_instance_capture_owners = BTreeSet::new();
-    let mut closed_instance_statement_owners = BTreeSet::new();
+    for (_, semantics) in &program_semantics {
+        semantics.visit_type_projections(&mut |projection| {
+            let ordinary = match projection.owner() {
+                RuntimeProjectFunctionTypeOwner::Expression(owner) => {
+                    runtime_owners.contains_expression(owner)
+                }
+                RuntimeProjectFunctionTypeOwner::Pattern(owner) => {
+                    runtime_owners.contains_pattern(owner)
+                }
+                RuntimeProjectFunctionTypeOwner::Local(owner) => {
+                    runtime_owners.contains_local(owner)
+                        || semantics.partition().input_locals().contains(&owner)
+                }
+                RuntimeProjectFunctionTypeOwner::Type(owner) => runtime_owners.contains_type(owner),
+            };
+            if !ordinary {
+                closed_instance_type_owners.insert(projection.owner());
+            }
+        });
+        semantics.visit_captures(&mut |capture| {
+            if !runtime_owners.contains_capture(capture.capture()) {
+                closed_instance_capture_owners.insert(capture.capture());
+            }
+        });
+        semantics.visit_statement_owners(&mut |statement| {
+            if !runtime_owners.contains_statement(statement) {
+                closed_instance_statement_owners.insert(statement);
+            }
+        });
+    }
     for instance in &project_function_instances {
         instance.visit_type_projections(&mut |projection| {
             closed_instance_type_owners.insert(projection.owner());
@@ -760,6 +850,7 @@ fn project_runtime_semantic_fact_inventories(
         &project_function_instances,
         &root_closures,
         &trait_methods,
+        &program_semantics,
         &dialogue_projection,
     )?;
     let mut runtime_expression_type_owners = runtime_owners.selected_expression_type_owners()?;
@@ -1411,6 +1502,9 @@ fn project_runtime_semantic_fact_inventories(
     for program in pure_programs {
         input.push_pure_program(program.clone());
     }
+    for (program, semantics) in program_semantics {
+        input.push_pure_program_semantics(program, semantics);
+    }
     attach_dialogue_and_trigger_semantic_facts(
         analysis,
         runtime_owners,
@@ -1633,6 +1727,7 @@ fn runtime_assignment_under(
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum RuntimeDialogueProjectionScope {
     Global,
+    Program(arcweft_id::runtime_program::RuntimePureProgramId),
     ProjectInstance(RuntimeProjectFunctionInstanceKey),
     TraitMethod(RuntimeTraitMethodInstanceKey),
 }
@@ -1643,6 +1738,11 @@ enum RuntimeDialogueProjectionScope {
 #[derive(Clone, Copy)]
 enum RuntimeExecutableInstantiation<'a> {
     Global,
+    Program {
+        program: arcweft_id::runtime_program::RuntimePureProgramId,
+        environment: &'a arcweft_lang_sema::final_analysis::CheckedExecutionEnvironment,
+        types: Option<ProjectInstanceTypes<'a>>,
+    },
     Project {
         key: &'a RuntimeProjectFunctionInstanceKey,
         solution: ProjectInstanceTypes<'a>,
@@ -1658,6 +1758,7 @@ impl<'a> RuntimeExecutableInstantiation<'a> {
     const fn types(self) -> Option<ProjectInstanceTypes<'a>> {
         match self {
             Self::Global => None,
+            Self::Program { types, .. } => types,
             Self::Project { solution, .. } => Some(solution),
             Self::Display { conformance, .. } => Some(ProjectInstanceTypes::display(
                 conformance.implementation(),
@@ -1669,6 +1770,10 @@ impl<'a> RuntimeExecutableInstantiation<'a> {
     fn instantiate_type(self, ty: &TypeKind) -> Result<TypeKind, RuntimeSemanticProjectionError> {
         match self {
             Self::Global => Ok(ty.clone()),
+            Self::Program { types, .. } => match types {
+                Some(types) => types.instantiate_type(ty),
+                None => Ok(ty.clone()),
+            },
             Self::Project { solution, .. } => solution.instantiate_type(ty),
             Self::Display { conformance, .. } => {
                 conformance.instantiate_type(ty).map_err(|error| {
@@ -1691,6 +1796,10 @@ impl<'a> RuntimeExecutableInstantiation<'a> {
                 .map_err(|error| RuntimeSemanticProjectionError::Type {
                     reason: error.to_string(),
                 })?),
+            Self::Program { types, .. } => match types {
+                Some(types) => types.instantiate_effect_row(row),
+                None => Self::Global.instantiate_effect_row(row),
+            },
             Self::Project { solution, .. } => solution.instantiate_effect_row(row),
             Self::Display { conformance, .. } => row
                 .resolve(&arcweft_lang_sema::effect_row::EffectSubstitution::default())
@@ -1706,6 +1815,7 @@ impl<'a> RuntimeExecutableInstantiation<'a> {
     fn dialogue_scope(self) -> RuntimeDialogueProjectionScope {
         match self {
             Self::Global => RuntimeDialogueProjectionScope::Global,
+            Self::Program { program, .. } => RuntimeDialogueProjectionScope::Program(program),
             Self::Project { key, .. } => {
                 RuntimeDialogueProjectionScope::ProjectInstance(key.clone())
             }
@@ -1832,6 +1942,10 @@ fn project_runtime_format_templates(
     project_instances: &[RuntimeProjectFunctionInstanceFact],
     root_closures: &[RuntimeClosureInstanceFact],
     trait_methods: &[RuntimeTraitMethodFact],
+    programs: &[(
+        arcweft_id::runtime_program::RuntimePureProgramId,
+        RuntimeProjectFunctionInstanceSemanticFacts,
+    )],
     dialogue: &RuntimeDialogueProjectionCatalog,
 ) -> Result<Vec<RuntimeFormatTemplateFact>, RuntimeSemanticProjectionError> {
     enum Selection {
@@ -1864,6 +1978,14 @@ fn project_runtime_format_templates(
     }
     for closure in root_closures {
         closure.visit_scoped_calls(&mut |scope, owner, call| visit(scope.scope(), owner, call));
+    }
+    for (program, semantics) in programs {
+        semantics.visit_scoped_calls(
+            arcweft_runtime_plan::semantic_facts::RuntimeScopedExecutableSemanticFactView::program(
+                *program, semantics,
+            ),
+            &mut |scope, owner, call| visit(scope.scope(), owner, call),
+        );
     }
     for method in trait_methods {
         if let Some(semantics) = method.closed_semantics() {
@@ -1998,11 +2120,56 @@ fn project_runtime_dialogue_projection_catalog<'analysis>(
         &arcweft_dialogue::CharacterDialogueGenerationDeclaration<RuntimeNormalizedType>,
     >,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
+    program_owners: Option<&HirRuntimeSemanticReachability<'_>>,
+    programs: &[RuntimePureProgramFact],
     instances: &'analysis DiscoveredProjectInstances,
     fx_catalog: &crate::fx_catalog::CompiledFxCatalog,
 ) -> Result<RuntimeDialogueProjectionCatalog, RuntimeSemanticProjectionError> {
     let mut projections = Vec::new();
     let mut instance_expression_owners = BTreeSet::new();
+    if let Some(owners) = program_owners {
+        for program in programs {
+            let mut expressions = BTreeSet::new();
+            collect_runtime_project_executable_expression_owners(
+                &program.reachability_owner(),
+                analysis,
+                owners,
+                &mut BTreeSet::new(),
+                &mut expressions,
+            )?;
+            for owner in expressions {
+                let Some(checked) = analysis.expression(owner) else {
+                    continue;
+                };
+                let CheckedExpressionResolution::DialogueApplication {
+                    target,
+                    rich_text,
+                    line_result,
+                    ..
+                } = checked.resolution()
+                else {
+                    continue;
+                };
+                let module = project
+                    .modules()
+                    .find_map(|(_, module)| {
+                        (module.module_id() == owner.module()).then_some(module.as_ref())
+                    })
+                    .ok_or(RuntimeSemanticProjectionError::MissingModule { owner })?;
+                if expression_belongs_to_non_product_plan(module, owner)? {
+                    continue;
+                }
+                projections.push(RuntimeDialogueApplicationProjection {
+                    scope: RuntimeDialogueProjectionScope::Program(program.program()),
+                    owner,
+                    target,
+                    report: rich_text,
+                    line_result,
+                    solution: instances.program_types(program.program())?,
+                });
+            }
+        }
+    }
     for (key, node) in instances.nodes() {
         instances.check_cancelled(node.origin)?;
         let executable = HirRuntimeExecutableOwner::Item(node.callable.owner());
@@ -2011,7 +2178,7 @@ fn project_runtime_dialogue_projection_catalog<'analysis>(
         collect_runtime_project_executable_expression_owners(
             &executable,
             analysis,
-            runtime_owners,
+            node.definition_reachability(runtime_owners, program_owners)?,
             &mut visited,
             &mut expressions,
         )?;
@@ -2769,6 +2936,9 @@ fn lower_checked_rich_text(
                     )?;
                     let template = RuntimeFormatTemplateKey::new(
                         match scope {
+                            RuntimeDialogueProjectionScope::Program(program) => {
+                                RuntimeFormatExecutableScope::Program(*program)
+                            }
                             RuntimeDialogueProjectionScope::Global => {
                                 RuntimeFormatExecutableScope::Global
                             }
@@ -6930,6 +7100,7 @@ fn discover_runtime_project_function_instances(
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
+    program_owners: Option<&HirRuntimeSemanticReachability<'_>>,
     instances: &mut ProjectInstantiationSession,
 ) -> Result<(), RuntimeSemanticProjectionError> {
     loop {
@@ -6942,7 +7113,8 @@ fn discover_runtime_project_function_instances(
             symbols,
             world,
             analysis,
-            runtime_owners,
+            work.node()
+                .definition_reachability(runtime_owners, program_owners)?,
             &mut ProjectInstanceProjection::Discover(instances),
         )?;
         instances.complete(work)?;
@@ -6966,7 +7138,7 @@ fn discover_runtime_project_function_instance_dependencies(
     let mut visited = BTreeSet::new();
     discover_runtime_project_executable_dependencies(
         &executable,
-        &node.solution,
+        Some(&node.solution),
         symbols,
         world,
         analysis,
@@ -6982,7 +7154,7 @@ fn discover_runtime_project_function_instance_dependencies(
 )]
 fn discover_runtime_project_executable_dependencies(
     executable: &HirRuntimeExecutableOwner,
-    enclosing: &CheckedProjectFunctionInstanceSolution,
+    enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
@@ -7001,7 +7173,7 @@ fn discover_runtime_project_executable_dependencies(
         for row in partition.expressions() {
             instances.discover_value_specialization(
                 row.owner(),
-                Some(enclosing),
+                enclosing,
                 symbols,
                 world,
                 analysis,
@@ -7032,19 +7204,14 @@ fn discover_runtime_project_executable_dependencies(
                         CheckedProjectFunctionRuntimeOutcome::Continue { .. }
                     ) {
                         instances.callable_result(
-                            owner,
-                            &selection,
-                            Some(enclosing),
-                            symbols,
-                            world,
-                            analysis,
+                            owner, &selection, enclosing, symbols, world, analysis,
                         )?;
                         continue;
                     }
                     let solution = instances.close_instance(
                         ProjectInstantiationOrigin::Call(owner),
                         &selection,
-                        Some(enclosing),
+                        enclosing,
                     )?;
                     let callable =
                         runtime_project_callable(selection.declaration(), symbols, world, analysis)
@@ -7067,7 +7234,7 @@ fn discover_runtime_project_executable_dependencies(
                     )?;
                     if let CheckedCallCalleeExecution::Value { source } = application.core().callee()
                         && let arcweft_lang_sema::callable::CheckedCallArgumentSlotSource::Expression(callee) = source.raw() {
-                        instances.call_input_specialization(owner, callee, &selection, Some(enclosing), symbols, world, analysis)?;
+                        instances.call_input_specialization(owner, callee, &selection, enclosing, symbols, world, analysis)?;
                     }
                 }
                 CheckedExecutableRuntimeExpressionFactFamily::Closure => {
@@ -7088,7 +7255,7 @@ fn discover_runtime_project_executable_dependencies(
                             symbols,
                             world,
                             analysis,
-                            Some(enclosing),
+                            enclosing,
                             instances,
                         )?;
                     }
@@ -7126,6 +7293,7 @@ fn materialize_runtime_project_function_instances(
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
+    program_owners: Option<&HirRuntimeSemanticReachability<'_>>,
     dialogue: &RuntimeDialogueProjectionCatalog,
     instances: &DiscoveredProjectInstances,
 ) -> Result<Vec<RuntimeProjectFunctionInstanceFact>, RuntimeSemanticProjectionError> {
@@ -7141,7 +7309,7 @@ fn materialize_runtime_project_function_instances(
             symbols,
             world,
             analysis,
-            runtime_owners,
+            node.definition_reachability(runtime_owners, program_owners)?,
             dialogue,
             &mut ProjectInstanceProjection::Materialize {
                 graph: instances,
@@ -8111,6 +8279,9 @@ fn runtime_executable_semantic_facts<'abi>(
         .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
 
     let local_uses = match lexical {
+        RuntimeExecutableInstantiation::Program { environment, .. } => {
+            environment.local_uses().clone()
+        }
         RuntimeExecutableInstantiation::Global => {
             CheckedLocalUseAuthority::Global(Arc::clone(analysis.checked_local_uses()))
         }
@@ -8255,11 +8426,11 @@ fn runtime_closure_instance_fact(
         RuntimeExecutableInstantiation::Display { selected, .. } => analysis
             .execution_projection()
             .selected_method_closure_fact_partition(selected, owner)?,
-        RuntimeExecutableInstantiation::Global | RuntimeExecutableInstantiation::Project { .. } => {
-            analysis
-                .execution_projection()
-                .runtime_fact_partition(runtime_owners, &executable)?
-        }
+        RuntimeExecutableInstantiation::Global
+        | RuntimeExecutableInstantiation::Project { .. }
+        | RuntimeExecutableInstantiation::Program { .. } => analysis
+            .execution_projection()
+            .runtime_fact_partition(runtime_owners, &executable)?,
     };
     let semantics = runtime_executable_semantic_facts(
         origin,
@@ -8278,6 +8449,9 @@ fn runtime_closure_instance_fact(
         RuntimeClosureInstanceKey::new(
             match lexical {
                 RuntimeExecutableInstantiation::Global => None,
+                RuntimeExecutableInstantiation::Program { program, .. } => {
+                    Some(RuntimeClosureLexicalOwner::Program(program))
+                }
                 RuntimeExecutableInstantiation::Project { key, .. } => {
                     Some(RuntimeClosureLexicalOwner::ProjectFunction(key.clone()))
                 }

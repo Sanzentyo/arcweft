@@ -16,7 +16,7 @@ use crate::plan::{RuntimeFunctionInputSource, RuntimeFunctionSiteBody};
 use crate::value::{RuntimeFunctionApplyError, RuntimeValue};
 
 impl Engine {
-    pub(super) fn start_function_site_call(
+    pub(in crate::engine) fn start_function_site_call(
         &mut self,
         captures: Vec<RuntimeValue>,
         args: Vec<RuntimeValue>,
@@ -30,14 +30,22 @@ impl Engine {
             .validate_function_site_inputs(site, &captures, &args)?;
         let body = declaration.body().clone();
         let inputs = declaration.inputs().to_vec();
-        if let RuntimeFunctionSiteBody::Expression(_) = &body {
+        if let RuntimeFunctionSiteBody::Expression(_) = &body
+            && !matches!(
+                frame.continuation,
+                FunctionReturnContinuation::Program { .. }
+            )
+        {
             let value = self.evaluate_function_site(site, captures, args, pure_backend)?;
             frame.caller_pending_ops = std::mem::take(&mut self.fiber.pending_ops);
             self.complete_function_call_return(frame, value, output, pure_backend);
             return Ok(());
         }
-        let RuntimeFunctionSiteBody::Executable(executable) = body else {
-            unreachable!("function-site body match is exhaustive")
+        let ops = match body {
+            RuntimeFunctionSiteBody::Expression(body) => {
+                vec![crate::plan::FlowOp::ReturnExpr(body)]
+            }
+            RuntimeFunctionSiteBody::Executable(executable) => executable.ops().to_vec(),
         };
         let mut captures = captures.into_iter().map(Some).collect::<Vec<_>>();
         let mut args = args.into_iter().map(Some).collect::<Vec<_>>();
@@ -73,9 +81,7 @@ impl Engine {
         self.fiber.control_stack.push(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::FunctionCall(frame),
         });
-        self.fiber
-            .pending_ops
-            .extend(executable.ops().iter().cloned());
+        self.fiber.pending_ops.extend(ops);
         Ok(())
     }
 
@@ -112,6 +118,26 @@ impl Engine {
         }
         self.fiber.pending_ops = frame.caller_pending_ops;
         match frame.continuation {
+            FunctionReturnContinuation::Program { program } => {
+                if !plan_owner
+                    .pure_programs()
+                    .iter()
+                    .any(|binding| binding.program() == program && binding.site() == frame.site)
+                {
+                    self.fail_eval(
+                        RuntimeEvalError::UnsupportedPure {
+                            name: program.to_string(),
+                            reason: "program return does not match its admitted function site"
+                                .to_owned(),
+                        },
+                        output,
+                    );
+                    return;
+                }
+                self.fiber.cursor = None;
+                self.program_result = Some((program, value));
+                self.fiber.status = FlowFiberStatus::Done(crate::engine::FlowExit::Done);
+            }
             FunctionReturnContinuation::CallableDefault { pending, result } => {
                 if let Err(error) = self.finish_callable_group_default(
                     pending,

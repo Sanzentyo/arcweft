@@ -22,6 +22,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 serde.workspace = true
+serde_json.workspace = true
 trybuild.workspace = true
 
 [lib]

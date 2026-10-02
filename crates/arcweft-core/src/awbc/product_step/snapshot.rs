@@ -1110,7 +1110,10 @@ fn restore_need_producer_registry(
     program
         .verify(
             crate::awbc::verify::AwbcVerifyBudget::default(),
-            crate::awbc::verify::AwbcVerifyContext::default(),
+            crate::awbc::verify::AwbcVerifyContext {
+                require_entrypoint: false,
+                ..crate::awbc::verify::AwbcVerifyContext::default()
+            },
         )
         .map_err(|error| format!("Need producer restore program failed verification: {error}"))?;
     let launches = saved
@@ -2293,7 +2296,7 @@ impl AwbcProductStepExecutor {
             }
         };
         let program = std::sync::Arc::clone(&self.program);
-        let entry = self.fiber.entry;
+        let origin = self.fiber.root;
         let budget_quantum = self.fiber.budget.quantum;
         let original_generation = self.runtime_generation;
         let format_context = self.format_context.clone();
@@ -2303,9 +2306,9 @@ impl AwbcProductStepExecutor {
         drop(self);
 
         let build = |generation| {
-            let mut executor = super::AwbcProductStepExecutor::for_entry_arc_with_context_proof(
+            let mut executor = super::AwbcProductStepExecutor::for_root_arc_with_context_proof(
                 std::sync::Arc::clone(&program),
-                entry,
+                origin,
                 budget_quantum,
                 generation,
                 plain_text_context_template_proof,
@@ -2817,6 +2820,11 @@ impl AwbcProductStepExecutor {
         &self,
         snapshot: &AwbcProductExecutorSnapshot,
     ) -> Result<(), AwbcProductStepBuildError> {
+        if snapshot.fiber.root != self.fiber.root {
+            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                message: "saved fiber origin differs from the selected invocation".to_owned(),
+            });
+        }
         let has_invalid_await_many_identity = |fiber: &AwbcFiberStateSnapshot| {
             fiber.suspension.as_ref().is_some_and(|suspension| {
                 matches!(
@@ -3870,7 +3878,7 @@ mod tests {
                     next_frame_instance: RuntimeIdCursor::initial(),
                     next_await_many_ordinal: 0,
                     generation: 1,
-                    entry: AwbcEntryId(0),
+                    root: crate::awbc::fiber::AwbcFiberRoot::Entry(AwbcEntryId(0)),
                     cursor: FiberCursor {
                         function: AwbcFunctionId(0),
                         block: AwbcBlockId(0),

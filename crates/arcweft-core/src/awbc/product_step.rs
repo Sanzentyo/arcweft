@@ -11,6 +11,7 @@ mod execution;
 mod lifecycle;
 mod line;
 mod mapping;
+pub mod program;
 mod root;
 mod runtime_id;
 mod snapshot;
@@ -146,14 +147,29 @@ pub fn evaluate_pure_program_with_backend(
         }
     }
     backend.record_awbc_pure_program_call();
-    let mut fallback_stats = crate::step::RuntimePureCallStats::default();
-    let result = run_function(
-        program,
-        binding.function,
+    let mut executor = AwbcProductStepExecutor::for_program_invocation(
+        Arc::clone(program),
+        pure_program,
         args.to_vec(),
+        GenerationId::new(0),
+        1_000_000,
+    )
+    .map_err(|error| crate::awbc::vm::VmError::Runtime(error.into_parts().0.to_string()))?;
+    let output = executor.step_with_pure_backend(
+        RuntimeStepInput::default(),
+        RuntimeStepOptions {
+            mode: RuntimeStepMode::Drain,
+            budget: crate::step::RuntimeStepBudget { max_ops: 1_000_000 },
+            ..RuntimeStepOptions::default()
+        },
         backend,
-        &mut fallback_stats,
-    )?;
+    );
+    let (_, result) = executor.take_program_result().ok_or_else(|| {
+        crate::awbc::vm::VmError::Runtime(format!(
+            "program {pure_program} did not return: {:?}; {:?}",
+            output.stop_reason, output.output.diagnostics,
+        ))
+    })?;
     let result_ty = program
         .runtime_types
         .iter()
@@ -1670,8 +1686,30 @@ impl AwbcProductStepExecutor {
         generation: GenerationId,
         proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
     ) -> Result<Self, AwbcProductStepBuildError> {
+        Self::for_root_arc_with_context_proof(
+            program,
+            crate::awbc::fiber::AwbcFiberRoot::Entry(entry),
+            budget_quantum,
+            generation,
+            proof,
+        )
+    }
+
+    fn for_root_arc_with_context_proof(
+        program: Arc<AwbcProgram>,
+        origin: crate::awbc::fiber::AwbcFiberRoot,
+        budget_quantum: u64,
+        generation: GenerationId,
+        proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
+    ) -> Result<Self, AwbcProductStepBuildError> {
         program
-            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .verify(
+                AwbcVerifyBudget::default(),
+                AwbcVerifyContext {
+                    require_entrypoint: origin.entry().is_some(),
+                    ..AwbcVerifyContext::default()
+                },
+            )
             .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
                 message: error.to_string(),
             })?;
@@ -1687,8 +1725,16 @@ impl AwbcProductStepExecutor {
                     .to_owned(),
             });
         }
-        let mut root_startup = root::prepare_startup(&program, entry)?;
-        let mut fiber = if program.entries.is_empty() {
+        let mut root_startup = match origin.entry() {
+            Some(entry) => root::prepare_startup(&program, entry)?,
+            None => None,
+        };
+        let mut fiber = if origin == crate::awbc::fiber::AwbcFiberRoot::Empty {
+            if !program.entries.is_empty() {
+                return Err(AwbcProductStepBuildError::FiberState {
+                    message: "empty fiber origin cannot own a program with entries".to_owned(),
+                });
+            }
             FiberState {
                 instance: crate::runtime_id::RuntimeFiberInstanceId::from_allocated(
                     std::num::NonZeroU64::MIN,
@@ -1696,7 +1742,7 @@ impl AwbcProductStepExecutor {
                 next_frame_instance: crate::runtime_id::RuntimeIdCursor::initial(),
                 next_await_many_ordinal: 0,
                 generation: generation.get(),
-                entry,
+                root: crate::awbc::fiber::AwbcFiberRoot::Empty,
                 cursor: FiberCursor {
                     function: AwbcFunctionId::default(),
                     block: AwbcBlockId::default(),
@@ -1715,13 +1761,39 @@ impl AwbcProductStepExecutor {
                 streams: Vec::new(),
             }
         } else {
-            FiberState::for_entry(&program, entry, generation.get(), budget_quantum.max(1))
-                .map_err(|error| AwbcProductStepBuildError::FiberState {
-                    message: error.to_string(),
-                })?
+            let fiber = match origin {
+                crate::awbc::fiber::AwbcFiberRoot::Entry(entry) => {
+                    FiberState::for_entry(&program, entry, generation.get(), budget_quantum.max(1))
+                }
+                crate::awbc::fiber::AwbcFiberRoot::Program(id) => program
+                    .pure_program_binding(id)
+                    .ok_or(crate::awbc::fiber::FiberStateError::UnknownProgram(id))
+                    .and_then(|binding| {
+                        FiberState::for_function(
+                            &program,
+                            origin,
+                            binding.function,
+                            generation.get(),
+                            budget_quantum.max(1),
+                        )
+                    }),
+                crate::awbc::fiber::AwbcFiberRoot::Function(function) => FiberState::for_function(
+                    &program,
+                    origin,
+                    function,
+                    generation.get(),
+                    budget_quantum.max(1),
+                ),
+                crate::awbc::fiber::AwbcFiberRoot::Empty => {
+                    unreachable!("empty origin is handled above")
+                }
+            };
+            fiber.map_err(|error| AwbcProductStepBuildError::FiberState {
+                message: error.to_string(),
+            })?
         };
         root::bind_startup(&program, &mut fiber, root_startup.as_ref())?;
-        if root_startup.is_none() && !fiber.frames.is_empty() {
+        if origin.entry().is_some() && root_startup.is_none() && !fiber.frames.is_empty() {
             fiber
                 .bind_flow_parameter_coordinates(&program, &[])
                 .map_err(|error| AwbcProductStepBuildError::FiberState {
@@ -1902,7 +1974,6 @@ impl AwbcProductStepExecutor {
     ) -> ProductChildFiber {
         let fiber = FiberState::for_callable_callback_prepared(
             &self.program,
-            self.fiber.entry,
             callback,
             prepared,
             instance,
@@ -2308,7 +2379,25 @@ impl AwbcProductStepExecutor {
             &context,
             &mut host,
         ) {
-            Ok(vm_output) => {
+            Ok(mut vm_output) => {
+                if matches!(
+                    self.fiber.root,
+                    crate::awbc::fiber::AwbcFiberRoot::Program(_)
+                ) && let VmExit::Returned(value) = &mut vm_output.exit
+                {
+                    let Some(value) = value.take() else {
+                        return self.fail_main_vm_step(
+                            checkpoint,
+                            ProductStepError::Internal(
+                                "admitted program returned without its typed result".to_owned(),
+                            ),
+                            output,
+                            vm_output.executed,
+                        );
+                    };
+                    self.fiber.return_summary = Some(crate::value::runtime_value_label(&value));
+                    self.fiber.terminal = Some(FiberTerminalValue::Returned(Some(value)));
+                }
                 let (drop_policy, observations) =
                     match partition_drop_observation(vm_output.observations) {
                         Ok(parts) => parts,
@@ -2362,7 +2451,13 @@ impl AwbcProductStepExecutor {
                         self.sync_facade();
                         self.initialize_suspension(need_states, output, pure_backend);
                     }
-                    VmExit::Returned(value) => Self::record_return(value.as_ref(), output),
+                    VmExit::Returned(value) => {
+                        let retained = match &self.fiber.terminal {
+                            Some(FiberTerminalValue::Returned(value)) => value.as_ref(),
+                            _ => None,
+                        };
+                        Self::record_return(retained.or(value.as_ref()), output);
+                    }
                     VmExit::DialogueResultSelected(_) => self.fail_with_error(
                         ProductStepError::Internal(
                             "dialogue result selection escaped its line-task child".to_owned(),
@@ -2424,7 +2519,7 @@ impl AwbcProductStepExecutor {
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
         let mut fiber =
-            match FiberState::for_function(&self.program, self.fiber.entry, transform, 0, 64) {
+            match FiberState::for_function(&self.program, self.fiber.root, transform, 0, 64) {
                 Ok(fiber) => fiber,
                 Err(error) => {
                     self.record_error(ProductStepError::Internal(error.to_string()), output);
@@ -3861,7 +3956,7 @@ impl AwbcProductStepExecutor {
         };
         let mut activation_fiber = match FiberState::for_function_with_instance(
             &self.program,
-            self.fiber.entry,
+            crate::awbc::fiber::AwbcFiberRoot::Function(group.activation),
             group.activation,
             activation_fiber_instance,
             self.next_generation,

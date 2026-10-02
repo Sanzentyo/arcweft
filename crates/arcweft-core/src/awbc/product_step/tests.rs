@@ -78,6 +78,45 @@ fn commit_test_dialogue_transaction(
 #[path = "tests/context.rs"]
 mod context;
 
+#[test]
+fn empty_fiber_restore_has_no_executable_cursor_or_return_owner() {
+    let executor = AwbcProductStepExecutor::for_root_arc_with_context_proof(
+        std::sync::Arc::new(AwbcProgram::default()),
+        crate::awbc::fiber::AwbcFiberRoot::Empty,
+        64,
+        GenerationId::new(7),
+        None,
+    )
+    .expect("empty program admits an inert terminal executor");
+    executor
+        .fiber
+        .validate_for_program(&executor.program)
+        .unwrap();
+    let saved = executor.inert_rollback_image().unwrap().product;
+    let executor = executor
+        .restore_inert_snapshot_owned(saved.clone())
+        .unwrap();
+    executor
+        .fiber
+        .validate_for_program(&executor.program)
+        .unwrap();
+
+    let mut forged = saved;
+    forged.fiber.status = FiberStatus::Returned;
+    forged.fiber.terminal = Some(crate::awbc::fiber::AwbcFiberTerminalSnapshot::Returned(
+        Some(crate::value::AwbcRuntimeValueSnapshot::Bool(true)),
+    ));
+    let (executor, _) = executor.restore_inert_snapshot_owned(forged).unwrap_err();
+    assert_eq!(
+        executor.fiber.root,
+        crate::awbc::fiber::AwbcFiberRoot::Empty
+    );
+    executor
+        .fiber
+        .validate_for_program(&executor.program)
+        .unwrap();
+}
+
 fn fixture_dialogue_target() -> crate::value::RuntimeOpaqueValue {
     let owner = crate::pattern::RuntimeOpaqueTypeOwner::exact_with(
         crate::value::RuntimeCharacterDialogueProducerId::get(),
@@ -696,7 +735,7 @@ fn line_activation_register_defer_commits_captures_and_cursor() {
     );
     let activation_fiber = crate::awbc::fiber::FiberState::for_function(
         &executor.program,
-        AwbcEntryId(0),
+        crate::awbc::fiber::AwbcFiberRoot::Function(activation),
         activation,
         1,
         64,
@@ -783,7 +822,7 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
     );
     let mut activation_fiber = crate::awbc::fiber::FiberState::for_function(
         &executor.program,
-        AwbcEntryId(0),
+        crate::awbc::fiber::AwbcFiberRoot::Function(AwbcFunctionId(1)),
         AwbcFunctionId(1),
         1,
         64,
@@ -1162,7 +1201,7 @@ fn line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls() {
             phase: ProductDialoguePhase::Activating {
                 fiber: crate::awbc::fiber::FiberState::for_function(
                     &executor.program,
-                    AwbcEntryId(0),
+                    crate::awbc::fiber::AwbcFiberRoot::Function(AwbcFunctionId(1)),
                     AwbcFunctionId(1),
                     1,
                     64,
@@ -2149,7 +2188,7 @@ fn begin_actor_look_dialogue(
             phase: ProductDialoguePhase::Activating {
                 fiber: FiberState::for_function(
                     &executor.program,
-                    AwbcEntryId(0),
+                    crate::awbc::fiber::AwbcFiberRoot::Function(AwbcFunctionId(1)),
                     AwbcFunctionId(1),
                     1,
                     64,
@@ -2474,7 +2513,7 @@ fn actor_look_borrows_one_stage_actor_across_two_looks_and_out_return() {
             phase: ProductDialoguePhase::Activating {
                 fiber: FiberState::for_function(
                     &executor.program,
-                    AwbcEntryId(0),
+                    crate::awbc::fiber::AwbcFiberRoot::Function(AwbcFunctionId(1)),
                     AwbcFunctionId(1),
                     1,
                     64,

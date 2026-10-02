@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use super::{
     Engine, RuntimeCallBackend, RuntimeCallTarget, RuntimeEvalError, RuntimeExpr, RuntimeValue,
-    evaluate_runtime_call, runtime_sequence_from_literal_values,
-    runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
+    evaluate_runtime_call, runtime_value_into_sequence_values, runtime_value_label,
+    sum_i64_sequence_ref,
 };
 use crate::pattern::RuntimeBuiltinVariantCaseIdentity;
 use crate::plan::{RuntimePlanTypeProjection, RuntimeReceiverMode, RuntimeTraitMethodId};
@@ -11,6 +11,7 @@ use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::value::{
     RuntimeCallArgument, RuntimeCallArgumentMode, RuntimeCallableValue, RuntimeIntrinsic,
     RuntimeIterator, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
+    runtime_sequence_values,
 };
 use crate::{
     entry::RuntimeSchemaLimits, pattern::RuntimeSemanticTypeId, pure::RuntimeExternalCallContext,
@@ -108,7 +109,7 @@ impl Engine {
             let use_value = mapping.try_duplicate_unrestricted()?;
             mapped.push(self.apply_runtime_function(use_value, vec![item], pure_backend)?);
         }
-        Ok(runtime_sequence_from_literal_values(mapped))
+        Ok(runtime_sequence_values(mapped))
     }
 
     pub(super) fn evaluate_call_expr(

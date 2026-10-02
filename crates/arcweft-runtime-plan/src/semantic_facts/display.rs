@@ -70,6 +70,7 @@ impl RuntimeResolvedFormatCall {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeFormatExecutableScope {
     Global,
+    Program(arcweft_id::runtime_program::RuntimePureProgramId),
     ProjectFunction(RuntimeProjectFunctionInstanceKey),
     Closure(RuntimeClosureInstanceKey),
     TraitMethod(RuntimeTraitMethodInstanceKey),
@@ -111,6 +112,9 @@ impl RuntimeFormatTemplateKey {
     ) -> RuntimeFormatExecutableScope {
         match scope {
             RuntimeExecutableSemanticScope::Global => RuntimeFormatExecutableScope::Global,
+            RuntimeExecutableSemanticScope::Program(program) => {
+                RuntimeFormatExecutableScope::Program(program)
+            }
             RuntimeExecutableSemanticScope::ProjectFunction(key) => {
                 RuntimeFormatExecutableScope::ProjectFunction(key.clone())
             }

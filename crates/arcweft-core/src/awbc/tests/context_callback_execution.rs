@@ -351,9 +351,14 @@ fn context(fixture: &ContextFixture, with_proof: bool) -> crate::awbc::vm::VmExe
 }
 
 fn context_fiber(fixture: &ContextFixture, receiver: RuntimeValue) -> FiberState {
-    let mut fiber =
-        FiberState::for_function(&fixture.program, AwbcEntryId(0), AwbcFunctionId(0), 1, 64)
-            .unwrap();
+    let mut fiber = FiberState::for_function(
+        &fixture.program,
+        crate::awbc::fiber::AwbcFiberRoot::Function(AwbcFunctionId(0)),
+        AwbcFunctionId(0),
+        1,
+        64,
+    )
+    .unwrap();
     fiber
         .active_frame_mut()
         .unwrap()
@@ -885,9 +890,14 @@ fn formatter_context_fixture() -> ContextFixture {
 #[test]
 fn formatter_recovers_context_callback_expression_failure_after_snapshot() {
     let fixture = formatter_context_fixture();
-    let mut fiber =
-        FiberState::for_function(&fixture.program, AwbcEntryId(0), AwbcFunctionId(0), 1, 64)
-            .unwrap();
+    let mut fiber = FiberState::for_function(
+        &fixture.program,
+        crate::awbc::fiber::AwbcFiberRoot::Function(AwbcFunctionId(0)),
+        AwbcFunctionId(0),
+        1,
+        64,
+    )
+    .unwrap();
     fiber
         .active_frame_mut()
         .unwrap()
@@ -964,9 +974,14 @@ fn formatter_does_not_recover_context_message_proof_failure() {
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .unwrap();
     fixture.program = std::sync::Arc::new(program);
-    let mut fiber =
-        FiberState::for_function(&fixture.program, AwbcEntryId(0), AwbcFunctionId(0), 1, 64)
-            .unwrap();
+    let mut fiber = FiberState::for_function(
+        &fixture.program,
+        crate::awbc::fiber::AwbcFiberRoot::Function(AwbcFunctionId(0)),
+        AwbcFunctionId(0),
+        1,
+        64,
+    )
+    .unwrap();
     fiber
         .active_frame_mut()
         .unwrap()
@@ -1008,9 +1023,14 @@ fn formatter_does_not_recover_context_message_proof_failure() {
 #[test]
 fn verified_lazy_context_callback_survives_budget_snapshot_without_replay() {
     let fixture = context_fixture(ContextReceiver::Result, false);
-    let mut fiber =
-        FiberState::for_function(&fixture.program, AwbcEntryId(0), AwbcFunctionId(0), 1, 64)
-            .unwrap();
+    let mut fiber = FiberState::for_function(
+        &fixture.program,
+        crate::awbc::fiber::AwbcFiberRoot::Function(AwbcFunctionId(0)),
+        AwbcFunctionId(0),
+        1,
+        64,
+    )
+    .unwrap();
     fiber
         .active_frame_mut()
         .unwrap()

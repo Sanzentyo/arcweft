@@ -779,7 +779,7 @@ impl Engine {
         }
     }
 
-    fn has_active_project_call(&self) -> bool {
+    pub(in crate::engine) fn has_active_project_call(&self) -> bool {
         self.fiber
             .control_stack
             .iter()

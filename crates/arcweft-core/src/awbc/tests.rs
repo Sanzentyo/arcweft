@@ -1428,8 +1428,14 @@ fn explicit_dialogue_selector_roundtrips_executes_and_restores_distinctly() {
         encoded
     );
 
-    let mut fiber = FiberState::for_function(&decoded, AwbcEntryId(0), AwbcFunctionId(2), 1, 64)
-        .expect("line action fiber starts");
+    let mut fiber = FiberState::for_function(
+        &decoded,
+        crate::awbc::fiber::AwbcFiberRoot::Function(AwbcFunctionId(2)),
+        AwbcFunctionId(2),
+        1,
+        64,
+    )
+    .expect("line action fiber starts");
     let output = super::vm::step(
         &decoded,
         &mut fiber,

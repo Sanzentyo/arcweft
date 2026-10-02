@@ -499,8 +499,8 @@ fn project_display_program(project_success: bool) -> AwbcProgram {
 
     let mut program = format_program(ValueThunk::Succeeds);
     program.strings.extend([
-        "DisplayContext".to_owned(),
-        "DisplayError".to_owned(),
+        "standard::DisplayContext".to_owned(),
+        "standard::DisplayError".to_owned(),
         "locale".to_owned(),
         "style".to_owned(),
         "currency".to_owned(),
@@ -532,13 +532,13 @@ fn project_display_program(project_success: bool) -> AwbcProgram {
     let context_layout = TypeLayoutHash::from_bytes([0x21; 32]);
     let error_layout = TypeLayoutHash::from_bytes([0x22; 32]);
     let context_checked = RuntimeCheckedType::Nominal {
-        nominal: RuntimeNominalTypeId::try_new("DisplayContext").unwrap(),
+        nominal: RuntimeNominalTypeId::try_new("standard::DisplayContext").unwrap(),
         semantic_identity: crate::pattern::RuntimeSemanticTypeId::from_bytes([0x23; 32]),
         layout: context_layout,
         arguments: Vec::new(),
     };
     let error_checked = RuntimeCheckedType::Nominal {
-        nominal: RuntimeNominalTypeId::try_new("DisplayError").unwrap(),
+        nominal: RuntimeNominalTypeId::try_new("standard::DisplayError").unwrap(),
         semantic_identity: crate::pattern::RuntimeSemanticTypeId::from_bytes([0x24; 32]),
         layout: error_layout,
         arguments: Vec::new(),
@@ -559,7 +559,7 @@ fn project_display_program(project_success: bool) -> AwbcProgram {
         AwbcRuntimeType::new(
             context_checked.semantic_identity_digest(),
             AwbcRuntimeTypeShape::NominalRecord {
-                public_id: string("DisplayContext"),
+                public_id: string("standard::DisplayContext"),
                 layout: *context_layout.as_bytes(),
                 arguments: Vec::new(),
                 shape: crate::entry::RuntimeNominalRecordShape::Record,
@@ -585,7 +585,7 @@ fn project_display_program(project_success: bool) -> AwbcProgram {
         AwbcRuntimeType::new(
             error_checked.semantic_identity_digest(),
             AwbcRuntimeTypeShape::NominalRecord {
-                public_id: string("DisplayError"),
+                public_id: string("standard::DisplayError"),
                 layout: *error_layout.as_bytes(),
                 arguments: Vec::new(),
                 shape: crate::entry::RuntimeNominalRecordShape::Record,

@@ -890,7 +890,7 @@ impl super::AwbcProductStepExecutor {
             };
             let child = FiberState::for_function_with_arguments_prepared(
                 &self.program,
-                self.fiber.entry,
+                crate::awbc::fiber::AwbcFiberRoot::Function(run.spawn.inputs.function()),
                 args,
                 run.spawn.inputs,
                 run.spawn.fiber_instance,
@@ -3467,7 +3467,7 @@ impl super::ProductLineTaskExecutionBatch {
     ) {
         let child = FiberState::for_function_with_arguments_prepared(
             &executor.program,
-            executor.fiber.entry,
+            crate::awbc::fiber::AwbcFiberRoot::Function(prepared.inputs.function()),
             args,
             prepared.inputs,
             prepared.fiber_instance,
@@ -3887,6 +3887,21 @@ pub(super) fn product_fiber_handle_owners(
     fiber: &FiberState,
 ) -> Result<BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>, ProductStepError> {
     let mut owners = BTreeMap::new();
+    if let Some(FiberTerminalValue::Returned(Some(value))) = &fiber.terminal
+        && matches!(fiber.root, crate::awbc::fiber::AwbcFiberRoot::Program(_))
+    {
+        let owner = RuntimeOwnedSlotId::ProgramResult {
+            execution,
+            fiber: crate::runtime_id::RuntimePersistentFiberId::from_allocated(
+                fiber.instance.get().get(),
+            ),
+        };
+        for handle in unique_line_handles(value)? {
+            if owners.insert(handle.token().clone(), owner).is_some() {
+                return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
+            }
+        }
+    }
     for frame in &fiber.frames {
         for (index, value) in frame
             .registers

@@ -51,6 +51,36 @@ records do not retain a second signature copy.
 Ordinary internal call frames use their own checked positional call ABI. Tail
 calls replace the active frame only after that argument validation succeeds.
 
+### Fiber origin and admitted programs
+
+`AwbcFiberRoot` retains the invocation origin independently of the current
+callee cursor: an actual Entry, an admitted `RuntimePureProgramId`, a standalone
+internal function, or an empty execution. Internal functions and admitted
+programs do not synthesize an Entry ID. Entry invocation retains its complete
+target validation; program invocation resolves the unique verified program
+binding and its complete function signature.
+
+An independently spawned child retains its actual function root. Its existing
+typed execution owner carries its parent, dialogue and task relationship;
+the child's function is not substituted for the parent's original program.
+
+Owned program activation preflights all inputs before moving any value into the
+frame. Rejection returns the complete owned input packet. Execution and backend
+calls begin only during budgeted stepping. Borrowed adapters require transitively
+unrestricted inputs before copying them into this same owned activation path.
+
+The fiber terminal owns a completed program result until the caller takes it
+once. Status labels carry no live result owner. The result participates in
+`ProgramResult` ownership reconciliation and the inert save snapshot. Restore
+authenticates the origin against the retained executable tables and verifies
+the original program/function frame even while its current cursor is in a callee.
+The saved root must match the selected invocation, and a retained program result
+must match that root's exact function result type. Unit is a typed return value;
+an absent program result is rejected rather than synthesized.
+Foreground session restore requires an actual Entry origin; it does not treat a
+program or internal function as an Entry. Snapshot shapes evolve in place at
+contract version `1`.
+
 ## Pure helpers and intrinsics
 
 Product execution receives the caller-provided `RuntimeCallBackend` through the

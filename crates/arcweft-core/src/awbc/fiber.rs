@@ -34,6 +34,45 @@ pub use format::{AwbcFiberFormatAttemptStateSnapshot, FiberFormatAttemptState};
 
 type AwbcSaveResult<T> = Result<T, crate::value::AwbcRuntimeValueSnapshotError>;
 
+/// Authenticated origin of a fiber, independent of its current callee cursor.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub enum AwbcFiberRoot {
+    Entry(AwbcEntryId),
+    Program(arcweft_id::runtime_program::RuntimePureProgramId),
+    Function(AwbcFunctionId),
+    Empty,
+}
+
+impl AwbcFiberRoot {
+    pub const fn entry(self) -> Option<AwbcEntryId> {
+        match self {
+            Self::Entry(entry) => Some(entry),
+            Self::Program(_) | Self::Function(_) | Self::Empty => None,
+        }
+    }
+
+    fn validate(self, program: &AwbcProgram) -> Result<Option<AwbcFunctionId>, FiberStateError> {
+        match self {
+            Self::Entry(entry) => program
+                .entries
+                .get(entry.index())
+                .map(|_| None)
+                .ok_or(FiberStateError::UnknownEntry(entry.0)),
+            Self::Program(id) => program
+                .pure_program_binding(id)
+                .map(|binding| Some(binding.function))
+                .ok_or(FiberStateError::UnknownProgram(id)),
+            Self::Function(function) => program
+                .functions
+                .get(function.index())
+                .map(|_| Some(function))
+                .ok_or(FiberStateError::UnknownFunction(function.0)),
+            Self::Empty if program.entries.is_empty() => Ok(None),
+            Self::Empty => Err(FiberStateError::InvalidFrame),
+        }
+    }
+}
+
 /// Complete state that may cross compact-VM and compiled-region boundaries.
 #[derive(Debug, PartialEq)]
 pub struct FiberState {
@@ -42,7 +81,7 @@ pub struct FiberState {
     /// Next per-fiber AwaitMany occurrence ordinal, persisted across safe points.
     pub next_await_many_ordinal: u64,
     pub generation: u64,
-    pub entry: AwbcEntryId,
+    pub root: AwbcFiberRoot,
     pub cursor: FiberCursor,
     pub frames: Vec<FiberFrame>,
     pub status: FiberStatus,
@@ -69,6 +108,12 @@ pub(crate) struct PreparedCallableCallbackActivation {
 pub(crate) struct PreparedFunctionInputBinding {
     function: AwbcFunctionId,
     parameter_registers: Box<[AwbcRegisterId]>,
+}
+
+impl PreparedFunctionInputBinding {
+    pub(crate) const fn function(&self) -> AwbcFunctionId {
+        self.function
+    }
 }
 
 pub(crate) struct PreparedFiberResume {
@@ -455,7 +500,7 @@ pub struct AwbcFiberStateSnapshot {
     pub next_frame_instance: RuntimeIdCursor,
     pub next_await_many_ordinal: u64,
     pub generation: u64,
-    pub entry: AwbcEntryId,
+    pub root: AwbcFiberRoot,
     pub cursor: FiberCursor,
     pub frames: Vec<AwbcFiberFrameSnapshot>,
     pub status: FiberStatus,
@@ -812,7 +857,7 @@ impl AwbcFiberStateSnapshot {
             next_frame_instance: state.next_frame_instance,
             next_await_many_ordinal: state.next_await_many_ordinal,
             generation: state.generation,
-            entry: state.entry,
+            root: state.root,
             cursor: state.cursor,
             frames: state
                 .frames
@@ -847,7 +892,7 @@ impl AwbcFiberStateSnapshot {
             next_frame_instance: self.next_frame_instance,
             next_await_many_ordinal: self.next_await_many_ordinal,
             generation: self.generation,
-            entry: self.entry,
+            root: self.root,
             cursor: self.cursor,
             frames: self
                 .frames
@@ -1692,6 +1737,8 @@ pub enum FiberStateError {
     RuntimeIdentity(#[from] crate::runtime_id::RuntimeIdExhausted),
     #[error("AWBC entry {0} does not exist")]
     UnknownEntry(u32),
+    #[error("AWBC program {0} does not exist")]
+    UnknownProgram(arcweft_id::runtime_program::RuntimePureProgramId),
     #[error("AWBC entry target is a route set and needs a host-selected route")]
     RouteSelectionRequired,
     #[error("AWBC function {0} does not exist")]
@@ -2011,7 +2058,7 @@ impl FiberState {
         };
         Self::for_function_with_instance(
             program,
-            entry,
+            AwbcFiberRoot::Entry(entry),
             function,
             instance,
             generation,
@@ -2039,7 +2086,13 @@ impl FiberState {
         if !selected {
             return Err(FiberStateError::InvalidFrame);
         }
-        Self::for_function(program, entry, function, generation, budget_quantum)
+        Self::for_function(
+            program,
+            AwbcFiberRoot::Entry(entry),
+            function,
+            generation,
+            budget_quantum,
+        )
     }
 
     /// Creates an internal function fiber. Entry target membership is not an
@@ -2048,14 +2101,14 @@ impl FiberState {
     /// [`Self::for_entry_target_function`].
     pub fn for_function(
         program: &AwbcProgram,
-        entry: AwbcEntryId,
+        root: AwbcFiberRoot,
         function: AwbcFunctionId,
         generation: u64,
         budget_quantum: u64,
     ) -> Result<Self, FiberStateError> {
         Self::for_function_with_instance(
             program,
-            entry,
+            root,
             function,
             RuntimeFiberInstanceId::from_allocated(std::num::NonZeroU64::MIN),
             generation,
@@ -2065,12 +2118,19 @@ impl FiberState {
 
     pub(crate) fn for_function_with_instance(
         program: &AwbcProgram,
-        entry: AwbcEntryId,
+        root: AwbcFiberRoot,
         function: AwbcFunctionId,
         instance: RuntimeFiberInstanceId,
         generation: u64,
         budget_quantum: u64,
     ) -> Result<Self, FiberStateError> {
+        if root == AwbcFiberRoot::Empty
+            || root
+                .validate(program)?
+                .is_some_and(|expected| expected != function)
+        {
+            return Err(FiberStateError::InvalidFrame);
+        }
         let function_record = program
             .functions
             .get(function.index())
@@ -2085,7 +2145,7 @@ impl FiberState {
             next_frame_instance,
             next_await_many_ordinal: 0,
             generation,
-            entry,
+            root,
             cursor: FiberCursor {
                 function,
                 block: function_record.entry_block,
@@ -2121,7 +2181,7 @@ impl FiberState {
     /// the caller transfers `args`.
     pub(crate) fn for_function_with_arguments_prepared(
         program: &AwbcProgram,
-        entry: AwbcEntryId,
+        root: AwbcFiberRoot,
         args: Vec<RuntimeValue>,
         prepared: PreparedFunctionInputBinding,
         instance: RuntimeFiberInstanceId,
@@ -2131,7 +2191,7 @@ impl FiberState {
         debug_assert_eq!(prepared.parameter_registers.len(), args.len());
         let mut fiber = Self::for_function_with_instance(
             program,
-            entry,
+            root,
             prepared.function,
             instance,
             generation,
@@ -2151,7 +2211,6 @@ impl FiberState {
     /// the callback is removed from its owning dialogue.
     pub(crate) fn for_callable_callback_prepared(
         program: &AwbcProgram,
-        entry: AwbcEntryId,
         callable: RuntimeCallableValue,
         prepared: PreparedCallableCallbackActivation,
         instance: RuntimeFiberInstanceId,
@@ -2174,7 +2233,7 @@ impl FiberState {
         values.extend(invocation.arguments);
         Self::for_function_with_arguments_prepared(
             program,
-            entry,
+            AwbcFiberRoot::Function(function),
             values,
             input_layout,
             instance,
@@ -2469,10 +2528,38 @@ impl FiberState {
     }
 
     pub fn validate_for_program(&self, program: &AwbcProgram) -> Result<(), FiberStateError> {
-        if program.entries.get(self.entry.index()).is_none()
-            && !(program.entries.is_empty() && self.entry == AwbcEntryId(0))
+        let expected = self.root.validate(program)?;
+        if self.root == AwbcFiberRoot::Empty {
+            // An empty executor has no executable cursor or value owner. Do
+            // not authenticate its inert cursor against a fictitious function.
+            return if self.frames.is_empty()
+                && self.status == FiberStatus::Returned
+                && self.suspension.is_none()
+                && matches!(self.terminal, Some(FiberTerminalValue::Returned(None)))
+                && self.return_summary.is_none()
+                && self.streams.is_empty()
+                && self.next_await_many_ordinal == 0
+                && self.line_cursor == 0
+                && self.cursor
+                    == (FiberCursor {
+                        function: AwbcFunctionId::default(),
+                        block: AwbcBlockId::default(),
+                        instruction_offset: 0,
+                    })
+            {
+                Ok(())
+            } else {
+                Err(FiberStateError::InvalidFrame)
+            };
+        }
+        if let Some(expected) = expected
+            && self
+                .frames
+                .first()
+                .map_or(self.cursor.function, |frame| frame.function)
+                != expected
         {
-            return Err(FiberStateError::UnknownEntry(self.entry.0));
+            return Err(FiberStateError::InvalidFrame);
         }
         validate_fiber_terminal_shape(self)?;
         validate_cursor(program, self.cursor)?;
@@ -5578,7 +5665,21 @@ fn validate_terminal(
 ) -> Result<(), FiberStateError> {
     match terminal {
         FiberTerminalValue::Returned(Some(value)) => {
-            validate_runtime_value_at(program, value, None, "terminal.returned".to_owned())
+            let expected = match state.root {
+                AwbcFiberRoot::Program(id) => {
+                    let binding = program
+                        .pure_program_binding(id)
+                        .ok_or(FiberStateError::UnknownProgram(id))?;
+                    let signature = program
+                        .functions
+                        .get(binding.function.index())
+                        .and_then(|function| program.signatures.get(function.signature.index()))
+                        .ok_or(FiberStateError::InvalidFrame)?;
+                    Some(signature.result.ok_or(FiberStateError::InvalidFrame)?)
+                }
+                AwbcFiberRoot::Entry(_) | AwbcFiberRoot::Function(_) | AwbcFiberRoot::Empty => None,
+            };
+            validate_runtime_value_at(program, value, expected, "terminal.returned".to_owned())
         }
         FiberTerminalValue::DialogueResultSelected(value) => {
             if state.frames.len() != 1 {

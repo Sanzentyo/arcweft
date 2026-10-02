@@ -542,6 +542,175 @@ fn options() -> RuntimeStepOptions {
 }
 
 #[test]
+fn owned_program_root_retains_affine_inputs_and_result_across_save_restore() {
+    use arcweft_core::awbc::fiber::AwbcFiberRoot;
+    use arcweft_core::awbc::product_step::{
+        AwbcProductExecutorSaveSnapshot, AwbcProductStepExecutor,
+    };
+    use arcweft_core::task::NeedId;
+
+    let boolean = type_id(41);
+    let need = type_id(42);
+    let id = RuntimePureProgramId::from_checked_digest([43; 32]);
+    let mut builder = RuntimePlanBuilder::new();
+    let locals = builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(boolean, RuntimePlanTypeProjection::Bool),
+                RuntimePlanTypeSeed::new(need, RuntimePlanTypeProjection::Need(boolean)),
+            ],
+            [RuntimeLocalDeclarationSeed::new(need)],
+        )
+        .unwrap();
+    let local = locals.local_ids()[0].clone();
+    let input = RuntimeFunctionInputBindingSeed {
+        source: RuntimeFunctionInputSource::Parameter { position: 0 },
+        input_local: local.clone(),
+        pattern: RuntimePatternSeed::new(
+            need,
+            RuntimePatternSeedKind::Bind {
+                mutable: false,
+                local: local.clone(),
+            },
+        ),
+        ownership: Default::default(),
+        unrestricted_bindings: Box::new([]),
+    };
+    let site = builder
+        .push_function_site_seed(
+            [input],
+            RuntimeExprSeed::new(
+                need,
+                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                    local,
+                    RuntimeLocalReadMode::Move,
+                )),
+            ),
+        )
+        .unwrap();
+    builder
+        .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed { program: id, site })
+        .unwrap();
+    let program = Arc::new(lower(&builder.finish().unwrap()));
+    assert!(program.entries.is_empty());
+    let rejected = AwbcProductStepExecutor::for_program_invocation(
+        Arc::clone(&program),
+        RuntimePureProgramId::from_checked_digest([44; 32]),
+        vec![RuntimeValue::Need(NeedId("need.retained".to_owned()))],
+        GenerationId::new(7),
+        64,
+    )
+    .unwrap_err();
+    let (_, inputs) = rejected.into_parts();
+    assert_eq!(
+        inputs,
+        [RuntimeValue::Need(NeedId("need.retained".to_owned()))]
+    );
+
+    let executor = AwbcProductStepExecutor::for_program_invocation(
+        Arc::clone(&program),
+        id,
+        inputs,
+        GenerationId::new(7),
+        64,
+    )
+    .unwrap();
+    assert_eq!(executor.compact_fiber().root, AwbcFiberRoot::Program(id));
+    let saved = executor.inert_rollback_image().unwrap().product;
+    let bytes = serde_json::to_vec(&saved).unwrap();
+    let saved: AwbcProductExecutorSaveSnapshot = serde_json::from_slice(&bytes).unwrap();
+    let mut forged = saved.clone();
+    forged.fiber.root = AwbcFiberRoot::Entry(AwbcEntryId(0));
+    let (executor, _) = executor.restore_inert_snapshot_owned(forged).unwrap_err();
+    assert_eq!(executor.compact_fiber().root, AwbcFiberRoot::Program(id));
+    let mut forged = saved.clone();
+    forged.fiber.root = AwbcFiberRoot::Function(program.pure_program_binding(id).unwrap().function);
+    let (executor, _) = executor.restore_inert_snapshot_owned(forged).unwrap_err();
+    assert_eq!(executor.compact_fiber().root, AwbcFiberRoot::Program(id));
+    let mut executor = executor.restore_inert_snapshot_owned(saved).unwrap();
+    let result = executor.step(RuntimeStepInput::default(), options());
+    assert!(
+        result.output.diagnostics.is_empty(),
+        "{:?}",
+        result.output.diagnostics
+    );
+    let saved = executor.inert_rollback_image().unwrap().product;
+    let mut forged = saved.clone();
+    forged.fiber.terminal = Some(
+        arcweft_core::awbc::fiber::AwbcFiberTerminalSnapshot::Returned(Some(
+            arcweft_core::value::AwbcRuntimeValueSnapshot::Bool(true),
+        )),
+    );
+    forged.fiber.return_summary = Some("true".to_owned());
+    let (mut executor, _) = executor.restore_inert_snapshot_owned(forged).unwrap_err();
+    assert_eq!(
+        executor.take_program_result(),
+        Some((id, RuntimeValue::Need(NeedId("need.retained".to_owned()))))
+    );
+    assert_eq!(executor.take_program_result(), None);
+    let bytes = serde_json::to_vec(&saved).unwrap();
+    let saved: AwbcProductExecutorSaveSnapshot = serde_json::from_slice(&bytes).unwrap();
+    let mut executor = executor.restore_inert_snapshot_owned(saved).unwrap();
+    assert_eq!(
+        executor.take_program_result(),
+        Some((id, RuntimeValue::Need(NeedId("need.retained".to_owned()))))
+    );
+    assert_eq!(executor.take_program_result(), None);
+}
+
+#[test]
+fn owned_unit_program_retains_its_typed_result_across_save_restore() {
+    use arcweft_core::awbc::product_step::AwbcProductStepExecutor;
+
+    let unit = type_id(45);
+    let id = RuntimePureProgramId::from_checked_digest([46; 32]);
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            [RuntimePlanTypeSeed::new(
+                unit,
+                RuntimePlanTypeProjection::Unit,
+            )],
+            [],
+        )
+        .unwrap();
+    let site = builder
+        .push_function_site_seed(
+            [],
+            RuntimeExprSeed::new(unit, RuntimeExprSeedKind::Value(RuntimeValue::Unit)),
+        )
+        .unwrap();
+    builder
+        .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed { program: id, site })
+        .unwrap();
+    let program = Arc::new(lower(&builder.finish().unwrap()));
+    let mut executor = AwbcProductStepExecutor::for_program_invocation(
+        program,
+        id,
+        Vec::new(),
+        GenerationId::new(7),
+        64,
+    )
+    .unwrap();
+    assert!(
+        executor
+            .step(RuntimeStepInput::default(), options())
+            .output
+            .diagnostics
+            .is_empty()
+    );
+    let saved = executor.inert_rollback_image().unwrap().product;
+    let mut executor = executor.restore_inert_snapshot_owned(saved).unwrap();
+    assert_eq!(
+        executor.take_program_result(),
+        Some((id, RuntimeValue::Unit))
+    );
+    let saved = executor.inert_rollback_image().unwrap().product;
+    let mut executor = executor.restore_inert_snapshot_owned(saved).unwrap();
+    assert_eq!(executor.take_program_result(), None);
+}
+
+#[test]
 fn typed_runtime_plan_and_product_awbc_return_the_same_value() {
     let plan = plan_with_return("done");
     let program = lower(&plan);

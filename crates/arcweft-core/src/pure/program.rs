@@ -82,19 +82,24 @@ pub fn evaluate_pure_program_with_backend(
             return Err(RuntimeEvalError::AffineLocalCopy(input.input_local()));
         }
     }
-    let mut captures = Vec::new();
-    let mut parameters = Vec::new();
-    for (input, value) in site.inputs().iter().zip(args) {
-        match input.source() {
-            crate::plan::RuntimeFunctionInputSource::Capture { .. } => captures.push(value.clone()),
-            crate::plan::RuntimeFunctionInputSource::Parameter { .. } => {
-                parameters.push(value.clone())
-            }
-        }
-    }
-    let mut evaluator = PureEvaluator::new_ref(plan, &[]);
-    evaluator.external = Some(backend);
-    let result = evaluator.evaluate_function_site(binding.site(), captures, parameters)?;
+    let mut engine =
+        crate::engine::Engine::for_program_invocation(Arc::clone(plan), program, args.to_vec())
+            .map_err(|failure| failure.into_parts().0)?;
+    let output = engine.step_with_pure_backend(
+        crate::step::RuntimeStepInput::default(),
+        crate::step::RuntimeStepOptions {
+            mode: crate::step::RuntimeStepMode::Drain,
+            budget: crate::step::RuntimeStepBudget { max_ops: 1_000_000 },
+            ..crate::step::RuntimeStepOptions::default()
+        },
+        backend,
+    );
+    let (_, result) = engine.take_program_result().ok_or_else(|| {
+        error(&format!(
+            "program did not return: {:?}; {:?}",
+            output.stop_reason, output.output.diagnostics
+        ))
+    })?;
     if !plan.value_matches_type(site.result(), &result)? {
         return Err(RuntimeEvalError::InvalidExpressionType(site.result()));
     }

@@ -49,11 +49,16 @@ pub mod eval;
 pub(crate) use eval::evaluate_runtime_call;
 pub mod flow;
 pub mod line;
+pub mod program;
 pub mod stream;
 pub mod suspend;
 
 #[derive(Debug, PartialEq)]
 pub struct Engine {
+    program_result: Option<(
+        arcweft_id::runtime_program::RuntimePureProgramId,
+        RuntimeValue,
+    )>,
     plan: Arc<RuntimePlan>,
     format_context: crate::value::RuntimeFormatContext,
     generation: GenerationId,
@@ -93,6 +98,10 @@ pub struct Engine {
 /// image may coexist with a live Engine because it carries no live values.
 #[derive(Clone, Debug, PartialEq)]
 struct NativeEngineRollbackImage {
+    program_result: Option<(
+        arcweft_id::runtime_program::RuntimePureProgramId,
+        crate::value::AwbcRuntimeValueSnapshot,
+    )>,
     plan: Arc<RuntimePlan>,
     format_context: crate::value::RuntimeFormatContext,
     generation: GenerationId,
@@ -812,7 +821,11 @@ impl FlowControlStackEntry {
                     .into_iter()
                     .map(|op| op.into_live(owner))
                     .collect::<Result<_, String>>()?,
-                continuation: FunctionReturnContinuation::from_rollback_image(continuation, owner)?,
+                continuation: FunctionReturnContinuation::from_rollback_image(
+                    continuation,
+                    site,
+                    owner,
+                )?,
             }),
         };
         Ok(Self { kind })
@@ -839,6 +852,9 @@ impl FunctionCallFrame {
 /// resumes its materialization plan without reevaluating source operands.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum FunctionReturnContinuation {
+    Program {
+        program: arcweft_id::runtime_program::RuntimePureProgramId,
+    },
     CallableDefault {
         pending: crate::value::RuntimeCallablePendingGroup,
         result: RuntimePattern,
@@ -850,6 +866,9 @@ pub(crate) enum FunctionReturnContinuation {
 
 #[derive(Clone, Debug, PartialEq)]
 enum FunctionReturnContinuationRollbackImage {
+    Program {
+        program: arcweft_id::runtime_program::RuntimePureProgramId,
+    },
     CallableDefault {
         pending: crate::value::RuntimeCallablePendingRollbackImage,
         result: RuntimePattern,
@@ -865,6 +884,9 @@ impl FunctionReturnContinuation {
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<FunctionReturnContinuationRollbackImage, String> {
         Ok(match self {
+            Self::Program { program } => {
+                FunctionReturnContinuationRollbackImage::Program { program: *program }
+            }
             Self::CallableDefault { pending, result } => {
                 FunctionReturnContinuationRollbackImage::CallableDefault {
                     pending: pending.inert_rollback_image(owner)?,
@@ -879,9 +901,23 @@ impl FunctionReturnContinuation {
 
     fn from_rollback_image(
         image: FunctionReturnContinuationRollbackImage,
+        site: crate::runtime_id::RuntimeFunctionSiteId,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
         Ok(match image {
+            FunctionReturnContinuationRollbackImage::Program { program } => {
+                let crate::task::RuntimeProgramOwner::Plan(plan) = owner else {
+                    return Err("native program continuation requires its plan owner".to_owned());
+                };
+                if !plan
+                    .pure_programs()
+                    .iter()
+                    .any(|binding| binding.program() == program && binding.site() == site)
+                {
+                    return Err("native program continuation is absent from its plan".to_owned());
+                }
+                Self::Program { program }
+            }
             FunctionReturnContinuationRollbackImage::CallableDefault { pending, result } => {
                 Self::CallableDefault {
                     pending: crate::value::RuntimeCallablePendingGroup::from_rollback_image(
@@ -1485,6 +1521,17 @@ impl Engine {
         let publication_image =
             |publication: &RuntimeNeedPublication| publication.inert_rollback_image(&owner);
         Ok(NativeEngineRollbackImage {
+            program_result: self
+                .program_result
+                .as_ref()
+                .map(|(program, value)| {
+                    crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                        value, &owner,
+                    )
+                    .map(|snapshot| (*program, snapshot))
+                    .map_err(|error| error.to_string())
+                })
+                .transpose()?,
             plan: Arc::clone(&self.plan),
             format_context: self.format_context.clone(),
             generation: self.generation,
@@ -1537,6 +1584,15 @@ impl Engine {
     fn from_rollback_image(image: NativeEngineRollbackImage) -> Result<Self, String> {
         let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&image.plan));
         Ok(Self {
+            program_result: image
+                .program_result
+                .map(|(program, value)| {
+                    value
+                        .into_runtime_value_for_program(&owner)
+                        .map(|value| (program, value))
+                        .map_err(|error| error.to_string())
+                })
+                .transpose()?,
             plan: image.plan,
             format_context: image.format_context,
             generation: image.generation,
@@ -1682,6 +1738,7 @@ impl Engine {
             .collect();
         let pure_helper_i64_call_shapes = pure_helper_i64_call_shapes(&plan);
         Self {
+            program_result: None,
             plan,
             format_context: crate::value::RuntimeFormatContext::default(),
             generation,
@@ -1731,6 +1788,16 @@ impl Engine {
     /// Selects the session locale for subsequent native `fmt` evaluations.
     pub fn set_format_context(&mut self, context: crate::value::RuntimeFormatContext) {
         self.format_context = context;
+    }
+
+    /// Transfers a completed program's value to its caller exactly once.
+    pub fn take_program_result(
+        &mut self,
+    ) -> Option<(
+        arcweft_id::runtime_program::RuntimePureProgramId,
+        RuntimeValue,
+    )> {
+        self.program_result.take()
     }
 
     #[must_use]
@@ -2452,7 +2519,10 @@ impl Engine {
         if !matches!(self.fiber.status, FlowFiberStatus::Running) {
             return;
         }
-        if self.fiber.cursor.is_some() {
+        if self.fiber.cursor.is_some()
+            || !self.fiber.pending_ops.is_empty()
+            || self.has_active_project_call()
+        {
             self.step_main_flow_transaction(output, pure_backend);
         } else {
             self.step_line_only(input, output, pure_backend);
@@ -2464,7 +2534,7 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        let before = match flow_fiber_line_handle_owners(&self.fiber) {
+        let before = match self.main_fiber_line_handle_owners() {
             Ok(owners) => owners,
             Err(error) => {
                 self.fail_eval(error, output);
@@ -2493,7 +2563,7 @@ impl Engine {
             self.fail_eval(error, output);
             return;
         }
-        let after = match flow_fiber_line_handle_owners(&candidate.fiber) {
+        let after = match candidate.main_fiber_line_handle_owners() {
             Ok(owners) => owners,
             Err(error) => {
                 drop(candidate);

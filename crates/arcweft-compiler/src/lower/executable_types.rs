@@ -57,7 +57,7 @@ impl RuntimeExecutableInstantiation<'_> {
                 runtime_type_under(checked.ty(), self.types(), symbols, world, analysis)?,
             ));
         }
-        for owner in partition.locals() {
+        for owner in partition.locals().iter().chain(partition.input_locals()) {
             let checked = analysis
                 .local(*owner)
                 .ok_or_else(|| origin.error("runtime local has no checked semantic fact"))?;

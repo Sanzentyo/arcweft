@@ -4727,6 +4727,7 @@ pub struct RuntimeTraitMethodInstanceKey {
 /// was sealed. The use is scoped to a concrete instance and expression.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeTraitMethodUseScope {
+    Program(RuntimePureProgramId),
     ProjectFunction(RuntimeProjectFunctionInstanceKey),
     Closure(RuntimeClosureInstanceKey),
     TraitMethod(RuntimeTraitMethodInstanceKey),
@@ -4736,6 +4737,7 @@ impl RuntimeTraitMethodUseScope {
     fn for_executable(scope: RuntimeExecutableSemanticScope<'_>) -> Option<Self> {
         match scope {
             RuntimeExecutableSemanticScope::Global => None,
+            RuntimeExecutableSemanticScope::Program(program) => Some(Self::Program(program)),
             RuntimeExecutableSemanticScope::ProjectFunction(key) => {
                 Some(Self::ProjectFunction(key.clone()))
             }
@@ -5097,6 +5099,10 @@ pub struct RuntimePlanSemanticFactInput {
     pipes: Vec<(ExprId, RuntimePipeFact)>,
     captures: Vec<RuntimeCheckedCapture>,
     pure_programs: Vec<RuntimePureProgramFact>,
+    pure_program_semantics: Vec<(
+        RuntimePureProgramId,
+        RuntimeProjectFunctionInstanceSemanticFacts,
+    )>,
     project_function_instances: Vec<RuntimeProjectFunctionInstanceFact>,
     root_closures: Vec<RuntimeClosureInstanceFact>,
     project_function_roots: Vec<RuntimeProjectFunctionRootFact>,
@@ -5151,6 +5157,7 @@ impl RuntimePlanSemanticFactInput {
             pipes: Vec::new(),
             captures: Vec::new(),
             pure_programs: Vec::new(),
+            pure_program_semantics: Vec::new(),
             project_function_instances: Vec::new(),
             root_closures: Vec::new(),
             project_function_roots: Vec::new(),
@@ -5406,6 +5413,14 @@ impl RuntimePlanSemanticFactInput {
         self.pure_programs.push(program);
     }
 
+    pub fn push_pure_program_semantics(
+        &mut self,
+        program: RuntimePureProgramId,
+        semantics: RuntimeProjectFunctionInstanceSemanticFacts,
+    ) {
+        self.pure_program_semantics.push((program, semantics));
+    }
+
     /// Stages one fully closed ordinary project-function instance. Equal keys
     /// must carry equal facts; publication rejects conflicting projections.
     pub fn push_project_function_instance(&mut self, instance: RuntimeProjectFunctionInstanceFact) {
@@ -5447,6 +5462,9 @@ impl RuntimePlanSemanticFactInput {
             self.project_function_instances.iter(),
             self.root_closures.iter(),
             self.trait_methods.iter(),
+            self.pure_program_semantics
+                .iter()
+                .map(|(program, semantics)| (*program, semantics)),
         ) {
             semantics
                 .visit_dialogue_applications(scope, &mut |_, _, _| has_instance_dialogue = true);
@@ -5516,6 +5534,8 @@ pub struct RuntimePlanSemanticFacts {
     pipes: BTreeMap<ExprId, RuntimePipeFact>,
     captures: BTreeMap<CaptureId, RuntimeCheckedCapture>,
     pure_programs: BTreeMap<RuntimePureProgramId, RuntimePureProgramFact>,
+    pure_program_semantics:
+        BTreeMap<RuntimePureProgramId, RuntimeProjectFunctionInstanceSemanticFacts>,
     project_function_instances:
         BTreeMap<RuntimeProjectFunctionInstanceKey, RuntimeProjectFunctionInstanceFact>,
     root_closures: BTreeMap<ExprId, RuntimeClosureInstanceFact>,
@@ -5550,6 +5570,7 @@ pub enum RuntimeExecutableSemanticFactView<'facts> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RuntimeExecutableSemanticScope<'facts> {
     Global,
+    Program(RuntimePureProgramId),
     ProjectFunction(&'facts RuntimeProjectFunctionInstanceKey),
     Closure(&'facts RuntimeClosureInstanceKey),
     TraitMethod(&'facts RuntimeTraitMethodInstanceKey),
@@ -5567,6 +5588,7 @@ pub(crate) struct RuntimeImplicitCallableSiteKey {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum RuntimeImplicitCallableSiteScope {
     Global,
+    Program(RuntimePureProgramId),
     ProjectFunction(RuntimeProjectFunctionInstanceKey),
     Closure(RuntimeClosureInstanceKey),
     TraitMethod(RuntimeTraitMethodInstanceKey),
@@ -5576,6 +5598,9 @@ impl RuntimeImplicitCallableSiteKey {
     pub(crate) fn new(scope: RuntimeExecutableSemanticScope<'_>, expression: ExprId) -> Self {
         let scope = match scope {
             RuntimeExecutableSemanticScope::Global => RuntimeImplicitCallableSiteScope::Global,
+            RuntimeExecutableSemanticScope::Program(program) => {
+                RuntimeImplicitCallableSiteScope::Program(program)
+            }
             RuntimeExecutableSemanticScope::ProjectFunction(key) => {
                 RuntimeImplicitCallableSiteScope::ProjectFunction(key.clone())
             }
@@ -5598,6 +5623,16 @@ pub struct RuntimeScopedExecutableSemanticFactView<'facts> {
 }
 
 impl<'facts> RuntimeScopedExecutableSemanticFactView<'facts> {
+    pub const fn program(
+        program: RuntimePureProgramId,
+        facts: &'facts RuntimeProjectFunctionInstanceSemanticFacts,
+    ) -> Self {
+        Self {
+            scope: RuntimeExecutableSemanticScope::Program(program),
+            facts: RuntimeExecutableSemanticFactView::ProjectInstance(facts),
+        }
+    }
+
     pub const fn global(facts: &'facts RuntimePlanSemanticFacts) -> Self {
         Self {
             scope: RuntimeExecutableSemanticScope::Global,
@@ -6267,6 +6302,12 @@ fn instance_semantic_roots<'facts>(
     functions: impl Iterator<Item = &'facts RuntimeProjectFunctionInstanceFact> + 'facts,
     closures: impl Iterator<Item = &'facts RuntimeClosureInstanceFact> + 'facts,
     methods: impl Iterator<Item = &'facts RuntimeTraitMethodFact> + 'facts,
+    programs: impl Iterator<
+        Item = (
+            RuntimePureProgramId,
+            &'facts RuntimeProjectFunctionInstanceSemanticFacts,
+        ),
+    > + 'facts,
 ) -> impl Iterator<
     Item = (
         RuntimeScopedExecutableSemanticFactView<'facts>,
@@ -6299,9 +6340,22 @@ fn instance_semantic_roots<'facts>(
                 semantics,
             ))
         }))
+        .chain(programs.map(|(program, semantics)| {
+            (
+                RuntimeScopedExecutableSemanticFactView::program(program, semantics),
+                semantics,
+            )
+        }))
 }
 
 impl<'a> RuntimeSemanticOwnerSet<'a> {
+    fn admits_reachability(self, identity: &HirRuntimeReachabilityIdentity) -> bool {
+        self.runtime.identity() == identity
+            || self
+                .programs
+                .is_some_and(|owners| owners.identity() == identity)
+    }
+
     const fn runtime_only(runtime: &'a HirRuntimeSemanticReachability<'a>) -> Self {
         Self {
             runtime,
@@ -6585,6 +6639,32 @@ impl RuntimePlanSemanticFacts {
             .map(|(id, module)| (*id, module.snapshot_id()))
             .collect();
 
+        let pure_program_semantics = collect_unique(
+            input.pure_program_semantics.into_iter(),
+            RuntimeSemanticFactFamily::PureProgram,
+        )?;
+        if pure_program_semantics.len() != input.pure_programs.len() {
+            return Err(RuntimeSemanticFactsError::ReachabilityMismatch);
+        }
+        for program in &input.pure_programs {
+            let semantics = pure_program_semantics.get(&program.program()).ok_or(
+                RuntimeSemanticFactsError::InvalidPureProgram {
+                    program: program.program(),
+                },
+            )?;
+            let abi = program.admission().input_abi();
+            if semantics.partition().executable() != &program.reachability_owner()
+                || !runtime_owners
+                    .programs
+                    .is_some_and(|owners| owners.identity() == semantics.partition().reachability())
+                || semantics.local_uses() != abi.environment().local_uses()
+            {
+                return Err(RuntimeSemanticFactsError::InvalidPureProgram {
+                    program: program.program(),
+                });
+            }
+        }
+
         let project_function_instances = collect_unique(
             input
                 .project_function_instances
@@ -6658,77 +6738,49 @@ impl RuntimePlanSemanticFacts {
         let mut instance_type_owners = BTreeSet::new();
         let mut instance_capture_owners = BTreeSet::new();
         let mut instance_statement_owners = BTreeSet::new();
-        for instance in project_function_instances.values() {
-            instance.visit_type_projections(&mut |projection| match projection.owner() {
-                RuntimeProjectFunctionTypeOwner::Expression(owner) => {
-                    instance_expression_owners.insert(owner);
-                }
-                RuntimeProjectFunctionTypeOwner::Pattern(owner) => {
-                    instance_pattern_owners.insert(owner);
-                }
-                RuntimeProjectFunctionTypeOwner::Local(owner) => {
-                    instance_local_owners.insert(owner);
-                }
-                RuntimeProjectFunctionTypeOwner::Type(owner) => {
-                    instance_type_owners.insert(owner);
-                }
-            });
-            instance.visit_captures(&mut |capture| {
-                instance_capture_owners.insert(capture.capture());
-            });
-            instance.visit_statement_owners(&mut |statement| {
-                instance_statement_owners.insert(statement);
-            });
-        }
-        for closure in root_closures.values() {
-            closure.semantics().visit_type_projections(
-                &mut |projection| match projection.owner() {
-                    RuntimeProjectFunctionTypeOwner::Expression(owner) => {
-                        instance_expression_owners.insert(owner);
-                    }
-                    RuntimeProjectFunctionTypeOwner::Pattern(owner) => {
-                        instance_pattern_owners.insert(owner);
-                    }
-                    RuntimeProjectFunctionTypeOwner::Local(owner) => {
-                        instance_local_owners.insert(owner);
-                    }
-                    RuntimeProjectFunctionTypeOwner::Type(owner) => {
-                        instance_type_owners.insert(owner);
-                    }
-                },
-            );
-            closure.semantics().visit_captures(&mut |capture| {
-                instance_capture_owners.insert(capture.capture());
-            });
-            closure
-                .semantics()
-                .visit_statement_owners(&mut |statement| {
-                    instance_statement_owners.insert(statement);
-                });
-        }
-        for method in &input.trait_methods {
-            let Some(semantics) = method.closed_semantics() else {
-                continue;
-            };
+        for (scope, semantics) in instance_semantic_roots(
+            project_function_instances.values(),
+            root_closures.values(),
+            input.trait_methods.iter(),
+            pure_program_semantics
+                .iter()
+                .map(|(program, semantics)| (*program, semantics)),
+        ) {
+            let program_scope = matches!(scope.scope(), RuntimeExecutableSemanticScope::Program(_));
             semantics.visit_type_projections(&mut |projection| match projection.owner() {
                 RuntimeProjectFunctionTypeOwner::Expression(owner) => {
-                    instance_expression_owners.insert(owner);
+                    if !program_scope || !runtime_owners.runtime.contains_expression(owner) {
+                        instance_expression_owners.insert(owner);
+                    }
                 }
                 RuntimeProjectFunctionTypeOwner::Pattern(owner) => {
-                    instance_pattern_owners.insert(owner);
+                    if !program_scope || !runtime_owners.runtime.contains_pattern(owner) {
+                        instance_pattern_owners.insert(owner);
+                    }
                 }
                 RuntimeProjectFunctionTypeOwner::Local(owner) => {
-                    instance_local_owners.insert(owner);
+                    if !program_scope
+                        || (!runtime_owners.runtime.contains_local(owner)
+                            && !semantics.partition().input_locals().contains(&owner))
+                    {
+                        instance_local_owners.insert(owner);
+                    }
                 }
                 RuntimeProjectFunctionTypeOwner::Type(owner) => {
-                    instance_type_owners.insert(owner);
+                    if !program_scope || !runtime_owners.runtime.contains_type(owner) {
+                        instance_type_owners.insert(owner);
+                    }
                 }
             });
             semantics.visit_captures(&mut |capture| {
-                instance_capture_owners.insert(capture.capture());
+                if !program_scope || !runtime_owners.runtime.contains_capture(capture.capture()) {
+                    instance_capture_owners.insert(capture.capture());
+                }
             });
-            semantics.visit_statement_owners(&mut |statement| {
-                instance_statement_owners.insert(statement);
+            semantics.visit_statement_owners(&mut |owner| {
+                if !program_scope || !runtime_owners.runtime.contains_statement(owner) {
+                    instance_statement_owners.insert(owner);
+                }
             });
         }
         let expected_local_declarations = runtime_owners
@@ -7377,61 +7429,32 @@ impl RuntimePlanSemanticFacts {
                 return Err(RuntimeSemanticFactsError::OwnerOutsideReachability { owner });
             }
         }
-        for instance in project_function_instances.values() {
+        for (_, semantics) in instance_semantic_roots(
+            project_function_instances.values(),
+            root_closures.values(),
+            input.trait_methods.iter(),
+            pure_program_semantics
+                .iter()
+                .map(|(program, semantics)| (*program, semantics)),
+        ) {
             let mut expression_types = BTreeMap::new();
-            instance.visit_type_projections(&mut |projection| {
+            semantics.visit_type_projections(&mut |projection| {
                 if let (RuntimeProjectFunctionTypeOwner::Expression(owner), Some(ty)) =
                     (projection.owner(), projection.ty())
                 {
                     expression_types.insert(owner, ty);
                 }
             });
-            instance
-                .semantics()
-                .visit_specializations(&mut |owner, spec, _| {
-                    expression_types.insert(owner, spec.source());
-                });
+            semantics.visit_specializations(&mut |owner, spec, _| {
+                expression_types.insert(owner, spec.source());
+            });
             let mut closed_calls = Vec::new();
-            instance.visit_calls(&mut |owner, call| closed_calls.push((owner, call)));
+            semantics.visit_calls(&mut |owner, call| closed_calls.push((owner, call)));
             for (owner, call) in closed_calls {
                 if let Some(invoked) = validate_project_function_instance_reference(
                     owner,
                     call,
                     expression_types.get(&owner).copied(),
-                    &project_function_instances,
-                    &callable_sources,
-                    &callable_specializations,
-                )? {
-                    referenced_project_function_instances.insert(invoked);
-                }
-            }
-        }
-        for closure in root_closures.values() {
-            let mut closed_calls = Vec::new();
-            closure
-                .semantics()
-                .visit_calls(&mut |owner, call| closed_calls.push((owner, call)));
-            for (owner, call) in closed_calls {
-                let mut expected_type = None;
-                closure
-                    .semantics()
-                    .visit_type_projections(&mut |projection| {
-                        if projection.owner() == RuntimeProjectFunctionTypeOwner::Expression(owner)
-                        {
-                            expected_type = projection.ty();
-                        }
-                    });
-                closure
-                    .semantics()
-                    .visit_specializations(&mut |candidate, spec, _| {
-                        if candidate == owner {
-                            expected_type = Some(spec.source());
-                        }
-                    });
-                if let Some(invoked) = validate_project_function_instance_reference(
-                    owner,
-                    call,
-                    expected_type,
                     &project_function_instances,
                     &callable_sources,
                     &callable_specializations,
@@ -7913,7 +7936,7 @@ impl RuntimePlanSemanticFacts {
                     return Err(RuntimeSemanticFactsError::InvalidTraitMethodIdentity);
                 }
                 if semantics.partition().executable() != &owner
-                    || semantics.partition().reachability() != runtime_owners.runtime.identity()
+                    || !runtime_owners.admits_reachability(semantics.partition().reachability())
                 {
                     return Err(RuntimeSemanticFactsError::InvalidTraitMethodIdentity);
                 }
@@ -7925,7 +7948,7 @@ impl RuntimePlanSemanticFacts {
                     &modules,
                     runtime_owners,
                     Some(&lexical_owner),
-                    callable,
+                    RuntimeExecutableLexicalAuthority::Callable(callable),
                     semantics,
                     None,
                 )?;
@@ -8311,6 +8334,9 @@ impl RuntimePlanSemanticFacts {
             project_function_instances.values(),
             root_closures.values(),
             trait_methods.values(),
+            pure_program_semantics
+                .iter()
+                .map(|(program, semantics)| (*program, semantics)),
         ) {
             semantics.visit_content_fragments(scope, &mut |_, fragment| {
                 if !fragment_templates.insert(fragment.template().id())
@@ -8347,6 +8373,9 @@ impl RuntimePlanSemanticFacts {
             project_function_instances.values(),
             root_closures.values(),
             trait_methods.values(),
+            pure_program_semantics
+                .iter()
+                .map(|(program, semantics)| (*program, semantics)),
         ) {
             semantics
                 .visit_dialogue_applications(scope, &mut |_, _, _| has_instance_dialogue = true);
@@ -8404,6 +8433,7 @@ impl RuntimePlanSemanticFacts {
             pipes,
             captures,
             pure_programs,
+            pure_program_semantics,
             project_function_instances,
             root_closures,
             project_function_roots,
@@ -8416,6 +8446,20 @@ impl RuntimePlanSemanticFacts {
             character_dialogue_generation,
         };
         for program in facts.pure_programs.values() {
+            let semantics = facts.pure_program_semantics.get(&program.program()).ok_or(
+                RuntimeSemanticFactsError::InvalidPureProgram {
+                    program: program.program(),
+                },
+            )?;
+            let lexical = RuntimeClosureLexicalOwner::Program(program.program());
+            validate_project_function_semantic_catalog(
+                &modules,
+                runtime_owners,
+                Some(&lexical),
+                RuntimeExecutableLexicalAuthority::Program(program),
+                semantics,
+                None,
+            )?;
             let scope = facts.program_scope(program)?;
             for (input, ty) in program.free_inputs() {
                 if scope.local_type(input.binding().local()) != Some(ty) {
@@ -8457,7 +8501,7 @@ impl RuntimePlanSemanticFacts {
                 &modules,
                 runtime_owners,
                 None,
-                &callable,
+                RuntimeExecutableLexicalAuthority::Callable(&callable),
                 RuntimeExecutableSemanticFactView::Global(&facts),
                 closure.owner(),
                 closure,
@@ -8482,6 +8526,10 @@ impl RuntimePlanSemanticFacts {
                 facts.project_function_instances.values(),
                 facts.root_closures.values(),
                 facts.trait_methods.values(),
+                facts
+                    .pure_program_semantics
+                    .iter()
+                    .map(|(program, semantics)| (*program, semantics)),
             ) {
                 validate_project_instance_dialogue_applications(
                     &modules,
@@ -8865,6 +8913,9 @@ impl RuntimePlanSemanticFacts {
             self.project_function_instances.values(),
             self.root_closures.values(),
             self.trait_methods.values(),
+            self.pure_program_semantics
+                .iter()
+                .map(|(program, semantics)| (*program, semantics)),
         ) {
             semantics.visit_catalogs(&mut |catalog| {
                 for row in catalog.expressions() {
@@ -8922,6 +8973,9 @@ impl RuntimePlanSemanticFacts {
         for program in self.pure_programs.values() {
             roots.extend(program.input_types());
             roots.push(program.result());
+        }
+        for semantics in self.pure_program_semantics.values() {
+            semantics.append_normalized_types(&mut roots);
         }
         for call in self.calls.values() {
             call.append_normalized_types(&mut roots);
@@ -9197,90 +9251,38 @@ impl RuntimePlanSemanticFacts {
         self.trait_methods.values()
     }
 
-    /// Selects the sole closed semantic catalog certified by this program's ABI.
-    /// A monomorphic proof explicitly selects global evidence; closed proofs
-    /// must match both their instance identity and executable partition.
+    /// The program's own sealed executable catalog, independent of ordinary call reachability.
     pub(crate) fn program_scope<'facts>(
         &'facts self,
         program: &RuntimePureProgramFact,
     ) -> Result<RuntimeScopedExecutableSemanticFactView<'facts>, RuntimeSemanticFactsError> {
-        use arcweft_lang_sema::final_analysis::{
-            CheckedExecutionBodyOwner, CheckedExecutionSource,
-        };
-        let abi = program.admission().input_abi();
-        let Some(identity) = abi.instance_identity() else {
-            if !matches!(abi.environment().local_uses(), CheckedLocalUseAuthority::Global(expected)
-                if self.checked_local_uses.as_ref().is_some_and(|actual| actual == expected))
-            {
-                return Err(RuntimeSemanticFactsError::InvalidPureProgram {
-                    program: program.program(),
-                });
-            }
-            return Ok(RuntimeScopedExecutableSemanticFactView::global(self));
-        };
-        let mut candidates = Vec::new();
-        let mut select =
-            |scope: RuntimeScopedExecutableSemanticFactView<'facts>,
-             semantics: &'facts RuntimeProjectFunctionInstanceSemanticFacts| {
-                if semantics.local_uses().instance_identity() != Some(identity)
-                    || semantics.local_uses() != abi.environment().local_uses()
-                {
-                    return;
-                }
-                let owns_root = match program.source() {
-                    CheckedExecutionSource::EvaluateValue(root) => {
-                        semantics.expression(*root).is_some()
-                    }
-                    CheckedExecutionSource::InvokeBody(
-                        CheckedExecutionBodyOwner::CallableValue(root),
-                    ) => {
-                        semantics.partition().executable()
-                            == &HirRuntimeExecutableOwner::CallableBody(*root)
-                            || semantics.implicit_callable(*root).is_some()
-                    }
-                    CheckedExecutionSource::InvokeBody(
-                        CheckedExecutionBodyOwner::Declaration { declaration, .. },
-                    ) => {
-                        let owner = match declaration {
-                            CallableDeclarationKey::ImplMethod(method) => {
-                                HirRuntimeExecutableOwner::ImplMethod(method.clone())
-                            }
-                            _ => match abi.hir_topology().declaration(declaration) {
-                                Ok(view) => {
-                                    HirRuntimeExecutableOwner::Item(view.body().source_item())
-                                }
-                                Err(_) => return,
-                            },
-                        };
-                        semantics.partition().executable() == &owner
-                    }
-                };
-                if owns_root {
-                    candidates.push(scope);
-                }
-            };
-        for (scope, semantics) in instance_semantic_roots(
-            self.project_function_instances.values(),
-            self.root_closures.values(),
-            self.trait_methods.values(),
-        ) {
-            select(scope, semantics);
-            semantics.visit_closure_instances(&mut |closure| {
-                select(
-                    RuntimeScopedExecutableSemanticFactView::closure(
-                        closure.key(),
-                        closure.semantics(),
-                    ),
-                    closure.semantics(),
-                );
+        let semantics = self.pure_program_semantics.get(&program.program()).ok_or(
+            RuntimeSemanticFactsError::InvalidPureProgram {
+                program: program.program(),
+            },
+        )?;
+        if semantics.partition().executable() != &program.reachability_owner()
+            || semantics.local_uses() != program.admission().input_abi().environment().local_uses()
+        {
+            return Err(RuntimeSemanticFactsError::InvalidPureProgram {
+                program: program.program(),
             });
         }
-        match candidates.as_slice() {
-            [scope] => Ok(*scope),
-            _ => Err(RuntimeSemanticFactsError::InvalidPureProgram {
-                program: program.program(),
-            }),
-        }
+        Ok(RuntimeScopedExecutableSemanticFactView::program(
+            program.program(),
+            semantics,
+        ))
+    }
+
+    pub(crate) fn pure_program_semantics(
+        &self,
+    ) -> impl ExactSizeIterator<
+        Item = (
+            &RuntimePureProgramId,
+            &RuntimeProjectFunctionInstanceSemanticFacts,
+        ),
+    > {
+        self.pure_program_semantics.iter()
     }
 
     pub fn trait_method(
@@ -9401,6 +9403,9 @@ impl RuntimePlanSemanticFacts {
             self.project_function_instances.values(),
             self.root_closures.values(),
             self.trait_methods.values(),
+            self.pure_program_semantics
+                .iter()
+                .map(|(program, semantics)| (*program, semantics)),
         ) {
             semantics.visit_dialogue_applications(scope, visitor);
         }
@@ -9439,6 +9444,9 @@ impl RuntimePlanSemanticFacts {
             self.project_function_instances.values(),
             self.root_closures.values(),
             self.trait_methods.values(),
+            self.pure_program_semantics
+                .iter()
+                .map(|(program, semantics)| (*program, semantics)),
         ) {
             semantics.visit_content_fragments(scope, visitor);
         }
@@ -9465,6 +9473,9 @@ impl RuntimePlanSemanticFacts {
             self.project_function_instances.values(),
             self.root_closures.values(),
             self.trait_methods.values(),
+            self.pure_program_semantics
+                .iter()
+                .map(|(program, semantics)| (*program, semantics)),
         ) {
             semantics.visit_scoped_calls(scope, visitor);
         }
@@ -9489,6 +9500,9 @@ impl RuntimePlanSemanticFacts {
             self.project_function_instances.values(),
             self.root_closures.values(),
             self.trait_methods.values(),
+            self.pure_program_semantics
+                .iter()
+                .map(|(program, semantics)| (*program, semantics)),
         ) {
             semantics.visit_scoped_implicit_callables(scope, visitor);
         }
@@ -9506,6 +9520,9 @@ impl RuntimePlanSemanticFacts {
                     self.project_function_instances.values(),
                     self.root_closures.values(),
                     self.trait_methods.values(),
+                    self.pure_program_semantics
+                        .iter()
+                        .map(|(program, semantics)| (*program, semantics)),
                 )
                 .find_map(|(_, semantics)| semantics.dialogue_content_fragment(template))
             })
@@ -11694,7 +11711,7 @@ fn validate_project_function_instance(
             instance.callable().owner(),
         ))
         .ok_or(RuntimeSemanticFactsError::InvalidProjectFunctionInstance)?;
-    if instance.semantics().partition().reachability() != runtime_owners.runtime.identity()
+    if !runtime_owners.admits_reachability(instance.semantics().partition().reachability())
         || instance.semantics().partition().executable()
             != &HirRuntimeExecutableOwner::Item(instance.callable().owner())
         || instance.semantics().expressions().iter().any(|fact| {
@@ -11877,7 +11894,7 @@ fn validate_project_function_instance(
         modules,
         runtime_owners,
         Some(&lexical_owner),
-        instance.callable().runtime(),
+        RuntimeExecutableLexicalAuthority::Callable(instance.callable().runtime()),
         instance.semantics(),
         None,
     )?;
@@ -11930,16 +11947,40 @@ fn validate_project_function_root(
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+enum RuntimeExecutableLexicalAuthority<'facts> {
+    Callable(&'facts RuntimeCallableId),
+    Program(&'facts RuntimePureProgramFact),
+}
+
+impl RuntimeExecutableLexicalAuthority<'_> {
+    fn admits_closure_owner(self, closure: &RuntimeClosureInstanceFact) -> bool {
+        let owner = closure.key().closure().owner();
+        match self {
+            Self::Callable(expected) => {
+                RuntimeCallableId::from_checked_digest(owner.semantic_digest().into_bytes())
+                    == *expected
+            }
+            Self::Program(program) => {
+                let abi = program.admission().input_abi();
+                abi.environment()
+                    .validate_callable_owner(owner, abi.hir_topology())
+                    .is_ok()
+            }
+        }
+    }
+}
+
 fn validate_project_function_semantic_catalog(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     runtime_owners: RuntimeSemanticOwnerSet<'_>,
     parent_key: Option<&RuntimeClosureLexicalOwner>,
-    callable: &RuntimeCallableId,
+    callable: RuntimeExecutableLexicalAuthority<'_>,
     semantics: &RuntimeProjectFunctionInstanceSemanticFacts,
     outer: Option<RuntimeExecutableSemanticFactView<'_>>,
 ) -> Result<(), RuntimeSemanticFactsError> {
     let partition = semantics.partition();
-    if partition.reachability() != runtime_owners.runtime.identity() {
+    if !runtime_owners.admits_reachability(partition.reachability()) {
         return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
     }
     let exact = runtime_owners.executable_owners(partition.executable());
@@ -12749,7 +12790,7 @@ fn validate_closure_instance(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     runtime_owners: RuntimeSemanticOwnerSet<'_>,
     parent_key: Option<&RuntimeClosureLexicalOwner>,
-    callable: &RuntimeCallableId,
+    callable: RuntimeExecutableLexicalAuthority<'_>,
     outer: RuntimeExecutableSemanticFactView<'_>,
     owner: ExprId,
     closure: &RuntimeClosureInstanceFact,
@@ -12823,14 +12864,7 @@ fn validate_closure_instance(
     if closure.owner() != owner
         || closure.key().enclosing_owner() != parent_key
         || closure.key().closure().expression() != source
-        || RuntimeCallableId::from_checked_digest(
-            closure
-                .key()
-                .closure()
-                .owner()
-                .semantic_digest()
-                .into_bytes(),
-        ) != *callable
+        || !callable.admits_closure_owner(closure)
         || closure.scope() != hir.scope()
         || closure.body() != hir.body()
         || closure.parameters().len() != hir.parameters().len()

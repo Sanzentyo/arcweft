@@ -6,7 +6,7 @@
 //! selects an instantiation from a callee value or from the first observed
 //! call.
 
-use std::{collections::BTreeSet, sync::Arc};
+use std::collections::BTreeSet;
 
 use arcweft_core::entry::RuntimeCallableId;
 use arcweft_id::{EffectId, runtime_program::RuntimeProjectContinuationLineageId};
@@ -1155,6 +1155,7 @@ impl RuntimeProjectFunctionTypeProjection {
 /// Closed lexical owner of a closure inside an instantiated callable body.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeClosureLexicalOwner {
+    Program(arcweft_id::runtime_program::RuntimePureProgramId),
     ProjectFunction(RuntimeProjectFunctionInstanceKey),
     TraitMethod(RuntimeTraitMethodInstanceKey),
 }
@@ -1511,6 +1512,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                 partition
                     .locals()
                     .iter()
+                    .chain(partition.input_locals())
                     .copied()
                     .map(RuntimeProjectFunctionTypeOwner::Local),
             )
@@ -1671,7 +1673,9 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
     }
 
     pub fn local_type(&self, owner: LocalId) -> Option<&RuntimeNormalizedType> {
-        if self.partition.locals().binary_search(&owner).is_ok() {
+        if self.partition.locals().binary_search(&owner).is_ok()
+            || self.partition.input_locals().binary_search(&owner).is_ok()
+        {
             self.ty(RuntimeProjectFunctionTypeOwner::Local(owner))
         } else {
             self.captures

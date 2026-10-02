@@ -115,11 +115,16 @@ impl AwbcProductStepExecutor {
     pub fn active_entry_snapshot_identity(
         &self,
     ) -> Result<crate::entry::ActiveEntrySnapshotV1, RootRuntimeError> {
+        let selected = self
+            .fiber
+            .root
+            .entry()
+            .ok_or(RootRuntimeError::SnapshotRoleMismatch("entry origin"))?;
         let entry = self
             .program
             .entries
-            .get(self.fiber.entry.index())
-            .ok_or_else(|| RootRuntimeError::MissingEntry(self.fiber.entry.0.to_string()))?;
+            .get(selected.index())
+            .ok_or_else(|| RootRuntimeError::MissingEntry(selected.0.to_string()))?;
         let kind = entry
             .kind
             .runtime_kind(&self.program.strings)
@@ -146,11 +151,16 @@ impl AwbcProductStepExecutor {
         active: &crate::entry::ActiveEntrySnapshotV1,
         snapshot: Option<crate::root::RootStateSnapshotV1>,
     ) -> Result<(), RootRuntimeError> {
+        let selected = self
+            .fiber
+            .root
+            .entry()
+            .ok_or(RootRuntimeError::SnapshotRoleMismatch("entry origin"))?;
         let entry = self
             .program
             .entries
-            .get(self.fiber.entry.index())
-            .ok_or_else(|| RootRuntimeError::MissingEntry(self.fiber.entry.0.to_string()))?;
+            .get(selected.index())
+            .ok_or_else(|| RootRuntimeError::MissingEntry(selected.0.to_string()))?;
         let kind = entry
             .kind
             .runtime_kind(&self.program.strings)
@@ -158,7 +168,7 @@ impl AwbcProductStepExecutor {
         if active.id != entry.runtime_id || active.kind != kind || active.binding != entry.binding {
             return Err(RootRuntimeError::SnapshotRoleMismatch("active entry"));
         }
-        let contract = startup_contract(&self.program, self.fiber.entry)?;
+        let contract = startup_contract(&self.program, selected)?;
         let candidate = match (contract, snapshot) {
             (Some(contract), Some(snapshot)) => Some(RootRuntime::from_snapshot(
                 contract,

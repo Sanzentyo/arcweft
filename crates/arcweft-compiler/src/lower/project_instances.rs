@@ -31,6 +31,7 @@ mod tests;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ProjectInstantiationOrigin {
+    Program(arcweft_id::runtime_program::RuntimePureProgramId),
     Call(ExprId),
     CallableValue(ExprId),
     Root(ItemId),
@@ -41,6 +42,7 @@ impl ProjectInstantiationOrigin {
     pub(super) fn error(self, reason: impl Into<String>) -> RuntimeSemanticProjectionError {
         let reason = reason.into();
         match self {
+            Self::Program(program) => RuntimeSemanticProjectionError::Program { program, reason },
             Self::Call(owner) => RuntimeSemanticProjectionError::Call { owner, reason },
             Self::CallableValue(owner) => RuntimeSemanticProjectionError::Value { owner, reason },
             Self::Root(owner) => {
@@ -125,6 +127,8 @@ pub enum ProjectInstantiationLimitKind {
 
 #[derive(Clone, Debug, Error)]
 pub enum ProjectInstantiationError {
+    #[error("program environment was admitted more than once at {origin:?}")]
+    DuplicateProgram { origin: ProjectInstantiationOrigin },
     #[error(transparent)]
     CallableDiscovery(#[from] callables::ProjectCallableDiscoveryError),
     #[error("project-function instantiation was cancelled at {origin:?}")]
@@ -224,6 +228,10 @@ impl ProjectInstanceSelection {
 }
 
 pub(super) struct ProjectInstantiationSession {
+    programs: BTreeMap<
+        arcweft_id::runtime_program::RuntimePureProgramId,
+        Arc<arcweft_lang_sema::final_analysis::CheckedExecutionEnvironment>,
+    >,
     callables: callables::ProjectCallableDiscovery,
     work: ProjectInstantiationWork,
     nodes: BTreeMap<RuntimeProjectFunctionInstanceKey, Arc<ProjectInstanceNode>>,
@@ -256,6 +264,7 @@ impl ProjectInstanceWorkItem {
 impl ProjectInstantiationSession {
     pub(super) fn new(control: ProjectInstantiationControl) -> Self {
         Self {
+            programs: BTreeMap::new(),
             callables: callables::ProjectCallableDiscovery::default(),
             work: ProjectInstantiationWork::new(control),
             nodes: BTreeMap::new(),
@@ -264,6 +273,22 @@ impl ProjectInstantiationSession {
             pending: BTreeSet::new(),
             active: None,
         }
+    }
+
+    pub(super) fn admit_program(
+        &mut self,
+        program: arcweft_id::runtime_program::RuntimePureProgramId,
+        environment: Arc<arcweft_lang_sema::final_analysis::CheckedExecutionEnvironment>,
+    ) -> Result<(), ProjectInstantiationError> {
+        let origin = ProjectInstantiationOrigin::Program(program);
+        if self.programs.contains_key(&program) {
+            return Err(self
+                .work
+                .abort(ProjectInstantiationError::DuplicateProgram { origin }));
+        }
+        self.charge(origin, 1, false, false)?;
+        self.programs.insert(program, environment);
+        Ok(())
     }
 
     fn check_cancelled(
@@ -388,6 +413,7 @@ impl ProjectInstantiationSession {
         }
         self.callables.validate_complete()?;
         Ok(DiscoveredProjectInstances {
+            programs: self.programs,
             callables: self.callables,
             work: self.work,
             nodes: self.nodes,
@@ -398,6 +424,33 @@ impl ProjectInstantiationSession {
 }
 
 impl ProjectInstanceNode {
+    pub(super) fn definition_reachability<'roots, 'project>(
+        &self,
+        runtime: &'roots arcweft_lang_hir::project::HirRuntimeSemanticReachability<'project>,
+        programs: Option<
+            &'roots arcweft_lang_hir::project::HirRuntimeSemanticReachability<'project>,
+        >,
+    ) -> Result<
+        &'roots arcweft_lang_hir::project::HirRuntimeSemanticReachability<'project>,
+        RuntimeSemanticProjectionError,
+    > {
+        let owner =
+            arcweft_lang_hir::project::HirRuntimeExecutableOwner::Item(self.callable.owner());
+        match (
+            runtime.executable_owners(&owner),
+            programs.and_then(|roots| roots.executable_owners(&owner)),
+        ) {
+            (Some(ordinary), Some(program)) if ordinary != program => Err(self
+                .origin
+                .error("executable owner inventories disagree across admitted root sets")),
+            (Some(_), _) => Ok(runtime),
+            (None, Some(_)) => Ok(programs.expect("program inventory has its owning reachability")),
+            (None, None) => Err(self
+                .origin
+                .error("instance definition is outside the admitted root sets")),
+        }
+    }
+
     fn validate_key(
         &self,
         key: &RuntimeProjectFunctionInstanceKey,
@@ -434,6 +487,10 @@ impl ProjectInstanceNode {
 }
 
 pub(super) struct DiscoveredProjectInstances {
+    programs: BTreeMap<
+        arcweft_id::runtime_program::RuntimePureProgramId,
+        Arc<arcweft_lang_sema::final_analysis::CheckedExecutionEnvironment>,
+    >,
     callables: callables::ProjectCallableDiscovery,
     work: ProjectInstantiationWork,
     nodes: BTreeMap<RuntimeProjectFunctionInstanceKey, Arc<ProjectInstanceNode>>,
@@ -448,6 +505,36 @@ pub(super) struct DiscoveredProjectInstances {
 }
 
 impl DiscoveredProjectInstances {
+    pub(super) fn program_types(
+        &self,
+        program: arcweft_id::runtime_program::RuntimePureProgramId,
+    ) -> Result<Option<ProjectInstanceTypes<'_>>, RuntimeSemanticProjectionError> {
+        let origin = ProjectInstantiationOrigin::Program(program);
+        let environment = self
+            .programs
+            .get(&program)
+            .ok_or_else(|| origin.error("program environment is absent from the sealed graph"))?;
+        Ok(self.environment_types(origin, environment))
+    }
+
+    pub(super) fn environment_types<'a>(
+        &'a self,
+        origin: ProjectInstantiationOrigin,
+        environment: &'a arcweft_lang_sema::final_analysis::CheckedExecutionEnvironment,
+    ) -> Option<ProjectInstanceTypes<'a>> {
+        match environment.instantiation()? {
+            arcweft_lang_sema::final_analysis::CheckedLocalUseInstantiation::ProjectFunction(
+                solution,
+            ) => Some(ProjectInstanceTypes::new(origin, solution, &self.work)),
+            arcweft_lang_sema::final_analysis::CheckedLocalUseInstantiation::DisplayText(
+                conformance,
+            ) => Some(ProjectInstanceTypes::display(
+                conformance.implementation(),
+                conformance,
+            )),
+        }
+    }
+
     pub(super) fn types<'a>(&'a self, node: &'a ProjectInstanceNode) -> ProjectInstanceTypes<'a> {
         ProjectInstanceTypes::new(node.origin, &node.solution, &self.work)
     }

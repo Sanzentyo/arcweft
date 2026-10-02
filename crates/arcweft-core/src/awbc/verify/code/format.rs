@@ -561,7 +561,7 @@ fn record_field_named(
 }
 
 fn is_display_context_type(program: &AwbcProgram, ty: AwbcTypeId) -> bool {
-    let Some(fields) = nominal_record_fields_named(program, ty, "DisplayContext") else {
+    let Some(fields) = nominal_record_fields_named(program, ty, "standard::DisplayContext") else {
         return false;
     };
     let [locale, style, currency] = fields else {
@@ -584,7 +584,7 @@ fn is_display_context_type(program: &AwbcProgram, ty: AwbcTypeId) -> bool {
 }
 
 fn is_display_error_type(program: &AwbcProgram, ty: AwbcTypeId) -> bool {
-    let Some(fields) = nominal_record_fields_named(program, ty, "DisplayError") else {
+    let Some(fields) = nominal_record_fields_named(program, ty, "standard::DisplayError") else {
         return false;
     };
     let [message] = fields else {

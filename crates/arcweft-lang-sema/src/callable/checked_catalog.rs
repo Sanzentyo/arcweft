@@ -99,6 +99,38 @@ impl PartialEq for CheckedCallableAuthorityLease {
 impl Eq for CheckedCallableAuthorityLease {}
 
 impl CheckedCallableAuthorityLease {
+    pub(crate) fn admits_generation(&self, generation: &Arc<AcceptedHirProjectGeneration>) -> bool {
+        matches!(&self.generation.origin,
+            CheckedCallableCatalogOrigin::RegisteredProject { hir, .. } if Arc::ptr_eq(hir, generation))
+    }
+
+    pub(crate) fn admits_callable_id(&self, id: &CheckedCallableId) -> bool {
+        match (&self.generation.origin, id.context()) {
+            (
+                CheckedCallableCatalogOrigin::RegisteredProject { hir, catalog },
+                CheckedCallableContext::Project {
+                    world,
+                    revision,
+                    catalog: selected,
+                    standard,
+                },
+            ) => {
+                hir.symbol_world() == world
+                    && hir.symbol_revision() == *revision
+                    && catalog == selected
+                    && self.generation.standard == *standard
+            }
+            (
+                CheckedCallableCatalogOrigin::Detached { source },
+                CheckedCallableContext::Detached {
+                    source: selected,
+                    standard,
+                },
+            ) => source == selected && self.generation.standard == *standard,
+            _ => false,
+        }
+    }
+
     pub(crate) fn admits(&self, catalog: &CheckedCallableCatalog) -> bool {
         self == &catalog.authority_lease()
     }

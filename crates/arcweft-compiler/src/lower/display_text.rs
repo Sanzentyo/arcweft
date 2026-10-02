@@ -108,6 +108,9 @@ fn display_method_use_scope(
 ) -> Option<RuntimeTraitMethodUseScope> {
     match scope {
         RuntimeExecutableSemanticScope::Global => None,
+        RuntimeExecutableSemanticScope::Program(program) => {
+            Some(RuntimeTraitMethodUseScope::Program(program))
+        }
         RuntimeExecutableSemanticScope::ProjectFunction(key) => {
             Some(RuntimeTraitMethodUseScope::ProjectFunction(key.clone()))
         }
@@ -133,6 +136,10 @@ pub(super) fn materialize_runtime_display_methods(
     runtime_calls: &BTreeMap<ExprId, RuntimeResolvedCall>,
     project_instances: &[RuntimeProjectFunctionInstanceFact],
     root_closures: &[RuntimeClosureInstanceFact],
+    programs: &[(
+        arcweft_id::runtime_program::RuntimePureProgramId,
+        RuntimeProjectFunctionInstanceSemanticFacts,
+    )],
     dialogue: &RuntimeDialogueProjectionCatalog,
     instances: &DiscoveredProjectInstances,
 ) -> Result<Vec<RuntimeTraitMethodFact>, RuntimeSemanticProjectionError> {
@@ -174,6 +181,18 @@ pub(super) fn materialize_runtime_display_methods(
             }
         });
     }
+    for (program, semantics) in programs {
+        semantics.visit_scoped_calls(
+            arcweft_runtime_plan::semantic_facts::RuntimeScopedExecutableSemanticFactView::program(
+                *program, semantics,
+            ),
+            &mut |scope, expression, call| {
+                if projection_error.is_none() {
+                    projection_error = note_call(scope.scope(), expression, call).err();
+                }
+            },
+        );
+    }
     if let Some(error) = projection_error {
         return Err(error);
     }
@@ -181,6 +200,9 @@ pub(super) fn materialize_runtime_display_methods(
 
     for ((scope, _), fragment) in &dialogue.fragments {
         let instance = match scope {
+            RuntimeDialogueProjectionScope::Program(program) => {
+                instances.program_types(*program)?
+            }
             RuntimeDialogueProjectionScope::ProjectInstance(key) => {
                 let node = instances
                     .nodes()
@@ -228,6 +250,9 @@ pub(super) fn materialize_runtime_display_methods(
             })?;
             let use_scope = match scope {
                 RuntimeDialogueProjectionScope::Global => None,
+                RuntimeDialogueProjectionScope::Program(program) => {
+                    Some(RuntimeTraitMethodUseScope::Program(*program))
+                }
                 RuntimeDialogueProjectionScope::ProjectInstance(key) => {
                     Some(RuntimeTraitMethodUseScope::ProjectFunction(key.clone()))
                 }

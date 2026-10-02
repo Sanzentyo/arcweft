@@ -2,13 +2,79 @@
 
 use std::sync::Arc;
 
-use arcweft_lang_hir::symbol::ProjectSymbolTable;
+use arcweft_lang_hir::{
+    project::{HirAnalysisProjectView, HirRuntimeSemanticReachability},
+    symbol::ProjectSymbolTable,
+};
 use arcweft_lang_sema::{
     final_analysis::FinalSemanticAnalysis, registration::RegisteredSemanticWorld,
 };
-use arcweft_runtime_plan::semantic_facts::RuntimePureProgramFact;
+use arcweft_runtime_plan::semantic_facts::{
+    RuntimeProjectFunctionInstanceSemanticFacts, RuntimePureProgramFact,
+};
 
-use super::{RuntimeSemanticProjectionError, runtime_type};
+use super::{
+    DiscoveredProjectInstances, ProjectInstanceProjection, ProjectInstantiationOrigin,
+    RuntimeDialogueProjectionCatalog, RuntimeExecutableInstantiation,
+    RuntimeSemanticProjectionError, runtime_executable_semantic_facts, runtime_type,
+};
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "program catalogs use the same authenticated project, semantic world, frozen environment and discovery ledger as ordinary executable catalogs"
+)]
+pub(super) fn materialize(
+    project: HirAnalysisProjectView<'_>,
+    symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
+    analysis: &FinalSemanticAnalysis,
+    owners: &HirRuntimeSemanticReachability<'_>,
+    programs: &[RuntimePureProgramFact],
+    dialogue: &RuntimeDialogueProjectionCatalog,
+    instances: &DiscoveredProjectInstances,
+) -> Result<
+    Vec<(
+        arcweft_id::runtime_program::RuntimePureProgramId,
+        RuntimeProjectFunctionInstanceSemanticFacts,
+    )>,
+    RuntimeSemanticProjectionError,
+> {
+    let mut projection = ProjectInstanceProjection::Materialize {
+        graph: instances,
+        caller: None,
+    };
+    programs
+        .iter()
+        .map(|program| {
+            let origin = ProjectInstantiationOrigin::Program(program.program());
+            let environment = program.admission().input_abi().environment();
+            environment.validate_analysis(analysis).map_err(Box::new)?;
+            environment.validate_project(project).map_err(Box::new)?;
+            let partition = analysis
+                .execution_projection()
+                .runtime_program_fact_partition(owners, program.admission())?;
+            let lexical = RuntimeExecutableInstantiation::Program {
+                program: program.program(),
+                environment,
+                types: instances.environment_types(origin, environment),
+            };
+            let semantics = runtime_executable_semantic_facts(
+                origin,
+                lexical,
+                partition,
+                [],
+                project,
+                symbols,
+                world,
+                analysis,
+                owners,
+                dialogue,
+                &mut projection,
+            )?;
+            Ok((program.program(), semantics))
+        })
+        .collect()
+}
 
 pub(crate) fn project(
     program: arcweft_id::runtime_program::RuntimePureProgramId,
@@ -116,9 +182,48 @@ mod tests {
 
     #[test]
     fn declared_program_executes_full_formal_inputs_through_native_and_awbc() {
-        let compiled = crate::source::compile_source(
+        assert_declared_program(
             "pub fn root(value: i64, unused: i64) -> i64 { value + 1i64 }\nflow main() -> String { return \"ok\" }\n",
-        ).unwrap();
+        );
+    }
+
+    #[test]
+    fn declared_program_owns_its_catalog_when_same_body_has_an_ordinary_instance() {
+        assert_declared_program(
+            "pub fn root(value: i64, unused: i64) -> i64 { value + 1i64 }\nflow main() -> String { let ignored = root(1i64, 2i64); return \"ok\" }\n",
+        );
+    }
+
+    #[test]
+    fn program_nested_closure_uses_the_program_parent_frame() {
+        assert_declared_program(
+            "pub fn root(value: i64, unused: i64) -> i64 { let add = |item: i64| value + item; add(1i64) }\nflow main() -> String { return \"ok\" }\n",
+        );
+    }
+
+    #[test]
+    fn program_format_call_uses_its_own_template_scope() {
+        assert_declared_program(
+            "pub fn root(value: i64, unused: i64) -> i64 { let formatted = fmt(value); value + 1i64 }\nflow main() -> String { return \"ok\" }\n",
+        );
+    }
+
+    #[test]
+    fn program_body_retains_all_argument_group_coordinates() {
+        assert_declared_program(
+            "pub fn root(value: i64)(unused: i64) -> i64 { value + 1i64 }\nflow main() -> String { return \"ok\" }\n",
+        );
+    }
+
+    #[test]
+    fn program_only_format_call_selects_its_closed_display_method() {
+        assert_declared_program(
+            "struct RouteInfo { value: i64 }\nimpl DisplayText for RouteInfo { fn display_text(self, ctx: DisplayContext) -> Result<Content, DisplayError> { Ok(fmt(self.value)) } }\npub fn root(value: i64, unused: i64) -> i64 { let formatted = fmt(RouteInfo { value }); value + 1i64 }\nflow main() -> String { return \"ok\" }\n",
+        );
+    }
+
+    fn assert_declared_program(source: &str) {
+        let compiled = crate::source::compile_source(source).unwrap();
         let lease = &compiled.analysis;
         let analysis = lease.final_analysis();
         let declaration = analysis
@@ -165,7 +270,13 @@ mod tests {
         args: &[RuntimeValue],
         expected: RuntimeValue,
     ) {
-        let report = lower_program(compiled, fact);
+        let mut report = lower_program(compiled, fact);
+        report
+            .plan
+            .bind_artifact(
+                arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([71; 32]).unwrap(),
+            )
+            .unwrap();
         let plan = Arc::new(report.plan);
         let mut native = arcweft_core::pure::VmRuntimePureCallBackend::default();
         assert_eq!(
@@ -198,10 +309,31 @@ mod tests {
 
     #[test]
     fn closed_program_selects_exact_generic_instance_catalog_and_frame() {
-        use arcweft_lang_sema::final_analysis::CheckedLocalUseInstantiation;
-        let compiled = crate::source::compile_source(
+        assert_closed_program_instances(
             "fn identity<T>(value: T) -> T { value }\nflow main() -> String { let signed = identity(1i64); let unsigned = identity(2u64); return \"ok\" }\n",
-        ).unwrap();
+            true,
+        );
+    }
+
+    #[test]
+    fn closed_program_materializes_instances_outside_ordinary_call_reachability() {
+        assert_closed_program_instances(
+            "fn identity<T>(value: T) -> T { value }\nfn evidence() -> String { let signed = identity(1i64); let unsigned = identity(2u64); \"ok\" }\nflow main() -> String { return \"ok\" }\n",
+            false,
+        );
+    }
+
+    #[test]
+    fn program_only_generic_calls_discover_and_execute_their_transitive_instances() {
+        assert_closed_program_instances(
+            "fn leaf<T>(value: T) -> T { value }\nfn identity<T>(value: T) -> T { leaf(value) }\nfn evidence() -> String { let signed = identity(1i64); let unsigned = identity(2u64); \"ok\" }\nflow main() -> String { return \"ok\" }\n",
+            false,
+        );
+    }
+
+    fn assert_closed_program_instances(source: &str, ordinarily_reached: bool) {
+        use arcweft_lang_sema::final_analysis::CheckedLocalUseInstantiation;
+        let compiled = crate::source::compile_source(source).unwrap();
         let lease = &compiled.analysis;
         let analysis = lease.final_analysis();
         let declaration = analysis
@@ -214,6 +346,27 @@ mod tests {
             .unwrap()
             .declaration()
             .clone();
+        let hir = lease.hir_project().analysis_view().unwrap();
+        let ordinary = project_runtime_reachability(
+            hir,
+            lease.project_symbols(),
+            analysis,
+            analysis.checked_entries(),
+            RuntimeEmissionMode::CheckAll,
+        )
+        .unwrap();
+        let owner = arcweft_lang_hir::project::HirRuntimeExecutableOwner::Item(
+            analysis
+                .hir_topology()
+                .declaration(&declaration)
+                .unwrap()
+                .body()
+                .source_item(),
+        );
+        assert_eq!(
+            ordinary.executable_owners(&owner).is_some(),
+            ordinarily_reached
+        );
         let source = CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
             declaration: declaration.clone(),
             role: arcweft_lang_hir::project::HirDeclarationBodyRootRole::FunctionBody,
@@ -345,6 +498,50 @@ mod tests {
                 RuntimeValue::Tuple(vec![RuntimeValue::i64(20), RuntimeValue::i64(22)]),
                 RuntimeValue::i64(999),
             ],
+            RuntimeValue::i64(42),
+        );
+    }
+
+    #[test]
+    fn captured_body_uses_program_ingress_instead_of_the_ordinary_parent_frame() {
+        let compiled = crate::source::compile_source(
+            "flow main() -> String { let base = 1i64; let callback: (i64) -> i64 effects {} = |item: i64| { base + item }; return \"ok\" }\n",
+        ).unwrap();
+        let lease = &compiled.analysis;
+        let analysis = lease.final_analysis();
+        let owner = analysis
+            .expressions()
+            .find_map(|(owner, expression)| {
+                matches!(
+                    expression.resolution(),
+                    CheckedExpressionResolution::Closure(_)
+                )
+                .then_some(owner)
+            })
+            .unwrap();
+        let source =
+            CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(owner));
+        let context = analysis
+            .checked_execution_context(
+                lease.hir_project().analysis_view().unwrap(),
+                lease.project_symbols(),
+                source.clone(),
+                None,
+            )
+            .unwrap();
+        let fact = project(
+            id(),
+            Arc::new(context.checked_deterministic_program(source).unwrap()),
+            lease.project_symbols(),
+            lease.registered_world(),
+            analysis,
+        )
+        .unwrap();
+        assert_eq!(fact.free_inputs().count(), 1);
+        assert_program_execution(
+            &compiled,
+            fact,
+            &[RuntimeValue::i64(41), RuntimeValue::i64(1)],
             RuntimeValue::i64(42),
         );
     }
