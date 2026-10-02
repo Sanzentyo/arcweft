@@ -103,9 +103,10 @@ impl<T> RuntimePlaceStorage<T> {
     /// Visits every remaining complete child, including owners in partial
     /// records. Ownership/cleanup must use this inventory, not `as_ref`.
     pub fn values(&self) -> impl Iterator<Item = &T> {
-        let mut stack = vec![self];
+        let mut current = Some(self);
+        let mut stack = Vec::new();
         std::iter::from_fn(move || {
-            while let Some(storage) = stack.pop() {
+            while let Some(storage) = current.take().or_else(|| stack.pop()) {
                 match &storage.state {
                     PlaceState::Initialized(value) => return Some(value),
                     PlaceState::Record { fields, .. } => stack.extend(fields.iter().rev()),
@@ -118,8 +119,9 @@ impl<T> RuntimePlaceStorage<T> {
 
     pub fn into_values(self) -> Vec<T> {
         let mut values = Vec::new();
-        let mut stack = vec![self];
-        while let Some(storage) = stack.pop() {
+        let mut current = Some(self);
+        let mut stack = Vec::new();
+        while let Some(storage) = current.take().or_else(|| stack.pop()) {
             match storage.state {
                 PlaceState::Initialized(value) => values.push(value),
                 PlaceState::Record { fields, .. } => stack.extend(fields.into_iter().rev()),
@@ -466,6 +468,13 @@ mod tests {
         assert!(storage.take_field(&[field(0)]).is_none());
         assert!(storage.take_field(&[field(9)]).is_none());
         assert_eq!(storage, before);
+        assert_eq!(
+            storage.values().collect::<Vec<_>>(),
+            vec![
+                &RuntimeValue::Bool(false),
+                &RuntimeValue::String("owner".into())
+            ]
+        );
         assert_eq!(
             storage.into_values(),
             vec![

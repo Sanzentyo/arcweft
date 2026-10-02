@@ -4782,3 +4782,32 @@ owned input/runner migration, precise synthetic/capture boundaries, and the
 retained View/runtime-plan/scheduler convergence remain active acceptance.
 Do not mark the full goal or complete Rust parity achieved. The requested
 one-shot Astra consultation is completed; never dispatch it again after compaction.
+
+Delivery receipt: `7190f3582d48e0cac33f0ba39bd9d54e58b2b811` commits the
+reviewed 55-path record-place/custody migration and was pushed non-forced to
+origin/main. The full remote SHA matched and the checkout was observed clean.
+Final 7,234-pass workspace, check/Clippy/format/structure receipts above apply to
+that source. The one-shot Astra consultation remains completed and must not be
+repeated. Full convergence remains active.
+
+The next private storage-walk adjustment removes the traversal-stack allocation
+for vacant/complete roots; a stack is populated only when visiting partial child
+cells. Borrowed and owned inventory keep the same deterministic order and
+complete-value grouping. The existing nested remaining-owner test now also checks
+the borrowed inventory order. No public/serialized/type/ownership contract,
+dependency or scheduling change is made. Focused/core validation and lint are
+required; no GPU or measured performance claim is inferred from this source edit.
+
+Storage-walk final evidence: core all-feature library tests pass 796/796,
+core all-target/all-feature check and Clippy exit 0, format and diff checks exit 0.
+This is an isolated traversal implementation adjustment; public contract/schema,
+features/dependencies and integration boundaries are unchanged from the tested
+7190f3582d48e0cac33f0ba39bd9d54e58b2b811 cut. Its broader integration/structure
+receipts are reused for those unchanged boundaries, not represented as a new
+full workspace run of these source bytes. The earlier storage cohesion review
+remains applicable. No stack allocation occurs for vacant/complete inventory
+roots in this implementation; output collections still allocate when returning
+values. Actual runtime/GPU speed was not measured. General root/owned-runner and
+static old-value disposition acceptance remains active; Astra was not reconsulted.
+
+Storage-walk measurement at base 7190f3582d48e0cac33f0ba39bd9d54e58b2b811: arcweft-core/src/value/place_storage.rs, handwritten production/test owner, 17,766 bytes, 511 → 520 physical LOC, 112 embedded test LOC; responsibility and dependency disposition unchanged.
