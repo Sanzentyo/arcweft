@@ -338,16 +338,16 @@ impl AwbcProgram {
             .map(|binding| &binding.flow)
     }
 
-    /// Resolves one stable domain-owned pure program to its exact helper row.
+    /// Resolves one stable domain-owned pure program to its exact function.
     #[must_use]
-    pub fn pure_program_helper(
+    pub fn pure_program_function(
         &self,
         program: arcweft_id::runtime_program::RuntimePureProgramId,
-    ) -> Option<AwbcPureHelperId> {
+    ) -> Option<AwbcFunctionId> {
         self.pure_programs
             .iter()
             .find(|binding| binding.program == program)
-            .map(|binding| binding.helper)
+            .map(|binding| binding.function)
     }
 
     /// Resolves the complete semantic signature sealed for one pure program.
@@ -3394,11 +3394,11 @@ pub struct AwbcPureHelper {
     pub origin: AwbcPureHelperOrigin,
 }
 
-/// Exact stable pure-program identity mapped to one verified helper row.
+/// Exact stable pure-program identity mapped to one verified function frame.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcPureProgramBinding {
     pub program: arcweft_id::runtime_program::RuntimePureProgramId,
-    pub helper: AwbcPureHelperId,
+    pub function: AwbcFunctionId,
     pub input_types: Vec<RuntimeSemanticTypeId>,
     pub result_type: RuntimeSemanticTypeId,
 }

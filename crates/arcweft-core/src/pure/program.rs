@@ -1,4 +1,4 @@
-//! Program-bound deterministic helper execution with an explicit Sans-I/O
+//! Program-bound function-frame execution with an explicit Sans-I/O
 //! external backend. The backend receives the same selected plan Arc.
 
 use super::*;
@@ -33,44 +33,72 @@ pub fn evaluate_pure_program_with_backend(
     if bindings.next().is_some() {
         return Err(error("pure program binding is ambiguous"));
     }
-    let helper = resolve_validated_pure_helper(plan, binding.helper())?;
-    if helper.input_locals.len() != binding.input_types().len()
+    let site = plan
+        .function_sites()
+        .get(binding.site())
+        .ok_or_else(|| error("pure program function site is absent"))?;
+    if site.inputs().len() != binding.input_types().len()
         || plan
             .type_table()
-            .get(helper.expr.ty())
+            .get(site.result())
             .map(RuntimePlanTypeDeclaration::semantic_identity)
             != Some(binding.result_type())
     {
         return Err(error(
-            "pure program binding disagrees with its helper signature",
+            "pure program binding disagrees with its function signature",
         ));
     }
-    for (&local, &expected) in helper.input_locals.iter().zip(binding.input_types()) {
+    for (input, &expected) in site.inputs().iter().zip(binding.input_types()) {
         let actual = plan
             .local_declarations()
-            .get(local)
+            .get(input.input_local())
             .and_then(|local| plan.type_table().get(local.ty()))
             .map(RuntimePlanTypeDeclaration::semantic_identity);
         if actual != Some(expected) {
-            return Err(error("pure program input disagrees with its helper local"));
+            return Err(error(
+                "pure program input disagrees with its function local",
+            ));
         }
     }
-    validate_helper_arguments(plan, helper, args)?;
-    for (&local, value) in helper.input_locals.iter().zip(args) {
+    if args.len() != site.inputs().len() {
+        return Err(RuntimeEvalError::TooManyPureArgs {
+            helper: program.to_string(),
+            max: site.inputs().len(),
+            found: args.len(),
+        });
+    }
+    for (input, value) in site.inputs().iter().zip(args) {
+        let local = input.input_local();
+        let declaration = plan
+            .local_declarations()
+            .get(local)
+            .ok_or(RuntimeEvalError::UnknownLocal(local))?;
+        if !plan.value_matches_type(declaration.ty(), value)? {
+            return Err(RuntimeEvalError::InvalidExpressionType(declaration.ty()));
+        }
+    }
+    for (input, value) in site.inputs().iter().zip(args) {
         if !value.ownership().permits_copy() {
-            return Err(RuntimeEvalError::AffineLocalCopy(local));
+            return Err(RuntimeEvalError::AffineLocalCopy(input.input_local()));
         }
     }
-    let bindings = helper
-        .input_locals
-        .iter()
-        .copied()
-        .zip(args.iter().cloned())
-        .map(|(local, value)| RuntimeLocalBinding { local, value })
-        .collect::<Vec<_>>();
-    let mut evaluator = PureEvaluator::new_ref(plan, &bindings);
+    let mut captures = Vec::new();
+    let mut parameters = Vec::new();
+    for (input, value) in site.inputs().iter().zip(args) {
+        match input.source() {
+            crate::plan::RuntimeFunctionInputSource::Capture { .. } => captures.push(value.clone()),
+            crate::plan::RuntimeFunctionInputSource::Parameter { .. } => {
+                parameters.push(value.clone())
+            }
+        }
+    }
+    let mut evaluator = PureEvaluator::new_ref(plan, &[]);
     evaluator.external = Some(backend);
-    validate_helper_result(plan, helper, evaluator.evaluate_expr(&helper.expr))
+    let result = evaluator.evaluate_function_site(binding.site(), captures, parameters)?;
+    if !plan.value_matches_type(site.result(), &result)? {
+        return Err(RuntimeEvalError::InvalidExpressionType(site.result()));
+    }
+    Ok(result)
 }
 
 impl PureEvaluator<'_> {

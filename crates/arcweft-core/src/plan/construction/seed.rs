@@ -1813,14 +1813,14 @@ pub struct RuntimePureHelperDeclarationSeed {
     pub origin: RuntimePureHelperOrigin,
 }
 
-/// One exact domain program identity bound to a reserved deterministic helper.
+/// One exact domain program identity bound to a reserved function frame.
 ///
-/// The helper handle proves that the binding belongs to the same aggregate
+/// The function-site handle proves that the binding belongs to the same aggregate
 /// runtime-plan construction transaction.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimePureProgramBindingSeed {
     pub program: RuntimePureProgramId,
-    pub helper: RuntimePureHelperSeedId,
+    pub site: RuntimeFunctionSiteSeedId,
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -1222,17 +1222,27 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
             });
         }
         check_index(
-            program.pure_helpers.len(),
-            binding.helper.0,
-            "pure_helpers",
+            program.functions.len(),
+            binding.function.0,
+            "functions",
             &at,
         )?;
-        let helper = &program.pure_helpers[binding.helper.index()];
-        let signature = &program.signatures[helper.signature.index()];
+        let function = &program.functions[binding.function.index()];
+        let signature = &program.signatures[function.signature.index()];
+        if function.kind != AwbcFunctionKind::Ordinary
+            || !program.effect_sets[signature.effects.index()]
+                .effects
+                .is_empty()
+        {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: "pure program requires an effect-free ordinary function frame".to_owned(),
+            });
+        }
         if signature.params.len() != binding.input_types.len() || signature.result.is_none() {
             return Err(AwbcVerifyError::InvalidInvariant {
                 at,
-                message: "pure-program semantic signature does not match helper arity".to_owned(),
+                message: "pure-program semantic signature does not match function arity".to_owned(),
             });
         }
         for (parameter, semantic_identity) in
@@ -1243,7 +1253,7 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
             {
                 return Err(AwbcVerifyError::InvalidInvariant {
                     at,
-                    message: "pure-program input semantic identity does not match helper type"
+                    message: "pure-program input semantic identity does not match function type"
                         .to_owned(),
                 });
             }
@@ -1253,12 +1263,12 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
                 program,
                 signature
                     .result
-                    .expect("pure-program helper result checked above"),
+                    .expect("pure-program function result checked above"),
             ) != Some(binding.result_type)
         {
             return Err(AwbcVerifyError::InvalidInvariant {
                 at,
-                message: "pure-program result semantic identity does not match helper type"
+                message: "pure-program result semantic identity does not match function type"
                     .to_owned(),
             });
         }

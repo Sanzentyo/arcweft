@@ -171,19 +171,19 @@ impl<'program> RuntimeProgramDataShapes<'program> {
                     if candidates.next().is_some() {
                         return Err(invalid("program identity is ambiguous").into());
                     }
-                    let helper = plan
-                        .pure_helpers()
-                        .iter()
-                        .find(|helper| helper.id == binding.helper())
-                        .ok_or_else(|| invalid("helper is absent"))?;
+                    let site = plan
+                        .function_sites()
+                        .get(binding.site())
+                        .ok_or_else(|| invalid("function site is absent"))?;
                     let actual_result = plan
                         .type_table()
-                        .get(helper.expr.ty())
+                        .get(site.result())
                         .map(|row| row.semantic_identity());
-                    if helper.input_locals.len() != binding.input_types().len()
+                    if site.inputs().len() != binding.input_types().len()
                         || actual_result != Some(binding.result_type())
+                        || !site.body().is_effect_free()
                     {
-                        return Err(invalid("helper signature disagrees with the binding").into());
+                        return Err(invalid("function signature disagrees with the binding").into());
                     }
                     (binding.input_types().is_empty(), binding.result_type())
                 }
@@ -198,28 +198,27 @@ impl<'program> RuntimeProgramDataShapes<'program> {
                     if candidates.next().is_some() {
                         return Err(invalid("program identity is ambiguous").into());
                     }
-                    let helper = awbc
-                        .pure_helpers
-                        .get(binding.helper.index())
-                        .ok_or_else(|| invalid("helper is absent"))?;
-                    let signature = awbc
-                        .signatures
-                        .get(helper.signature.index())
-                        .ok_or_else(|| invalid("helper signature is absent"))?;
                     let function = awbc
                         .functions
-                        .get(helper.function.index())
-                        .ok_or_else(|| invalid("helper function is absent"))?;
+                        .get(binding.function.index())
+                        .ok_or_else(|| invalid("program function is absent"))?;
+                    let signature = awbc
+                        .signatures
+                        .get(function.signature.index())
+                        .ok_or_else(|| invalid("function signature is absent"))?;
                     let actual_result = signature
                         .result
                         .and_then(|ty| awbc.runtime_types.get(ty.index()))
                         .map(|row| row.semantic_identity());
-                    if function.kind != crate::awbc::schema::AwbcFunctionKind::PureHelper
-                        || function.signature != helper.signature
+                    if function.kind != crate::awbc::schema::AwbcFunctionKind::Ordinary
                         || signature.params.len() != binding.input_types.len()
                         || actual_result != Some(binding.result_type)
+                        || !awbc
+                            .effect_sets
+                            .get(signature.effects.index())
+                            .is_some_and(|effects| effects.effects.is_empty())
                     {
-                        return Err(invalid("helper signature disagrees with the binding").into());
+                        return Err(invalid("function signature disagrees with the binding").into());
                     }
                     (binding.input_types.is_empty(), binding.result_type)
                 }

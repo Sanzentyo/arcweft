@@ -1740,7 +1740,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
         let binding = awbc
             .pure_program_binding(program_id)
             .ok_or_else(|| failure("View handler pure-program binding is stale".to_owned()))?;
-        if binding.helper != accepted.helper()
+        if binding.function != accepted.function()
             || binding.input_types.len() != accepted.captures().len()
             || binding
                 .input_types

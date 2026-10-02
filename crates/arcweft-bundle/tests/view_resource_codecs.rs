@@ -467,8 +467,8 @@ fn view_handler_cross_section_rejects_missing_binding_and_nonempty_effects() {
         .push(arcweft_core::awbc::schema::AwbcEffectSet {
             effects: vec![effect_name],
         });
-    let helper = &effectful.pure_helpers[effectful.pure_programs[0].helper.index()];
-    effectful.signatures[helper.signature.index()].effects = effects;
+    let function = &effectful.functions[effectful.pure_programs[0].function.index()];
+    effectful.signatures[function.signature.index()].effects = effects;
     assert_eq!(
         program
             .validate_awbc_handlers(&effectful)

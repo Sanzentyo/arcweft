@@ -12,8 +12,8 @@ use arcweft_core::awbc::schema::{
     AwbcFunctionId, AwbcFunctionInputOwnership, AwbcFunctionKind, AwbcHostArgument, AwbcHostCall,
     AwbcHostCallId, AwbcHostCallMode, AwbcInstruction, AwbcInstructionId, AwbcLineCleanupPolicy,
     AwbcLineTaskGroupId, AwbcPattern, AwbcPatternId, AwbcPresentationCleanup, AwbcProgram,
-    AwbcPureHelperId, AwbcPureProgramBinding, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
-    AwbcRoute, AwbcRouteBinding, AwbcRouteBindingSource, AwbcRouteSegment, AwbcRuntimeType,
+    AwbcPureProgramBinding, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcRoute,
+    AwbcRouteBinding, AwbcRouteBindingSource, AwbcRouteSegment, AwbcRuntimeType,
     AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcSignedIntKind,
     AwbcStreamPlan, AwbcStreamPlanId, AwbcStringId, AwbcStructuralRuntimeTypeKind,
     AwbcSyntheticRuntimeTypeKind, AwbcTableRange, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanId,
@@ -298,24 +298,23 @@ impl AwbcInventory {
 
     pub fn lower_pure_program_bindings(&mut self, plan: &RuntimePlan) {
         for binding in plan.pure_programs() {
-            let Ok(helper) = u32::try_from(binding.helper().0) else {
+            let Some(function) = self.function_site_function(binding.site()) else {
                 self.diagnostic(AwbcLowerDiagnostic::error(
                     binding.program().to_string(),
-                    "pure-program helper index exceeds Product AWBC limits",
+                    "pure-program function site has no Product AWBC function",
                 ));
                 continue;
             };
-            let helper = AwbcPureHelperId(helper);
-            if self.program.pure_helpers.get(helper.index()).is_none() {
+            if self.program.functions.get(function.index()).is_none() {
                 self.diagnostic(AwbcLowerDiagnostic::error(
                     binding.program().to_string(),
-                    "pure-program binding references a missing Product AWBC helper",
+                    "pure-program binding references a missing Product AWBC function",
                 ));
                 continue;
             }
             self.program.pure_programs.push(AwbcPureProgramBinding {
                 program: binding.program(),
-                helper,
+                function,
                 input_types: binding.input_types().to_vec(),
                 result_type: binding.result_type(),
             });

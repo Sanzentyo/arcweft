@@ -657,15 +657,17 @@ pub enum RuntimePlanError {
     DuplicatePureProgram {
         program: arcweft_id::runtime_program::RuntimePureProgramId,
     },
-    #[error("runtime pure program {program} references missing helper {helper}")]
-    MissingPureProgramHelper {
+    #[error("runtime pure program {program} references missing function site {site}")]
+    MissingPureProgramSite {
         program: arcweft_id::runtime_program::RuntimePureProgramId,
-        helper: usize,
+        site: crate::runtime_id::RuntimeFunctionSiteId,
     },
-    #[error("runtime pure program {program} semantic signature does not match helper {helper}")]
+    #[error(
+        "runtime pure program {program} semantic signature does not match function site {site}"
+    )]
     PureProgramSignatureMismatch {
         program: arcweft_id::runtime_program::RuntimePureProgramId,
-        helper: usize,
+        site: crate::runtime_id::RuntimeFunctionSiteId,
     },
     #[error("role-flow executable `{0}` is not reachable from an entry role")]
     UnreachableFlowExecutable(String),
@@ -713,7 +715,7 @@ impl RuntimePlan {
                 return Err(RuntimePlanError::DuplicatePureHelper(helper.id.0));
             }
         }
-        self.verify_pure_programs(&helper_ids)?;
+        self.verify_pure_programs()?;
         crate::program_types::RuntimeProgramDataShapes::new(
             crate::program_types::RuntimeProgramTypes::Plan(self),
         )
@@ -979,10 +981,7 @@ impl RuntimePlan {
         Ok(flow_ids)
     }
 
-    fn verify_pure_programs(
-        &self,
-        helper_ids: &BTreeSet<RuntimePureHelperId>,
-    ) -> Result<(), RuntimePlanError> {
+    fn verify_pure_programs(&self) -> Result<(), RuntimePlanError> {
         let mut pure_programs = BTreeSet::new();
         for binding in &self.pure_programs {
             if !pure_programs.insert(binding.program()) {
@@ -990,42 +989,33 @@ impl RuntimePlan {
                     program: binding.program(),
                 });
             }
-            if !helper_ids.contains(&binding.helper()) {
-                return Err(RuntimePlanError::MissingPureProgramHelper {
+            let Some(site) = self.function_sites.get(binding.site()) else {
+                return Err(RuntimePlanError::MissingPureProgramSite {
                     program: binding.program(),
-                    helper: binding.helper().0,
-                });
-            }
-            let Some(helper) = self
-                .pure_helpers
-                .iter()
-                .find(|helper| helper.id == binding.helper())
-            else {
-                return Err(RuntimePlanError::MissingPureProgramHelper {
-                    program: binding.program(),
-                    helper: binding.helper().0,
+                    site: binding.site(),
                 });
             };
-            let input_types = helper
-                .input_locals
+            let input_types = site
+                .inputs()
                 .iter()
-                .map(|local| {
+                .map(|input| {
                     self.local_declarations
-                        .get(*local)
+                        .get(input.input_local())
                         .and_then(|declaration| self.type_table.get(declaration.ty()))
                         .map(super::type_table::RuntimePlanTypeDeclaration::semantic_identity)
                 })
                 .collect::<Option<Vec<_>>>();
             let result_type = self
                 .type_table
-                .get(helper.expr.ty())
+                .get(site.result())
                 .map(super::type_table::RuntimePlanTypeDeclaration::semantic_identity);
             if input_types.as_deref() != Some(binding.input_types())
                 || result_type != Some(binding.result_type())
+                || !site.body().is_effect_free()
             {
                 return Err(RuntimePlanError::PureProgramSignatureMismatch {
                     program: binding.program(),
-                    helper: binding.helper().0,
+                    site: binding.site(),
                 });
             }
         }

@@ -2113,17 +2113,25 @@ impl RuntimePlanBuilder {
         Ok(helper)
     }
 
-    /// Binds one stable domain-owned pure-program identity to a helper
+    /// Binds one stable domain-owned pure-program identity to a function frame
     /// reserved by this same aggregate construction transaction.
     pub fn push_pure_program_binding_seed(
         &mut self,
         seed: &RuntimePureProgramBindingSeed,
     ) -> Result<u32, RuntimePlanBuildError> {
         self.ensure_usable()?;
-        let Some((helper, parameters, result)) = seed.helper.resolve(&self.issuer) else {
+        let Some((site, _, parameters, result, _, effects)) = seed.site.resolve(&self.issuer)
+        else {
             self.poisoned = true;
-            return Err(RuntimePlanBuildError::ForeignPureHelperSeed);
+            return Err(RuntimePlanBuildError::ForeignFunctionSiteSeed);
         };
+        if !effects.is_empty() {
+            self.poisoned = true;
+            return Err(RuntimePlanBuildError::InvalidTypeProjection {
+                context: "pure program requires an effect-free function frame",
+                ty: result,
+            });
+        }
         let input_types = parameters
             .iter()
             .map(|ty| {
@@ -2156,7 +2164,7 @@ impl RuntimePlanBuilder {
         }
         push_row(
             &mut self.pure_programs,
-            RuntimePureProgramBinding::new(seed.program, helper, input_types, result_type),
+            RuntimePureProgramBinding::new(seed.program, site, input_types, result_type),
             RuntimePlanTable::PurePrograms,
         )
     }

@@ -2,9 +2,10 @@ use super::*;
 use crate::{
     entry::RuntimeCallableId,
     plan::{
-        RuntimeExprSeed, RuntimeExprSeedKind, RuntimeLocalDeclarationSeed, RuntimePlanBuilder,
-        RuntimePlanTypeSeed, RuntimePureHelperOrigin, RuntimePureHelperSeed,
-        RuntimePureProgramBindingSeed,
+        RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFunctionInputBindingSeed,
+        RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionInputSource,
+        RuntimeLocalDeclarationSeed, RuntimePatternSeed, RuntimePatternSeedKind,
+        RuntimePlanBuilder, RuntimePlanTypeSeed, RuntimePureProgramBindingSeed,
     },
 };
 
@@ -21,26 +22,21 @@ fn fixture() -> (Arc<RuntimePlan>, RuntimePureProgramId, RuntimeCallTarget) {
         )
         .unwrap();
     let target = RuntimeCallTarget::callable(RuntimeCallableId::from_checked_digest([44; 32]));
-    let helper = builder
-        .push_pure_helper_seed(RuntimePureHelperSeed {
-            name: "registered.default".to_owned(),
-            inputs: Box::new([]),
-            input_abi: vec![],
-            output_abi: RuntimePureOutputType::Value,
-            body: RuntimeExprSeed::new(
+    let site = builder
+        .push_function_site_seed(
+            [],
+            RuntimeExprSeed::new(
                 semantic,
                 RuntimeExprSeedKind::Call {
                     callee: target.clone(),
                     args: Box::new([]),
                 },
             ),
-            scalar_eval_supported: false,
-            origin: RuntimePureHelperOrigin::Annotated,
-        })
+        )
         .unwrap();
     let program = RuntimePureProgramId::from_checked_digest([38; 32]);
     builder
-        .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed { program, helper })
+        .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed { program, site })
         .unwrap();
     (Arc::new(builder.finish().unwrap()), program, target)
 }
@@ -148,26 +144,42 @@ fn borrowed_program_inputs_reject_nested_affine_values_before_execution() {
         )
         .unwrap();
     let target = RuntimeCallTarget::callable(RuntimeCallableId::from_checked_digest([44; 32]));
-    let helper = builder
-        .push_pure_helper_seed(RuntimePureHelperSeed {
-            name: "borrowed.inputs".to_owned(),
-            inputs: admission.local_ids().to_vec().into_boxed_slice(),
-            input_abi: vec![RuntimePureInputType::Value; 2],
-            output_abi: RuntimePureOutputType::Value,
-            body: RuntimeExprSeed::new(
+    let inputs = admission
+        .local_ids()
+        .iter()
+        .cloned()
+        .zip([boolean, owner.semantic_identity()])
+        .enumerate()
+        .map(|(position, (local, ty))| RuntimeFunctionInputBindingSeed {
+            source: RuntimeFunctionInputSource::Capture {
+                position: position as u32,
+            },
+            input_local: local.clone(),
+            pattern: RuntimePatternSeed::new(
+                ty,
+                RuntimePatternSeedKind::Bind {
+                    mutable: false,
+                    local,
+                },
+            ),
+            ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
+            unrestricted_bindings: Box::new([]),
+        });
+    let site = builder
+        .push_function_site_seed(
+            inputs,
+            RuntimeExprSeed::new(
                 boolean,
                 RuntimeExprSeedKind::Call {
                     callee: target.clone(),
                     args: Box::new([]),
                 },
             ),
-            scalar_eval_supported: false,
-            origin: RuntimePureHelperOrigin::Inferred,
-        })
+        )
         .unwrap();
     let program = RuntimePureProgramId::from_checked_digest([40; 32]);
     builder
-        .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed { program, helper })
+        .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed { program, site })
         .unwrap();
     let plan = Arc::new(builder.finish().unwrap());
     let mut backend = VmRuntimePureCallBackend::default().with_external_calls(External {
@@ -185,9 +197,7 @@ fn borrowed_program_inputs_reject_nested_affine_values_before_execution() {
             .unwrap(),
     ];
     let binding = &plan.pure_programs()[0];
-    let local = resolve_validated_pure_helper(&plan, binding.helper())
-        .unwrap()
-        .input_locals[1];
+    let local = plan.function_sites().get(binding.site()).unwrap().inputs()[1].input_local();
     assert_eq!(
         evaluate_pure_program_with_backend(&plan, program, &args, &mut backend),
         Err(RuntimeEvalError::AffineLocalCopy(local))
@@ -295,13 +305,10 @@ fn pure_character_dialogue_uses_the_exact_plan_and_ordered_source_row() {
         )
         .expect("typed dialogue expression graph");
     let character = CharacterId::try_new("character.alice").unwrap();
-    let helper = builder
-        .push_pure_helper_seed(RuntimePureHelperSeed {
-            name: "character.factory".to_owned(),
-            inputs: Box::new([]),
-            input_abi: vec![],
-            output_abi: RuntimePureOutputType::Value,
-            body: RuntimeExprSeed::new(
+    let site = builder
+        .push_function_site_seed(
+            [],
+            RuntimeExprSeed::new(
                 result_type,
                 RuntimeExprSeedKind::CharacterDialogue {
                     operation: CharacterDialogueOperation::Factory,
@@ -328,13 +335,11 @@ fn pure_character_dialogue_uses_the_exact_plan_and_ordered_source_row() {
                     .into_boxed_slice(),
                 },
             ),
-            scalar_eval_supported: false,
-            origin: RuntimePureHelperOrigin::Annotated,
-        })
-        .expect("pure helper seed");
+        )
+        .expect("program function site");
     let program = RuntimePureProgramId::from_checked_digest([44; 32]);
     builder
-        .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed { program, helper })
+        .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed { program, site })
         .expect("pure program binding");
     let plan = Arc::new(builder.finish().expect("sealed plan"));
     let value =

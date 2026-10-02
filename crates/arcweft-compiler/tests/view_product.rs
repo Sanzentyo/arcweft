@@ -189,12 +189,14 @@ fn compiler_lowers_checked_on_click_to_typed_bundle_handler_without_fx_conflatio
         .iter()
         .find(|binding| binding.program() == handler)
         .expect("mount-only runtime pure-program binding");
-    let helper = &compiled.runtime_plan().plan.pure_helpers()[binding.helper().0];
-    assert_eq!(helper.input_locals.len(), 1);
-    assert!(matches!(
-        helper.origin,
-        arcweft_core::plan::RuntimePureHelperOrigin::Inferred
-    ));
+    let site = compiled
+        .runtime_plan()
+        .plan
+        .function_sites()
+        .get(binding.site())
+        .unwrap();
+    assert_eq!(site.inputs().len(), 1);
+    assert!(compiled.runtime_plan().plan.pure_helpers().is_empty());
     assert!(
         !body
             .iter()

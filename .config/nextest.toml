@@ -1,0 +1,8 @@
+# trybuild owners share target/tests/trybuild and acquire fixture/Cargo locks.
+# Schedule those tests together without limiting ordinary test concurrency.
+[test-groups]
+cargo-fixtures = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'binary(=api_compile) | binary(=public_api) | binary(=compile_fail) | binary(=derive_trybuild) | (package(=arcweft-lang-hir) & binary(=project_symbols) & (test(=external_id_is_opaque) | test(=external_input_constructors_are_the_only_public_construction_path)))'
+test-group = 'cargo-fixtures'

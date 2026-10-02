@@ -1,10 +1,7 @@
 //! Executable wrapper emission from the exact accepted Rust callable proof.
 
 use super::*;
-use arcweft_core::{
-    plan::{RuntimeExprSeedKind, RuntimePureHelperSeed},
-    value::RuntimeCallTarget,
-};
+use arcweft_core::{plan::RuntimeExprSeedKind, value::RuntimeCallTarget};
 
 pub(super) fn lower(
     facts: &RuntimePlanSemanticFacts,
@@ -21,22 +18,17 @@ pub(super) fn lower(
             }
             continue;
         }
-        let helper = match builder.push_pure_helper_seed(RuntimePureHelperSeed {
-            name: format!("rust.default.{}", program.program()),
-            inputs: Box::new([]),
-            input_abi: Vec::new(),
-            output_abi: RuntimePureOutputType::Value,
-            body: RuntimeExprSeed::new(
+        let site = match builder.push_function_site_seed(
+            [],
+            RuntimeExprSeed::new(
                 program.result_type(),
                 RuntimeExprSeedKind::Call {
                     callee: RuntimeCallTarget::callable(program.target()),
                     args: Box::new([]),
                 },
             ),
-            scalar_eval_supported: false,
-            origin: RuntimePureHelperOrigin::Annotated,
-        }) {
-            Ok(helper) => helper,
+        ) {
+            Ok(site) => site,
             Err(error) => {
                 errors.push(RuntimePlanLowerError::new(error.to_string()));
                 continue;
@@ -44,7 +36,7 @@ pub(super) fn lower(
         };
         if let Err(error) = builder.push_pure_program_binding_seed(&RuntimePureProgramBindingSeed {
             program: program.program(),
-            helper,
+            site,
         }) {
             errors.push(RuntimePlanLowerError::new(error.to_string()));
         }

@@ -313,7 +313,14 @@ fn default_contract(
         let RuntimeExprKind::Call {
             callee: RuntimeCallTarget::Callable(target),
             args,
-        } = plan.pure_helpers()[binding.helper().0].expr.kind()
+        } = plan
+            .function_sites()
+            .get(binding.site())
+            .unwrap()
+            .body()
+            .expression()
+            .unwrap()
+            .kind()
         else {
             panic!("accepted Rust callable wrapper")
         };
@@ -478,7 +485,14 @@ fn rust_defaults_for_primitive_foreign_and_generic_fields_share_checked_bindings
             let RuntimeExprKind::Call {
                 callee: RuntimeCallTarget::Callable(target),
                 ..
-            } = plan.pure_helpers()[binding.helper().0].expr.kind()
+            } = plan
+                .function_sites()
+                .get(binding.site())
+                .unwrap()
+                .body()
+                .expression()
+                .unwrap()
+                .kind()
             else {
                 panic!("declared Rust wrapper")
             };

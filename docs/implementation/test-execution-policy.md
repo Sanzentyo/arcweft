@@ -22,6 +22,17 @@ user data depend on their actual authorization; do not declare every test safe
 or ask about every test merely because some may have external effects.
 
 Select a stable feature/target combination and exact test names or owner groups.
+Use `cargo nextest run` for Rust unit and integration tests. Select changed
+packages and their transitive reverse dependencies from Cargo's resolved graph,
+using `-E 'rdeps(=crate-name)'` or the union of the affected package predicates.
+`just test-affected crate-name` applies this selection to the same library,
+integration and CLI surfaces as `just test-workspace`. Record selected packages,
+filters and actual test counts; an empty selection is not behavioral evidence.
+Add explicit owner tests where a semantic consumer is outside the Cargo graph.
+The nextest `cargo-fixtures` group serializes trybuild owners sharing the fixture
+target directory; ordinary tests retain nextest's default concurrency.
+Doctests retain Cargo's supported doctest runner. Historical Cargo test receipts
+remain evidence for their original bytes and are not relabeled as nextest runs.
 Broaden or repeat only for changed inputs, failures, unresolved coverage, or an
 applicable acceptance requirement. Once the evidence is sufficient, deliver the
 result instead of starting another speculative verification loop.
@@ -36,9 +47,11 @@ result instead of starting another speculative verification loop.
   build settings, or dependency/features affecting shared consumers require
   `cargo check --workspace --all-targets --all-features`,
   `cargo clippy --workspace --all-targets --all-features`, and
-  `just test-workspace`, plus affected contract tests. File/crate count alone is
-  not this trigger; a private rename or leaf-only dependency change can use its
-  affected dependency/consumer closure.
+  nextest over the changed packages and their complete reverse dependencies,
+  plus affected contract tests. Use `just test-workspace` when workspace-wide
+  settings or explicit milestone acceptance require that complete surface.
+  File/crate count alone is not this trigger; a private rename or leaf-only
+  dependency change can use its affected dependency/consumer closure.
 - **Specialized surfaces:** select affected CLI integration tests, crate doctests
   for executable/public API documentation, `just verify-vendor-glyphon` for that
   fork or its adapter contract, and generated-artifact checks for changed

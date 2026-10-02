@@ -264,10 +264,10 @@ impl ViewProgramResource {
                     .ok_or(SectionCodecError::NonCanonicalTable(
                         "view_handler_pure_program_binding",
                     ))?;
-            let helper = program.pure_helpers.get(binding.helper.index()).ok_or(
-                SectionCodecError::NonCanonicalTable("view_handler_pure_program_helper"),
+            let function = program.functions.get(binding.function.index()).ok_or(
+                SectionCodecError::NonCanonicalTable("view_handler_pure_program_function"),
             )?;
-            let signature = program.signatures.get(helper.signature.index()).ok_or(
+            let signature = program.signatures.get(function.signature.index()).ok_or(
                 SectionCodecError::NonCanonicalTable("view_handler_pure_program_signature"),
             )?;
             let signature_inputs = signature

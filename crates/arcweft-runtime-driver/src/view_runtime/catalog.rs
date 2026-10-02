@@ -6,7 +6,7 @@ use arcweft_bundle::resource_codec::view::{
     ValidatedViewProduct, ViewDefinitionResource, ViewProgramInstruction, ViewProgramResource,
 };
 use arcweft_bundle::resource_codec::{SectionCodecError, SourceSetRevision};
-use arcweft_core::awbc::schema::{AwbcProgram, AwbcPureHelperId};
+use arcweft_core::awbc::schema::{AwbcFunctionId, AwbcProgram};
 use arcweft_id::PublicId;
 use arcweft_view::{
     AcceptedViewProgramRevision, BindEvent, BindHandler, CustomElementId, HandlerId, ImageId,
@@ -61,7 +61,7 @@ pub struct ViewProgramCatalog {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct AcceptedViewHandlerRuntime {
     program: ViewHandlerProgramId,
-    helper: AwbcPureHelperId,
+    function: AwbcFunctionId,
     captures: Box<[ViewHandlerCapture]>,
     result: ViewHandlerResult,
 }
@@ -135,7 +135,7 @@ impl ViewProgramCatalog {
                             handler.program,
                             AcceptedViewHandlerRuntime {
                                 program: handler.program,
-                                helper: binding.helper,
+                                function: binding.function,
                                 captures: handler.captures.clone().into_boxed_slice(),
                                 result: handler.result,
                             },
@@ -312,8 +312,8 @@ impl AcceptedViewHandlerRuntime {
         self.program
     }
 
-    pub(super) const fn helper(&self) -> AwbcPureHelperId {
-        self.helper
+    pub(super) const fn function(&self) -> AwbcFunctionId {
+        self.function
     }
 
     pub(super) const fn captures(&self) -> &[ViewHandlerCapture] {

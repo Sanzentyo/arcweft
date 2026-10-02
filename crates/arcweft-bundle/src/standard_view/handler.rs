@@ -7,10 +7,9 @@ use arcweft_core::{
             AwbcBlock, AwbcBlockId, AwbcEffectSet, AwbcEffectSetId, AwbcFieldProjection,
             AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunction,
             AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionInputOwnership,
-            AwbcFunctionKind, AwbcInstruction, AwbcProgram, AwbcPureHelper, AwbcPureHelperId,
-            AwbcPureHelperOrigin, AwbcPureProgramBinding, AwbcRegisterId, AwbcRuntimeType,
-            AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId,
-            AwbcTableRange, AwbcTerminator, AwbcTypeId,
+            AwbcFunctionKind, AwbcInstruction, AwbcProgram, AwbcPureProgramBinding, AwbcRegisterId,
+            AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcSignature,
+            AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator, AwbcTypeId,
         },
         verify::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError},
     },
@@ -19,7 +18,7 @@ use arcweft_core::{
 };
 use thiserror::Error;
 
-const STANDARD_HELPER_NAME: &str = "std.view.dialogue.primary_action";
+const STANDARD_FUNCTION_NAME: &str = "std.view.dialogue.primary_action";
 
 /// Atomic standard-handler installation failure.
 #[derive(Debug, Error)]
@@ -81,7 +80,7 @@ fn install_dialogue_handler_rows(candidate: &mut AwbcProgram) -> Result<(), Stan
     let view_type = exact_dialogue_type(candidate, RuntimeDialogueOpaqueRole::View)?;
     let action_type = exact_dialogue_type(candidate, RuntimeDialogueOpaqueRole::Action)?;
     let effect_set = empty_effect_set(candidate)?;
-    let helper_name = intern_string(candidate, STANDARD_HELPER_NAME)?;
+    let function_name = intern_string(candidate, STANDARD_FUNCTION_NAME)?;
 
     let signature = AwbcSignatureId(table_index(candidate.signatures.len(), "signatures")?);
     candidate.signatures.push(AwbcSignature {
@@ -133,8 +132,8 @@ fn install_dialogue_handler_rows(candidate: &mut AwbcProgram) -> Result<(), Stan
         source_map: None,
     });
     candidate.functions.push(AwbcFunction {
-        public_id: Some(helper_name),
-        kind: AwbcFunctionKind::PureHelper,
+        public_id: Some(function_name),
+        kind: AwbcFunctionKind::Ordinary,
         signature,
         input_ownership: vec![AwbcFunctionInputOwnership::default()],
         frame_layout,
@@ -143,17 +142,9 @@ fn install_dialogue_handler_rows(candidate: &mut AwbcProgram) -> Result<(), Stan
         flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
     });
 
-    let helper = AwbcPureHelperId(table_index(candidate.pure_helpers.len(), "pure_helpers")?);
-    candidate.pure_helpers.push(AwbcPureHelper {
-        public_id: helper_name,
-        signature,
-        function,
-        scalar_eval_supported: false,
-        origin: AwbcPureHelperOrigin::EngineOwned,
-    });
     candidate.pure_programs.push(AwbcPureProgramBinding {
         program: handler,
-        helper,
+        function,
         input_types: vec![RuntimeDialogueOpaqueRole::View.semantic_identity()],
         result_type: RuntimeDialogueOpaqueRole::Action.semantic_identity(),
     });

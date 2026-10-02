@@ -22,13 +22,9 @@ use arcweft_core::plan::{
     RuntimeFunctionInputBindingSeed, RuntimeFunctionInputSource, RuntimeFunctionSiteSeedId,
     RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed, RuntimePatternSeed, RuntimePatternSeedKind,
     RuntimePlan, RuntimePlanBuilder, RuntimePlanSequenceKind, RuntimePlanTypeProjection,
-    RuntimePlanTypeSeed, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureHelperSeed,
-    RuntimePureOutputType, RuntimePureProgramBindingSeed,
+    RuntimePlanTypeSeed, RuntimePureProgramBindingSeed,
 };
-use arcweft_core::pure::{
-    PureFunctionBackend, PureFunctionRequest, RuntimePureCallBackend, VmPureFunctionBackend,
-    VmRuntimePureCallBackend,
-};
+use arcweft_core::pure::{RuntimePureCallBackend, VmRuntimePureCallBackend};
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
 };
@@ -112,7 +108,6 @@ fn standard_map_seed(
 
 #[derive(Clone)]
 struct AwbcStandardMapCase {
-    helper: RuntimePureHelperId,
     program: RuntimePureProgramId,
     expected: RuntimeValue,
 }
@@ -328,13 +323,10 @@ fn standard_map_awbc_plan() -> (Arc<RuntimePlan>, Vec<AwbcStandardMapCase>) {
     for (index, (family, order, source_ty, result_ty, source, expected)) in
         cases.into_iter().enumerate()
     {
-        let helper = builder
-            .push_pure_helper_seed(RuntimePureHelperSeed {
-                name: format!("standard_map_awbc_{index}"),
-                inputs: Box::new([]),
-                input_abi: Vec::new(),
-                output_abi: RuntimePureOutputType::Value,
-                body: standard_map_seed(
+        let site = builder
+            .push_function_site_seed(
+                [],
+                standard_map_seed(
                     family,
                     order,
                     function_ty,
@@ -343,13 +335,11 @@ fn standard_map_awbc_plan() -> (Arc<RuntimePlan>, Vec<AwbcStandardMapCase>) {
                     callback_site.clone(),
                     source,
                 ),
-                scalar_eval_supported: false,
-                origin: RuntimePureHelperOrigin::Annotated,
-            })
-            .expect("standard map AWBC helper");
+            )
+            .expect("standard map AWBC function site");
         let program = RuntimePureProgramId::from_checked_digest([index as u8 + 1; 32]);
         builder
-            .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed { program, helper })
+            .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed { program, site })
             .expect("standard map AWBC pure-program binding");
         expectations.push((program, expected));
     }
@@ -380,19 +370,7 @@ fn standard_map_awbc_plan() -> (Arc<RuntimePlan>, Vec<AwbcStandardMapCase>) {
     let plan = Arc::new(builder.finish().expect("standard map AWBC plan"));
     let cases = expectations
         .into_iter()
-        .map(|(program, expected)| {
-            let helper = plan
-                .pure_programs()
-                .iter()
-                .find(|binding| binding.program() == program)
-                .expect("standard map AWBC binding has its helper")
-                .helper();
-            AwbcStandardMapCase {
-                helper,
-                program,
-                expected,
-            }
-        })
+        .map(|(program, expected)| AwbcStandardMapCase { program, expected })
         .collect();
     (plan, cases)
 }
@@ -733,7 +711,7 @@ fn product_awbc_matches_first_progress_observer_and_consumes_publication_once() 
 }
 
 #[test]
-fn product_awbc_standard_map_helpers_match_structured_results() {
+fn product_awbc_standard_map_programs_match_structured_results() {
     let (plan, cases) = standard_map_awbc_plan();
     let program = Arc::new(lower(&plan));
     program
@@ -741,13 +719,14 @@ fn product_awbc_standard_map_helpers_match_structured_results() {
         .expect("standard map AWBC product verifies");
 
     for case in cases {
-        let structured = VmPureFunctionBackend
-            .evaluate(
-                &PureFunctionRequest::try_new(Arc::clone(&plan), case.helper, [])
-                    .expect("standard map structured request"),
-            )
-            .expect("standard map structured execution")
-            .value;
+        let mut native_backend = VmRuntimePureCallBackend::default();
+        let structured = arcweft_core::pure::evaluate_pure_program_with_backend(
+            &plan,
+            case.program,
+            &[],
+            &mut native_backend,
+        )
+        .expect("standard map structured execution");
         assert_eq!(structured, case.expected);
 
         let mut product_backend = VmRuntimePureCallBackend::default();

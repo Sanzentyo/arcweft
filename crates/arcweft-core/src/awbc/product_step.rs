@@ -92,8 +92,8 @@ use std::sync::Arc;
 use thiserror::Error;
 
 /// Executes one verified stable pure-program binding through its exact AWBC
-/// helper row. Callers retain domain ownership of the program identity and
-/// arguments; this boundary performs no string lookup or helper fallback.
+/// function frame. Callers retain domain ownership of the program identity and
+/// arguments; this boundary performs no string lookup or function fallback.
 pub fn evaluate_pure_program_with_backend(
     program: &Arc<AwbcProgram>,
     pure_program: arcweft_id::runtime_program::RuntimePureProgramId,
@@ -105,13 +105,13 @@ pub fn evaluate_pure_program_with_backend(
             "missing verified AWBC pure program {pure_program}"
         ))
     })?;
-    let helper = program
-        .pure_helpers
-        .get(binding.helper.index())
+    program
+        .functions
+        .get(binding.function.index())
         .ok_or_else(|| {
             crate::awbc::vm::VmError::Runtime(format!(
-                "pure program {pure_program} references missing helper {}",
-                binding.helper.0
+                "pure program {pure_program} references missing function {}",
+                binding.function.0
             ))
         })?;
     if args.len() != binding.input_types.len() {
@@ -149,7 +149,7 @@ pub fn evaluate_pure_program_with_backend(
     let mut fallback_stats = crate::step::RuntimePureCallStats::default();
     let result = run_function(
         program,
-        helper.function,
+        binding.function,
         args.to_vec(),
         backend,
         &mut fallback_stats,

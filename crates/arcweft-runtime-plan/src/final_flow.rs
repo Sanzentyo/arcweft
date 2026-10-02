@@ -50,11 +50,9 @@ use arcweft_core::plan::{
     RuntimePlan, RuntimePlanBuilder, RuntimeProjectCallAttachedMaterializationSeed,
     RuntimeProjectCallAttachedPresenceSeed, RuntimeProjectCallFixedMaterializationSeed,
     RuntimeProjectCallOperandSeed, RuntimeProjectCallOrdinaryMaterializationSeed,
-    RuntimeProjectCallPlanSeed, RuntimeProjectCallRestMaterializationSeed,
-    RuntimePureHelperDeclarationSeed, RuntimePureHelperOrigin, RuntimePureHelperSeedId,
-    RuntimePureInputType, RuntimePureOutputType, RuntimePureProgramBindingSeed,
-    RuntimeReceiverMode, RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodIdentity,
-    RuntimeTraitMethodSeedId,
+    RuntimeProjectCallPlanSeed, RuntimeProjectCallRestMaterializationSeed, RuntimePureInputType,
+    RuntimePureOutputType, RuntimePureProgramBindingSeed, RuntimeReceiverMode,
+    RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodIdentity, RuntimeTraitMethodSeedId,
 };
 use arcweft_core::runtime_id::RuntimeDeferSiteId;
 use arcweft_core::value::{
@@ -411,7 +409,7 @@ struct ReservedPureProgramDefinition {
     closure: ExprId,
     module: HirModuleId,
     body: ExprId,
-    helper: RuntimePureHelperSeedId,
+    site: RuntimeFunctionSiteSeedId,
 }
 
 #[derive(Clone)]
@@ -2973,31 +2971,45 @@ fn reserve_pure_programs(
         let inputs = program
             .captures()
             .iter()
-            .map(|capture| {
-                locals.get(&capture.local()).cloned().ok_or_else(|| {
+            .enumerate()
+            .map(|(position, capture)| {
+                let local = locals.get(&capture.local()).cloned().ok_or_else(|| {
                     RuntimePlanLowerError::new(format!(
                         "pure program {} capture {:?} has no admitted local",
                         program.program(),
                         capture.local()
                     ))
+                })?;
+                let position = u32::try_from(position).map_err(|_| {
+                    RuntimePlanLowerError::new("pure program input position exceeds u32")
+                })?;
+                Ok(RuntimeFunctionInputBindingSeed {
+                    source: RuntimeFunctionInputSource::Capture { position },
+                    input_local: local.clone(),
+                    pattern: RuntimePatternSeed::new(
+                        capture.value_type(),
+                        RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local,
+                        },
+                    ),
+                    ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
+                    unrestricted_bindings: Box::new([]),
                 })
             })
             .collect::<Result<Vec<_>, _>>();
-        let declaration = inputs.map(|inputs| RuntimePureHelperDeclarationSeed {
-            name: format!("pure.program.{}", program.program()),
-            input_abi: vec![RuntimePureInputType::Value; inputs.len()],
+        let declaration = inputs.map(|inputs| RuntimeFunctionSiteDeclarationSeed {
             inputs: inputs.into_boxed_slice(),
             result: program.result(),
-            output_abi: RuntimePureOutputType::Value,
-            scalar_eval_supported: false,
-            origin: RuntimePureHelperOrigin::Inferred,
+            body_kind: RuntimeFunctionSiteBodyKind::Expression,
+            effects: RuntimeEffectSet::empty(),
         });
-        let helper = match declaration.and_then(|declaration| {
+        let site = match declaration.and_then(|declaration| {
             builder
-                .reserve_pure_helper_seed(declaration)
+                .reserve_function_site_seed(declaration)
                 .map_err(|error| RuntimePlanLowerError::new(error.to_string()))
         }) {
-            Ok(helper) => helper,
+            Ok(site) => site,
             Err(error) => {
                 errors.push(error);
                 continue;
@@ -3005,7 +3017,7 @@ fn reserve_pure_programs(
         };
         let binding = RuntimePureProgramBindingSeed {
             program: program.program(),
-            helper: helper.clone(),
+            site: site.clone(),
         };
         if let Err(error) = builder.push_pure_program_binding_seed(&binding) {
             errors.push(RuntimePlanLowerError::new(error.to_string()));
@@ -3015,7 +3027,7 @@ fn reserve_pure_programs(
             closure: program.closure(),
             module: program.closure().module(),
             body: program.body(),
-            helper,
+            site,
         });
     }
     definitions
@@ -3407,7 +3419,7 @@ fn define_pure_programs(
         );
         match body.and_then(|body| {
             builder
-                .define_pure_helper_seed(&definition.helper, body)
+                .define_function_site_seed(&definition.site, body)
                 .map_err(|error| error.to_string())
         }) {
             Ok(()) => {}

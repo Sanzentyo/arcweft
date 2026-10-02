@@ -5,7 +5,6 @@ use crate::{
     plan::{
         RuntimeExprSeed, RuntimeExprSeedKind, RuntimePlan, RuntimePlanBuilder,
         RuntimePlanRecordField, RuntimePlanTypeProjection as Type, RuntimePlanTypeSeed,
-        RuntimePureHelperOrigin, RuntimePureHelperSeed, RuntimePureOutputType,
         RuntimePureProgramBindingSeed,
     },
     value::RuntimeRecordFieldId,
@@ -49,24 +48,19 @@ fn programs() -> (RuntimePlan, AwbcProgram) {
             [],
         )
         .unwrap();
-    let helper = builder
-        .push_pure_helper_seed(RuntimePureHelperSeed {
-            name: "default_flag".to_owned(),
-            inputs: Box::new([]),
-            input_abi: vec![],
-            output_abi: RuntimePureOutputType::Bool,
-            body: RuntimeExprSeed::new(
+    let site = builder
+        .push_function_site_seed(
+            [],
+            RuntimeExprSeed::new(
                 semantic(2),
                 RuntimeExprSeedKind::Value(RuntimeValue::Bool(true)),
             ),
-            scalar_eval_supported: true,
-            origin: RuntimePureHelperOrigin::Annotated,
-        })
+        )
         .unwrap();
     builder
         .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed {
             program: program_id(),
-            helper,
+            site,
         })
         .unwrap();
     let awbc = AwbcProgram {
@@ -88,22 +82,16 @@ fn programs() -> (RuntimePlan, AwbcProgram) {
         ],
         pure_programs: vec![AwbcPureProgramBinding {
             program: program_id(),
-            helper: AwbcPureHelperId(0),
+            function: AwbcFunctionId(0),
             input_types: vec![],
             result_type: semantic(2),
-        }],
-        pure_helpers: vec![AwbcPureHelper {
-            public_id: AwbcStringId(0),
-            signature: AwbcSignatureId(0),
-            function: AwbcFunctionId(0),
-            scalar_eval_supported: true,
-            origin: AwbcPureHelperOrigin::EngineOwned,
         }],
         signatures: vec![AwbcSignature {
             params: vec![],
             result: Some(AwbcTypeId(1)),
             effects: AwbcEffectSetId(0),
         }],
+        effect_sets: vec![AwbcEffectSet { effects: vec![] }],
         frame_layouts: vec![AwbcFrameLayout {
             scopes: Vec::new(),
             slots: vec![AwbcFrameSlot {
@@ -116,7 +104,7 @@ fn programs() -> (RuntimePlan, AwbcProgram) {
         }],
         functions: vec![AwbcFunction {
             public_id: Some(AwbcStringId(0)),
-            kind: AwbcFunctionKind::PureHelper,
+            kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(0),
             input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId(0),
@@ -172,7 +160,7 @@ fn field_default_requests_keep_the_exact_nullary_program_and_admit_its_result() 
 #[test]
 fn field_default_admission_rejects_missing_and_tampered_program_proofs() {
     let (_, awbc) = programs();
-    for defect in 0..6 {
+    for defect in 0..9 {
         let mut candidate = awbc.clone();
         match defect {
             0 => candidate.pure_programs.clear(),
@@ -181,8 +169,11 @@ fn field_default_admission_rejects_missing_and_tampered_program_proofs() {
                 .push(candidate.pure_programs[0].clone()),
             2 => candidate.pure_programs[0].input_types.push(semantic(2)),
             3 => candidate.pure_programs[0].result_type = semantic(1),
-            4 => candidate.pure_helpers.clear(),
-            5 => candidate.functions[0].kind = AwbcFunctionKind::Ordinary,
+            4 => candidate.functions.clear(),
+            5 => candidate.functions[0].kind = AwbcFunctionKind::Synthetic,
+            6 => candidate.effect_sets.clear(),
+            7 => candidate.signatures[0].effects = AwbcEffectSetId(1),
+            8 => candidate.effect_sets[0].effects.push(AwbcStringId(0)),
             _ => unreachable!(),
         }
         assert!(

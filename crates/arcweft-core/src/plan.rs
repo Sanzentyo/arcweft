@@ -937,11 +937,11 @@ pub struct RuntimePureHelper {
     pub origin: RuntimePureHelperOrigin,
 }
 
-/// Exact stable program identity mapped to its deterministic runtime helper.
+/// Exact stable program identity mapped to its plan-owned function frame.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimePureProgramBinding {
     program: arcweft_id::runtime_program::RuntimePureProgramId,
-    helper: RuntimePureHelperId,
+    site: crate::runtime_id::RuntimeFunctionSiteId,
     input_types: Box<[RuntimeSemanticTypeId]>,
     result_type: RuntimeSemanticTypeId,
 }
@@ -950,13 +950,13 @@ impl RuntimePureProgramBinding {
     #[must_use]
     pub(crate) fn new(
         program: arcweft_id::runtime_program::RuntimePureProgramId,
-        helper: RuntimePureHelperId,
+        site: crate::runtime_id::RuntimeFunctionSiteId,
         input_types: impl Into<Box<[RuntimeSemanticTypeId]>>,
         result_type: RuntimeSemanticTypeId,
     ) -> Self {
         Self {
             program,
-            helper,
+            site,
             input_types: input_types.into(),
             result_type,
         }
@@ -968,8 +968,8 @@ impl RuntimePureProgramBinding {
     }
 
     #[must_use]
-    pub const fn helper(&self) -> RuntimePureHelperId {
-        self.helper
+    pub const fn site(&self) -> crate::runtime_id::RuntimeFunctionSiteId {
+        self.site
     }
 
     /// Ordered semantic input identities retained across the Value ABI.

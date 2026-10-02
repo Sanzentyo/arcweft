@@ -16,14 +16,15 @@ structure-audit-gate:
 test: test-workspace
 
 test-workspace:
-    @cargo test --workspace --lib --tests --exclude arcweft-cli --quiet
-    @cargo test -p arcweft-cli --lib --bins --quiet
-    @cargo test -p arcweft-cli --test runtime_native_options --quiet
-    @cargo test -p arcweft-cli --test check_core_cli --quiet
-    @cargo test -p arcweft-cli --test native_style_parity_sample --quiet
-    @cargo test -p arcweft-cli --test release_trust_json --quiet
-    @cargo test -p arcweft-cli --test arcw_fixtures_check_run --quiet
-    @cargo test -p arcweft-cli --test seq04_8_4_persistent_cache_build_cli_goldens --quiet
+    @cargo nextest run --workspace --lib --tests --exclude arcweft-cli
+    @cargo nextest run -p arcweft-cli --lib --bins
+    @cargo nextest run -p arcweft-cli --test runtime_native_options --test check_core_cli --test native_style_parity_sample --test release_trust_json --test arcw_fixtures_check_run --test seq04_8_4_persistent_cache_build_cli_goldens
+
+# Same surface as test-workspace, selected by the changed crate's transitive consumers.
+test-affected crate:
+    @cargo nextest run --workspace --lib --tests --exclude arcweft-cli -E "rdeps(={{crate}})" --no-tests pass
+    @cargo nextest run -p arcweft-cli --lib --bins -E "rdeps(={{crate}})" --no-tests pass
+    @cargo nextest run -p arcweft-cli --test runtime_native_options --test check_core_cli --test native_style_parity_sample --test release_trust_json --test arcw_fixtures_check_run --test seq04_8_4_persistent_cache_build_cli_goldens -E "rdeps(={{crate}})" --no-tests pass
 
 test-workspace-profile:
     @Write-Host "test-workspace"; $sw = [System.Diagnostics.Stopwatch]::StartNew(); just test-workspace; $code = $LASTEXITCODE; $sw.Stop(); Write-Host ("elapsed_seconds={0:N3}" -f $sw.Elapsed.TotalSeconds); if ($code -ne 0) { exit $code }

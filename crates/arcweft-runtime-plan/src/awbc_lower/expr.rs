@@ -996,6 +996,7 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
 
 pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &RuntimePlan) {
     let mut callable_sites = BTreeSet::new();
+    callable_sites.extend(plan.pure_programs().iter().map(|binding| binding.site()));
     for (_, state) in plan.callable_states().iter_with_ids() {
         if let RuntimeCallableTransition::Invoke { function, .. } = &state.transition {
             callable_sites.insert(*function);
@@ -1009,12 +1010,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
         }
     }
     for site in callable_sites {
-        let _ = ensure_function_site(
-            inventory,
-            plan,
-            site,
-            &format!("callable state body {site}"),
-        );
+        let _ = ensure_function_site(inventory, plan, site, &format!("function site body {site}"));
     }
 
     while let Some(closure) = inventory.pop_pending_closure() {
