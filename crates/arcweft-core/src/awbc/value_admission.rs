@@ -70,16 +70,47 @@ impl AwbcProgram {
         value: View<'_>,
         limits: RuntimeSchemaLimits,
     ) -> Result<(), AwbcValueAdmissionError> {
-        self.runtime_types
+        let row = self
+            .runtime_types
             .get(ty.index())
             .ok_or(AwbcValueAdmissionError::UnknownType { ty })?;
-        let mut validation = AwbcValueValidation {
-            program: self,
-            work: ValidationWork::new(limits),
-            context: (),
+        let binding = match value {
+            View::NominalRecord(record)
+                if !row.scope().is_root()
+                    && record.semantic_identity() == row.semantic_identity() =>
+            {
+                record.type_instantiation()
+            }
+            _ => None,
         };
-        value_encoding::validate_live_view(value, limits, &mut validation, Expected::Type(ty))
-            .map_err(|source| AwbcValueAdmissionError::Value { ty, source })
+        crate::program_types::RuntimeFunctionEffectInstantiation::with_value_relation(
+            self,
+            binding,
+            |context| {
+                let mut validation = AwbcValueValidation {
+                    program: self,
+                    work: ValidationWork::new(limits),
+                    context,
+                };
+                value_encoding::validate_live_view(
+                    value,
+                    limits,
+                    &mut validation,
+                    Expected::Type(ty),
+                )
+                .map_err(|source| AwbcValueAdmissionError::Value { ty, source })
+            },
+        )
+        .unwrap_or_else(|| {
+            Err(AwbcValueAdmissionError::Value {
+                ty,
+                source: RuntimeSchemaError::Type {
+                    path: "$".to_owned(),
+                    expected: "admitted AWBC type binding",
+                    actual: value.type_name(),
+                },
+            })
+        })
     }
 
     /// Validates a decoded private snapshot candidate before publication.
@@ -89,16 +120,47 @@ impl AwbcProgram {
         value: &RuntimeValue,
         limits: RuntimeSchemaLimits,
     ) -> Result<(), AwbcValueAdmissionError> {
-        self.runtime_types
+        let row = self
+            .runtime_types
             .get(ty.index())
             .ok_or(AwbcValueAdmissionError::UnknownType { ty })?;
-        let mut validation = AwbcValueValidation {
-            program: self,
-            work: ValidationWork::new(limits),
-            context: (),
+        let binding = match value {
+            RuntimeValue::NominalRecord(record)
+                if !row.scope().is_root()
+                    && record.semantic_identity() == row.semantic_identity() =>
+            {
+                record.type_instantiation()
+            }
+            _ => None,
         };
-        value_encoding::validate_snapshot(value, limits, &mut validation, Expected::Type(ty))
-            .map_err(|source| AwbcValueAdmissionError::Value { ty, source })
+        crate::program_types::RuntimeFunctionEffectInstantiation::with_value_relation(
+            self,
+            binding,
+            |context| {
+                let mut validation = AwbcValueValidation {
+                    program: self,
+                    work: ValidationWork::new(limits),
+                    context,
+                };
+                value_encoding::validate_snapshot(
+                    value,
+                    limits,
+                    &mut validation,
+                    Expected::Type(ty),
+                )
+                .map_err(|source| AwbcValueAdmissionError::Value { ty, source })
+            },
+        )
+        .unwrap_or_else(|| {
+            Err(AwbcValueAdmissionError::Value {
+                ty,
+                source: RuntimeSchemaError::Type {
+                    path: "$".to_owned(),
+                    expected: "admitted AWBC type binding",
+                    actual: value.view().type_name(),
+                },
+            })
+        })
     }
 
     /// Validates and hashes a persistent value against this program's type rows.
@@ -291,7 +353,7 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
                     && layout == actual_layout.as_bytes()
                     && self.string(actual_case.name)? == name
                     && actual_case.payload.is_some() == payload.is_some()
-                    && self.context.nominal(ty, actual_ty)
+                    && self.context.nominal(ty, actual_ty, None)
             }
             _ => false,
         };
@@ -428,7 +490,10 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
                     });
                 }
                 Self::arity(actual_fields.len(), actual.fields().len())?;
-                if !self.context.nominal(ty, actual_ty) {
+                if !self
+                    .context
+                    .nominal(ty, actual_ty, actual.type_instantiation())
+                {
                     return Err(Self::mismatch(value));
                 }
                 Self::arity(fields.len(), actual.fields().len())?;

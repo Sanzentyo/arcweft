@@ -934,6 +934,11 @@ impl Engine {
                 declaration.semantic_identity(),
                 *layout,
                 fields,
+            )
+            .with_type_instantiation(
+                (!declaration.scope().is_root())
+                    .then(|| self.fiber.env.function_instantiation_lease().cloned())
+                    .flatten(),
             ),
         ))
     }

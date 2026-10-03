@@ -134,6 +134,7 @@ pub struct AwbcRuntimeNominalRecordSnapshot {
     pub type_id: crate::entry::RuntimeNominalTypeId,
     pub semantic_identity: RuntimeSemanticTypeId,
     pub layout: crate::entry::TypeLayoutHash,
+    pub type_instantiation: Option<crate::program_types::RuntimeFunctionEffectInstantiation>,
     pub fields: Vec<AwbcRuntimeValueSnapshot>,
 }
 
@@ -632,6 +633,7 @@ impl AwbcRuntimeValueSnapshot {
             type_id: value.type_id().clone(),
             semantic_identity: value.semantic_identity(),
             layout: value.layout(),
+            type_instantiation: value.type_instantiation().cloned(),
             fields: value
                 .fields()
                 .iter()
@@ -645,16 +647,19 @@ impl AwbcRuntimeValueSnapshot {
         program_owner: &RuntimeProgramOwner,
     ) -> Result<RuntimeNominalRecordValue, AwbcRuntimeValueSnapshotError> {
         let semantic_identity = value.semantic_identity;
-        let value = RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
-            value.type_id,
-            semantic_identity,
-            value.layout,
-            value
-                .fields
-                .into_iter()
-                .map(|value| value.into_runtime_value_for_program(program_owner))
-                .collect::<Result<_, _>>()?,
-        ));
+        let value = RuntimeValue::NominalRecord(
+            RuntimeNominalRecordValue::new(
+                value.type_id,
+                semantic_identity,
+                value.layout,
+                value
+                    .fields
+                    .into_iter()
+                    .map(|value| value.into_runtime_value_for_program(program_owner))
+                    .collect::<Result<_, _>>()?,
+            )
+            .with_type_instantiation(value.type_instantiation.map(std::sync::Arc::new)),
+        );
         program_owner
             .types()
             .validate_snapshot_value(

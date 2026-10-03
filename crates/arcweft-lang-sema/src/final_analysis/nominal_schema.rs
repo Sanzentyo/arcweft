@@ -155,6 +155,10 @@ pub enum NominalProjectionLimitKind {
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum NominalSchemaProjectionError {
     #[error(transparent)]
+    SemanticPath(#[from] arcweft_lang_hir::project::HirSemanticPathLookupError),
+    #[error(transparent)]
+    DeclarationProjection(#[from] crate::types::TypeInstantiationError),
+    #[error(transparent)]
     NominalInstantiation(#[from] super::CheckedProjectNominalInstantiationError),
     #[error(transparent)]
     ParameterContract(#[from] crate::callable::CheckedCallableParameterContractError),
@@ -411,6 +415,51 @@ impl NominalProjectionRequestSet {
         self.insert(NominalProjectionRequest::new(nominal.clone()))
     }
 
+    /// Includes expression terms projected into the same declaration binder
+    /// used by executable View inputs, before either catalog is sealed.
+    fn include_declaration_expressions<'a>(
+        &mut self,
+        symbols: &ProjectSymbolTable,
+        callables: &crate::callable::CheckedCallableCatalog,
+        topology: &arcweft_lang_hir::project::HirProjectEvaluationTopology,
+        expressions: impl IntoIterator<Item = (arcweft_lang_hir::identity::ExprId, &'a TypeKind)>,
+    ) -> Result<(), NominalSchemaProjectionError> {
+        for (owner, ty) in expressions {
+            let Some(location) = topology.semantic_path(owner.into())? else {
+                continue;
+            };
+            let arcweft_lang_hir::project::HirSemanticPathRoot::Declaration(declaration) =
+                location.root()
+            else {
+                continue;
+            };
+            if declaration.owner() != arcweft_lang_hir::symbol::CallableDeclarationOwner::View {
+                continue;
+            }
+            let facts = callables
+                .project_callable(declaration)
+                .map_err(|_| NominalSchemaProjectionError::GenerationMismatch)?;
+            let binder = facts
+                .signature()
+                .function_value_binder()
+                .map_err(crate::types::TypeInstantiationError::from)?;
+            let projected = binder
+                .project_with_control(ty, &mut crate::types::UnmeteredTypeProjection)
+                .map_err(crate::types::TypeProjectionError::into_instantiation)?;
+            crate::types::visit_project_nominals(projected.view(), &mut |view, nominal| {
+                let generics = crate::types::StableGenericReferenceUseCollector::collect_in_scope(
+                    view.value(),
+                    view.scope(),
+                )?;
+                if !generics.types().is_empty() || !generics.consts().is_empty() {
+                    return Ok(());
+                }
+                self.insert_type(symbols, view, nominal)
+            })?;
+        }
+        Ok(())
+    }
+
     fn insert_type(
         &mut self,
         symbols: &ProjectSymbolTable,
@@ -518,6 +567,15 @@ impl RuntimeNominalProjectionRequestInventory {
         draft
             .checked_callables
             .visit_parameter_contracts(&mut |ty| inventory.visit_type(symbols, ty))?;
+        inventory.requests.include_declaration_expressions(
+            symbols,
+            &draft.checked_callables,
+            draft.selected_expressions.topology(),
+            draft
+                .expressions
+                .iter()
+                .filter_map(|(owner, fact)| fact.runtime_value_type().map(|ty| (*owner, ty))),
+        )?;
         Ok(inventory)
     }
 
@@ -560,6 +618,15 @@ impl RuntimeNominalProjectionRequestInventory {
         draft
             .checked_callables
             .visit_parameter_contracts(&mut |ty| inventory.visit_type(symbols, ty))?;
+        inventory.requests.include_declaration_expressions(
+            symbols,
+            &draft.checked_callables,
+            draft.selected_expressions.topology(),
+            draft
+                .expressions
+                .iter()
+                .filter_map(|(owner, fact)| fact.runtime_value_type().map(|ty| (*owner, ty))),
+        )?;
         Ok(inventory)
     }
 }
@@ -712,7 +779,16 @@ fn collect_prepared_semantic_nominals(
         .visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
     draft
         .checked_callables
-        .visit_parameter_contracts(&mut |ty| inventory.visit_type(symbols, ty))
+        .visit_parameter_contracts(&mut |ty| inventory.visit_type(symbols, ty))?;
+    inventory.requests.include_declaration_expressions(
+        symbols,
+        &draft.checked_callables,
+        draft.selected_expressions.topology(),
+        draft
+            .expressions
+            .iter()
+            .filter_map(|(owner, fact)| fact.runtime_value_type().map(|ty| (*owner, ty))),
+    )
 }
 
 fn collect_post_entry_semantic_nominals(
@@ -755,7 +831,16 @@ fn collect_post_entry_semantic_nominals(
         .visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
     draft
         .checked_callables
-        .visit_parameter_contracts(&mut |ty| inventory.visit_type(symbols, ty))
+        .visit_parameter_contracts(&mut |ty| inventory.visit_type(symbols, ty))?;
+    inventory.requests.include_declaration_expressions(
+        symbols,
+        &draft.checked_callables,
+        draft.selected_expressions.topology(),
+        draft
+            .expressions
+            .iter()
+            .filter_map(|(owner, fact)| fact.runtime_value_type().map(|ty| (*owner, ty))),
+    )
 }
 
 /// Immutable complete runtime-nominal catalog published by final analysis.

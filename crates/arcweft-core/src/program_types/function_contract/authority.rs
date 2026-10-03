@@ -12,8 +12,13 @@ use crate::{
 pub(crate) trait RuntimeValueTypeContext<T: Copy + Eq> {
     fn permits_scope(&self, scope: &RuntimeTypeScope) -> bool;
     fn callable(&mut self, expected: T, actual: T) -> bool;
-    fn nominal(&mut self, expected: T, actual: T) -> bool {
-        expected == actual
+    fn nominal(
+        &mut self,
+        expected: T,
+        actual: T,
+        origin: Option<&super::RuntimeFunctionEffectInstantiation>,
+    ) -> bool {
+        origin.is_none() && expected == actual
     }
     fn begin_choice(&mut self) {}
     fn begin_alternative(&mut self) {}
@@ -37,8 +42,13 @@ impl<T: Copy + Eq, C: RuntimeValueTypeContext<T>> RuntimeValueTypeContext<T> for
     fn callable(&mut self, expected: T, actual: T) -> bool {
         (**self).callable(expected, actual)
     }
-    fn nominal(&mut self, expected: T, actual: T) -> bool {
-        (**self).nominal(expected, actual)
+    fn nominal(
+        &mut self,
+        expected: T,
+        actual: T,
+        origin: Option<&super::RuntimeFunctionEffectInstantiation>,
+    ) -> bool {
+        (**self).nominal(expected, actual, origin)
     }
     fn begin_choice(&mut self) {
         (**self).begin_choice();
@@ -254,6 +264,7 @@ impl FunctionTypeAuthority for AwbcProgram {
                     nominal,
                     semantic_identity,
                     layout,
+                    ..
                 },
                 AwbcRuntimeTypeShape::NominalRecord {
                     public_id,
@@ -469,6 +480,7 @@ impl FunctionTypeAuthority for RuntimePlan {
                     nominal,
                     semantic_identity,
                     layout,
+                    ..
                 },
                 RuntimePlanTypeProjection::Nominal {
                     nominal: expected_nominal,

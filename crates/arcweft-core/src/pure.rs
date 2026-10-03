@@ -2510,6 +2510,11 @@ impl<'a> PureEvaluator<'a> {
                 declaration.semantic_identity(),
                 *layout,
                 fields,
+            )
+            .with_type_instantiation(
+                (!declaration.scope().is_root())
+                    .then(|| self.env.function_instantiation_lease().cloned())
+                    .flatten(),
             ),
         ))
     }

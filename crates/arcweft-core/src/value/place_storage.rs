@@ -43,6 +43,8 @@ pub(crate) enum RecordHeader {
         nominal: RuntimeNominalTypeId,
         semantic_identity: RuntimeSemanticTypeId,
         layout: TypeLayoutHash,
+        type_instantiation:
+            Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
     },
     Structural {
         names: Vec<String>,
@@ -327,12 +329,21 @@ impl RuntimePlaceStorage<RuntimeValue> {
                 nominal,
                 semantic_identity,
                 layout,
+                type_instantiation,
             } = header
             {
                 owner
                     .types()
                     .require_nominal(*semantic_identity, nominal, *layout)
                     .map_err(|error| error.to_string())?;
+                if !owner
+                    .types()
+                    .type_origin_is_valid(*semantic_identity, type_instantiation.as_deref())
+                {
+                    return Err(
+                        "partial nominal record has an invalid construction type origin".to_owned(),
+                    );
+                }
             }
             for field in fields {
                 field.validate_record_headers(owner)?;
@@ -467,6 +478,10 @@ impl RuntimePlaceStorage<RuntimeValue> {
                     nominal: record.type_id().clone(),
                     semantic_identity: record.semantic_identity(),
                     layout: record.layout(),
+                    type_instantiation: record
+                        .type_instantiation()
+                        .cloned()
+                        .map(std::sync::Arc::new),
                 };
                 (header, record.into_fields())
             }
@@ -509,12 +524,11 @@ impl RuntimePlaceStorage<RuntimeValue> {
                 nominal,
                 semantic_identity,
                 layout,
-            } => RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
-                nominal,
-                semantic_identity,
-                layout,
-                fields,
-            )),
+                type_instantiation,
+            } => RuntimeValue::NominalRecord(
+                RuntimeNominalRecordValue::new(nominal, semantic_identity, layout, fields)
+                    .with_type_instantiation(type_instantiation),
+            ),
             RecordHeader::Structural { names } => {
                 RuntimeValue::try_record(names.into_iter().zip(fields).collect())
                     .expect("header retained from an admitted record")
@@ -600,6 +614,49 @@ mod tests {
                 RuntimeValue::String("owner".into())
             ]
         );
+    }
+
+    #[test]
+    fn partial_nominal_move_and_repair_preserve_the_construction_binding() {
+        let binding = std::sync::Arc::new(
+            serde_json::from_value::<crate::program_types::RuntimeFunctionEffectInstantiation>(
+                serde_json::json!({"context": vec![7; 32], "effects": [["io.read"]]}),
+            )
+            .unwrap(),
+        );
+        let record = RuntimeNominalRecordValue::new(
+            RuntimeNominalTypeId::try_new("game.Holder").unwrap(),
+            RuntimeSemanticTypeId::from_bytes([3; 32]),
+            TypeLayoutHash::from_bytes([5; 32]),
+            vec![RuntimeValue::Bool(true)],
+        )
+        .with_type_instantiation(Some(binding.clone()));
+        let mut storage = RuntimePlaceStorage::from(RuntimeValue::NominalRecord(record));
+        let moved = storage.take_field(&[field(0)]).unwrap();
+        let encoded = serde_json::to_vec(&storage).unwrap();
+        let mut restored: RuntimePlaceStorage<RuntimeValue> =
+            serde_json::from_slice(&encoded).unwrap();
+        let Some((
+            RecordHeader::Nominal {
+                type_instantiation, ..
+            },
+            _,
+        )) = restored.record_parts()
+        else {
+            panic!("partial nominal header")
+        };
+        assert_eq!(type_instantiation.as_deref(), Some(binding.as_ref()));
+        assert!(
+            restored
+                .assign_field(&[field(0)], moved)
+                .unwrap()
+                .is_empty()
+        );
+        let RuntimeValue::NominalRecord(record) = restored.take().unwrap() else {
+            panic!("repaired nominal value")
+        };
+        assert_eq!(record.type_instantiation(), Some(binding.as_ref()));
+        assert_eq!(record.fields(), [RuntimeValue::Bool(true)]);
     }
 
     #[test]

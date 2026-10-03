@@ -4003,12 +4003,20 @@ impl AwbcProgram {
                     string(self, *public_id)?.to_owned(),
                 )
                 .map_err(|error| VmError::Runtime(error.to_string()))?;
-                let value = RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
-                    nominal,
-                    row.semantic_identity(),
-                    crate::entry::TypeLayoutHash::from_bytes(*layout),
-                    values,
-                ));
+                let value = RuntimeValue::NominalRecord(
+                    RuntimeNominalRecordValue::new(
+                        nominal,
+                        row.semantic_identity(),
+                        crate::entry::TypeLayoutHash::from_bytes(*layout),
+                        values,
+                    )
+                    .with_type_instantiation(
+                        (!row.scope().is_root())
+                            .then(|| frame.and_then(|frame| frame.type_instantiation.clone()))
+                            .flatten()
+                            .map(std::sync::Arc::new),
+                    ),
+                );
                 let accepted = frame.map_or_else(
                     || {
                         self.validate_live_value(

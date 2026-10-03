@@ -1181,6 +1181,164 @@ view Mirror(first: Holder<i64 -> i64> = Holder { callback = |input: i64| input +
 }
 
 #[test]
+fn nominal_default_constructed_from_scoped_input_keeps_its_origin() {
+    use arcweft_runtime_driver::presentation_handles::{
+        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    };
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+struct Holder<T> { callback: T }
+view Main(first: i64 -> i64 = |input: i64| input + 1,
+          value: Holder<i64 -> i64> = Holder { callback = first },
+          copied: Holder<i64 -> i64> = value) { Text("static") }
+"#;
+    let compiled = project_view_fixture_with_entry(source, "arcweft-test://nominal-origin")
+        .compile()
+        .unwrap();
+    let awbc = AwbcLowerer::new(
+        &compiled.runtime_plan().plan,
+        &compiled.runtime_plan().dialogue_content_catalog,
+        "main.arcw",
+    )
+    .lower()
+    .unwrap()
+    .program;
+    let awbc =
+        Arc::new(arcweft_bundle::standard_view::install_dialogue_handler_awbc(awbc).unwrap());
+    let mut runtime = BundleViewRuntime::try_new_with_awbc(
+        compiled.view_product().product().as_ref().clone(),
+        compiled.view_product().text().cloned(),
+        Arc::clone(&awbc),
+    )
+    .unwrap();
+    let handle = PresentationHandleRecord::new(
+        PresentationHandleId::try_new("view.origin").unwrap(),
+        PresentationHandleKind::View,
+        "view.Main".to_owned(),
+        None,
+        PresentationResourceState::Mounted,
+        None,
+        0,
+    );
+    let frame = runtime.evaluate(&[handle], &[], false);
+    assert!(frame.diagnostics.is_empty(), "{frame:#?}");
+    let snapshot = runtime.snapshot().unwrap();
+    let parameters = &snapshot.mounts[0].runtime_parameters;
+    let first = &parameters
+        .iter()
+        .find(|value| value.name == "first")
+        .unwrap()
+        .value;
+    let value = &parameters
+        .iter()
+        .find(|value| value.name == "value")
+        .unwrap()
+        .value;
+    let arcweft_core::value::RuntimeValue::NominalRecord(record) = value else {
+        panic!("nominal default: {value:?}")
+    };
+    assert_eq!(record.fields(), [first.clone()]);
+    let ty = awbc.semantic_type_id(record.semantic_identity()).unwrap();
+    assert!(!awbc.runtime_types[ty.index()].scope().is_root());
+    assert!(record.type_instantiation().is_some());
+    assert_eq!(
+        value,
+        &parameters
+            .iter()
+            .find(|value| value.name == "copied")
+            .unwrap()
+            .value
+    );
+    let owner = arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&awbc));
+    let image = arcweft_core::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+        value, &owner,
+    )
+    .unwrap();
+    let bytes = serde_json::to_vec(&image).unwrap();
+    let decoded: arcweft_core::value::AwbcRuntimeValueSnapshot =
+        serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(
+        decoded.into_runtime_value_for_program(&owner).unwrap(),
+        *value
+    );
+    let arcweft_core::value::AwbcRuntimeValueSnapshot::NominalRecord(record_image) = image else {
+        panic!("record snapshot")
+    };
+    let mut missing = record_image.clone();
+    missing.type_instantiation = None;
+    assert!(
+        arcweft_core::value::AwbcRuntimeValueSnapshot::NominalRecord(missing)
+            .into_runtime_value_for_program(&owner)
+            .is_err()
+    );
+    for (field, replacement) in [
+        ("effects", serde_json::json!([])),
+        ("context", serde_json::json!(vec![0xa9; 32])),
+    ] {
+        let mut forged = record_image.clone();
+        let mut binding =
+            serde_json::to_value(forged.type_instantiation.as_ref().unwrap()).unwrap();
+        binding[field] = replacement;
+        forged.type_instantiation = Some(serde_json::from_value(binding).unwrap());
+        assert!(
+            arcweft_core::value::AwbcRuntimeValueSnapshot::NominalRecord(forged)
+                .into_runtime_value_for_program(&owner)
+                .is_err()
+        );
+    }
+    let definition = compiled
+        .view_product()
+        .product()
+        .program()
+        .unwrap()
+        .resource()
+        .definitions
+        .iter()
+        .find(|definition| definition.public_id.as_str() == "view.Main")
+        .unwrap();
+    let default = |name: &str| {
+        definition
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == name)
+            .unwrap()
+            .default_program
+            .as_ref()
+            .unwrap()
+            .program
+    };
+    let native_plan = Arc::new(compiled.runtime_plan().plan.clone());
+    let finish = |program, inputs| {
+        let mut engine = arcweft_core::engine::Engine::for_program_invocation(
+            Arc::clone(&native_plan),
+            program,
+            inputs,
+        )
+        .unwrap();
+        for _ in 0..64 {
+            let output = engine.step(Default::default(), Default::default()).output;
+            assert!(output.diagnostics.is_empty(), "{output:?}");
+            if let Some((_, value)) = engine.take_program_result().unwrap() {
+                return value;
+            }
+        }
+        panic!("native nominal default exceeded its deterministic step limit")
+    };
+    let native_first = finish(default("first"), vec![]);
+    let native_value = finish(default("value"), vec![native_first.clone()]);
+    let arcweft_core::value::RuntimeValue::NominalRecord(record) = &native_value else {
+        panic!("native nominal record")
+    };
+    assert_eq!(record.fields(), [native_first]);
+    assert!(record.type_instantiation().is_some());
+    assert_eq!(
+        finish(default("copied"), vec![native_value.clone()]),
+        native_value
+    );
+}
+
+#[test]
 fn compiler_rejects_general_view_calls_at_the_unimplemented_runtime_boundary() {
     let cases = ["view Child(value: i32) { Text(value) }\nview Main() { Child(1i32) }\n"];
 

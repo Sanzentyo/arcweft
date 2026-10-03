@@ -79,10 +79,47 @@ impl RuntimePlan {
         value: View<'_>,
         limits: RuntimeSchemaLimits,
     ) -> Result<(), RuntimePlanValueAdmissionError> {
-        let mut validation =
-            PlanValueValidation::new(PlanValueAuthority::Sealed(self), ty, limits)?;
-        value_encoding::validate_live_view(value, limits, &mut validation, Expected::Type(ty))
-            .map_err(|source| RuntimePlanValueAdmissionError::Value { ty, source })
+        let row = self
+            .type_table()
+            .get(ty)
+            .ok_or(RuntimePlanValueAdmissionError::UnknownType { ty })?;
+        let binding = match value {
+            View::NominalRecord(record)
+                if !row.scope().is_root()
+                    && record.semantic_identity() == row.semantic_identity() =>
+            {
+                record.type_instantiation()
+            }
+            _ => None,
+        };
+        crate::program_types::RuntimeFunctionEffectInstantiation::with_value_relation(
+            self,
+            binding,
+            |context| {
+                let mut validation = PlanValueValidation {
+                    authority: PlanValueAuthority::Sealed(self),
+                    work: ValidationWork::new(limits),
+                    context,
+                };
+                value_encoding::validate_live_view(
+                    value,
+                    limits,
+                    &mut validation,
+                    Expected::Type(ty),
+                )
+                .map_err(|source| RuntimePlanValueAdmissionError::Value { ty, source })
+            },
+        )
+        .unwrap_or_else(|| {
+            Err(RuntimePlanValueAdmissionError::Value {
+                ty,
+                source: RuntimeSchemaError::Type {
+                    path: "$".to_owned(),
+                    expected: "admitted plan type binding",
+                    actual: value.type_name(),
+                },
+            })
+        })
     }
 
     /// Validates a decoded private snapshot candidate before publication.
@@ -92,10 +129,47 @@ impl RuntimePlan {
         value: &RuntimeValue,
         limits: RuntimeSchemaLimits,
     ) -> Result<(), RuntimePlanValueAdmissionError> {
-        let mut validation =
-            PlanValueValidation::new(PlanValueAuthority::Sealed(self), ty, limits)?;
-        value_encoding::validate_snapshot(value, limits, &mut validation, Expected::Type(ty))
-            .map_err(|source| RuntimePlanValueAdmissionError::Value { ty, source })
+        let row = self
+            .type_table()
+            .get(ty)
+            .ok_or(RuntimePlanValueAdmissionError::UnknownType { ty })?;
+        let binding = match value {
+            RuntimeValue::NominalRecord(record)
+                if !row.scope().is_root()
+                    && record.semantic_identity() == row.semantic_identity() =>
+            {
+                record.type_instantiation()
+            }
+            _ => None,
+        };
+        crate::program_types::RuntimeFunctionEffectInstantiation::with_value_relation(
+            self,
+            binding,
+            |context| {
+                let mut validation = PlanValueValidation {
+                    authority: PlanValueAuthority::Sealed(self),
+                    work: ValidationWork::new(limits),
+                    context,
+                };
+                value_encoding::validate_snapshot(
+                    value,
+                    limits,
+                    &mut validation,
+                    Expected::Type(ty),
+                )
+                .map_err(|source| RuntimePlanValueAdmissionError::Value { ty, source })
+            },
+        )
+        .unwrap_or_else(|| {
+            Err(RuntimePlanValueAdmissionError::Value {
+                ty,
+                source: RuntimeSchemaError::Type {
+                    path: "$".to_owned(),
+                    expected: "admitted plan type binding",
+                    actual: value.view().type_name(),
+                },
+            })
+        })
     }
 
     /// Validates the complete finite value through the plan's type and nominal
@@ -304,7 +378,7 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
             || (matches!(
                 owner,
                 crate::pattern::RuntimeVariantIdentity::Nominal { .. }
-            ) && !self.context.nominal(ty, actual_ty))
+            ) && !self.context.nominal(ty, actual_ty, None))
         {
             return Err(Self::mismatch(value));
         }
@@ -367,7 +441,10 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
             .record(actual_ty)
             .ok_or_else(|| Self::mismatch(value))?;
         Self::arity(actual_domain.fields().len(), record.fields().len())?;
-        if !self.context.nominal(ty, actual_ty) {
+        if !self
+            .context
+            .nominal(ty, actual_ty, record.type_instantiation())
+        {
             return Err(Self::mismatch(value));
         }
         Self::arity(domain.fields().len(), record.fields().len())?;

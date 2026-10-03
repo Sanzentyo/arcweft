@@ -250,6 +250,8 @@ pub struct RuntimeNominalRecordValue {
     type_id: RuntimeNominalTypeId,
     semantic_identity: RuntimeSemanticTypeId,
     layout: TypeLayoutHash,
+    type_instantiation:
+        Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
     fields: Vec<RuntimeValue>,
 }
 
@@ -292,6 +294,7 @@ impl RuntimeNominalRecordValue {
             type_id: layout.nominal().clone(),
             semantic_identity: layout.semantic_identity(),
             layout: layout.layout(),
+            type_instantiation: None,
             fields: fields_in_layout_order,
         })
     }
@@ -308,8 +311,25 @@ impl RuntimeNominalRecordValue {
             type_id,
             semantic_identity,
             layout,
+            type_instantiation: None,
             fields,
         }
+    }
+
+    /// Immutable declaration binding from the value's construction frame.
+    #[must_use]
+    pub fn type_instantiation(
+        &self,
+    ) -> Option<&crate::program_types::RuntimeFunctionEffectInstantiation> {
+        self.type_instantiation.as_deref()
+    }
+
+    pub(crate) fn with_type_instantiation(
+        mut self,
+        binding: Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
+    ) -> Self {
+        self.type_instantiation = binding;
+        self
     }
 
     /// Stable nominal type identity.

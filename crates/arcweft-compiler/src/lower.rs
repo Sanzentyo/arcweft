@@ -343,7 +343,7 @@ pub enum RuntimeSemanticProjectionError {
     MissingNominal {
         declaration: Box<ProjectNominalDeclarationId>,
     },
-    #[error("checked nominal schema projection failed for `{nominal}`")]
+    #[error("checked nominal schema projection failed for `{nominal}`: {source}")]
     NominalSchemaProjection {
         nominal: String,
         #[source]
@@ -7896,18 +7896,28 @@ fn runtime_executable_semantic_facts<'abi>(
                     })
                     .collect::<Vec<_>>()
                     .into_boxed_slice();
+                let ty = projected_types
+                    .get(&RuntimeProjectFunctionTypeOwner::Expression(owner))
+                    .ok_or_else(|| {
+                        error(owner, "nominal record has no executable type projection")
+                    })?;
+                let arcweft_runtime_plan::semantic_facts::RuntimeNominalDefinition::Record(record) =
+                    nominals::definition(ty, symbols, world, analysis)?
+                else {
+                    return Err(error(owner, "nominal record projection selects a variant"));
+                };
+                if !matches!(record.nominal().source(),
+                    arcweft_runtime_plan::semantic_facts::RuntimeResolvedNominalSource::Project {
+                        declaration, owner: declaration_owner, ..
+                    } if declaration == nominal.declaration() && *declaration_owner == nominal.owner())
+                {
+                    return Err(error(
+                        owner,
+                        "nominal record projection changes its declaration owner",
+                    ));
+                }
                 RuntimeProjectFunctionExpressionPayload::NominalRecord(
-                    RuntimeRecordExpressionFact::try_new(
-                        runtime_nominal_record_under(
-                            nominal,
-                            symbols,
-                            world,
-                            analysis,
-                            lexical.types(),
-                        )?,
-                        fields,
-                    )
-                    .map_err(|source| {
+                    RuntimeRecordExpressionFact::try_new(record, fields).map_err(|source| {
                         RuntimeSemanticProjectionError::RecordPlan {
                             owner: RuntimeRecordExecutableOwner::Expression(owner),
                             source,
