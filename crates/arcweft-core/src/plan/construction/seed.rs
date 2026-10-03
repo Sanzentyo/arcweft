@@ -47,12 +47,26 @@ pub(super) struct RuntimePlanConstructionIssuer;
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RuntimeLocalDeclarationSeed {
     ty: RuntimeSemanticTypeId,
+    context: Option<RuntimeSemanticTypeId>,
 }
 
 impl RuntimeLocalDeclarationSeed {
     #[must_use]
     pub const fn new(ty: RuntimeSemanticTypeId) -> Self {
-        Self { ty }
+        Self { ty, context: None }
+    }
+
+    /// Declares a slot under the lexical binder of a function-shaped contract.
+    #[must_use]
+    pub const fn in_function(ty: RuntimeSemanticTypeId, context: RuntimeSemanticTypeId) -> Self {
+        Self {
+            ty,
+            context: Some(context),
+        }
+    }
+
+    pub const fn context(self) -> Option<RuntimeSemanticTypeId> {
+        self.context
     }
 
     #[must_use]

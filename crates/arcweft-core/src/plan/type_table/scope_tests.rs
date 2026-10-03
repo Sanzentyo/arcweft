@@ -132,3 +132,74 @@ fn executable_slots_reject_scoped_descendants_but_accept_closed_schemes() {
         })
     ));
 }
+
+#[test]
+fn contextual_local_admission_requires_its_function_scope_and_remains_atomic() {
+    use crate::plan::construction::{
+        RuntimeLocalDeclarationSeed, RuntimePlanBuildError, RuntimePlanBuilder,
+    };
+    let binder = RuntimeTypeBinder::new(1, 0, 0);
+    let scope = RuntimeTypeScope::root().enter(binder).unwrap();
+    let scoped = RuntimePlanTypeSeed::new(
+        identity(1),
+        RuntimePlanTypeProjection::BoundType(scope.bound_type(0, 0).unwrap()),
+    )
+    .with_scope(scope);
+    let closed = RuntimePlanTypeSeed::new(identity(2), RuntimePlanTypeProjection::Bool);
+    let function = |id, binder| {
+        RuntimePlanTypeSeed::new(
+            identity(id),
+            RuntimePlanTypeProjection::Function {
+                contract: RuntimeFunctionTypeContract::new(
+                    binder,
+                    EffectPredicate::unconstrained(),
+                    EffectFormula::empty(),
+                ),
+                parameters: Box::new([identity(2)]),
+                result: identity(2),
+            },
+        )
+    };
+    let seeds = [
+        scoped,
+        closed,
+        function(3, binder),
+        function(4, RuntimeTypeBinder::new(2, 0, 0)),
+    ];
+    let mut builder = RuntimePlanBuilder::new();
+    for context in [identity(2), identity(4)] {
+        assert!(matches!(
+            builder.admit_type_batch(
+                seeds.clone(),
+                [RuntimeLocalDeclarationSeed::in_function(
+                    identity(1),
+                    context
+                )]
+            ),
+            Err(RuntimePlanBuildError::InvalidTypeProjection {
+                context: "function-owned local declaration type",
+                ..
+            })
+        ));
+    }
+    let admitted = builder
+        .admit_type_batch(
+            seeds,
+            [RuntimeLocalDeclarationSeed::in_function(
+                identity(1),
+                identity(3),
+            )],
+        )
+        .unwrap();
+    assert_eq!(admitted.local_ids().len(), 1);
+    let plan = builder.finish().unwrap();
+    let declaration = plan.local_declarations().declarations().next().unwrap();
+    assert_eq!(plan.local_declarations().len(), 1);
+    assert_eq!(
+        plan.type_table()
+            .get(declaration.context().unwrap())
+            .unwrap()
+            .semantic_identity(),
+        identity(3)
+    );
+}

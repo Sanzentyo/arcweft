@@ -10,9 +10,14 @@ use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RuntimeLocalDeclaration {
     ty: RuntimePlanTypeId,
+    context: Option<RuntimePlanTypeId>,
 }
 
 impl RuntimeLocalDeclaration {
+    #[must_use]
+    pub const fn context(self) -> Option<RuntimePlanTypeId> {
+        self.context
+    }
     #[must_use]
     pub const fn ty(self) -> RuntimePlanTypeId {
         self.ty
@@ -92,7 +97,7 @@ impl RuntimeLocalDeclarationTableBuilder {
         &mut self,
         ty: RuntimePlanTypeId,
     ) -> Result<RuntimeLocalDeclarationId, RuntimeLocalDeclarationTableError> {
-        let prepared = self.prepare_batch([ty])?;
+        let prepared = self.prepare_batch([(ty, None)])?;
         self.commit_batch(prepared)
             .first()
             .copied()
@@ -101,7 +106,7 @@ impl RuntimeLocalDeclarationTableBuilder {
 
     pub(crate) fn prepare_batch(
         &self,
-        types: impl IntoIterator<Item = RuntimePlanTypeId>,
+        types: impl IntoIterator<Item = (RuntimePlanTypeId, Option<RuntimePlanTypeId>)>,
     ) -> Result<PreparedRuntimeLocalDeclarationBatch, RuntimeLocalDeclarationTableError> {
         let types = types.into_iter().collect::<Box<[_]>>();
         let final_len = self
@@ -114,14 +119,14 @@ impl RuntimeLocalDeclarationTableBuilder {
         let _ = final_len;
         let mut declarations = self.declarations.clone();
         let mut ids = Vec::with_capacity(types.len());
-        for ty in types {
+        for (ty, context) in types {
             let ordinal = declarations
                 .len()
                 .checked_add(1)
                 .and_then(|value| u32::try_from(value).ok())
                 .and_then(NonZeroU32::new)
                 .ok_or(RuntimeLocalDeclarationTableError::IdentityExhausted)?;
-            declarations.push(RuntimeLocalDeclaration { ty });
+            declarations.push(RuntimeLocalDeclaration { ty, context });
             ids.push(RuntimeLocalDeclarationId::from_accepted_ordinal(ordinal));
         }
         Ok(PreparedRuntimeLocalDeclarationBatch {

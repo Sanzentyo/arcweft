@@ -779,16 +779,25 @@ impl RuntimePlanBuilder {
             .iter()
             .map(|local| {
                 let ty = resolve_semantic_type(&prepared_types, local.ty())?;
-                if !prepared_types
-                    .get(ty)
-                    .is_some_and(|row| row.scope().is_root())
-                {
+                let context = local.context().map(|context| resolve_semantic_type(&prepared_types, context)).transpose()?;
+                let valid = prepared_types.get(ty).is_some_and(|row| match context {
+                    None => row.scope().is_root(),
+                    Some(context) => prepared_types.get(context).is_some_and(|owner| {
+                        owner.scope().is_root() && matches!(owner.projection(), super::RuntimePlanTypeProjection::Function { contract, .. }
+                            if owner.scope().enter(contract.binder()).is_ok_and(|scope| &scope == row.scope()))
+                    }),
+                });
+                if !valid {
                     return Err(RuntimePlanBuildError::InvalidTypeProjection {
-                        context: "scoped local declaration type",
+                        context: if context.is_some() {
+                            "function-owned local declaration type"
+                        } else {
+                            "scoped local declaration type"
+                        },
                         ty,
                     });
                 }
-                Ok(ty)
+                Ok((ty, context))
             })
             .collect::<Result<Box<[_]>, _>>()?;
         let prepared_locals = self
@@ -850,7 +859,7 @@ impl RuntimePlanBuilder {
             .into_vec()
             .into_iter()
             .zip(declared_local_types)
-            .map(|(local, ty)| RuntimeLocalSeedId::issued(&self.issuer, local, ty))
+            .map(|(local, (ty, _))| RuntimeLocalSeedId::issued(&self.issuer, local, ty))
             .collect::<Vec<_>>()
             .into_boxed_slice();
         Ok(RuntimePlanSemanticAdmission {
