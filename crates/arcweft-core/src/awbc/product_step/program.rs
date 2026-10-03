@@ -36,6 +36,15 @@ impl AwbcProductStepExecutor {
         budget_quantum: u64,
     ) -> Result<Self, AwbcProgramInvocationError> {
         let prepared = (|| {
+            for (position, value) in inputs.iter().enumerate() {
+                value.validate_detached_custody().map_err(|source| {
+                    AwbcProductStepBuildError::ProgramInputCustody {
+                        program: id,
+                        position,
+                        source,
+                    }
+                })?;
+            }
             let binding = program.pure_program_binding(id).ok_or_else(|| {
                 AwbcProductStepBuildError::FiberState {
                     message: format!("admitted program {id} is absent"),
@@ -72,13 +81,21 @@ impl AwbcProductStepExecutor {
 
     /// Moves a completed value to the caller once; the terminal label remains
     /// available to status and snapshots without duplicating the live value.
-    pub fn take_program_result(&mut self) -> Option<(RuntimePureProgramId, RuntimeValue)> {
+    pub fn take_program_result(
+        &mut self,
+    ) -> Result<
+        Option<(RuntimePureProgramId, RuntimeValue)>,
+        crate::value::ownership::RuntimeDetachedValueError,
+    > {
         let AwbcFiberRoot::Program(id) = self.fiber.root else {
-            return None;
+            return Ok(None);
         };
         let Some(FiberTerminalValue::Returned(value)) = &mut self.fiber.terminal else {
-            return None;
+            return Ok(None);
         };
-        value.take().map(|value| (id, value))
+        if let Some(value) = value.as_ref() {
+            value.validate_detached_custody()?;
+        }
+        Ok(value.take().map(|value| (id, value)))
     }
 }

@@ -11,6 +11,7 @@ mod affine_intrinsics;
 mod flow;
 pub(crate) mod function_application;
 mod line_task_reducer;
+pub(crate) mod program_custody;
 mod pure;
 mod step_stats_delta;
 mod stream;

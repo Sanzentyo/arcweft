@@ -69,6 +69,20 @@ frame. Rejection returns the complete owned input packet. Execution and backend
 calls begin only during budgeted stepping. Borrowed adapters require transitively
 unrestricted inputs before copying them into this same owned activation path.
 
+A raw owned input carries a detached value, not a published line ledger.
+`RuntimeValue::validate_detached_custody` traverses the complete value graph and
+rejects line handles before that input packet is consumed. External Need
+identities remain valid. The detached result-taking API returns a typed error
+for a resource-bearing value and retains both the value and its owning executor;
+it cannot export a line handle while leaving its ledger behind.
+
+Published dialogue registry metadata has one movable owner independent of the
+executor's released frame type. A registry may enter that published transfer
+phase only when every activation is published. Active or in-flight state rejects
+the transition with the original owner intact. The transition moves ledger,
+revision, issuance and command-result history together and does not clone a live
+value or create another registry authority.
+
 The fiber terminal owns a completed program result until the caller takes it
 once. Status labels carry no live result owner. The result participates in
 `ProgramResult` ownership reconciliation and the inert save snapshot. Restore

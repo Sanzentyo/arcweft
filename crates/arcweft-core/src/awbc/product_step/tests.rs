@@ -79,6 +79,49 @@ fn commit_test_dialogue_transaction(
 mod context;
 
 #[test]
+fn detached_program_result_rejection_retains_awbc_value_and_saved_owner() {
+    let fixture = crate::tests::program_custody::issued_program_handle();
+    let mut executor = AwbcProductStepExecutor::for_root_arc_with_context_proof(
+        crate::tests::program_custody::awbc_handle_program(fixture.program),
+        crate::awbc::fiber::AwbcFiberRoot::Program(fixture.program),
+        64,
+        GenerationId::new(0),
+        None,
+    )
+    .unwrap();
+    executor.fiber.status = FiberStatus::Returned;
+    executor.fiber.frames.clear();
+    let destination = crate::value::ownership::RuntimeOwnedSlotId::ProgramResult {
+        execution: executor.facade_fiber.execution,
+        fiber: crate::runtime_id::RuntimePersistentFiberId::from_allocated(
+            executor.fiber.instance.get().get(),
+        ),
+    };
+    let (value, custody) = crate::tests::program_custody::publish_program_handle(
+        fixture.ledger,
+        fixture.value,
+        destination,
+    );
+    executor.dialogues = super::dialogue::ProductDialogueStore::from_published(custody);
+    executor.fiber.return_summary = Some(crate::value::runtime_value_label(&value));
+    executor.fiber.terminal = Some(FiberTerminalValue::Returned(Some(value)));
+    assert!(executor.take_program_result().is_err());
+    assert!(executor.take_program_result().is_err());
+    let saved = executor.inert_rollback_image().unwrap().product;
+    let executor = executor
+        .restore_inert_snapshot_owned(saved.clone())
+        .unwrap();
+    let Some(FiberTerminalValue::Returned(Some(value))) = &executor.fiber.terminal else {
+        panic!("rejected export must keep its live result")
+    };
+    assert_eq!(
+        value.affine_line_handles().unwrap()[0].token(),
+        &fixture.token
+    );
+    assert_eq!(executor.inert_rollback_image().unwrap().product, saved);
+}
+
+#[test]
 fn empty_fiber_restore_has_no_executable_cursor_or_return_owner() {
     let executor = AwbcProductStepExecutor::for_root_arc_with_context_proof(
         std::sync::Arc::new(AwbcProgram::default()),

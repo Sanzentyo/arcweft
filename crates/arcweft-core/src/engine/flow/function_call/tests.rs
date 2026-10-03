@@ -9,6 +9,33 @@ use crate::tests::function_application::{
 use crate::value::{RuntimeCallableValue, RuntimeEvalError, RuntimeValue};
 
 #[test]
+fn detached_program_result_rejection_retains_native_value() {
+    let fixture = crate::tests::program_custody::issued_program_handle();
+    let mut engine = Engine::new_with_shared_plan(fixture.plan, crate::task::GenerationId::new(0));
+    let destination = crate::value::ownership::RuntimeOwnedSlotId::ProgramResult {
+        execution: engine.fiber.execution,
+        fiber: engine.fiber.persistent_id,
+    };
+    let (value, custody) = crate::tests::program_custody::publish_program_handle(
+        fixture.ledger,
+        fixture.value,
+        destination,
+    );
+    engine.dialogue_activations =
+        crate::engine::dialogue::DialogueActivationStore::from_published(custody);
+    engine.program_result = Some((fixture.program, value));
+    let before = engine.inert_rollback_image().unwrap();
+    assert!(engine.take_program_result().is_err());
+    assert!(engine.take_program_result().is_err());
+    let (_, value) = engine.program_result.as_ref().unwrap();
+    assert_eq!(
+        value.affine_line_handles().unwrap()[0].token(),
+        &fixture.token
+    );
+    assert_eq!(engine.inert_rollback_image().unwrap(), before);
+}
+
+#[test]
 fn program_return_preserves_typed_result_and_rollback_custody() {
     use crate::engine::FunctionReturnContinuation;
     use crate::plan::{
@@ -54,7 +81,7 @@ fn program_return_preserves_typed_result_and_rollback_custody() {
         }
     ));
     assert_eq!(retained, [RuntimeValue::Bool(false)]);
-    assert_eq!(engine.take_program_result(), None);
+    assert_eq!(engine.take_program_result().unwrap(), None);
     engine.step_with_pure_backend(
         crate::step::RuntimeStepInput::default(),
         crate::step::RuntimeStepOptions::default(),
@@ -62,16 +89,16 @@ fn program_return_preserves_typed_result_and_rollback_custody() {
     );
     let saved = engine.inert_rollback_image().unwrap();
     assert_eq!(
-        engine.take_program_result(),
+        engine.take_program_result().unwrap(),
         Some((program, RuntimeValue::Bool(true)))
     );
-    assert_eq!(engine.take_program_result(), None);
+    assert_eq!(engine.take_program_result().unwrap(), None);
     let mut restored = Engine::from_rollback_image(saved).unwrap();
     assert_eq!(
-        restored.take_program_result(),
+        restored.take_program_result().unwrap(),
         Some((program, RuntimeValue::Bool(true)))
     );
-    assert_eq!(restored.take_program_result(), None);
+    assert_eq!(restored.take_program_result().unwrap(), None);
     let owner = crate::task::RuntimeProgramOwner::Plan(plan);
     assert!(
         FunctionReturnContinuation::from_rollback_image(
@@ -150,22 +177,22 @@ fn owned_program_moves_affine_input_and_returns_it_once() {
     assert!(output.output.diagnostics.is_empty());
     let saved = engine.inert_rollback_image().unwrap();
     assert_eq!(
-        engine.take_program_result(),
+        engine.take_program_result().unwrap(),
         Some((
             program,
             RuntimeValue::Need(crate::task::NeedId("need.owned-program".to_owned()))
         ))
     );
-    assert_eq!(engine.take_program_result(), None);
+    assert_eq!(engine.take_program_result().unwrap(), None);
     let mut restored = Engine::from_rollback_image(saved).unwrap();
     assert_eq!(
-        restored.take_program_result(),
+        restored.take_program_result().unwrap(),
         Some((
             program,
             RuntimeValue::Need(crate::task::NeedId("need.owned-program".to_owned()))
         ))
     );
-    assert_eq!(restored.take_program_result(), None);
+    assert_eq!(restored.take_program_result().unwrap(), None);
 }
 
 #[test]

@@ -598,6 +598,14 @@ pub(crate) struct DialogueActivationStore {
 }
 
 impl DialogueActivationStore {
+    pub(crate) fn from_published(
+        custody: crate::line_task::RuntimePublishedDialogueRegistry,
+    ) -> Self {
+        Self {
+            registry: custody.into_registry(),
+        }
+    }
+
     pub(crate) fn inspect_commit_transaction(
         &self,
         transaction: &DialogueActivationTransaction,

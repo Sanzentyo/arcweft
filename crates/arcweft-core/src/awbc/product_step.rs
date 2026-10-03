@@ -164,12 +164,15 @@ pub fn evaluate_pure_program_with_backend(
         },
         backend,
     );
-    let (_, result) = executor.take_program_result().ok_or_else(|| {
-        crate::awbc::vm::VmError::Runtime(format!(
-            "program {pure_program} did not return: {:?}; {:?}",
-            output.stop_reason, output.output.diagnostics,
-        ))
-    })?;
+    let (_, result) = executor
+        .take_program_result()
+        .map_err(|error| crate::awbc::vm::VmError::Runtime(error.to_string()))?
+        .ok_or_else(|| {
+            crate::awbc::vm::VmError::Runtime(format!(
+                "program {pure_program} did not return: {:?}; {:?}",
+                output.stop_reason, output.output.diagnostics,
+            ))
+        })?;
     let result_ty = program
         .runtime_types
         .iter()
@@ -193,6 +196,13 @@ pub fn evaluate_pure_program_with_backend(
 /// Product AWBC executor construction failures.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum AwbcProductStepBuildError {
+    #[error("program {program} input {position} cannot transfer detached custody: {source}")]
+    ProgramInputCustody {
+        program: arcweft_id::runtime_program::RuntimePureProgramId,
+        position: usize,
+        #[source]
+        source: crate::value::ownership::RuntimeDetachedValueError,
+    },
     #[error("product AWBC program failed verification: {message}")]
     InvalidProgram { message: String },
     #[error("failed to initialize product AWBC fiber state: {message}")]

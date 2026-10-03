@@ -26,6 +26,14 @@ pub(super) type ProductDialogueTransaction =
     RuntimeDialogueActivationTransaction<ActiveDialogue, AwbcTypeId>;
 
 impl ProductDialogueStore {
+    pub(super) fn from_published(
+        custody: crate::line_task::RuntimePublishedDialogueRegistry,
+    ) -> Self {
+        Self {
+            registry: custody.into_registry(),
+        }
+    }
+
     pub(super) fn begin(&mut self, frame: ActiveDialogue) -> Result<(), LineRuntimeError> {
         if self.registry.has_active_or_inflight() {
             return Err(LineRuntimeError::DuplicateActivationLedger);

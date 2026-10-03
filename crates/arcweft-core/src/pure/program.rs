@@ -94,7 +94,7 @@ pub fn evaluate_pure_program_with_backend(
         },
         backend,
     );
-    let (_, result) = engine.take_program_result().ok_or_else(|| {
+    let (_, result) = engine.take_program_result()?.ok_or_else(|| {
         error(&format!(
             "program did not return: {:?}; {:?}",
             output.stop_reason, output.output.diagnostics

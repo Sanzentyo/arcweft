@@ -1790,14 +1790,21 @@ impl Engine {
         self.format_context = context;
     }
 
-    /// Transfers a completed program's value to its caller exactly once.
+    /// Transfers a detached completed value once. A resource-bearing value
+    /// remains in this executor until its ledger can be transferred with it.
     pub fn take_program_result(
         &mut self,
-    ) -> Option<(
-        arcweft_id::runtime_program::RuntimePureProgramId,
-        RuntimeValue,
-    )> {
-        self.program_result.take()
+    ) -> Result<
+        Option<(
+            arcweft_id::runtime_program::RuntimePureProgramId,
+            RuntimeValue,
+        )>,
+        crate::value::ownership::RuntimeDetachedValueError,
+    > {
+        if let Some((_, value)) = &self.program_result {
+            value.validate_detached_custody()?;
+        }
+        Ok(self.program_result.take())
     }
 
     #[must_use]

@@ -2229,6 +2229,15 @@ impl From<RuntimeLocalBinding> for RuntimeLocalSlot {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimeEvalError {
+    #[error("program {program} input {position} cannot transfer detached custody: {source}")]
+    ProgramInputCustody {
+        program: arcweft_id::runtime_program::RuntimePureProgramId,
+        position: usize,
+        #[source]
+        source: ownership::RuntimeDetachedValueError,
+    },
+    #[error(transparent)]
+    DetachedValueCustody(#[from] ownership::RuntimeDetachedValueError),
     #[error(transparent)]
     RecoverableExpression(#[from] RuntimeExpressionFailure),
     #[error("runtime fiber/execution identity space is exhausted")]

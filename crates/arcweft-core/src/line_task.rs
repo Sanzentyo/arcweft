@@ -26,7 +26,7 @@ pub(crate) use activation::{
     RuntimeDialogueActivationRegistry, RuntimeDialogueActivationTransaction,
     RuntimeDialogueCommitProof, RuntimeDialoguePublishedCommitProof,
     RuntimeDialogueRegistryCommitReceipt, RuntimeDialogueRegistrySaveSnapshot,
-    RuntimeDialogueRegistrySnapshotError,
+    RuntimeDialogueRegistrySnapshotError, RuntimePublishedDialogueRegistry,
 };
 pub(crate) use defer::AwbcRuntimeDeferredRegistrationSnapshot;
 

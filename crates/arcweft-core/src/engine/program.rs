@@ -59,6 +59,15 @@ impl Engine {
         inputs: Vec<RuntimeValue>,
     ) -> Result<Self, RuntimeProgramInvocationError> {
         let prepared = (|| {
+            for (position, value) in inputs.iter().enumerate() {
+                value.validate_detached_custody().map_err(|source| {
+                    RuntimeEvalError::ProgramInputCustody {
+                        program,
+                        position,
+                        source,
+                    }
+                })?;
+            }
             let error = |reason: &str| RuntimeEvalError::UnsupportedPure {
                 name: program.to_string(),
                 reason: reason.to_owned(),

@@ -644,18 +644,18 @@ fn owned_program_root_retains_affine_inputs_and_result_across_save_restore() {
     forged.fiber.return_summary = Some("true".to_owned());
     let (mut executor, _) = executor.restore_inert_snapshot_owned(forged).unwrap_err();
     assert_eq!(
-        executor.take_program_result(),
+        executor.take_program_result().unwrap(),
         Some((id, RuntimeValue::Need(NeedId("need.retained".to_owned()))))
     );
-    assert_eq!(executor.take_program_result(), None);
+    assert_eq!(executor.take_program_result().unwrap(), None);
     let bytes = serde_json::to_vec(&saved).unwrap();
     let saved: AwbcProductExecutorSaveSnapshot = serde_json::from_slice(&bytes).unwrap();
     let mut executor = executor.restore_inert_snapshot_owned(saved).unwrap();
     assert_eq!(
-        executor.take_program_result(),
+        executor.take_program_result().unwrap(),
         Some((id, RuntimeValue::Need(NeedId("need.retained".to_owned()))))
     );
-    assert_eq!(executor.take_program_result(), None);
+    assert_eq!(executor.take_program_result().unwrap(), None);
 }
 
 #[test]
@@ -702,12 +702,12 @@ fn owned_unit_program_retains_its_typed_result_across_save_restore() {
     let saved = executor.inert_rollback_image().unwrap().product;
     let mut executor = executor.restore_inert_snapshot_owned(saved).unwrap();
     assert_eq!(
-        executor.take_program_result(),
+        executor.take_program_result().unwrap(),
         Some((id, RuntimeValue::Unit))
     );
     let saved = executor.inert_rollback_image().unwrap().product;
     let mut executor = executor.restore_inert_snapshot_owned(saved).unwrap();
-    assert_eq!(executor.take_program_result(), None);
+    assert_eq!(executor.take_program_result().unwrap(), None);
 }
 
 #[test]

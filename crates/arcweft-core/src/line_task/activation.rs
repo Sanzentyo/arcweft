@@ -24,6 +24,56 @@ pub(crate) struct RuntimeDialogueActivationRegistry<F, T> {
     entries: BTreeMap<DialogueActivationId, RuntimeDialogueRegistryEntry<F, T>>,
 }
 
+/// Sole owner of published activation metadata during an executor transfer.
+/// Active frames and in-flight transactions cannot enter this phase.
+#[derive(Debug, PartialEq)]
+pub(crate) struct RuntimePublishedDialogueRegistry {
+    entries: BTreeMap<DialogueActivationId, (u64, RuntimePublishedDialogueHandles)>,
+}
+
+impl RuntimePublishedDialogueRegistry {
+    pub(crate) fn into_registry<F, T>(self) -> RuntimeDialogueActivationRegistry<F, T> {
+        RuntimeDialogueActivationRegistry {
+            entries: self
+                .entries
+                .into_iter()
+                .map(|(activation, (revision, handles))| {
+                    (
+                        activation,
+                        RuntimeDialogueRegistryEntry::PublishedHandles { revision, handles },
+                    )
+                })
+                .collect(),
+        }
+    }
+}
+
+impl<F, T> RuntimeDialogueActivationRegistry<F, T> {
+    pub(crate) fn into_published(
+        self,
+    ) -> Result<RuntimePublishedDialogueRegistry, (Self, LineRuntimeError)> {
+        if self
+            .entries
+            .values()
+            .any(|entry| !matches!(entry, RuntimeDialogueRegistryEntry::PublishedHandles { .. }))
+        {
+            return Err((self, LineRuntimeError::ParentHandleBeforePublication));
+        }
+        let entries = self
+            .entries
+            .into_iter()
+            .map(|(activation, entry)| {
+                let RuntimeDialogueRegistryEntry::PublishedHandles { revision, handles } = entry
+                else {
+                    unreachable!("the complete borrowed phase check precedes the registry move")
+                };
+                (activation, (revision, handles))
+            })
+            .collect();
+        Ok(RuntimePublishedDialogueRegistry { entries })
+    }
+}
+
 impl<F, T> Default for RuntimeDialogueActivationRegistry<F, T> {
     fn default() -> Self {
         Self {

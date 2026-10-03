@@ -57,7 +57,7 @@ impl RuntimeAffineLineHandle {
 }
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub(crate) enum RuntimeAffineLineHandleError {
+pub enum RuntimeAffineLineHandleError {
     #[error(transparent)]
     Path(#[from] RuntimeValuePathError),
     #[error(transparent)]
@@ -66,6 +66,18 @@ pub(crate) enum RuntimeAffineLineHandleError {
     RecordField(#[from] super::RuntimeRecordFieldIdError),
     #[error("runtime value structural ordinal exceeds the canonical u32 path coordinate")]
     StructuralOrdinalOverflow,
+}
+
+/// A bare value cannot transfer the ledger obligations of a live line handle.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum RuntimeDetachedValueError {
+    #[error(transparent)]
+    HandleGraph(#[from] RuntimeAffineLineHandleError),
+    #[error("line handle {token:?} at {path:?} requires its owning ledger")]
+    LineHandleCustodyRequired {
+        token: crate::runtime_id::RuntimeLineHandleToken,
+        path: RuntimeValuePath,
+    },
 }
 
 impl RuntimeValueOwnership {
@@ -86,6 +98,19 @@ impl RuntimeValueOwnership {
 }
 
 impl RuntimeValue {
+    /// Checks a transfer that carries a value without an execution-resource
+    /// owner. External Need identities remain valid; issued line handles must
+    /// travel with their ledger instead of becoming detached values.
+    pub fn validate_detached_custody(&self) -> Result<(), RuntimeDetachedValueError> {
+        if let Some(handle) = self.affine_line_handles()?.into_iter().next() {
+            return Err(RuntimeDetachedValueError::LineHandleCustodyRequired {
+                token: handle.token,
+                path: handle.path,
+            });
+        }
+        Ok(())
+    }
+
     /// Computes ownership from the complete executable value graph.
     ///
     /// The exhaustive recursive traversal is the sole authority and makes a
