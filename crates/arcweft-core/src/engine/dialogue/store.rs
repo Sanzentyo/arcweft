@@ -598,6 +598,13 @@ pub(crate) struct DialogueActivationStore {
 }
 
 impl DialogueActivationStore {
+    pub(crate) fn into_published(
+        self,
+    ) -> Result<crate::line_task::RuntimePublishedDialogueRegistry, (Self, LineRuntimeError)> {
+        self.registry
+            .into_published()
+            .map_err(|(registry, reason)| (Self { registry }, reason))
+    }
     pub(crate) fn from_published(
         custody: crate::line_task::RuntimePublishedDialogueRegistry,
     ) -> Self {
@@ -1151,6 +1158,17 @@ impl DialogueActivationStore {
             .reconcile_parent_fiber(execution, before, after, drops)
     }
 
+    pub(in crate::engine) fn inspect_parent_fiber_reconciliation(
+        &self,
+        execution: crate::runtime_id::ExecutionInstanceId,
+        before: &BTreeMap<crate::runtime_id::RuntimeLineHandleToken, RuntimeOwnedSlotId>,
+        after: &BTreeMap<crate::runtime_id::RuntimeLineHandleToken, RuntimeOwnedSlotId>,
+        drops: &crate::line_task::RuntimeHandleDropAuthorization,
+    ) -> Result<crate::line_task::PreparedRuntimeParentFiberReconciliation, LineRuntimeError> {
+        self.registry
+            .inspect_parent_fiber_reconciliation(execution, before, after, drops)
+    }
+
     pub(crate) fn commit_transaction(
         &mut self,
         transaction: DialogueActivationTransaction,
@@ -1643,6 +1661,19 @@ mod tests {
                 .expect("no-op reconciliation")
                 .into_commands()
                 .is_empty()
+        );
+        assert_eq!(published_registry_snapshot(&store), unchanged);
+
+        let forged = BTreeMap::from([(
+            token.clone(),
+            RuntimeOwnedSlotId::EnvironmentLocal {
+                execution,
+                local: RuntimeLocalSlotId::from_allocated(NonZeroU64::new(99).expect("nonzero")),
+            },
+        )]);
+        assert_eq!(
+            store.reconcile_parent_fiber(execution, &forged, &forged, &Default::default()),
+            Err(LineRuntimeError::WrongOwner)
         );
         assert_eq!(published_registry_snapshot(&store), unchanged);
 

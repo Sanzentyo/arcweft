@@ -76,6 +76,33 @@ identities remain valid. The detached result-taking API returns a typed error
 for a resource-bearing value and retains both the value and its owning executor;
 it cannot export a line handle while leaving its ledger behind.
 
+The retained executor's producer registry also owns the context of its admitted
+Needs. Detached result export rejects any such Need, including one nested in a
+value or closure, with its original path. External Need identities that have no
+producer in this executor remain detached inputs/results. This classification
+shares the value resource-graph traversal with line-handle custody checking.
+
+`continue_program` consumes a completed executor and an ordered
+`RuntimeProgramInput` packet into another admitted program on the same executable
+lease. `PreviousResult` consumes the complete old result exactly once;
+`Detached(value)` supplies other positional inputs after custody preflight.
+The complete ABI and binding patterns are checked by borrowing that packet.
+The executor retains its published ledgers, Need producers, publication
+frontiers, generation, observations, streams and identity counters. Completed
+AWBC frames may retain Copy values; affine values or unfinished cleanup in those
+frames prevent continuation. A fresh AWBC root frame advances the retained
+frame-instance frontier instead of reusing an earlier frame identity.
+
+Registry ownership is authenticated even when before/after slots are equal;
+an authenticated no-op does not advance a revision. Argument placement and
+ledger reconciliation form one transaction. Rejection after placement drops
+the candidate before restoring the original executor and external inputs from
+inert rollback images. No backend or host execution occurs during activation.
+Need registry restoration has one typed policy: `Resume` admits re-ensure of
+unfinished restartable work, while `Rollback` preserves its accepted submission
+frontier. Product rollback and native rollback use the latter; ordinary Product
+save restore uses the former.
+
 Published dialogue registry metadata has one movable owner independent of the
 executor's released frame type. A registry may enter that published transfer
 phase only when every activation is published. Active or in-flight state rejects

@@ -32,6 +32,14 @@ pub(crate) struct RuntimePublishedDialogueRegistry {
 }
 
 impl RuntimePublishedDialogueRegistry {
+    #[cfg(test)]
+    pub(crate) fn with_revision_for_test(mut self, revision: u64) -> Self {
+        for (current, _) in self.entries.values_mut() {
+            *current = revision;
+        }
+        self
+    }
+
     pub(crate) fn into_registry<F, T>(self) -> RuntimeDialogueActivationRegistry<F, T> {
         RuntimeDialogueActivationRegistry {
             entries: self
@@ -903,17 +911,11 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         let mut commands = Vec::new();
         for (activation, source) in grouped_before {
             let destination = grouped_after.remove(&activation).unwrap_or_default();
-            if source == destination {
-                continue;
-            }
             let Some(RuntimeDialogueRegistryEntry::PublishedHandles { revision, handles }) =
                 self.entries.get(&activation)
             else {
                 return Err(LineRuntimeError::ParentHandleBeforePublication);
             };
-            let next_revision = revision
-                .checked_add(1)
-                .ok_or(LineRuntimeError::ActivationTransactionRevisionOverflow)?;
             let mut candidate = handles.clone();
             let receipt = candidate.reconcile_parent_owned(
                 &activation,
@@ -922,6 +924,12 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
                 &destination,
                 drops,
             )?;
+            if source == destination {
+                continue;
+            }
+            let next_revision = revision
+                .checked_add(1)
+                .ok_or(LineRuntimeError::ActivationTransactionRevisionOverflow)?;
             updates.push((activation, *revision, next_revision, candidate));
             commands.extend(receipt.into_commands());
         }

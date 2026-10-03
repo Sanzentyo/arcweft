@@ -1802,7 +1802,9 @@ impl Engine {
         crate::value::ownership::RuntimeDetachedValueError,
     > {
         if let Some((_, value)) = &self.program_result {
-            value.validate_detached_custody()?;
+            value.validate_detached_custody_for(Some(&|need| {
+                self.need_producers.launch_for_need(need).is_some()
+            }))?;
         }
         Ok(self.program_result.take())
     }

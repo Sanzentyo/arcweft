@@ -8,6 +8,258 @@ use crate::tests::function_application::{
 };
 use crate::value::{RuntimeCallableValue, RuntimeEvalError, RuntimeValue};
 
+fn completed_handle_program() -> (
+    Engine,
+    arcweft_id::runtime_program::RuntimePureProgramId,
+    crate::runtime_id::RuntimeLineHandleToken,
+) {
+    completed_handle_program_with_prefix(false)
+}
+
+fn completed_handle_program_with_prefix(
+    prefix: bool,
+) -> (
+    Engine,
+    arcweft_id::runtime_program::RuntimePureProgramId,
+    crate::runtime_id::RuntimeLineHandleToken,
+) {
+    let fixture = crate::tests::program_custody::issued_program_handle_with_prefix(prefix);
+    let mut engine = Engine::new_with_shared_plan(fixture.plan, crate::task::GenerationId::new(37));
+    let destination = crate::value::ownership::RuntimeOwnedSlotId::ProgramResult {
+        execution: engine.fiber.execution,
+        fiber: engine.fiber.persistent_id,
+    };
+    let (value, custody) = crate::tests::program_custody::publish_program_handle(
+        fixture.ledger,
+        fixture.value,
+        destination,
+    );
+    engine.dialogue_activations =
+        crate::engine::dialogue::DialogueActivationStore::from_published(custody);
+    engine.program_result = Some((fixture.program, value));
+    engine.fiber.status = crate::engine::FlowFiberStatus::Done(crate::engine::FlowExit::Done);
+    engine.main_started = true;
+    engine.need_producers = crate::tests::program_custody::pending_program_need(
+        engine.generation,
+        engine.fiber.persistent_id,
+    )
+    .0;
+    (engine, fixture.program, fixture.token)
+}
+
+#[test]
+fn program_continuation_accepts_detached_prefix_and_retains_native_need_result_context() {
+    use crate::program_invocation::RuntimeProgramInput;
+    let (engine, id, token) = completed_handle_program_with_prefix(true);
+    let mut engine = engine
+        .continue_program(
+            id,
+            vec![
+                RuntimeProgramInput::Detached(RuntimeValue::Bool(true)),
+                RuntimeProgramInput::PreviousResult,
+            ],
+        )
+        .unwrap();
+    let output = engine.step(Default::default(), Default::default());
+    assert!(output.output.diagnostics.is_empty());
+    assert_eq!(
+        engine
+            .program_result
+            .as_ref()
+            .unwrap()
+            .1
+            .affine_line_handles()
+            .unwrap()[0]
+            .token(),
+        &token
+    );
+
+    let plan = crate::tests::program_custody::native_need_program(id);
+    let (registry, need) = crate::tests::program_custody::pending_program_need(
+        crate::task::GenerationId::new(0),
+        crate::runtime_id::RuntimePersistentFiberId::from_allocated(1),
+    );
+    let mut engine =
+        Engine::for_program_invocation(plan, id, vec![RuntimeValue::Need(need.clone())]).unwrap();
+    engine.need_producers = registry;
+    assert!(
+        engine
+            .step(Default::default(), Default::default())
+            .output
+            .diagnostics
+            .is_empty()
+    );
+    let before = engine.inert_rollback_image().unwrap();
+    assert!(matches!(
+        engine.take_program_result(),
+        Err(crate::value::ownership::RuntimeDetachedValueError::NeedProducerCustodyRequired { .. })
+    ));
+    assert_eq!(engine.inert_rollback_image().unwrap(), before);
+    let mut engine = engine
+        .continue_program(id, vec![RuntimeProgramInput::PreviousResult])
+        .unwrap();
+    assert!(
+        engine
+            .step(Default::default(), Default::default())
+            .output
+            .diagnostics
+            .is_empty()
+    );
+    assert_eq!(
+        &engine.program_result.as_ref().unwrap().1,
+        &RuntimeValue::Need(need.clone())
+    );
+    assert!(engine.need_producers.launch_for_need(&need).is_some());
+}
+
+#[test]
+fn program_continuation_moves_live_handle_with_need_context_and_returns_it_again() {
+    use crate::program_invocation::RuntimeProgramInput;
+    let (engine, id, token) = completed_handle_program();
+    let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&engine.plan));
+    let needs = engine.need_producers.inert_rollback_image(&owner).unwrap();
+    let execution = engine.fiber.execution;
+    let mut engine = engine
+        .continue_program(id, vec![RuntimeProgramInput::PreviousResult])
+        .unwrap();
+    assert_eq!(engine.fiber.execution, execution);
+    assert_eq!(engine.generation, crate::task::GenerationId::new(37));
+    assert_eq!(
+        engine.need_producers.inert_rollback_image(&owner).unwrap(),
+        needs
+    );
+    assert!(engine.program_result.is_none());
+    let output = engine.step_with_pure_backend(
+        Default::default(),
+        Default::default(),
+        &mut crate::pure::VmRuntimePureCallBackend::default(),
+    );
+    assert!(
+        output.output.diagnostics.is_empty(),
+        "{:?}",
+        output.output.diagnostics
+    );
+    assert!(output.output.requests.line_commands.is_empty());
+    assert_eq!(
+        engine
+            .program_result
+            .as_ref()
+            .unwrap()
+            .1
+            .affine_line_handles()
+            .unwrap()[0]
+            .token(),
+        &token
+    );
+    assert!(engine.take_program_result().is_err());
+    let image = engine.inert_rollback_image().unwrap();
+    drop(engine);
+    let engine = Engine::from_rollback_image(image).unwrap();
+    assert_eq!(
+        engine.need_producers.inert_rollback_image(&owner).unwrap(),
+        needs
+    );
+    let mut engine = engine
+        .continue_program(id, vec![RuntimeProgramInput::PreviousResult])
+        .unwrap();
+    let output = engine.step_with_pure_backend(
+        Default::default(),
+        Default::default(),
+        &mut crate::pure::VmRuntimePureCallBackend::default(),
+    );
+    assert!(output.output.diagnostics.is_empty());
+    assert_eq!(
+        engine
+            .program_result
+            .as_ref()
+            .unwrap()
+            .1
+            .affine_line_handles()
+            .unwrap()[0]
+            .token(),
+        &token
+    );
+}
+
+#[test]
+fn program_continuation_rejects_duplicate_or_invalid_inputs_with_original_native_owner() {
+    use crate::program_invocation::{RuntimeProgramContinuationFailure, RuntimeProgramInput};
+    let (engine, id, _) = completed_handle_program();
+    let before = engine.inert_rollback_image().unwrap();
+    let (reason, engine, inputs) = engine
+        .continue_program(
+            id,
+            vec![
+                RuntimeProgramInput::PreviousResult,
+                RuntimeProgramInput::PreviousResult,
+            ],
+        )
+        .unwrap_err()
+        .into_parts();
+    assert!(matches!(
+        reason,
+        RuntimeProgramContinuationFailure::ResultUseCount { count: 2 }
+    ));
+    assert_eq!(inputs.len(), 2);
+    assert_eq!(engine.inert_rollback_image().unwrap(), before);
+    let (reason, engine, inputs) = engine
+        .continue_program(
+            id,
+            vec![
+                RuntimeProgramInput::Detached(RuntimeValue::Bool(true)),
+                RuntimeProgramInput::PreviousResult,
+            ],
+        )
+        .unwrap_err()
+        .into_parts();
+    assert!(matches!(
+        reason,
+        RuntimeProgramContinuationFailure::Native(RuntimeEvalError::TooManyPureArgs { .. })
+    ));
+    assert_eq!(
+        inputs[0],
+        RuntimeProgramInput::Detached(RuntimeValue::Bool(true))
+    );
+    assert_eq!(engine.inert_rollback_image().unwrap(), before);
+}
+
+#[test]
+fn program_continuation_rolls_back_native_context_and_inputs_after_custody_revision_failure() {
+    use crate::program_invocation::{RuntimeProgramContinuationFailure, RuntimeProgramInput};
+    let (mut engine, id, _) = completed_handle_program_with_prefix(true);
+    let custody = std::mem::take(&mut engine.dialogue_activations)
+        .into_published()
+        .unwrap();
+    let custody = crate::tests::program_custody::published_at_final_revision(custody);
+    engine.dialogue_activations =
+        crate::engine::dialogue::DialogueActivationStore::from_published(custody);
+    let before = engine.inert_rollback_image().unwrap();
+    let (reason, engine, inputs) = engine
+        .continue_program(
+            id,
+            vec![
+                RuntimeProgramInput::Detached(RuntimeValue::Bool(false)),
+                RuntimeProgramInput::PreviousResult,
+            ],
+        )
+        .unwrap_err()
+        .into_parts();
+    assert!(matches!(
+        reason,
+        RuntimeProgramContinuationFailure::Custody(
+            crate::line_task::LineRuntimeError::ActivationTransactionRevisionOverflow
+        )
+    ));
+    assert_eq!(
+        inputs,
+        vec![
+            RuntimeProgramInput::Detached(RuntimeValue::Bool(false)),
+            RuntimeProgramInput::PreviousResult
+        ]
+    );
+    assert_eq!(engine.inert_rollback_image().unwrap(), before);
+}
+
 #[test]
 fn detached_program_result_rejection_retains_native_value() {
     let fixture = crate::tests::program_custody::issued_program_handle();

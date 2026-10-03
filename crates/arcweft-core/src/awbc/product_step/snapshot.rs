@@ -2271,7 +2271,10 @@ impl AwbcProductStepExecutor {
             .product
             .into_live_for_program(&owner)
             .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
-        self.restore_snapshot(product)?;
+        self.restore_snapshot_with_policy(
+            product,
+            crate::task::NeedProducerRestorePolicy::Rollback,
+        )?;
         self.root = root;
         Ok(())
     }
@@ -2469,6 +2472,14 @@ impl AwbcProductStepExecutor {
         &mut self,
         snapshot: AwbcProductExecutorSnapshot,
     ) -> Result<(), AwbcProductStepBuildError> {
+        self.restore_snapshot_with_policy(snapshot, crate::task::NeedProducerRestorePolicy::Resume)
+    }
+
+    fn restore_snapshot_with_policy(
+        &mut self,
+        snapshot: AwbcProductExecutorSnapshot,
+        policy: crate::task::NeedProducerRestorePolicy,
+    ) -> Result<(), AwbcProductStepBuildError> {
         self.validate_snapshot(&snapshot)?;
         let deferred_children = expected_deferred_children(&snapshot)?;
         let program_owner =
@@ -2516,7 +2527,7 @@ impl AwbcProductStepExecutor {
         self.need_publications = snapshot.need_publications;
         self.need_producers = NeedProducerRegistry::default();
         self.need_producers
-            .restore_registry(snapshot.need_producers)
+            .restore_registry_with_policy(snapshot.need_producers, policy)
             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                 message: format!("invalid Need producer registry snapshot: {error}"),
             })?;

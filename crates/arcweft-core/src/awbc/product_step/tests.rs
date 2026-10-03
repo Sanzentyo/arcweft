@@ -78,6 +78,297 @@ fn commit_test_dialogue_transaction(
 #[path = "tests/context.rs"]
 mod context;
 
+fn completed_handle_program() -> (
+    AwbcProductStepExecutor,
+    arcweft_id::runtime_program::RuntimePureProgramId,
+    crate::runtime_id::RuntimeLineHandleToken,
+) {
+    completed_handle_program_with_prefix(false)
+}
+
+fn completed_handle_program_with_prefix(
+    prefix: bool,
+) -> (
+    AwbcProductStepExecutor,
+    arcweft_id::runtime_program::RuntimePureProgramId,
+    crate::runtime_id::RuntimeLineHandleToken,
+) {
+    let fixture = crate::tests::program_custody::issued_program_handle_with_prefix(prefix);
+    let program = if prefix {
+        crate::tests::program_custody::awbc_prefixed_handle_program(fixture.program)
+    } else {
+        crate::tests::program_custody::awbc_handle_program(fixture.program)
+    };
+    let mut executor = AwbcProductStepExecutor::for_root_arc_with_context_proof(
+        program,
+        crate::awbc::fiber::AwbcFiberRoot::Program(fixture.program),
+        64,
+        GenerationId::new(37),
+        None,
+    )
+    .unwrap();
+    executor.fiber.status = FiberStatus::Returned;
+    executor.fiber.frames.clear();
+    let fiber = crate::runtime_id::RuntimePersistentFiberId::from_allocated(
+        executor.fiber.instance.get().get(),
+    );
+    let destination = crate::value::ownership::RuntimeOwnedSlotId::ProgramResult {
+        execution: executor.facade_fiber.execution,
+        fiber,
+    };
+    let (value, custody) = crate::tests::program_custody::publish_program_handle(
+        fixture.ledger,
+        fixture.value,
+        destination,
+    );
+    executor.dialogues = super::dialogue::ProductDialogueStore::from_published(custody);
+    executor.fiber.return_summary = Some(crate::value::runtime_value_label(&value));
+    executor.fiber.terminal = Some(FiberTerminalValue::Returned(Some(value)));
+    executor.need_producers =
+        crate::tests::program_custody::pending_program_need(executor.runtime_generation, fiber).0;
+    (executor, fixture.program, fixture.token)
+}
+
+#[test]
+fn program_continuation_accepts_detached_prefix_and_retains_awbc_need_result_context() {
+    use crate::program_invocation::RuntimeProgramInput;
+    let (executor, id, _) = completed_handle_program_with_prefix(true);
+    let mut executor = executor
+        .continue_program(
+            id,
+            vec![
+                RuntimeProgramInput::Detached(RuntimeValue::Bool(true)),
+                RuntimeProgramInput::PreviousResult,
+            ],
+        )
+        .unwrap();
+    assert!(
+        executor
+            .step_with_pure_backend(
+                Default::default(),
+                Default::default(),
+                &mut crate::pure::VmRuntimePureCallBackend::default()
+            )
+            .output
+            .diagnostics
+            .is_empty()
+    );
+    assert!(executor.take_program_result().is_err());
+
+    let program = crate::tests::program_custody::awbc_need_program(id);
+    let (registry, need) = crate::tests::program_custody::pending_program_need(
+        GenerationId::new(0),
+        crate::runtime_id::RuntimePersistentFiberId::from_allocated(1),
+    );
+    let mut executor = AwbcProductStepExecutor::for_program_invocation(
+        program,
+        id,
+        vec![RuntimeValue::Need(need.clone())],
+        GenerationId::new(0),
+        64,
+    )
+    .unwrap();
+    executor.need_producers = registry;
+    assert!(
+        executor
+            .step_with_pure_backend(
+                Default::default(),
+                Default::default(),
+                &mut crate::pure::VmRuntimePureCallBackend::default()
+            )
+            .output
+            .diagnostics
+            .is_empty()
+    );
+    let before = executor.inert_rollback_image().unwrap().product;
+    assert!(matches!(
+        executor.take_program_result(),
+        Err(crate::value::ownership::RuntimeDetachedValueError::NeedProducerCustodyRequired { .. })
+    ));
+    assert_eq!(executor.inert_rollback_image().unwrap().product, before);
+    let mut executor = executor
+        .continue_program(id, vec![RuntimeProgramInput::PreviousResult])
+        .unwrap();
+    assert!(
+        executor
+            .step_with_pure_backend(
+                Default::default(),
+                Default::default(),
+                &mut crate::pure::VmRuntimePureCallBackend::default()
+            )
+            .output
+            .diagnostics
+            .is_empty()
+    );
+    let Some(FiberTerminalValue::Returned(Some(value))) = &executor.fiber.terminal else {
+        panic!("the Need must return")
+    };
+    assert_eq!(value, &RuntimeValue::Need(need.clone()));
+    assert!(executor.need_producers.launch_for_need(&need).is_some());
+}
+
+#[test]
+fn program_continuation_moves_live_handle_with_need_context_and_fresh_awbc_frames() {
+    use crate::program_invocation::RuntimeProgramInput;
+    let (executor, id, token) = completed_handle_program();
+    let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&executor.program));
+    let needs = executor
+        .need_producers
+        .inert_rollback_image(&owner)
+        .unwrap();
+    let execution = executor.facade_fiber.execution;
+    let first_frame_frontier = executor.fiber.next_frame_instance;
+    let mut executor = executor
+        .continue_program(id, vec![RuntimeProgramInput::PreviousResult])
+        .unwrap();
+    assert_eq!(executor.facade_fiber.execution, execution);
+    assert_eq!(executor.runtime_generation, GenerationId::new(37));
+    assert_ne!(executor.fiber.next_frame_instance, first_frame_frontier);
+    let first_frame = executor.fiber.frames[0].instance;
+    assert_eq!(
+        executor
+            .need_producers
+            .inert_rollback_image(&owner)
+            .unwrap(),
+        needs
+    );
+    let output = executor.step_with_pure_backend(
+        Default::default(),
+        Default::default(),
+        &mut crate::pure::VmRuntimePureCallBackend::default(),
+    );
+    assert!(
+        output.output.diagnostics.is_empty(),
+        "{:?}",
+        output.output.diagnostics
+    );
+    assert!(output.output.requests.line_commands.is_empty());
+    assert!(executor.take_program_result().is_err());
+    let dispatch = executor
+        .need_producers
+        .restartable_dispatches()
+        .pop()
+        .unwrap();
+    let invocation_frontiers = executor.need_producers.invocation_frontiers();
+    let launch_frontiers = executor.need_producers.launch_frontiers();
+    let image = executor.inert_rollback_image().unwrap().product;
+    let executor = executor.restore_inert_snapshot_owned(image).unwrap();
+    let restored = executor
+        .need_producers
+        .restartable_dispatches()
+        .pop()
+        .unwrap();
+    assert_eq!(restored.need_id, dispatch.need_id);
+    assert_eq!(restored.task_id, dispatch.task_id);
+    assert_eq!(restored.task_spec, dispatch.task_spec);
+    assert_eq!(restored.generation, dispatch.generation);
+    assert_eq!(restored.publication, dispatch.publication);
+    assert!(restored.needs_reensure);
+    assert_eq!(
+        executor.need_producers.invocation_frontiers(),
+        invocation_frontiers
+    );
+    assert_eq!(executor.need_producers.launch_frontiers(), launch_frontiers);
+    let mut executor = executor
+        .continue_program(id, vec![RuntimeProgramInput::PreviousResult])
+        .unwrap();
+    assert_ne!(executor.fiber.frames[0].instance, first_frame);
+    let output = executor.step_with_pure_backend(
+        Default::default(),
+        Default::default(),
+        &mut crate::pure::VmRuntimePureCallBackend::default(),
+    );
+    assert!(
+        output.output.diagnostics.is_empty(),
+        "{:?}",
+        output.output.diagnostics
+    );
+    let Some(FiberTerminalValue::Returned(Some(value))) = &executor.fiber.terminal else {
+        panic!("the retained handle must return")
+    };
+    assert_eq!(value.affine_line_handles().unwrap()[0].token(), &token);
+}
+
+#[test]
+fn program_continuation_rejects_duplicate_or_invalid_inputs_with_original_awbc_owner() {
+    use crate::program_invocation::{RuntimeProgramContinuationFailure, RuntimeProgramInput};
+    let (executor, id, _) = completed_handle_program();
+    let before = executor.inert_rollback_image().unwrap().product;
+    let (reason, executor, inputs) = executor
+        .continue_program(
+            id,
+            vec![
+                RuntimeProgramInput::PreviousResult,
+                RuntimeProgramInput::PreviousResult,
+            ],
+        )
+        .unwrap_err()
+        .into_parts();
+    assert!(matches!(
+        reason,
+        RuntimeProgramContinuationFailure::ResultUseCount { count: 2 }
+    ));
+    assert_eq!(inputs.len(), 2);
+    assert_eq!(executor.inert_rollback_image().unwrap().product, before);
+    let (reason, executor, inputs) = executor
+        .continue_program(
+            id,
+            vec![
+                RuntimeProgramInput::Detached(RuntimeValue::Bool(true)),
+                RuntimeProgramInput::PreviousResult,
+            ],
+        )
+        .unwrap_err()
+        .into_parts();
+    assert!(matches!(
+        reason,
+        RuntimeProgramContinuationFailure::Fiber(
+            crate::awbc::fiber::FiberStateError::ArgumentCount { .. }
+        )
+    ));
+    assert_eq!(
+        inputs[0],
+        RuntimeProgramInput::Detached(RuntimeValue::Bool(true))
+    );
+    assert_eq!(executor.inert_rollback_image().unwrap().product, before);
+}
+
+#[test]
+fn program_continuation_rolls_back_awbc_context_and_inputs_after_custody_revision_failure() {
+    use crate::program_invocation::{RuntimeProgramContinuationFailure, RuntimeProgramInput};
+    let (mut executor, id, _) = completed_handle_program_with_prefix(true);
+    let custody = std::mem::take(&mut executor.dialogues)
+        .into_published()
+        .unwrap();
+    let custody = crate::tests::program_custody::published_at_final_revision(custody);
+    executor.dialogues = super::dialogue::ProductDialogueStore::from_published(custody);
+    let before = executor.inert_rollback_image().unwrap().product;
+    let (reason, executor, inputs) = executor
+        .continue_program(
+            id,
+            vec![
+                RuntimeProgramInput::Detached(RuntimeValue::Bool(false)),
+                RuntimeProgramInput::PreviousResult,
+            ],
+        )
+        .unwrap_err()
+        .into_parts();
+    assert!(matches!(
+        reason,
+        RuntimeProgramContinuationFailure::Custody(
+            crate::line_task::LineRuntimeError::ActivationTransactionRevisionOverflow
+        )
+    ));
+    assert_eq!(
+        inputs,
+        vec![
+            RuntimeProgramInput::Detached(RuntimeValue::Bool(false)),
+            RuntimeProgramInput::PreviousResult
+        ]
+    );
+    assert_eq!(executor.inert_rollback_image().unwrap().product, before);
+}
+
 #[test]
 fn detached_program_result_rejection_retains_awbc_value_and_saved_owner() {
     let fixture = crate::tests::program_custody::issued_program_handle();

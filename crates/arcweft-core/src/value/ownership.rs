@@ -78,6 +78,18 @@ pub enum RuntimeDetachedValueError {
         token: crate::runtime_id::RuntimeLineHandleToken,
         path: RuntimeValuePath,
     },
+    #[error("Need {need:?} at {path:?} requires its retained producer context")]
+    NeedProducerCustodyRequired {
+        need: crate::task::NeedId,
+        path: RuntimeValuePath,
+    },
+}
+
+#[derive(Default)]
+struct RuntimeValueResourceGraph<'a> {
+    line_handles: Vec<RuntimeAffineLineHandle>,
+    owned_need: Option<(crate::task::NeedId, RuntimeValuePath)>,
+    need_custody: Option<&'a dyn Fn(&crate::task::NeedId) -> bool>,
 }
 
 impl RuntimeValueOwnership {
@@ -102,11 +114,26 @@ impl RuntimeValue {
     /// owner. External Need identities remain valid; issued line handles must
     /// travel with their ledger instead of becoming detached values.
     pub fn validate_detached_custody(&self) -> Result<(), RuntimeDetachedValueError> {
-        if let Some(handle) = self.affine_line_handles()?.into_iter().next() {
+        self.validate_detached_custody_for(None)
+    }
+
+    pub(crate) fn validate_detached_custody_for(
+        &self,
+        need_custody: Option<&dyn Fn(&crate::task::NeedId) -> bool>,
+    ) -> Result<(), RuntimeDetachedValueError> {
+        let mut graph = RuntimeValueResourceGraph {
+            need_custody,
+            ..Default::default()
+        };
+        self.collect_resources(&RuntimeValuePath::root(), &mut graph)?;
+        if let Some(handle) = graph.line_handles.into_iter().next() {
             return Err(RuntimeDetachedValueError::LineHandleCustodyRequired {
                 token: handle.token,
                 path: handle.path,
             });
+        }
+        if let Some((need, path)) = graph.owned_need {
+            return Err(RuntimeDetachedValueError::NeedProducerCustodyRequired { need, path });
         }
         Ok(())
     }
@@ -168,15 +195,15 @@ impl RuntimeValue {
     pub(crate) fn affine_line_handles(
         &self,
     ) -> Result<Vec<RuntimeAffineLineHandle>, RuntimeAffineLineHandleError> {
-        let mut handles = Vec::new();
-        self.collect_affine_line_handles(&RuntimeValuePath::root(), &mut handles)?;
-        Ok(handles)
+        let mut handles = RuntimeValueResourceGraph::default();
+        self.collect_resources(&RuntimeValuePath::root(), &mut handles)?;
+        Ok(handles.line_handles)
     }
 
-    fn collect_affine_line_handles(
+    fn collect_resources(
         &self,
         path: &RuntimeValuePath,
-        handles: &mut Vec<RuntimeAffineLineHandle>,
+        handles: &mut RuntimeValueResourceGraph<'_>,
     ) -> Result<(), RuntimeAffineLineHandleError> {
         match self {
             Self::Unit
@@ -191,7 +218,6 @@ impl RuntimeValue {
             | Self::TensorF64(_)
             | Self::String(_)
             | Self::Color(_)
-            | Self::Need(_)
             | Self::Char(_)
             | Self::Duration(_)
             | Self::Progress(_)
@@ -199,13 +225,21 @@ impl RuntimeValue {
             | Self::EntityRef(_)
             | Self::Seq(RuntimeSeq::Dense(_))
             | Self::Iterator(RuntimeIterator::Range(_)) => Ok(()),
-            Self::Tuple(values) => collect_indexed_line_handles(
+            Self::Need(need) => {
+                if handles.owned_need.is_none()
+                    && handles.need_custody.is_some_and(|custody| custody(need))
+                {
+                    handles.owned_need = Some((need.clone(), path.clone()));
+                }
+                Ok(())
+            }
+            Self::Tuple(values) => collect_indexed_resources(
                 values,
                 path,
                 RuntimeValuePathSegment::TupleElement,
                 handles,
             ),
-            Self::Seq(RuntimeSeq::Values(values)) => collect_indexed_line_handles_u64(
+            Self::Seq(RuntimeSeq::Values(values)) => collect_indexed_resources_u64(
                 values,
                 path,
                 RuntimeValuePathSegment::SequenceElement,
@@ -215,7 +249,7 @@ impl RuntimeValue {
                 for (index, column) in columns.columns().iter().enumerate() {
                     let index = u32::try_from(index)
                         .map_err(|_| RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
-                    column.collect_affine_line_handles(
+                    column.collect_resources(
                         &path.child(RuntimeValuePathSegment::TupleColumn(index))?,
                         handles,
                     )?;
@@ -224,7 +258,7 @@ impl RuntimeValue {
             }
             Self::Seq(RuntimeSeq::RecordColumns(records)) => {
                 for field in records.fields() {
-                    field.values().collect_affine_line_handles(
+                    field.values().collect_resources(
                         &path.child(RuntimeValuePathSegment::RecordColumn(field.field()))?,
                         handles,
                     )?;
@@ -233,7 +267,7 @@ impl RuntimeValue {
             }
             Self::Record(fields) => {
                 for field in fields {
-                    field.value().collect_affine_line_handles(
+                    field.value().collect_resources(
                         &path.child(RuntimeValuePathSegment::RecordField(field.field()))?,
                         handles,
                     )?;
@@ -243,7 +277,7 @@ impl RuntimeValue {
             Self::NominalRecord(record) => {
                 for (index, value) in record.fields().iter().enumerate() {
                     let field = super::RuntimeRecordFieldId::try_from_zero_based_ordinal(index)?;
-                    value.collect_affine_line_handles(
+                    value.collect_resources(
                         &path.child(RuntimeValuePathSegment::NominalRecordField(field))?,
                         handles,
                     )?;
@@ -252,7 +286,7 @@ impl RuntimeValue {
             }
             Self::Opaque(value) => match value.value_class() {
                 RuntimeOpaqueValueClass::AffineHandle(kind) => {
-                    handles.push(RuntimeAffineLineHandle {
+                    handles.line_handles.push(RuntimeAffineLineHandle {
                         kind,
                         token: crate::runtime_id::RuntimeLineHandleToken::try_decode_payload(
                             value.payload(),
@@ -261,7 +295,7 @@ impl RuntimeValue {
                     });
                     Ok(())
                 }
-                RuntimeOpaqueValueClass::Plain => value.payload().collect_affine_line_handles(
+                RuntimeOpaqueValueClass::Plain => value.payload().collect_resources(
                     &path.child(RuntimeValuePathSegment::OpaquePayload)?,
                     handles,
                 ),
@@ -270,34 +304,33 @@ impl RuntimeValue {
                 for (offset, value) in items.iter().enumerate() {
                     let offset = u64::try_from(offset)
                         .map_err(|_| RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
-                    value.collect_affine_line_handles(
+                    value.collect_resources(
                         &path.child(RuntimeValuePathSegment::IteratorRemainder(offset))?,
                         handles,
                     )?;
                 }
                 Ok(())
             }
-            Self::Iterator(RuntimeIterator::Witness { state, .. }) => state
-                .collect_affine_line_handles(
-                    &path.child(RuntimeValuePathSegment::IteratorWitnessState)?,
-                    handles,
-                ),
+            Self::Iterator(RuntimeIterator::Witness { state, .. }) => state.collect_resources(
+                &path.child(RuntimeValuePathSegment::IteratorWitnessState)?,
+                handles,
+            ),
             Self::Variant { payload, .. } => match payload {
-                Some(payload) => payload.collect_affine_line_handles(
+                Some(payload) => payload.collect_resources(
                     &path.child(RuntimeValuePathSegment::VariantPayload)?,
                     handles,
                 ),
                 None => Ok(()),
             },
             Self::Reduction(reduction) => {
-                reduction.state().collect_affine_line_handles(
+                reduction.state().collect_resources(
                     &path.child(RuntimeValuePathSegment::ReductionState)?,
                     handles,
                 )?;
                 for (index, command) in reduction.commands().iter().enumerate() {
                     let index = u32::try_from(index)
                         .map_err(|_| RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
-                    command.payload().0.collect_affine_line_handles(
+                    command.payload().0.collect_resources(
                         &path.child(RuntimeValuePathSegment::ReductionCommandPayload(index))?,
                         handles,
                     )?;
@@ -312,14 +345,14 @@ impl RuntimeValue {
                 {
                     let index = u32::try_from(index)
                         .map_err(|_| RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
-                    value.collect_affine_line_handles(
+                    value.collect_resources(
                         &path.child(RuntimeValuePathSegment::AgentEmbeddedValue(index))?,
                         handles,
                     )?;
                 }
                 Ok(())
             }
-            Self::Callable(callable) => collect_indexed_line_handles(
+            Self::Callable(callable) => collect_indexed_resources(
                 callable.retained(),
                 path,
                 RuntimeValuePathSegment::CallableRetained,
@@ -329,30 +362,30 @@ impl RuntimeValue {
     }
 }
 
-fn collect_indexed_line_handles(
+fn collect_indexed_resources(
     values: &[RuntimeValue],
     path: &RuntimeValuePath,
     segment: impl Fn(u32) -> RuntimeValuePathSegment,
-    handles: &mut Vec<RuntimeAffineLineHandle>,
+    handles: &mut RuntimeValueResourceGraph<'_>,
 ) -> Result<(), RuntimeAffineLineHandleError> {
     for (index, value) in values.iter().enumerate() {
         let index = u32::try_from(index)
             .map_err(|_| RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
-        value.collect_affine_line_handles(&path.child(segment(index))?, handles)?;
+        value.collect_resources(&path.child(segment(index))?, handles)?;
     }
     Ok(())
 }
 
-fn collect_indexed_line_handles_u64(
+fn collect_indexed_resources_u64(
     values: &[RuntimeValue],
     path: &RuntimeValuePath,
     segment: impl Fn(u64) -> RuntimeValuePathSegment,
-    handles: &mut Vec<RuntimeAffineLineHandle>,
+    handles: &mut RuntimeValueResourceGraph<'_>,
 ) -> Result<(), RuntimeAffineLineHandleError> {
     for (index, value) in values.iter().enumerate() {
         let index = u64::try_from(index)
             .map_err(|_| RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
-        value.collect_affine_line_handles(&path.child(segment(index))?, handles)?;
+        value.collect_resources(&path.child(segment(index))?, handles)?;
     }
     Ok(())
 }
@@ -387,13 +420,13 @@ impl RuntimeSeq {
         }
     }
 
-    fn collect_affine_line_handles(
+    fn collect_resources(
         &self,
         path: &RuntimeValuePath,
-        handles: &mut Vec<RuntimeAffineLineHandle>,
+        handles: &mut RuntimeValueResourceGraph<'_>,
     ) -> Result<(), RuntimeAffineLineHandleError> {
         match self {
-            Self::Values(values) => collect_indexed_line_handles_u64(
+            Self::Values(values) => collect_indexed_resources_u64(
                 values,
                 path,
                 RuntimeValuePathSegment::SequenceElement,
@@ -404,7 +437,7 @@ impl RuntimeSeq {
                 for (index, column) in columns.columns().iter().enumerate() {
                     let index = u32::try_from(index)
                         .map_err(|_| RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
-                    column.collect_affine_line_handles(
+                    column.collect_resources(
                         &path.child(RuntimeValuePathSegment::TupleColumn(index))?,
                         handles,
                     )?;
@@ -413,7 +446,7 @@ impl RuntimeSeq {
             }
             Self::RecordColumns(records) => {
                 for field in records.fields() {
-                    field.values().collect_affine_line_handles(
+                    field.values().collect_resources(
                         &path.child(RuntimeValuePathSegment::RecordColumn(field.field()))?,
                         handles,
                     )?;

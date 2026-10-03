@@ -33,7 +33,52 @@ pub(crate) struct IssuedProgramHandle {
     pub token: RuntimeLineHandleToken,
 }
 
+/// Actual pending producer authority retained through a program continuation.
+pub(crate) fn pending_program_need(
+    generation: crate::task::GenerationId,
+    fiber: RuntimePersistentFiberId,
+) -> (crate::task::NeedProducerRegistry, crate::task::NeedId) {
+    use crate::task::*;
+    let plan = program_need_plan();
+    let mut registry = NeedProducerRegistry::default();
+    let invocation = registry
+        .begin_invocation(generation, fiber, plan.site())
+        .unwrap();
+    let need = registry
+        .admit_start(invocation, plan, Vec::new())
+        .unwrap()
+        .need()
+        .clone();
+    (registry, need)
+}
+
+fn program_need_plan() -> crate::task::NeedProducerTaskPlan {
+    use crate::task::*;
+    NeedProducerTaskPlan::try_new(
+        NeedProducerContractDigest::from_bytes([7; 32]),
+        NeedProducerSiteDigest::from_bytes([8; 32]),
+        NeedProducerRequestProjection::ExternCapability {
+            capability: HostCapabilityId("fixture".to_owned()),
+            operation: "pending".to_owned(),
+            contract: crate::step::HostCallContractDigest::from_bytes([7; 32]),
+            argument_names: Box::new([]),
+        },
+        Box::new([]),
+        RuntimeSemanticTypeId::from_bytes([0x51; 32]),
+        TaskPolicy::JoinSameKey,
+        HostRestartPolicy::Restartable,
+        TaskClass::Io,
+        TaskPriority(4),
+        CancelScopeId("fixture".to_owned()),
+    )
+    .unwrap()
+}
+
 pub(crate) fn issued_program_handle() -> IssuedProgramHandle {
+    issued_program_handle_with_prefix(false)
+}
+
+pub(crate) fn issued_program_handle_with_prefix(prefix: bool) -> IssuedProgramHandle {
     let ty = RuntimeSemanticTypeId::from_bytes([0x51; 32]);
     let program = RuntimePureProgramId::from_checked_digest([92; 32]);
     let producer = RuntimeHandleKind::StageActor.try_producer().unwrap();
@@ -43,51 +88,26 @@ pub(crate) fn issued_program_handle() -> IssuedProgramHandle {
         RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::StageActor),
         RuntimeOpaquePersistence::SnapshotOnly,
     );
-    let mut builder = RuntimePlanBuilder::new();
-    let locals = builder
-        .admit_type_batch(
-            [RuntimePlanTypeSeed::new(
-                ty,
-                RuntimePlanTypeProjection::Opaque {
-                    producer,
-                    admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
-                    value_class: opaque_owner.value_class(),
-                    persistence: opaque_owner.persistence(),
-                    arguments: Box::new([]),
-                },
-            )],
-            [RuntimeLocalDeclarationSeed::new(ty)],
-        )
-        .unwrap();
-    let local = locals.local_ids()[0].clone();
-    let site = builder
-        .push_function_site_seed(
-            [RuntimeFunctionInputBindingSeed {
-                source: RuntimeFunctionInputSource::Parameter { position: 0 },
-                input_local: local.clone(),
-                pattern: RuntimePatternSeed::new(
-                    ty,
-                    RuntimePatternSeedKind::Bind {
-                        mutable: false,
-                        local: local.clone(),
-                    },
-                ),
-                ownership: Default::default(),
-                unrestricted_bindings: Box::new([]),
-            }],
-            RuntimeExprSeed::new(
-                ty,
-                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                    local,
-                    RuntimeLocalReadMode::Move,
-                )),
-            ),
-        )
-        .unwrap();
-    builder
-        .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed { program, site })
-        .unwrap();
-    let plan = Arc::new(builder.finish().unwrap());
+    let mut types = vec![RuntimePlanTypeSeed::new(
+        ty,
+        RuntimePlanTypeProjection::Opaque {
+            producer,
+            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            value_class: opaque_owner.value_class(),
+            persistence: opaque_owner.persistence(),
+            arguments: Box::new([]),
+        },
+    )];
+    let mut input_types = vec![ty];
+    if prefix {
+        let boolean = RuntimeSemanticTypeId::from_bytes([0x52; 32]);
+        types.push(RuntimePlanTypeSeed::new(
+            boolean,
+            RuntimePlanTypeProjection::Bool,
+        ));
+        input_types.insert(0, boolean);
+    }
+    let plan = identity_program_plan(program, types, input_types);
     let activation = DialogueActivationId::new(
         crate::effect::RuntimeArtifactFingerprint::try_from_bytes([93; 32]).unwrap(),
         RuntimePersistentFiberId::from_allocated(1),
@@ -129,6 +149,74 @@ pub(crate) fn issued_program_handle() -> IssuedProgramHandle {
     }
 }
 
+pub(crate) fn native_need_program(id: RuntimePureProgramId) -> Arc<RuntimePlan> {
+    let payload = RuntimeSemanticTypeId::from_bytes([0x51; 32]);
+    let need = RuntimeSemanticTypeId::from_bytes([0x53; 32]);
+    identity_program_plan(
+        id,
+        vec![
+            RuntimePlanTypeSeed::new(payload, RuntimePlanTypeProjection::Bool),
+            RuntimePlanTypeSeed::new(need, RuntimePlanTypeProjection::Need(payload)),
+        ],
+        vec![need],
+    )
+}
+
+fn identity_program_plan(
+    program: RuntimePureProgramId,
+    types: Vec<RuntimePlanTypeSeed>,
+    input_types: Vec<RuntimeSemanticTypeId>,
+) -> Arc<RuntimePlan> {
+    let mut builder = RuntimePlanBuilder::new();
+    let locals = builder
+        .admit_type_batch(
+            types,
+            input_types
+                .iter()
+                .copied()
+                .map(RuntimeLocalDeclarationSeed::new),
+        )
+        .unwrap();
+    let ty = *input_types.last().unwrap();
+    let local = locals.local_ids().last().unwrap().clone();
+    let inputs = input_types
+        .iter()
+        .zip(locals.local_ids())
+        .enumerate()
+        .map(|(position, (ty, local))| RuntimeFunctionInputBindingSeed {
+            source: RuntimeFunctionInputSource::Parameter {
+                position: u32::try_from(position).unwrap(),
+            },
+            input_local: local.clone(),
+            pattern: RuntimePatternSeed::new(
+                *ty,
+                RuntimePatternSeedKind::Bind {
+                    mutable: false,
+                    local: local.clone(),
+                },
+            ),
+            ownership: Default::default(),
+            unrestricted_bindings: Box::new([]),
+        })
+        .collect::<Vec<_>>();
+    let site = builder
+        .push_function_site_seed(
+            inputs,
+            RuntimeExprSeed::new(
+                ty,
+                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                    local,
+                    RuntimeLocalReadMode::Move,
+                )),
+            ),
+        )
+        .unwrap();
+    builder
+        .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed { program, site })
+        .unwrap();
+    Arc::new(builder.finish().unwrap())
+}
+
 /// Publishes the issued handle and moves the complete ledger without cloning it.
 pub(crate) fn publish_program_handle(
     mut ledger: RuntimeLineHandleLedger,
@@ -159,6 +247,14 @@ pub(crate) fn publish_program_handle(
     transaction.line_mut().release_frame().unwrap();
     registry.commit_published_prepared(transaction, proof);
     (value, registry.into_published().unwrap())
+}
+
+/// A valid published journal at its final revision exercises the failure after
+/// candidate argument placement. Only revision metadata is changed here.
+pub(crate) fn published_at_final_revision(
+    custody: crate::line_task::RuntimePublishedDialogueRegistry,
+) -> crate::line_task::RuntimePublishedDialogueRegistry {
+    custody.with_revision_for_test(u64::MAX)
 }
 
 #[test]
@@ -245,6 +341,36 @@ pub(crate) fn awbc_handle_program(
         input_types: vec![ty],
         result_type: ty,
     }];
+    let need_plan = program_need_plan();
+    program
+        .strings
+        .extend(["fixture".to_owned(), "pending".to_owned()]);
+    program.signatures.push(AwbcSignature {
+        params: Vec::new(),
+        result: None,
+        effects: AwbcEffectSetId(0),
+    });
+    program.task_plans.push(AwbcTaskPlan {
+        signature: AwbcSignatureId(1),
+        request: AwbcTaskRequestProjection::ExternCapability {
+            capability: AwbcStringId(1),
+            operation: AwbcStringId(2),
+            contract: crate::step::HostCallContractDigest::from_bytes([7; 32]),
+        },
+        class: AwbcTaskClass::Io,
+        priority: 4,
+        cancel_scope: AwbcStringId(1),
+        policy: AwbcTaskPolicy::JoinSameKey,
+        payload_type: AwbcTypeId(0),
+        arguments: Vec::new(),
+        kind: AwbcTaskPlanKind::NeedProducer {
+            contract: crate::task::NeedProducerContractDigest::from_bytes([7; 32]),
+            site: need_plan.site(),
+            semantic_digest: need_plan.semantic_digest(),
+            restart: AwbcTaskRestartPolicy::Restartable,
+        },
+    });
+    program.canonicalize_string_table();
     program
         .verify(
             crate::awbc::verify::AwbcVerifyBudget::default(),
@@ -255,6 +381,93 @@ pub(crate) fn awbc_handle_program(
         )
         .unwrap();
     Arc::new(program)
+}
+
+pub(crate) fn awbc_prefixed_handle_program(
+    id: RuntimePureProgramId,
+) -> Arc<crate::awbc::schema::AwbcProgram> {
+    use crate::awbc::schema::*;
+    let mut program = (*awbc_handle_program(id)).clone();
+    let ty = RuntimeSemanticTypeId::from_bytes([0x52; 32]);
+    let index = AwbcTypeId(u32::try_from(program.runtime_types.len()).unwrap());
+    program
+        .runtime_types
+        .push(AwbcRuntimeType::new(ty, AwbcRuntimeTypeShape::Bool));
+    program.signatures[0].params.insert(0, index);
+    program.frame_layouts[0].slots.insert(
+        0,
+        AwbcFrameSlot {
+            name: None,
+            ty: index,
+            role: AwbcFrameSlotRole::Parameter,
+            scope_depth: 0,
+        },
+    );
+    program.functions[0]
+        .input_ownership
+        .insert(0, AwbcFunctionInputOwnership::default());
+    program.blocks[0].terminator = AwbcTerminator::Return {
+        value: Some(AwbcRegisterId(1)),
+    };
+    program.pure_programs[0].input_types.insert(0, ty);
+    program
+        .verify(
+            Default::default(),
+            crate::awbc::verify::AwbcVerifyContext {
+                require_entrypoint: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    Arc::new(program)
+}
+
+pub(crate) fn awbc_need_program(id: RuntimePureProgramId) -> Arc<crate::awbc::schema::AwbcProgram> {
+    use crate::awbc::schema::*;
+    let mut program = (*awbc_handle_program(id)).clone();
+    let ty = RuntimeSemanticTypeId::from_bytes([0x53; 32]);
+    let index = AwbcTypeId(u32::try_from(program.runtime_types.len()).unwrap());
+    program.runtime_types.push(AwbcRuntimeType::new(
+        ty,
+        AwbcRuntimeTypeShape::Need(AwbcTypeId(0)),
+    ));
+    program.signatures[0].params = vec![index];
+    program.signatures[0].result = Some(index);
+    program.frame_layouts[0].slots[0].ty = index;
+    program.pure_programs[0].input_types = vec![ty];
+    program.pure_programs[0].result_type = ty;
+    program
+        .verify(
+            Default::default(),
+            crate::awbc::verify::AwbcVerifyContext {
+                require_entrypoint: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    Arc::new(program)
+}
+
+#[test]
+fn detached_nested_need_requires_its_own_producer_context() {
+    let (registry, need) = pending_program_need(
+        crate::task::GenerationId::new(37),
+        RuntimePersistentFiberId::from_allocated(1),
+    );
+    let value = RuntimeValue::Tuple(vec![RuntimeValue::Unit, RuntimeValue::Need(need.clone())]);
+    assert!(value.validate_detached_custody().is_ok());
+    let error = value
+        .validate_detached_custody_for(Some(&|need| registry.launch_for_need(need).is_some()))
+        .unwrap_err();
+    assert_eq!(
+        error,
+        crate::value::ownership::RuntimeDetachedValueError::NeedProducerCustodyRequired {
+            need,
+            path: crate::value::ownership::RuntimeValuePath::root()
+                .child(crate::value::ownership::RuntimeValuePathSegment::TupleElement(1))
+                .unwrap()
+        }
+    );
 }
 
 #[test]

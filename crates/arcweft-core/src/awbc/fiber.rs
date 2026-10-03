@@ -1871,6 +1871,32 @@ fn visit_deferred_capture_values<E>(
 }
 
 impl FiberState {
+    /// Completed root frames may retain Copy values and lexical metadata.
+    /// Their affine owners and unfinished cleanup work cannot be discarded by
+    /// a program continuation.
+    pub(crate) fn program_continuation_ready(&self) -> bool {
+        self.status == FiberStatus::Returned
+            && matches!(self.root, AwbcFiberRoot::Program(_))
+            && matches!(self.terminal, Some(FiberTerminalValue::Returned(Some(_))))
+            && self.suspension.is_none()
+            && self.frames.len() <= 1
+            && self.frames.iter().all(|frame| {
+                frame.return_to.is_none()
+                    && frame.format.is_none()
+                    && frame.format_attempts.is_empty()
+                    && frame.root_cleanups.is_empty()
+                    && frame.root_defers.is_empty()
+                    && frame
+                        .scopes
+                        .iter()
+                        .all(|scope| scope.cleanups.is_empty() && scope.defers.is_empty())
+                    && frame
+                        .registers
+                        .iter()
+                        .flat_map(|storage| storage.values())
+                        .all(|value| value.ownership().permits_copy())
+            })
+    }
     /// Visits every runtime value retained by this fiber, including values in
     /// saved call continuations, defer captures, suspension payloads, streams,
     /// and terminal results.

@@ -26,6 +26,13 @@ pub(super) type ProductDialogueTransaction =
     RuntimeDialogueActivationTransaction<ActiveDialogue, AwbcTypeId>;
 
 impl ProductDialogueStore {
+    pub(super) fn into_published(
+        self,
+    ) -> Result<crate::line_task::RuntimePublishedDialogueRegistry, (Self, LineRuntimeError)> {
+        self.registry
+            .into_published()
+            .map_err(|(registry, reason)| (Self { registry }, reason))
+    }
     pub(super) fn from_published(
         custody: crate::line_task::RuntimePublishedDialogueRegistry,
     ) -> Self {

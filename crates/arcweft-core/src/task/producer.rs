@@ -980,6 +980,14 @@ pub struct NeedProducerRegistry {
     >,
 }
 
+/// Resume reissues restartable work; rollback preserves the accepted host
+/// submission frontier because no external execution was undone.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum NeedProducerRestorePolicy {
+    Resume,
+    Rollback,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct NeedProducerLaunchKey {
     generation: GenerationId,
@@ -1450,7 +1458,7 @@ impl NeedProducerRegistry {
                     invocation_frontiers: image.invocation_frontiers,
                     launch_frontiers: image.launch_frontiers,
                 },
-                false,
+                NeedProducerRestorePolicy::Rollback,
             )
             .map_err(|error| error.to_string())?;
         Ok(registry)
@@ -1908,13 +1916,13 @@ impl NeedProducerRegistry {
         &mut self,
         restore: NeedProducerRegistryRestore,
     ) -> Result<(), NeedProducerAdmissionError> {
-        self.restore_registry_with_policy(restore, true)
+        self.restore_registry_with_policy(restore, NeedProducerRestorePolicy::Resume)
     }
 
-    fn restore_registry_with_policy(
+    pub(crate) fn restore_registry_with_policy(
         &mut self,
         restore: NeedProducerRegistryRestore,
-        reset_restartable_submission: bool,
+        policy: NeedProducerRestorePolicy,
     ) -> Result<(), NeedProducerAdmissionError> {
         if !self.launches.is_empty()
             || !self.joined.is_empty()
@@ -1927,7 +1935,7 @@ impl NeedProducerRegistry {
         Self::validate_restore(&restore)?;
         let mut candidate = Self::default();
         for launch in restore.launches {
-            candidate.insert_validated_restore_launch(launch, reset_restartable_submission);
+            candidate.insert_validated_restore_launch(launch, policy);
         }
         for (invocation, need) in restore.invocations {
             let already_restored = candidate
@@ -2381,7 +2389,7 @@ impl NeedProducerRegistry {
     fn insert_validated_restore_launch(
         &mut self,
         restore: NeedProducerLaunchRestore,
-        reset_restartable_submission: bool,
+        policy: NeedProducerRestorePolicy,
     ) {
         // `restore_registry` validates the entire borrowed journal before the
         // first owner moves into this candidate.
@@ -2425,7 +2433,7 @@ impl NeedProducerRegistry {
             .entry(checked.invocation_key)
             .or_insert(0);
         *entry = (*entry).max(checked.invocation_next);
-        if reset_restartable_submission
+        if policy == NeedProducerRestorePolicy::Resume
             && launch.plan.restart == HostRestartPolicy::Restartable
             && !launch.task_terminal
         {

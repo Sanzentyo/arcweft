@@ -14,6 +14,7 @@ pub mod observation;
 pub mod pattern;
 pub mod plan;
 pub mod presentation;
+pub mod program_invocation;
 pub mod program_types;
 pub mod pure;
 pub mod root;
