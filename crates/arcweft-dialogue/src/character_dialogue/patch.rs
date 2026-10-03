@@ -704,18 +704,18 @@ fn merge_runtime_value(base: &RuntimeValue, incoming: &RuntimeValue) -> RuntimeV
             if base.type_id() == incoming.type_id()
                 && base.semantic_identity() == incoming.semantic_identity()
                 && base.layout() == incoming.layout()
-                && base.fields().len() == incoming.fields().len() =>
+                && base.fields().len() == incoming.fields().len()
+                && base.type_instantiation() == incoming.type_instantiation() =>
         {
-            RuntimeValue::NominalRecord(arcweft_core::value::RuntimeNominalRecordValue::new(
-                base.type_id().clone(),
-                base.semantic_identity(),
-                base.layout(),
-                base.fields()
-                    .iter()
-                    .zip(incoming.fields())
-                    .map(|(base, incoming)| merge_runtime_value(base, incoming))
-                    .collect(),
-            ))
+            let mut base_fields = base.fields().iter();
+            RuntimeValue::NominalRecord(incoming.clone().map_fields(|incoming| {
+                merge_runtime_value(
+                    base_fields
+                        .next()
+                        .expect("equal defining-order field counts"),
+                    &incoming,
+                )
+            }))
         }
         (
             RuntimeValue::Variant {
@@ -723,15 +723,18 @@ fn merge_runtime_value(base: &RuntimeValue, incoming: &RuntimeValue) -> RuntimeV
                 ordinal: base_ordinal,
                 name: base_name,
                 payload: Some(base_payload),
+                type_instantiation: base_instantiation,
             },
             RuntimeValue::Variant {
                 owner: incoming_owner,
                 ordinal: incoming_ordinal,
                 name: incoming_name,
                 payload: Some(incoming_payload),
+                type_instantiation: incoming_instantiation,
             },
         ) if base_owner == incoming_owner
             && base_ordinal == incoming_ordinal
+            && base_instantiation == incoming_instantiation
             && base_name == incoming_name =>
         {
             RuntimeValue::Variant {
@@ -742,6 +745,7 @@ fn merge_runtime_value(base: &RuntimeValue, incoming: &RuntimeValue) -> RuntimeV
                     base_payload,
                     incoming_payload,
                 ))),
+                type_instantiation: incoming_instantiation.clone(),
             }
         }
         // A leaf Set replaces the prior leaf. Structured containers recurse

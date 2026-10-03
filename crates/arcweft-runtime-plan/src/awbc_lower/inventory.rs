@@ -1222,6 +1222,7 @@ impl AwbcInventory {
                     ordinal,
                     name,
                     payload,
+                    type_instantiation: _,
                 },
                 AwbcRuntimeTypeShape::Variant {
                     owner: expected_owner,

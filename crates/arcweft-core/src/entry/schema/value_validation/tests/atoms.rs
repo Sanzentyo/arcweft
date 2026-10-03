@@ -289,6 +289,7 @@ fn nominal_variant_payloads_use_runtime_scalar_schema_authority() {
         payload: Some(Box::new(
             RuntimeValue::try_record(vec![("fade".to_owned(), fade)]).unwrap(),
         )),
+        type_instantiation: None,
     };
     let valid = value(RuntimeValue::Duration(LogicalDuration::from_nanos(10)));
     assert_eq!(

@@ -773,6 +773,7 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
             ordinal,
             name,
             payload,
+            type_instantiation: _,
         } => {
             writer.u8(14)?;
             writer.variant_identity(owner)?;

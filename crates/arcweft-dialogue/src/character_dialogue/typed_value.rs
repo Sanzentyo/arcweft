@@ -481,6 +481,7 @@ fn normalize_runtime_value(
             ordinal,
             name,
             payload,
+            type_instantiation,
         } => payload
             .map(|payload| normalize_runtime_value(*payload).map(Box::new))
             .transpose()
@@ -489,6 +490,7 @@ fn normalize_runtime_value(
                 ordinal,
                 name,
                 payload,
+                type_instantiation,
             }),
         value => Ok(value),
     }

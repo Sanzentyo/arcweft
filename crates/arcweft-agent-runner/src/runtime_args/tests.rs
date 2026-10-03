@@ -126,6 +126,7 @@ fn runtime_enum_arguments_reject_labels_wrong_owners_and_malformed_cases() {
                     ordinal: 0,
                     name: case.name().to_owned(),
                     payload: None,
+                    type_instantiation: None,
                 },
             ] {
                 assert!(runtime_capture_format(&invalid).is_err());

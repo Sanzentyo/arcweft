@@ -377,6 +377,7 @@ fn source_variant_value(
         ordinal,
         name: name.to_owned(),
         payload: payload.map(Box::new),
+        type_instantiation: None,
     }
 }
 
@@ -930,6 +931,7 @@ fn rejects_stale_contracts_and_tampered_policy_headers() {
                 ordinal,
                 name,
                 payload,
+                type_instantiation,
             } = &mut changed[16]
             else {
                 unreachable!()

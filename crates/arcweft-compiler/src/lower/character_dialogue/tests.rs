@@ -29,7 +29,7 @@ fn project_calls(source: &str) -> Vec<(CharacterDialogueOperation, RuntimeResolv
                 lease.project_symbols(),
                 lease.registered_world(),
                 analysis,
-                None,
+                RuntimeExecutableInstantiation::Global,
             )
             .expect("selected factory/reconfigure projection")
             .expect("the Dialogue branch is retained");

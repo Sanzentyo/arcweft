@@ -2658,6 +2658,15 @@ pub enum RuntimeVariantOwner {
 }
 
 impl RuntimeVariantOwner {
+    /// Selects an accepted case from this complete executable definition.
+    pub fn select_case(
+        self,
+        ordinal: u32,
+        selected_name: &str,
+    ) -> Result<RuntimeResolvedVariant, RuntimeResolvedVariantError> {
+        RuntimeResolvedVariant::try_new(self, ordinal, selected_name)
+    }
+
     pub const fn semantic_identity(&self) -> RuntimeSemanticTypeId {
         match self {
             Self::Nominal { nominal, .. } => nominal.identity(),

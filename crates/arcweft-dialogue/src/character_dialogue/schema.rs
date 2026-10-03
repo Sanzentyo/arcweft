@@ -1104,6 +1104,7 @@ impl CharacterDialogueRuntimeSchema {
             ordinal,
             name,
             payload,
+            type_instantiation: _,
         } = value
         else {
             return Err(field_shape(
@@ -1498,6 +1499,7 @@ impl CharacterDialogueRuntimeSchema {
             ordinal,
             name,
             payload,
+            type_instantiation: _,
         } = value
         else {
             return Err(field_shape("voice", "expected DialogueVoice variant"));
@@ -1633,6 +1635,7 @@ impl CharacterDialogueRuntimeSchema {
             ordinal,
             name,
             payload,
+            type_instantiation: _,
         } = value
         else {
             return Err(field_shape("inline_failure", "expected policy variant"));
@@ -1705,6 +1708,7 @@ impl CharacterDialogueRuntimeSchema {
             ordinal,
             name,
             payload,
+            type_instantiation: _,
         } = value
         else {
             return Err(field_shape("inline_failure", "expected fallback variant"));
@@ -1791,6 +1795,7 @@ impl CharacterDialogueRuntimeSchema {
             ordinal,
             name,
             payload,
+            type_instantiation: _,
         } = value
         else {
             return Err(field_shape(
@@ -1849,6 +1854,7 @@ impl CharacterDialogueRuntimeSchema {
             ordinal,
             name: name.to_owned(),
             payload: payload.map(Box::new),
+            type_instantiation: None,
         }
     }
 

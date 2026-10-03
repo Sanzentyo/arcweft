@@ -339,6 +339,7 @@ fn recursive_variants_require_exact_owner_case_and_payload() {
         ordinal,
         name: name.to_owned(),
         payload: payload.map(Box::new),
+        type_instantiation: None,
     };
     let nil = variant(0, "Nil", None);
     let value = variant(
@@ -386,7 +387,8 @@ fn recursive_variants_require_exact_owner_case_and_payload() {
                     owner,
                     ordinal: 0,
                     name: "Nil".to_owned(),
-                    payload: None
+                    payload: None,
+                    type_instantiation: None,
                 }
             )
             .is_err()
@@ -661,6 +663,7 @@ fn builtin_payloads_are_correlated_before_type_rows_are_published() {
                 ordinal: 0,
                 name: "Some".to_owned(),
                 payload: Some(Box::new(RuntimeValue::Bool(true))),
+                type_instantiation: None,
             }
         )
         .is_err()

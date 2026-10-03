@@ -263,6 +263,7 @@ impl RuntimeCharacterLookSourceAuthority {
             ordinal,
             name,
             payload: None,
+            type_instantiation: None,
         } = value
         else {
             return Err(RuntimeCharacterLookSourceError::InvalidLookValue(

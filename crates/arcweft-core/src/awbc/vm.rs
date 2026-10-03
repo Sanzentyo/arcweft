@@ -1177,6 +1177,14 @@ fn execute_instruction(
                 .map(|payload| fiber.active_frame_mut()?.take_register(payload))
                 .transpose()?
                 .map(Box::new);
+            let type_instantiation = (!program.runtime_types[ty.index()].scope().is_root())
+                .then(|| {
+                    fiber
+                        .active_frame()
+                        .map(|frame| frame.type_instantiation.clone())
+                })
+                .transpose()?
+                .flatten();
             fiber.active_frame_mut()?.set_register(
                 *dst,
                 RuntimeValue::Variant {
@@ -1184,6 +1192,7 @@ fn execute_instruction(
                     ordinal: *case,
                     name: string(program, *case_name)?.to_owned(),
                     payload,
+                    type_instantiation,
                 },
             )?;
         }
@@ -4013,8 +4022,7 @@ impl AwbcProgram {
                     .with_type_instantiation(
                         (!row.scope().is_root())
                             .then(|| frame.and_then(|frame| frame.type_instantiation.clone()))
-                            .flatten()
-                            .map(std::sync::Arc::new),
+                            .flatten(),
                     ),
                 );
                 let accepted = frame.map_or_else(
@@ -4136,6 +4144,7 @@ pub(crate) fn constant_value(
                     .map(|id| constant_value(program, id))
                     .transpose()?
                     .map(Box::new),
+                type_instantiation: None,
             })
         }
         AwbcConstant::Opaque { ty, payload } => {
@@ -4493,15 +4502,18 @@ fn runtime_value_views_equal(left: RuntimeValueView<'_>, right: RuntimeValueView
                 ordinal: left_ordinal,
                 name: left_name,
                 payload: left_payload,
+                type_instantiation: left_instantiation,
             },
             RuntimeValueView::Variant {
                 owner: right_owner,
                 ordinal: right_ordinal,
                 name: right_name,
                 payload: right_payload,
+                type_instantiation: right_instantiation,
             },
         ) => {
             left_owner == right_owner
+                && left_instantiation == right_instantiation
                 && left_ordinal == right_ordinal
                 && left_name == right_name
                 && match (left_payload, right_payload) {
@@ -4620,7 +4632,7 @@ pub(crate) fn runtime_value_view_matches_type(
                 })
         }
         (
-            RuntimeValueView::Variant { owner, ordinal, name, payload },
+            RuntimeValueView::Variant { owner, ordinal, name, payload , type_instantiation,},
             AwbcRuntimeTypeShape::Variant { owner: expected_owner, cases, .. },
         ) => {
             runtime_variant_identity(program, ty_row.semantic_identity(), expected_owner).as_ref()

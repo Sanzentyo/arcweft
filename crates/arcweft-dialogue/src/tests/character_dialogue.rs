@@ -466,6 +466,7 @@ fn structured_clear_rejects_non_option_some_leaf_atomically() {
         ordinal: 0,
         name: "Some".to_owned(),
         payload: Some(Box::new(RuntimeValue::Bool(true))),
+        type_instantiation: None,
     };
     let style = CharacterDialogueStyleValue::try_new(nominal_typed(vec![non_option_some.clone()]))
         .expect("nominal style");

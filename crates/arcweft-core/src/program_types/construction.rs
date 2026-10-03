@@ -274,6 +274,7 @@ impl RuntimeProgramTypes<'_> {
             ordinal,
             name,
             payload: payload.map(Box::new),
+            type_instantiation: None,
         };
         self.validate_live_value(semantic_type, &value, limits)?;
         Ok(value)

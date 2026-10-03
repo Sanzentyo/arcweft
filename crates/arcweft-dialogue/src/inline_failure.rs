@@ -334,6 +334,7 @@ fn decode_policy_variant<'a>(
         ordinal,
         name,
         payload,
+        type_instantiation: _,
     } = value
     else {
         return Err(InlineFailurePolicyDecodeError::InvalidValue { field });
@@ -402,6 +403,7 @@ mod tests {
             ordinal: case.ordinal(),
             name: case.name().to_owned(),
             payload: payload.map(Box::new),
+            type_instantiation: None,
         }
     }
 

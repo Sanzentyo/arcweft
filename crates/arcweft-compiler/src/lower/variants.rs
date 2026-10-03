@@ -91,52 +91,12 @@ pub(super) fn runtime_variant_under(
     }
     let semantic_type = variant.owner().semantic_type();
     let projected = match variant.owner().kind() {
-        CheckedVariantOwnerKind::Project { nominal } => {
-            let nominal_type = variant.owner().ty();
-            let closed = enclosing.map_or_else(
-                || Ok(nominal_type.clone()),
-                |solution| solution.instantiate_type(&nominal_type),
-            )?;
-            let semantic_type = closed.semantic_identity_digest()?;
-            let projection = analysis
-                .runtime_nominal_projection(semantic_type)
-                .filter(|projection| {
-                    projection.kind()
-                        == arcweft_lang_sema::final_analysis::RuntimeProjectNominalKind::Variant
-                })
-                .ok_or_else(|| RuntimeSemanticProjectionError::NominalSchemaProjection {
-                    nominal: nominal.declaration().qualified_name(),
-                    source: NominalSchemaProjectionError::MissingCachedProjection { semantic_type },
-                })?;
-            if projection.variant_cases().len() != variant.owner().cases().len() {
-                return Err(RuntimeSemanticProjectionError::Type {
-                    reason: "checked project variant case inventory is incomplete".to_owned(),
-                });
-            }
+        CheckedVariantOwnerKind::Project { .. } => {
+            let ty = variant.owner().ty();
+            let closed = enclosing
+                .map_or_else(|| Ok(ty.clone()), |solution| solution.instantiate_type(&ty))?;
             let normalized = runtime_type(&closed, symbols, world, analysis)?;
-            let RuntimeTypeShape::Nominal {
-                nominal: runtime_nominal,
-                arguments,
-            } = normalized.shape()
-            else {
-                return Err(RuntimeSemanticProjectionError::Type {
-                    reason: "closed checked project variant is not a project nominal".to_owned(),
-                });
-            };
-            RuntimeResolvedVariant::project(
-                runtime_nominal.clone(),
-                arguments.clone(),
-                variant.ordinal(),
-                checked_variant_selected_name(variant)?,
-                runtime_checked_variant_cases_under(
-                    variant.owner(),
-                    symbols,
-                    world,
-                    analysis,
-                    enclosing,
-                )?,
-            )
-            .map_err(|error| runtime_variant_projection_error(&error))?
+            runtime_project_variant(variant, &normalized, symbols, world, analysis)?
         }
         CheckedVariantOwnerKind::CharacterNominal { .. } => RuntimeResolvedVariant::character(
             RuntimeSemanticTypeId::from_bytes(*semantic_type.as_bytes()),
@@ -270,6 +230,42 @@ pub(super) fn runtime_variant_under(
         }
     };
     Ok(projected)
+}
+
+/// Selects a project case from the executable type's sealed definition.
+pub(super) fn runtime_project_variant(
+    variant: &CheckedVariantResolution,
+    ty: &RuntimeNormalizedType,
+    symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
+    analysis: &FinalSemanticAnalysis,
+) -> Result<RuntimeResolvedVariant, RuntimeSemanticProjectionError> {
+    let CheckedVariantOwnerKind::Project { nominal: checked } = variant.owner().kind() else {
+        return Err(RuntimeSemanticProjectionError::Type {
+            reason: "project variant projection has a foreign source family".to_owned(),
+        });
+    };
+    let arcweft_runtime_plan::semantic_facts::RuntimeNominalDefinition::Variant(definition) =
+        nominals::definition(ty, symbols, world, analysis)?
+    else {
+        return Err(RuntimeSemanticProjectionError::Type {
+            reason: "project variant projection selects a record".to_owned(),
+        });
+    };
+    if !matches!(&definition,
+        arcweft_runtime_plan::semantic_facts::RuntimeVariantOwner::Nominal { nominal, cases, .. }
+            if cases.len() == variant.owner().cases().len() && matches!(nominal.source(),
+                arcweft_runtime_plan::semantic_facts::RuntimeResolvedNominalSource::Project { declaration, owner }
+                    if declaration == checked.declaration() && *owner == checked.owner()))
+    {
+        return Err(RuntimeSemanticProjectionError::Type {
+            reason: "project variant projection changes its complete declaration authority"
+                .to_owned(),
+        });
+    }
+    definition
+        .select_case(variant.ordinal(), checked_variant_selected_name(variant)?)
+        .map_err(|error| runtime_variant_projection_error(&error))
 }
 
 fn checked_variant_selected_name(

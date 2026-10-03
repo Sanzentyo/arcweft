@@ -214,6 +214,7 @@ fn option_none_conversion_rejects_same_named_non_option_variants() {
             ordinal: 1,
             name: "None".to_owned(),
             payload: None,
+            type_instantiation: None,
         })
     );
 
@@ -226,6 +227,7 @@ fn option_none_conversion_rejects_same_named_non_option_variants() {
         ordinal: 0,
         name: "Some".to_owned(),
         payload: Some(Box::new(RuntimeValue::Bool(true))),
+        type_instantiation: None,
     };
     assert_eq!(unrelated.option_none_with_same_owner(), None);
 
@@ -236,6 +238,7 @@ fn option_none_conversion_rejects_same_named_non_option_variants() {
         ordinal: 0,
         name: "Some".to_owned(),
         payload: None,
+        type_instantiation: None,
     };
     assert_eq!(malformed.option_none_with_same_owner(), None);
 }
@@ -308,6 +311,7 @@ fn builtin_option_and_result_reject_flat_legacy_payloads() {
         ordinal: 0,
         name: "Some".to_owned(),
         payload: Some(Box::new(RuntimeValue::i64(7))),
+        type_instantiation: None,
     };
     let result = RuntimeValue::Variant {
         owner: RuntimeVariantIdentity::Builtin(
@@ -316,6 +320,7 @@ fn builtin_option_and_result_reject_flat_legacy_payloads() {
         ordinal: 0,
         name: "Ok".to_owned(),
         payload: Some(Box::new(RuntimeValue::i64(8))),
+        type_instantiation: None,
     };
 
     assert_eq!(option.builtin_variant_case(), None);
@@ -352,6 +357,7 @@ fn variant_canonical_bytes_retain_closed_owner_ordinal_semantic_identity_and_lay
         ordinal: 0,
         name: "Some".to_owned(),
         payload: Some(Box::new(RuntimeValue::Unit)),
+        type_instantiation: None,
     };
     let result = RuntimeValue::result_ok(RuntimeValue::Unit);
     let nominal = |semantic_identity, layout| RuntimeValue::Variant {
@@ -363,6 +369,7 @@ fn variant_canonical_bytes_retain_closed_owner_ordinal_semantic_identity_and_lay
         ordinal: 0,
         name: "Some".to_owned(),
         payload: Some(Box::new(RuntimeValue::Unit)),
+        type_instantiation: None,
     };
 
     let encode = |value: RuntimeValue| value.try_canonical_bytes(1024).expect("canonical value");
@@ -1151,6 +1158,7 @@ fn compound_literal_sequences_use_columnar_storage_when_shape_is_stable() {
             ordinal: 0,
             name: "Some".to_owned(),
             payload: Some(Box::new(RuntimeValue::i64(1))),
+            type_instantiation: None,
         },
         RuntimeValue::Variant {
             owner: RuntimeVariantIdentity::Builtin(
@@ -1159,6 +1167,7 @@ fn compound_literal_sequences_use_columnar_storage_when_shape_is_stable() {
             ordinal: 0,
             name: "Some".to_owned(),
             payload: Some(Box::new(RuntimeValue::i64(2))),
+            type_instantiation: None,
         },
     ]) else {
         panic!("variant literals lower to a sequence");

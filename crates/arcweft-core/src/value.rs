@@ -296,6 +296,8 @@ pub enum RuntimeValue {
         owner: RuntimeVariantIdentity,
         ordinal: u32,
         name: String,
+        type_instantiation:
+            Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
         payload: Option<Box<RuntimeValue>>,
     },
 }
@@ -882,6 +884,7 @@ impl RuntimeValue {
             ordinal,
             name: schema.name().to_owned(),
             payload: payload.map(|payload| Box::new(Self::Tuple(vec![payload]))),
+            type_instantiation: None,
         })
     }
 
@@ -897,6 +900,7 @@ impl RuntimeValue {
             ordinal,
             name,
             payload,
+            type_instantiation: _,
         } = self
         else {
             return None;
@@ -920,6 +924,7 @@ impl RuntimeValue {
             ordinal,
             name,
             payload,
+            type_instantiation,
         } = self
         else {
             return Err(self);
@@ -930,6 +935,7 @@ impl RuntimeValue {
                 ordinal,
                 name,
                 payload,
+                type_instantiation,
             });
         };
         let payload = match (schema.payload_arity(), payload) {
@@ -942,6 +948,7 @@ impl RuntimeValue {
                         ordinal,
                         name,
                         payload: Some(Box::new(payload)),
+                        type_instantiation,
                     });
                 }
             },
@@ -951,6 +958,7 @@ impl RuntimeValue {
                     ordinal,
                     name,
                     payload,
+                    type_instantiation,
                 });
             }
         };
@@ -960,6 +968,7 @@ impl RuntimeValue {
                 ordinal,
                 name,
                 payload: payload.map(|payload| Box::new(Self::Tuple(vec![payload]))),
+                type_instantiation,
             });
         }
         Ok((schema.identity(), payload))

@@ -103,6 +103,7 @@ mod tests {
                 ordinal: 1,
                 name: "None".to_owned(),
                 payload: None,
+                type_instantiation: None,
             }
             .shape(),
             RuntimeValueShape::Variant

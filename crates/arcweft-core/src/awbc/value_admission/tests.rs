@@ -349,6 +349,7 @@ fn nominal_variant_correlates_every_owner_atom_and_the_complete_case_row() {
         ordinal: 0,
         name: "Full".to_owned(),
         payload: Some(Box::new(RuntimeValue::Bool(true))),
+        type_instantiation: None,
     };
     assert!(admits(&program, 1, &good).is_ok());
     for changed in 0..6 {
@@ -363,6 +364,7 @@ fn nominal_variant_correlates_every_owner_atom_and_the_complete_case_row() {
             ordinal,
             name,
             payload,
+            type_instantiation,
         } = &mut value
         else {
             unreachable!()

@@ -316,6 +316,7 @@ fn source_rust_nominals_preserve_shapes_recursion_and_exact_arguments_in_native_
             ordinal,
             name: case.name().to_owned(),
             payload: payload.map(Box::new),
+            type_instantiation: None,
         };
         let correct = variant(correct);
         assert_eq!(

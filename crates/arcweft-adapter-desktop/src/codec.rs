@@ -332,6 +332,7 @@ mod tests {
             ordinal,
             name: name.to_owned(),
             payload: None,
+            type_instantiation: None,
         })
     }
 

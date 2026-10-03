@@ -362,6 +362,14 @@ impl RuntimeNominalRecordValue {
         self.fields
     }
 
+    /// Maps owned fields in defining order while retaining the complete header
+    /// and construction binding. The selected program still admits the result.
+    #[must_use]
+    pub fn map_fields(mut self, map: impl FnMut(RuntimeValue) -> RuntimeValue) -> Self {
+        self.fields = self.fields.into_iter().map(map).collect();
+        self
+    }
+
     /// Derives the accepted field identity for one stored ordinal.
     #[must_use]
     pub fn field_id(&self, zero_based_ordinal: usize) -> Option<RuntimeRecordFieldId> {

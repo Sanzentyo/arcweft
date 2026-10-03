@@ -3344,6 +3344,7 @@ mod tests {
             ordinal: 0,
             name: "Ready".to_owned(),
             payload: None,
+            type_instantiation: None,
         };
         assert!(checked.accepts_value(&value(layout)));
         assert!(!checked.accepts_value(&value(wrong_layout)));

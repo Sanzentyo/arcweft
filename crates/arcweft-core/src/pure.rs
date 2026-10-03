@@ -2541,6 +2541,14 @@ impl<'a> PureEvaluator<'a> {
             ordinal,
             name: case.name().to_owned(),
             payload: payload.map(Box::new),
+            type_instantiation: (!plan
+                .type_table()
+                .get(ty)
+                .ok_or(RuntimeEvalError::UnknownPlanType(ty))?
+                .scope()
+                .is_root())
+            .then(|| self.env.function_instantiation_lease().cloned())
+            .flatten(),
         })
     }
 

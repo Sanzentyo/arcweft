@@ -517,6 +517,7 @@ mod tests {
                     payload: Some(Box::new(RuntimeValue::Seq(RuntimeSeq::values(vec![
                         RuntimeValue::String("value".to_owned()),
                     ])))),
+                    type_instantiation: None,
                 },
             )])
             .unwrap(),

@@ -82,6 +82,7 @@ fn runtime_value_to_json_at(
             ordinal,
             name,
             payload,
+            type_instantiation: _,
         } => {
             let payload = payload
                 .as_deref()

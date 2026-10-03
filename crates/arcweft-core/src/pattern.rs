@@ -1189,8 +1189,7 @@ impl RuntimeCheckedType {
                     owner,
                     ordinal,
                     name,
-                    payload,
-                },
+                    payload, type_instantiation,},
                 Self::Variant { .. },
             ) => self.accepts_nominal_variant_at_depth(
                 owner,
@@ -1200,7 +1199,7 @@ impl RuntimeCheckedType {
                 depth,
             ),
             (
-                RuntimeValueView::Variant { owner, ordinal, name, payload },
+                RuntimeValueView::Variant { owner, ordinal, name, payload , type_instantiation,},
                 Self::Result { .. } | Self::Option(_),
             ) => self.accepts_builtin_variant_parts_at_depth(owner, ordinal, name, payload, depth),
             (RuntimeValueView::Agent(value), Self::Agent(expected)) => {
@@ -2066,15 +2065,18 @@ fn runtime_value_views_equal(left: RuntimeValueView<'_>, right: RuntimeValueView
                 ordinal: left_ordinal,
                 name: left_name,
                 payload: left_payload,
+                type_instantiation: left_instantiation,
             },
             RuntimeValueView::Variant {
                 owner: right_owner,
                 ordinal: right_ordinal,
                 name: right_name,
                 payload: right_payload,
+                type_instantiation: right_instantiation,
             },
         ) => {
             left_owner == right_owner
+                && left_instantiation == right_instantiation
                 && left_ordinal == right_ordinal
                 && left_name == right_name
                 && match (left_payload, right_payload) {
@@ -3083,6 +3085,7 @@ fn runtime_variant_matches_type(
         ordinal,
         name,
         payload,
+        type_instantiation: _,
     } = value
     else {
         return false;
@@ -3477,6 +3480,7 @@ mod tests {
                 .0,
             name: "not-a-resource-case".to_owned(),
             payload: Some(Box::new(RuntimeValue::Unit)),
+            type_instantiation: None,
         };
         assert!(wrong_name.builtin_variant_case().is_none());
         assert!(!expected.accepts_value(&wrong_name));

@@ -766,6 +766,7 @@ impl<'a> HostCallArgs<'a> {
                 ordinal,
                 name,
                 payload,
+                type_instantiation,
             }) => Ok(HostCallVariantArg {
                 owner,
                 ordinal: *ordinal,
@@ -1003,6 +1004,7 @@ mod tests {
                 ordinal: 4,
                 name: "Fullscreen".to_owned(),
                 payload: None,
+                type_instantiation: None,
             })],
         );
         let args = HostCallArgs::from_custom_request(&request).expect("custom args");

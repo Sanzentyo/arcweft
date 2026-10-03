@@ -152,10 +152,11 @@ callable を返す default は値生成であり、capture の転送だけをそ
 含める。latent body と defer の cleanup body は別の実行境界で、cleanup の効果・
 中断条件は保持する。field access は field identity と receiver の評価元を別々に
 持ち、直接 binding の read と receiver expression の評価を二重に数えない。
-宣言の型スコープに属する nominal record の生成では、その実行 frame の不変な
+宣言の型スコープに属する nominal record／enum の生成では、その実行 frame の不変な
 型束縛を値の生成元として保持する。別 frame への転送と snapshot 復元では、
 同じ executable の型表で生成元を検証し、転送先とは別の環境で nominal 引数を
-比較する。スコープの幅が同じでも転送先の束縛で生成元を代用しない。部分 move
+比較する。case の選択と call の入力・結果・spread の型投影にも、この完全な
+実行環境を使う。スコープの幅が同じでも転送先の束縛で生成元を代用しない。部分 move
 後の record header もこの証拠を保持し、field の再初期化で失わない。
 move した値の読み取り・借用は未初期化として拒否する。whole-local への代入は
 同じ宣言を再初期化できる。部分 move は field ごとに追跡し、その field への

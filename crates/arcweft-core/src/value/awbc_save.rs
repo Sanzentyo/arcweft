@@ -80,6 +80,7 @@ pub enum AwbcRuntimeValueSnapshot {
         owner: super::RuntimeVariantIdentity,
         ordinal: u32,
         name: String,
+        type_instantiation: Option<crate::program_types::RuntimeFunctionEffectInstantiation>,
         payload: Option<Box<Self>>,
     },
 }
@@ -361,6 +362,7 @@ impl AwbcRuntimeValueSnapshot {
                 ordinal,
                 name,
                 payload,
+                type_instantiation,
             } => Self::Variant {
                 owner: variant_owner.clone(),
                 ordinal: *ordinal,
@@ -370,6 +372,7 @@ impl AwbcRuntimeValueSnapshot {
                     .map(|value| Self::from_live_with_owner(value, owner))
                     .transpose()?
                     .map(Box::new),
+                type_instantiation: type_instantiation.as_deref().cloned(),
             },
         })
     }
@@ -455,6 +458,7 @@ impl AwbcRuntimeValueSnapshot {
                 ordinal,
                 name,
                 payload,
+                type_instantiation,
             } => {
                 let semantic_identity = match &owner {
                     super::RuntimeVariantIdentity::Nominal {
@@ -473,6 +477,7 @@ impl AwbcRuntimeValueSnapshot {
                                 .map(Box::new)
                         })
                         .transpose()?,
+                    type_instantiation: type_instantiation.map(std::sync::Arc::new),
                 };
                 if let Some(semantic_identity) = semantic_identity {
                     program_owner

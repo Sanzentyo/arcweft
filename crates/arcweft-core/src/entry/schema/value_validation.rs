@@ -362,6 +362,7 @@ impl<'a> SchemaValueValidation<'a> {
                     ordinal,
                     name,
                     payload,
+                    type_instantiation: _,
                 },
             ) => {
                 if owner != &RuntimeVariantIdentity::Builtin(builtin.owner()) {
@@ -411,6 +412,7 @@ impl<'a> SchemaValueValidation<'a> {
                     ordinal,
                     name,
                     payload,
+                    type_instantiation: None,
                 },
             ) if nominal.as_str() == expected_owner => {
                 Self::serde_enum(variants, ordinal, name, payload.is_some())

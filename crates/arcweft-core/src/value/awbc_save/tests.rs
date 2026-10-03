@@ -390,6 +390,7 @@ fn nominal_snapshot_restore_requires_exact_program_admission() {
                 .is_err()
         );
         let wrong_case = AwbcRuntimeValueSnapshot::Variant {
+            type_instantiation: None,
             owner: super::super::RuntimeVariantIdentity::Nominal {
                 nominal: RuntimeNominalTypeId::try_new("snapshot.Event").unwrap(),
                 semantic_identity: semantic(3),

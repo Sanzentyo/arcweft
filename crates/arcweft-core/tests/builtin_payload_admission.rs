@@ -68,6 +68,7 @@ fn every_builtin_payload_case_requires_one_tuple_item_before_publication() {
                 payload: case
                     .has_payload()
                     .then(|| Box::new(RuntimeValue::Tuple(vec![RuntimeValue::Bool(true)]))),
+                type_instantiation: None,
             };
             assert!(checked.accepts_value(&value), "{owner:?}::{case:?}");
         }

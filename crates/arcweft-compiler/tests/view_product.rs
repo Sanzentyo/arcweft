@@ -1339,6 +1339,178 @@ view Main(first: i64 -> i64 = |input: i64| input + 1,
 }
 
 #[test]
+fn nominal_enum_default_constructed_from_scoped_input_keeps_its_origin() {
+    use arcweft_runtime_driver::presentation_handles::{
+        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    };
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+enum Slot<T> { Empty, Full T }
+view Main(first: i64 -> i64 = |input: i64| input + 1,
+          value: Slot<i64 -> i64> = .Full(first),
+          copied: Slot<i64 -> i64> = value) { Text("static") }
+"#;
+    let compiled = project_view_fixture_with_entry(source, "arcweft-test://nominal-enum-origin")
+        .compile()
+        .unwrap();
+    let awbc = AwbcLowerer::new(
+        &compiled.runtime_plan().plan,
+        &compiled.runtime_plan().dialogue_content_catalog,
+        "main.arcw",
+    )
+    .lower()
+    .unwrap()
+    .program;
+    let awbc =
+        Arc::new(arcweft_bundle::standard_view::install_dialogue_handler_awbc(awbc).unwrap());
+    let mut runtime = BundleViewRuntime::try_new_with_awbc(
+        compiled.view_product().product().as_ref().clone(),
+        compiled.view_product().text().cloned(),
+        Arc::clone(&awbc),
+    )
+    .unwrap();
+    let handle = PresentationHandleRecord::new(
+        PresentationHandleId::try_new("view.enum-origin").unwrap(),
+        PresentationHandleKind::View,
+        "view.Main".to_owned(),
+        None,
+        PresentationResourceState::Mounted,
+        None,
+        0,
+    );
+    let frame = runtime.evaluate(&[handle], &[], false);
+    assert!(frame.diagnostics.is_empty(), "{frame:#?}");
+    let snapshot = runtime.snapshot().unwrap();
+    let parameters = &snapshot.mounts[0].runtime_parameters;
+    let value = &parameters
+        .iter()
+        .find(|value| value.name == "value")
+        .unwrap()
+        .value;
+    let copied = &parameters
+        .iter()
+        .find(|value| value.name == "copied")
+        .unwrap()
+        .value;
+    assert_eq!(value, copied);
+    let arcweft_core::value::RuntimeValue::Variant {
+        owner:
+            arcweft_core::pattern::RuntimeVariantIdentity::Nominal {
+                semantic_identity, ..
+            },
+        type_instantiation: Some(origin),
+        ..
+    } = value
+    else {
+        panic!("scoped enum origin")
+    };
+    assert!(
+        !awbc.runtime_types[awbc.semantic_type_id(*semantic_identity).unwrap().index()]
+            .scope()
+            .is_root()
+    );
+    let arcweft_core::value::RuntimeValue::Variant {
+        type_instantiation: Some(copied_origin),
+        ..
+    } = copied
+    else {
+        panic!("transferred enum origin")
+    };
+    assert!(Arc::ptr_eq(origin, copied_origin));
+    let owner = arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&awbc));
+    let image = arcweft_core::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+        value, &owner,
+    )
+    .unwrap();
+    let decoded: arcweft_core::value::AwbcRuntimeValueSnapshot =
+        serde_json::from_slice(&serde_json::to_vec(&image).unwrap()).unwrap();
+    assert_eq!(
+        decoded.into_runtime_value_for_program(&owner).unwrap(),
+        *value
+    );
+    let mut missing = image.clone();
+    let arcweft_core::value::AwbcRuntimeValueSnapshot::Variant {
+        type_instantiation, ..
+    } = &mut missing
+    else {
+        panic!("enum snapshot")
+    };
+    *type_instantiation = None;
+    assert!(missing.into_runtime_value_for_program(&owner).is_err());
+    for (field, replacement) in [
+        ("effects", serde_json::json!([])),
+        ("context", serde_json::json!(vec![0xa9; 32])),
+    ] {
+        let mut forged = image.clone();
+        let arcweft_core::value::AwbcRuntimeValueSnapshot::Variant {
+            type_instantiation: Some(binding),
+            ..
+        } = &mut forged
+        else {
+            panic!("enum binding snapshot")
+        };
+        let mut altered = serde_json::to_value(&*binding).unwrap();
+        altered[field] = replacement;
+        *binding = serde_json::from_value(altered).unwrap();
+        assert!(forged.into_runtime_value_for_program(&owner).is_err());
+    }
+    let definition = compiled
+        .view_product()
+        .product()
+        .program()
+        .unwrap()
+        .resource()
+        .definitions
+        .iter()
+        .find(|definition| definition.public_id.as_str() == "view.Main")
+        .unwrap();
+    let default = |name: &str| {
+        definition
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == name)
+            .unwrap()
+            .default_program
+            .as_ref()
+            .unwrap()
+            .program
+    };
+    let native_plan = Arc::new(compiled.runtime_plan().plan.clone());
+    let finish = |program, inputs| {
+        let mut engine = arcweft_core::engine::Engine::for_program_invocation(
+            Arc::clone(&native_plan),
+            program,
+            inputs,
+        )
+        .unwrap();
+        for _ in 0..64 {
+            let output = engine.step(Default::default(), Default::default()).output;
+            assert!(output.diagnostics.is_empty(), "{output:?}");
+            if let Some((_, value)) = engine.take_program_result().unwrap() {
+                return value;
+            }
+        }
+        panic!("native enum default exceeded its deterministic step limit")
+    };
+    let first = finish(default("first"), vec![]);
+    let native = finish(default("value"), vec![first.clone()]);
+    let arcweft_core::value::RuntimeValue::Variant {
+        payload: Some(payload),
+        type_instantiation: Some(_),
+        ..
+    } = &native
+    else {
+        panic!("native enum origin")
+    };
+    assert_eq!(
+        payload.as_ref(),
+        &arcweft_core::value::RuntimeValue::Tuple(vec![first])
+    );
+    assert_eq!(finish(default("copied"), vec![native.clone()]), native);
+}
+
+#[test]
 fn compiler_rejects_general_view_calls_at_the_unimplemented_runtime_boundary() {
     let cases = ["view Child(value: i32) { Text(value) }\nview Main() { Child(1i32) }\n"];
 

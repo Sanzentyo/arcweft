@@ -377,6 +377,7 @@ impl Fixture {
             ordinal: 1,
             name: "Set".into(),
             payload: Some(Box::new(RuntimeValue::Tuple(vec![field_value]))),
+            type_instantiation: None,
         }))
     }
     fn start(&self, program: RuntimeProgramTypes<'_>) -> RootRuntime {

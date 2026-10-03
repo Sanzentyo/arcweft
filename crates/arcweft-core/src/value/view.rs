@@ -44,12 +44,36 @@ pub(crate) enum RuntimeValueView<'a> {
         owner: &'a RuntimeVariantIdentity,
         ordinal: u32,
         name: &'a str,
+        type_instantiation:
+            Option<&'a std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
         payload: Option<&'a RuntimeValue>,
     },
     RuntimeOnly(&'a RuntimeValue),
 }
 
-impl RuntimeValueView<'_> {
+impl<'a> RuntimeValueView<'a> {
+    /// Borrows the construction witness for a header with scoped nominal identity.
+    pub(crate) fn construction_instantiation(
+        self,
+    ) -> Option<(
+        crate::pattern::RuntimeSemanticTypeId,
+        &'a crate::program_types::RuntimeFunctionEffectInstantiation,
+    )> {
+        match self {
+            Self::NominalRecord(record) => {
+                Some((record.semantic_identity(), record.type_instantiation()?))
+            }
+            Self::Variant {
+                owner:
+                    RuntimeVariantIdentity::Nominal {
+                        semantic_identity, ..
+                    },
+                type_instantiation: Some(binding),
+                ..
+            } => Some((*semantic_identity, binding.as_ref())),
+            _ => None,
+        }
+    }
     /// Materializes a second logical value only after recursive Copy proof.
     /// Columnar rows are projected through borrowed children before any
     /// physical row is constructed.
@@ -98,11 +122,13 @@ impl RuntimeValueView<'_> {
                 ordinal,
                 name,
                 payload,
+                type_instantiation,
             } => RuntimeValue::Variant {
                 owner: owner.clone(),
                 ordinal,
                 name: name.to_owned(),
                 payload: payload.map(|value| Box::new(value.clone())),
+                type_instantiation: type_instantiation.cloned(),
             },
             Self::RuntimeOnly(value) => value.clone(),
         })
@@ -349,11 +375,13 @@ impl RuntimeValue {
                 ordinal,
                 name,
                 payload,
+                type_instantiation,
             } => View::Variant {
                 owner,
                 ordinal: *ordinal,
                 name,
                 payload: payload.as_deref(),
+                type_instantiation: type_instantiation.as_ref(),
             },
             Self::MatrixF32(_)
             | Self::MatrixF64(_)

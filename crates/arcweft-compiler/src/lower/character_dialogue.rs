@@ -26,7 +26,7 @@ pub(super) fn runtime_character_dialogue_call(
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
-    enclosing: Option<ProjectInstanceTypes<'_>>,
+    lexical: RuntimeExecutableInstantiation<'_>,
 ) -> Result<Option<RuntimeResolvedCall>, RuntimeSemanticProjectionError> {
     let selected = application.core().candidates().selected();
     let CallableValidator::Dialogue(operation) = selected.schema().validator() else {
@@ -79,9 +79,8 @@ pub(super) fn runtime_character_dialogue_call(
     let target_ty = analysis
         .expression(target.expression())
         .ok_or_else(|| invalid("CharacterDialogue target has no checked type"))?;
-    let target_ty = runtime_type_under(
+    let target_ty = lexical.runtime_type(
         checked_expression_type(target_ty, target.expression())?,
-        enclosing,
         symbols,
         world,
         analysis,
@@ -102,7 +101,7 @@ pub(super) fn runtime_character_dialogue_call(
         symbols,
         world,
         analysis,
-        enclosing,
+        lexical,
         &mut operands,
     )?;
     let call = RuntimeResolvedCall::try_new(
@@ -130,7 +129,7 @@ fn project_patch_operands(
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
-    enclosing: Option<ProjectInstanceTypes<'_>>,
+    lexical: RuntimeExecutableInstantiation<'_>,
     operands: &mut Vec<RuntimeResolvedCallOperand>,
 ) -> Result<Box<[CharacterDialoguePatchField<u32>]>, RuntimeSemanticProjectionError> {
     let invalid = |reason: &str| RuntimeSemanticProjectionError::Call {
@@ -186,7 +185,7 @@ fn project_patch_operands(
                 .checked_add(1)
                 .ok_or_else(|| invalid("CharacterDialogue operand ABI position exceeds u32"))?;
             let projection =
-                runtime_call_operand_projection(owner, slot, symbols, world, analysis, enclosing)?;
+                runtime_call_operand_projection(owner, slot, symbols, world, analysis, lexical)?;
             if !matches!(projection, RuntimeResolvedCallOperandProjection::Scalar) {
                 return Err(invalid(
                     "CharacterDialogue patch operand is not a scalar contribution",
@@ -213,7 +212,7 @@ fn project_patch_operands(
                         .map_err(|_| invalid("CharacterDialogue argument slot exceeds u32"))?,
                 },
                 runtime_call_operand_source(slot.source().raw()),
-                runtime_type_under(slot.inferred(), enclosing, symbols, world, analysis)?,
+                lexical.runtime_type(slot.inferred(), symbols, world, analysis)?,
                 runtime_call_operand_binding(owner, selected, *passing, slot)?,
                 projection,
                 parameter,

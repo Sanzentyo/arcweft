@@ -899,6 +899,7 @@ fn data_calls_reject_unbound_context_and_wrong_format_identity() {
         ordinal: 0,
         name: "Json".to_owned(),
         payload: None,
+        type_instantiation: None,
     };
     assert!(
         accelerator

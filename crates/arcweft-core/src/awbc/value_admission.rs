@@ -74,15 +74,10 @@ impl AwbcProgram {
             .runtime_types
             .get(ty.index())
             .ok_or(AwbcValueAdmissionError::UnknownType { ty })?;
-        let binding = match value {
-            View::NominalRecord(record)
-                if !row.scope().is_root()
-                    && record.semantic_identity() == row.semantic_identity() =>
-            {
-                record.type_instantiation()
-            }
-            _ => None,
-        };
+        let binding = value
+            .construction_instantiation()
+            .filter(|(identity, _)| !row.scope().is_root() && *identity == row.semantic_identity())
+            .map(|(_, binding)| binding);
         crate::program_types::RuntimeFunctionEffectInstantiation::with_value_relation(
             self,
             binding,
@@ -124,15 +119,11 @@ impl AwbcProgram {
             .runtime_types
             .get(ty.index())
             .ok_or(AwbcValueAdmissionError::UnknownType { ty })?;
-        let binding = match value {
-            RuntimeValue::NominalRecord(record)
-                if !row.scope().is_root()
-                    && record.semantic_identity() == row.semantic_identity() =>
-            {
-                record.type_instantiation()
-            }
-            _ => None,
-        };
+        let binding = value
+            .view()
+            .construction_instantiation()
+            .filter(|(identity, _)| !row.scope().is_root() && *identity == row.semantic_identity())
+            .map(|(_, binding)| binding);
         crate::program_types::RuntimeFunctionEffectInstantiation::with_value_relation(
             self,
             binding,
@@ -305,6 +296,7 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
             ordinal,
             name,
             payload,
+            type_instantiation,
         } = value
         else {
             return Err(Self::mismatch(value));
@@ -353,7 +345,11 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
                     && layout == actual_layout.as_bytes()
                     && self.string(actual_case.name)? == name
                     && actual_case.payload.is_some() == payload.is_some()
-                    && self.context.nominal(ty, actual_ty, None)
+                    && self.context.nominal(
+                        ty,
+                        actual_ty,
+                        type_instantiation.map(std::sync::Arc::as_ref),
+                    )
             }
             _ => false,
         };

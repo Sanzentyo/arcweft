@@ -1157,6 +1157,7 @@ mod visitor_tests {
             ordinal: 300,
             name: "case".to_owned(),
             payload: None,
+            type_instantiation: None,
         };
         let mut expected = vec![14, 0, 15];
         expected.extend_from_slice(b"aw.test.variant");

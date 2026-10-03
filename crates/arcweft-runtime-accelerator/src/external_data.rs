@@ -399,6 +399,7 @@ fn data_format_arg(
         ordinal,
         name,
         payload: None,
+        type_instantiation,
     } = value
     else {
         return Err(data_runtime_error(

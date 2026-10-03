@@ -149,6 +149,7 @@ fn look_source_requires_manifest_row_and_exact_program_lease() {
         ordinal: 0,
         name: "normal".to_owned(),
         payload: None,
+        type_instantiation: None,
     };
     assert_eq!(
         authority.decode(&owner, &akane, &value).unwrap().as_str(),

@@ -61,6 +61,7 @@ fn builtin_schema_and_value_constructors_agree_on_every_case_and_wrapper() {
                     ordinal,
                     name: name.clone(),
                     payload: payload.map(Box::new),
+                    type_instantiation: None,
                 };
                 assert!(schema.validate_value(&malformed, limits).is_err());
             }
@@ -70,6 +71,7 @@ fn builtin_schema_and_value_constructors_agree_on_every_case_and_wrapper() {
                     ordinal,
                     name,
                     payload: None,
+                    type_instantiation: None,
                 };
                 assert!(schema.validate_value(&missing, limits).is_err());
             }
@@ -105,6 +107,7 @@ fn builtin_schema_rejects_wrong_owner_case_and_name_before_payload_admission() {
             payload: Some(Box::new(RuntimeValue::Tuple(vec![RuntimeValue::Bool(
                 true,
             )]))),
+            type_instantiation: None,
         };
         assert!(matches!(
             schema.validate_value(&value, limits),

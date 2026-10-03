@@ -652,7 +652,7 @@ fn project_runtime_semantic_fact_inventories(
             symbols,
             world,
             analysis,
-            None,
+            RuntimeExecutableInstantiation::Global,
             &mut instance_projection,
         )?;
         if runtime_calls.insert(owner, projected).is_some() {
@@ -6355,9 +6355,10 @@ fn runtime_call(
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
-    enclosing: Option<ProjectInstanceTypes<'_>>,
+    lexical: RuntimeExecutableInstantiation<'_>,
     project_function_instances: &mut ProjectInstanceProjection<'_>,
 ) -> Result<RuntimeResolvedCall, RuntimeSemanticProjectionError> {
+    let enclosing = lexical.types();
     if facts.expression() != owner {
         return Err(RuntimeSemanticProjectionError::Call {
             owner,
@@ -6376,7 +6377,7 @@ fn runtime_call(
         symbols,
         world,
         analysis,
-        enclosing,
+        lexical,
     )? {
         return Ok(dialogue);
     }
@@ -6443,7 +6444,7 @@ fn runtime_call(
                     symbols,
                     world,
                     analysis,
-                    enclosing,
+                    lexical,
                 )?)
             }
             CheckedCallCalleeExecution::Value { source } => {
@@ -6567,7 +6568,7 @@ fn runtime_call(
                     abi_position,
                     RuntimeResolvedCallOperandOrigin::Receiver,
                     runtime_call_operand_source(source.raw()),
-                    runtime_type_under(ty, enclosing, symbols, world, analysis)?,
+                    lexical.runtime_type(ty, symbols, world, analysis)?,
                     RuntimeResolvedCallOperandBinding::Positional,
                     RuntimeResolvedCallOperandProjection::Scalar,
                     None,
@@ -6590,9 +6591,9 @@ fn runtime_call(
                     })?,
                 },
                 runtime_call_operand_source(slot.source().raw()),
-                runtime_type_under(slot.inferred(), enclosing, symbols, world, analysis)?,
+                lexical.runtime_type(slot.inferred(), symbols, world, analysis)?,
                 runtime_call_operand_binding(owner, selected, passing, slot)?,
-                runtime_call_operand_projection(owner, slot, symbols, world, analysis, enclosing)?,
+                runtime_call_operand_projection(owner, slot, symbols, world, analysis, lexical)?,
                 match slot.destination() {
                     CheckedCallOperandDestination::Parameter(coordinate) => {
                         Some(RuntimeCallParameterCoordinate::new(
@@ -6624,7 +6625,7 @@ fn runtime_call(
                 abi_position,
             } => {
                 let source = source.map(|source| source.raw().owner());
-                let ty = runtime_type_under(ty, enclosing, symbols, world, analysis)?;
+                let ty = lexical.runtime_type(ty, symbols, world, analysis)?;
                 let content = match (presence, source) {
                     (CallableParameterPresence::Required, Some(source)) => {
                         RuntimeResolvedAttachedContent::Required { source, ty }
@@ -6738,7 +6739,7 @@ fn runtime_call(
                 owner,
                 reason: "selected runtime call has no checked value result".to_owned(),
             })?;
-    let need_type = runtime_type_under(selected_result, enclosing, symbols, world, analysis)?;
+    let need_type = lexical.runtime_type(selected_result, symbols, world, analysis)?;
     let is_need_result = matches!(
         need_type.shape(),
         arcweft_runtime_plan::semantic_facts::RuntimeTypeShape::Need(_)
@@ -7927,6 +7928,19 @@ fn runtime_executable_semantic_facts<'abi>(
             }
             CheckedExecutableRuntimeExpressionFactFamily::Variant => {
                 let variant = match checked.resolution() {
+                    CheckedExpressionResolution::Variant(variant)
+                        if matches!(
+                            variant.owner().kind(),
+                            CheckedVariantOwnerKind::Project { .. }
+                        ) =>
+                    {
+                        let ty = projected_types
+                            .get(&RuntimeProjectFunctionTypeOwner::Expression(owner))
+                            .ok_or_else(|| {
+                                error(owner, "nominal variant has no executable type projection")
+                            })?;
+                        variants::runtime_project_variant(variant, ty, symbols, world, analysis)?
+                    }
                     CheckedExpressionResolution::Variant(variant) => {
                         runtime_variant_under(variant, symbols, world, analysis, lexical.types())?
                     }
@@ -7947,14 +7961,7 @@ fn runtime_executable_semantic_facts<'abi>(
                     error(owner, "instance runtime call has no checked call fact")
                 })?;
                 RuntimeProjectFunctionExpressionPayload::Call(runtime_call(
-                    owner,
-                    facts,
-                    project,
-                    symbols,
-                    world,
-                    analysis,
-                    lexical.types(),
-                    instances,
+                    owner, facts, project, symbols, world, analysis, lexical, instances,
                 )?)
             }
             CheckedExecutableRuntimeExpressionFactFamily::EvaluatedEffect => {
@@ -8770,8 +8777,9 @@ fn runtime_call_operand_projection(
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
-    enclosing: Option<ProjectInstanceTypes<'_>>,
+    lexical: RuntimeExecutableInstantiation<'_>,
 ) -> Result<RuntimeResolvedCallOperandProjection, RuntimeSemanticProjectionError> {
+    let enclosing = lexical.types();
     let projection = match slot.source_projection() {
         CheckedConstraintSourceProjection::Scalar => RuntimeResolvedCallOperandProjection::Scalar,
         CheckedConstraintSourceProjection::SpreadContainer(container) => {
@@ -8799,7 +8807,7 @@ fn runtime_call_operand_projection(
                             MapKind::Sorted => RuntimeMapKind::Sorted,
                             MapKind::BTree => RuntimeMapKind::BTree,
                         },
-                        key: runtime_type_under(key, enclosing, symbols, world, analysis)?,
+                        key: lexical.runtime_type(key, symbols, world, analysis)?,
                     }
                 }
             })
@@ -9046,12 +9054,21 @@ fn runtime_call_target(
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
-    enclosing: Option<ProjectInstanceTypes<'_>>,
+    lexical: RuntimeExecutableInstantiation<'_>,
 ) -> Result<RuntimeResolvedStaticCallTarget, RuntimeSemanticProjectionError> {
+    let enclosing = lexical.types();
     if let Some(variant) = analysis
         .execution_projection()
         .variant_constructor(project, application)?
     {
+        if matches!(
+            variant.owner().kind(),
+            CheckedVariantOwnerKind::Project { .. }
+        ) {
+            let ty = lexical.runtime_type(&variant.owner().ty(), symbols, world, analysis)?;
+            return variants::runtime_project_variant(&variant, &ty, symbols, world, analysis)
+                .map(RuntimeResolvedStaticCallTarget::Variant);
+        }
         return runtime_variant_under(&variant, symbols, world, analysis, enclosing)
             .map(RuntimeResolvedStaticCallTarget::Variant);
     }

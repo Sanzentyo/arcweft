@@ -965,6 +965,7 @@ fn unwrap_named_variant(value: RuntimeValue, expected: &str) -> Result<RuntimeVa
             ordinal: 0,
             name,
             payload: Some(payload),
+            type_instantiation: None,
         } if nominal.as_str() == expected && name == expected => Ok(*payload),
         RuntimeValue::Record(_) => Ok(value),
         _ => Err(format!("expected `{expected}` value")),

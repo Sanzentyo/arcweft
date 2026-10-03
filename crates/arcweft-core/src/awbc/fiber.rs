@@ -161,7 +161,8 @@ pub struct FiberCursor {
 pub struct FiberFrame {
     pub instance: RuntimeFrameInstanceId,
     pub function: AwbcFunctionId,
-    pub type_instantiation: Option<crate::program_types::RuntimeFunctionEffectInstantiation>,
+    pub type_instantiation:
+        Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
     pub layout: AwbcFrameLayoutId,
     pub return_to: Option<FiberReturnPoint>,
     pub registers: Vec<RuntimePlaceStorage<RuntimeValue>>,
@@ -963,7 +964,7 @@ impl AwbcFiberFrameSnapshot {
         Ok(Self {
             instance: frame.instance,
             function: frame.function,
-            type_instantiation: frame.type_instantiation.clone(),
+            type_instantiation: frame.type_instantiation.as_deref().cloned(),
             layout: frame.layout,
             return_to: frame
                 .return_to
@@ -1007,7 +1008,7 @@ impl AwbcFiberFrameSnapshot {
         Ok(FiberFrame {
             instance: self.instance,
             function: self.function,
-            type_instantiation: self.type_instantiation,
+            type_instantiation: self.type_instantiation.map(std::sync::Arc::new),
             layout: self.layout,
             return_to: self
                 .return_to
@@ -2229,7 +2230,7 @@ impl FiberState {
             budget_quantum,
         )
         .expect("prepared function input binding validated the AWBC frame");
-        fiber.frames[0].type_instantiation = prepared.type_instantiation;
+        fiber.frames[0].type_instantiation = prepared.type_instantiation.map(std::sync::Arc::new);
         let registers = &mut fiber.frames[0].registers;
         for (register, value) in prepared.parameter_registers.into_iter().zip(args) {
             registers[register.index()] = value.into();
@@ -2471,7 +2472,7 @@ impl FiberState {
         }
         let frame = self.active_frame_mut()?;
         frame.registers = register_values;
-        frame.type_instantiation = type_instantiation;
+        frame.type_instantiation = type_instantiation.map(std::sync::Arc::new);
         Ok(())
     }
 
@@ -4102,7 +4103,7 @@ fn validate_frame(
     if function.frame_layout != frame.layout {
         return Err(FiberStateError::InvalidFrame);
     }
-    match (function.type_context, frame.type_instantiation.as_ref()) {
+    match (function.type_context, frame.type_instantiation.as_deref()) {
         (None, None) => {}
         (Some(context), Some(binding))
             if program
@@ -4126,7 +4127,7 @@ fn validate_frame(
             .ok_or(FiberStateError::InvalidFrame)?;
         validate_place_storage_at(
             program,
-            frame.type_instantiation.as_ref(),
+            frame.type_instantiation.as_deref(),
             value,
             slot.ty,
             format!("{path}.registers[{index}]"),
@@ -5887,7 +5888,7 @@ impl FiberFrame {
             next[*register] = value.clone().into();
         }
         self.registers = next;
-        self.type_instantiation = type_instantiation;
+        self.type_instantiation = type_instantiation.map(std::sync::Arc::new);
         Ok(())
     }
 
@@ -5951,7 +5952,7 @@ impl FiberFrame {
             next[register] = value.into();
         }
         self.registers = next;
-        self.type_instantiation = type_instantiation;
+        self.type_instantiation = type_instantiation.map(std::sync::Arc::new);
         Ok(())
     }
 
@@ -6007,7 +6008,7 @@ impl FiberFrame {
     ) -> bool {
         Self::value_matches_instantiation(
             program,
-            self.type_instantiation.as_ref(),
+            self.type_instantiation.as_deref(),
             value,
             expected,
         )
@@ -6019,7 +6020,7 @@ impl FiberFrame {
         value: crate::value::RuntimeValueView<'_>,
         expected: AwbcTypeId,
     ) -> bool {
-        self.type_instantiation.as_ref().map_or_else(
+        self.type_instantiation.as_deref().map_or_else(
             || super::vm::runtime_value_view_matches_type(program, value, expected, 0),
             |binding| binding.value_view_matches(program, expected, value),
         )
@@ -6091,7 +6092,7 @@ impl FiberFrame {
                         })?;
                 validate_place_storage_at(
                     program,
-                    self.type_instantiation.as_ref(),
+                    self.type_instantiation.as_deref(),
                     storage,
                     *expected,
                     format!("parameter_storage[{index}]"),

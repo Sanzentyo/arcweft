@@ -460,6 +460,7 @@ fn graph_variants_require_exact_owner_layout_case_and_payload_shape() {
         ordinal,
         name: name.to_owned(),
         payload: payload.map(Box::new),
+        type_instantiation: None,
     };
     let limits = RuntimeSchemaLimits::engine_default();
     let validate =
