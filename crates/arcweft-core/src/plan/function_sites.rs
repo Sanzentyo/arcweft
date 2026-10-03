@@ -138,12 +138,17 @@ impl RuntimeFunctionSiteBody {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeFunctionSite {
+    function_type: Option<RuntimePlanTypeId>,
     inputs: Box<[RuntimeFunctionInputBinding]>,
     result: RuntimePlanTypeId,
     body: RuntimeFunctionSiteBody,
 }
 
 impl RuntimeFunctionSite {
+    #[must_use]
+    pub const fn function_type(&self) -> Option<RuntimePlanTypeId> {
+        self.function_type
+    }
     #[must_use]
     pub const fn body(&self) -> &RuntimeFunctionSiteBody {
         &self.body
@@ -222,6 +227,7 @@ impl RuntimeFunctionSiteTableBuilder {
 
     pub(crate) fn push(
         &mut self,
+        function_type: Option<RuntimePlanTypeId>,
         inputs: Box<[RuntimeFunctionInputBinding]>,
         result: RuntimePlanTypeId,
         body: RuntimeFunctionSiteBody,
@@ -234,6 +240,7 @@ impl RuntimeFunctionSiteTableBuilder {
             .and_then(NonZeroU32::new)
             .ok_or(RuntimeFunctionSiteError::IdentityExhausted)?;
         self.sites.push(RuntimeFunctionSite {
+            function_type,
             inputs,
             result,
             body,

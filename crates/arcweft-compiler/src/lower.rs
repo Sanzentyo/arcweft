@@ -896,14 +896,50 @@ fn project_runtime_semantic_fact_inventories(
         let local = analysis
             .local(owner)
             .ok_or(RuntimeSemanticProjectionError::MissingLocalSemanticFact { local: owner })?;
-        input.push_local_declaration(
-            owner,
-            runtime_type(local.ty(), symbols, world, analysis).map_err(|error| {
-                RuntimeSemanticProjectionError::Type {
-                    reason: format!("runtime local {owner:?}: {error}"),
-                }
-            })?,
-        );
+        let source = analysis
+            .hir_topology()
+            .semantic_path(owner.into())
+            .map_err(|_| RuntimeSemanticProjectionError::MissingLocalSemanticFact { local: owner })?
+            .ok_or(RuntimeSemanticProjectionError::MissingLocalSemanticFact { local: owner })?;
+        let (ty, context) = match source.root() {
+            arcweft_lang_hir::project::HirSemanticPathRoot::Declaration(declaration) => {
+                let contract = analysis
+                    .checked_callables()
+                    .project_callable(declaration)
+                    .map_err(
+                        |_| RuntimeSemanticProjectionError::MissingLocalSemanticFact {
+                            local: owner,
+                        },
+                    )?
+                    .parameter_contract(
+                        arcweft_lang_sema::callable::CallableGroupIndex::try_from_usize(0)
+                            .expect("initial declaration group fits"),
+                    )
+                    .map_err(|error| RuntimeSemanticProjectionError::Type {
+                        reason: error.to_string(),
+                    })?;
+                let bound = contract.bind_type(local.ty())?;
+                let ty = runtime_type_scoped_at(
+                    &bound,
+                    symbols,
+                    world,
+                    analysis,
+                    &RuntimeTypeProjectionPath::root(),
+                    contract.scope(),
+                )?;
+                let context = (!ty.scope().is_root())
+                    .then(|| runtime_type(contract.schema(), symbols, world, analysis))
+                    .transpose()?;
+                (ty, context)
+            }
+            arcweft_lang_hir::project::HirSemanticPathRoot::Item { .. } => {
+                (runtime_type(local.ty(), symbols, world, analysis)?, None)
+            }
+        };
+        match context {
+            Some(context) => input.push_contextual_local_declaration(owner, ty, context),
+            None => input.push_local_declaration(owner, ty),
+        }
     }
 
     let iteration_methods = runtime_iteration_methods(analysis, runtime_owners, program_owners)?;
@@ -1813,9 +1849,15 @@ impl<'a> RuntimeExecutableInstantiation<'a> {
     fn instantiate_type(self, ty: &TypeKind) -> Result<TypeKind, RuntimeSemanticProjectionError> {
         match self {
             Self::Global => Ok(ty.clone()),
-            Self::Program { types, .. } => match types {
+            Self::Program {
+                types, environment, ..
+            } => match types {
                 Some(types) => types.instantiate_type(ty),
-                None => Ok(ty.clone()),
+                None => environment.instantiate_type(ty).map_err(|error| {
+                    RuntimeSemanticProjectionError::Type {
+                        reason: error.to_string(),
+                    }
+                }),
             },
             Self::Project { solution, .. } => solution.instantiate_type(ty),
             Self::Display { conformance, .. } => {
@@ -8316,7 +8358,7 @@ fn runtime_executable_semantic_facts<'abi>(
                 *analysis.selected_capture(*owner).ok_or_else(|| {
                     origin.error("instance capture has no selected lexical projection")
                 })?,
-                runtime_type_under(checked.ty(), lexical.types(), symbols, world, analysis)?,
+                lexical.runtime_type(checked.ty(), symbols, world, analysis)?,
             ))
         })
         .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
@@ -8419,11 +8461,10 @@ fn runtime_closure_instance_fact(
         ) => RuntimeProjectFunctionExecution::ExpressionFunctionSite,
         _ => RuntimeProjectFunctionExecution::ExecutableFunctionSite,
     };
-    let function_type = runtime_type_under(
+    let function_type = lexical.runtime_type(
         checked
             .value_type()
             .ok_or_else(|| error("closure-instance has no checked function type"))?,
-        lexical.types(),
         symbols,
         world,
         analysis,
@@ -8441,7 +8482,7 @@ fn runtime_closure_instance_fact(
             Ok(RuntimeClosureParameterFact::new(
                 position,
                 parameter.pattern(),
-                runtime_type_under(ty.ty(), lexical.types(), symbols, world, analysis)?,
+                lexical.runtime_type(ty.ty(), symbols, world, analysis)?,
             ))
         })
         .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
@@ -8459,7 +8500,7 @@ fn runtime_closure_instance_fact(
                 position,
                 capture.capture(),
                 capture.local(),
-                runtime_type_under(checked.ty(), lexical.types(), symbols, world, analysis)?,
+                lexical.runtime_type(checked.ty(), symbols, world, analysis)?,
             ))
         })
         .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;

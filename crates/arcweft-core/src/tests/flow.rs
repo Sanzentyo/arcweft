@@ -1035,6 +1035,7 @@ fn native_project_call_executable_target_explicit_return_rejoins_catalog_site() 
         .expect("project-call return type admits");
     let target_site = builder
         .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            function_type: None,
             inputs: Box::new([]),
             result: string,
             body_kind: RuntimeFunctionSiteBodyKind::Executable,
@@ -1121,6 +1122,7 @@ fn native_project_call_target_goto_unwinds_the_catalog_return_boundary() {
         .expect("goto project-call type admits");
     let target_site = builder
         .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            function_type: None,
             inputs: Box::new([]),
             result: unit,
             body_kind: RuntimeFunctionSiteBodyKind::Executable,
@@ -1222,6 +1224,7 @@ fn native_project_call_executable_target_fallthrough_fails_closed() {
         .expect("fallthrough type admits");
     let target_site = builder
         .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            function_type: None,
             inputs: Box::new([]),
             result: unit,
             body_kind: RuntimeFunctionSiteBodyKind::Executable,

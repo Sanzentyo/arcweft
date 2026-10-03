@@ -6,7 +6,9 @@ use arcweft_core::plan::{RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, Runtim
 use arcweft_lang_hir::identity::ExprId;
 
 use crate::errors::RuntimePlanLowerError;
-use crate::semantic_facts::{RuntimeExecutableSemanticFactView, RuntimeScopeOwner};
+use crate::semantic_facts::{
+    RuntimeExecutableSemanticFactView, RuntimeNormalizedType, RuntimeScopeOwner,
+};
 
 use super::{AwaitLocalSeeds, ScopeLocalSeeds, TryLocalSeeds};
 
@@ -35,24 +37,30 @@ impl ControlLocals {
     )]
     pub(super) fn admit(
         facts: RuntimeExecutableSemanticFactView<'_>,
+        function: Option<&RuntimeNormalizedType>,
         builder: &mut RuntimePlanBuilder,
     ) -> Result<Self, RuntimePlanLowerError> {
+        let declaration =
+            |ty: &RuntimeNormalizedType| match function.filter(|_| !ty.scope().is_root()) {
+                Some(function) => {
+                    RuntimeLocalDeclarationSeed::in_function(ty.identity(), function.identity())
+                }
+                None => RuntimeLocalDeclarationSeed::new(ty.identity()),
+            };
         let mut owners = Vec::new();
         let mut seeds = Vec::new();
         let mut error = None;
         facts.visit_runtime_expression_types(&mut |owner, ty| {
             let expression_value_type = facts.expression_source_type(owner).unwrap_or(ty);
             owners.push((owner, ControlLocal::ExpressionValue));
-            seeds.push(RuntimeLocalDeclarationSeed::new(
-                expression_value_type.identity(),
-            ));
+            seeds.push(declaration(expression_value_type));
             if expression_value_type.identity() != ty.identity() {
                 owners.push((owner, ControlLocal::ExpressionFinalValue));
-                seeds.push(RuntimeLocalDeclarationSeed::new(ty.identity()));
+                seeds.push(declaration(ty));
             }
             if facts.awaited(owner).is_some() {
                 owners.push((owner, ControlLocal::Await));
-                seeds.push(RuntimeLocalDeclarationSeed::new(ty.identity()));
+                seeds.push(declaration(ty));
             }
             if let Some(tried) = facts.tried(owner) {
                 let residual = tried.carrier().residual();
@@ -62,15 +70,13 @@ impl ControlLocals {
                         residual: residual.is_some(),
                     },
                 ));
-                seeds.push(RuntimeLocalDeclarationSeed::new(
-                    tried.carrier().success().identity(),
-                ));
-                seeds.extend(residual.map(|ty| RuntimeLocalDeclarationSeed::new(ty.identity())));
+                seeds.push(declaration(tried.carrier().success()));
+                seeds.extend(residual.map(declaration));
             }
             if let Some(pipe) = facts.pipe(owner) {
                 if let Some(left) = facts.expression_type(pipe.left()) {
                     owners.push((owner, ControlLocal::Pipe));
-                    seeds.push(RuntimeLocalDeclarationSeed::new(left.identity()));
+                    seeds.push(declaration(left));
                 } else {
                     error.get_or_insert_with(|| {
                         RuntimePlanLowerError::new(format!(
@@ -83,7 +89,7 @@ impl ControlLocals {
         facts.visit_untyped_evaluated_effect_pipes(&mut |owner, pipe| {
             if let Some(left) = facts.expression_type(pipe.left()) {
                 owners.push((owner, ControlLocal::Pipe));
-                seeds.push(RuntimeLocalDeclarationSeed::new(left.identity()));
+                seeds.push(declaration(left));
             } else {
                 error.get_or_insert_with(|| {
                     RuntimePlanLowerError::new(format!(
@@ -155,14 +161,10 @@ impl ControlLocals {
         facts.visit_scope_continuations(&mut |owner, continuation| {
             scope_owners.push((owner, continuation.residual_type().is_some()));
             scope_seeds.extend([
-                RuntimeLocalDeclarationSeed::new(continuation.carrier_type().identity()),
-                RuntimeLocalDeclarationSeed::new(continuation.value_type().identity()),
+                declaration(continuation.carrier_type()),
+                declaration(continuation.value_type()),
             ]);
-            scope_seeds.extend(
-                continuation
-                    .residual_type()
-                    .map(|ty| RuntimeLocalDeclarationSeed::new(ty.identity())),
-            );
+            scope_seeds.extend(continuation.residual_type().map(declaration));
         });
         let admission = builder
             .admit_type_batch([], scope_seeds)

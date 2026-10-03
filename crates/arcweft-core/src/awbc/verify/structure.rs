@@ -815,6 +815,65 @@ fn verify_parameter_layout(
     let function = &program.functions[function_index];
     let signature = &program.signatures[function.signature.index()];
     let layout = &program.frame_layouts[function.frame_layout.index()];
+    let at = format!("function {function_index} type context");
+    let invalid_context = |message: &str| AwbcVerifyError::InvalidInvariant {
+        at: at.clone(),
+        message: message.to_owned(),
+    };
+    let scope = match function.type_context {
+        None => crate::plan::RuntimeTypeScope::root(),
+        Some(owner) => {
+            let row = program
+                .runtime_types
+                .get(owner.index())
+                .ok_or_else(|| invalid_context("function context type is absent"))?;
+            let AwbcRuntimeTypeShape::Function {
+                contract,
+                parameters,
+                result,
+            } = row.shape()
+            else {
+                return Err(invalid_context("function context is not function-shaped"));
+            };
+            let effects = crate::effect_row::EffectSet::from_labels(
+                program.effect_sets[signature.effects.index()]
+                    .effects
+                    .iter()
+                    .map(|effect| program.strings[effect.index()].as_str()),
+            )
+            .map_err(|_| invalid_context("function effect set contains an invalid identity"))?;
+            if !row.scope().is_root()
+                || parameters != &signature.params
+                || Some(*result) != signature.result
+                || contract.invocation()
+                    != &crate::effect_row::EffectFormula::literal(effects, None)
+            {
+                return Err(invalid_context(
+                    "function context does not authenticate its exact signature",
+                ));
+            }
+            contract
+                .child_scope(row.scope())
+                .map_err(|_| invalid_context("function context has an invalid binder"))?
+        }
+    };
+    for ty in signature
+        .params
+        .iter()
+        .copied()
+        .chain(signature.result)
+        .chain(layout.slots.iter().map(|slot| slot.ty))
+    {
+        let row = program
+            .runtime_types
+            .get(ty.index())
+            .ok_or_else(|| invalid_context("function slot type is absent"))?;
+        if !row.scope().is_root() && row.scope() != &scope {
+            return Err(invalid_context(
+                "function slot escapes its authenticated lexical type scope",
+            ));
+        }
+    }
     let parameter_slots = layout
         .slots
         .iter()
@@ -1229,6 +1288,16 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
         )?;
         let function = &program.functions[binding.function.index()];
         let signature = &program.signatures[function.signature.index()];
+        let context = function
+            .type_context
+            .and_then(|ty| program.runtime_types.get(ty.index()))
+            .map(AwbcRuntimeType::semantic_identity);
+        if context != binding.function_type {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: "pure-program frame context does not match its owning function".to_owned(),
+            });
+        }
         if function.kind != AwbcFunctionKind::Ordinary
             || !program.effect_sets[signature.effects.index()]
                 .effects

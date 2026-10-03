@@ -206,6 +206,7 @@ fn context_fixture(receiver: ContextReceiver, defaulted: bool) -> ContextFixture
         public_id: None,
         kind: AwbcFunctionKind::Ordinary,
         signature: AwbcSignatureId(1),
+        type_context: None,
         input_ownership: vec![
             AwbcFunctionInputOwnership::default();
             program.signatures[AwbcSignatureId(1).index()].params.len()
@@ -244,6 +245,7 @@ fn context_fixture(receiver: ContextReceiver, defaulted: bool) -> ContextFixture
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(2),
+            type_context: None,
             input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId(2),
             blocks: AwbcTableRange::new(2, 1),
@@ -855,6 +857,7 @@ fn formatter_context_fixture() -> ContextFixture {
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
             signature: AwbcSignatureId(2),
+            type_context: None,
             input_ownership: vec![
                 AwbcFunctionInputOwnership::default();
                 program.signatures[AwbcSignatureId(2).index()].params.len()
@@ -868,6 +871,7 @@ fn formatter_context_fixture() -> ContextFixture {
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
             signature: AwbcSignatureId(3),
+            type_context: None,
             input_ownership: vec![
                 AwbcFunctionInputOwnership::default();
                 program.signatures[AwbcSignatureId(3).index()].params.len()

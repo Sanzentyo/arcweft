@@ -121,6 +121,7 @@ fn executable_slots_reject_scoped_descendants_but_accept_closed_schemes() {
         .unwrap();
     assert!(matches!(
         builder.reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            function_type: None,
             inputs: Box::new([]),
             result: identity(1),
             body_kind: RuntimeFunctionSiteBodyKind::Expression,
@@ -202,4 +203,98 @@ fn contextual_local_admission_requires_its_function_scope_and_remains_atomic() {
             .semantic_identity(),
         identity(3)
     );
+}
+
+#[test]
+fn quantified_function_frame_retains_its_header_through_pattern_and_body_admission() {
+    use crate::plan::construction::{
+        RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFunctionInputBindingSeed,
+        RuntimeFunctionSiteDeclarationSeed, RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed,
+        RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlanBuilder,
+    };
+    use crate::plan::{RuntimeEffectSet, RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind};
+    use crate::value::RuntimeLocalReadMode;
+    let binder = RuntimeTypeBinder::new(1, 0, 0);
+    let scope = RuntimeTypeScope::root().enter(binder).unwrap();
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(
+                    identity(1),
+                    RuntimePlanTypeProjection::BoundType(scope.bound_type(0, 0).unwrap()),
+                )
+                .with_scope(scope),
+                RuntimePlanTypeSeed::new(
+                    identity(2),
+                    RuntimePlanTypeProjection::Function {
+                        contract: RuntimeFunctionTypeContract::new(
+                            binder,
+                            EffectPredicate::unconstrained(),
+                            EffectFormula::empty(),
+                        ),
+                        parameters: Box::new([identity(1)]),
+                        result: identity(1),
+                    },
+                ),
+            ],
+            [RuntimeLocalDeclarationSeed::in_function(
+                identity(1),
+                identity(2),
+            )],
+        )
+        .unwrap();
+    let local = admission.local_ids()[0].clone();
+    let site = builder
+        .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            function_type: Some(identity(2)),
+            inputs: Box::new([RuntimeFunctionInputBindingSeed {
+                source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                input_local: local.clone(),
+                pattern: RuntimePatternSeed::new(
+                    identity(1),
+                    RuntimePatternSeedKind::Bind {
+                        mutable: false,
+                        local: local.clone(),
+                    },
+                ),
+                ownership: Default::default(),
+                unrestricted_bindings: Box::new([]),
+            }]),
+            result: identity(1),
+            body_kind: RuntimeFunctionSiteBodyKind::Expression,
+            effects: RuntimeEffectSet::empty(),
+        })
+        .unwrap();
+    builder
+        .define_function_site_seed(
+            &site,
+            RuntimeExprSeed::new(
+                identity(1),
+                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                    local,
+                    RuntimeLocalReadMode::Move,
+                )),
+            ),
+        )
+        .unwrap();
+    let program =
+        arcweft_id::runtime_program::RuntimePureProgramId::from_checked_digest([0x42; 32]);
+    builder
+        .push_pure_program_binding_seed(&crate::plan::construction::RuntimePureProgramBindingSeed {
+            program,
+            site: site.clone(),
+        })
+        .unwrap();
+    let plan = builder.finish().unwrap();
+    let frame = plan.function_sites().iter().next().unwrap();
+    assert_eq!(plan.pure_programs()[0].function_type(), Some(identity(2)));
+    assert_eq!(
+        plan.type_table()
+            .get(frame.function_type().unwrap())
+            .unwrap()
+            .semantic_identity(),
+        identity(2)
+    );
+    assert_eq!(frame.inputs()[0].pattern().ty(), frame.result());
 }

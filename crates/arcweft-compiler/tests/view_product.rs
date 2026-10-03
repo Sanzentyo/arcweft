@@ -870,6 +870,7 @@ fn compiler_defaults_execute_general_values_and_refresh_preceding_inputs() {
         "enum Toggle { On, Off }\nview Main(value: Toggle = .On) { Text(\"static\") }",
         r#"view Main(first: i64 = 1, value: i64 -> i64 = |input: i64| input + first) { Text("static") }"#,
         r#"view Main(first: i64 = 1, value: i64 -> i64 = _ + first) { Text("static") }"#,
+        r#"view Main(first: i64 -> i64 = |input: i64| input + 1, value: i64 -> i64 = first) { Text("static") }"#,
     ].into_iter().enumerate() {
         let source = format!(
             "entry cli @entry.main {{ goto @flow.main }}\nflow main() -> String {{ return \"done\" }}\n{source}"
@@ -893,10 +894,11 @@ fn compiler_defaults_execute_general_values_and_refresh_preceding_inputs() {
         let mut forged = resource.clone();
         forged.definitions.iter_mut().find(|definition| definition.public_id.as_str() == "view.Main").unwrap().parameters.iter_mut().find_map(|parameter| parameter.default_program.as_mut()).unwrap().program = arcweft_id::runtime_program::RuntimePureProgramId::from_checked_digest([0xa9;32]);
         assert!(forged.validate_awbc_programs(&awbc).is_err());
+        let awbc = Arc::new(awbc);
         let mut runtime = BundleViewRuntime::try_new_with_awbc(
             compiled.view_product().product().as_ref().clone(),
             compiled.view_product().text().cloned(),
-            Arc::new(awbc),
+            Arc::clone(&awbc),
         )
         .unwrap_or_else(|error| {
             panic!("{source}\n{error:?}")
@@ -915,6 +917,35 @@ fn compiler_defaults_execute_general_values_and_refresh_preceding_inputs() {
         let result = runtime.evaluate(&handles, &[], false);
         assert!(result.diagnostics.is_empty(), "{source}\n{result:#?}");
         let snapshot = runtime.snapshot().unwrap();
+        if case == 7 {
+            use arcweft_core::awbc::{fiber::AwbcFiberStateSnapshot, product_step::AwbcProductStepExecutor};
+            let definition = resource.definitions.iter().find(|definition| definition.public_id.as_str() == "view.Main").unwrap();
+            let program = definition.parameters.iter().find(|parameter| parameter.name == "value").unwrap().default_program.as_ref().unwrap().program;
+            let first = snapshot.mounts[0].runtime_parameters.iter().find(|binding| binding.name == "first").unwrap().value.clone();
+            let executor = AwbcProductStepExecutor::for_program_invocation(Arc::clone(&awbc), program, vec![first], arcweft_core::task::GenerationId::new(0), 64).unwrap();
+            let owner = arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&awbc));
+            let image = AwbcFiberStateSnapshot::from_live(executor.compact_fiber()).unwrap();
+            let encoded = serde_json::to_vec(&image).unwrap();
+            let decoded: AwbcFiberStateSnapshot = serde_json::from_slice(&encoded).unwrap();
+            let mut restored = decoded.into_live_for_program(&owner).unwrap();
+            restored.validate_for_program(&awbc).unwrap();
+            let checkpoint = restored.checkpoint().unwrap();
+            restored.active_frame_mut().unwrap().clear_register(arcweft_core::awbc::schema::AwbcRegisterId(0)).unwrap();
+            restored.restore(checkpoint, &owner).unwrap();
+            let mut missing = image.clone();
+            missing.frames[0].type_instantiation = None;
+            assert!(missing.into_live_for_program(&owner).unwrap().validate_for_program(&awbc).is_err());
+            let mut malformed = serde_json::to_value(&image).unwrap();
+            malformed["frames"][0]["type_instantiation"]["effects"] = serde_json::json!([]);
+            let malformed: AwbcFiberStateSnapshot = serde_json::from_value(malformed).unwrap();
+            assert!(malformed.into_live_for_program(&owner).unwrap().validate_for_program(&awbc).is_err());
+            let returned = restored.frames[0].registers.iter().find_map(|storage| storage.as_ref()).unwrap().clone();
+            restored.mark_returned(Some(returned)).unwrap();
+            restored.validate_for_program(&awbc).unwrap();
+            let mut frameless = AwbcFiberStateSnapshot::from_live(&restored).unwrap();
+            frameless.frames.clear();
+            assert!(matches!(frameless.into_live_for_program(&owner).unwrap().validate_for_program(&awbc), Err(arcweft_core::awbc::fiber::FiberStateError::ReturnValueMismatch)));
+        }
         assert_eq!(snapshot.mounts.len(), 2);
         assert_ne!(snapshot.mounts[0].state.mount, snapshot.mounts[1].state.mount);
         let value = &snapshot.mounts[0]
@@ -928,7 +959,7 @@ fn compiler_defaults_execute_general_values_and_refresh_preceding_inputs() {
             2 => assert_eq!(*value, RuntimeValue::Tuple(vec![RuntimeValue::String("hello".to_owned()), RuntimeValue::String("world".to_owned())])),
             3 => { let RuntimeValue::NominalRecord(record) = value else { panic!("expected nominal record: {value:?}") }; assert_eq!(record.fields(), [RuntimeValue::String("hello".to_owned())]); }
             4 => assert!(matches!(value, RuntimeValue::Variant { name, ordinal: 0, .. } if name == "On")),
-            5 | 6 => assert!(matches!(value, RuntimeValue::Callable(_))),
+            5 | 6 | 7 => assert!(matches!(value, RuntimeValue::Callable(_))),
             _ => unreachable!(),
         }
         runtime.restore(&snapshot, &handles).unwrap();

@@ -1257,6 +1257,8 @@ pub struct AwbcFunction {
     pub public_id: Option<AwbcStringId>,
     pub kind: AwbcFunctionKind,
     pub signature: AwbcSignatureId,
+    /// Lexical frame contract; None denotes the fixed root-scope signature.
+    pub type_context: Option<AwbcTypeId>,
     /// Per-entry ownership proof required before a positional input enters
     /// this function. It is aligned with `signature.params`.
     pub input_ownership: Vec<AwbcFunctionInputOwnership>,
@@ -3417,6 +3419,8 @@ pub struct AwbcPureHelper {
 pub struct AwbcPureProgramBinding {
     pub program: arcweft_id::runtime_program::RuntimePureProgramId,
     pub function: AwbcFunctionId,
+    /// Complete quantified frame owner; None is a fixed root-scope ABI.
+    pub function_type: Option<RuntimeSemanticTypeId>,
     pub input_types: Vec<RuntimeSemanticTypeId>,
     pub result_type: RuntimeSemanticTypeId,
 }

@@ -1017,6 +1017,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
         match closure {
             PendingAwbcClosure::FunctionSite {
                 function,
+                function_type,
                 inputs,
                 result,
                 body: RuntimeFunctionSiteBody::Executable(executable),
@@ -1024,6 +1025,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
             } => {
                 super::flow::AwbcFlowLowerer::new(inventory, plan).lower_executable_function_site(
                     function,
+                    function_type,
                     &inputs,
                     result,
                     &executable,
@@ -1032,6 +1034,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
             }
             PendingAwbcClosure::FunctionSite {
                 function,
+                function_type,
                 inputs,
                 result,
                 body: RuntimeFunctionSiteBody::Expression(expression),
@@ -1073,12 +1076,14 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                 let result = admitted_plan_type(inventory, plan, result);
                 let signature =
                     inventory.intern_signature(params, Some(result), AwbcEffectSetId(0));
+                let type_context = function_type.map(|ty| admitted_plan_type(inventory, plan, ty));
                 inventory.replace_function(
                     function,
                     AwbcFunction {
                         public_id: None,
                         kind: AwbcFunctionKind::Ordinary,
                         signature,
+                        type_context,
                         input_ownership,
                         frame_layout: layout,
                         blocks: AwbcTableRange::new(block.0, block_len),
@@ -1121,6 +1126,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                         public_id: None,
                         kind: AwbcFunctionKind::Synthetic,
                         signature,
+                        type_context: None,
                         input_ownership: vec![
                             AwbcFunctionInputOwnership::default();
                             captures.len()
@@ -1154,6 +1160,7 @@ fn ensure_function_site(
     if !already_reserved {
         inventory.push_pending_closure(PendingAwbcClosure::FunctionSite {
             function,
+            function_type: declaration.function_type(),
             inputs: declaration.inputs().to_vec().into_boxed_slice(),
             result: declaration.result(),
             body: declaration.body().clone(),

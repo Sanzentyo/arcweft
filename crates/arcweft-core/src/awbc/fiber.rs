@@ -107,6 +107,7 @@ pub(crate) struct PreparedCallableCallbackActivation {
 #[derive(Debug)]
 pub(crate) struct PreparedFunctionInputBinding {
     function: AwbcFunctionId,
+    type_instantiation: Option<super::AwbcFunctionEffectInstantiation>,
     parameter_registers: Box<[AwbcRegisterId]>,
 }
 
@@ -160,6 +161,7 @@ pub struct FiberCursor {
 pub struct FiberFrame {
     pub instance: RuntimeFrameInstanceId,
     pub function: AwbcFunctionId,
+    pub type_instantiation: Option<super::AwbcFunctionEffectInstantiation>,
     pub layout: AwbcFrameLayoutId,
     pub return_to: Option<FiberReturnPoint>,
     pub registers: Vec<RuntimePlaceStorage<RuntimeValue>>,
@@ -517,6 +519,7 @@ pub struct AwbcFiberStateSnapshot {
 pub struct AwbcFiberFrameSnapshot {
     pub instance: RuntimeFrameInstanceId,
     pub function: AwbcFunctionId,
+    pub type_instantiation: Option<super::AwbcFunctionEffectInstantiation>,
     pub layout: AwbcFrameLayoutId,
     pub return_to: Option<AwbcFiberReturnPointSnapshot>,
     pub registers: Vec<RuntimePlaceStorage<AwbcRuntimeValueSnapshot>>,
@@ -960,6 +963,7 @@ impl AwbcFiberFrameSnapshot {
         Ok(Self {
             instance: frame.instance,
             function: frame.function,
+            type_instantiation: frame.type_instantiation.clone(),
             layout: frame.layout,
             return_to: frame
                 .return_to
@@ -1003,6 +1007,7 @@ impl AwbcFiberFrameSnapshot {
         Ok(FiberFrame {
             instance: self.instance,
             function: self.function,
+            type_instantiation: self.type_instantiation,
             layout: self.layout,
             return_to: self
                 .return_to
@@ -2224,6 +2229,7 @@ impl FiberState {
             budget_quantum,
         )
         .expect("prepared function input binding validated the AWBC frame");
+        fiber.frames[0].type_instantiation = prepared.type_instantiation;
         let registers = &mut fiber.frames[0].registers;
         for (register, value) in prepared.parameter_registers.into_iter().zip(args) {
             registers[register.index()] = value.into();
@@ -2417,18 +2423,11 @@ impl FiberState {
         }
 
         let mut argument_values = vec![None; parameters.len()];
-        for (position, value, name) in assignments {
+        for &(position, value, _) in &assignments {
             let (register, slot) = parameters[position];
             let expected = signature.params[position];
             if slot.ty != expected {
                 return Err(FiberStateError::InvalidFrame);
-            }
-            if !runtime_value_matches_type(program, value, expected, 0) {
-                return Err(FiberStateError::ArgumentType {
-                    name: name.to_owned(),
-                    expected: runtime_type_label(program, expected),
-                    actual: runtime_value_type_label(value),
-                });
             }
             argument_values[position] = Some((register, value));
         }
@@ -2441,6 +2440,22 @@ impl FiberState {
                     .expect("all ABI inputs assigned")
             })
             .collect::<Vec<_>>();
+        let type_instantiation = frame.instantiate_arguments(program, &references)?;
+        for (position, value, name) in assignments {
+            let expected = signature.params[position];
+            if !FiberFrame::value_matches_instantiation(
+                program,
+                type_instantiation.as_ref(),
+                value,
+                expected,
+            ) {
+                return Err(FiberStateError::ArgumentType {
+                    name: name.to_owned(),
+                    expected: runtime_type_label(program, expected),
+                    actual: runtime_value_type_label(value),
+                });
+            }
+        }
         super::vm::validate_function_input_ownership_values(program, frame.function, &references)
             .map_err(|error| FiberStateError::InvalidFunctionInputOwnership {
             reason: error.to_string(),
@@ -2454,7 +2469,9 @@ impl FiberState {
         for (register, value) in argument_values.into_iter().flatten() {
             register_values[register] = value.clone().into();
         }
-        self.active_frame_mut()?.registers = register_values;
+        let frame = self.active_frame_mut()?;
+        frame.registers = register_values;
+        frame.type_instantiation = type_instantiation;
         Ok(())
     }
 
@@ -3011,7 +3028,7 @@ impl FiberState {
                         register: register.0,
                         layout: frame.layout.0,
                     })?;
-            if !runtime_value_matches_type(program, value, layout_slot.ty, 0) {
+            if !frame.value_matches_type(program, value, layout_slot.ty) {
                 return Err(FiberStateError::InvalidRuntimeValue {
                     path: format!("yielded operand register {}", register.0),
                     reason: "value does not match the sealed register type".to_owned(),
@@ -3049,12 +3066,7 @@ impl FiberState {
             .zip(prepared.types.iter().copied())
         {
             assert_eq!(register, expected_register);
-            assert!(runtime_value_matches_type(
-                program,
-                &value,
-                expected_type,
-                0
-            ));
+            assert!(frame.value_matches_type(program, &value, expected_type));
             let slot = frame
                 .registers
                 .get_mut(register.index())
@@ -3600,6 +3612,19 @@ impl FiberState {
     ) -> Result<(Option<FiberReturnPoint>, Option<RuntimeValue>), FiberStateError> {
         self.require_status(FiberStatus::Running)?;
         if self.frames.len() == 1 {
+            let frame = self.active_frame()?;
+            let signature = program
+                .functions
+                .get(frame.function.index())
+                .and_then(|function| program.signatures.get(function.signature.index()))
+                .ok_or(FiberStateError::InvalidFrame)?;
+            if let Some(value) = &value
+                && !signature
+                    .result
+                    .is_some_and(|expected| frame.value_matches_type(program, value, expected))
+            {
+                return Err(FiberStateError::ReturnValueMismatch);
+            }
             self.mark_returned(value)?;
             return Ok((None, None));
         }
@@ -3625,7 +3650,7 @@ impl FiberState {
             .ok_or(FiberStateError::InvalidFrame)?;
         let return_value = match (signature.result, value) {
             (Some(expected), Some(value))
-                if runtime_value_matches_type(program, &value, expected, 0) =>
+                if returning_frame.value_matches_type(program, &value, expected) =>
             {
                 Some(value)
             }
@@ -3654,7 +3679,7 @@ impl FiberState {
                 .and_then(|layout| layout.slots.get(destination.index()))
                 .map(|slot| slot.ty)
                 .ok_or(FiberStateError::InvalidFrame)?;
-            if !runtime_value_matches_type(program, value, destination_type, 0) {
+            if !caller_frame.value_matches_type(program, value, destination_type) {
                 return Err(FiberStateError::ReturnValueMismatch);
             }
         }
@@ -4077,6 +4102,12 @@ fn validate_frame(
     if function.frame_layout != frame.layout {
         return Err(FiberStateError::InvalidFrame);
     }
+    match (function.type_context, frame.type_instantiation.as_ref()) {
+        (None, None) => {}
+        (Some(context), Some(binding))
+            if binding.context() == context && binding.is_valid(program) => {}
+        _ => return Err(FiberStateError::InvalidFrame),
+    }
     let layout = program
         .frame_layouts
         .get(frame.layout.index())
@@ -4091,6 +4122,7 @@ fn validate_frame(
             .ok_or(FiberStateError::InvalidFrame)?;
         validate_place_storage_at(
             program,
+            frame.type_instantiation.as_ref(),
             value,
             slot.ty,
             format!("{path}.registers[{index}]"),
@@ -4226,6 +4258,7 @@ fn validate_deferred(
 
 fn validate_place_storage_at(
     program: &AwbcProgram,
+    instantiation: Option<&super::AwbcFunctionEffectInstantiation>,
     storage: &RuntimePlaceStorage<RuntimeValue>,
     expected: AwbcTypeId,
     path: String,
@@ -4235,7 +4268,13 @@ fn validate_place_storage_at(
         return Err(FiberStateError::InvalidFrame);
     }
     if let Some(value) = storage.as_ref() {
-        return validate_runtime_value_at(program, value, Some(expected), path);
+        if !FiberFrame::value_matches_instantiation(program, instantiation, value, expected) {
+            return Err(FiberStateError::InvalidRuntimeValue {
+                path,
+                reason: "value does not match the frame's instantiated type".to_owned(),
+            });
+        }
+        return validate_runtime_value_at(program, value, None, path);
     }
     if storage.is_vacant() {
         return Ok(());
@@ -4299,6 +4338,7 @@ fn validate_place_storage_at(
         }
         validate_place_storage_at(
             program,
+            instantiation,
             child,
             field.ty,
             format!("{path}.fields[{ordinal}]"),
@@ -4634,6 +4674,8 @@ pub(crate) fn validate_function_argument_value_refs(
             actual: values.len(),
         });
     }
+    let type_instantiation =
+        FiberFrame::instantiate_context(program, function_record.type_context, values)?;
     for (position, ((register, slot), value)) in parameter_registers
         .iter()
         .map(|register| (*register, &layout.slots[register.index()]))
@@ -4642,7 +4684,12 @@ pub(crate) fn validate_function_argument_value_refs(
     {
         let expected = signature.params[position];
         if slot.ty != expected
-            || !super::vm::runtime_value_view_matches_type(program, value.view(), expected, 0)
+            || !FiberFrame::value_matches_instantiation(
+                program,
+                type_instantiation.as_ref(),
+                value,
+                expected,
+            )
         {
             return Err(FiberStateError::ArgumentType {
                 name: slot
@@ -4664,6 +4711,7 @@ pub(crate) fn validate_function_argument_value_refs(
     )?;
     Ok(PreparedFunctionInputBinding {
         function,
+        type_instantiation,
         parameter_registers: parameter_registers.into_boxed_slice(),
     })
 }
@@ -5086,7 +5134,7 @@ fn instruction_call_receiver_update(
         .and_then(|layout| layout.slots.get(destination.index()))
         .map(|slot| slot.ty)
         .ok_or(FiberStateError::InvalidFrame)?;
-    if !runtime_value_matches_type(program, &value, expected, 0) {
+    if !caller.value_matches_type(program, &value, expected) {
         return Err(FiberStateError::ReturnValueMismatch);
     }
     Ok(Some((*destination, value)))
@@ -5705,7 +5753,21 @@ fn validate_terminal(
                 }
                 AwbcFiberRoot::Entry(_) | AwbcFiberRoot::Function(_) | AwbcFiberRoot::Empty => None,
             };
-            validate_runtime_value_at(program, value, expected, "terminal.returned".to_owned())
+            if let Some(expected) = expected
+                && !state.frames.first().map_or_else(
+                    || {
+                        program
+                            .runtime_types
+                            .get(expected.index())
+                            .is_some_and(|row| row.scope().is_root())
+                            && runtime_value_matches_type(program, value, expected, 0)
+                    },
+                    |frame| frame.value_matches_type(program, value, expected),
+                )
+            {
+                return Err(FiberStateError::ReturnValueMismatch);
+            }
+            validate_runtime_value_at(program, value, None, "terminal.returned".to_owned())
         }
         FiberTerminalValue::DialogueResultSelected(value) => {
             if state.frames.len() != 1 {
@@ -5796,6 +5858,7 @@ impl FiberFrame {
         Ok(Self {
             instance,
             function,
+            type_instantiation: None,
             layout: function_record.frame_layout,
             return_to,
             registers: vec![RuntimePlaceStorage::default(); layout.slots.len()],
@@ -5849,6 +5912,7 @@ impl FiberFrame {
             });
         }
         let references = args.iter().collect::<Vec<_>>();
+        let type_instantiation = self.instantiate_arguments(program, &references)?;
         super::vm::validate_function_input_ownership_values(program, self.function, &references)
             .map_err(|error| FiberStateError::InvalidFunctionInputOwnership {
                 reason: error.to_string(),
@@ -5861,7 +5925,14 @@ impl FiberFrame {
         let mut next = self.registers.clone();
         for (position, ((register, slot), value)) in parameters.iter().zip(args).enumerate() {
             let expected = signature.params[position];
-            if slot.ty != expected || !runtime_value_matches_type(program, value, expected, 0) {
+            if slot.ty != expected
+                || !Self::value_matches_instantiation(
+                    program,
+                    type_instantiation.as_ref(),
+                    value,
+                    expected,
+                )
+            {
                 return Err(FiberStateError::ArgumentType {
                     name: slot
                         .name
@@ -5874,6 +5945,7 @@ impl FiberFrame {
             next[*register] = value.clone().into();
         }
         self.registers = next;
+        self.type_instantiation = type_instantiation;
         Ok(())
     }
 
@@ -5906,9 +5978,18 @@ impl FiberFrame {
                 actual: args.len(),
             });
         }
+        let references = args.iter().collect::<Vec<_>>();
+        let type_instantiation = self.instantiate_arguments(program, &references)?;
         for (position, ((_, slot), value)) in parameters.iter().zip(&args).enumerate() {
             let expected = signature.params[position];
-            if slot.ty != expected || !runtime_value_matches_type(program, value, expected, 0) {
+            if slot.ty != expected
+                || !Self::value_matches_instantiation(
+                    program,
+                    type_instantiation.as_ref(),
+                    value,
+                    expected,
+                )
+            {
                 return Err(FiberStateError::ArgumentType {
                     name: slot
                         .name
@@ -5919,7 +6000,6 @@ impl FiberFrame {
                 });
             }
         }
-        let references = args.iter().collect::<Vec<_>>();
         super::vm::validate_function_input_ownership_values(program, self.function, &references)
             .map_err(|error| FiberStateError::InvalidFunctionInputOwnership {
                 reason: error.to_string(),
@@ -5929,7 +6009,76 @@ impl FiberFrame {
             next[register] = value.into();
         }
         self.registers = next;
+        self.type_instantiation = type_instantiation;
         Ok(())
+    }
+
+    fn instantiate_arguments(
+        &self,
+        program: &AwbcProgram,
+        values: &[&RuntimeValue],
+    ) -> Result<Option<super::AwbcFunctionEffectInstantiation>, FiberStateError> {
+        let function = program
+            .functions
+            .get(self.function.index())
+            .ok_or(FiberStateError::UnknownFunction(self.function.0))?;
+        Self::instantiate_context(program, function.type_context, values)
+    }
+
+    fn instantiate_context(
+        program: &AwbcProgram,
+        context: Option<AwbcTypeId>,
+        values: &[&RuntimeValue],
+    ) -> Result<Option<super::AwbcFunctionEffectInstantiation>, FiberStateError> {
+        context
+            .map(|context| {
+                program.instantiate_function_effects(context, values).ok_or(
+                    FiberStateError::InvalidRuntimeValue {
+                        path: "function arguments".to_owned(),
+                        reason: "arguments have no joint declaration effect instantiation"
+                            .to_owned(),
+                    },
+                )
+            })
+            .transpose()
+    }
+
+    fn value_matches_instantiation(
+        program: &AwbcProgram,
+        instantiation: Option<&super::AwbcFunctionEffectInstantiation>,
+        value: &RuntimeValue,
+        expected: super::schema::AwbcTypeId,
+    ) -> bool {
+        instantiation.map_or_else(
+            || runtime_value_matches_type(program, value, expected, 0),
+            |binding| binding.value_matches(program, expected, value),
+        )
+    }
+
+    pub(crate) fn value_matches_type(
+        &self,
+        program: &AwbcProgram,
+        value: &RuntimeValue,
+        expected: super::schema::AwbcTypeId,
+    ) -> bool {
+        Self::value_matches_instantiation(
+            program,
+            self.type_instantiation.as_ref(),
+            value,
+            expected,
+        )
+    }
+
+    pub(crate) fn value_view_matches_type(
+        &self,
+        program: &AwbcProgram,
+        value: crate::value::RuntimeValueView<'_>,
+        expected: AwbcTypeId,
+    ) -> bool {
+        self.type_instantiation.as_ref().map_or_else(
+            || super::vm::runtime_value_view_matches_type(program, value, expected, 0),
+            |binding| binding.value_view_matches(program, expected, value),
+        )
     }
 
     pub(crate) fn take_positional_argument_storage(
@@ -5998,6 +6147,7 @@ impl FiberFrame {
                         })?;
                 validate_place_storage_at(
                     program,
+                    self.type_instantiation.as_ref(),
                     storage,
                     *expected,
                     format!("parameter_storage[{index}]"),
@@ -6160,6 +6310,7 @@ mod tests {
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: Default::default(),
+            type_context: None,
             input_ownership: Vec::new(),
             frame_layout: Default::default(),
             blocks: AwbcTableRange::new(0, 1),
@@ -6255,6 +6406,7 @@ mod tests {
                 public_id: None,
                 kind: AwbcFunctionKind::Synthetic,
                 signature: AwbcSignatureId(signature_id),
+                type_context: None,
                 input_ownership: vec![AwbcFunctionInputOwnership::default()],
                 frame_layout: AwbcFrameLayoutId(1),
                 blocks: AwbcTableRange::new(function_id, 1),

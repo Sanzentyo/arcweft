@@ -445,6 +445,17 @@ impl<V: Clone + Ord> EffectPredicate<V> {
             .map(Self::normalized)
     }
 
+    /// Keeps the conclusion conditional on the admitted source domain.
+    pub fn implies<C: DecisionControl>(
+        &self,
+        other: &Self,
+        control: &mut C,
+    ) -> Result<Self, C::Error> {
+        self.0
+            .combine(&other.0, Operation::Subset, control)
+            .map(Self::normalized)
+    }
+
     /// Eliminates function-local rigid rows before a surrounding input scope is solved.
     pub fn universally_quantified<C: DecisionControl>(
         &self,

@@ -95,6 +95,7 @@ pub(super) fn reserve_global_defer_sites(
                 .collect::<Result<Vec<_>, RuntimePlanLowerError>>()?;
             Ok((
                 RuntimeFunctionSiteDeclarationSeed {
+                    function_type: None,
                     inputs: inputs.into_boxed_slice(),
                     result: result.identity(),
                     body_kind: RuntimeFunctionSiteBodyKind::Executable,

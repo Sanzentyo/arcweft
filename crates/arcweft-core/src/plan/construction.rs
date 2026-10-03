@@ -623,6 +623,7 @@ pub enum RuntimePlanBuildError {
 
 #[derive(Debug)]
 struct ReservedFunctionSite {
+    function_type: Option<RuntimePlanTypeId>,
     inputs: Box<[RuntimeFunctionInputBinding]>,
     result: RuntimePlanTypeId,
     body_kind: RuntimeFunctionSiteBodyKind,
@@ -893,6 +894,7 @@ impl RuntimePlanBuilder {
     ) -> Result<RuntimeFunctionSiteSeedId, RuntimePlanBuildError> {
         let result = body.ty();
         let site = self.reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            function_type: None,
             inputs: inputs.into_iter().collect(),
             result,
             body_kind: RuntimeFunctionSiteBodyKind::Expression,
@@ -918,6 +920,11 @@ impl RuntimePlanBuilder {
         &mut self,
         seed: RuntimeFunctionSiteDeclarationSeed,
     ) -> Result<RuntimeFunctionSiteSeedId, RuntimePlanBuildError> {
+        let function_type = seed
+            .function_type
+            .map(|ty| self.resolve_seed_type("function frame contract", ty))
+            .transpose()?;
+        let body_context = self.function_body_context(function_type)?;
         let mut inputs = Vec::with_capacity(seed.inputs.len());
         let mut input_sources = Vec::with_capacity(seed.inputs.len());
         let mut input_types = Vec::with_capacity(seed.inputs.len());
@@ -926,7 +933,7 @@ impl RuntimePlanBuilder {
                 .input_local
                 .resolve(&self.issuer)
                 .ok_or(RuntimePlanBuildError::ForeignLocalSeed)?;
-            let pattern = self.lower_pattern_seed(input.pattern)?;
+            let pattern = body_context.lower_pattern_seed(input.pattern)?;
             require_same("function input pattern", input_type, pattern.ty())?;
             let mut unrestricted_bindings = input
                 .unrestricted_bindings
@@ -952,7 +959,33 @@ impl RuntimePlanBuilder {
         }
         validate_function_input_bindings(&inputs)?;
         let input_types = input_types.into_boxed_slice();
-        let result = self.resolve_seed_type("function result", seed.result)?;
+        let result = body_context.resolve_seed_type("function result", seed.result)?;
+        if let Some(function_type) = function_type {
+            let RuntimePlanTypeProjection::Function {
+                contract,
+                parameters,
+                result: expected_result,
+            } = body_context.projection(function_type)?
+            else {
+                return Err(RuntimePlanBuildError::InvalidTypeProjection {
+                    context: "function frame contract",
+                    ty: function_type,
+                });
+            };
+            if parameters.as_ref() != input_types.as_ref()
+                || *expected_result != result
+                || contract.invocation()
+                    != &crate::effect_row::EffectFormula::literal(
+                        seed.effects.iter().cloned().collect(),
+                        None,
+                    )
+            {
+                return Err(RuntimePlanBuildError::InvalidTypeProjection {
+                    context: "function frame ABI",
+                    ty: function_type,
+                });
+            }
+        }
         let body_kind = seed.body_kind;
         let effects = seed.effects;
         let ordinal = self
@@ -964,6 +997,7 @@ impl RuntimePlanBuilder {
             .ok_or(RuntimeFunctionSiteError::IdentityExhausted)?;
         let site = crate::runtime_id::RuntimeFunctionSiteId::from_accepted_ordinal(ordinal);
         self.function_sites.push(ReservedFunctionSite {
+            function_type,
             inputs: inputs.into_boxed_slice(),
             result,
             body_kind,
@@ -1066,11 +1100,12 @@ impl RuntimePlanBuilder {
             return Err(RuntimePlanBuildError::FunctionSiteEffectSetMismatch { site: site_id });
         }
         let inputs = reserved.inputs.clone();
+        let body_context = self.function_body_context(reserved.function_type)?;
         let lowered = match body {
             RuntimeFunctionSiteBodySeed::Expression(body) => {
-                let body = self.lower_expression(body)?;
+                let body = body_context.lower_expression(body)?;
                 require_reserved_result("function result", result, body.ty())?;
-                self.validate_function_body_locals(&body, &inputs)?;
+                body_context.validate_function_body_locals(&body, &inputs)?;
                 RuntimeFunctionSiteBody::Expression(body)
             }
             RuntimeFunctionSiteBodySeed::Executable(body) => {
@@ -1080,9 +1115,9 @@ impl RuntimePlanBuilder {
                         site: site_id,
                     });
                 }
-                let ops = self.lower_flow_ops(body.ops.into_vec())?;
+                let ops = body_context.lower_flow_ops(body.ops.into_vec())?;
                 let mut scope = function_input_scope(&inputs);
-                self.validate_flow_operation_locals_with_usage(&ops, &mut scope)?;
+                body_context.validate_flow_operation_locals_with_usage(&ops, &mut scope)?;
                 RuntimeFunctionSiteBody::Executable(RuntimeExecutableBody::new(
                     body_effects,
                     ops.into_boxed_slice(),
@@ -2171,9 +2206,33 @@ impl RuntimePlanBuilder {
                 program: seed.program,
             });
         }
+        let function_type = self
+            .function_sites
+            .get(
+                usize::try_from(site.get().get() - 1)
+                    .map_err(|_| RuntimePlanBuildError::ForeignFunctionSiteSeed)?,
+            )
+            .ok_or(RuntimePlanBuildError::ForeignFunctionSiteSeed)?
+            .function_type
+            .map(|ty| {
+                self.types
+                    .get(ty)
+                    .map(super::RuntimePlanTypeDeclaration::semantic_identity)
+                    .ok_or(RuntimePlanBuildError::InvalidTypeProjection {
+                        context: "pure program frame contract",
+                        ty,
+                    })
+            })
+            .transpose()?;
         push_row(
             &mut self.pure_programs,
-            RuntimePureProgramBinding::new(seed.program, site, input_types, result_type),
+            RuntimePureProgramBinding::new(
+                seed.program,
+                site,
+                function_type,
+                input_types,
+                result_type,
+            ),
             RuntimePlanTable::PurePrograms,
         )
     }
@@ -2496,7 +2555,7 @@ impl RuntimePlanBuilder {
             let Some(body) = site.body else {
                 unreachable!("incomplete function sites returned before materialization")
             };
-            function_site_builder.push(site.inputs, site.result, body)?;
+            function_site_builder.push(site.function_type, site.inputs, site.result, body)?;
         }
         let pure_helpers = self
             .pure_helpers

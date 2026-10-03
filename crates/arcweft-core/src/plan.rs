@@ -942,6 +942,7 @@ pub struct RuntimePureHelper {
 pub struct RuntimePureProgramBinding {
     program: arcweft_id::runtime_program::RuntimePureProgramId,
     site: crate::runtime_id::RuntimeFunctionSiteId,
+    function_type: Option<RuntimeSemanticTypeId>,
     input_types: Box<[RuntimeSemanticTypeId]>,
     result_type: RuntimeSemanticTypeId,
 }
@@ -951,12 +952,14 @@ impl RuntimePureProgramBinding {
     pub(crate) fn new(
         program: arcweft_id::runtime_program::RuntimePureProgramId,
         site: crate::runtime_id::RuntimeFunctionSiteId,
+        function_type: Option<RuntimeSemanticTypeId>,
         input_types: impl Into<Box<[RuntimeSemanticTypeId]>>,
         result_type: RuntimeSemanticTypeId,
     ) -> Self {
         Self {
             program,
             site,
+            function_type,
             input_types: input_types.into(),
             result_type,
         }
@@ -970,6 +973,12 @@ impl RuntimePureProgramBinding {
     #[must_use]
     pub const fn site(&self) -> crate::runtime_id::RuntimeFunctionSiteId {
         self.site
+    }
+
+    /// Quantified frame owner; absence denotes the fixed root-scope ABI.
+    #[must_use]
+    pub const fn function_type(&self) -> Option<RuntimeSemanticTypeId> {
+        self.function_type
     }
 
     /// Ordered semantic input identities retained across the Value ABI.

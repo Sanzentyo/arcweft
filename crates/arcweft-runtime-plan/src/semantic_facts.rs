@@ -4911,6 +4911,12 @@ impl RuntimeCheckedCapture {
     }
 }
 
+#[derive(Clone, Debug)]
+struct RuntimeLocalDeclarationFact {
+    ty: RuntimeNormalizedType,
+    context: Option<RuntimeNormalizedType>,
+}
+
 /// Runtime type projection of one admitted value or body root's complete ABI.
 /// Free bindings and full formal inputs retain the admission's stable order.
 #[derive(Clone, Debug)]
@@ -4919,6 +4925,7 @@ pub struct RuntimePureProgramFact {
     admission: Arc<arcweft_lang_sema::final_analysis::CheckedDeterministicProgram>,
     input_types: Box<[RuntimeNormalizedType]>,
     result: RuntimeNormalizedType,
+    function_type: RuntimeNormalizedType,
     body_kind: arcweft_core::plan::RuntimeFunctionSiteBodyKind,
 }
 
@@ -4928,9 +4935,19 @@ impl RuntimePureProgramFact {
         admission: Arc<arcweft_lang_sema::final_analysis::CheckedDeterministicProgram>,
         input_types: Box<[RuntimeNormalizedType]>,
         result: RuntimeNormalizedType,
+        function_type: RuntimeNormalizedType,
     ) -> Result<Self, RuntimeSemanticFactsError> {
         use arcweft_lang_sema::final_analysis::CheckedExecutionInputRole;
         let abi = admission.input_abi();
+        if !abi
+            .function_type()
+            .and_then(|ty| ty.semantic_identity_digest().ok())
+            .is_some_and(|identity| identity.as_bytes() == function_type.identity().as_bytes())
+            || !matches!(function_type.shape(), RuntimeTypeShape::Function { parameters, result: declared_result, .. }
+                if parameters.as_ref() == input_types.as_ref() && declared_result.as_ref() == &result)
+        {
+            return Err(RuntimeSemanticFactsError::InvalidPureProgram { program });
+        }
         let expression_body = match abi.source() {
             arcweft_lang_sema::final_analysis::CheckedExecutionSource::InvokeBody(
                 arcweft_lang_sema::final_analysis::CheckedExecutionBodyOwner::Declaration {
@@ -4976,6 +4993,9 @@ impl RuntimePureProgramFact {
         {
             if !source
                 .semantic_identity_digest()
+                .or_else(|_| {
+                    source.semantic_identity_digest_in_scope(&abi.environment().type_scope())
+                })
                 .is_ok_and(|digest| digest.as_bytes() == projected.identity().as_bytes())
             {
                 return Err(RuntimeSemanticFactsError::InvalidPureProgram { program });
@@ -4986,6 +5006,7 @@ impl RuntimePureProgramFact {
             admission,
             input_types,
             result,
+            function_type,
             body_kind,
         })
     }
@@ -5008,6 +5029,10 @@ impl RuntimePureProgramFact {
 
     pub const fn input_types(&self) -> &[RuntimeNormalizedType] {
         &self.input_types
+    }
+
+    pub const fn function_type(&self) -> &RuntimeNormalizedType {
+        &self.function_type
     }
 
     pub fn free_inputs(
@@ -5065,7 +5090,7 @@ pub struct RuntimePlanSemanticFactInput {
     callable_sources: Vec<RuntimeProjectCallableSourceFact>,
     callable_specializations: Vec<RuntimeCallableSpecializationFact>,
     expression_specializations: Vec<(ExprId, RuntimeCallableValueSpecialization)>,
-    local_declarations: Vec<(LocalId, RuntimeNormalizedType)>,
+    local_declarations: Vec<(LocalId, RuntimeLocalDeclarationFact)>,
     flows: Vec<(ItemId, RuntimeFlowFact)>,
     expression_scopes: Vec<(ExprId, crate::semantic_facts::RuntimeScopeFact)>,
     statement_scopes: Vec<(StmtId, crate::semantic_facts::RuntimeScopeFact)>,
@@ -5177,7 +5202,24 @@ impl RuntimePlanSemanticFactInput {
     /// canonical project order. Final plan-local identity issuance belongs
     /// exclusively to [`arcweft_core::plan::RuntimePlanBuilder`].
     pub fn push_local_declaration(&mut self, owner: LocalId, ty: RuntimeNormalizedType) {
-        self.local_declarations.push((owner, ty));
+        self.local_declarations
+            .push((owner, RuntimeLocalDeclarationFact { ty, context: None }));
+    }
+
+    /// Publishes a local together with the function-shaped scope that owns it.
+    pub fn push_contextual_local_declaration(
+        &mut self,
+        owner: LocalId,
+        ty: RuntimeNormalizedType,
+        context: RuntimeNormalizedType,
+    ) {
+        self.local_declarations.push((
+            owner,
+            RuntimeLocalDeclarationFact {
+                ty,
+                context: Some(context),
+            },
+        ));
     }
 
     pub fn push_flow(&mut self, owner: ItemId, flow: RuntimeFlowFact) {
@@ -5508,7 +5550,7 @@ pub struct RuntimePlanSemanticFacts {
     runtime_owners: BTreeSet<HirRuntimeExecutableOwner>,
     snapshots: BTreeMap<HirModuleId, HirSnapshotId>,
     local_declaration_order: Box<[LocalId]>,
-    local_declarations: BTreeMap<LocalId, RuntimeNormalizedType>,
+    local_declarations: BTreeMap<LocalId, RuntimeLocalDeclarationFact>,
     flows: BTreeMap<ItemId, RuntimeFlowFact>,
     expression_scopes: BTreeMap<ExprId, crate::semantic_facts::RuntimeScopeFact>,
     statement_scopes: BTreeMap<StmtId, crate::semantic_facts::RuntimeScopeFact>,
@@ -6926,7 +6968,19 @@ impl RuntimePlanSemanticFacts {
                     },
                 );
             }
-            validate_normalized_type(&modules, ty)?;
+            validate_normalized_type(&modules, &ty.ty)?;
+            let valid = match &ty.context {
+                None => ty.ty.scope().is_root(),
+                Some(context) => {
+                    validate_normalized_type(&modules, context)?;
+                    context.scope().is_root()
+                        && matches!(context.shape(), RuntimeTypeShape::Function { contract, .. }
+                        if context.scope().enter(contract.binder()).is_ok_and(|scope| &scope == ty.ty.scope()))
+                }
+            };
+            if !valid {
+                return Err(RuntimeSemanticFactsError::MissingLocalDeclaration { local: *owner });
+            }
         }
 
         let flows = collect_unique(input.flows, RuntimeSemanticFactFamily::FlowIdentity)?;
@@ -7127,7 +7181,7 @@ impl RuntimePlanSemanticFacts {
             if let RuntimeResolvedValue::NominalField { base, owner, .. } = value
                 && local_declarations
                     .get(base)
-                    .is_none_or(|base_type| base_type.identity() != *owner)
+                    .is_none_or(|base_type| base_type.ty.identity() != *owner)
             {
                 return Err(RuntimeSemanticFactsError::WrongExpressionFamily {
                     expression: *expression,
@@ -8144,7 +8198,7 @@ impl RuntimePlanSemanticFacts {
             defer::validate_defer(
                 &modules,
                 runtime_owners,
-                &local_declarations,
+                |local| local_declarations.get(local).map(|fact| &fact.ty),
                 &expression_types,
                 *statement,
                 defer,
@@ -8190,7 +8244,7 @@ impl RuntimePlanSemanticFacts {
             )?;
             validate_assignment(
                 &modules,
-                &local_declarations,
+                |local| local_declarations.get(local).map(|fact| &fact.ty),
                 &expression_types,
                 &values,
                 &selects,
@@ -8284,7 +8338,11 @@ impl RuntimePlanSemanticFacts {
                 }
                 for capture in effect.captures() {
                     validate_normalized_type(&modules, capture.ty())?;
-                    if local_declarations.get(&capture.local()) != Some(capture.ty()) {
+                    if local_declarations
+                        .get(&capture.local())
+                        .map(|fact| &fact.ty)
+                        != Some(capture.ty())
+                    {
                         return Err(RuntimeSemanticFactsError::InvalidContentFragment {
                             expression: fragment.source(),
                         });
@@ -8797,7 +8855,13 @@ impl RuntimePlanSemanticFacts {
     /// Sole accepted normalized semantic type of one runtime-domain final-HIR
     /// local.
     pub fn local_type(&self, local: LocalId) -> Option<&RuntimeNormalizedType> {
-        self.local_declarations.get(&local)
+        self.local_declarations.get(&local).map(|fact| &fact.ty)
+    }
+
+    pub fn local_context(&self, local: LocalId) -> Option<&RuntimeNormalizedType> {
+        self.local_declarations
+            .get(&local)
+            .and_then(|fact| fact.context.as_ref())
     }
 
     /// Runtime-domain locals in canonical final-HIR inventory order.
@@ -8814,6 +8878,7 @@ impl RuntimePlanSemanticFacts {
                 *local,
                 self.local_declarations
                     .get(local)
+                    .map(|fact| &fact.ty)
                     .expect("accepted local order and fact map remain correlated"),
             )
         })
@@ -8972,7 +9037,10 @@ impl RuntimePlanSemanticFacts {
         for definition in self.nominal_definitions.values() {
             definition.append_types(&mut roots);
         }
-        roots.extend(self.local_declarations.values());
+        for local in self.local_declarations.values() {
+            roots.push(&local.ty);
+            roots.extend(local.context.as_ref());
+        }
         roots.extend(self.expression_types.values());
         roots.extend(self.pattern_types.values());
         roots.extend(self.types.values());
@@ -8986,6 +9054,7 @@ impl RuntimePlanSemanticFacts {
         }
         roots.extend(self.captures.values().map(RuntimeCheckedCapture::ty));
         for program in self.pure_programs.values() {
+            roots.push(program.function_type());
             roots.extend(program.input_types());
             roots.push(program.result());
         }
@@ -9600,6 +9669,7 @@ fn validate_pure_programs(
         }
         supplied.insert(owner);
         validate_normalized_type(modules, fact.result())?;
+        validate_normalized_type(modules, fact.function_type())?;
         for ty in fact.input_types() {
             validate_normalized_type(modules, ty)?;
         }
@@ -10231,9 +10301,9 @@ fn validate_project_item(
     }
 }
 
-fn validate_assignment(
+fn validate_assignment<'types>(
     modules: &BTreeMap<HirModuleId, &HirModule>,
-    local_declarations: &BTreeMap<LocalId, RuntimeNormalizedType>,
+    local_type: impl Fn(&LocalId) -> Option<&'types RuntimeNormalizedType>,
     expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
     values: &BTreeMap<ExprId, RuntimeResolvedValue>,
     selects: &BTreeMap<ExprId, RuntimeResolvedSelect>,
@@ -10252,7 +10322,7 @@ fn validate_assignment(
         RuntimeAssignmentPlace::Local(local) => {
             if !matches!(resolve_expr(modules, *target)?, HirExprKind::Path(_))
                 || values.get(target) != Some(&RuntimeResolvedValue::Local(*local))
-                || local_declarations.get(local) != Some(assignment.value_type())
+                || local_type(local) != Some(assignment.value_type())
                 || !modules.get(&local.module()).is_some_and(|module| {
                     module
                         .resolve_local(*local)
@@ -10276,9 +10346,7 @@ fn validate_assignment(
             ) || values.get(&select.target()) != Some(&RuntimeResolvedValue::Local(*base))
                 || !matches!(selects.get(target), Some(RuntimeResolvedSelect::Field { owner, field: actual })
                     if *owner == nominal.identity() && actual == field)
-                || local_declarations
-                    .get(base)
-                    .and_then(|local| local.checked_type().ok())
+                || local_type(base).and_then(|local| local.checked_type().ok())
                     != Some(nominal.checked_type())
             {
                 return Err(RuntimeSemanticFactsError::InvalidAssignmentFact { statement });
@@ -12475,7 +12543,7 @@ fn validate_project_function_semantic_catalog(
             RuntimeProjectFunctionStatementPayload::Assignment(fact) => {
                 validate_assignment(
                     modules,
-                    &local_types,
+                    |local| local_types.get(local),
                     &expression_types,
                     &values,
                     &selects,
@@ -12495,7 +12563,7 @@ fn validate_project_function_semantic_catalog(
             RuntimeProjectFunctionStatementPayload::Defer(fact) => {
                 defer::validate_defer_payload(
                     modules,
-                    &local_types,
+                    |local| local_types.get(local),
                     &expression_types,
                     row.owner(),
                     fact,

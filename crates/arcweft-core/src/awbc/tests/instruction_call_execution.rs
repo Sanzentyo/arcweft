@@ -97,6 +97,7 @@ fn mut_trait_program(receiver_out: AwbcRegisterId) -> std::sync::Arc<AwbcProgram
         public_id: None,
         kind: AwbcFunctionKind::TraitMethod,
         signature: AwbcSignatureId(1),
+        type_context: None,
         input_ownership: vec![AwbcFunctionInputOwnership::default()],
         frame_layout: AwbcFrameLayoutId(1),
         blocks: AwbcTableRange::new(1, 1),

@@ -135,6 +135,7 @@ fn install_dialogue_handler_rows(candidate: &mut AwbcProgram) -> Result<(), Stan
         public_id: Some(function_name),
         kind: AwbcFunctionKind::Ordinary,
         signature,
+        type_context: None,
         input_ownership: vec![AwbcFunctionInputOwnership::default()],
         frame_layout,
         blocks: AwbcTableRange::new(block.0, 1),
@@ -145,6 +146,7 @@ fn install_dialogue_handler_rows(candidate: &mut AwbcProgram) -> Result<(), Stan
     candidate.pure_programs.push(AwbcPureProgramBinding {
         program: handler,
         function,
+        function_type: None,
         input_types: vec![RuntimeDialogueOpaqueRole::View.semantic_identity()],
         result_type: RuntimeDialogueOpaqueRole::Action.semantic_identity(),
     });

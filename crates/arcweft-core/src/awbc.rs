@@ -18,5 +18,6 @@ pub mod verify;
 pub mod vm;
 
 mod parameter_contract;
+pub use parameter_contract::AwbcFunctionEffectInstantiation;
 #[cfg(test)]
 mod tests;

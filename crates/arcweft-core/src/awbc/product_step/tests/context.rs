@@ -240,6 +240,7 @@ fn context_program() -> AwbcContextFixture {
                 public_id: Some(AwbcStringId(0)),
                 kind: AwbcFunctionKind::Ordinary,
                 signature: AwbcSignatureId(0),
+                type_context: None,
                 input_ownership: Vec::new(),
                 frame_layout: AwbcFrameLayoutId(0),
                 blocks: AwbcTableRange::new(0, 1),
@@ -250,6 +251,7 @@ fn context_program() -> AwbcContextFixture {
                 public_id: None,
                 kind: AwbcFunctionKind::Ordinary,
                 signature: AwbcSignatureId(1),
+                type_context: None,
                 input_ownership: vec![AwbcFunctionInputOwnership::default(); 2],
                 frame_layout: AwbcFrameLayoutId(1),
                 blocks: AwbcTableRange::new(1, 1),
@@ -313,6 +315,7 @@ fn context_program() -> AwbcContextFixture {
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature,
+            type_context: None,
             input_ownership: vec![
                 AwbcFunctionInputOwnership::default();
                 program.signatures[signature.index()].params.len()

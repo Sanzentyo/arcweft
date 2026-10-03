@@ -132,6 +132,7 @@ impl Wire for AwbcPureProgramBinding {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.program.write_wire(writer)?;
         self.function.write_wire(writer)?;
+        self.function_type.write_wire(writer)?;
         self.input_types.write_wire(writer)?;
         self.result_type.write_wire(writer)
     }
@@ -140,6 +141,7 @@ impl Wire for AwbcPureProgramBinding {
         Ok(Self {
             program: arcweft_id::runtime_program::RuntimePureProgramId::read_wire(reader)?,
             function: crate::awbc::schema::AwbcFunctionId::read_wire(reader)?,
+            function_type: Option::<RuntimeSemanticTypeId>::read_wire(reader)?,
             input_types: Vec::<RuntimeSemanticTypeId>::read_wire(reader)?,
             result_type: RuntimeSemanticTypeId::read_wire(reader)?,
         })

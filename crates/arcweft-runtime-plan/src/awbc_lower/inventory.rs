@@ -175,6 +175,7 @@ pub(crate) enum PendingAwbcClosure {
     /// pattern before the site body executes.
     FunctionSite {
         function: AwbcFunctionId,
+        function_type: Option<arcweft_core::runtime_id::RuntimePlanTypeId>,
         inputs: Box<[RuntimeFunctionInputBinding]>,
         result: RuntimePlanTypeId,
         body: RuntimeFunctionSiteBody,
@@ -315,6 +316,7 @@ impl AwbcInventory {
             self.program.pure_programs.push(AwbcPureProgramBinding {
                 program: binding.program(),
                 function,
+                function_type: binding.function_type(),
                 input_types: binding.input_types().to_vec(),
                 result_type: binding.result_type(),
             });
@@ -1449,6 +1451,7 @@ impl AwbcInventory {
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
             signature: AwbcSignatureId::default(),
+            type_context: None,
             input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId::default(),
             blocks: AwbcTableRange::new(0, 0),
@@ -2166,6 +2169,7 @@ impl AwbcInventory {
             public_id,
             kind,
             signature,
+            type_context: None,
             input_ownership: Vec::<AwbcFunctionInputOwnership>::new(),
             frame_layout: layout,
             blocks: AwbcTableRange::new(block.0, 1),

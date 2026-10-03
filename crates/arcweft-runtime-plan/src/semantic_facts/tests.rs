@@ -827,7 +827,8 @@ fn assignment_fact_fixture(
         .iter_mut()
         .find(|(owner, _)| *owner == local)
         .expect("assignment local type")
-        .1 = record_type.clone();
+        .1
+        .ty = record_type.clone();
     for (owner, ty) in &mut input.expression_types {
         if *owner == base {
             *ty = record_type.clone();

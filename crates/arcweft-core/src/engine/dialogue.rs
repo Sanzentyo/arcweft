@@ -2822,6 +2822,7 @@ mod tests {
             .expect("unit type");
         let function = builder
             .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+                function_type: None,
                 inputs: Box::new([]),
                 result: unit,
                 body_kind: RuntimeFunctionSiteBodyKind::Executable,

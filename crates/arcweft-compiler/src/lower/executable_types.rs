@@ -13,10 +13,31 @@ use arcweft_runtime_plan::semantic_facts::{
 
 use super::{
     ProjectInstantiationOrigin, RuntimeExecutableInstantiation, RuntimeSemanticProjectionError,
-    runtime_type_under,
+    RuntimeTypeProjectionPath, runtime_type_scoped_at,
 };
 
 impl RuntimeExecutableInstantiation<'_> {
+    pub(super) fn runtime_type(
+        self,
+        ty: &arcweft_lang_sema::types::TypeKind,
+        symbols: &ProjectSymbolTable,
+        world: &RegisteredSemanticWorld,
+        analysis: &FinalSemanticAnalysis,
+    ) -> Result<RuntimeNormalizedType, RuntimeSemanticProjectionError> {
+        let ty = self.instantiate_type(ty)?;
+        let scope = match self {
+            Self::Program { environment, .. } => environment.type_scope(),
+            _ => arcweft_lang_sema::types::GenericScope::default(),
+        };
+        runtime_type_scoped_at(
+            &ty,
+            symbols,
+            world,
+            analysis,
+            &RuntimeTypeProjectionPath::root(),
+            &scope,
+        )
+    }
     pub(super) fn type_projection<'abi>(
         self,
         origin: ProjectInstantiationOrigin,
@@ -44,7 +65,7 @@ impl RuntimeExecutableInstantiation<'_> {
                 .ok_or_else(|| origin.error("runtime expression has no checked value type"))?;
             projection.push(RuntimeProjectFunctionTypeProjection::value(
                 RuntimeProjectFunctionTypeOwner::Expression(owner),
-                runtime_type_under(ty, self.types(), symbols, world, analysis)?,
+                self.runtime_type(ty, symbols, world, analysis)?,
             ));
         }
         for expected in partition.patterns() {
@@ -54,7 +75,7 @@ impl RuntimeExecutableInstantiation<'_> {
                 .ok_or_else(|| origin.error("runtime pattern has no checked semantic fact"))?;
             projection.push(RuntimeProjectFunctionTypeProjection::value(
                 RuntimeProjectFunctionTypeOwner::Pattern(owner),
-                runtime_type_under(checked.ty(), self.types(), symbols, world, analysis)?,
+                self.runtime_type(checked.ty(), symbols, world, analysis)?,
             ));
         }
         for owner in partition.locals().iter().chain(partition.input_locals()) {
@@ -63,7 +84,7 @@ impl RuntimeExecutableInstantiation<'_> {
                 .ok_or_else(|| origin.error("runtime local has no checked semantic fact"))?;
             projection.push(RuntimeProjectFunctionTypeProjection::value(
                 RuntimeProjectFunctionTypeOwner::Local(*owner),
-                runtime_type_under(checked.ty(), self.types(), symbols, world, analysis)?,
+                self.runtime_type(checked.ty(), symbols, world, analysis)?,
             ));
         }
         for owner in partition.types() {
@@ -73,7 +94,7 @@ impl RuntimeExecutableInstantiation<'_> {
                 let checked = analysis.ty(*owner).ok_or_else(|| {
                     origin.error("runtime type root has no checked semantic fact")
                 })?;
-                runtime_type_under(checked, self.types(), symbols, world, analysis)?
+                self.runtime_type(checked, symbols, world, analysis)?
             };
             projection.push(RuntimeProjectFunctionTypeProjection::value(
                 RuntimeProjectFunctionTypeOwner::Type(*owner),

@@ -426,6 +426,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 public_id: Some(public_id),
                 kind: AwbcFunctionKind::PureHelper,
                 signature,
+                type_context: None,
                 input_ownership: vec![
                     AwbcFunctionInputOwnership::default();
                     helper.input_locals.len()
@@ -858,6 +859,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 public_id,
                 kind,
                 signature,
+                type_context: None,
                 input_ownership: vec![AwbcFunctionInputOwnership::default(); captures.len()],
                 frame_layout: layout,
                 blocks: body.blocks,
@@ -877,6 +879,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
     pub(crate) fn lower_executable_function_site(
         &mut self,
         owner: AwbcFunctionId,
+        function_type: Option<arcweft_core::runtime_id::RuntimePlanTypeId>,
         inputs: &[RuntimeFunctionInputBinding],
         result: arcweft_core::runtime_id::RuntimePlanTypeId,
         executable: &RuntimeExecutableBody,
@@ -952,12 +955,15 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         let signature = self
             .inventory
             .intern_signature(params, Some(result_type), effects);
+        let type_context =
+            function_type.map(|ty| admitted_plan_type(self.inventory, self.plan, ty));
         self.inventory.replace_function(
             owner,
             AwbcFunction {
                 public_id: None,
                 kind: AwbcFunctionKind::Ordinary,
                 signature,
+                type_context,
                 input_ownership,
                 frame_layout: layout,
                 blocks: body.blocks,
@@ -1026,6 +1032,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 public_id: Some(public_id),
                 kind: AwbcFunctionKind::Flow,
                 signature,
+                type_context: None,
                 input_ownership: vec![AwbcFunctionInputOwnership::default(); flow.params.len()],
                 frame_layout: layout,
                 blocks: body.blocks,
@@ -2004,6 +2011,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             self.inventory
                 .push_pending_closure(PendingAwbcClosure::FunctionSite {
                     function,
+                    function_type: declaration.function_type(),
                     inputs: declaration.inputs().to_vec().into_boxed_slice(),
                     result: declaration.result(),
                     body: declaration.body().clone(),

@@ -49,6 +49,7 @@ fn captured_identity_plan() -> RuntimePlan {
         .unwrap();
     let site = builder
         .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            function_type: None,
             inputs: Box::new([
                 RuntimeFunctionInputBindingSeed {
                     ownership: Default::default(),

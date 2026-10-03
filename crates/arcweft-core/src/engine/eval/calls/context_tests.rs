@@ -180,6 +180,7 @@ fn context_plan(with_proof: bool, with_callback: bool) -> ContextPlan {
     if with_callback {
         let site = builder
             .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+                function_type: None,
                 inputs: Box::new([]),
                 result: STRING,
                 body_kind: RuntimeFunctionSiteBodyKind::Expression,

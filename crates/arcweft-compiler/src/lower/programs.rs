@@ -16,7 +16,7 @@ use arcweft_runtime_plan::semantic_facts::{
 use super::{
     DiscoveredProjectInstances, ProjectInstanceProjection, ProjectInstantiationOrigin,
     RuntimeDialogueProjectionCatalog, RuntimeExecutableInstantiation,
-    RuntimeSemanticProjectionError, runtime_executable_semantic_facts, runtime_type,
+    RuntimeSemanticProjectionError, runtime_executable_semantic_facts,
 };
 
 #[allow(
@@ -96,10 +96,19 @@ pub(crate) fn project(
         })
         .map(|input| input.binding().ty())
         .chain(abi.parameters().iter().map(|parameter| parameter.ty()))
-        .map(|ty| runtime_type(ty, symbols, world, analysis))
+        .map(|ty| {
+            super::runtime_type_scoped_at(
+                ty,
+                symbols,
+                world,
+                analysis,
+                &super::RuntimeTypeProjectionPath::root(),
+                &abi.environment().type_scope(),
+            )
+        })
         .collect::<Result<Vec<_>, _>>()?
         .into_boxed_slice();
-    let result = runtime_type(
+    let result = super::runtime_type_scoped_at(
         abi.result()
             .value_type()
             .ok_or_else(|| RuntimeSemanticProjectionError::Type {
@@ -108,15 +117,30 @@ pub(crate) fn project(
         symbols,
         world,
         analysis,
+        &super::RuntimeTypeProjectionPath::root(),
+        &abi.environment().type_scope(),
     )?;
     Ok(RuntimePureProgramFact::try_new(
-        program, admission, inputs, result,
+        program,
+        Arc::clone(&admission),
+        inputs,
+        result,
+        super::runtime_type(
+            &abi.function_type()
+                .ok_or_else(|| RuntimeSemanticProjectionError::Type {
+                    reason: "program ABI has no function contract".to_owned(),
+                })?,
+            symbols,
+            world,
+            analysis,
+        )?,
     )?)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{RuntimePureProgramFact, RuntimeSemanticProjectionError, project, runtime_type};
+    use super::{RuntimePureProgramFact, RuntimeSemanticProjectionError, project};
+    use crate::lower::runtime_type;
     use crate::lower::{
         ProjectInstantiationControl, RuntimeEmissionMode, project_program_reachability,
         project_runtime_reachability, project_runtime_semantic_facts_with_programs_and_fx,
@@ -471,7 +495,8 @@ mod tests {
                 id(),
                 Arc::clone(&admission),
                 Box::new([fact.input_types()[0].clone()]),
-                fact.result().clone()
+                fact.result().clone(),
+                fact.function_type().clone()
             )
             .is_err()
         );
@@ -487,7 +512,8 @@ mod tests {
                 id(),
                 admission,
                 fact.input_types().to_vec().into_boxed_slice(),
-                boolean
+                boolean,
+                fact.function_type().clone()
             )
             .is_err()
         );

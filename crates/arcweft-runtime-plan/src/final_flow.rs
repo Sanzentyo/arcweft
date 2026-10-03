@@ -382,8 +382,17 @@ enum ProjectFunctionFrameLocal {
 impl ProjectFunctionFrameLocals {
     fn admit_catalog(
         semantics: &RuntimeProjectFunctionInstanceSemanticFacts,
+        program: &crate::semantic_facts::RuntimePureProgramFact,
         builder: &mut RuntimePlanBuilder,
     ) -> Result<Self, RuntimePlanLowerError> {
+        let context = program.function_type().identity();
+        let declaration = |ty: &crate::semantic_facts::RuntimeNormalizedType| {
+            if ty.scope().is_root() {
+                RuntimeLocalDeclarationSeed::new(ty.identity())
+            } else {
+                RuntimeLocalDeclarationSeed::in_function(ty.identity(), context)
+            }
+        };
         let mut rows = semantics
             .type_projection()
             .iter()
@@ -391,7 +400,7 @@ impl ProjectFunctionFrameLocals {
                 RuntimeProjectFunctionTypeProjection::Value {
                     owner: RuntimeProjectFunctionTypeOwner::Local(local),
                     ty,
-                } => Some((ProjectFunctionFrameLocal::Hir(*local), ty.identity())),
+                } => Some((ProjectFunctionFrameLocal::Hir(*local), declaration(ty))),
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -413,16 +422,12 @@ impl ProjectFunctionFrameLocals {
                         owner: expression.owner(),
                         source_index,
                     },
-                    operand.ty().identity(),
+                    declaration(operand.ty()),
                 ));
             }
         }
         let admitted = builder
-            .admit_type_batch(
-                [],
-                rows.iter()
-                    .map(|(_, ty)| RuntimeLocalDeclarationSeed::new(*ty)),
-            )
+            .admit_type_batch([], rows.iter().map(|(_, declaration)| *declaration))
             .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
         let mut frame = Self::default();
         for ((owner, _), local) in rows.into_iter().zip(admitted.local_ids()) {
@@ -448,6 +453,7 @@ impl ProjectFunctionFrameLocals {
         }
         frame.control = ControlLocals::admit(
             crate::semantic_facts::RuntimeExecutableSemanticFactView::project_instance(semantics),
+            Some(program.function_type()),
             builder,
         )?;
         Ok(frame)
@@ -794,7 +800,12 @@ pub fn lower_runtime_plan_with_stats(
     let local_facts = facts.local_declarations().collect::<Vec<_>>();
     let mut local_seeds = local_facts
         .iter()
-        .map(|(_, ty)| RuntimeLocalDeclarationSeed::new(ty.identity()))
+        .map(|(local, ty)| match facts.local_context(*local) {
+            Some(context) => {
+                RuntimeLocalDeclarationSeed::in_function(ty.identity(), context.identity())
+            }
+            None => RuntimeLocalDeclarationSeed::new(ty.identity()),
+        })
         .collect::<Vec<_>>();
     let mut implicit_callable_facts = Vec::new();
     facts.visit_scoped_implicit_callables(&mut |scope, owner, callable| {
@@ -1310,6 +1321,7 @@ pub fn lower_runtime_plan_with_stats(
             crate::semantic_facts::RuntimeExecutableSemanticFactView::project_instance(
                 instance.semantics(),
             ),
+            None,
             &mut builder,
         )
         .map_err(|error| vec![error])?;
@@ -1365,6 +1377,7 @@ pub fn lower_runtime_plan_with_stats(
             })?;
         frame.control = ControlLocals::admit(
             crate::semantic_facts::RuntimeExecutableSemanticFactView::project_instance(semantics),
+            None,
             &mut builder,
         )
         .map_err(|error| vec![error])?;
@@ -1377,9 +1390,15 @@ pub fn lower_runtime_plan_with_stats(
     let program_locals = facts
         .pure_program_semantics()
         .map(|(program, semantics)| {
+            let contract = facts
+                .pure_programs()
+                .find_map(|(_, fact)| (fact.program() == *program).then_some(fact))
+                .ok_or_else(|| {
+                    RuntimePlanLowerError::new("program frame has no function contract")
+                })?;
             Ok((
                 *program,
-                ProjectFunctionFrameLocals::admit_catalog(semantics, &mut builder)?,
+                ProjectFunctionFrameLocals::admit_catalog(semantics, contract, &mut builder)?,
             ))
         })
         .collect::<Result<BTreeMap<_, _>, RuntimePlanLowerError>>()
@@ -1481,6 +1500,7 @@ pub fn lower_runtime_plan_with_stats(
             crate::semantic_facts::RuntimeExecutableSemanticFactView::project_instance(
                 closure.semantics(),
             ),
+            None,
             &mut builder,
         )
         .map_err(|error| vec![error])?;
@@ -1562,6 +1582,9 @@ pub fn lower_runtime_plan_with_stats(
             &mut builder,
             &mut errors,
         );
+    if !errors.is_empty() {
+        return Err(errors);
+    }
     let (
         project_callable_states,
         callable_sources,
@@ -1595,6 +1618,7 @@ pub fn lower_runtime_plan_with_stats(
     let empty_dialogue_content = BTreeMap::new();
     let control_locals = ControlLocals::admit(
         crate::semantic_facts::RuntimeExecutableSemanticFactView::global(facts),
+        None,
         &mut builder,
     )
     .map_err(|error| vec![error])?;
@@ -1630,6 +1654,9 @@ pub fn lower_runtime_plan_with_stats(
     };
 
     let pure_program_definitions = reserve_pure_programs(&context, &mut builder, &mut errors);
+    if !errors.is_empty() {
+        return Err(errors);
+    }
 
     // Effect callback inputs are known entirely from the checked effect
     // rows. Admit their synthetic destination locals first so the callback
@@ -2449,6 +2476,7 @@ fn reserve_implicit_function_sites<'facts>(
                 }
             };
         let declaration = captures.map(|captures| RuntimeFunctionSiteDeclarationSeed {
+            function_type: None,
             inputs: captures
                 .into_iter()
                 .chain([parameter_input])
@@ -2682,6 +2710,7 @@ fn reserve_closure_sites<'facts>(
         };
         let declaration = captures.and_then(|captures| {
             parameters.map(|parameters| RuntimeFunctionSiteDeclarationSeed {
+                function_type: None,
                 inputs: captures
                     .into_iter()
                     .chain(parameters)
@@ -2941,6 +2970,7 @@ fn reserve_project_function_sites<'facts>(
             continue;
         }
         let declaration = RuntimeFunctionSiteDeclarationSeed {
+            function_type: None,
             inputs: inputs.into_boxed_slice(),
             result: result.identity(),
             body_kind,
@@ -3052,6 +3082,7 @@ fn reserve_project_default_function_sites<'facts>(
             });
         let declaration = inputs.and_then(|inputs| {
             effects.map(|effects| RuntimeFunctionSiteDeclarationSeed {
+                function_type: None,
                 inputs: inputs.into_boxed_slice(),
                 result: default.result().identity(),
                 body_kind: match default.execution() {
@@ -3156,8 +3187,13 @@ fn reserve_pure_programs<'facts>(
             .parameters()
             .enumerate()
             .map(|(position, (parameter, ty))| {
+                let declaration = if ty.scope().is_root() {
+                    RuntimeLocalDeclarationSeed::new(ty.identity())
+                } else {
+                    RuntimeLocalDeclarationSeed::in_function(ty.identity(), program.function_type().identity())
+                };
                 let admitted = builder
-                    .admit_type_batch([], [RuntimeLocalDeclarationSeed::new(ty.identity())])
+                    .admit_type_batch([], [declaration])
                     .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
                 let input_local = admitted.local_ids().first().cloned().ok_or_else(|| {
                     RuntimePlanLowerError::new("program parameter input local is absent")
@@ -3234,6 +3270,7 @@ fn reserve_pure_programs<'facts>(
             });
         }
         let declaration = inputs.map(|inputs| RuntimeFunctionSiteDeclarationSeed {
+            function_type: Some(program.function_type().identity()),
             inputs: inputs.into_boxed_slice(),
             result: program.result().identity(),
             body_kind,
@@ -4313,6 +4350,7 @@ fn reserve_dialogue_effect_sites<'facts>(
                     effects
                         .clone()
                         .map(|effects| RuntimeFunctionSiteDeclarationSeed {
+                            function_type: None,
                             inputs: captures.into_boxed_slice(),
                             result: result.identity(),
                             body_kind: RuntimeFunctionSiteBodyKind::Executable,
@@ -4599,6 +4637,7 @@ fn lower_dialogue_application<'facts>(
             ),
         }];
         let declaration = RuntimeFunctionSiteDeclarationSeed {
+            function_type: None,
             inputs: capture_inputs.into(),
             result: expression_type,
             body_kind: RuntimeFunctionSiteBodyKind::Expression,

@@ -306,6 +306,16 @@ impl ViewProgramResource {
                 let signature = program.signatures.get(function.signature.index()).ok_or(
                     SectionCodecError::NonCanonicalTable("view_default_program_signature"),
                 )?;
+                if function
+                    .type_context
+                    .and_then(|ty| program.runtime_types.get(ty.index()))
+                    .map(|ty| ty.semantic_identity())
+                    != binding.function_type
+                {
+                    return Err(SectionCodecError::NonCanonicalTable(
+                        "view_default_program_context",
+                    ));
+                }
                 let inputs = signature
                     .params
                     .iter()
@@ -329,11 +339,23 @@ impl ViewProgramResource {
                     || binding.result_type != default.result_type
                     || !match definition.parameter_contract {
                         Some(contract) => {
+                            let source_contract = binding
+                                .function_type
+                                .map(|identity| {
+                                    program.semantic_type_id(identity).ok_or(
+                                        SectionCodecError::NonCanonicalTable(
+                                            "view_default_program_context",
+                                        ),
+                                    )
+                                })
+                                .transpose()?;
                             program.semantic_type_id(contract).is_some_and(|contract| {
                                 signature.result.is_some_and(|result| {
-                                    program.parameter_contract_accepts_types(
+                                    program.parameter_contract_accepts_default(
                                         contract,
-                                        [(usize::from(parameter.ordinal), result)],
+                                        usize::from(parameter.ordinal),
+                                        source_contract,
+                                        result,
                                     )
                                 })
                             })

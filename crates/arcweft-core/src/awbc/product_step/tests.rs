@@ -1009,6 +1009,7 @@ fn line_activation_register_defer_commits_captures_and_cursor() {
             public_id: None,
             kind: AwbcFunctionKind::LineActivation,
             signature: AwbcSignatureId(1),
+            type_context: None,
             input_ownership: vec![
                 AwbcFunctionInputOwnership::default();
                 program.signatures[AwbcSignatureId(1).index()].params.len()
@@ -1022,6 +1023,7 @@ fn line_activation_register_defer_commits_captures_and_cursor() {
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(2),
+            type_context: None,
             input_ownership: vec![
                 AwbcFunctionInputOwnership::default();
                 program.signatures[AwbcSignatureId(2).index()].params.len()
@@ -2262,6 +2264,7 @@ fn actor_look_program() -> AwbcProgram {
         public_id: None,
         kind: AwbcFunctionKind::LineActivation,
         signature: AwbcSignatureId(0),
+        type_context: None,
         input_ownership: Vec::new(),
         frame_layout: AwbcFrameLayoutId(1),
         blocks: AwbcTableRange::new(1, 1),
@@ -2435,6 +2438,7 @@ fn scheduled_actor_look_program() -> AwbcProgram {
         public_id: None,
         kind: AwbcFunctionKind::LineTask,
         signature: AwbcSignatureId(1),
+        type_context: None,
         input_ownership: vec![AwbcFunctionInputOwnership::default(); 2],
         frame_layout: AwbcFrameLayoutId(2),
         blocks: AwbcTableRange::new(2, 1),
@@ -3056,6 +3060,7 @@ fn mark_selector_program(
             public_id: None,
             kind: AwbcFunctionKind::LineActivation,
             signature: AwbcSignatureId(0),
+            type_context: None,
             input_ownership: vec![
                 AwbcFunctionInputOwnership::default();
                 program.signatures[AwbcSignatureId(0).index()].params.len()
@@ -3069,6 +3074,7 @@ fn mark_selector_program(
             public_id: None,
             kind: AwbcFunctionKind::LineTask,
             signature: AwbcSignatureId(0),
+            type_context: None,
             input_ownership: vec![
                 AwbcFunctionInputOwnership::default();
                 program.signatures[AwbcSignatureId(0).index()].params.len()
@@ -3082,6 +3088,7 @@ fn mark_selector_program(
             public_id: None,
             kind: AwbcFunctionKind::LineCancellationHandler,
             signature: AwbcSignatureId(0),
+            type_context: None,
             input_ownership: vec![
                 AwbcFunctionInputOwnership::default();
                 program.signatures[AwbcSignatureId(0).index()].params.len()
@@ -3402,6 +3409,7 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
             public_id: None,
             kind: AwbcFunctionKind::LineActivation,
             signature: AwbcSignatureId(4),
+            type_context: None,
             input_ownership: vec![
                 AwbcFunctionInputOwnership::default();
                 program.signatures[AwbcSignatureId(4).index()].params.len()
@@ -3415,6 +3423,7 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(2),
+            type_context: None,
             input_ownership: vec![
                 AwbcFunctionInputOwnership::default();
                 program.signatures[AwbcSignatureId(2).index()].params.len()
@@ -3671,6 +3680,7 @@ fn defer_host_call_program() -> AwbcProgram {
             public_id: None,
             kind: AwbcFunctionKind::LineActivation,
             signature: AwbcSignatureId(1),
+            type_context: None,
             input_ownership: vec![
                 AwbcFunctionInputOwnership::default();
                 program.signatures[AwbcSignatureId(1).index()].params.len()
@@ -3684,6 +3694,7 @@ fn defer_host_call_program() -> AwbcProgram {
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(2),
+            type_context: None,
             input_ownership: vec![
                 AwbcFunctionInputOwnership::default();
                 program.signatures[AwbcSignatureId(2).index()].params.len()
@@ -4905,6 +4916,7 @@ fn trap_program(code: AwbcTrapCode, message: &str) -> AwbcProgram {
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
+            type_context: None,
             input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 1),
@@ -4975,6 +4987,7 @@ fn content_ensure_program() -> AwbcProgram {
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
+            type_context: None,
             input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 1),
@@ -5074,6 +5087,7 @@ fn host_call_program() -> AwbcProgram {
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
+            type_context: None,
             input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 2),
@@ -5229,6 +5243,7 @@ fn direct_need_program() -> AwbcProgram {
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
+            type_context: None,
             input_ownership: vec![AwbcFunctionInputOwnership::default()],
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 2),
@@ -5393,6 +5408,7 @@ fn need_producer_program(restart: AwbcTaskRestartPolicy) -> AwbcProgram {
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
+            type_context: None,
             input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 2),
@@ -5567,6 +5583,7 @@ fn await_many_product_program() -> AwbcProgram {
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
+            type_context: None,
             input_ownership: vec![AwbcFunctionInputOwnership::default()],
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 2),

@@ -821,9 +821,16 @@ fn lower_view_parameter_defaults(
         }
         let result = abi.result().value_type().ok_or_else(invalid)?;
         let result_type = ViewHandlerValueTypeId::from_semantic_digest(
-            *result.semantic_identity_digest()?.as_bytes(),
+            *abi.environment().semantic_type_identity(result)?.as_bytes(),
         );
-        if result_type.as_bytes() != default.result().as_bytes() {
+        if analysis
+            .expression(default.source())
+            .and_then(|expression| expression.value_type())
+            .ok_or_else(invalid)?
+            .semantic_identity_digest()?
+            .as_bytes()
+            != default.result().as_bytes()
+        {
             return Err(invalid());
         }
         let inputs = abi
@@ -841,7 +848,10 @@ fn lower_view_parameter_defaults(
                     .get(&input.binding().local())
                     .ok_or_else(invalid)?;
                 if binding.coordinate.index() >= ordinal
-                    || input.binding().ty().semantic_identity_digest()?.as_bytes()
+                    || abi
+                        .environment()
+                        .semantic_type_identity(input.binding().ty())?
+                        .as_bytes()
                         != binding.value_type.as_bytes()
                 {
                     return Err(invalid());

@@ -75,6 +75,7 @@ impl<'a, 'plan> AwbcTraitMethodLowerer<'a, 'plan> {
                 public_id: Some(public_id),
                 kind: AwbcFunctionKind::TraitMethod,
                 signature,
+                type_context: None,
                 input_ownership: vec![
                     AwbcFunctionInputOwnership::default();
                     method.input_locals.len()

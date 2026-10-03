@@ -83,6 +83,7 @@ fn programs() -> (RuntimePlan, AwbcProgram) {
         pure_programs: vec![AwbcPureProgramBinding {
             program: program_id(),
             function: AwbcFunctionId(0),
+            function_type: None,
             input_types: vec![],
             result_type: semantic(2),
         }],
@@ -106,6 +107,7 @@ fn programs() -> (RuntimePlan, AwbcProgram) {
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(0),
+            type_context: None,
             input_ownership: Vec::new(),
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 1),

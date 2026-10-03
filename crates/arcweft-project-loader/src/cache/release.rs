@@ -1482,6 +1482,7 @@ mod tests {
                 public_id: Some(AwbcStringId(0)),
                 kind: AwbcFunctionKind::Flow,
                 signature: AwbcSignatureId(0),
+                type_context: None,
                 input_ownership: Vec::new(),
                 frame_layout: AwbcFrameLayoutId(0),
                 blocks: AwbcTableRange::new(0, 1),

@@ -49,6 +49,7 @@ pub(crate) fn returning_function_plan(body_kind: RuntimeFunctionSiteBodyKind) ->
         .expect("nested function types admit");
     let inner_site = builder
         .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            function_type: None,
             inputs: Box::new([RuntimeFunctionInputBindingSeed {
                 ownership: Default::default(),
                 unrestricted_bindings: Box::new([]),
@@ -72,6 +73,7 @@ pub(crate) fn returning_function_plan(body_kind: RuntimeFunctionSiteBodyKind) ->
         .expect("inner function defines");
     let outer_site = builder
         .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            function_type: None,
             inputs: Box::new([]),
             result: inner,
             body_kind,

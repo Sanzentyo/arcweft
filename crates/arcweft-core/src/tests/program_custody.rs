@@ -320,6 +320,7 @@ pub(crate) fn awbc_handle_program(
         public_id: None,
         kind: AwbcFunctionKind::Ordinary,
         signature: AwbcSignatureId(0),
+        type_context: None,
         input_ownership: vec![AwbcFunctionInputOwnership::default()],
         frame_layout: AwbcFrameLayoutId(0),
         blocks: AwbcTableRange::new(0, 1),
@@ -338,6 +339,7 @@ pub(crate) fn awbc_handle_program(
     program.pure_programs = vec![AwbcPureProgramBinding {
         program: id,
         function: AwbcFunctionId(0),
+        function_type: None,
         input_types: vec![ty],
         result_type: ty,
     }];

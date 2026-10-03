@@ -95,7 +95,162 @@ enum FlowLocalValidationWork<'a> {
     },
 }
 
-impl RuntimeAgentTypeContext for RuntimePlanBuilder {
+/// Admission context borrowed from the aggregate owner. Its lexical scope is
+/// derived only from an admitted function contract, never inferred from seeds.
+pub(super) struct RuntimePlanBodyConstruction<'plan> {
+    plan: &'plan RuntimePlanBuilder,
+    scope: super::super::RuntimeTypeScope,
+}
+
+impl std::ops::Deref for RuntimePlanBodyConstruction<'_> {
+    type Target = RuntimePlanBuilder;
+    fn deref(&self) -> &Self::Target {
+        self.plan
+    }
+}
+
+impl RuntimePlanBuilder {
+    pub(super) fn root_body_context(&self) -> RuntimePlanBodyConstruction<'_> {
+        RuntimePlanBodyConstruction {
+            plan: self,
+            scope: super::super::RuntimeTypeScope::root(),
+        }
+    }
+
+    pub(super) fn function_body_context(
+        &self,
+        function: Option<RuntimePlanTypeId>,
+    ) -> Result<RuntimePlanBodyConstruction<'_>, RuntimePlanBuildError> {
+        let Some(function) = function else {
+            return Ok(self.root_body_context());
+        };
+        let declaration =
+            self.types
+                .get(function)
+                .ok_or(RuntimePlanBuildError::InvalidTypeProjection {
+                    context: "function body contract",
+                    ty: function,
+                })?;
+        let RuntimePlanTypeProjection::Function { contract, .. } = declaration.projection() else {
+            return invalid_projection("function body contract", function);
+        };
+        if !declaration.scope().is_root() {
+            return invalid_projection("function body contract", function);
+        }
+        let scope = contract.child_scope(declaration.scope()).map_err(|_| {
+            RuntimePlanBuildError::InvalidTypeProjection {
+                context: "function body contract",
+                ty: function,
+            }
+        })?;
+        Ok(RuntimePlanBodyConstruction { plan: self, scope })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn lower_pattern_seed_for_test(
+        &self,
+        seed: RuntimePatternSeed,
+    ) -> Result<RuntimePattern, RuntimePlanBuildError> {
+        self.root_body_context().lower_pattern_seed(seed)
+    }
+    pub(super) fn lower_pattern_seed(
+        &self,
+        seed: RuntimePatternSeed,
+    ) -> Result<RuntimePattern, RuntimePlanBuildError> {
+        self.root_body_context().lower_pattern_seed(seed)
+    }
+
+    pub(super) fn lower_expression(
+        &self,
+        seed: RuntimeExprSeed,
+    ) -> Result<RuntimeExpr, RuntimePlanBuildError> {
+        self.root_body_context().lower_expression(seed)
+    }
+
+    pub(super) fn resolve_seed_type(
+        &self,
+        context: &'static str,
+        semantic_identity: crate::pattern::RuntimeSemanticTypeId,
+    ) -> Result<RuntimePlanTypeId, RuntimePlanBuildError> {
+        self.root_body_context()
+            .resolve_seed_type(context, semantic_identity)
+    }
+
+    pub(super) fn projection(
+        &self,
+        ty: RuntimePlanTypeId,
+    ) -> Result<&RuntimePlanTypeProjection<RuntimePlanTypeId>, RuntimePlanBuildError> {
+        self.root_body_context().projection(ty)
+    }
+
+    pub(super) fn validate_callable_input_abi(
+        &self,
+        context: &'static str,
+        inputs: &[(RuntimeLocalDeclarationId, RuntimePlanTypeId)],
+        abi: &[RuntimePureInputType],
+    ) -> Result<(), RuntimePlanBuildError> {
+        self.root_body_context()
+            .validate_callable_input_abi(context, inputs, abi)
+    }
+
+    pub(super) fn validate_callable_output_abi(
+        &self,
+        context: &'static str,
+        ty: RuntimePlanTypeId,
+        abi: RuntimePureOutputType,
+    ) -> Result<(), RuntimePlanBuildError> {
+        self.root_body_context()
+            .validate_callable_output_abi(context, ty, abi)
+    }
+
+    pub(super) fn is_string(&self, ty: RuntimePlanTypeId) -> Result<bool, RuntimePlanBuildError> {
+        self.root_body_context().is_string(ty)
+    }
+
+    pub(super) fn validate_callable_body_locals(
+        &self,
+        body: &RuntimeExpr,
+        params: &[RuntimeLocalDeclarationId],
+        captures: &[RuntimeLocalDeclarationId],
+    ) -> Result<(), RuntimePlanBuildError> {
+        self.root_body_context()
+            .validate_callable_body_locals(body, params, captures)
+    }
+
+    pub(super) fn lower_stream_plan_seed(
+        &self,
+        seed: RuntimeStreamPlanSeed,
+    ) -> Result<StreamPlan, RuntimePlanBuildError> {
+        self.root_body_context().lower_stream_plan_seed(seed)
+    }
+
+    pub(super) fn lower_flow_ops(
+        &self,
+        seeds: Vec<RuntimeFlowOpSeed>,
+    ) -> Result<Vec<FlowOp>, RuntimePlanBuildError> {
+        self.root_body_context().lower_flow_ops(seeds)
+    }
+
+    pub(super) fn validate_flow_operation_locals(
+        &self,
+        ops: &[FlowOp],
+        scope: &mut BTreeSet<RuntimeLocalDeclarationId>,
+    ) -> Result<(), RuntimePlanBuildError> {
+        self.root_body_context()
+            .validate_flow_operation_locals(ops, scope)
+    }
+
+    pub(super) fn validate_line_task_actions_locals(
+        &self,
+        actions: &[&[FlowOp]],
+        captures: &BTreeSet<RuntimeLocalDeclarationId>,
+    ) -> Result<BTreeSet<RuntimeLocalDeclarationId>, RuntimePlanBuildError> {
+        self.root_body_context()
+            .validate_line_task_actions_locals(actions, captures)
+    }
+}
+
+impl RuntimeAgentTypeContext for RuntimePlanBodyConstruction<'_> {
     type Type = RuntimePlanTypeId;
 
     fn is_string(&self, ty: Self::Type) -> bool {
@@ -143,7 +298,7 @@ impl RuntimeAgentTypeContext for RuntimePlanBuilder {
     }
 }
 
-impl RuntimePlanBuilder {
+impl RuntimePlanBodyConstruction<'_> {
     fn validate_task_outcome(
         &self,
         outcome: &TaskOutcomeContract,
@@ -168,14 +323,6 @@ impl RuntimePlanBuilder {
         seed: RuntimePatternSeed,
     ) -> Result<RuntimePattern, RuntimePlanBuildError> {
         self.lower_pattern(seed, &mut PatternAdmission::default(), &mut Vec::new())
-    }
-
-    #[cfg(test)]
-    pub(crate) fn lower_pattern_seed_for_test(
-        &self,
-        seed: RuntimePatternSeed,
-    ) -> Result<RuntimePattern, RuntimePlanBuildError> {
-        self.lower_pattern_seed(seed)
     }
 
     #[allow(
@@ -1261,10 +1408,9 @@ fn validate_sequence_length(expected: u64, actual: usize) -> Result<(), RuntimeP
     }
 }
 
-impl RuntimePlanBuilder {
-    /// Resolves a physical value or ABI root. Scoped descendants remain in the
-    /// type table for logical callable schemes, but cannot escape their binder
-    /// into executable slots, expressions, patterns, or function results.
+impl<'plan> RuntimePlanBodyConstruction<'plan> {
+    /// Resolves a value in the authenticated frame scope. Root construction
+    /// accepts only closed roots; scoped descendants cannot escape their owner.
     pub(super) fn resolve_seed_type(
         &self,
         context: &'static str,
@@ -1276,7 +1422,11 @@ impl RuntimePlanBuilder {
                 semantic_identity,
             },
         )?;
-        if !self.types.get(ty).is_some_and(|row| row.scope().is_root()) {
+        if !self
+            .types
+            .get(ty)
+            .is_some_and(|row| row.scope().is_root() || row.scope() == &self.scope)
+        {
             return invalid_projection(context, ty);
         }
         Ok(ty)
@@ -1285,8 +1435,9 @@ impl RuntimePlanBuilder {
     pub(super) fn projection(
         &self,
         ty: RuntimePlanTypeId,
-    ) -> Result<&RuntimePlanTypeProjection<RuntimePlanTypeId>, RuntimePlanBuildError> {
-        self.types
+    ) -> Result<&'plan RuntimePlanTypeProjection<RuntimePlanTypeId>, RuntimePlanBuildError> {
+        self.plan
+            .types
             .get(ty)
             .map(super::super::RuntimePlanTypeDeclaration::projection)
             .ok_or(RuntimePlanBuildError::InvalidTypeProjection {
@@ -2305,7 +2456,7 @@ impl RuntimePlanBuilder {
     }
 }
 
-impl RuntimePlanBuilder {
+impl RuntimePlanBodyConstruction<'_> {
     fn lower_agent_expression(
         &self,
         result_ty: RuntimePlanTypeId,
@@ -2455,7 +2606,7 @@ impl RuntimePlanBuilder {
     }
 }
 
-impl RuntimePlanBuilder {
+impl RuntimePlanBodyConstruction<'_> {
     #[allow(
         clippy::too_many_lines,
         reason = "the match is the exhaustive pattern-admission authority"
@@ -2697,7 +2848,7 @@ impl RuntimePlanBuilder {
     }
 }
 
-impl RuntimePlanBuilder {
+impl RuntimePlanBodyConstruction<'_> {
     pub(super) fn validate_callable_body_locals(
         &self,
         body: &RuntimeExpr,
@@ -3139,7 +3290,7 @@ impl RuntimePlanBuilder {
     }
 }
 
-impl RuntimePlanBuilder {
+impl RuntimePlanBodyConstruction<'_> {
     pub(super) fn lower_flow_ops(
         &self,
         seeds: Vec<RuntimeFlowOpSeed>,
@@ -5424,7 +5575,7 @@ fn collect_pattern_binding_locals(
     }
 }
 
-impl RuntimePlanBuilder {
+impl RuntimePlanBodyConstruction<'_> {
     fn validate_plan_value(
         &self,
         context: &'static str,

@@ -894,7 +894,13 @@ fn execute_instruction(
             mode,
         } => {
             let value_ref = register(fiber, *value)?;
-            if !test_pattern(program, *pattern, value_ref)? {
+            if !test_pattern_view(
+                program,
+                Some(fiber.active_frame()?),
+                *pattern,
+                value_ref.view(),
+                0,
+            )? {
                 return Err(VmError::PatternMismatch);
             }
             if *mode == crate::awbc::schema::AwbcBindMode::Guard {
@@ -926,7 +932,13 @@ fn execute_instruction(
             pattern,
             value,
         } => {
-            let matched = test_pattern(program, *pattern, register(fiber, *value)?)?;
+            let matched = test_pattern_view(
+                program,
+                Some(fiber.active_frame()?),
+                *pattern,
+                register(fiber, *value)?.view(),
+                0,
+            )?;
             fiber
                 .active_frame_mut()?
                 .set_register(*dst, RuntimeValue::Bool(matched))?;
@@ -2799,10 +2811,11 @@ fn execute_terminator(
                 .map_err(|_| VmError::Runtime("match arm start does not fit usize".to_owned()))?;
             let end = usize::try_from(arms.checked_end().unwrap_or(arms.start))
                 .map_err(|_| VmError::Runtime("match arm end does not fit usize".to_owned()))?;
+            let frame = fiber.active_frame()?;
             let target = program.match_arms[start..end]
                 .iter()
                 .find_map(|arm| {
-                    test_pattern(program, arm.pattern, &value)
+                    test_pattern_view(program, Some(frame), arm.pattern, value.view(), 0)
                         .ok()
                         .and_then(|matched| matched.then_some(arm.target))
                 })
@@ -4225,16 +4238,18 @@ fn variant_identity_for_type(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn test_pattern(
     program: &AwbcProgram,
     pattern: AwbcPatternId,
     value: &RuntimeValue,
 ) -> Result<bool, VmError> {
-    test_pattern_view(program, pattern, value.view(), 0)
+    test_pattern_view(program, None, pattern, value.view(), 0)
 }
 
 fn test_pattern_view(
     program: &AwbcProgram,
+    frame: Option<&FiberFrame>,
     pattern: AwbcPatternId,
     value: RuntimeValueView<'_>,
     depth: usize,
@@ -4247,8 +4262,12 @@ fn test_pattern_view(
         .get(pattern.index())
         .ok_or(VmError::MissingPattern(pattern))?;
     Ok(match pattern {
-        AwbcPattern::Bind { expected, .. } => expected
-            .is_none_or(|expected| runtime_value_view_matches_type(program, value, expected, 0)),
+        AwbcPattern::Bind { expected, .. } => expected.is_none_or(|expected| {
+            frame.map_or_else(
+                || runtime_value_view_matches_type(program, value, expected, 0),
+                |frame| frame.value_view_matches_type(program, value, expected),
+            )
+        }),
         AwbcPattern::Discard => true,
         AwbcPattern::Literal(id) => {
             runtime_value_views_equal(constant_value(program, *id)?.view(), value)
@@ -4264,7 +4283,7 @@ fn test_pattern_view(
                         matched = false;
                         break;
                     };
-                    if !test_pattern_view(program, *pattern, value, depth + 1)? {
+                    if !test_pattern_view(program, frame, *pattern, value, depth + 1)? {
                         matched = false;
                         break;
                     }
@@ -4274,8 +4293,12 @@ fn test_pattern_view(
             _ => false,
         },
         AwbcPattern::Record { ty, fields, rest } => {
-            let owner_matches =
-                ty.is_none_or(|ty| runtime_value_view_matches_type(program, value, ty, 0));
+            let owner_matches = ty.is_none_or(|ty| {
+                frame.map_or_else(
+                    || runtime_value_view_matches_type(program, value, ty, 0),
+                    |frame| frame.value_view_matches_type(program, value, ty),
+                )
+            });
             owner_matches
                 && match value {
                     RuntimeValueView::Record(values) => {
@@ -4290,7 +4313,13 @@ fn test_pattern_view(
                                     break;
                                 };
                                 if identity.zero_based() != field.field
-                                    || !test_pattern_view(program, field.pattern, value, depth + 1)?
+                                    || !test_pattern_view(
+                                        program,
+                                        frame,
+                                        field.pattern,
+                                        value,
+                                        depth + 1,
+                                    )?
                                 {
                                     matched = false;
                                     break;
@@ -4311,6 +4340,7 @@ fn test_pattern_view(
                                 };
                                 if !test_pattern_view(
                                     program,
+                                    frame,
                                     field.pattern,
                                     value.view(),
                                     depth + 1,
@@ -4335,7 +4365,7 @@ fn test_pattern_view(
                         matched = false;
                         break;
                     };
-                    if !test_pattern_view(program, *pattern, value, depth + 1)? {
+                    if !test_pattern_view(program, frame, *pattern, value, depth + 1)? {
                         matched = false;
                         break;
                     }
@@ -4351,7 +4381,10 @@ fn test_pattern_view(
             payload,
         } => {
             let case_name = string(program, *case_name)?;
-            if !runtime_value_view_matches_type(program, value, *ty, 0) {
+            if !frame.map_or_else(
+                || runtime_value_view_matches_type(program, value, *ty, 0),
+                |frame| frame.value_view_matches_type(program, value, *ty),
+            ) {
                 false
             } else if let RuntimeValueView::Variant {
                 ordinal,
@@ -4366,7 +4399,7 @@ fn test_pattern_view(
                     match (payload, actual) {
                         (None, None) => true,
                         (Some(pattern), Some(value)) => {
-                            test_pattern_view(program, *pattern, value.view(), depth + 1)?
+                            test_pattern_view(program, frame, *pattern, value.view(), depth + 1)?
                         }
                         _ => false,
                     }
@@ -4375,7 +4408,9 @@ fn test_pattern_view(
                 false
             }
         }
-        AwbcPattern::Whole { inner, .. } => test_pattern_view(program, *inner, value, depth + 1)?,
+        AwbcPattern::Whole { inner, .. } => {
+            test_pattern_view(program, frame, *inner, value, depth + 1)?
+        }
     })
 }
 
@@ -4678,7 +4713,13 @@ pub(crate) fn prepare_pattern_binding(
     pattern: AwbcPatternId,
     value: &RuntimeValue,
 ) -> Result<PreparedPatternBinding, VmError> {
-    if !test_pattern(program, pattern, value)? {
+    if !test_pattern_view(
+        program,
+        Some(fiber.active_frame()?),
+        pattern,
+        value.view(),
+        0,
+    )? {
         return Err(VmError::PatternMismatch);
     }
     let frame = fiber.active_frame()?;
@@ -4696,7 +4737,7 @@ pub(crate) fn prepare_pattern_binding(
                     register: register.0,
                     layout: frame.layout.0,
                 })?;
-        if !runtime_value_view_matches_type(program, view, slot.ty, 0) {
+        if !frame.value_view_matches_type(program, view, slot.ty) {
             return Err(VmError::Runtime(format!(
                 "pattern target register {} rejects the projected value type",
                 register.0

@@ -1893,6 +1893,8 @@ pub struct RuntimeFunctionInputBindingSeed {
 /// Signature-only reservation for one plan-owned structured function site.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeFunctionSiteDeclarationSeed {
+    /// Complete frame contract when the body owns a quantified lexical scope.
+    pub function_type: Option<RuntimeSemanticTypeId>,
     pub inputs: Box<[RuntimeFunctionInputBindingSeed]>,
     pub result: RuntimeSemanticTypeId,
     pub body_kind: RuntimeFunctionSiteBodyKind,

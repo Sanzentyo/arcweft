@@ -321,6 +321,7 @@ impl Wire for AwbcFunction {
         self.public_id.write_wire(writer)?;
         self.kind.write_wire(writer)?;
         self.signature.write_wire(writer)?;
+        self.type_context.write_wire(writer)?;
         self.input_ownership.write_wire(writer)?;
         self.frame_layout.write_wire(writer)?;
         self.blocks.write_wire(writer)?;
@@ -333,6 +334,7 @@ impl Wire for AwbcFunction {
             public_id: Option::<AwbcStringId>::read_wire(reader)?,
             kind: AwbcFunctionKind::read_wire(reader)?,
             signature: AwbcSignatureId::read_wire(reader)?,
+            type_context: Option::<crate::awbc::schema::AwbcTypeId>::read_wire(reader)?,
             input_ownership: Vec::read_wire(reader)?,
             frame_layout: AwbcFrameLayoutId::read_wire(reader)?,
             blocks: AwbcTableRange::read_wire(reader)?,

@@ -53,10 +53,10 @@ impl RuntimeDeferFact {
     }
 }
 
-pub(super) fn validate_defer(
+pub(super) fn validate_defer<'types>(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     owners: RuntimeSemanticOwnerSet<'_>,
-    locals: &BTreeMap<LocalId, RuntimeNormalizedType>,
+    local_type: impl Fn(&LocalId) -> Option<&'types RuntimeNormalizedType>,
     expressions: &BTreeMap<ExprId, RuntimeNormalizedType>,
     statement: StmtId,
     fact: &RuntimeDeferFact,
@@ -68,12 +68,12 @@ pub(super) fn validate_defer(
         RuntimeSemanticFactFamily::Defer,
         |kind| matches!(kind, HirStmtKind::Defer { .. }),
     )?;
-    validate_defer_payload(modules, locals, expressions, statement, fact)
+    validate_defer_payload(modules, local_type, expressions, statement, fact)
 }
 
-pub(super) fn validate_defer_payload(
+pub(super) fn validate_defer_payload<'types>(
     modules: &BTreeMap<HirModuleId, &HirModule>,
-    locals: &BTreeMap<LocalId, RuntimeNormalizedType>,
+    local_type: impl Fn(&LocalId) -> Option<&'types RuntimeNormalizedType>,
     expressions: &BTreeMap<ExprId, RuntimeNormalizedType>,
     statement: StmtId,
     fact: &RuntimeDeferFact,
@@ -116,7 +116,7 @@ pub(super) fn validate_defer_payload(
     for capture in fact.captures() {
         if !seen.insert(capture.local())
             || !origins.insert(capture.origin().clone())
-            || locals.get(&capture.local()) != Some(capture.ty())
+            || local_type(&capture.local()) != Some(capture.ty())
         {
             return Err(RuntimeSemanticFactsError::InvalidDeferFact { statement });
         }
