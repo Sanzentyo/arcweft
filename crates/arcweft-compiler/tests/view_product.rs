@@ -1092,6 +1092,95 @@ view Main(first: Slot<i64 -> i64> = .Full(|input: i64| input + 1), value: Slot<i
 }
 
 #[test]
+fn nominal_defaults_keep_distinct_scope_widths_and_share_equal_scopes() {
+    use arcweft_core::awbc::schema::AwbcRuntimeTypeShape;
+    use arcweft_runtime_driver::presentation_handles::{
+        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    };
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+struct Holder<T> { callback: T }
+view Narrow(first: Holder<i64 -> i64> = Holder { callback = |input: i64| input + 1 }) { Text("narrow") }
+view Wide(first: Holder<i64 -> i64> = Holder { callback = |input: i64| input + 1 }, extra: i64 -> i64 = |input: i64| input + 2) { Text("wide") }
+view Mirror(first: Holder<i64 -> i64> = Holder { callback = |input: i64| input + 1 }) { Text("mirror") }
+"#;
+    let compiled = project_view_fixture_with_entry(source, "arcweft-test://nominal-scope-widths")
+        .compile()
+        .unwrap();
+    let awbc = AwbcLowerer::new(
+        &compiled.runtime_plan().plan,
+        &compiled.runtime_plan().dialogue_content_catalog,
+        "main.arcw",
+    )
+    .lower()
+    .unwrap()
+    .program;
+    let awbc =
+        Arc::new(arcweft_bundle::standard_view::install_dialogue_handler_awbc(awbc).unwrap());
+    let product = compiled.view_product().product();
+    let resource = product.program().unwrap().resource();
+    let parameter = |name: &str| {
+        let definition = resource
+            .definitions
+            .iter()
+            .find(|definition| definition.public_id.as_str() == name)
+            .unwrap();
+        let contract = awbc
+            .semantic_type_id(definition.parameter_contract.unwrap())
+            .unwrap();
+        let AwbcRuntimeTypeShape::Function {
+            contract: header,
+            parameters,
+            ..
+        } = awbc.runtime_types[contract.index()].shape()
+        else {
+            panic!("parameter contract")
+        };
+        (header.binder().effects(), parameters[0])
+    };
+    let narrow = parameter("view.Narrow");
+    let wide = parameter("view.Wide");
+    let mirror = parameter("view.Mirror");
+    assert_eq!(narrow.0, 1);
+    assert_eq!(wide.0, 2);
+    assert_eq!(narrow, mirror);
+    assert_ne!(narrow.1, wide.1);
+    assert_ne!(
+        awbc.runtime_types[narrow.1.index()].semantic_identity(),
+        awbc.runtime_types[wide.1.index()].semantic_identity()
+    );
+    assert_eq!(
+        awbc.runtime_types[narrow.1.index()].nominal_declaration(),
+        awbc.runtime_types[wide.1.index()].nominal_declaration()
+    );
+    let handles = ["Narrow", "Wide", "Mirror"]
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, name)| {
+            PresentationHandleRecord::new(
+                PresentationHandleId::try_new(format!("view.scope.{ordinal}")).unwrap(),
+                PresentationHandleKind::View,
+                format!("view.{name}"),
+                None,
+                PresentationResourceState::Mounted,
+                None,
+                0,
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut runtime = BundleViewRuntime::try_new_with_awbc(
+        product.as_ref().clone(),
+        compiled.view_product().text().cloned(),
+        awbc,
+    )
+    .unwrap();
+    let frame = runtime.evaluate(&handles, &[], false);
+    assert!(frame.diagnostics.is_empty(), "{frame:#?}");
+    assert_eq!(runtime.snapshot().unwrap().mounts.len(), 3);
+}
+
+#[test]
 fn compiler_rejects_general_view_calls_at_the_unimplemented_runtime_boundary() {
     let cases = ["view Child(value: i32) { Text(value) }\nview Main() { Child(1i32) }\n"];
 
