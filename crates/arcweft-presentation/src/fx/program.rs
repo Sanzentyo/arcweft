@@ -1011,6 +1011,25 @@ impl FxEvaluationBudget {
         self.remaining
     }
 
+    /// Charges the same deterministic work on cached and uncached value paths.
+    pub fn charge_operations(
+        &mut self,
+        operations: u32,
+        instruction: usize,
+    ) -> Result<(), FxEvaluationError> {
+        if operations > self.remaining {
+            let instruction = instruction.saturating_add(self.remaining as usize);
+            self.remaining = 0;
+            Err(FxEvaluationError::BudgetExceeded {
+                instruction,
+                limit: self.limit,
+            })
+        } else {
+            self.remaining -= operations;
+            Ok(())
+        }
+    }
+
     pub(crate) fn charge(&mut self, instruction: usize) -> Result<(), FxEvaluationError> {
         if self.remaining == 0 {
             Err(FxEvaluationError::BudgetExceeded {

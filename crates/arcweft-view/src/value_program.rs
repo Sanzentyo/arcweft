@@ -377,6 +377,11 @@ impl ViewMountState {
             && cached.state_revisions == state_revisions
             && cached.context == context_key
         {
+            budget.charge_operations(
+                u32::try_from(program.program.instructions().len())
+                    .expect("validated View program limits fit the operation counter"),
+                0,
+            )?;
             return Ok(ViewValueEvaluation {
                 value: cached.value,
                 status: ViewValueEvaluationStatus::Reused,
@@ -641,6 +646,47 @@ mod tests {
             inventory,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn cached_and_restored_values_obey_the_same_budget_as_cold_evaluation() {
+        let inventory = inventory();
+        let mut cold = mount(&inventory);
+        let mut warm = mount(&inventory);
+        warm.evaluate(
+            ViewValueProgramId(0),
+            &inventory,
+            context(),
+            &mut FxEvaluationBudget::new(2),
+        )
+        .unwrap();
+        let mut restored = ViewMountState::from_snapshot(
+            &warm.snapshot(),
+            &program_id("view-program.test"),
+            0xCAFE,
+            &inventory,
+        )
+        .unwrap();
+        let mut errors = Vec::new();
+        for state in [&mut cold, &mut warm, &mut restored] {
+            let mut budget = FxEvaluationBudget::new(1);
+            errors.push(
+                state
+                    .evaluate(ViewValueProgramId(0), &inventory, context(), &mut budget)
+                    .unwrap_err(),
+            );
+            assert_eq!(budget.remaining(), 0);
+        }
+        assert_eq!(errors[0], errors[1]);
+        assert_eq!(errors[0], errors[2]);
+        let mut budget = FxEvaluationBudget::new(2);
+        assert_eq!(
+            warm.evaluate(ViewValueProgramId(0), &inventory, context(), &mut budget)
+                .unwrap()
+                .status(),
+            ViewValueEvaluationStatus::Reused
+        );
+        assert_eq!(budget.remaining(), 0);
     }
 
     #[test]
