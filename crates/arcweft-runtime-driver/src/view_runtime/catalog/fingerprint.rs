@@ -51,7 +51,7 @@ impl ViewDefinitionFingerprints {
         view: &ViewId,
     ) -> Result<Self, ViewProgramCatalogError> {
         let body = definition_body(resource, definition, view)?;
-        let value_program_ids = referenced_value_programs(definition, body);
+        let value_program_ids = referenced_value_programs(body);
         let value_programs = resource
             .value_programs
             .iter()
@@ -156,15 +156,8 @@ fn definition_body<'a>(
         .ok_or_else(|| ViewProgramCatalogError::InvalidDefinitionSpan { view: view.clone() })
 }
 
-fn referenced_value_programs(
-    definition: &ViewDefinitionResource,
-    body: &[ViewProgramInstruction],
-) -> BTreeSet<ViewValueProgramId> {
-    let mut programs = definition
-        .parameters
-        .iter()
-        .filter_map(|parameter| parameter.default_program)
-        .collect::<BTreeSet<_>>();
+fn referenced_value_programs(body: &[ViewProgramInstruction]) -> BTreeSet<ViewValueProgramId> {
+    let mut programs = BTreeSet::new();
     for instruction in body {
         match instruction {
             ViewProgramInstruction::CallView { arguments, .. } => {

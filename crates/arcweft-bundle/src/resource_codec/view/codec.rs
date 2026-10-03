@@ -210,12 +210,12 @@ impl ViewProgramResource {
         ViewResourceCompatibility::ContentOnly
     }
 
-    /// Joins every View handler schema to its exact verified AWBC pure-program
+    /// Joins every View default and handler to its exact verified AWBC pure-program
     /// binding. The View wire keeps only the stable program identity; helper
     /// indices remain derived execution data. Product bytecode body integrity
     /// is owned once by the canonical bundle content root/signature, while this
     /// join proves the local typed ABI and opaque result owner.
-    pub fn validate_awbc_handlers(&self, program: &AwbcProgram) -> Result<(), SectionCodecError> {
+    pub fn validate_awbc_programs(&self, program: &AwbcProgram) -> Result<(), SectionCodecError> {
         let bindings = program
             .pure_programs
             .iter()
@@ -235,6 +235,38 @@ impl ViewProgramResource {
             ));
         }
         for definition in &self.definitions {
+            if let Some(contract) = definition.parameter_contract {
+                let contract = program.semantic_type_id(contract).ok_or(
+                    SectionCodecError::NonCanonicalTable("view_parameter_contract"),
+                )?;
+                let arcweft_core::awbc::schema::AwbcRuntimeTypeShape::Function {
+                    contract: signature,
+                    parameters,
+                    ..
+                } = program.runtime_types[contract.index()].shape()
+                else {
+                    return Err(SectionCodecError::NonCanonicalTable(
+                        "view_parameter_contract",
+                    ));
+                };
+                if signature.binder().is_empty()
+                    || !program.parameter_contract_accepts_types(contract, [])
+                    || parameters.len() != definition.parameters.len()
+                    || parameters
+                        .iter()
+                        .zip(&definition.parameters)
+                        .any(|(ty, parameter)| {
+                            program
+                                .runtime_types
+                                .get(ty.index())
+                                .is_none_or(|ty| ty.semantic_identity() != parameter.semantic_type)
+                        })
+                {
+                    return Err(SectionCodecError::NonCanonicalTable(
+                        "view_parameter_contract",
+                    ));
+                }
+            }
             for parameter in &definition.parameters {
                 let runtime_type = runtime_types.get(&parameter.semantic_type).ok_or(
                     SectionCodecError::NonCanonicalTable("view_parameter_runtime_type"),
@@ -254,6 +286,85 @@ impl ViewProgramResource {
                             "view_dialogue_parameter_owner",
                         ));
                     }
+                }
+            }
+        }
+        for definition in &self.definitions {
+            for parameter in &definition.parameters {
+                let Some(default) = &parameter.default_program else {
+                    continue;
+                };
+                let binding =
+                    bindings
+                        .get(&default.program)
+                        .ok_or(SectionCodecError::NonCanonicalTable(
+                            "view_default_program_binding",
+                        ))?;
+                let function = program.functions.get(binding.function.index()).ok_or(
+                    SectionCodecError::NonCanonicalTable("view_default_program_function"),
+                )?;
+                let signature = program.signatures.get(function.signature.index()).ok_or(
+                    SectionCodecError::NonCanonicalTable("view_default_program_signature"),
+                )?;
+                let inputs = signature
+                    .params
+                    .iter()
+                    .map(|ty| {
+                        program
+                            .runtime_types
+                            .get(ty.index())
+                            .map(|ty| ty.semantic_identity())
+                    })
+                    .collect::<Option<Vec<_>>>();
+                let result = signature
+                    .result
+                    .and_then(|ty| program.runtime_types.get(ty.index()))
+                    .map(|ty| ty.semantic_identity());
+                if binding.input_types.len() != default.inputs.len()
+                    || binding
+                        .input_types
+                        .iter()
+                        .zip(default.inputs.iter())
+                        .any(|(ty, input)| *ty != input.value_type())
+                    || binding.result_type != default.result_type
+                    || !match definition.parameter_contract {
+                        Some(contract) => {
+                            program.semantic_type_id(contract).is_some_and(|contract| {
+                                signature.result.is_some_and(|result| {
+                                    program.parameter_contract_accepts_types(
+                                        contract,
+                                        [(usize::from(parameter.ordinal), result)],
+                                    )
+                                })
+                            })
+                        }
+                        None => program.types_compatible(
+                            program
+                                .runtime_types
+                                .iter()
+                                .position(|ty| ty.semantic_identity() == parameter.semantic_type)
+                                .and_then(|index| u32::try_from(index).ok())
+                                .map(arcweft_core::awbc::schema::AwbcTypeId)
+                                .ok_or(SectionCodecError::NonCanonicalTable(
+                                    "view_default_parameter_type",
+                                ))?,
+                            signature
+                                .result
+                                .ok_or(SectionCodecError::NonCanonicalTable(
+                                    "view_default_result_type",
+                                ))?,
+                        ),
+                    }
+                    || inputs.as_deref() != Some(binding.input_types.as_slice())
+                    || result != Some(binding.result_type)
+                    || !program
+                        .effect_sets
+                        .get(signature.effects.index())
+                        .is_some_and(|effects| effects.effects.is_empty())
+                {
+                    return Err(SectionCodecError::NonCanonicalTable(
+                        "view_default_program_signature",
+                    ));
                 }
             }
         }
@@ -699,7 +810,7 @@ impl ViewProgramResource {
                 "view_definition_coverage",
             ));
         }
-        let inventory = ViewValueProgramInventory::from_programs(self.value_programs.clone())
+        ViewValueProgramInventory::from_programs(self.value_programs.clone())
             .map_err(|_| SectionCodecError::NonCanonicalTable("view_value_program_inventory"))?;
         for definition in &self.definitions {
             let mut names = BTreeSet::new();
@@ -712,15 +823,23 @@ impl ViewProgramResource {
                         "view_definition_parameters",
                     ));
                 }
-                validate_optional_program(
-                    &inventory,
-                    parameter.default_program,
-                    parameter.value_type,
-                )?;
+                if let Some(default) = &parameter.default_program {
+                    let mut inputs = BTreeSet::new();
+                    if default.inputs.iter().any(|input| {
+                        !inputs.insert(input.parameter())
+                            || input.parameter().index() >= ordinal
+                            || definition
+                                .parameters
+                                .get(input.parameter().index())
+                                .is_none_or(|source| source.semantic_type != input.value_type())
+                    }) {
+                        return Err(SectionCodecError::NonCanonicalTable(
+                            "view_parameter_default_abi",
+                        ));
+                    }
+                }
                 if parameter.role == super::model::ViewParameterRole::Dialogue
-                    && (parameter.value_type.is_some()
-                        || parameter.value_slot.is_some()
-                        || parameter.default_program.is_some())
+                    && (parameter.value_type.is_some() || parameter.value_slot.is_some())
                 {
                     return Err(SectionCodecError::NonCanonicalTable(
                         "view_dialogue_parameter_schema",

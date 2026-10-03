@@ -842,6 +842,7 @@ impl Analyzer<'_, '_, '_> {
             .resolve_item(view.body().source_item())
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
         let mut expectations = Vec::new();
+        let mut default_patterns = std::collections::BTreeMap::new();
         match (view.body().source_owner(), item.kind()) {
             (
                 arcweft_lang_hir::source_index::HirCallableSourceOwner::Item,
@@ -926,6 +927,7 @@ impl Analyzer<'_, '_, '_> {
                             .cloned()
                             .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
                         expectations.push((default, expected));
+                        default_patterns.insert(default, parameter.pattern());
                     }
                 }
             }
@@ -962,6 +964,12 @@ impl Analyzer<'_, '_, '_> {
             };
             if !expected.accepts(&checked_type) {
                 return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
+            }
+            if let Some(pattern) = default_patterns.get(&owner) {
+                let binding = expected
+                    .binding_type_with_inferred_effects(&checked_type)
+                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+                self.seed_contextual_pattern_locals(module, *pattern, &binding)?;
             }
         }
         Ok(())

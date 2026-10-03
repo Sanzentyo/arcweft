@@ -39,6 +39,52 @@ fn runtime_type(marker: u8, shape: AwbcRuntimeTypeShape) -> AwbcRuntimeType {
     AwbcRuntimeType::new(RuntimeSemanticTypeId::from_bytes([marker; 32]), shape)
 }
 
+#[test]
+fn function_assignment_checks_parameter_variance_result_and_effect_contract() {
+    let mut program = AwbcProgram::default();
+    program.runtime_types = vec![
+        runtime_type(1, AwbcRuntimeTypeShape::Bool),
+        runtime_type(2, AwbcRuntimeTypeShape::String),
+        runtime_type(
+            3,
+            AwbcRuntimeTypeShape::Choice(vec![AwbcTypeId(0), AwbcTypeId(1)]),
+        ),
+    ];
+    let function = |parameter, result| AwbcRuntimeTypeShape::Function {
+        contract: RuntimeFunctionTypeContract::default(),
+        parameters: vec![parameter],
+        result,
+    };
+    program.runtime_types.extend([
+        runtime_type(4, function(AwbcTypeId(0), AwbcTypeId(2))),
+        runtime_type(5, function(AwbcTypeId(2), AwbcTypeId(0))),
+        runtime_type(6, function(AwbcTypeId(1), AwbcTypeId(0))),
+        runtime_type(7, function(AwbcTypeId(0), AwbcTypeId(1))),
+        runtime_type(8, function(AwbcTypeId(0), AwbcTypeId(2))),
+    ]);
+    assert!(program.types_compatible(AwbcTypeId(3), AwbcTypeId(4)));
+    assert!(!program.types_compatible(AwbcTypeId(4), AwbcTypeId(3)));
+    assert!(!program.types_compatible(AwbcTypeId(3), AwbcTypeId(5)));
+    assert!(!program.types_compatible(AwbcTypeId(4), AwbcTypeId(6)));
+    assert!(program.types_compatible(AwbcTypeId(3), AwbcTypeId(7)));
+    // A different effect binder remains a distinct executable contract.
+    let contract = RuntimeFunctionTypeContract::new(
+        crate::plan::RuntimeTypeBinder::new(0, 0, 1),
+        RuntimeFunctionTypeContract::default().predicate().clone(),
+        RuntimeFunctionTypeContract::default().invocation().clone(),
+    );
+    program.runtime_types.push(runtime_type(
+        9,
+        AwbcRuntimeTypeShape::Function {
+            contract,
+            parameters: vec![AwbcTypeId(0)],
+            result: AwbcTypeId(2),
+        },
+    ));
+    assert!(!program.types_compatible(AwbcTypeId(3), AwbcTypeId(8)));
+    assert!(!program.types_compatible(AwbcTypeId(999), AwbcTypeId(999)));
+}
+
 fn test_flow_binding(label: &str, function: u32) -> AwbcFlowBinding {
     AwbcFlowBinding {
         flow: FlowRuntimeId::canonical(label).expect("test Flow ID is valid"),

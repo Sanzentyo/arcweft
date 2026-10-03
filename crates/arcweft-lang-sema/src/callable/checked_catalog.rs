@@ -453,6 +453,7 @@ pub struct CheckedDeclarationDefault {
     coordinate: StableCheckedValueCoordinate,
     expected: SemanticTypeDigest,
     result: SemanticTypeDigest,
+    binding_type: TypeKind,
     effects: EffectRow,
     suspension: CheckedSuspensionRole,
     control: CheckedExecutableControlRole,
@@ -554,10 +555,10 @@ impl CheckedDeclarationDefaultCapture {
 }
 
 impl CheckedDeclarationDefault {
-    pub(crate) const fn new(
+    pub(crate) fn new(
         source: ExprId,
         coordinate: StableCheckedValueCoordinate,
-        types: (SemanticTypeDigest, SemanticTypeDigest),
+        types: (SemanticTypeDigest, SemanticTypeDigest, TypeKind),
         effects: EffectRow,
         suspension: CheckedSuspensionRole,
         control: CheckedExecutableControlRole,
@@ -569,6 +570,7 @@ impl CheckedDeclarationDefault {
             coordinate,
             expected: types.0,
             result: types.1,
+            binding_type: types.2,
             effects,
             suspension,
             control,
@@ -591,6 +593,10 @@ impl CheckedDeclarationDefault {
 
     pub const fn expected(&self) -> SemanticTypeDigest {
         self.expected
+    }
+
+    pub const fn binding_type(&self) -> &TypeKind {
+        &self.binding_type
     }
 
     pub const fn effects(&self) -> &EffectRow {
@@ -2705,6 +2711,10 @@ fn validate_parameter_default_interfaces(
                 return Err(CheckedCallableCatalogBuildError::InvalidParameterDefaultInterface);
             };
             if default.expected() != ty.semantic_identity_digest()?
+                || ty
+                    .binding_type_with_inferred_effects(default.binding_type())
+                    .as_ref()
+                    != Some(default.binding_type())
                 || !default.effects().is_empty()
                 || default.suspension() != CheckedSuspensionRole::NonSuspending
                 || !matches!(path.steps(), [crate::semantic_coordinate::CheckedSemanticPathStep::ParameterDefault { group, parameter }]
@@ -2854,6 +2864,12 @@ fn encode_declaration_default(
     );
     encoder.bytes(default.result().as_bytes());
     encoder.bytes(default.expected().as_bytes());
+    encoder.bytes(
+        default
+            .binding_type()
+            .semantic_identity_digest()?
+            .as_bytes(),
+    );
     encode_row(encoder, default.effects());
     encoder.tag(match default.suspension() {
         CheckedSuspensionRole::NonSuspending => 0,
@@ -2942,3 +2958,7 @@ fn encode_visibility(
 fn encode_row(encoder: &mut super::digest::CanonicalEncoder, row: &EffectRow) {
     encoder.effect_row(row);
 }
+mod parameter_contract;
+pub use parameter_contract::{
+    CheckedCallableParameterContract, CheckedCallableParameterContractError,
+};

@@ -66,6 +66,16 @@ default の評価は外部効果を実行せず、中断しない。純粋な関
 coordinate、型、効果・中断・control row、式 transcript と全 free parameter input
 は宣言の checked callable authority に属し、添付本文 default と同じ型で保持する。
 
+bundle の default record は `RuntimePureProgramId`、canonical free-input order の
+parameter coordinate／semantic type、および result semantic type を保持する。
+Product AWBC の verified program binding と正確な input／result ABI を照合し、
+生成された result 型と宣言型の適合を共通の型グラフで検証する。関数値は
+引数の反変性、戻り値の共変性、効果契約を保持する。scalar value inventory の
+index へ変換しない。mount は通常の `RuntimeValue` を
+保持し、default の cache key は同じ executable owner と先行入力の inert value
+から作る。cache の有無や restore 前後によって成功・失敗が変わらないよう、
+cache hit も初回実行と同じ論理 operation cost を評価予算から消費する。
+
 ## Binding
 
 Binding は直接 state を破壊的に書き換えず、lens + event/command。
@@ -77,8 +87,8 @@ View 宣言を、次の閉じた定義 record として保持する。
 
 - package/module scoped `public_id`
 - 共通 instruction inventory 内の半開区間 `body`
-- authored order の parameter schema（ordinal、name、scalar runtime type、
-  definition-scoped value slot、typed default program）
+- authored order の parameter schema（ordinal、name、semantic type、optional な
+  scalar runtime type／definition-scoped value slot、typed default program）
 - mount-state schema hash
 
 `CallView` は対象 definition ID と、parameter ordinal/name に結び付いた

@@ -1364,7 +1364,7 @@ impl ArcweftBundle {
         if let Some(program) = &self.view_program {
             program.validate_style_contract(self.view_style.as_ref())?;
             program
-                .validate_awbc_handlers(self.product_awbc.program())
+                .validate_awbc_programs(self.product_awbc.program())
                 .map_err(|error| BundleCodecError::InvalidViewHandlerRuntime {
                     message: error.to_string(),
                 })?;

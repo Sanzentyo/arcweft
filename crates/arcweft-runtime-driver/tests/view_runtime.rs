@@ -197,6 +197,7 @@ fn minimal_program(program: &str, view: &str, schema: u64) -> ViewProgramResourc
             body: ViewInstructionSpan::new(0, 0),
             styles: Vec::new(),
             parameters: Vec::new(),
+            parameter_contract: None,
             state_schema_hash: schema,
         }],
         ..ViewProgramResource::default()
@@ -367,7 +368,7 @@ fn authored_click_handler_enters_the_catalog_as_control_activation() {
     ];
     program.handlers = vec![arcweft_bundle::resource_codec::view::ViewHandlerRef {
         program: handler,
-        captures: vec![arcweft_view::ViewHandlerCapture::new(
+        captures: vec![arcweft_view::ViewParameterInput::new(
             arcweft_view::ViewParameterCoordinate::try_from_index(0).unwrap(),
             arcweft_core::value::RuntimeDialogueOpaqueRole::View.semantic_identity(),
         )],
@@ -896,6 +897,7 @@ fn replacement_graph_program(
                 body: ViewInstructionSpan::new(0, 1),
                 styles: Vec::new(),
                 parameters: Vec::new(),
+                parameter_contract: None,
                 state_schema_hash: 1,
             },
             ViewDefinitionResource {
@@ -903,6 +905,7 @@ fn replacement_graph_program(
                 body: ViewInstructionSpan::new(1, 2),
                 styles: Vec::new(),
                 parameters: Vec::new(),
+                parameter_contract: None,
                 state_schema_hash: 2,
             },
             ViewDefinitionResource {
@@ -910,6 +913,7 @@ fn replacement_graph_program(
                 body: ViewInstructionSpan::new(2, 3),
                 styles: Vec::new(),
                 parameters: Vec::new(),
+                parameter_contract: None,
                 state_schema_hash: 3,
             },
         ],
@@ -948,6 +952,7 @@ fn replacement_repeat_graph_program() -> ViewProgramResource {
                 body: ViewInstructionSpan::new(0, 2),
                 styles: Vec::new(),
                 parameters: Vec::new(),
+                parameter_contract: None,
                 state_schema_hash: 1,
             },
             ViewDefinitionResource {
@@ -955,6 +960,7 @@ fn replacement_repeat_graph_program() -> ViewProgramResource {
                 body: ViewInstructionSpan::new(2, 3),
                 styles: Vec::new(),
                 parameters: Vec::new(),
+                parameter_contract: None,
                 state_schema_hash: 2,
             },
         ],
@@ -1087,6 +1093,7 @@ fn style_scope_follows_subtrees_without_leaking_to_siblings() {
             body: ViewInstructionSpan::new(0, 7),
             styles: vec![ViewStyleApplicationTarget::named(root_sheet.clone())],
             parameters: Vec::new(),
+            parameter_contract: None,
             state_schema_hash: 1,
         }],
         instructions: vec![
@@ -1196,6 +1203,7 @@ fn dialogue_selected_style_is_scoped_after_view_defaults_and_clear_removes_it() 
                 value_slot: None,
                 default_program: None,
             }],
+            parameter_contract: None,
             state_schema_hash: 1,
         }],
         instructions: vec![ViewProgramInstruction::EmitCustom {
@@ -1260,6 +1268,7 @@ fn call_boundary_style_program(
                 body: ViewInstructionSpan::new(0, 2),
                 styles: Vec::new(),
                 parameters: Vec::new(),
+                parameter_contract: None,
                 state_schema_hash: 1,
             },
             ViewDefinitionResource {
@@ -1267,6 +1276,7 @@ fn call_boundary_style_program(
                 body: ViewInstructionSpan::new(2, 6),
                 styles: vec![ViewStyleApplicationTarget::named(child_sheet.clone())],
                 parameters: Vec::new(),
+                parameter_contract: None,
                 state_schema_hash: 2,
             },
         ],
@@ -1464,6 +1474,7 @@ fn exported_part_access_does_not_cross_two_nested_view_boundaries() {
                 body: ViewInstructionSpan::new(0, 1),
                 styles: Vec::new(),
                 parameters: Vec::new(),
+                parameter_contract: None,
                 state_schema_hash: 1,
             },
             ViewDefinitionResource {
@@ -1471,6 +1482,7 @@ fn exported_part_access_does_not_cross_two_nested_view_boundaries() {
                 body: ViewInstructionSpan::new(1, 2),
                 styles: Vec::new(),
                 parameters: Vec::new(),
+                parameter_contract: None,
                 state_schema_hash: 2,
             },
             ViewDefinitionResource {
@@ -1478,6 +1490,7 @@ fn exported_part_access_does_not_cross_two_nested_view_boundaries() {
                 body: ViewInstructionSpan::new(2, 3),
                 styles: Vec::new(),
                 parameters: Vec::new(),
+                parameter_contract: None,
                 state_schema_hash: 3,
             },
         ],
@@ -1555,6 +1568,7 @@ fn style_scope_rejects_inline_patch_on_non_rendered_definition_root() {
                 17,
             ))],
             parameters: Vec::new(),
+            parameter_contract: None,
             state_schema_hash: 1,
         }],
         ..ViewProgramResource::default()
@@ -1597,6 +1611,7 @@ fn branch_reacts_per_mount_and_missing_input_never_uses_placeholder() {
                 value_slot: Some(0),
                 default_program: None,
             }],
+            parameter_contract: None,
             state_schema_hash: 11,
         }],
         value_programs: vec![value_program(
@@ -1749,6 +1764,7 @@ fn view_save_round_trips_stable_nested_owners_and_allocator_stays_fresh() {
                 body: ViewInstructionSpan::new(0, 3),
                 styles: Vec::new(),
                 parameters: Vec::new(),
+                parameter_contract: None,
                 state_schema_hash: 21,
             },
             ViewDefinitionResource {
@@ -1767,6 +1783,7 @@ fn view_save_round_trips_stable_nested_owners_and_allocator_stays_fresh() {
                     value_slot: Some(0),
                     default_program: None,
                 }],
+                parameter_contract: None,
                 state_schema_hash: 22,
             },
         ],
@@ -2024,6 +2041,7 @@ fn duplicate_repeat_keys_fail_structurally_instead_of_reusing_one_child() {
             body: ViewInstructionSpan::new(0, 2),
             styles: Vec::new(),
             parameters: Vec::new(),
+            parameter_contract: None,
             state_schema_hash: 31,
         }],
         value_programs: vec![source, duplicate_key],
@@ -2101,6 +2119,7 @@ fn repeat_style_inventory_retains_one_collision_free_path_per_executed_item() {
             body: ViewInstructionSpan::new(0, 2),
             styles: vec![ViewStyleApplicationTarget::named(sheet)],
             parameters: Vec::new(),
+            parameter_contract: None,
             state_schema_hash: 32,
         }],
         value_programs: vec![source, key],
@@ -2219,6 +2238,7 @@ fn logical_time_updates_context_cache_and_reduce_motion_freezes_it() {
             body: ViewInstructionSpan::new(0, 2),
             styles: Vec::new(),
             parameters: Vec::new(),
+            parameter_contract: None,
             state_schema_hash: 41,
         }],
         value_programs: vec![value_program(
@@ -2302,6 +2322,7 @@ fn exact_i32_width_is_enforced_at_the_runtime_boundary() {
                 value_slot: Some(0),
                 default_program: None,
             }],
+            parameter_contract: None,
             state_schema_hash: 51,
         }],
         value_inputs: vec![ViewValueInputResource {
@@ -2351,6 +2372,7 @@ fn typed_text_stores_resolve_localized_rich_and_display_sources_without_string_f
             body: ViewInstructionSpan::new(0, 3),
             styles: Vec::new(),
             parameters: Vec::new(),
+            parameter_contract: None,
             state_schema_hash: 61,
         }],
         instructions: ["localized", "rich", "display"]
@@ -2614,6 +2636,7 @@ fn typed_dialogue_view_resources() -> (ViewProgramResource, ViewTextResource) {
                 value_slot: None,
                 default_program: None,
             }],
+            parameter_contract: None,
             state_schema_hash: 91,
         }],
         instructions: ["speaker", "content"]

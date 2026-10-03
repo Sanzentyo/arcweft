@@ -165,6 +165,7 @@ fn authored_program_is_merged_without_replacing_the_reserved_standard_definition
             body: ViewInstructionSpan::new(0, 0),
             styles: Vec::new(),
             parameters: Vec::new(),
+            parameter_contract: None,
             state_schema_hash: 7,
         }],
         ..ViewProgramResource::default()
@@ -351,6 +352,7 @@ fn reserved_standard_dialogue_view_id_cannot_be_overridden() {
             body: ViewInstructionSpan::new(0, 0),
             styles: Vec::new(),
             parameters: Vec::new(),
+            parameter_contract: None,
             state_schema_hash: 99,
         }],
         ..ViewProgramResource::default()

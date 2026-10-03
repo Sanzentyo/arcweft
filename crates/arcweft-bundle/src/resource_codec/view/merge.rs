@@ -848,9 +848,6 @@ fn merge_value_inventories(
                     ViewResourceMergeError::Overflow("View definition parameter slots"),
                 )?;
             }
-            if let Some(default_program) = &mut parameter.default_program {
-                remap_program(default_program, program_offset)?;
-            }
         }
     }
     left.value_programs.append(&mut right.value_programs);

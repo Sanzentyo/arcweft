@@ -49,6 +49,7 @@ fn style_program_contract_rejects_dangling_targets_and_inline_definition_roots()
         body: ViewInstructionSpan::new(0, 0),
         styles: vec![ViewStyleApplicationTarget::named(sheet_id("style.missing"))],
         parameters: Vec::new(),
+        parameter_contract: None,
         state_schema_hash: 0,
     });
     assert!(matches!(

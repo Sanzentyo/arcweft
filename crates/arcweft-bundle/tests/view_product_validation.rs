@@ -315,6 +315,7 @@ fn exported_program(
             body: ViewInstructionSpan::new(0, 1),
             styles: Vec::new(),
             parameters: Vec::new(),
+            parameter_contract: None,
             state_schema_hash: 0,
         }],
         instructions: vec![ViewProgramInstruction::EmitCustom {
@@ -345,6 +346,7 @@ fn definition(public_id: &str, start: u32, end: u32) -> ViewDefinitionResource {
         body: ViewInstructionSpan::new(start, end),
         styles: Vec::new(),
         parameters: Vec::new(),
+        parameter_contract: None,
         state_schema_hash: 0,
     }
 }

@@ -511,6 +511,8 @@ pub enum BundleViewRuntimeError {
     InvalidInitializedSlot { kind: &'static str, slot: u16 },
     #[error("View snapshot repeats runtime parameter `{parameter}`")]
     DuplicateRuntimeParameter { parameter: String },
+    #[error("saved View `{definition}` violates its parameter contract")]
+    InvalidRuntimeParameterContract { definition: ViewId },
     #[error("View snapshot repeats root binding `{binding}`")]
     DuplicateRootBinding { binding: String },
     #[error("saved View presentation frame does not match the retained mount table: {message}")]
@@ -545,8 +547,18 @@ struct MountedView {
     initialized_parameters: BTreeSet<u16>,
     initialized_state: BTreeSet<u16>,
     runtime_parameters: BTreeMap<String, RuntimeValue>,
+    default_evaluations: BTreeMap<u16, MountedViewDefaultEvaluation>,
     handler_seals: BTreeMap<MountedViewHandlerKey, MountedViewHandlerSeal>,
     next_handler_seal_revision: u64,
+}
+
+/// Derived memo evidence. The parameter map owns the only live result value.
+#[derive(Clone, Debug, PartialEq)]
+struct MountedViewDefaultEvaluation {
+    owner: Arc<AwbcProgram>,
+    program: arcweft_id::runtime_program::RuntimePureProgramId,
+    inputs: Box<[AwbcRuntimeValueSnapshot]>,
+    operations: u32,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -590,7 +602,7 @@ pub struct BundleViewRuntime {
     mounts: BTreeMap<ViewOccurrenceKey, MountedView>,
     axis_seeds: axis_seed::BundleViewAxisSeedRegistry,
     required_dialogue_views: BTreeSet<ViewId>,
-    handler_runtime: ViewHandlerRuntimeAuthority,
+    program_runtime: ViewProgramRuntimeAuthority,
     event_tokens: BTreeMap<ViewHandlerRouteId, PublishedViewEventToken>,
 }
 
@@ -602,8 +614,8 @@ struct PublishedViewEventToken {
 }
 
 #[derive(Clone, Debug)]
-enum ViewHandlerRuntimeAuthority {
-    HandlerFree,
+enum ViewProgramRuntimeAuthority {
+    CoreProgramFree,
     Awbc(Arc<AwbcProgram>),
 }
 
@@ -684,9 +696,9 @@ impl BundleViewRuntime {
     pub(crate) fn fresh_for_entry(&self) -> Self {
         let product = self.product.clone();
         let text = self.text.clone();
-        match &self.handler_runtime {
-            ViewHandlerRuntimeAuthority::HandlerFree => Self::try_new(product, text),
-            ViewHandlerRuntimeAuthority::Awbc(program) => {
+        match &self.program_runtime {
+            ViewProgramRuntimeAuthority::CoreProgramFree => Self::try_new(product, text),
+            ViewProgramRuntimeAuthority::Awbc(program) => {
                 Self::try_new_with_awbc(product, text, Arc::clone(program))
             }
         }
@@ -742,7 +754,7 @@ impl BundleViewRuntime {
             text,
             registry,
             catalog,
-            ViewHandlerRuntimeAuthority::HandlerFree,
+            ViewProgramRuntimeAuthority::CoreProgramFree,
         )
     }
 
@@ -775,7 +787,7 @@ impl BundleViewRuntime {
             text,
             registry,
             catalog,
-            ViewHandlerRuntimeAuthority::Awbc(awbc),
+            ViewProgramRuntimeAuthority::Awbc(awbc),
         )
     }
 
@@ -784,7 +796,7 @@ impl BundleViewRuntime {
         text: Option<ViewTextResource>,
         mut registry: ViewRegistry,
         catalog: Option<ViewProgramCatalog>,
-        handler_runtime: ViewHandlerRuntimeAuthority,
+        program_runtime: ViewProgramRuntimeAuthority,
     ) -> Result<Self, BundleViewRuntimeError> {
         if let Some(program) = product.program() {
             program.register_runtime_views(&mut registry)?;
@@ -811,7 +823,7 @@ impl BundleViewRuntime {
             mounts: BTreeMap::new(),
             axis_seeds: axis_seed::BundleViewAxisSeedRegistry::default(),
             required_dialogue_views: BTreeSet::new(),
-            handler_runtime,
+            program_runtime,
             event_tokens: BTreeMap::new(),
         })
     }
@@ -1310,12 +1322,54 @@ impl BundleViewRuntime {
             )?;
             let mut runtime_parameters = BTreeMap::new();
             for parameter in &saved.runtime_parameters {
+                let declared = definition
+                    .parameters
+                    .iter()
+                    .find(|declared| declared.name == parameter.name);
+                if !parameter.value.ownership().permits_copy()
+                    || declared.is_none()
+                    || (definition.parameter_contract.is_none()
+                        && matches!(&self.program_runtime, ViewProgramRuntimeAuthority::Awbc(program)
+                            if !program.semantic_type_id(declared.expect("declaration checked").semantic_type)
+                                .is_some_and(|ty| program.value_matches_type(&parameter.value, ty))))
+                {
+                    return Err(BundleViewRuntimeError::InvalidRuntimeParameterContract {
+                        definition: saved_view.clone(),
+                    });
+                }
                 if runtime_parameters
                     .insert(parameter.name.clone(), parameter.value.clone())
                     .is_some()
                 {
                     return Err(BundleViewRuntimeError::DuplicateRuntimeParameter {
                         parameter: parameter.name.clone(),
+                    });
+                }
+            }
+            if let Some(contract) = definition.parameter_contract {
+                let valid = match &self.program_runtime {
+                    ViewProgramRuntimeAuthority::Awbc(program) => {
+                        program.semantic_type_id(contract).is_some_and(|contract| {
+                            runtime_parameters.keys().all(|name| {
+                                definition
+                                    .parameters
+                                    .iter()
+                                    .any(|parameter| &parameter.name == name)
+                            }) && program.parameter_contract_accepts_values(
+                                contract,
+                                definition.parameters.iter().filter_map(|parameter| {
+                                    runtime_parameters
+                                        .get(&parameter.name)
+                                        .map(|value| (usize::from(parameter.ordinal), value))
+                                }),
+                            )
+                        })
+                    }
+                    ViewProgramRuntimeAuthority::CoreProgramFree => false,
+                };
+                if !valid {
+                    return Err(BundleViewRuntimeError::InvalidRuntimeParameterContract {
+                        definition: saved_view.clone(),
                     });
                 }
             }
@@ -1334,6 +1388,7 @@ impl BundleViewRuntime {
                         initialized_parameters,
                         initialized_state,
                         runtime_parameters,
+                        default_evaluations: BTreeMap::new(),
                         handler_seals: BTreeMap::new(),
                         next_handler_seal_revision: saved.next_handler_seal_revision,
                     },

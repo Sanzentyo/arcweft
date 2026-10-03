@@ -14,8 +14,8 @@ pub use arcweft_view::ViewProgramId;
 pub use arcweft_view::program::{EventKind, ViewElementKind};
 use arcweft_view::program::{ViewElementTextInputKind, ViewVirtualAxis};
 use arcweft_view::{
-    ViewHandlerCapture, ViewHandlerProgramId, ViewHandlerResult, ViewHandlerValueTypeId,
-    ViewParameterCoordinate, ViewPartLocalName, ViewValueProgram, ViewValueProgramId,
+    ViewHandlerProgramId, ViewHandlerResult, ViewHandlerValueTypeId, ViewParameterCoordinate,
+    ViewParameterInput, ViewPartLocalName, ViewValueProgram, ViewValueProgramId,
 };
 use core::fmt;
 use serde::{Deserialize, Serialize};
@@ -282,6 +282,9 @@ pub struct ViewDefinitionResource {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub styles: Vec<ViewStyleApplicationTarget>,
     pub parameters: Vec<ViewParameterResource>,
+    /// A declaration-owned generic input scope. Monomorphic definitions have none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameter_contract: Option<arcweft_id::RuntimeSemanticTypeId>,
     pub state_schema_hash: u64,
 }
 
@@ -320,7 +323,7 @@ impl Default for ViewProgramResource {
     }
 }
 
-/// One ordered View parameter and its optional executable scalar default.
+/// One ordered View parameter and its optional general executable default.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ViewParameterResource {
     pub ordinal: u16,
@@ -333,7 +336,7 @@ pub struct ViewParameterResource {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value_slot: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default_program: Option<ViewValueProgramId>,
+    pub default_program: Option<arcweft_view::ViewParameterDefaultProgram>,
 }
 
 /// Closed runtime role of one authored View parameter.
@@ -404,7 +407,7 @@ pub struct ViewInstructionSpan {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ViewHandlerRef {
     pub program: ViewHandlerProgramId,
-    pub captures: Vec<ViewHandlerCapture>,
+    pub captures: Vec<ViewParameterInput>,
     pub result: ViewHandlerResult,
 }
 

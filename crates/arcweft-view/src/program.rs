@@ -9,7 +9,7 @@
 use crate::style::{ViewPhysicalFlow, ViewStyleApplicationTarget};
 use crate::{
     CustomElementId, HandlerId, ImageId, SemanticSpecId, TextSourceId, ViewEvaluationSiteId,
-    ViewHandlerCapture, ViewHandlerProgramId, ViewHandlerResult, ViewId, ViewInstructionIndex,
+    ViewHandlerProgramId, ViewHandlerResult, ViewId, ViewInstructionIndex, ViewParameterInput,
     ViewPartExport, ViewPartId, ViewPartInstructionKind, ViewPartLocalName, ViewPartName,
     ViewPartStaticReachability, ViewProgramBuildError, ViewProgramId, ViewStaticPart,
     ViewValueProgramId, ViewValueProgramInventory,
@@ -406,7 +406,7 @@ pub struct ViewSemanticSpec {
 pub struct BindHandler {
     pub handler: HandlerId,
     pub program: ViewHandlerProgramId,
-    pub captures: Box<[ViewHandlerCapture]>,
+    pub captures: Box<[ViewParameterInput]>,
     pub result: ViewHandlerResult,
 }
 

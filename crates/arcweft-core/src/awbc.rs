@@ -17,5 +17,6 @@ pub mod value_admission;
 pub mod verify;
 pub mod vm;
 
+mod parameter_contract;
 #[cfg(test)]
 mod tests;

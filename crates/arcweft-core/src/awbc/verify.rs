@@ -4,7 +4,6 @@ mod callable_specialization;
 mod code;
 mod structure;
 
-#[cfg(test)]
 pub(crate) use structure::types_compatible;
 
 use super::schema::{AWBC_ABI_VERSION, AwbcDigest, AwbcFunctionRoleError, AwbcProgram, AwbcTypeId};

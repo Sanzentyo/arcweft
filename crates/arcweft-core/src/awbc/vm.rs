@@ -4497,7 +4497,7 @@ pub(crate) fn runtime_value_view_matches_type(
         | (RuntimeValueView::RuntimeOnly(RuntimeValue::TensorF64(_)), AwbcRuntimeTypeShape::TensorF64) => true,
         (RuntimeValueView::RuntimeOnly(RuntimeValue::Callable(value)), AwbcRuntimeTypeShape::Function { .. }) => {
             matches!(value.owner(), RuntimeProgramOwner::Awbc(owner) if std::ptr::eq(owner.as_ref(), program))
-                && value.function_type().ok() == Some(ty_row.semantic_identity())
+                && value.function_type().ok().and_then(|identity| program.runtime_types.iter().position(|candidate| candidate.semantic_identity() == identity)).and_then(|index| u32::try_from(index).ok()).is_some_and(|actual| program.types_compatible(ty, AwbcTypeId(actual)))
                 && value.validate_retained().is_ok()
         }
         (RuntimeValueView::Agent(value), AwbcRuntimeTypeShape::Agent(expected)) => {

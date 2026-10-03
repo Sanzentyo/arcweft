@@ -445,6 +445,7 @@ fn nested_mount_host_mutation_is_rejected_without_changing_runtime_state() {
                 body: ViewInstructionSpan::new(0, 1),
                 styles: Vec::new(),
                 parameters: Vec::new(),
+                parameter_contract: None,
                 state_schema_hash: 1,
             },
             ViewDefinitionResource {
@@ -454,6 +455,7 @@ fn nested_mount_host_mutation_is_rejected_without_changing_runtime_state() {
                 body: ViewInstructionSpan::new(1, 1),
                 styles: Vec::new(),
                 parameters: Vec::new(),
+                parameter_contract: None,
                 state_schema_hash: 2,
             },
         ],

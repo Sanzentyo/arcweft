@@ -261,10 +261,9 @@ impl AwbcRuntimeValueSnapshot {
         Self::from_live_with_owner(value, None)
     }
 
-    /// Captures a native rollback value under the exact immutable Plan lease.
-    /// AWBC save callers use `from_runtime_value`, which still rejects a
-    /// foreign Plan callable anywhere in the graph.
-    pub(crate) fn from_runtime_value_for_program(
+    /// Captures an inert value under its exact immutable executable lease.
+    /// Callable values anywhere in the graph must belong to this owner.
+    pub fn from_runtime_value_for_program(
         value: &RuntimeValue,
         owner: &RuntimeProgramOwner,
     ) -> Result<Self, AwbcRuntimeValueSnapshotError> {

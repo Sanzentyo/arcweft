@@ -3457,46 +3457,67 @@ fn types_compatible_inner(
     if !visiting.insert((expected, actual)) {
         return false;
     }
-    let compatible = match (expected_type, actual_type) {
-        (
-            AwbcRuntimeTypeShape::Opaque {
-                arguments: expected_arguments,
-                ..
-            },
-            AwbcRuntimeTypeShape::Opaque {
-                arguments: actual_arguments,
-                ..
-            },
-        ) => expected_row
-            .try_opaque_owner(&program.strings)
-            .ok()
-            .flatten()
-            .zip(actual_row.try_opaque_owner(&program.strings).ok().flatten())
-            .is_some_and(|(expected, actual)| {
-                expected.accepts_owner(&actual)
-                    && expected_arguments.len() == actual_arguments.len()
-                    && expected_arguments
-                        .iter()
-                        .zip(actual_arguments)
-                        .all(|(expected, actual)| {
-                            types_compatible_inner(program, *expected, *actual, visiting)
-                        })
-            }),
-        (AwbcRuntimeTypeShape::Choice(expected), AwbcRuntimeTypeShape::Choice(actual)) => {
-            actual.iter().all(|actual| {
-                expected
-                    .iter()
-                    .any(|expected| types_compatible_inner(program, *expected, *actual, visiting))
-            })
-        }
-        (AwbcRuntimeTypeShape::Choice(expected), _) => expected
-            .iter()
-            .any(|expected| types_compatible_inner(program, *expected, actual, visiting)),
-        (_, AwbcRuntimeTypeShape::Choice(actual)) => actual
-            .iter()
-            .all(|actual| types_compatible_inner(program, expected, *actual, visiting)),
-        _ => false,
-    };
+    let compatible =
+        match (expected_type, actual_type) {
+            (
+                AwbcRuntimeTypeShape::Function {
+                    contract: expected_contract,
+                    parameters: expected_parameters,
+                    result: expected_result,
+                },
+                AwbcRuntimeTypeShape::Function {
+                    contract: actual_contract,
+                    parameters: actual_parameters,
+                    result: actual_result,
+                },
+            ) => {
+                expected_contract == actual_contract
+                    && expected_parameters.len() == actual_parameters.len()
+                    && expected_parameters.iter().zip(actual_parameters).all(
+                        |(expected, actual)| {
+                            types_compatible_inner(program, *actual, *expected, visiting)
+                        },
+                    )
+                    && types_compatible_inner(program, *expected_result, *actual_result, visiting)
+            }
+            (
+                AwbcRuntimeTypeShape::Opaque {
+                    arguments: expected_arguments,
+                    ..
+                },
+                AwbcRuntimeTypeShape::Opaque {
+                    arguments: actual_arguments,
+                    ..
+                },
+            ) => expected_row
+                .try_opaque_owner(&program.strings)
+                .ok()
+                .flatten()
+                .zip(actual_row.try_opaque_owner(&program.strings).ok().flatten())
+                .is_some_and(|(expected, actual)| {
+                    expected.accepts_owner(&actual)
+                        && expected_arguments.len() == actual_arguments.len()
+                        && expected_arguments.iter().zip(actual_arguments).all(
+                            |(expected, actual)| {
+                                types_compatible_inner(program, *expected, *actual, visiting)
+                            },
+                        )
+                }),
+            (AwbcRuntimeTypeShape::Choice(expected), AwbcRuntimeTypeShape::Choice(actual)) => {
+                actual.iter().all(|actual| {
+                    expected.iter().any(|expected| {
+                        types_compatible_inner(program, *expected, *actual, visiting)
+                    })
+                })
+            }
+            (AwbcRuntimeTypeShape::Choice(expected), _) => expected
+                .iter()
+                .any(|expected| types_compatible_inner(program, *expected, actual, visiting)),
+            (_, AwbcRuntimeTypeShape::Choice(actual)) => actual
+                .iter()
+                .all(|actual| types_compatible_inner(program, expected, *actual, visiting)),
+            _ => false,
+        };
     visiting.remove(&(expected, actual));
     compatible
 }

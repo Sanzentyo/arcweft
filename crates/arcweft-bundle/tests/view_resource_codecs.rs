@@ -388,13 +388,13 @@ fn dialogue_parameter_rejects_a_forged_semantic_identity() {
         .expect("standard binding");
     binding.input_types[0] = forged;
     program.definitions[0].parameters[0].semantic_type = forged;
-    program.handlers[0].captures[0] = arcweft_view::ViewHandlerCapture::new(
+    program.handlers[0].captures[0] = arcweft_view::ViewParameterInput::new(
         arcweft_view::ViewParameterCoordinate::try_from_index(0).unwrap(),
         forged,
     );
 
     let error = program
-        .validate_awbc_handlers(&awbc)
+        .validate_awbc_programs(&awbc)
         .expect_err("same-producer forged DialogueView identity must reject");
 
     assert_eq!(
@@ -428,7 +428,7 @@ fn dialogue_action_result_rejects_a_same_producer_forged_semantic_identity() {
 
     assert_eq!(
         program
-            .validate_awbc_handlers(&awbc)
+            .validate_awbc_programs(&awbc)
             .expect_err("same-producer forged DialogueAction identity must reject"),
         arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
             "view_handler_result_owner"
@@ -447,7 +447,7 @@ fn view_handler_cross_section_rejects_missing_binding_and_nonempty_effects() {
     missing.pure_programs.clear();
     assert_eq!(
         program
-            .validate_awbc_handlers(&missing)
+            .validate_awbc_programs(&missing)
             .expect_err("missing pure-program binding must reject"),
         arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
             "view_handler_pure_program_binding"
@@ -471,7 +471,7 @@ fn view_handler_cross_section_rejects_missing_binding_and_nonempty_effects() {
     effectful.signatures[function.signature.index()].effects = effects;
     assert_eq!(
         program
-            .validate_awbc_handlers(&effectful)
+            .validate_awbc_programs(&effectful)
             .expect_err("effectful handler helper must reject"),
         arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
             "view_handler_pure_program_signature"
@@ -581,6 +581,7 @@ fn nested_view_calls_are_ordinal_canonical_required_and_typed() {
                 body: ViewInstructionSpan::new(0, 1),
                 styles: Vec::new(),
                 parameters: Vec::new(),
+                parameter_contract: None,
                 state_schema_hash: 1,
             },
             ViewDefinitionResource {
@@ -611,6 +612,7 @@ fn nested_view_calls_are_ordinal_canonical_required_and_typed() {
                         default_program: None,
                     },
                 ],
+                parameter_contract: None,
                 state_schema_hash: 2,
             },
         ],
@@ -1383,6 +1385,7 @@ fn exported_part_program() -> ViewProgramResource {
                 body: ViewInstructionSpan::new(0, 2),
                 styles: Vec::new(),
                 parameters: Vec::new(),
+                parameter_contract: None,
                 state_schema_hash: 0,
             },
             ViewDefinitionResource {
@@ -1390,6 +1393,7 @@ fn exported_part_program() -> ViewProgramResource {
                 body: ViewInstructionSpan::new(2, 3),
                 styles: Vec::new(),
                 parameters: Vec::new(),
+                parameter_contract: None,
                 state_schema_hash: 0,
             },
         ],
@@ -1478,6 +1482,7 @@ fn sourced_program(view_id: &str) -> ViewProgramResource {
             body: ViewInstructionSpan::new(0, 1),
             styles: Vec::new(),
             parameters: Vec::new(),
+            parameter_contract: None,
             state_schema_hash: 0,
         }],
         instructions: vec![ViewProgramInstruction::EmitCustom {
@@ -1499,6 +1504,7 @@ fn fixture_program() -> ViewProgramResource {
             body: ViewInstructionSpan::new(0, 5),
             styles: vec![named_style("style.dialogue")],
             parameters: Vec::new(),
+            parameter_contract: None,
             state_schema_hash: 0xD1A1_06A0_0000_0001,
         }],
         value_programs: vec![

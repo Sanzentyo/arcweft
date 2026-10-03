@@ -23,8 +23,8 @@ use arcweft_view::style::{
     ViewStyleSourceId,
 };
 use arcweft_view::{
-    EventKind, ViewHandlerCapture, ViewHandlerProgramId, ViewHandlerResult, ViewHandlerResultRole,
-    ViewId, ViewParameterCoordinate, ViewPartLocalName, ViewPartName,
+    EventKind, ViewHandlerProgramId, ViewHandlerResult, ViewHandlerResultRole, ViewId,
+    ViewParameterCoordinate, ViewParameterInput, ViewPartLocalName, ViewPartName,
 };
 
 pub const DIALOGUE_VIEW_ID: &str = "std.view.dialogue";
@@ -131,6 +131,7 @@ pub fn dialogue_program() -> ViewProgramResource {
                 value_slot: None,
                 default_program: None,
             }],
+            parameter_contract: None,
             state_schema_hash: 0x5354_4444_4941_4c47,
         }],
         instructions: vec![
@@ -174,7 +175,7 @@ pub fn dialogue_program() -> ViewProgramResource {
         ],
         handlers: vec![crate::resource_codec::view::ViewHandlerRef {
             program: dialogue_primary_action_program_id(),
-            captures: vec![ViewHandlerCapture::new(
+            captures: vec![ViewParameterInput::new(
                 ViewParameterCoordinate::try_from_index(0)
                     .expect("the standard dialogue parameter coordinate is representable"),
                 RuntimeDialogueOpaqueRole::View.semantic_identity(),

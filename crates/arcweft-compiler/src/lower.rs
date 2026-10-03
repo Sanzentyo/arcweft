@@ -965,6 +965,49 @@ fn project_runtime_semantic_fact_inventories(
         }
     }
 
+    for (_, module) in project.modules() {
+        for (owner, item) in module.items() {
+            if let HirItemKind::View(view) = item.kind() {
+                let declaration = symbols
+                    .callable_at_source(
+                        module.snapshot_id(),
+                        owner,
+                        arcweft_lang_hir::source_index::HirCallableSourceOwner::ViewItem,
+                    )
+                    .ok_or_else(|| RuntimeSemanticProjectionError::Type {
+                        reason: "retained View parameter contract has no declaration authority"
+                            .to_owned(),
+                    })?;
+                let facts = analysis
+                    .checked_callables()
+                    .project_callable(declaration.declaration())
+                    .map_err(|error| RuntimeSemanticProjectionError::Type {
+                        reason: format!("retained View callable authority: {error:?}"),
+                    })?;
+                let contract = facts
+                    .parameter_contract(
+                        arcweft_lang_sema::callable::CallableGroupIndex::try_from_usize(0)
+                            .expect("initial View parameter group fits"),
+                    )
+                    .map_err(|error| RuntimeSemanticProjectionError::Type {
+                        reason: error.to_string(),
+                    })?;
+                if contract.parameters().len() != view.parameters().len() {
+                    return Err(RuntimeSemanticProjectionError::Type {
+                        reason: "retained parameter contract differs from declaration topology"
+                            .to_owned(),
+                    });
+                }
+                input.push_value_contract_type(runtime_type(
+                    contract.schema(),
+                    symbols,
+                    world,
+                    analysis,
+                )?);
+            }
+        }
+    }
+
     for (owner, expression) in analysis.expressions() {
         if !runtime_owners.contains_expression(owner)
             && !program_owners.is_some_and(|owners| owners.contains_expression(owner))

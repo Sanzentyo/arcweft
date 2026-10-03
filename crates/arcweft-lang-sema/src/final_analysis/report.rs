@@ -1541,6 +1541,7 @@ fn seal_checked_callable_interfaces(
                             (
                                 result.semantic_identity_digest()?,
                                 result.semantic_identity_digest()?,
+                                result.clone(),
                             ),
                             EffectRow::closed(checked.effects().clone()),
                             execution.suspension(),

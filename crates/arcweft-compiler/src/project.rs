@@ -871,10 +871,10 @@ where
                     [error.diagnostic()],
                 )
             })?;
-            let pure_programs = view_product.handler_programs().iter().map(|program| {
+            let pure_programs = view_product.runtime_programs().iter().map(|program| {
                 let fact = lower::programs::project(program.id(), Arc::clone(program.admission()),
                     registered_world.symbols(), registered_world, final_analysis)?;
-                if fact.result().identity().as_bytes() != program.result().value_type().as_bytes() {
+                if fact.result().identity().as_bytes() != program.result().as_bytes() {
                     return Err(lower::RuntimeSemanticProjectionError::Facts(Box::new(
                         arcweft_runtime_plan::semantic_facts::RuntimeSemanticFactsError::InvalidPureProgram { program: program.id() },
                     )));

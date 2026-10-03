@@ -119,6 +119,11 @@ pub(super) fn checked_view_parameter_defaults(
                 (
                     expected.semantic_identity_digest()?,
                     result.semantic_identity_digest()?,
+                    analysis
+                        .pattern(parameter.pattern())
+                        .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?
+                        .ty()
+                        .clone(),
                 ),
                 crate::effect_row::EffectRow::closed(checked.effects().clone()),
                 execution.suspension(),

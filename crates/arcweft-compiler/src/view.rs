@@ -63,9 +63,9 @@ use arcweft_source::{
     SourceSpan,
 };
 use arcweft_view::{
-    ViewHandlerCapture, ViewHandlerProgramId, ViewHandlerResult, ViewHandlerValueTypeId, ViewId,
-    ViewParameterCoordinate, ViewProgramId, ViewValueProgram, ViewValueProgramId,
-    style::ViewStyleSheetId,
+    ViewHandlerProgramId, ViewHandlerResult, ViewHandlerValueTypeId, ViewId,
+    ViewParameterCoordinate, ViewParameterInput, ViewProgramId, ViewValueProgram,
+    ViewValueProgramId, style::ViewStyleSheetId,
 };
 use thiserror::Error;
 
@@ -92,7 +92,7 @@ pub struct CompiledViewProduct {
     style_sources: BTreeMap<ViewStyleSheetId, SourceSpan>,
     authored_sources: SourceSetRevision,
     resource_types: ResourceTypeRegistryDigest,
-    handler_programs: Arc<[CheckedViewHandlerProgram]>,
+    runtime_programs: Arc<[CheckedViewRuntimeProgram]>,
 }
 
 /// Compiler-private checked owner of one mount-time View handler program.
@@ -101,6 +101,13 @@ pub(crate) struct CheckedViewHandlerProgram {
     id: ViewHandlerProgramId,
     captures: Box<[CheckedViewHandlerCapture]>,
     result: ViewHandlerResult,
+}
+
+/// Sole executable admission inventory for handler and declaration-default roots.
+#[derive(Clone, Debug)]
+pub(crate) struct CheckedViewRuntimeProgram {
+    id: ViewHandlerProgramId,
+    result: ViewHandlerValueTypeId,
     admission: Arc<arcweft_lang_sema::final_analysis::CheckedDeterministicProgram>,
 }
 
@@ -108,7 +115,7 @@ pub(crate) struct CheckedViewHandlerProgram {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedViewHandlerCapture {
     local: LocalId,
-    schema: ViewHandlerCapture,
+    schema: ViewParameterInput,
 }
 
 /// Final-HIR inputs for one atomic View-product publication.
@@ -162,13 +169,13 @@ pub(crate) enum ViewProjectLowerError {
     TooManyViewValueInputs { actual: usize },
     #[error("semantic analysis does not belong to the accepted HIR generation")]
     SemanticGenerationMismatch,
-    #[error("View handler {owner:?} has an invalid execution context: {source}")]
-    InvalidHandlerContext {
+    #[error("View program {owner:?} has an invalid execution context: {source}")]
+    InvalidProgramContext {
         owner: ItemId,
         source: Box<arcweft_lang_sema::final_analysis::CheckedExecutionContextError>,
     },
-    #[error("View handler {owner:?} cannot be extracted as a deterministic program: {source}")]
-    InvalidHandlerProgram {
+    #[error("View program {owner:?} cannot be extracted as a deterministic program: {source}")]
+    InvalidProgramAdmission {
         owner: ItemId,
         source: Box<arcweft_lang_sema::final_analysis::CheckedProgramAdmissionError>,
     },
@@ -226,12 +233,12 @@ impl CompiledViewProduct {
         self.resource_types
     }
 
-    pub(crate) fn handler_programs(&self) -> &[CheckedViewHandlerProgram] {
-        &self.handler_programs
+    pub(crate) fn runtime_programs(&self) -> &[CheckedViewRuntimeProgram] {
+        &self.runtime_programs
     }
 }
 
-impl CheckedViewHandlerProgram {
+impl CheckedViewRuntimeProgram {
     pub(crate) fn admission(
         &self,
     ) -> &Arc<arcweft_lang_sema::final_analysis::CheckedDeterministicProgram> {
@@ -241,7 +248,7 @@ impl CheckedViewHandlerProgram {
         self.id
     }
 
-    pub(crate) const fn result(&self) -> ViewHandlerResult {
+    pub(crate) const fn result(&self) -> ViewHandlerValueTypeId {
         self.result
     }
 }
@@ -361,7 +368,7 @@ impl<'a> ViewProjectLowerer<'a> {
             style_sources,
             authored_sources,
             resource_types: self.resource_types.digest(),
-            handler_programs: authored.handlers.into(),
+            runtime_programs: authored.runtime_programs.into(),
         })
     }
 }
@@ -370,7 +377,7 @@ struct AuthoredViewArtifact {
     program: Option<ViewProgramResource>,
     text: ViewTextResource,
     sources: BTreeMap<ViewId, SourceSpan>,
-    handlers: Vec<CheckedViewHandlerProgram>,
+    runtime_programs: Vec<CheckedViewRuntimeProgram>,
 }
 
 struct AuthoredViewLowering {
@@ -386,6 +393,7 @@ struct AuthoredViewLowering {
     text: ViewTextResource,
     sources: BTreeMap<ViewId, SourceSpan>,
     handlers: Vec<CheckedViewHandlerProgram>,
+    runtime_programs: Vec<CheckedViewRuntimeProgram>,
 }
 
 struct PreparedAuthoredView<'a> {
@@ -395,6 +403,7 @@ struct PreparedAuthoredView<'a> {
     id: ViewId,
     parameters: BTreeMap<LocalId, CheckedViewParameter>,
     parameter_resources: Vec<ViewParameterResource>,
+    parameter_contract: arcweft_lang_sema::callable::CheckedCallableParameterContract,
     source: SourceSpan,
 }
 
@@ -517,6 +526,7 @@ fn lower_authored_views(
                 item.id(),
                 view,
                 analysis,
+                registered_world,
             )),
             _ => None,
         })
@@ -587,6 +597,7 @@ fn lower_authored_views(
         text: ViewTextResource::default(),
         sources: BTreeMap::new(),
         handlers: Vec::new(),
+        runtime_programs: Vec::new(),
     };
     for view in &views {
         lower_authored_view(
@@ -634,7 +645,7 @@ fn lower_authored_views(
         program,
         text: output.text,
         sources: output.sources,
-        handlers: output.handlers,
+        runtime_programs: output.runtime_programs,
     })
 }
 
@@ -643,6 +654,7 @@ fn prepare_authored_view<'a>(
     owner: ItemId,
     view: &'a HirViewDeclaration,
     analysis: &FinalSemanticAnalysis,
+    world: &RegisteredSemanticWorld,
 ) -> Result<PreparedAuthoredView<'a>, ViewProjectLowerError> {
     if view.header().family() != DeclarationIdentityFamily::View {
         return Err(ViewProjectLowerError::InvalidViewIdentity { owner });
@@ -657,12 +669,30 @@ fn prepare_authored_view<'a>(
     .map_err(|_| ViewProjectLowerError::InvalidViewIdentity { owner })?;
     let source = view_source_span(module, owner, HirViewSourceRole::Whole, "whole declaration")?;
     let mut parameters = BTreeMap::new();
+    let invalid = || ViewProjectLowerError::MissingCheckedViewProjection { owner };
+    let declaration = world
+        .symbols()
+        .callable_at_source(
+            module.snapshot_id(),
+            owner,
+            arcweft_lang_hir::source_index::HirCallableSourceOwner::ViewItem,
+        )
+        .ok_or_else(invalid)?;
+    let parameter_contract = analysis
+        .checked_callables()
+        .project_callable(declaration.declaration())
+        .map_err(|_| invalid())?
+        .parameter_contract(
+            arcweft_lang_sema::callable::CallableGroupIndex::try_from_usize(0)
+                .expect("initial View parameter group fits"),
+        )
+        .map_err(|_| invalid())?;
     let parameter_resources = view
         .parameters()
         .iter()
         .enumerate()
         .map(|(ordinal, parameter)| {
-            if parameter.default().is_some() || parameter.locals().len() != 1 {
+            if parameter.locals().len() != 1 {
                 return Err(ViewProjectLowerError::InvalidViewParameter { owner, ordinal });
             }
             let local = parameter.locals()[0];
@@ -678,7 +708,10 @@ fn prepare_authored_view<'a>(
             let coordinate = ViewParameterCoordinate::try_from_index(ordinal)
                 .ok_or(ViewProjectLowerError::InvalidViewParameter { owner, ordinal })?;
             let semantic_type = ViewHandlerValueTypeId::from_semantic_digest(
-                *local_fact.ty().semantic_identity_digest()?.as_bytes(),
+                *parameter_contract
+                    .parameter_identity(ordinal)
+                    .map_err(|_| invalid())?
+                    .as_bytes(),
             );
             parameters.insert(
                 local,
@@ -711,8 +744,143 @@ fn prepare_authored_view<'a>(
         id: view_id,
         parameters,
         parameter_resources,
+        parameter_contract,
         source,
     })
+}
+
+fn lower_view_parameter_defaults(
+    project: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
+    view: &PreparedAuthoredView<'_>,
+    analysis: &FinalSemanticAnalysis,
+    world: &RegisteredSemanticWorld,
+    output: &mut AuthoredViewLowering,
+) -> Result<Vec<ViewParameterResource>, ViewProjectLowerError> {
+    let invalid = || ViewProjectLowerError::MissingCheckedViewProjection { owner: view.owner };
+    let declaration = world
+        .symbols()
+        .callable_at_source(
+            view.module.snapshot_id(),
+            view.owner,
+            arcweft_lang_hir::source_index::HirCallableSourceOwner::ViewItem,
+        )
+        .ok_or_else(invalid)?;
+    let callable = analysis
+        .checked_callables()
+        .project_callable(declaration.declaration())
+        .map_err(|_| invalid())?;
+    let mut parameters = view.parameter_resources.clone();
+    for (coordinate, default) in callable.parameter_defaults() {
+        let ordinal = coordinate.parameter().get();
+        if coordinate.group().get() != 0
+            || view
+                .declaration
+                .parameters()
+                .get(ordinal)
+                .and_then(|parameter| parameter.default())
+                != Some(default.source())
+        {
+            return Err(invalid());
+        }
+        let parameter = parameters.get_mut(ordinal).ok_or_else(invalid)?;
+        if view
+            .declaration
+            .parameters()
+            .get(ordinal)
+            .and_then(|parameter| parameter.locals().first())
+            .and_then(|local| analysis.local(*local))
+            .ok_or_else(invalid)?
+            .ty()
+            .semantic_identity_digest()?
+            .as_bytes()
+            != default
+                .binding_type()
+                .semantic_identity_digest()?
+                .as_bytes()
+        {
+            return Err(invalid());
+        }
+        let source = arcweft_lang_sema::final_analysis::CheckedExecutionSource::EvaluateValue(
+            default.source(),
+        );
+        let context = analysis
+            .checked_execution_context(project, world.symbols(), source.clone(), None)
+            .map_err(|source| ViewProjectLowerError::InvalidProgramContext {
+                owner: view.owner,
+                source: Box::new(source),
+            })?;
+        let admission = Arc::new(context.checked_deterministic_program(source).map_err(
+            |source| ViewProjectLowerError::InvalidProgramAdmission {
+                owner: view.owner,
+                source: Box::new(source),
+            },
+        )?);
+        let abi = admission.input_abi();
+        if !abi.parameters().is_empty() {
+            return Err(invalid());
+        }
+        let result = abi.result().value_type().ok_or_else(invalid)?;
+        let result_type = ViewHandlerValueTypeId::from_semantic_digest(
+            *result.semantic_identity_digest()?.as_bytes(),
+        );
+        if result_type.as_bytes() != default.result().as_bytes() {
+            return Err(invalid());
+        }
+        let inputs = abi
+            .inputs()
+            .iter()
+            .filter(|input| {
+                matches!(
+                    input.role(),
+                    arcweft_lang_sema::final_analysis::CheckedExecutionInputRole::Free
+                )
+            })
+            .map(|input| {
+                let binding = view
+                    .parameters
+                    .get(&input.binding().local())
+                    .ok_or_else(invalid)?;
+                if binding.coordinate.index() >= ordinal
+                    || input.binding().ty().semantic_identity_digest()?.as_bytes()
+                        != binding.value_type.as_bytes()
+                {
+                    return Err(invalid());
+                }
+                Ok(arcweft_view::ViewParameterInput::new(
+                    binding.coordinate,
+                    binding.value_type,
+                ))
+            })
+            .collect::<Result<Vec<_>, ViewProjectLowerError>>()?
+            .into_boxed_slice();
+        let mut digest = blake3::Hasher::new();
+        digest.update(b"arcweft.view.parameter-default.v1\0");
+        digest.update(&(view.id.as_str().len() as u64).to_le_bytes());
+        digest.update(view.id.as_str().as_bytes());
+        digest.update(&parameter.ordinal.to_le_bytes());
+        digest.update(default.expression().as_bytes());
+        digest.update(default.expected().as_bytes());
+        digest.update(default.result().as_bytes());
+        let id = ViewHandlerProgramId::from_checked_digest(*digest.finalize().as_bytes());
+        if output
+            .runtime_programs
+            .iter()
+            .any(|program| program.id == id)
+        {
+            return Err(invalid());
+        }
+        parameter.default_program = Some(arcweft_view::ViewParameterDefaultProgram {
+            program: id,
+            inputs,
+            result_type,
+        });
+        output.runtime_programs.push(CheckedViewRuntimeProgram {
+            id,
+            result: result_type,
+            admission,
+        });
+    }
+    Ok(parameters)
 }
 
 fn lower_authored_view(
@@ -752,11 +920,25 @@ fn lower_authored_view(
     }
     let end = u32::try_from(output.instructions.len())
         .map_err(|_| ViewProjectLowerError::MissingCheckedViewProjection { owner: view.owner })?;
+    let parameters =
+        lower_view_parameter_defaults(project, view, analysis, registered_world, output)?;
     output.definitions.push(ViewDefinitionResource {
         public_id: ViewDefinitionRef::new(view.id.clone()),
         body: ViewInstructionSpan::new(start, end),
         styles: Vec::new(),
-        parameters: view.parameter_resources.clone(),
+        parameters,
+        parameter_contract: match view.parameter_contract.schema() {
+            arcweft_lang_sema::types::TypeKind::Function { binder, .. } if !binder.is_empty() => {
+                Some(arcweft_id::RuntimeSemanticTypeId::from_semantic_digest(
+                    *view
+                        .parameter_contract
+                        .schema()
+                        .semantic_identity_digest()?
+                        .as_bytes(),
+                ))
+            }
+            _ => None,
+        },
         state_schema_hash: view_schema_hash(&view.id, &view.parameters),
     });
     Ok(())
@@ -1133,12 +1315,12 @@ impl AuthoredViewBodyLowerer<'_> {
                 source.clone(),
                 None,
             )
-            .map_err(|source| ViewProjectLowerError::InvalidHandlerContext {
+            .map_err(|source| ViewProjectLowerError::InvalidProgramContext {
                 owner: self.owner,
                 source: Box::new(source),
             })?;
         let admission = Arc::new(context.checked_deterministic_program(source).map_err(
-            |source| ViewProjectLowerError::InvalidHandlerProgram {
+            |source| ViewProjectLowerError::InvalidProgramAdmission {
                 owner: self.owner,
                 source: Box::new(source),
             },
@@ -1190,7 +1372,7 @@ impl AuthoredViewBodyLowerer<'_> {
                 }
                 Ok(CheckedViewHandlerCapture {
                     local: capture.local(),
-                    schema: ViewHandlerCapture::new(parameter.coordinate, parameter.value_type),
+                    schema: ViewParameterInput::new(parameter.coordinate, parameter.value_type),
                 })
             })
             .collect::<Result<Vec<_>, _>>()?
@@ -1230,16 +1412,23 @@ impl AuthoredViewBodyLowerer<'_> {
         {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         }
+        let result = ViewHandlerResult::new(
+            handler_result_role,
+            ViewHandlerValueTypeId::from_semantic_digest(
+                *handler_result_type.semantic_identity_digest()?.as_bytes(),
+            ),
+        );
+        self.output
+            .runtime_programs
+            .push(CheckedViewRuntimeProgram {
+                id: program_id,
+                result: result.value_type(),
+                admission,
+            });
         self.output.handlers.push(CheckedViewHandlerProgram {
-            admission,
             id: program_id,
             captures,
-            result: ViewHandlerResult::new(
-                handler_result_role,
-                ViewHandlerValueTypeId::from_semantic_digest(
-                    *handler_result_type.semantic_identity_digest()?.as_bytes(),
-                ),
-            ),
+            result,
         });
 
         self.lower_value(select.target())?;

@@ -22,8 +22,8 @@ use super::{
     BundleViewFxApplication, BundleViewFxArgument, BundleViewInstancePath,
     BundleViewInstancePathSegment, BundleViewMountOutput, BundleViewPaintItem, BundleViewRuntime,
     BundleViewTextOutput, MountedView, MountedViewHandlerKey, MountedViewHandlerSeal,
-    PublishedViewEventToken, RuntimeDialogueActionToken, ViewHandlerRuntimeAuthority,
-    ViewOccurrenceKey, deterministic_mount_seed, mount_scoped_interaction_target,
+    PublishedViewEventToken, RuntimeDialogueActionToken, ViewOccurrenceKey,
+    ViewProgramRuntimeAuthority, deterministic_mount_seed, mount_scoped_interaction_target,
 };
 use crate::dialogue::DialogueViewInput;
 use crate::presentation_handles::{
@@ -199,7 +199,7 @@ struct ViewEvaluator<'a, B> {
     style_scope_allocator: ViewStyleScopeAllocator,
     visited: BTreeSet<ViewOccurrenceKey>,
     diagnostics: Vec<BundleViewDiagnostic>,
-    handler_runtime: &'a ViewHandlerRuntimeAuthority,
+    program_runtime: &'a ViewProgramRuntimeAuthority,
     pure_backend: &'a mut B,
     staged_event_tokens: BTreeMap<ViewHandlerRouteId, PublishedViewEventToken>,
 }
@@ -412,6 +412,25 @@ impl BundleViewRuntime {
         reduce_motion: bool,
         pure_backend: &mut B,
     ) -> BundleViewFrame {
+        if let Some(binding) = bindings
+            .iter()
+            .find(|binding| !binding.value.ownership().permits_copy())
+        {
+            return BundleViewFrame {
+                mounts: Vec::new(),
+                diagnostics: vec![BundleViewDiagnostic {
+                    code: BundleViewDiagnosticCode::InputType,
+                    handle: None,
+                    mount: None,
+                    view: None,
+                    instruction: None,
+                    message: format!(
+                        "borrowed View input `{}` requires owned execution custody",
+                        binding.name
+                    ),
+                }],
+            };
+        }
         if let Err(error) = self.validate_dialogue_inputs(dialogue) {
             return BundleViewFrame {
                 mounts: Vec::new(),
@@ -481,7 +500,7 @@ impl BundleViewRuntime {
                 axis_diagnostics.extend(collisions);
                 axis_diagnostics
             },
-            handler_runtime: &self.handler_runtime,
+            program_runtime: &self.program_runtime,
             pure_backend,
             staged_event_tokens: BTreeMap::new(),
         };
@@ -712,6 +731,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 initialized_parameters: BTreeSet::new(),
                 initialized_state: BTreeSet::new(),
                 runtime_parameters: BTreeMap::new(),
+                default_evaluations: BTreeMap::new(),
                 handler_seals: BTreeMap::new(),
                 next_handler_seal_revision: 1,
             },
@@ -788,7 +808,14 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
         mounted: &mut MountedView,
         call_arguments: Option<&BTreeMap<u16, FxRuntimeValue>>,
     ) -> Result<(), EvaluationFailure> {
+        let mut supplied_parameters = BTreeSet::new();
         for parameter in &definition.parameters {
+            if parameter.role == ViewParameterRole::Dialogue
+                && self.dialogue_inputs.contains_key(&key.handle)
+            {
+                supplied_parameters.insert(parameter.ordinal);
+                mounted.default_evaluations.remove(&parameter.ordinal);
+            }
             let supplied_fx =
                 call_arguments.and_then(|arguments| arguments.get(&parameter.ordinal));
             let supplied_runtime = match supplied_fx.copied() {
@@ -802,9 +829,14 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                         ),
                     )
                 })?),
-                None => self.view_root_bindings.get(&parameter.name).cloned(),
+                None if call_arguments.is_none() => {
+                    self.view_root_bindings.get(&parameter.name).cloned()
+                }
+                None => None,
             };
             if let Some(value) = supplied_runtime {
+                supplied_parameters.insert(parameter.ordinal);
+                mounted.default_evaluations.remove(&parameter.ordinal);
                 mounted
                     .runtime_parameters
                     .insert(parameter.name.clone(), value.clone());
@@ -843,41 +875,34 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
         }
 
         for parameter in &definition.parameters {
-            let (Some(slot), Some(default_program)) =
-                (parameter.value_slot, parameter.default_program)
-            else {
+            let Some(default_program) = &parameter.default_program else {
                 continue;
             };
-            if mounted.initialized_parameters.contains(&slot) {
+            if supplied_parameters.contains(&parameter.ordinal) {
                 continue;
             }
-            let context = self.sample_context(mounted, 0)?;
-            let value = evaluate_value(
-                mounted,
-                default_program,
-                self.inventory,
-                context,
-                &mut self.value_budget,
-                None,
-            )?;
-            mounted
-                .state
-                .set_parameter(slot, value, self.inventory)
-                .map_err(|error| EvaluationFailure::value(None, &error))?;
-            mounted.initialized_parameters.insert(slot);
-            let runtime_value = fx_to_runtime(value).map_err(|error| {
-                EvaluationFailure::new(
-                    BundleViewDiagnosticCode::InputType,
-                    None,
-                    format!(
-                        "View `{}` default parameter `{}` cannot cross into runtime state: {error}",
-                        definition.public_id, parameter.name
-                    ),
+            self.evaluate_parameter_default(key, definition, mounted, parameter, default_program)?;
+            if let (Some(slot), Some(value_type)) = (parameter.value_slot, parameter.value_type) {
+                let value = runtime_to_fx(
+                    mounted
+                        .runtime_parameters
+                        .get(&parameter.name)
+                        .expect("default evaluation publishes its only result owner"),
+                    value_type,
                 )
-            })?;
-            mounted
-                .runtime_parameters
-                .insert(parameter.name.clone(), runtime_value);
+                .map_err(|error| {
+                    EvaluationFailure::new(
+                        BundleViewDiagnosticCode::InputType,
+                        None,
+                        error.to_string(),
+                    )
+                })?;
+                mounted
+                    .state
+                    .set_parameter(slot, value, self.inventory)
+                    .map_err(|error| EvaluationFailure::value(None, &error))?;
+                mounted.initialized_parameters.insert(slot);
+            }
         }
 
         for parameter in &definition.parameters {
@@ -898,6 +923,278 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 ));
             }
         }
+        if let ViewProgramRuntimeAuthority::Awbc(program) = self.program_runtime {
+            for parameter in definition
+                .parameters
+                .iter()
+                .filter(|parameter| parameter.role == ViewParameterRole::Value)
+            {
+                if let Some(value) = mounted.runtime_parameters.get(&parameter.name)
+                    && definition.parameter_contract.is_none()
+                    && !program
+                        .semantic_type_id(parameter.semantic_type)
+                        .is_some_and(|ty| program.value_matches_type(value, ty))
+                {
+                    return Err(EvaluationFailure::new(
+                        BundleViewDiagnosticCode::InputType,
+                        None,
+                        format!(
+                            "View parameter `{}` violates its declared type",
+                            parameter.name
+                        ),
+                    ));
+                }
+            }
+        }
+        if let Some(contract) = definition.parameter_contract {
+            let ViewProgramRuntimeAuthority::Awbc(program) = self.program_runtime else {
+                return Err(EvaluationFailure::new(
+                    BundleViewDiagnosticCode::InputType,
+                    None,
+                    "generic View inputs have no admitted program type authority",
+                ));
+            };
+            let contract = program.semantic_type_id(contract).ok_or_else(|| {
+                EvaluationFailure::new(
+                    BundleViewDiagnosticCode::InputType,
+                    None,
+                    "missing View input contract",
+                )
+            })?;
+            let dialogue_values = definition
+                .parameters
+                .iter()
+                .filter(|parameter| {
+                    parameter.role == ViewParameterRole::Dialogue
+                        && !mounted.runtime_parameters.contains_key(&parameter.name)
+                })
+                .map(|parameter| {
+                    let input = self.dialogue_inputs.get(&key.handle).ok_or_else(|| {
+                        EvaluationFailure::new(
+                            BundleViewDiagnosticCode::MissingInput,
+                            None,
+                            "missing dialogue input",
+                        )
+                    })?;
+                    dialogue_view_runtime_value(parameter.semantic_type, input)
+                        .map(|value| (usize::from(parameter.ordinal), value))
+                        .map_err(|error| {
+                            EvaluationFailure::new(BundleViewDiagnosticCode::InputType, None, error)
+                        })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let values = definition
+                .parameters
+                .iter()
+                .filter_map(|parameter| {
+                    mounted
+                        .runtime_parameters
+                        .get(&parameter.name)
+                        .map(|value| (usize::from(parameter.ordinal), value))
+                })
+                .chain(
+                    dialogue_values
+                        .iter()
+                        .map(|(ordinal, value)| (*ordinal, value)),
+                );
+            if !program.parameter_contract_accepts_values(contract, values) {
+                return Err(EvaluationFailure::new(
+                    BundleViewDiagnosticCode::InputType,
+                    None,
+                    "View inputs violate their joint generic parameter contract",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn evaluate_parameter_default(
+        &mut self,
+        key: &ViewOccurrenceKey,
+        definition: &ViewDefinitionResource,
+        mounted: &mut MountedView,
+        parameter: &arcweft_bundle::resource_codec::ViewParameterResource,
+        default: &arcweft_view::ViewParameterDefaultProgram,
+    ) -> Result<(), EvaluationFailure> {
+        let failure = |message: String| {
+            EvaluationFailure::new(
+                BundleViewDiagnosticCode::InvalidValueProgram,
+                None,
+                format!(
+                    "View `{}` default `{}`: {message}",
+                    definition.public_id, parameter.name
+                ),
+            )
+        };
+        let ViewProgramRuntimeAuthority::Awbc(program) = self.program_runtime else {
+            return Err(failure("no admitted Core program authority".to_owned()));
+        };
+        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(program));
+        let mut inputs = Vec::with_capacity(default.inputs.len());
+        let mut snapshots = Vec::with_capacity(default.inputs.len());
+        for input in default.inputs.iter() {
+            let source = definition
+                .parameters
+                .get(input.parameter().index())
+                .filter(|source| {
+                    source.ordinal < parameter.ordinal && source.semantic_type == input.value_type()
+                })
+                .ok_or_else(|| failure("stale preceding parameter input".to_owned()))?;
+            let value = if source.role == ViewParameterRole::Dialogue {
+                dialogue_view_runtime_value(
+                    source.semantic_type,
+                    self.dialogue_inputs
+                        .get(&key.handle)
+                        .ok_or_else(|| failure("missing preceding dialogue input".to_owned()))?,
+                )
+                .map_err(failure)?
+            } else {
+                let value = mounted
+                    .runtime_parameters
+                    .get(&source.name)
+                    .ok_or_else(|| {
+                        failure(format!(
+                            "preceding parameter `{}` is uninitialized",
+                            source.name
+                        ))
+                    })?;
+                if !value.ownership().permits_copy() {
+                    return Err(failure(format!(
+                        "preceding parameter `{}` requires its retained resource owner",
+                        source.name
+                    )));
+                }
+                value.clone()
+            };
+            snapshots.push(
+                AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner)
+                    .map_err(|error| failure(error.to_string()))?,
+            );
+            inputs.push(value);
+        }
+        let budget_failure = |_error: FxEvaluationError| {
+            EvaluationFailure::new(
+                BundleViewDiagnosticCode::EvaluationBudgetExceeded,
+                None,
+                "View default exhausted its shared frame value budget",
+            )
+        };
+        if let Some(cached) = mounted.default_evaluations.get(&parameter.ordinal)
+            && std::sync::Arc::ptr_eq(&cached.owner, program)
+            && cached.program == default.program
+            && cached.inputs.as_ref() == snapshots.as_slice()
+            && mounted.runtime_parameters.contains_key(&parameter.name)
+        {
+            self.value_budget
+                .charge_operations(cached.operations, usize::from(parameter.ordinal))
+                .map_err(budget_failure)?;
+            return Ok(());
+        }
+        let limit = self.value_budget.remaining();
+        if limit == 0 {
+            self.value_budget
+                .charge_operations(1, usize::from(parameter.ordinal))
+                .map_err(budget_failure)?;
+        }
+        let mut executor =
+            arcweft_core::awbc::product_step::AwbcProductStepExecutor::for_program_invocation(
+                std::sync::Arc::clone(program),
+                default.program,
+                inputs,
+                arcweft_core::task::GenerationId::new(0),
+                u64::from(limit),
+            )
+            .map_err(|error| failure(error.into_parts().0.to_string()))?;
+        let output = executor.step_with_pure_backend(
+            Default::default(),
+            arcweft_core::step::RuntimeStepOptions {
+                mode: arcweft_core::step::RuntimeStepMode::Drain,
+                budget: arcweft_core::step::RuntimeStepBudget {
+                    max_ops: limit as usize,
+                },
+                max_new_task_requests: 0,
+            },
+            self.pure_backend,
+        );
+        let operations = u32::try_from(output.stats.executed_ops)
+            .map_err(|_| failure("evaluation operation count overflows".to_owned()))?;
+        self.value_budget
+            .charge_operations(operations, usize::from(parameter.ordinal))
+            .map_err(budget_failure)?;
+        if output.stop_reason == arcweft_core::step::RuntimeStepStopReason::BudgetExhausted {
+            return Err(EvaluationFailure::new(
+                BundleViewDiagnosticCode::EvaluationBudgetExceeded,
+                None,
+                "View default exhausted its shared frame value budget",
+            ));
+        }
+        if !output.output.diagnostics.is_empty()
+            || output.output.requests != Default::default()
+            || output.output.effects != Default::default()
+            || output
+                .output
+                .flow_events
+                .iter()
+                .any(|event| !matches!(event, arcweft_core::plan::FlowEvent::Return { .. }))
+            || !output.output.root_transitions.is_empty()
+            || !output.output.root_commands.is_empty()
+        {
+            return Err(failure(format!(
+                "default did not complete purely: {:?}",
+                output.output
+            )));
+        }
+        let (_, value) = executor
+            .take_program_result()
+            .map_err(|error| failure(error.to_string()))?
+            .ok_or_else(|| failure("program returned no value".to_owned()))?;
+        if !value.ownership().permits_copy() {
+            return Err(failure(
+                "result requires a retained resource execution owner".to_owned(),
+            ));
+        }
+        let expected = program
+            .runtime_types
+            .iter()
+            .position(|ty| ty.semantic_identity() == parameter.semantic_type)
+            .and_then(|index| u32::try_from(index).ok())
+            .map(arcweft_core::awbc::schema::AwbcTypeId)
+            .ok_or_else(|| failure("missing declared parameter type".to_owned()))?;
+        let compatible = match definition.parameter_contract {
+            Some(contract) => program.semantic_type_id(contract).is_some_and(|contract| {
+                program.parameter_contract_accepts_values(
+                    contract,
+                    definition.parameters.iter().filter_map(|source| {
+                        if source.ordinal == parameter.ordinal {
+                            Some((usize::from(source.ordinal), &value))
+                        } else {
+                            mounted
+                                .runtime_parameters
+                                .get(&source.name)
+                                .map(|value| (usize::from(source.ordinal), value))
+                        }
+                    }),
+                )
+            }),
+            None => program.value_matches_type(&value, expected),
+        };
+        if !compatible {
+            return Err(failure(
+                "result violates the declared parameter type".to_owned(),
+            ));
+        }
+        mounted
+            .runtime_parameters
+            .insert(parameter.name.clone(), value);
+        mounted.default_evaluations.insert(
+            parameter.ordinal,
+            super::MountedViewDefaultEvaluation {
+                owner: std::sync::Arc::clone(program),
+                program: default.program,
+                inputs: snapshots.into_boxed_slice(),
+                operations,
+            },
+        );
         Ok(())
     }
 
@@ -1722,16 +2019,16 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
         };
         let accepted = self
             .catalog
-            .handler_runtime(program_id)
+            .program_runtime(program_id)
             .ok_or_else(|| failure(format!("unknown View handler program {program_id}")))?;
         if accepted.program() != program_id {
             return Err(failure(
                 "accepted View handler identity is stale".to_owned(),
             ));
         }
-        let awbc = match self.handler_runtime {
-            ViewHandlerRuntimeAuthority::Awbc(program) => program,
-            ViewHandlerRuntimeAuthority::HandlerFree => {
+        let awbc = match self.program_runtime {
+            ViewProgramRuntimeAuthority::Awbc(program) => program,
+            ViewProgramRuntimeAuthority::CoreProgramFree => {
                 return Err(failure(
                     "View handler has no accepted AWBC runtime authority".to_owned(),
                 ));

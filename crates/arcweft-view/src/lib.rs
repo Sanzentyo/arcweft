@@ -49,9 +49,10 @@ pub use handler::{
     ViewHandlerInvocation, ViewHandlerRoute, ViewHandlerRouteId, ViewHandlerRouteTable,
 };
 pub use handler_program::{
-    ViewHandlerCapture, ViewHandlerProgramId, ViewHandlerResult, ViewHandlerResultRole,
-    ViewHandlerValueTypeId, ViewParameterCoordinate,
+    ViewHandlerProgramId, ViewHandlerResult, ViewHandlerResultRole, ViewHandlerValueTypeId,
+    ViewParameterCoordinate, ViewParameterInput,
 };
+mod parameter_default;
 pub use image::{
     ImageAlignment, ImageFit, ImagePlayback, ViewImagePresentationMetadata, ViewImageSource,
     ViewImageSourceTable, ViewResolvedImageFrame,
@@ -65,6 +66,7 @@ pub use motion::{
     ViewMotionSample, ViewReducedMotionPolicy, ViewStepPosition, ViewTimelineMillis,
     ViewTransition, ViewTransitionSpec,
 };
+pub use parameter_default::ViewParameterDefaultProgram;
 pub use part::{
     ViewEvaluationSiteId, ViewInstructionIndex, ViewPartExport, ViewPartId,
     ViewPartInstructionKind, ViewPartLocalName, ViewPartName, ViewPartStaticReachability,

@@ -5099,6 +5099,7 @@ pub struct RuntimePlanSemanticFactInput {
     pipes: Vec<(ExprId, RuntimePipeFact)>,
     captures: Vec<RuntimeCheckedCapture>,
     pure_programs: Vec<RuntimePureProgramFact>,
+    value_contract_types: Vec<RuntimeNormalizedType>,
     pure_program_semantics: Vec<(
         RuntimePureProgramId,
         RuntimeProjectFunctionInstanceSemanticFacts,
@@ -5157,6 +5158,7 @@ impl RuntimePlanSemanticFactInput {
             pipes: Vec::new(),
             captures: Vec::new(),
             pure_programs: Vec::new(),
+            value_contract_types: Vec::new(),
             pure_program_semantics: Vec::new(),
             project_function_instances: Vec::new(),
             root_closures: Vec::new(),
@@ -5486,6 +5488,13 @@ impl Default for RuntimePlanSemanticFactInput {
     }
 }
 
+impl RuntimePlanSemanticFactInput {
+    /// Publishes a retained consumer's declared type into the same plan type graph.
+    pub fn push_value_contract_type(&mut self, ty: RuntimeNormalizedType) {
+        self.value_contract_types.push(ty);
+    }
+}
+
 /// Immutable semantic fact set bound to one exact executable project generation.
 #[derive(Clone, Debug)]
 pub struct RuntimePlanSemanticFacts {
@@ -5534,6 +5543,7 @@ pub struct RuntimePlanSemanticFacts {
     pipes: BTreeMap<ExprId, RuntimePipeFact>,
     captures: BTreeMap<CaptureId, RuntimeCheckedCapture>,
     pure_programs: BTreeMap<RuntimePureProgramId, RuntimePureProgramFact>,
+    value_contract_types: Vec<RuntimeNormalizedType>,
     pure_program_semantics:
         BTreeMap<RuntimePureProgramId, RuntimeProjectFunctionInstanceSemanticFacts>,
     project_function_instances:
@@ -8223,6 +8233,9 @@ impl RuntimePlanSemanticFacts {
 
         let pure_programs =
             validate_pure_programs(project, &modules, runtime_owners, input.pure_programs)?;
+        for ty in &input.value_contract_types {
+            validate_normalized_type(&modules, ty)?;
+        }
         let dialogue_applications = input.dialogue_applications;
         let dialogue_content_fragments = input.dialogue_content_fragments;
         let mut fragment_ids = BTreeSet::new();
@@ -8433,6 +8446,7 @@ impl RuntimePlanSemanticFacts {
             pipes,
             captures,
             pure_programs,
+            value_contract_types: input.value_contract_types,
             pure_program_semantics,
             project_function_instances,
             root_closures,
@@ -8962,6 +8976,7 @@ impl RuntimePlanSemanticFacts {
         roots.extend(self.expression_types.values());
         roots.extend(self.pattern_types.values());
         roots.extend(self.types.values());
+        roots.extend(self.value_contract_types.iter());
         for scope in self
             .expression_scopes
             .values()

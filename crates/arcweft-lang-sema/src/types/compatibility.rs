@@ -101,11 +101,20 @@ impl TypeKind {
             Finish(TypeConstraintShape<'a>, usize, Option<EffectRow>),
         }
 
+        fn has_open_effects(effects: &EffectRow) -> bool {
+            !effects.is_known()
+                || effects.variables().is_ok_and(|mut variables| {
+                    variables.any(|reference| {
+                        matches!(reference, super::GenericEffectReference::Inference(_))
+                    })
+                })
+        }
+
         fn has_omitted_effects(ty: &TypeKind) -> bool {
             let mut pending = vec![ty];
             while let Some(ty) = pending.pop() {
                 let shape = ty.constraint_shape();
-                if matches!(shape, TypeConstraintShape::Function { effects, .. } if !effects.is_known())
+                if matches!(shape, TypeConstraintShape::Function { effects, .. } if has_open_effects(effects))
                 {
                     return true;
                 }
@@ -163,8 +172,8 @@ impl TypeKind {
                             TypeConstraintShape::Function {
                                 effects: actual, ..
                             },
-                        ) if !effects.is_known() => {
-                            if !actual.is_known() {
+                        ) if has_open_effects(effects) => {
+                            if has_open_effects(actual) {
                                 return None;
                             }
                             Some(actual.clone())

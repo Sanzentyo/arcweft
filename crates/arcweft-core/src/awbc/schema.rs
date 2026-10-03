@@ -308,6 +308,24 @@ impl Default for AwbcProgram {
 }
 
 impl AwbcProgram {
+    /// Resolves a semantic type through this immutable program's type inventory.
+    pub fn semantic_type_id(&self, semantic: RuntimeSemanticTypeId) -> Option<AwbcTypeId> {
+        self.runtime_types
+            .iter()
+            .position(|ty| ty.semantic_identity() == semantic)
+            .and_then(|index| u32::try_from(index).ok())
+            .map(AwbcTypeId)
+    }
+    /// Checks assignment compatibility within this program's exact type graph.
+    pub fn types_compatible(&self, expected: AwbcTypeId, actual: AwbcTypeId) -> bool {
+        self.runtime_types.get(expected.index()).is_some()
+            && self.runtime_types.get(actual.index()).is_some()
+            && super::verify::types_compatible(self, expected, actual)
+    }
+    /// Validates a live value against this program's retained runtime type table.
+    pub fn value_matches_type(&self, value: &crate::value::RuntimeValue, ty: AwbcTypeId) -> bool {
+        super::fiber::runtime_value_matches_type(self, value, ty, 0)
+    }
     /// Resolves the serialized context-template claim against its exact AWBC
     /// manifest row. This admits only the schema shape; catalog/body
     /// certification remains a bundle-level join.

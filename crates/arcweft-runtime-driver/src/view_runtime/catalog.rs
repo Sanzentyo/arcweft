@@ -12,9 +12,9 @@ use arcweft_view::{
     AcceptedViewProgramRevision, BindEvent, BindHandler, CustomElementId, HandlerId, ImageId,
     SemanticSpecId, TextSourceId, ViewAwait, ViewAwaitBranch, ViewBranch, ViewCall,
     ViewCallArgument, ViewCustomSpec, ViewElementSpec, ViewEvaluationSiteId,
-    ViewFxApplicationInstruction, ViewFxArgumentSource, ViewFxCallArgument, ViewHandlerCapture,
-    ViewHandlerProgramId, ViewHandlerResult, ViewId, ViewImageSpec, ViewInstruction,
-    ViewInstructionRange, ViewLocalBinding, ViewPartId, ViewPartStaticReachability, ViewProgram,
+    ViewFxApplicationInstruction, ViewFxArgumentSource, ViewFxCallArgument, ViewHandlerProgramId,
+    ViewHandlerResult, ViewId, ViewImageSpec, ViewInstruction, ViewInstructionRange,
+    ViewLocalBinding, ViewParameterInput, ViewPartId, ViewPartStaticReachability, ViewProgram,
     ViewProgramBuildError, ViewProgramBuilder, ViewProgramId, ViewRepeat, ViewSemanticSpec,
     ViewStableKey, ViewTextSpec, ViewValueInventoryError, ViewValueProgramInventory,
 };
@@ -62,7 +62,7 @@ pub struct ViewProgramCatalog {
 pub(super) struct AcceptedViewHandlerRuntime {
     program: ViewHandlerProgramId,
     function: AwbcFunctionId,
-    captures: Box<[ViewHandlerCapture]>,
+    captures: Box<[ViewParameterInput]>,
     result: ViewHandlerResult,
 }
 
@@ -85,8 +85,8 @@ pub enum ViewProgramCatalogError {
     ValueInventory(#[from] ViewValueInventoryError),
     #[error(transparent)]
     Program(#[from] ViewProgramBuildError),
-    #[error("View handlers require an exact validated AWBC program")]
-    MissingHandlerRuntime,
+    #[error("View expression programs require an exact validated AWBC program")]
+    MissingProgramRuntime,
     #[error(transparent)]
     HandlerRuntime(#[from] SectionCodecError),
 }
@@ -107,11 +107,17 @@ impl ViewProgramCatalog {
     pub(crate) fn try_from_validated(
         product: &ValidatedViewProduct,
     ) -> Result<Option<Self>, ViewProgramCatalogError> {
-        if product
-            .program()
-            .is_some_and(|program| !program.resource().handlers.is_empty())
-        {
-            return Err(ViewProgramCatalogError::MissingHandlerRuntime);
+        if product.program().is_some_and(|program| {
+            !program.resource().handlers.is_empty()
+                || program.resource().definitions.iter().any(|definition| {
+                    definition.parameter_contract.is_some()
+                        || definition
+                            .parameters
+                            .iter()
+                            .any(|parameter| parameter.default_program.is_some())
+                })
+        }) {
+            return Err(ViewProgramCatalogError::MissingProgramRuntime);
         }
         Self::build(product, BTreeMap::new())
     }
@@ -122,7 +128,7 @@ impl ViewProgramCatalog {
     ) -> Result<Option<Self>, ViewProgramCatalogError> {
         let handlers = match product.program() {
             Some(program) => {
-                program.resource().validate_awbc_handlers(awbc)?;
+                program.resource().validate_awbc_programs(awbc)?;
                 program
                     .resource()
                     .handlers
@@ -243,7 +249,7 @@ impl ViewProgramCatalog {
         &self.parts
     }
 
-    pub(super) fn handler_runtime(
+    pub(super) fn program_runtime(
         &self,
         program: ViewHandlerProgramId,
     ) -> Option<&AcceptedViewHandlerRuntime> {
@@ -316,7 +322,7 @@ impl AcceptedViewHandlerRuntime {
         self.function
     }
 
-    pub(super) const fn captures(&self) -> &[ViewHandlerCapture] {
+    pub(super) const fn captures(&self) -> &[ViewParameterInput] {
         &self.captures
     }
 

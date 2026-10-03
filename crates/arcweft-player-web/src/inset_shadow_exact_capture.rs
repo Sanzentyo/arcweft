@@ -327,6 +327,7 @@ fn exact_view_program() -> ViewProgramResource {
             body: ViewInstructionSpan::new(0, 4),
             styles: vec![ViewStyleApplicationTarget::named(exact_style_sheet_id())],
             parameters: Vec::new(),
+            parameter_contract: None,
             state_schema_hash: 0,
         }],
         instructions: vec![

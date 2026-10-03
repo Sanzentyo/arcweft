@@ -856,12 +856,167 @@ fn compiler_rejects_well_formed_view_values_without_a_typed_runtime_contract() {
 }
 
 #[test]
-fn compiler_rejects_checked_view_calls_and_defaults_at_the_unimplemented_runtime_boundary() {
-    let cases = [
-        "view Good() { Text(\"ok\") }\n\nview Broken(value: String = \"x\") { Text(\"x\") }\n",
-        "fn make_default() -> i32 { 1 }\n\nview Good() { Text(\"ok\") }\n\nview Broken(value: i32 = make_default()) { Text(\"x\") }\n",
-        "view Child(value: i32) { Text(value) }\nview Main() { Child(1i32) }\n",
-    ];
+fn compiler_defaults_execute_general_values_and_refresh_preceding_inputs() {
+    use arcweft_core::value::{RuntimeBinding, RuntimeValue};
+    use arcweft_runtime_driver::presentation_handles::{
+        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    };
+
+    for (case, source) in [
+        r#"view Main(value: String = "hello") { Text("static") }"#,
+        "fn fallback() -> String { \"hello\" }\nview Main(value: String = fallback()) { Text(\"static\") }",
+        r#"view Main(first: String = "hello", value: (String, String) = (first, "world")) { Text("static") }"#,
+        "struct Label { value: String }\nview Main(value: Label = Label { value = \"hello\" }) { Text(\"static\") }",
+        "enum Toggle { On, Off }\nview Main(value: Toggle = .On) { Text(\"static\") }",
+        r#"view Main(first: i64 = 1, value: i64 -> i64 = |input: i64| input + first) { Text("static") }"#,
+        r#"view Main(first: i64 = 1, value: i64 -> i64 = _ + first) { Text("static") }"#,
+    ].into_iter().enumerate() {
+        let source = format!(
+            "entry cli @entry.main {{ goto @flow.main }}\nflow main() -> String {{ return \"done\" }}\n{source}"
+        );
+        let compiled =
+            project_view_fixture_with_entry(&source, "arcweft-test://view-default-general")
+                .compile()
+                .unwrap_or_else(|error| panic!("{source}\n{error:?}"));
+        let awbc = AwbcLowerer::new(
+            &compiled.runtime_plan().plan,
+            &compiled.runtime_plan().dialogue_content_catalog,
+            "main.arcw",
+        )
+        .lower()
+        .unwrap()
+        .program;
+        let awbc = arcweft_bundle::standard_view::install_dialogue_handler_awbc(awbc).unwrap();
+        let resource = compiled.view_product().product().program().unwrap().resource();
+        let encoded = resource.encode_canonical_section().unwrap();
+        assert_eq!(ViewProgramResource::decode_canonical_section(&encoded).unwrap(), *resource);
+        let mut forged = resource.clone();
+        forged.definitions.iter_mut().find(|definition| definition.public_id.as_str() == "view.Main").unwrap().parameters.iter_mut().find_map(|parameter| parameter.default_program.as_mut()).unwrap().program = arcweft_id::runtime_program::RuntimePureProgramId::from_checked_digest([0xa9;32]);
+        assert!(forged.validate_awbc_programs(&awbc).is_err());
+        let mut runtime = BundleViewRuntime::try_new_with_awbc(
+            compiled.view_product().product().as_ref().clone(),
+            compiled.view_product().text().cloned(),
+            Arc::new(awbc),
+        )
+        .unwrap_or_else(|error| {
+            panic!("{source}\n{error:?}")
+        });
+        let handle = PresentationHandleRecord::new(
+            PresentationHandleId::try_new("view.default.first").unwrap(),
+            PresentationHandleKind::View,
+            "view.Main".to_owned(),
+            None,
+            PresentationResourceState::Mounted,
+            None,
+            0,
+        );
+        let second = PresentationHandleRecord::new(PresentationHandleId::try_new("view.default.second").unwrap(), PresentationHandleKind::View, "view.Main".to_owned(), None, PresentationResourceState::Mounted, None, 0);
+        let handles = [handle, second];
+        let result = runtime.evaluate(&handles, &[], false);
+        assert!(result.diagnostics.is_empty(), "{source}\n{result:#?}");
+        let snapshot = runtime.snapshot().unwrap();
+        assert_eq!(snapshot.mounts.len(), 2);
+        assert_ne!(snapshot.mounts[0].state.mount, snapshot.mounts[1].state.mount);
+        let value = &snapshot.mounts[0]
+            .runtime_parameters
+            .iter()
+            .find(|binding| binding.name == "value")
+            .unwrap()
+            .value;
+        match case {
+            0 | 1 => assert_eq!(*value, RuntimeValue::String("hello".to_owned())),
+            2 => assert_eq!(*value, RuntimeValue::Tuple(vec![RuntimeValue::String("hello".to_owned()), RuntimeValue::String("world".to_owned())])),
+            3 => { let RuntimeValue::NominalRecord(record) = value else { panic!("expected nominal record: {value:?}") }; assert_eq!(record.fields(), [RuntimeValue::String("hello".to_owned())]); }
+            4 => assert!(matches!(value, RuntimeValue::Variant { name, ordinal: 0, .. } if name == "On")),
+            5 | 6 => assert!(matches!(value, RuntimeValue::Callable(_))),
+            _ => unreachable!(),
+        }
+        runtime.restore(&snapshot, &handles).unwrap();
+        assert!(
+            runtime
+                .evaluate(&handles, &[], false)
+                .diagnostics
+                .is_empty()
+        );
+        assert_eq!(
+            runtime.snapshot().unwrap().mounts[0].runtime_parameters,
+            snapshot.mounts[0].runtime_parameters
+        );
+
+        if source.contains("value: (String, String)") {
+            let changed = [RuntimeBinding {
+                name: "first".to_owned(),
+                value: RuntimeValue::String("changed".to_owned()),
+            }];
+            assert!(
+                runtime
+                    .evaluate(&handles, &changed, false)
+                    .diagnostics
+                    .is_empty()
+            );
+            let changed_snapshot = runtime.snapshot().unwrap();
+            assert_eq!(
+                changed_snapshot.mounts[0]
+                    .runtime_parameters
+                    .iter()
+                    .find(|binding| binding.name == "value")
+                    .unwrap()
+                    .value,
+                RuntimeValue::Tuple(vec![
+                    RuntimeValue::String("changed".to_owned()),
+                    RuntimeValue::String("world".to_owned())
+                ])
+            );
+            let supplied = [RuntimeBinding {
+                name: "value".to_owned(),
+                value: RuntimeValue::Tuple(vec![
+                    RuntimeValue::String("supplied".to_owned()),
+                    RuntimeValue::String("override".to_owned()),
+                ]),
+            }];
+            assert!(
+                runtime
+                    .evaluate(&handles, &supplied, false)
+                    .diagnostics
+                    .is_empty()
+            );
+            assert_eq!(
+                runtime.snapshot().unwrap().mounts[0]
+                    .runtime_parameters
+                    .iter()
+                    .find(|binding| binding.name == "value")
+                    .unwrap()
+                    .value,
+                supplied[0].value
+            );
+        }
+        if case == 0 {
+            let before = runtime.snapshot().unwrap();
+            let supplied = [RuntimeBinding {
+                name: "value".to_owned(),
+                value: RuntimeValue::Tuple(vec![RuntimeValue::Need(arcweft_core::task::NeedId("need.borrowed-view".to_owned()))]),
+            }];
+            assert!(!runtime.evaluate(&handles, &supplied, false).diagnostics.is_empty());
+            assert_eq!(runtime.snapshot().unwrap(), before);
+            assert!(matches!(&supplied[0].value, RuntimeValue::Tuple(values) if matches!(values.first(), Some(RuntimeValue::Need(_)))));
+        }
+        {
+            let before = runtime.snapshot().unwrap();
+            let mut forged = before.clone();
+            forged.mounts[0].runtime_parameters.iter_mut().find(|binding| binding.name == "value").unwrap().value = RuntimeValue::Bool(true);
+            assert!(runtime.restore(&forged, &handles).is_err());
+            assert_eq!(runtime.snapshot().unwrap(), before);
+        }
+        if case >= 5 {
+            let supplied = [RuntimeBinding { name: "first".to_owned(), value: RuntimeValue::Int(arcweft_core::value::RuntimeInt::i64(2)) }, RuntimeBinding { name: "value".to_owned(), value: RuntimeValue::Bool(false) }];
+            assert!(!runtime.evaluate(&handles, &supplied, false).diagnostics.is_empty());
+        }
+    }
+}
+
+#[test]
+fn compiler_rejects_general_view_calls_at_the_unimplemented_runtime_boundary() {
+    let cases = ["view Child(value: i32) { Text(value) }\nview Main() { Child(1i32) }\n"];
 
     for source in cases {
         let fixture = project_view_fixture(

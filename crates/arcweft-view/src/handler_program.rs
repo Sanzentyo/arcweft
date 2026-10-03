@@ -21,10 +21,10 @@ pub use arcweft_id::runtime_program::RuntimePureProgramId as ViewHandlerProgramI
 #[serde(transparent)]
 pub struct ViewParameterCoordinate(u16);
 
-/// One ordered capture consumed when a handler program is evaluated at mount.
+/// One ordered parameter input consumed by a mount-time Core value program.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct ViewHandlerCapture {
+pub struct ViewParameterInput {
     parameter: ViewParameterCoordinate,
     value_type: ViewHandlerValueTypeId,
 }
@@ -60,7 +60,7 @@ impl ViewParameterCoordinate {
     }
 }
 
-impl ViewHandlerCapture {
+impl ViewParameterInput {
     #[must_use]
     pub const fn new(
         parameter: ViewParameterCoordinate,
