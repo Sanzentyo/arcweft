@@ -132,6 +132,54 @@ fn view_parameter_defaults_accept_general_checked_values_and_earlier_inputs() {
 }
 
 #[test]
+fn view_default_callback_alias_keeps_earlier_effects_rigid_in_its_owned_abi() {
+    let source = r#"view Main(first: i64 -> i64 = |input: i64| input + 1, value: i64 -> i64 = first) { Text("static") }"#;
+    let world = super::fixture(source, None);
+    let report = super::analyze(&world).unwrap();
+    let facts = report
+        .checked_callables()
+        .records()
+        .find(|facts| facts.parameter_defaults().len() == 2)
+        .unwrap();
+    let defaults = facts.parameter_defaults().values().collect::<Vec<_>>();
+    let alias = defaults[1];
+    assert_eq!(alias.captures().len(), 1);
+    assert!(alias.effects().is_empty());
+    let abi = input_abi(&report, &world, alias.source()).unwrap();
+    assert_eq!(abi.inputs().len(), 1);
+    let captured = report
+        .local(abi.inputs()[0].binding().local())
+        .unwrap()
+        .ty();
+    let projected = abi.environment().instantiate_type(&captured).unwrap();
+    assert_eq!(abi.result().value_type(), Some(&projected));
+    // The earlier input remains declaration-bound, rather than acquiring a
+    // globally pure row from its own default initializer.
+    assert!(projected.semantic_identity_digest().is_err());
+    assert_eq!(&projected, abi.inputs()[0].binding().ty());
+    assert!(abi.environment().semantic_type_identity(&projected).is_ok());
+    let header = abi.function_type().unwrap();
+    assert!(header.semantic_identity_digest().is_ok());
+    assert_ne!(alias.expected(), alias.result());
+}
+
+#[test]
+fn view_default_callback_invocation_retains_the_non_suspending_gate() {
+    let world = super::fixture(
+        r#"view Main(first: i64 -> i64 = |input: i64| input + 1, value: i64 = first(1i64)) { Text("static") }"#,
+        None,
+    );
+    let result = super::analyze(&world);
+    assert!(
+        matches!(
+            &result,
+            Err(FinalSemanticAnalysisError::ViewParameterDefaultSuspension { .. })
+        ),
+        "{result:?}"
+    );
+}
+
+#[test]
 fn view_default_record_shorthand_preserves_its_parameter_dependency() {
     for source in [
         "struct Label { value: String }\nview Main(value: String, label: Label = Label { value }) { Text(\"value\") }",

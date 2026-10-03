@@ -927,7 +927,7 @@ impl Analyzer<'_, '_, '_> {
                             .cloned()
                             .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
                         expectations.push((default, expected));
-                        default_patterns.insert(default, parameter.pattern());
+                        default_patterns.insert(default, (parameter.pattern(), coordinate));
                     }
                 }
             }
@@ -962,14 +962,26 @@ impl Analyzer<'_, '_, '_> {
                 }
                 Err(error) => return Err(error),
             };
-            if !expected.accepts(&checked_type) {
+            if let Some((pattern, coordinate)) = default_patterns.get(&owner) {
+                let signature = self
+                    .catalogs
+                    .world
+                    .environment()
+                    .callable_catalog()
+                    .project_record(declaration)
+                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+                if !crate::callable::CheckedDeclarationDefault::check_type(
+                    signature.schema(),
+                    *coordinate,
+                    &checked_type,
+                    owner,
+                    self.control,
+                )? {
+                    return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
+                }
+                self.seed_contextual_pattern_locals(module, *pattern, &expected)?;
+            } else if !expected.accepts(&checked_type) {
                 return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
-            }
-            if let Some(pattern) = default_patterns.get(&owner) {
-                let binding = expected
-                    .binding_type_with_inferred_effects(&checked_type)
-                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
-                self.seed_contextual_pattern_locals(module, *pattern, &binding)?;
             }
         }
         Ok(())

@@ -48,6 +48,7 @@ mod accounting;
 mod analyzer;
 mod canonical_literal;
 mod declaration_defaults;
+pub use declaration_defaults::FinalDeclarationDefaultConstraintFailure;
 mod error;
 mod execution_context;
 mod execution_plan;

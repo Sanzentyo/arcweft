@@ -52,9 +52,11 @@ pub enum CheckedExecutionContextError {
 }
 
 #[derive(Debug)]
-enum ClosedExecutionInstantiation {
+enum ExecutionTypeEnvironment {
+    Monomorphic,
     ProjectFunction(Arc<crate::callable::CheckedProjectFunctionInstanceSolution>),
     DisplayText(Arc<crate::checked_rich_text::CheckedDisplayConformance>),
+    Declaration(crate::types::GenericDeclarationBinder),
 }
 
 /// Owned snapshot of the exact environment that issued an execution admission.
@@ -63,7 +65,7 @@ enum ClosedExecutionInstantiation {
 pub struct CheckedExecutionEnvironment {
     authority: crate::callable::CheckedCallableAuthorityLease,
     scope: HirSemanticPathRoot,
-    instance: Option<ClosedExecutionInstantiation>,
+    types: ExecutionTypeEnvironment,
     local_uses: CheckedLocalUseAuthority,
 }
 
@@ -101,14 +103,35 @@ impl CheckedExecutionEnvironment {
     }
 
     pub fn instantiation(&self) -> Option<CheckedLocalUseInstantiation<'_>> {
-        self.instance.as_ref().map(|instance| match instance {
-            ClosedExecutionInstantiation::ProjectFunction(instance) => {
-                CheckedLocalUseInstantiation::ProjectFunction(instance)
+        match &self.types {
+            ExecutionTypeEnvironment::ProjectFunction(instance) => {
+                Some(CheckedLocalUseInstantiation::ProjectFunction(instance))
             }
-            ClosedExecutionInstantiation::DisplayText(instance) => {
-                CheckedLocalUseInstantiation::DisplayText(instance)
+            ExecutionTypeEnvironment::DisplayText(instance) => {
+                Some(CheckedLocalUseInstantiation::DisplayText(instance))
             }
-        })
+            ExecutionTypeEnvironment::Monomorphic | ExecutionTypeEnvironment::Declaration(_) => {
+                None
+            }
+        }
+    }
+
+    /// Lexical type scope owned by the exact declaration environment.
+    /// Closed instances and monomorphic roots have the root scope.
+    pub fn type_scope(&self) -> crate::types::GenericScope {
+        match &self.types {
+            ExecutionTypeEnvironment::Declaration(binder) => binder.scope().clone(),
+            _ => crate::types::GenericScope::default(),
+        }
+    }
+
+    /// Gives projected terms their canonical identity in this owned type scope.
+    pub fn semantic_type_identity(
+        &self,
+        ty: &TypeKind,
+    ) -> Result<crate::types::SemanticTypeDigest, crate::types::GenericScopeError> {
+        ty.semantic_identity_digest()
+            .or_else(|_| ty.semantic_identity_digest_in_scope(&self.type_scope()))
     }
 
     pub const fn local_uses(&self) -> &CheckedLocalUseAuthority {
@@ -123,6 +146,14 @@ impl CheckedExecutionEnvironment {
         &self,
         ty: &TypeKind,
     ) -> Result<TypeKind, CheckedExecutionContextError> {
+        if let ExecutionTypeEnvironment::Declaration(binder) = &self.types {
+            return binder
+                .project_with_control(ty, &mut crate::types::UnmeteredTypeProjection)
+                .map(|ty| ty.view().value().clone())
+                .map_err(crate::types::TypeProjectionError::into_instantiation)
+                .map_err(super::CheckedLocalUseError::from)
+                .map_err(CheckedExecutionContextError::from);
+        }
         match self.instantiation() {
             Some(instance) => Ok(instance.instantiate_type(ty)?),
             None => ClosedTypeInstantiation::default()
@@ -294,21 +325,42 @@ impl FinalSemanticAnalysis {
             }
             CheckedLocalUseAuthority::Global(Arc::clone(self.checked_local_uses()))
         };
-        let instance = instance.map(|instance| match instance {
-            CheckedLocalUseInstantiation::ProjectFunction(instance) => {
-                ClosedExecutionInstantiation::ProjectFunction(Arc::new(instance.clone()))
-            }
-            CheckedLocalUseInstantiation::DisplayText(instance) => {
-                ClosedExecutionInstantiation::DisplayText(Arc::new(instance.clone()))
-            }
-        });
+        let types = match instance {
+            Some(instance) => match instance {
+                CheckedLocalUseInstantiation::ProjectFunction(instance) => {
+                    ExecutionTypeEnvironment::ProjectFunction(Arc::new(instance.clone()))
+                }
+                CheckedLocalUseInstantiation::DisplayText(instance) => {
+                    ExecutionTypeEnvironment::DisplayText(Arc::new(instance.clone()))
+                }
+            },
+            None => match &scope {
+                HirSemanticPathRoot::Declaration(declaration)
+                    if declaration.owner()
+                        == arcweft_lang_hir::symbol::CallableDeclarationOwner::View =>
+                {
+                    let checked = self
+                        .checked_callables()
+                        .project_callable(declaration)
+                        .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+                    ExecutionTypeEnvironment::Declaration(
+                        checked
+                            .signature()
+                            .function_value_binder()
+                            .map_err(crate::types::TypeInstantiationError::from)
+                            .map_err(super::CheckedLocalUseError::from)?,
+                    )
+                }
+                _ => ExecutionTypeEnvironment::Monomorphic,
+            },
+        };
         Ok(CheckedClosedExecutionContext {
             analysis: self,
             project,
             environment: Arc::new(CheckedExecutionEnvironment {
                 authority: self.checked_callables().authority_lease(),
                 scope,
-                instance,
+                types,
                 local_uses,
             }),
         })

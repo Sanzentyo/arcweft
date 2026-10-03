@@ -225,8 +225,9 @@ impl CheckedCaptureExpression {
                     entry.insert(context.instantiate_type(original)?)
                 }
             };
-            source.ty = closed
-                .semantic_identity_digest()
+            source.ty = context
+                .environment()
+                .semantic_type_identity(closed)
                 .map_err(FinalSemanticAnalysisError::from)?;
         }
         Ok(self)
@@ -558,6 +559,7 @@ pub(super) fn ordered_checked_local_inputs(
 /// The same collector consumes a callback traversal or an eager execution fold.
 pub(super) struct CheckedFreeLocalCollector<'a, 'coordinate, F> {
     root: CheckedSemanticPath,
+    type_scope: crate::types::GenericScope,
     coordinates: &'a SemanticCoordinateIndex<'coordinate, 'coordinate>,
     local_type: F,
     captured: BTreeSet<LocalId>,
@@ -576,16 +578,23 @@ impl<'a, 'coordinate, F: Fn(LocalId) -> Option<TypeKind>>
             .expression_evidence(root)
             .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?
             .into_coordinate();
-        Ok(Self::at_path(root, coordinates, local_type))
+        Ok(Self::at_path(
+            root,
+            coordinates,
+            local_type,
+            crate::types::GenericScope::default(),
+        ))
     }
 
     pub(super) fn at_path(
         root: CheckedSemanticPath,
         coordinates: &'a SemanticCoordinateIndex<'coordinate, 'coordinate>,
         local_type: F,
+        type_scope: crate::types::GenericScope,
     ) -> Self {
         Self {
             root,
+            type_scope,
             coordinates,
             local_type,
             captured: BTreeSet::new(),
@@ -639,7 +648,10 @@ impl<'a, 'coordinate, F: Fn(LocalId) -> Option<TypeKind>>
             .coordinates
             .binding(source.local)
             .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        if accepted.semantic_identity_digest()? != source.ty
+        if accepted
+            .semantic_identity_digest()
+            .or_else(|_| accepted.semantic_identity_digest_in_scope(&self.type_scope))?
+            != source.ty
             || source
                 .origin
                 .as_ref()

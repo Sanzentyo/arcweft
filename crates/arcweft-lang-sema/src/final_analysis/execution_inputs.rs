@@ -170,6 +170,31 @@ pub struct CheckedExecutionInputAbi {
 }
 
 impl CheckedExecutionInputAbi {
+    /// Complete frame contract, including the lexical declaration quantifiers.
+    pub fn function_type(&self) -> Option<TypeKind> {
+        let scope = self.environment.type_scope();
+        Some(TypeKind::Function {
+            binder: scope
+                .binders()
+                .first()
+                .copied()
+                .unwrap_or(crate::types::GenericBinder::EMPTY),
+            predicate: crate::effect_row::EffectPredicate::unconstrained(),
+            params: self
+                .inputs
+                .iter()
+                .filter(|input| input.role() == &CheckedExecutionInputRole::Free)
+                .map(|input| input.binding().ty().clone())
+                .chain(
+                    self.parameters
+                        .iter()
+                        .map(|parameter| parameter.ty().clone()),
+                )
+                .collect(),
+            return_type: Box::new(self.result.value_type()?.clone()),
+            effects: crate::effect_row::EffectRow::closed(self.effects.clone()),
+        })
+    }
     pub const fn hir_topology(
         &self,
     ) -> &std::sync::Arc<arcweft_lang_hir::project::HirProjectEvaluationTopology> {
@@ -476,10 +501,12 @@ impl super::CheckedClosedExecutionContext<'_> {
                     .close_input_types(self, &mut types)?,
             );
         }
-        let mut collector =
-            CheckedFreeLocalCollector::at_path(input_scope, &coordinates, |local| {
-                types.get(&local).cloned()
-            });
+        let mut collector = CheckedFreeLocalCollector::at_path(
+            input_scope,
+            &coordinates,
+            |local| types.get(&local).cloned(),
+            self.environment().type_scope(),
+        );
         let mut sources = Vec::new();
         for projection in projected {
             collector.include_with_free_sources(projection, |source| sources.push(source))?;

@@ -253,6 +253,8 @@ pub enum CandidateFactTransactionViolation {
 /// Failure to publish final semantic facts.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum FinalSemanticAnalysisError {
+    #[error(transparent)]
+    DeclarationDefaultConstraintFailure(super::FinalDeclarationDefaultConstraintFailure),
     #[error("return {owner:?} has no selected enclosing callable frame")]
     ReturnBoundaryUnavailable { owner: StmtId },
     #[error("return {owner:?} has type {actual:?}, but its callable frame returns {expected:?}")]

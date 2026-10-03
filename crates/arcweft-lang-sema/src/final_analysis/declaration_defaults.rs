@@ -5,6 +5,8 @@ use arcweft_lang_hir::{
     identity::ExprId, project::HirAnalysisProjectView, symbol::ProjectSymbolTable,
 };
 use std::collections::BTreeMap;
+mod type_relation;
+pub use type_relation::FinalDeclarationDefaultConstraintFailure;
 
 pub(super) fn checked_view_parameter_defaults(
     analysis: &FinalSemanticAnalysis,
@@ -69,7 +71,13 @@ pub(super) fn checked_view_parameter_defaults(
         let result = checked
             .value_type()
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: source })?;
-        if !expected.accepts(result) {
+        if !CheckedDeclarationDefault::check_type(
+            facts.signature(),
+            position,
+            result,
+            source,
+            control,
+        )? {
             return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: source });
         }
         if !checked.effects().is_empty() {

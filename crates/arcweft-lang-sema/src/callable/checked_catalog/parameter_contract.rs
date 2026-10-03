@@ -12,6 +12,7 @@ use crate::{
 pub struct CheckedCallableParameterContract {
     schema: TypeKind,
     scope: GenericScope,
+    declaration: crate::types::GenericDeclarationBinder,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -56,16 +57,35 @@ impl CheckedCallableFacts {
                     error
                 }
             })?;
-        let schema = schema.quantify_function_value(&source)?;
+        let declaration = schema
+            .function_value_binder()
+            .map_err(crate::types::TypeInstantiationError::from)?;
+        let schema = declaration
+            .quantify_function_with_control(&source, &mut crate::types::UnmeteredTypeProjection)
+            .map_err(crate::types::TypeProjectionError::into_instantiation)?;
         let TypeKind::Function { binder, .. } = &schema else {
             return Err(CheckedCallableParameterContractError::InvalidSchema);
         };
         let scope = GenericScope::default().with_binder(*binder);
-        Ok(CheckedCallableParameterContract { schema, scope })
+        Ok(CheckedCallableParameterContract {
+            schema,
+            scope,
+            declaration,
+        })
     }
 }
 
 impl CheckedCallableParameterContract {
+    /// Projects a declaration-local term into this same owned input scope.
+    pub fn bind_type(
+        &self,
+        ty: &TypeKind,
+    ) -> Result<TypeKind, crate::types::TypeInstantiationError> {
+        self.declaration
+            .project_with_control(ty, &mut crate::types::UnmeteredTypeProjection)
+            .map(|ty| ty.view().value().clone())
+            .map_err(crate::types::TypeProjectionError::into_instantiation)
+    }
     pub const fn schema(&self) -> &TypeKind {
         &self.schema
     }
