@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 mod authority;
 use crate::pattern::RuntimeSemanticTypeId;
 use authority::FunctionTypeAuthority;
+pub(crate) use authority::RuntimeValueTypeContext;
 
 impl crate::value::RuntimePlaceStorage<RuntimeValue> {
     /// Checks initialized descendants and partial record headers against the
@@ -276,6 +277,60 @@ struct ParameterMatcher<'a, A: FunctionTypeAuthority> {
     next_binder: u32,
     work: ContractWork,
     replacements: BTreeMap<ContractVariable, crate::effect_row::EffectFormula<ContractVariable>>,
+}
+
+struct ValueChoiceRelation {
+    before: EffectPredicate<ContractVariable>,
+    selected: Option<EffectPredicate<ContractVariable>>,
+}
+struct CallableValueRelation<'m, 'p, A: FunctionTypeAuthority> {
+    matcher: &'m mut ParameterMatcher<'p, A>,
+    environment: EffectEnvironment,
+    choices: Vec<ValueChoiceRelation>,
+}
+impl<A: FunctionTypeAuthority> RuntimeValueTypeContext<A::Type>
+    for CallableValueRelation<'_, '_, A>
+{
+    fn permits_scope(&self, scope: &RuntimeTypeScope) -> bool {
+        self.environment.at_scope(scope).is_ok()
+    }
+    fn callable(&mut self, expected: A::Type, actual: A::Type) -> bool {
+        self.matcher
+            .types(
+                expected,
+                actual,
+                0,
+                &self.environment,
+                &EffectEnvironment::root(),
+            )
+            .is_ok()
+            && !self.matcher.predicate.is_impossible()
+    }
+    fn begin_choice(&mut self) {
+        self.choices.push(ValueChoiceRelation {
+            before: self.matcher.predicate.clone(),
+            selected: None,
+        });
+    }
+    fn begin_alternative(&mut self) {
+        self.matcher.predicate = self
+            .choices
+            .last()
+            .expect("active value Choice")
+            .before
+            .clone();
+    }
+    fn finish_alternative(&mut self, accepted: bool) {
+        let choice = self.choices.last_mut().expect("active value Choice");
+        if accepted && choice.selected.is_none() {
+            choice.selected = Some(self.matcher.predicate.clone());
+        }
+        self.matcher.predicate = choice.before.clone();
+    }
+    fn finish_choice(&mut self) {
+        let choice = self.choices.pop().expect("active value Choice");
+        self.matcher.predicate = choice.selected.unwrap_or(choice.before);
+    }
 }
 impl AwbcProgram {
     pub(crate) fn instantiate_function_effects(
@@ -686,22 +741,19 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
                 Ok(())
             }
             _ => {
-                if let (Some(expected), Some(actual)) =
-                    (self.program.tuple(expected), self.program.tuple(actual))
-                {
-                    if expected.len() != actual.len() {
-                        return Err(());
-                    }
-                    for (expected, actual) in expected.iter().zip(actual) {
+                let program = self.program;
+                if let Some(result) =
+                    program.relate_children(expected, actual, &mut |expected, actual| {
                         self.types(
-                            *expected,
-                            *actual,
+                            expected,
+                            actual,
                             depth + 1,
                             &expected_environment,
                             &actual_environment,
-                        )?;
-                    }
-                    return Ok(());
+                        )
+                    })
+                {
+                    return result;
                 }
                 if (expected_scope.is_root() && actual_scope.is_root()
                     || expected_environment == actual_environment)
@@ -733,34 +785,16 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
         self.enter(depth)?;
         let scope = self.program.scope(expected).ok_or(())?;
         let environment = environment.at_scope(scope)?;
-        match (self.program.function(expected), value) {
-            (
-                Some(_),
-                crate::value::RuntimeValueView::RuntimeOnly(RuntimeValue::Callable(value)),
-            ) => {
-                let actual = self.program.callable_type(value).ok_or(())?;
-                self.types(
-                    expected,
-                    actual,
-                    depth + 1,
-                    &environment,
-                    &EffectEnvironment::root(),
-                )
-            }
-            (_, crate::value::RuntimeValueView::Tuple(values))
-                if self.program.tuple(expected).is_some() =>
-            {
-                let types = self.program.tuple(expected).ok_or(())?;
-                if types.len() != values.len() {
-                    return Err(());
-                }
-                for (index, ty) in types.iter().enumerate() {
-                    self.value_view(*ty, values.get(index).ok_or(())?, depth + 1, &environment)?;
-                }
-                Ok(())
-            }
-            _ if scope.is_root() && self.program.value_matches(expected, value, depth) => Ok(()),
-            _ => Err(()),
+        let program = self.program;
+        let mut relation = CallableValueRelation {
+            matcher: self,
+            environment,
+            choices: Vec::new(),
+        };
+        if program.value_relation(expected, value, &mut relation) {
+            Ok(())
+        } else {
+            Err(())
         }
     }
 }
@@ -807,6 +841,139 @@ mod tests {
         pattern::RuntimeSemanticTypeId,
         plan::{RuntimeFunctionTypeContract, RuntimeTypeBinder, RuntimeTypeScope},
     };
+
+    #[test]
+    fn failed_value_choice_does_not_leak_callback_effect_constraints() {
+        use crate::plan::{
+            RuntimeEffectSet, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed,
+            RuntimeFlowSchema, RuntimeFlowSeed, RuntimeFunctionSiteBodyKind,
+            RuntimeFunctionSiteDeclarationSeed, RuntimePatternSeed, RuntimePatternSeedKind,
+            RuntimePlanBuilder, RuntimePlanTypeProjection as T, RuntimePlanTypeSeed,
+        };
+        use crate::value::{RuntimeCallableValue, RuntimeExprKind};
+        let id = |value| RuntimeSemanticTypeId::from_bytes([value; 32]);
+        let binder = RuntimeTypeBinder::new(0, 0, 1);
+        let scope = RuntimeTypeScope::root().enter(binder).unwrap();
+        let io = crate::effect_row::EffectSet::from_labels(["io.read"]).unwrap();
+        let function = |effects| T::Function {
+            contract: RuntimeFunctionTypeContract::new(
+                RuntimeTypeBinder::EMPTY,
+                EffectPredicate::unconstrained(),
+                effects,
+            ),
+            parameters: Box::new([]),
+            result: id(1),
+        };
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [
+                    RuntimePlanTypeSeed::new(id(1), T::Unit),
+                    RuntimePlanTypeSeed::new(id(2), T::String),
+                    RuntimePlanTypeSeed::new(
+                        id(3),
+                        function(EffectFormula::literal(io.clone(), None)),
+                    ),
+                    RuntimePlanTypeSeed::new(
+                        id(4),
+                        function(EffectFormula::literal(
+                            Default::default(),
+                            Some(scope.bound_effect(0, 0).unwrap()),
+                        )),
+                    )
+                    .with_scope(scope.clone()),
+                    RuntimePlanTypeSeed::new(id(5), T::Tuple(Box::new([id(4), id(2)])))
+                        .with_scope(scope.clone()),
+                    RuntimePlanTypeSeed::new(id(6), T::Tuple(Box::new([id(3), id(1)]))),
+                    RuntimePlanTypeSeed::new(id(7), T::Choice(Box::new([id(5), id(6)])))
+                        .with_scope(scope),
+                    RuntimePlanTypeSeed::new(
+                        id(8),
+                        T::Function {
+                            contract: RuntimeFunctionTypeContract::new(
+                                binder,
+                                EffectPredicate::unconstrained(),
+                                EffectFormula::empty(),
+                            ),
+                            parameters: Box::new([id(7)]),
+                            result: id(1),
+                        },
+                    ),
+                ],
+                [],
+            )
+            .unwrap();
+        let site = builder
+            .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+                function_type: None,
+                inputs: Box::new([]),
+                result: id(1),
+                body_kind: RuntimeFunctionSiteBodyKind::Expression,
+                effects: RuntimeEffectSet::try_from_effects(io.iter().cloned()).unwrap(),
+            })
+            .unwrap();
+        builder
+            .define_function_site_seed(
+                &site,
+                RuntimeExprSeed::new(id(1), RuntimeExprSeedKind::Value(RuntimeValue::Unit)),
+            )
+            .unwrap();
+        let flow = crate::plan::FlowRuntimeId::canonical("choice_relation").unwrap();
+        builder
+            .push_flow_schema(RuntimeFlowSchema {
+                flow: flow.clone(),
+                parameters: vec![],
+            })
+            .unwrap();
+        builder
+            .push_flow_seed(RuntimeFlowSeed::new(
+                flow,
+                [],
+                RuntimeEffectSet::empty(),
+                vec![RuntimeFlowOpSeed::Let {
+                    pattern: RuntimePatternSeed::new(id(3), RuntimePatternSeedKind::Discard),
+                    expr: RuntimeExprSeed::new(
+                        id(3),
+                        RuntimeExprSeedKind::Function {
+                            site,
+                            captures: Box::new([]),
+                        },
+                    ),
+                }],
+            ))
+            .unwrap();
+        let plan = std::sync::Arc::new(builder.finish().unwrap());
+        let crate::plan::FlowOp::Let { expr, .. } = &plan.flows()[0].body().ops()[0] else {
+            panic!("typed callback fixture")
+        };
+        let RuntimeExprKind::MakeCallable { state, .. } = expr.kind() else {
+            panic!("admitted callback state")
+        };
+        let callback = RuntimeCallableValue::try_new(
+            crate::task::RuntimeProgramOwner::Plan(plan.clone()),
+            *state,
+            [],
+        )
+        .unwrap();
+        let value = RuntimeValue::Tuple(vec![RuntimeValue::Callable(callback), RuntimeValue::Unit]);
+        let binding = super::super::RuntimeProgramTypes::Plan(&plan)
+            .instantiate_function_effects(id(8), &[&value])
+            .unwrap();
+        assert_eq!(
+            binding.effects.as_ref(),
+            &[crate::effect_row::EffectSet::new()]
+        );
+        let expected = plan.type_table().id_for_semantic(id(7)).unwrap();
+        assert!(binding.value_matches(plan.as_ref(), expected, &value));
+        assert!(
+            plan.validate_live_value(
+                expected,
+                &value,
+                crate::entry::RuntimeSchemaLimits::engine_default()
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn scoped_default_preserves_shared_source_rows_across_callback_variance() {

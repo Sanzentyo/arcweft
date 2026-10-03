@@ -31,7 +31,7 @@ pub use nominal::{
 };
 pub use record_shape::{RuntimeNominalRecordShape, RuntimeNominalRecordShapeError};
 
-/// Runtime-verifiable persistent data shape.
+/// Data shape and exact references to program-owned executable members.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum RuntimeTypeSchema {
     Unit,
@@ -88,6 +88,9 @@ pub enum RuntimeTypeSchema {
         arguments: Box<[Self]>,
     },
     NominalRef(RuntimeNominalSchemaIdentity),
+    /// A member whose type is authenticated by the selected executable table.
+    /// Standalone data codecs cannot admit this reference without that owner.
+    ExecutableRef(crate::pattern::RuntimeSemanticTypeId),
     Never,
     Duration,
     Progress,
@@ -996,6 +999,7 @@ impl RuntimeTypeSchema {
             Self::RecordValue { .. } => "record",
             Self::ExactOpaque { .. } => "opaque value",
             Self::NominalRef(_) => "nominal value",
+            Self::ExecutableRef(_) => "program-owned value",
             Self::Never => "never",
             Self::Duration => "duration",
             Self::Progress => "progress",

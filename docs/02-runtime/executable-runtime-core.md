@@ -232,6 +232,14 @@ definition, ordered field/case, child type and layout with the candidate type
 and domain tables, then discards the proof. Combining source documents retains
 equal definitions once and rejects conflicting definitions atomically.
 
+A function-valued nominal member retains an `ExecutableRef` to its exact
+semantic type row in the selected program. Source-schema correlation and
+diagnostic type projection preserve that identity; executable admission uses
+the referenced row and the active frame's type context. Such a reference is
+not a standalone data schema or value predicate. Standalone codec admission
+rejects it. The existing version-one schema codecs encode the reference in
+place, without a separate function schema or compatibility reader.
+
 Entry state/event roles contain nominal identity, semantic identity and layout;
 their version-one encoding contains no copied schema. Initializer values,
 incoming events, committed reducer state and restored root values are admitted

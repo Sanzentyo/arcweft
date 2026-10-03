@@ -285,6 +285,7 @@ impl SchemaVisitor<'_> for DefinitionComparison<'_, '_> {
             })?;
         let declaration = self.tables.declaration(ty);
         let matches = match (schema, declaration.projection()) {
+            (Schema::ExecutableRef(identity), _) => *identity == declaration.semantic_identity(),
             (Schema::Never, Type::Never)
             | (Schema::Unit, Type::Unit)
             | (Schema::Bool, Type::Bool)

@@ -1163,7 +1163,7 @@ fn execute_instruction(
         }
         AwbcInstruction::MakeRecord { dst, ty, fields } => {
             let fields = take_register_values(fiber, fields)?;
-            let value = program.make_record_value(*ty, fields)?;
+            let value = program.make_record_value(*ty, fields, Some(fiber.active_frame()?))?;
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
         AwbcInstruction::MakeVariant {
@@ -3983,20 +3983,49 @@ impl AwbcProgram {
         &self,
         ty: AwbcTypeId,
         values: Vec<RuntimeValue>,
+        frame: Option<&FiberFrame>,
     ) -> Result<RuntimeValue, VmError> {
         let row = self
             .runtime_types
             .get(ty.index())
             .ok_or(VmError::MissingType(ty))?;
         match row.shape() {
-            AwbcRuntimeTypeShape::NominalRecord { .. } => {
-                let layout = self
-                    .nominal_record_layout(ty)
-                    .map_err(|error| VmError::Runtime(error.to_string()))?
-                    .expect("nominal-record row supplies an executable layout");
-                RuntimeNominalRecordValue::try_from_accepted_layout(&layout, values)
-                    .map(RuntimeValue::NominalRecord)
-                    .map_err(|error| VmError::Runtime(error.to_string()))
+            AwbcRuntimeTypeShape::NominalRecord {
+                public_id,
+                layout,
+                shape,
+                fields,
+                ..
+            } => {
+                self.validate_record_fields(ty, *shape, fields)
+                    .map_err(|error| VmError::Runtime(error.to_string()))?;
+                let nominal = crate::entry::RuntimeNominalTypeId::try_new(
+                    string(self, *public_id)?.to_owned(),
+                )
+                .map_err(|error| VmError::Runtime(error.to_string()))?;
+                let value = RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
+                    nominal,
+                    row.semantic_identity(),
+                    crate::entry::TypeLayoutHash::from_bytes(*layout),
+                    values,
+                ));
+                let accepted = frame.map_or_else(
+                    || {
+                        self.validate_live_value(
+                            ty,
+                            &value,
+                            crate::entry::RuntimeSchemaLimits::engine_default(),
+                        )
+                        .is_ok()
+                    },
+                    |frame| frame.value_matches_type(self, &value, ty),
+                );
+                if !accepted {
+                    return Err(VmError::Runtime(
+                        "nominal record fields do not match the selected program type".to_owned(),
+                    ));
+                }
+                Ok(value)
             }
             AwbcRuntimeTypeShape::Record { fields, .. } => {
                 self.validate_record_fields(
@@ -4076,7 +4105,7 @@ pub(crate) fn constant_value(
                 .iter()
                 .map(|field| constant_value(program, *field))
                 .collect::<Result<Vec<_>, VmError>>()?;
-            program.make_record_value(*ty, values)
+            program.make_record_value(*ty, values, None)
         }
         AwbcConstant::Variant { ty, case, payload } => {
             let Some(AwbcRuntimeTypeShape::Variant { cases, .. }) = program
@@ -4606,10 +4635,8 @@ pub(crate) fn runtime_value_view_matches_type(
                 && record.layout().as_bytes() == layout
         }
         (RuntimeValueView::NominalRecord(record), AwbcRuntimeTypeShape::NominalRecord { .. }) => program
-            .nominal_record_layout(ty)
-            .ok()
-            .flatten()
-            .is_some_and(|layout| record.validate_against_layout(&layout).is_ok()),
+            .validate_live_value_view(ty, RuntimeValueView::NominalRecord(record), crate::entry::RuntimeSchemaLimits::engine_default())
+            .is_ok(),
         (RuntimeValueView::RuntimeOnly(RuntimeValue::Range(range)), AwbcRuntimeTypeShape::Range(item)) => {
             use crate::value::RuntimeRange;
             match range {

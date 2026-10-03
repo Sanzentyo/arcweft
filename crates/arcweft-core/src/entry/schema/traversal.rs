@@ -190,6 +190,7 @@ impl<'a> Iterator for SchemaChildren<'a> {
             | Schema::Bytes { .. }
             | Schema::Named(_)
             | Schema::NominalRef(_)
+            | Schema::ExecutableRef(_)
             | Schema::Seq(_)
             | Schema::Array { .. }
             | Schema::Map { .. } => return None,
@@ -294,6 +295,7 @@ impl RuntimeTypeSchema {
                 | Self::Bytes { .. }
                 | Self::Named(_)
                 | Self::NominalRef(_) => {}
+                Self::ExecutableRef(_) => {}
             }
         }
     }

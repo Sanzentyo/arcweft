@@ -45,6 +45,12 @@ pub(crate) trait ValueValidation {
         children: &Self::Children,
         index: usize,
     ) -> Result<Self::Expected, RuntimeSchemaError>;
+
+    // Stateful type relations keep speculative Choice obligations isolated.
+    fn begin_choice(&mut self) {}
+    fn begin_alternative(&mut self) {}
+    fn finish_alternative(&mut self, _accepted: bool) {}
+    fn finish_choice(&mut self) {}
 }
 
 /// Validates a persistent value and emits its canonical digest in one traversal.
@@ -408,6 +414,7 @@ fn visit_with_encoding<S: CanonicalSink + ?Sized, V: ValueValidation>(
                             }
                         })?;
                         validation.alternative(choice.depth + 1)?;
+                        validation.begin_alternative();
                         let value = choice.value;
                         let depth = choice.depth + 1;
                         active_choices.push(work.len());
@@ -416,6 +423,7 @@ fn visit_with_encoding<S: CanonicalSink + ?Sized, V: ValueValidation>(
                         work.push(Work::Value(value, depth, expected, None));
                     } else {
                         mode = choice.parent_mode;
+                        validation.finish_choice();
                         match (choice.first, choice.second) {
                             (None, _) => {
                                 return Err(RuntimeSchemaError::ChoiceNoMatch {
@@ -439,6 +447,7 @@ fn visit_with_encoding<S: CanonicalSink + ?Sized, V: ValueValidation>(
                     }
                 }
                 Work::ChoiceComplete(mut choice, ordinal) => {
+                    validation.finish_alternative(true);
                     let completed_boundary = active_choices.pop();
                     debug_assert_eq!(completed_boundary, Some(work.len()));
                     if choice.first.is_none() {
@@ -616,6 +625,7 @@ fn visit_with_encoding<S: CanonicalSink + ?Sized, V: ValueValidation>(
                             encoding,
                         )?,
                         ValueAdmission::Choice(alternatives) => {
+                            validation.begin_choice();
                             work.push(Work::ChoiceNext(ChoiceVisit {
                                 value,
                                 depth,
@@ -645,6 +655,7 @@ fn visit_with_encoding<S: CanonicalSink + ?Sized, V: ValueValidation>(
                 unreachable!("active Choice owns its continuation");
             };
             path.0.truncate(choice.path_length);
+            validation.finish_alternative(false);
             choice
                 .mismatches
                 .push(RuntimeSchemaChoiceMismatch::new(alternative, error));

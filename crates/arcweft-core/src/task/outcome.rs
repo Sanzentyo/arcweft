@@ -161,7 +161,8 @@ impl TaskOutcomeContract {
             }
             let child_depth = depth + 1;
             match ty {
-                RuntimeCheckedType::Nominal { .. }
+                RuntimeCheckedType::ExecutableRef(_)
+                | RuntimeCheckedType::Nominal { .. }
                 | RuntimeCheckedType::Agent(RuntimeAgentTypeProjection::DataShape(_))
                 | RuntimeCheckedType::Variant {
                     owner: crate::pattern::RuntimeVariantIdentity::Nominal { .. },

@@ -689,6 +689,11 @@ pub(crate) fn intern_runtime_type(
     ty: &RuntimeCheckedType,
 ) -> AwbcTypeId {
     let projected = match ty {
+        RuntimeCheckedType::ExecutableRef(identity) => {
+            return inventory
+                .semantic_type(*identity)
+                .expect("executable type reference was admitted by plan type preflight");
+        }
         RuntimeCheckedType::Never => AwbcRuntimeTypeShape::Never,
         RuntimeCheckedType::Unit => AwbcRuntimeTypeShape::Unit,
         RuntimeCheckedType::Bool => AwbcRuntimeTypeShape::Bool,

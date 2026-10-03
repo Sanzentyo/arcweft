@@ -216,6 +216,9 @@ impl AwbcProgram {
             return Err(AwbcTypeProjectionError::CheckedTypeCycle { index: ty.0 });
         }
         let result = match row.shape() {
+            AwbcRuntimeTypeShape::Function { .. } => {
+                Ok(RuntimeCheckedType::ExecutableRef(row.semantic_identity()))
+            }
             AwbcRuntimeTypeShape::Never => Ok(RuntimeCheckedType::Never),
             AwbcRuntimeTypeShape::Unit => Ok(RuntimeCheckedType::Unit),
             AwbcRuntimeTypeShape::Bool => Ok(RuntimeCheckedType::Bool),
@@ -321,7 +324,6 @@ impl AwbcProgram {
             | AwbcRuntimeTypeShape::Shared(_)
             | AwbcRuntimeTypeShape::Reference(_)
             | AwbcRuntimeTypeShape::BoundType(_)
-            | AwbcRuntimeTypeShape::Function { .. }
             | AwbcRuntimeTypeShape::Dynamic => {
                 Err(AwbcTypeProjectionError::UnsupportedCheckedType { index: ty.0 })
             }

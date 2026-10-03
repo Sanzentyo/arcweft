@@ -2008,6 +2008,7 @@ fn validate_variant_cases(
             }
         }
         RuntimeCheckedType::Never
+        | RuntimeCheckedType::ExecutableRef(_)
         | RuntimeCheckedType::Unit
         | RuntimeCheckedType::Bool
         | RuntimeCheckedType::Signed(_)

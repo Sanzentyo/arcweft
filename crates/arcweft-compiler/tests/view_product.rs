@@ -871,6 +871,10 @@ fn compiler_defaults_execute_general_values_and_refresh_preceding_inputs() {
         r#"view Main(first: i64 = 1, value: i64 -> i64 = |input: i64| input + first) { Text("static") }"#,
         r#"view Main(first: i64 = 1, value: i64 -> i64 = _ + first) { Text("static") }"#,
         r#"view Main(first: i64 -> i64 = |input: i64| input + 1, value: i64 -> i64 = first) { Text("static") }"#,
+        r#"view Main(first: Vec<i64 -> i64> = [|input: i64| input + 1], value: Vec<i64 -> i64> = first) { Text("static") }"#,
+        r#"view Main(first: Array<i64 -> i64, 1> = [|input: i64| input + 1], value: Array<i64 -> i64, 1> = first) { Text("static") }"#,
+        r#"struct Handler { callback: i64 -> i64 effects {} }
+view Main(first: Handler = Handler { callback = |input: i64| input + 1 }, value: Handler = first) { Text("static") }"#,
     ].into_iter().enumerate() {
         let source = format!(
             "entry cli @entry.main {{ goto @flow.main }}\nflow main() -> String {{ return \"done\" }}\n{source}"
@@ -917,7 +921,7 @@ fn compiler_defaults_execute_general_values_and_refresh_preceding_inputs() {
         let result = runtime.evaluate(&handles, &[], false);
         assert!(result.diagnostics.is_empty(), "{source}\n{result:#?}");
         let snapshot = runtime.snapshot().unwrap();
-        if case == 7 {
+        if case >= 7 {
             use arcweft_core::awbc::{fiber::AwbcFiberStateSnapshot, product_step::AwbcProductStepExecutor};
             let definition = resource.definitions.iter().find(|definition| definition.public_id.as_str() == "view.Main").unwrap();
             let program = definition.parameters.iter().find(|parameter| parameter.name == "value").unwrap().default_program.as_ref().unwrap().program;
@@ -932,9 +936,13 @@ fn compiler_defaults_execute_general_values_and_refresh_preceding_inputs() {
                 panic!("native default exceeded its deterministic step limit");
             };
             let native_first = finish_native(arcweft_core::engine::Engine::for_program_invocation(Arc::clone(&native_plan), first_program, vec![]).unwrap());
+            let expected_native = native_first.clone();
             let native_value = finish_native(arcweft_core::engine::Engine::for_program_invocation(Arc::clone(&native_plan), program, vec![native_first]).unwrap());
-            let RuntimeValue::Callable(native_value) = native_value else { panic!("native default did not retain its callback") };
-            assert!(matches!(native_value.owner(), arcweft_core::task::RuntimeProgramOwner::Plan(owner) if Arc::ptr_eq(owner, &native_plan)));
+            assert_eq!(native_value, expected_native, "native dependent default preserves all callbacks");
+            if let RuntimeValue::Callable(native_value) = native_value {
+                assert!(matches!(native_value.owner(), arcweft_core::task::RuntimeProgramOwner::Plan(owner) if Arc::ptr_eq(owner, &native_plan)));
+            }
+            if case <= 9 {
             let first = snapshot.mounts[0].runtime_parameters.iter().find(|binding| binding.name == "first").unwrap().value.clone();
             let executor = AwbcProductStepExecutor::for_program_invocation(Arc::clone(&awbc), program, vec![first], arcweft_core::task::GenerationId::new(0), 64).unwrap();
             let owner = arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&awbc));
@@ -959,6 +967,7 @@ fn compiler_defaults_execute_general_values_and_refresh_preceding_inputs() {
             let mut frameless = AwbcFiberStateSnapshot::from_live(&restored).unwrap();
             frameless.frames.clear();
             assert!(matches!(frameless.into_live_for_program(&owner).unwrap().validate_for_program(&awbc), Err(arcweft_core::awbc::fiber::FiberStateError::ReturnValueMismatch)));
+            }
         }
         assert_eq!(snapshot.mounts.len(), 2);
         assert_ne!(snapshot.mounts[0].state.mount, snapshot.mounts[1].state.mount);
@@ -974,6 +983,15 @@ fn compiler_defaults_execute_general_values_and_refresh_preceding_inputs() {
             3 => { let RuntimeValue::NominalRecord(record) = value else { panic!("expected nominal record: {value:?}") }; assert_eq!(record.fields(), [RuntimeValue::String("hello".to_owned())]); }
             4 => assert!(matches!(value, RuntimeValue::Variant { name, ordinal: 0, .. } if name == "On")),
             5 | 6 | 7 => assert!(matches!(value, RuntimeValue::Callable(_))),
+            8 | 9 => { let RuntimeValue::Seq(values) = value else { panic!("expected callback container: {value:?}") }; assert_eq!(values.len(), 1); assert!(matches!(values.value_at(0), RuntimeValue::Callable(_))); }
+            10 => {
+                let RuntimeValue::NominalRecord(record) = value else { panic!("expected callback record: {value:?}") };
+                assert!(matches!(record.fields(), [RuntimeValue::Callable(_)]));
+                let ordinal = awbc.runtime_types.iter().position(|row| row.semantic_identity() == record.semantic_identity()).unwrap();
+                let ty = arcweft_core::awbc::schema::AwbcTypeId(u32::try_from(ordinal).unwrap());
+                let wrong_field = RuntimeValue::NominalRecord(arcweft_core::value::RuntimeNominalRecordValue::new(record.type_id().clone(), record.semantic_identity(), record.layout(), vec![RuntimeValue::Unit]));
+                assert!(awbc.validate_live_value(ty, &wrong_field, arcweft_core::entry::RuntimeSchemaLimits::engine_default()).is_err());
+            }
             _ => unreachable!(),
         }
         runtime.restore(&snapshot, &handles).unwrap();

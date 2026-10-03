@@ -863,6 +863,9 @@ impl RuntimeNormalizedType {
         &self,
         path: &RuntimeTypeProjectionPath,
     ) -> Result<RuntimeCheckedType, RuntimeCheckedTypeProjectionError> {
+        if matches!(self.shape(), RuntimeTypeShape::Function { .. }) {
+            return Ok(RuntimeCheckedType::ExecutableRef(self.identity()));
+        }
         if let Some(checked) = self.checked_leaf_type() {
             return Ok(checked);
         }
@@ -10580,6 +10583,12 @@ fn normalized_type_matches_schema(
 ) -> bool {
     let mut pending = vec![(normalized, schema)];
     while let Some((normalized, schema)) = pending.pop() {
+        if let RuntimeTypeSchema::ExecutableRef(identity) = schema {
+            if normalized.identity() != *identity {
+                return false;
+            }
+            continue;
+        }
         match (normalized.shape(), schema) {
             (RuntimeTypeShape::Unit, RuntimeTypeSchema::Unit)
             | (RuntimeTypeShape::Never, RuntimeTypeSchema::Never)

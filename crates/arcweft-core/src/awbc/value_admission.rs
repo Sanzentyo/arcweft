@@ -34,11 +34,40 @@ pub enum AwbcValueAdmissionError {
 }
 
 impl AwbcProgram {
+    pub(crate) fn validate_value_relation<
+        C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>,
+    >(
+        &self,
+        ty: AwbcTypeId,
+        value: View<'_>,
+        context: &mut C,
+    ) -> Result<(), AwbcValueAdmissionError> {
+        self.runtime_types
+            .get(ty.index())
+            .ok_or(AwbcValueAdmissionError::UnknownType { ty })?;
+        let limits = RuntimeSchemaLimits::engine_default();
+        let mut validation = AwbcValueValidation {
+            program: self,
+            work: ValidationWork::new(limits),
+            context,
+        };
+        value_encoding::validate_live_view(value, limits, &mut validation, Expected::Type(ty))
+            .map_err(|source| AwbcValueAdmissionError::Value { ty, source })
+    }
     /// Validates a live value through this program's exact type table.
     pub fn validate_live_value(
         &self,
         ty: AwbcTypeId,
         value: &RuntimeValue,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<(), AwbcValueAdmissionError> {
+        self.validate_live_value_view(ty, value.view(), limits)
+    }
+
+    pub(crate) fn validate_live_value_view(
+        &self,
+        ty: AwbcTypeId,
+        value: View<'_>,
         limits: RuntimeSchemaLimits,
     ) -> Result<(), AwbcValueAdmissionError> {
         self.runtime_types
@@ -47,8 +76,9 @@ impl AwbcProgram {
         let mut validation = AwbcValueValidation {
             program: self,
             work: ValidationWork::new(limits),
+            context: (),
         };
-        value_encoding::validate_live(value, limits, &mut validation, Expected::Type(ty))
+        value_encoding::validate_live_view(value, limits, &mut validation, Expected::Type(ty))
             .map_err(|source| AwbcValueAdmissionError::Value { ty, source })
     }
 
@@ -65,6 +95,7 @@ impl AwbcProgram {
         let mut validation = AwbcValueValidation {
             program: self,
             work: ValidationWork::new(limits),
+            context: (),
         };
         value_encoding::validate_snapshot(value, limits, &mut validation, Expected::Type(ty))
             .map_err(|source| AwbcValueAdmissionError::Value { ty, source })
@@ -85,6 +116,7 @@ impl AwbcProgram {
         let mut validation = AwbcValueValidation {
             program: self,
             work: ValidationWork::new(limits),
+            context: (),
         };
         value_encoding::validate_and_hash(value, limits, &mut validation, Expected::Type(ty))
             .map_err(|source| AwbcValueAdmissionError::Value { ty, source })
@@ -125,12 +157,13 @@ impl Iterator for Alternatives<'_> {
 
 impl ExactSizeIterator for Alternatives<'_> {}
 
-struct AwbcValueValidation<'a> {
+struct AwbcValueValidation<'a, C = ()> {
     program: &'a AwbcProgram,
     work: ValidationWork,
+    context: C,
 }
 
-impl<'a> AwbcValueValidation<'a> {
+impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValueValidation<'a, C> {
     fn row(&self, ty: AwbcTypeId) -> Result<&'a AwbcRuntimeType, RuntimeSchemaError> {
         self.program
             .runtime_types
@@ -257,7 +290,11 @@ impl<'a> AwbcValueValidation<'a> {
         }
     }
 
-    fn check(&self, ty: AwbcTypeId, value: View<'_>) -> Result<Children<'a>, RuntimeSchemaError> {
+    fn check(
+        &mut self,
+        ty: AwbcTypeId,
+        value: View<'_>,
+    ) -> Result<Children<'a>, RuntimeSchemaError> {
         let row = self.row(ty)?;
         match (row.shape(), value) {
             (Type::Unit, View::Scalar(Scalar::Unit))
@@ -368,7 +405,8 @@ impl<'a> AwbcValueValidation<'a> {
                     callable.owner(),
                     RuntimeProgramOwner::Awbc(owner)
                         if std::ptr::eq(owner.as_ref(), self.program)
-                ) {
+                ) || callable.validate_retained().is_err()
+                {
                     return Err(Self::mismatch(value));
                 }
                 let state = self
@@ -376,7 +414,7 @@ impl<'a> AwbcValueValidation<'a> {
                     .callable_states
                     .get(callable.state().index())
                     .ok_or_else(|| Self::mismatch(value))?;
-                if state.function_type != ty {
+                if !self.context.callable(ty, state.function_type) {
                     return Err(Self::mismatch(value));
                 }
                 Self::arity(state.retained.len(), callable.retained().len())?;
@@ -433,7 +471,9 @@ impl<'a> AwbcValueValidation<'a> {
 #[cfg(test)]
 mod tests;
 
-impl<'a> ValueValidation for AwbcValueValidation<'a> {
+impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> ValueValidation
+    for AwbcValueValidation<'a, C>
+{
     type Expected = Expected;
     type Children = Children<'a>;
     type Alternatives = Alternatives<'a>;
@@ -481,6 +521,9 @@ impl<'a> ValueValidation for AwbcValueValidation<'a> {
                 }))
             }
             Expected::Type(ty) => {
+                if !self.context.permits_scope(self.row(ty)?.scope()) {
+                    return Err(Self::mismatch(value));
+                }
                 if let Type::Choice(alternatives) = self.row(ty)?.shape() {
                     self.work.collection(alternatives.len())?;
                     Ok(ValueAdmission::Choice(Alternatives(alternatives.iter())))
@@ -513,5 +556,17 @@ impl<'a> ValueValidation for AwbcValueValidation<'a> {
         child.ok_or_else(|| RuntimeSchemaError::Encoding {
             message: "validated AWBC value has an unexpected child".to_owned(),
         })
+    }
+    fn begin_choice(&mut self) {
+        self.context.begin_choice();
+    }
+    fn begin_alternative(&mut self) {
+        self.context.begin_alternative();
+    }
+    fn finish_alternative(&mut self, accepted: bool) {
+        self.context.finish_alternative(accepted);
+    }
+    fn finish_choice(&mut self) {
+        self.context.finish_choice();
     }
 }

@@ -101,6 +101,10 @@ pub enum RuntimeCodecUseError {
     Mismatch { path: String },
     #[error("unresolved named schema `{name}` cannot issue codec policy")]
     UnresolvedName { name: String },
+    #[error("program-owned type {semantic_type:?} has no standalone data codec")]
+    ExecutableType {
+        semantic_type: crate::pattern::RuntimeSemanticTypeId,
+    },
     #[error(transparent)]
     Schema(#[from] RuntimeSchemaError),
 }
@@ -398,6 +402,11 @@ impl RuntimeCodecUse {
                 }
             }
             Schema::NominalRef(_) => Self::NominalRef,
+            Schema::ExecutableRef(semantic_type) => {
+                return Err(RuntimeCodecUseError::ExecutableType {
+                    semantic_type: *semantic_type,
+                });
+            }
             Schema::Named(name) => {
                 return Err(RuntimeCodecUseError::UnresolvedName {
                     name: clone_string(name)?,

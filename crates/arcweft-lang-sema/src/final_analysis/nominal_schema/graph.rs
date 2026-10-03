@@ -547,6 +547,7 @@ impl<'a> NominalGraphProjection<'a> {
             }
             TypeKind::Tuple(items) => Schema::Tuple(self.sequence(items, depth + 1)?),
             TypeKind::Choice(items) => Schema::Choice(self.sequence(items, depth + 1)?),
+            TypeKind::Function { .. } => Schema::ExecutableRef(self.semantic_identity(ty)?.into()),
             TypeKind::AcceptedNominal(nominal) => self.nominal(ty, nominal, depth)?,
             TypeKind::ProjectNominal(nominal) => self.project_nominal(ty, nominal, depth)?,
             TypeKind::GenericParam(parameter) => {

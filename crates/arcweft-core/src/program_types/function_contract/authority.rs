@@ -5,9 +5,48 @@ use crate::{
     pattern::RuntimeSemanticTypeId,
     plan::{RuntimeFunctionTypeContract, RuntimePlan, RuntimePlanTypeProjection, RuntimeTypeScope},
     runtime_id::RuntimePlanTypeId,
-    task::RuntimeProgramOwner,
-    value::{RuntimeCallableValue, RuntimeValueView},
+    value::RuntimeValueView,
 };
+
+/// Typed relation context for the existing value visitor. It does not own rows.
+pub(crate) trait RuntimeValueTypeContext<T: Copy + Eq> {
+    fn permits_scope(&self, scope: &RuntimeTypeScope) -> bool;
+    fn callable(&mut self, expected: T, actual: T) -> bool;
+    fn begin_choice(&mut self) {}
+    fn begin_alternative(&mut self) {}
+    fn finish_alternative(&mut self, _accepted: bool) {}
+    fn finish_choice(&mut self) {}
+}
+
+impl<T: Copy + Eq> RuntimeValueTypeContext<T> for () {
+    fn permits_scope(&self, scope: &RuntimeTypeScope) -> bool {
+        scope.is_root()
+    }
+    fn callable(&mut self, expected: T, actual: T) -> bool {
+        expected == actual
+    }
+}
+
+impl<T: Copy + Eq, C: RuntimeValueTypeContext<T>> RuntimeValueTypeContext<T> for &mut C {
+    fn permits_scope(&self, scope: &RuntimeTypeScope) -> bool {
+        (**self).permits_scope(scope)
+    }
+    fn callable(&mut self, expected: T, actual: T) -> bool {
+        (**self).callable(expected, actual)
+    }
+    fn begin_choice(&mut self) {
+        (**self).begin_choice();
+    }
+    fn begin_alternative(&mut self) {
+        (**self).begin_alternative();
+    }
+    fn finish_alternative(&mut self, accepted: bool) {
+        (**self).finish_alternative(accepted);
+    }
+    fn finish_choice(&mut self) {
+        (**self).finish_choice();
+    }
+}
 
 pub(crate) trait FunctionTypeAuthority {
     type Type: Copy + Eq;
@@ -18,7 +57,12 @@ pub(crate) trait FunctionTypeAuthority {
         &self,
         ty: Self::Type,
     ) -> Option<(&RuntimeFunctionTypeContract, &[Self::Type], Self::Type)>;
-    fn tuple(&self, ty: Self::Type) -> Option<&[Self::Type]>;
+    fn relate_children(
+        &self,
+        expected: Self::Type,
+        actual: Self::Type,
+        visit: &mut impl FnMut(Self::Type, Self::Type) -> Result<(), ()>,
+    ) -> Option<Result<(), ()>>;
     fn record_field(
         &self,
         ty: Self::Type,
@@ -34,7 +78,12 @@ pub(crate) trait FunctionTypeAuthority {
         value: RuntimeValueView<'_>,
         depth: usize,
     ) -> bool;
-    fn callable_type(&self, value: &RuntimeCallableValue) -> Option<Self::Type>;
+    fn value_relation<C: RuntimeValueTypeContext<Self::Type>>(
+        &self,
+        expected: Self::Type,
+        value: RuntimeValueView<'_>,
+        context: &mut C,
+    ) -> bool;
 }
 
 impl FunctionTypeAuthority for AwbcProgram {
@@ -64,11 +113,84 @@ impl FunctionTypeAuthority for AwbcProgram {
         };
         Some((contract, parameters, *result))
     }
-    fn tuple(&self, ty: Self::Type) -> Option<&[Self::Type]> {
-        let AwbcRuntimeTypeShape::Tuple(items) = self.runtime_types.get(ty.index())?.shape() else {
-            return None;
-        };
-        Some(items)
+    fn relate_children(
+        &self,
+        expected: Self::Type,
+        actual: Self::Type,
+        visit: &mut impl FnMut(Self::Type, Self::Type) -> Result<(), ()>,
+    ) -> Option<Result<(), ()>> {
+        use AwbcRuntimeTypeShape as T;
+        let expected = self.runtime_types.get(expected.index())?.shape();
+        let actual = self.runtime_types.get(actual.index())?.shape();
+        Some(match (expected, actual) {
+            (T::Tuple(a), T::Tuple(b)) => relate_slices(a, b, visit),
+            (
+                T::Variant {
+                    owner: a,
+                    arguments: x,
+                    cases: p,
+                },
+                T::Variant {
+                    owner: b,
+                    arguments: y,
+                    cases: q,
+                },
+            ) if a == b && p.len() == q.len() => relate_slices(x, y, visit).and_then(|()| {
+                p.iter().zip(q).try_for_each(|(p, q)| {
+                    if p.name != q.name {
+                        return Err(());
+                    }
+                    match (p.payload, q.payload) {
+                        (Some(p), Some(q)) => visit(p, q),
+                        (None, None) => Ok(()),
+                        _ => Err(()),
+                    }
+                })
+            }),
+            (T::Sequence { kind: a, item: x }, T::Sequence { kind: b, item: y }) if a == b => {
+                visit(*x, *y)
+            }
+            (T::Array { length: a, item: x }, T::Array { length: b, item: y }) if a == b => {
+                visit(*x, *y)
+            }
+            (
+                T::Map {
+                    kind: a,
+                    key: x,
+                    value: u,
+                },
+                T::Map {
+                    kind: b,
+                    key: y,
+                    value: v,
+                },
+            ) if a == b => visit(*x, *y).and_then(|()| visit(*u, *v)),
+            (T::Stream { item: x, error: u }, T::Stream { item: y, error: v }) => {
+                visit(*x, *y).and_then(|()| visit(*u, *v))
+            }
+            (T::Range(x), T::Range(y))
+            | (T::Iterator(x), T::Iterator(y))
+            | (T::Need(x), T::Need(y))
+            | (T::Task(x), T::Task(y))
+            | (T::Shared(x), T::Shared(y))
+            | (T::Reference(x), T::Reference(y)) => visit(*x, *y),
+            (
+                T::Record {
+                    public_id: a,
+                    fields: x,
+                },
+                T::Record {
+                    public_id: b,
+                    fields: y,
+                },
+            ) if a == b && x.len() == y.len() => x.iter().zip(y).try_for_each(|(x, y)| {
+                if x.field != y.field || x.name != y.name {
+                    return Err(());
+                }
+                visit(x.ty, y.ty)
+            }),
+            _ => return None,
+        })
     }
     fn is_unit(&self, ty: Self::Type) -> bool {
         self.runtime_types
@@ -129,13 +251,14 @@ impl FunctionTypeAuthority for AwbcProgram {
     ) -> bool {
         crate::awbc::vm::runtime_value_view_matches_type(self, value, expected, depth)
     }
-    fn callable_type(&self, value: &RuntimeCallableValue) -> Option<Self::Type> {
-        if !matches!(value.owner(), RuntimeProgramOwner::Awbc(owner) if std::ptr::eq(owner.as_ref(), self))
-            || value.validate_retained().is_err()
-        {
-            return None;
-        }
-        self.by_semantic(value.function_type().ok()?)
+    fn value_relation<C: RuntimeValueTypeContext<Self::Type>>(
+        &self,
+        expected: Self::Type,
+        value: RuntimeValueView<'_>,
+        context: &mut C,
+    ) -> bool {
+        self.validate_value_relation(expected, value, context)
+            .is_ok()
     }
 }
 
@@ -164,12 +287,91 @@ impl FunctionTypeAuthority for RuntimePlan {
         };
         Some((contract, parameters, *result))
     }
-    fn tuple(&self, ty: Self::Type) -> Option<&[Self::Type]> {
-        let RuntimePlanTypeProjection::Tuple(items) = self.type_table().get(ty)?.projection()
-        else {
-            return None;
-        };
-        Some(items)
+    fn relate_children(
+        &self,
+        expected: Self::Type,
+        actual: Self::Type,
+        visit: &mut impl FnMut(Self::Type, Self::Type) -> Result<(), ()>,
+    ) -> Option<Result<(), ()>> {
+        use RuntimePlanTypeProjection as T;
+        let expected = self.type_table().get(expected)?.projection();
+        let actual = self.type_table().get(actual)?.projection();
+        Some(match (expected, actual) {
+            (T::Tuple(a), T::Tuple(b)) => relate_slices(a, b, visit),
+            (
+                T::BuiltinVariant { owner: a, cases: x },
+                T::BuiltinVariant { owner: b, cases: y },
+            ) if a == b && x.len() == y.len() => {
+                x.iter().zip(y).try_for_each(|(x, y)| match (x, y) {
+                    (Some(x), Some(y)) => visit(*x, *y),
+                    (None, None) => Ok(()),
+                    _ => Err(()),
+                })
+            }
+            (T::Sequence { kind: a, item: x }, T::Sequence { kind: b, item: y }) if a == b => {
+                visit(*x, *y)
+            }
+            (T::Array { length: a, item: x }, T::Array { length: b, item: y }) if a == b => {
+                visit(*x, *y)
+            }
+            (
+                T::Map {
+                    kind: a,
+                    key: x,
+                    value: u,
+                },
+                T::Map {
+                    kind: b,
+                    key: y,
+                    value: v,
+                },
+            ) if a == b => visit(*x, *y).and_then(|()| visit(*u, *v)),
+            (T::Stream { item: x, error: u }, T::Stream { item: y, error: v }) => {
+                visit(*x, *y).and_then(|()| visit(*u, *v))
+            }
+            (T::Range(x), T::Range(y))
+            | (T::Iterator(x), T::Iterator(y))
+            | (T::Need(x), T::Need(y))
+            | (T::ThreadHandle(x), T::ThreadHandle(y))
+            | (T::Shared(x), T::Shared(y))
+            | (T::Reference(x), T::Reference(y)) => visit(*x, *y),
+            (
+                T::Option {
+                    item: x,
+                    some_payload: u,
+                },
+                T::Option {
+                    item: y,
+                    some_payload: v,
+                },
+            ) => visit(*x, *y).and_then(|()| visit(*u, *v)),
+            (
+                T::Result {
+                    value: x,
+                    error: u,
+                    value_payload: p,
+                    error_payload: q,
+                },
+                T::Result {
+                    value: y,
+                    error: v,
+                    value_payload: r,
+                    error_payload: s,
+                },
+            ) => visit(*x, *y)
+                .and_then(|()| visit(*u, *v))
+                .and_then(|()| visit(*p, *r))
+                .and_then(|()| visit(*q, *s)),
+            (T::Record(a), T::Record(b)) if a.len() == b.len() => {
+                a.iter().zip(b).try_for_each(|(a, b)| {
+                    if a.diagnostic_name() != b.diagnostic_name() {
+                        return Err(());
+                    }
+                    visit(*a.ty(), *b.ty())
+                })
+            }
+            _ => return None,
+        })
     }
     fn is_unit(&self, ty: Self::Type) -> bool {
         self.type_table()
@@ -227,12 +429,24 @@ impl FunctionTypeAuthority for RuntimePlan {
         )
         .is_ok()
     }
-    fn callable_type(&self, value: &RuntimeCallableValue) -> Option<Self::Type> {
-        if !matches!(value.owner(), RuntimeProgramOwner::Plan(owner) if std::ptr::eq(owner.as_ref(), self))
-            || value.validate_retained().is_err()
-        {
-            return None;
-        }
-        self.by_semantic(value.function_type().ok()?)
+    fn value_relation<C: RuntimeValueTypeContext<Self::Type>>(
+        &self,
+        expected: Self::Type,
+        value: RuntimeValueView<'_>,
+        context: &mut C,
+    ) -> bool {
+        self.validate_value_relation(expected, value, context)
+            .is_ok()
     }
+}
+
+fn relate_slices<T: Copy>(
+    a: &[T],
+    b: &[T],
+    visit: &mut impl FnMut(T, T) -> Result<(), ()>,
+) -> Result<(), ()> {
+    if a.len() != b.len() {
+        return Err(());
+    }
+    a.iter().zip(b).try_for_each(|(a, b)| visit(*a, *b))
 }

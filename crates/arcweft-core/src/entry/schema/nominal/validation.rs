@@ -243,6 +243,7 @@ impl Work {
             RuntimeTypeSchema::Named(name) => self.string(name)?,
             RuntimeTypeSchema::NominalRef(identity) => self.string(identity.nominal.as_str())?,
             RuntimeTypeSchema::Unit
+            | RuntimeTypeSchema::ExecutableRef(_)
             | RuntimeTypeSchema::Bool
             | RuntimeTypeSchema::I8
             | RuntimeTypeSchema::I16

@@ -14,6 +14,31 @@ fn round_trip(schema: RuntimeTypeSchema, expected: &[u8]) {
 }
 
 #[test]
+fn executable_schema_reference_retains_identity_and_has_no_standalone_codec() {
+    let identity = RuntimeSemanticTypeId::from_bytes([0x91; 32]);
+    let schema = RuntimeTypeSchema::ExecutableRef(identity);
+    let mut expected = vec![38];
+    expected.extend_from_slice(identity.as_bytes());
+    round_trip(schema.clone(), &expected);
+    let budget = AwbcDecodeBudget::default();
+    let mut reader = Reader::new(&expected[..expected.len() - 1], &budget);
+    assert!(RuntimeTypeSchema::read_wire(&mut reader).is_err());
+    assert!(
+        matches!(crate::entry::schema::RuntimeCodecUse::from_schema(&schema,
+        crate::entry::RuntimeSchemaLimits::engine_default()),
+        Err(crate::entry::schema::RuntimeCodecUseError::ExecutableType { semantic_type }) if semantic_type == identity)
+    );
+    assert!(
+        schema
+            .validate_value(
+                &crate::value::RuntimeValue::Unit,
+                crate::entry::RuntimeSchemaLimits::engine_default()
+            )
+            .is_err()
+    );
+}
+
+#[test]
 fn map_schema_wire_retains_ordering_kind_in_version_one() {
     for (kind, tag) in [
         (RuntimeMapKind::Ordered, 0),

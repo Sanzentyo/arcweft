@@ -880,6 +880,9 @@ impl RuntimePatternRest {
 /// source/display label is reparsed at either boundary.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum RuntimeCheckedType {
+    /// Diagnostic reference to the selected program's complete type row.
+    /// It is not a standalone value-admission predicate.
+    ExecutableRef(RuntimeSemanticTypeId),
     Never,
     Unit,
     Bool,
@@ -1047,6 +1050,9 @@ impl RuntimeCheckedType {
     /// formatting so producers can share one semantic identity boundary.
     #[must_use]
     pub fn semantic_identity_digest(&self) -> RuntimeSemanticTypeId {
+        if let Self::ExecutableRef(identity) = self {
+            return *identity;
+        }
         let mut encoder = RuntimeSemanticTypeIdentityEncoder::new();
         self.encode_semantic_identity(&mut encoder);
         encoder.finish()
@@ -1278,6 +1284,10 @@ fn write_checked_type_identity(
     ty: &RuntimeCheckedType,
 ) {
     match ty {
+        RuntimeCheckedType::ExecutableRef(identity) => {
+            encoder.write_tag(27);
+            encoder.write_bytes(identity.as_bytes());
+        }
         RuntimeCheckedType::Never => encoder.write_tag(0),
         RuntimeCheckedType::Unit => encoder.write_tag(1),
         RuntimeCheckedType::Bool => encoder.write_tag(2),

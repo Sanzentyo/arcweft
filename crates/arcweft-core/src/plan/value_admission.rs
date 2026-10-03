@@ -42,6 +42,26 @@ pub enum RuntimePlanValueAdmissionError {
 }
 
 impl RuntimePlan {
+    pub(crate) fn validate_value_relation<
+        C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>,
+    >(
+        &self,
+        ty: RuntimePlanTypeId,
+        value: View<'_>,
+        context: &mut C,
+    ) -> Result<(), RuntimePlanValueAdmissionError> {
+        self.type_table()
+            .get(ty)
+            .ok_or(RuntimePlanValueAdmissionError::UnknownType { ty })?;
+        let limits = RuntimeSchemaLimits::engine_default();
+        let mut validation = PlanValueValidation {
+            authority: PlanValueAuthority::Sealed(self),
+            work: ValidationWork::new(limits),
+            context,
+        };
+        value_encoding::validate_live_view(value, limits, &mut validation, Expected::Type(ty))
+            .map_err(|source| RuntimePlanValueAdmissionError::Value { ty, source })
+    }
     /// Validates a live value against this plan's exact type/domain tables,
     /// including recursive nominal descendants, without persistence encoding.
     pub fn validate_live_value(
@@ -184,9 +204,10 @@ impl Iterator for Alternatives<'_> {
 
 impl ExactSizeIterator for Alternatives<'_> {}
 
-struct PlanValueValidation<'a> {
+struct PlanValueValidation<'a, C = ()> {
     authority: PlanValueAuthority<'a>,
     work: ValidationWork,
+    context: C,
 }
 
 impl<'a> PlanValueValidation<'a> {
@@ -204,9 +225,14 @@ impl<'a> PlanValueValidation<'a> {
         Ok(Self {
             authority,
             work: ValidationWork::new(limits),
+            context: (),
         })
     }
+}
 
+impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
+    PlanValueValidation<'a, C>
+{
     fn mismatch(value: View<'_>) -> RuntimeSchemaError {
         RuntimeSchemaError::Type {
             path: "$".to_owned(),
@@ -374,7 +400,7 @@ impl<'a> PlanValueValidation<'a> {
     }
 
     fn check(
-        &self,
+        &mut self,
         ty: RuntimePlanTypeId,
         value: View<'_>,
     ) -> Result<Children<'a>, RuntimeSchemaError> {
@@ -477,6 +503,7 @@ impl<'a> PlanValueValidation<'a> {
                     return Err(Self::mismatch(value));
                 };
                 if !matches!(callable.owner(), crate::task::RuntimeProgramOwner::Plan(owner) if std::ptr::eq(owner.as_ref(), *plan))
+                    || callable.validate_retained().is_err()
                 {
                     return Err(Self::mismatch(value));
                 }
@@ -484,7 +511,7 @@ impl<'a> PlanValueValidation<'a> {
                     .callable_states()
                     .get(callable.state())
                     .ok_or_else(|| Self::mismatch(value))?;
-                if state.function_type != ty {
+                if !self.context.callable(ty, state.function_type) {
                     return Err(Self::mismatch(value));
                 }
                 Self::arity(state.retained.len(), callable.retained().len())?;
@@ -522,7 +549,9 @@ impl<'a> PlanValueValidation<'a> {
     }
 }
 
-impl<'a> ValueValidation for PlanValueValidation<'a> {
+impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>> ValueValidation
+    for PlanValueValidation<'a, C>
+{
     type Expected = Expected;
     type Children = Children<'a>;
     type Alternatives = Alternatives<'a>;
@@ -572,6 +601,12 @@ impl<'a> ValueValidation for PlanValueValidation<'a> {
                 }))
             }
             Expected::Type(ty) => {
+                if !self
+                    .context
+                    .permits_scope(self.authority.declaration(ty).scope())
+                {
+                    return Err(Self::mismatch(value));
+                }
                 if let Type::Choice(alternatives) = self.authority.declaration(ty).projection() {
                     self.work.collection(alternatives.len())?;
                     Ok(ValueAdmission::Choice(Alternatives(alternatives.iter())))
@@ -607,6 +642,18 @@ impl<'a> ValueValidation for PlanValueValidation<'a> {
         child.ok_or_else(|| RuntimeSchemaError::Encoding {
             message: "validated plan value has an unexpected child".to_owned(),
         })
+    }
+    fn begin_choice(&mut self) {
+        self.context.begin_choice();
+    }
+    fn begin_alternative(&mut self) {
+        self.context.begin_alternative();
+    }
+    fn finish_alternative(&mut self, accepted: bool) {
+        self.context.finish_alternative(accepted);
+    }
+    fn finish_choice(&mut self) {
+        self.context.finish_choice();
     }
 }
 

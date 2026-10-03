@@ -1180,6 +1180,10 @@ impl Wire for RuntimeTypeSchema {
                 item.write_wire(writer)?;
             }
             Self::Color => writer.write_u8(37),
+            Self::ExecutableRef(identity) => {
+                writer.write_u8(38);
+                identity.write_wire(writer)?;
+            }
         }
         Ok(())
     }
@@ -1258,6 +1262,7 @@ impl Wire for RuntimeTypeSchema {
                     item: Box::new(Self::read_wire(reader)?),
                 },
                 37 => Self::Color,
+                38 => Self::ExecutableRef(RuntimeSemanticTypeId::read_wire(reader)?),
                 tag => {
                     return Err(AwbcCodecError::UnknownTag {
                         kind: "runtime type schema",

@@ -1850,14 +1850,21 @@ fn every_direct_operational_shape_selects_its_closed_plan_family() {
         let marker = 0x30_u8 + u8::try_from(index).expect("bounded operational fixture");
         let identity = RuntimeSemanticTypeId::from_bytes([marker; 32]);
         let normalized = super::RuntimeNormalizedType::new(identity, shape);
-        assert_eq!(
-            normalized.checked_type(),
-            Err(RuntimeCheckedTypeProjectionError::UnsupportedRuntimeShape {
-                semantic_identity: identity,
-                path: super::RuntimeTypeProjectionPath::root(),
-                shape: unsupported,
-            })
-        );
+        if operational == RuntimeOperationalType::Function {
+            let checked = normalized.checked_type().unwrap();
+            assert_eq!(checked, RuntimeCheckedType::ExecutableRef(identity));
+            assert_eq!(checked.semantic_identity_digest(), identity);
+            assert!(!checked.accepts_value(&RuntimeValue::Unit));
+        } else {
+            assert_eq!(
+                normalized.checked_type(),
+                Err(RuntimeCheckedTypeProjectionError::UnsupportedRuntimeShape {
+                    semantic_identity: identity,
+                    path: super::RuntimeTypeProjectionPath::root(),
+                    shape: unsupported,
+                })
+            );
+        }
         assert_eq!(
             normalized
                 .runtime_plan_type_seed()
