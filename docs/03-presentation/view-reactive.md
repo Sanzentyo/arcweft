@@ -70,7 +70,10 @@ bundle の default record は `RuntimePureProgramId`、canonical free-input orde
 parameter coordinate／semantic type、および result semantic type を保持する。
 Product AWBC の verified program binding と正確な input／result ABI を照合し、
 生成された result 型と宣言型の適合を共通の型グラフで検証する。関数値は
-引数の反変性、戻り値の共変性、効果契約を保持する。scalar value inventory の
+引数の反変性、戻り値の共変性、効果契約を保持する。関数値が自身で宣言する
+型・配列長 parameter は、その binder の所有元と slot を比較する rigid な参照
+として扱う。外側の効果 scope が異なっても対応する local binder を比較できるが、
+別 slot や外側の binder、固定配列長への置き換えは同一視しない。scalar value inventory の
 index へ変換しない。mount は通常の `RuntimeValue` を
 保持し、default の cache key は同じ executable owner と先行入力の inert value
 から作る。cache の有無や restore 前後によって成功・失敗が変わらないよう、

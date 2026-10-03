@@ -3,7 +3,10 @@
 use crate::{
     awbc::schema::{AwbcProgram, AwbcRuntimeTypeShape, AwbcTypeId},
     pattern::RuntimeSemanticTypeId,
-    plan::{RuntimeFunctionTypeContract, RuntimePlan, RuntimePlanTypeProjection, RuntimeTypeScope},
+    plan::{
+        RuntimeArrayLength, RuntimeBoundTypeReference, RuntimeFunctionTypeContract, RuntimePlan,
+        RuntimePlanTypeProjection, RuntimeTypeScope,
+    },
     runtime_id::RuntimePlanTypeId,
     value::RuntimeValueView,
 };
@@ -69,6 +72,8 @@ pub(crate) trait FunctionTypeAuthority {
     fn scope(&self, ty: Self::Type) -> Option<&RuntimeTypeScope>;
     fn semantic(&self, ty: Self::Type) -> Option<RuntimeSemanticTypeId>;
     fn by_semantic(&self, ty: RuntimeSemanticTypeId) -> Option<Self::Type>;
+    fn bound_type(&self, ty: Self::Type) -> Option<RuntimeBoundTypeReference>;
+    fn array(&self, ty: Self::Type) -> Option<(RuntimeArrayLength, Self::Type)>;
     fn nominal_arguments(
         &self,
         expected: Self::Type,
@@ -109,6 +114,18 @@ pub(crate) trait FunctionTypeAuthority {
 
 impl FunctionTypeAuthority for AwbcProgram {
     type Type = AwbcTypeId;
+    fn bound_type(&self, ty: Self::Type) -> Option<RuntimeBoundTypeReference> {
+        match self.runtime_types.get(ty.index())?.shape() {
+            AwbcRuntimeTypeShape::BoundType(reference) => Some(*reference),
+            _ => None,
+        }
+    }
+    fn array(&self, ty: Self::Type) -> Option<(RuntimeArrayLength, Self::Type)> {
+        match self.runtime_types.get(ty.index())?.shape() {
+            AwbcRuntimeTypeShape::Array { length, item } => Some((*length, *item)),
+            _ => None,
+        }
+    }
     fn nominal_arguments(
         &self,
         expected: Self::Type,
@@ -200,9 +217,6 @@ impl FunctionTypeAuthority for AwbcProgram {
                 })
             }),
             (T::Sequence { kind: a, item: x }, T::Sequence { kind: b, item: y }) if a == b => {
-                visit(*x, *y)
-            }
-            (T::Array { length: a, item: x }, T::Array { length: b, item: y }) if a == b => {
                 visit(*x, *y)
             }
             (
@@ -317,6 +331,18 @@ impl FunctionTypeAuthority for AwbcProgram {
 
 impl FunctionTypeAuthority for RuntimePlan {
     type Type = RuntimePlanTypeId;
+    fn bound_type(&self, ty: Self::Type) -> Option<RuntimeBoundTypeReference> {
+        match self.type_table().get(ty)?.projection() {
+            RuntimePlanTypeProjection::BoundType(reference) => Some(*reference),
+            _ => None,
+        }
+    }
+    fn array(&self, ty: Self::Type) -> Option<(RuntimeArrayLength, Self::Type)> {
+        match self.type_table().get(ty)?.projection() {
+            RuntimePlanTypeProjection::Array { length, item } => Some((*length, *item)),
+            _ => None,
+        }
+    }
     fn nominal_arguments(
         &self,
         expected: Self::Type,
@@ -396,9 +422,6 @@ impl FunctionTypeAuthority for RuntimePlan {
                 })
             }
             (T::Sequence { kind: a, item: x }, T::Sequence { kind: b, item: y }) if a == b => {
-                visit(*x, *y)
-            }
-            (T::Array { length: a, item: x }, T::Array { length: b, item: y }) if a == b => {
                 visit(*x, *y)
             }
             (

@@ -1,9 +1,12 @@
-//! Joint effect binding and declaration-scoped default relations.
+//! Scoped callable relations and immutable declaration effect solutions.
 
 use crate::awbc::schema::{AwbcProgram, AwbcRuntimeTypeShape, AwbcTypeId};
 use crate::{
     effect_row::{DecisionControl, DecisionWork, EffectPredicate},
-    plan::{RuntimeBoundEffectReference, RuntimeTypeBinder, RuntimeTypeScope},
+    plan::{
+        RuntimeArrayLength, RuntimeBoundConstReference, RuntimeBoundEffectReference,
+        RuntimeBoundTypeReference, RuntimeTypeBinder, RuntimeTypeScope,
+    },
     value::RuntimeValue,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -230,24 +233,24 @@ enum ContractVariable {
     Local { binder: u32, slot: u32 },
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum EffectOwner {
+enum BinderOwner {
     Parameters,
     Sources,
     Local(u32),
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct EffectEnvironment {
+struct ContractEnvironment {
     scope: RuntimeTypeScope,
-    owners: Vec<EffectOwner>,
+    owners: Vec<BinderOwner>,
 }
-impl EffectEnvironment {
+impl ContractEnvironment {
     fn root() -> Self {
         Self {
             scope: RuntimeTypeScope::root(),
             owners: Vec::new(),
         }
     }
-    fn enter(&self, binder: RuntimeTypeBinder, owner: EffectOwner) -> Result<Self, ()> {
+    fn enter(&self, binder: RuntimeTypeBinder, owner: BinderOwner) -> Result<Self, ()> {
         let mut next = self.clone();
         next.scope = self.scope.enter(binder).map_err(|_| ())?;
         if !binder.is_empty() {
@@ -270,25 +273,49 @@ impl EffectEnvironment {
         bindable: Option<&BTreeSet<u32>>,
     ) -> Result<ContractVariable, ()> {
         self.scope.validate_effect(*reference).map_err(|_| ())?;
-        let index = self
-            .owners
-            .len()
-            .checked_sub(usize::try_from(reference.depth()).map_err(|_| ())? + 1)
-            .ok_or(())?;
-        Ok(match self.owners.get(index).ok_or(())? {
-            EffectOwner::Parameters
+        Ok(match self.owner(reference.depth())? {
+            BinderOwner::Parameters
                 if bindable.is_none_or(|slots| slots.contains(&reference.slot())) =>
             {
                 ContractVariable::Parameter(reference.slot())
             }
-            EffectOwner::Parameters | EffectOwner::Sources => {
+            BinderOwner::Parameters | BinderOwner::Sources => {
                 ContractVariable::Source(reference.slot())
             }
-            EffectOwner::Local(binder) => ContractVariable::Local {
-                binder: *binder,
+            BinderOwner::Local(binder) => ContractVariable::Local {
+                binder,
                 slot: reference.slot(),
             },
         })
+    }
+    fn owner(&self, depth: u32) -> Result<BinderOwner, ()> {
+        let index = self
+            .owners
+            .len()
+            .checked_sub(
+                usize::try_from(depth)
+                    .map_err(|_| ())?
+                    .checked_add(1)
+                    .ok_or(())?,
+            )
+            .ok_or(())?;
+        self.owners.get(index).copied().ok_or(())
+    }
+    fn type_variable(
+        &self,
+        reference: RuntimeBoundTypeReference,
+    ) -> Result<(BinderOwner, u16), ()> {
+        self.scope.validate_type(reference).map_err(|_| ())?;
+        Ok((self.owner(reference.depth())?, reference.slot()))
+    }
+    fn const_variable(
+        &self,
+        reference: RuntimeBoundConstReference,
+    ) -> Result<(BinderOwner, u16), ()> {
+        self.scope
+            .validate_length(RuntimeArrayLength::Bound(reference))
+            .map_err(|_| ())?;
+        Ok((self.owner(reference.depth())?, reference.slot()))
     }
 }
 struct ContractWork(u64);
@@ -303,7 +330,7 @@ struct ParameterMatcher<'a, A: FunctionTypeAuthority> {
     program: &'a A,
     predicate: EffectPredicate<ContractVariable>,
     source_predicate: EffectPredicate<ContractVariable>,
-    parameters: EffectEnvironment,
+    parameters: ContractEnvironment,
     bindable: Option<BTreeSet<u32>>,
     locals: BTreeSet<ContractVariable>,
     sources: BTreeSet<ContractVariable>,
@@ -318,7 +345,7 @@ struct ValueChoiceRelation {
 }
 pub(crate) struct CallableValueRelation<'m, 'p, A: FunctionTypeAuthority> {
     matcher: &'m mut ParameterMatcher<'p, A>,
-    environment: EffectEnvironment,
+    environment: ContractEnvironment,
     choices: Vec<ValueChoiceRelation>,
 }
 impl<A: FunctionTypeAuthority> RuntimeValueTypeContext<A::Type>
@@ -334,7 +361,7 @@ impl<A: FunctionTypeAuthority> RuntimeValueTypeContext<A::Type>
                 actual,
                 0,
                 &self.environment,
-                &EffectEnvironment::root(),
+                &ContractEnvironment::root(),
             )
             .is_ok()
             && !self.matcher.predicate.is_impossible()
@@ -352,7 +379,7 @@ impl<A: FunctionTypeAuthority> RuntimeValueTypeContext<A::Type>
             if origin.is_some() {
                 return false;
             }
-            EffectEnvironment::root()
+            ContractEnvironment::root()
         } else {
             let Some(origin) = origin else {
                 return false;
@@ -511,7 +538,7 @@ impl AwbcProgram {
                         actual,
                         0,
                         &environment,
-                        &EffectEnvironment::root(),
+                        &ContractEnvironment::root(),
                     )
                     .is_err()
             {
@@ -564,7 +591,7 @@ impl AwbcProgram {
             return false;
         };
         let Ok(environment) =
-            EffectEnvironment::root().enter(header.binder(), EffectOwner::Parameters)
+            ContractEnvironment::root().enter(header.binder(), BinderOwner::Parameters)
         else {
             return false;
         };
@@ -591,7 +618,7 @@ impl AwbcProgram {
         };
         matcher.work.0 = remaining;
         let source = match source_contract {
-            None => EffectEnvironment::root(),
+            None => ContractEnvironment::root(),
             Some(source) => {
                 let Some(row) = self.runtime_types.get(source.index()) else {
                     return false;
@@ -612,7 +639,7 @@ impl AwbcProgram {
                     return false;
                 }
                 let Ok(environment) =
-                    EffectEnvironment::root().enter(source.binder(), EffectOwner::Sources)
+                    ContractEnvironment::root().enter(source.binder(), BinderOwner::Sources)
                 else {
                     return false;
                 };
@@ -642,7 +669,7 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
             program,
             predicate: EffectPredicate::unconstrained(),
             source_predicate: EffectPredicate::unconstrained(),
-            parameters: EffectEnvironment::root(),
+            parameters: ContractEnvironment::root(),
             bindable: None,
             locals: BTreeSet::new(),
             sources: BTreeSet::new(),
@@ -656,7 +683,7 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
     fn origin_environment(
         &mut self,
         origin: &RuntimeFunctionEffectInstantiation,
-    ) -> Option<EffectEnvironment> {
+    ) -> Option<ContractEnvironment> {
         let source = origin.matcher(self.program)?;
         let spent = crate::entry::RuntimeSchemaLimits::engine_default()
             .max_validation_work
@@ -664,13 +691,13 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
         self.work.0 = self.work.0.checked_sub(spent)?;
         let binder = self.next_binder;
         self.next_binder = binder.checked_add(1)?;
-        let environment = EffectEnvironment {
+        let environment = ContractEnvironment {
             scope: source.parameters.scope,
             owners: source
                 .parameters
                 .owners
                 .iter()
-                .map(|_| EffectOwner::Local(binder))
+                .map(|_| BinderOwner::Local(binder))
                 .collect(),
         };
         for (slot, effects) in origin.effects.iter().enumerate() {
@@ -712,8 +739,8 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
         {
             return None;
         }
-        let parameters_environment = EffectEnvironment::root()
-            .enter(contract.binder(), EffectOwner::Parameters)
+        let parameters_environment = ContractEnvironment::root()
+            .enter(contract.binder(), BinderOwner::Parameters)
             .ok()?;
         let mut work =
             ContractWork(crate::entry::RuntimeSchemaLimits::engine_default().max_validation_work);
@@ -784,8 +811,8 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
         expected: A::Type,
         actual: A::Type,
         depth: usize,
-        expected_environment: &EffectEnvironment,
-        actual_environment: &EffectEnvironment,
+        expected_environment: &ContractEnvironment,
+        actual_environment: &ContractEnvironment,
     ) -> Result<(), ()> {
         self.enter(depth)?;
         let expected_scope = self.program.scope(expected).ok_or(())?;
@@ -796,6 +823,49 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
             && (expected_scope.is_root() || expected_environment == actual_environment)
         {
             return Ok(());
+        }
+        match (
+            self.program.bound_type(expected),
+            self.program.bound_type(actual),
+        ) {
+            (Some(expected), Some(actual)) => {
+                return if expected_environment.type_variable(expected)?
+                    == actual_environment.type_variable(actual)?
+                {
+                    Ok(())
+                } else {
+                    Err(())
+                };
+            }
+            (None, None) => {}
+            _ => return Err(()),
+        }
+        match (self.program.array(expected), self.program.array(actual)) {
+            (Some((expected_length, expected_item)), Some((actual_length, actual_item))) => {
+                let same_length = match (expected_length, actual_length) {
+                    (
+                        RuntimeArrayLength::Constant(expected),
+                        RuntimeArrayLength::Constant(actual),
+                    ) => expected == actual,
+                    (RuntimeArrayLength::Bound(expected), RuntimeArrayLength::Bound(actual)) => {
+                        expected_environment.const_variable(expected)?
+                            == actual_environment.const_variable(actual)?
+                    }
+                    _ => false,
+                };
+                if !same_length {
+                    return Err(());
+                }
+                return self.types(
+                    expected_item,
+                    actual_item,
+                    depth + 1,
+                    &expected_environment,
+                    &actual_environment,
+                );
+            }
+            (None, None) => {}
+            _ => return Err(()),
         }
         if let Some(arguments) = self.program.nominal_arguments(expected, actual) {
             let (expected, actual) = arguments?;
@@ -829,8 +899,6 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
                 Some((actual_contract, actual_parameters, actual_result)),
             ) => {
                 if expected_contract.binder() != actual_contract.binder()
-                    || expected_contract.binder().types() != 0
-                    || expected_contract.binder().const_lengths() != 0
                     || expected_parameters.len() != actual_parameters.len()
                 {
                     return Err(());
@@ -838,9 +906,9 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
                 let binder = self.next_binder;
                 self.next_binder = binder.checked_add(1).ok_or(())?;
                 let expected_environment = expected_environment
-                    .enter(expected_contract.binder(), EffectOwner::Local(binder))?;
+                    .enter(expected_contract.binder(), BinderOwner::Local(binder))?;
                 let actual_environment = actual_environment
-                    .enter(actual_contract.binder(), EffectOwner::Local(binder))?;
+                    .enter(actual_contract.binder(), BinderOwner::Local(binder))?;
                 for (expected, actual) in expected_parameters.iter().zip(actual_parameters) {
                     self.types(
                         *actual,
@@ -919,7 +987,7 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
         expected: A::Type,
         value: &RuntimeValue,
         depth: usize,
-        environment: &EffectEnvironment,
+        environment: &ContractEnvironment,
     ) -> Result<(), ()> {
         self.value_view(expected, value.view(), depth, environment)
     }
@@ -928,7 +996,7 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
         expected: A::Type,
         value: crate::value::RuntimeValueView<'_>,
         depth: usize,
-        environment: &EffectEnvironment,
+        environment: &ContractEnvironment,
     ) -> Result<(), ()> {
         self.enter(depth)?;
         let scope = self.program.scope(expected).ok_or(())?;
@@ -949,7 +1017,7 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
 fn collect_parameter_effects(
     program: &AwbcProgram,
     ty: AwbcTypeId,
-    environment: &EffectEnvironment,
+    environment: &ContractEnvironment,
     work: &mut ContractWork,
 ) -> Result<BTreeSet<u32>, ()> {
     let mut result = BTreeSet::new();
@@ -962,7 +1030,7 @@ fn collect_parameter_effects(
         let row = program.runtime_types.get(ty.index()).ok_or(())?;
         let mut environment = environment.at_scope(row.scope())?;
         if let AwbcRuntimeTypeShape::Function { contract, .. } = row.shape() {
-            environment = environment.enter(contract.binder(), EffectOwner::Local(0))?;
+            environment = environment.enter(contract.binder(), BinderOwner::Local(0))?;
             for reference in contract
                 .invocation()
                 .variables()
@@ -981,525 +1049,4 @@ fn collect_parameter_effects(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{
-        awbc::schema::AwbcRuntimeType,
-        effect_row::EffectFormula,
-        pattern::RuntimeSemanticTypeId,
-        plan::{RuntimeFunctionTypeContract, RuntimeTypeBinder, RuntimeTypeScope},
-    };
-
-    #[test]
-    fn nominal_arguments_preserve_declaration_identity_and_invariant_effects() {
-        let row = |marker, shape| {
-            AwbcRuntimeType::new(RuntimeSemanticTypeId::from_bytes([marker; 32]), shape)
-        };
-        let declaration = crate::entry::RuntimeNominalDeclarationId::from_bytes([0x81; 32]);
-        let callback = |effects| AwbcRuntimeTypeShape::Function {
-            contract: RuntimeFunctionTypeContract::new(
-                RuntimeTypeBinder::EMPTY,
-                EffectPredicate::unconstrained(),
-                effects,
-            ),
-            parameters: vec![],
-            result: AwbcTypeId(0),
-        };
-        let nominal = |argument| AwbcRuntimeTypeShape::NominalRecord {
-            public_id: crate::awbc::schema::AwbcStringId(0),
-            layout: [0x82; 32],
-            arguments: vec![argument],
-            shape: crate::entry::RuntimeNominalRecordShape::Unit,
-            fields: vec![],
-        };
-        let mut program = AwbcProgram::default();
-        program.runtime_types = vec![
-            row(1, AwbcRuntimeTypeShape::Unit),
-            row(2, callback(EffectFormula::empty())),
-            row(
-                3,
-                callback(EffectFormula::literal(
-                    crate::effect_row::EffectSet::from_labels(["io.read"]).unwrap(),
-                    None,
-                )),
-            ),
-            row(4, nominal(AwbcTypeId(1))).with_nominal_declaration(declaration),
-            row(5, nominal(AwbcTypeId(2))).with_nominal_declaration(declaration),
-            row(6, nominal(AwbcTypeId(1))).with_nominal_declaration(
-                crate::entry::RuntimeNominalDeclarationId::from_bytes([0x83; 32]),
-            ),
-            row(
-                7,
-                AwbcRuntimeTypeShape::Function {
-                    contract: RuntimeFunctionTypeContract::new(
-                        RuntimeTypeBinder::new(0, 0, 1),
-                        EffectPredicate::unconstrained(),
-                        EffectFormula::empty(),
-                    ),
-                    parameters: vec![AwbcTypeId(4)],
-                    result: AwbcTypeId(0),
-                },
-            ),
-        ];
-        assert!(program.parameter_contract_accepts_types(AwbcTypeId(6), [(0, AwbcTypeId(4))]));
-        assert!(!program.parameter_contract_accepts_types(AwbcTypeId(6), [(0, AwbcTypeId(3))]));
-        program.runtime_types[6] = row(
-            8,
-            AwbcRuntimeTypeShape::Function {
-                contract: RuntimeFunctionTypeContract::new(
-                    RuntimeTypeBinder::new(0, 0, 1),
-                    EffectPredicate::unconstrained(),
-                    EffectFormula::empty(),
-                ),
-                parameters: vec![AwbcTypeId(3)],
-                result: AwbcTypeId(0),
-            },
-        );
-        assert!(!program.parameter_contract_accepts_types(AwbcTypeId(6), [(0, AwbcTypeId(5))]));
-    }
-
-    #[test]
-    fn nominal_origin_is_independent_of_destination_effect_bindings() {
-        let id = |marker| RuntimeSemanticTypeId::from_bytes([marker; 32]);
-        let binder = RuntimeTypeBinder::new(0, 0, 1);
-        let scope = RuntimeTypeScope::root().enter(binder).unwrap();
-        let callback = |effects| AwbcRuntimeTypeShape::Function {
-            contract: RuntimeFunctionTypeContract::new(
-                RuntimeTypeBinder::EMPTY,
-                EffectPredicate::unconstrained(),
-                effects,
-            ),
-            parameters: vec![],
-            result: AwbcTypeId(0),
-        };
-        let nominal = |argument| AwbcRuntimeTypeShape::NominalRecord {
-            public_id: crate::awbc::schema::AwbcStringId(0),
-            layout: [0x82; 32],
-            arguments: vec![argument],
-            shape: crate::entry::RuntimeNominalRecordShape::Unit,
-            fields: vec![],
-        };
-        let declaration = crate::entry::RuntimeNominalDeclarationId::from_bytes([0x81; 32]);
-        let mut program = AwbcProgram::default();
-        program.runtime_types = vec![
-            AwbcRuntimeType::new(id(1), AwbcRuntimeTypeShape::Unit),
-            AwbcRuntimeType::new(id(2), callback(EffectFormula::empty())),
-            AwbcRuntimeType::new(
-                id(3),
-                callback(EffectFormula::literal(
-                    Default::default(),
-                    Some(scope.bound_effect(0, 0).unwrap()),
-                )),
-            )
-            .with_scope(scope.clone()),
-            AwbcRuntimeType::new(id(4), nominal(AwbcTypeId(1)))
-                .with_nominal_declaration(declaration),
-            AwbcRuntimeType::new(id(5), nominal(AwbcTypeId(2)))
-                .with_scope(scope)
-                .with_nominal_declaration(declaration),
-            AwbcRuntimeType::new(
-                id(6),
-                AwbcRuntimeTypeShape::Function {
-                    contract: RuntimeFunctionTypeContract::new(
-                        binder,
-                        EffectPredicate::unconstrained(),
-                        EffectFormula::empty(),
-                    ),
-                    parameters: vec![AwbcTypeId(2)],
-                    result: AwbcTypeId(0),
-                },
-            ),
-        ];
-        let empty = crate::effect_row::EffectSet::new();
-        let io = crate::effect_row::EffectSet::from_labels(["io.read"]).unwrap();
-        let binding = |effects| RuntimeFunctionEffectInstantiation {
-            context: id(6),
-            effects: Box::new([effects]),
-        };
-        let destination = binding(empty.clone());
-        let source = binding(io);
-        let matches = |destination: Option<&RuntimeFunctionEffectInstantiation>, origin| {
-            RuntimeFunctionEffectInstantiation::with_value_relation(
-                &program,
-                destination,
-                |relation| {
-                    relation.nominal(
-                        if destination.is_some() {
-                            AwbcTypeId(4)
-                        } else {
-                            AwbcTypeId(3)
-                        },
-                        AwbcTypeId(4),
-                        origin,
-                    )
-                },
-            ) == Some(true)
-        };
-        assert!(!matches(Some(&destination), None));
-        assert!(!matches(Some(&destination), Some(&source)));
-        assert!(matches(Some(&destination), Some(&destination)));
-        assert!(!matches(None, Some(&source)));
-        assert!(matches(None, Some(&destination)));
-        let malformed = RuntimeFunctionEffectInstantiation {
-            context: id(6),
-            effects: Box::new([]),
-        };
-        assert!(!matches(Some(&destination), Some(&malformed)));
-    }
-
-    #[test]
-    fn failed_value_choice_does_not_leak_callback_effect_constraints() {
-        use crate::plan::{
-            RuntimeEffectSet, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed,
-            RuntimeFlowSchema, RuntimeFlowSeed, RuntimeFunctionSiteBodyKind,
-            RuntimeFunctionSiteDeclarationSeed, RuntimePatternSeed, RuntimePatternSeedKind,
-            RuntimePlanBuilder, RuntimePlanTypeProjection as T, RuntimePlanTypeSeed,
-        };
-        use crate::value::{RuntimeCallableValue, RuntimeExprKind};
-        let id = |value| RuntimeSemanticTypeId::from_bytes([value; 32]);
-        let binder = RuntimeTypeBinder::new(0, 0, 1);
-        let scope = RuntimeTypeScope::root().enter(binder).unwrap();
-        let io = crate::effect_row::EffectSet::from_labels(["io.read"]).unwrap();
-        let function = |effects| T::Function {
-            contract: RuntimeFunctionTypeContract::new(
-                RuntimeTypeBinder::EMPTY,
-                EffectPredicate::unconstrained(),
-                effects,
-            ),
-            parameters: Box::new([]),
-            result: id(1),
-        };
-        let mut builder = RuntimePlanBuilder::new();
-        builder
-            .admit_type_batch(
-                [
-                    RuntimePlanTypeSeed::new(id(1), T::Unit),
-                    RuntimePlanTypeSeed::new(id(2), T::String),
-                    RuntimePlanTypeSeed::new(
-                        id(3),
-                        function(EffectFormula::literal(io.clone(), None)),
-                    ),
-                    RuntimePlanTypeSeed::new(
-                        id(4),
-                        function(EffectFormula::literal(
-                            Default::default(),
-                            Some(scope.bound_effect(0, 0).unwrap()),
-                        )),
-                    )
-                    .with_scope(scope.clone()),
-                    RuntimePlanTypeSeed::new(id(5), T::Tuple(Box::new([id(4), id(2)])))
-                        .with_scope(scope.clone()),
-                    RuntimePlanTypeSeed::new(id(6), T::Tuple(Box::new([id(3), id(1)]))),
-                    RuntimePlanTypeSeed::new(id(7), T::Choice(Box::new([id(5), id(6)])))
-                        .with_scope(scope),
-                    RuntimePlanTypeSeed::new(
-                        id(8),
-                        T::Function {
-                            contract: RuntimeFunctionTypeContract::new(
-                                binder,
-                                EffectPredicate::unconstrained(),
-                                EffectFormula::empty(),
-                            ),
-                            parameters: Box::new([id(7)]),
-                            result: id(1),
-                        },
-                    ),
-                ],
-                [],
-            )
-            .unwrap();
-        let site = builder
-            .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
-                function_type: None,
-                inputs: Box::new([]),
-                result: id(1),
-                body_kind: RuntimeFunctionSiteBodyKind::Expression,
-                effects: RuntimeEffectSet::try_from_effects(io.iter().cloned()).unwrap(),
-            })
-            .unwrap();
-        builder
-            .define_function_site_seed(
-                &site,
-                RuntimeExprSeed::new(id(1), RuntimeExprSeedKind::Value(RuntimeValue::Unit)),
-            )
-            .unwrap();
-        let flow = crate::plan::FlowRuntimeId::canonical("choice_relation").unwrap();
-        builder
-            .push_flow_schema(RuntimeFlowSchema {
-                flow: flow.clone(),
-                parameters: vec![],
-            })
-            .unwrap();
-        builder
-            .push_flow_seed(RuntimeFlowSeed::new(
-                flow,
-                [],
-                RuntimeEffectSet::empty(),
-                vec![RuntimeFlowOpSeed::Let {
-                    pattern: RuntimePatternSeed::new(id(3), RuntimePatternSeedKind::Discard),
-                    expr: RuntimeExprSeed::new(
-                        id(3),
-                        RuntimeExprSeedKind::Function {
-                            site,
-                            captures: Box::new([]),
-                        },
-                    ),
-                }],
-            ))
-            .unwrap();
-        let plan = std::sync::Arc::new(builder.finish().unwrap());
-        let crate::plan::FlowOp::Let { expr, .. } = &plan.flows()[0].body().ops()[0] else {
-            panic!("typed callback fixture")
-        };
-        let RuntimeExprKind::MakeCallable { state, .. } = expr.kind() else {
-            panic!("admitted callback state")
-        };
-        let callback = RuntimeCallableValue::try_new(
-            crate::task::RuntimeProgramOwner::Plan(plan.clone()),
-            *state,
-            [],
-        )
-        .unwrap();
-        let value = RuntimeValue::Tuple(vec![RuntimeValue::Callable(callback), RuntimeValue::Unit]);
-        let binding = super::super::RuntimeProgramTypes::Plan(&plan)
-            .instantiate_function_effects(id(8), &[&value])
-            .unwrap();
-        assert_eq!(
-            binding.effects.as_ref(),
-            &[crate::effect_row::EffectSet::new()]
-        );
-        let expected = plan.type_table().id_for_semantic(id(7)).unwrap();
-        assert!(binding.value_matches(plan.as_ref(), expected, &value));
-        assert!(
-            plan.validate_live_value(
-                expected,
-                &value,
-                crate::entry::RuntimeSchemaLimits::engine_default()
-            )
-            .is_err()
-        );
-    }
-
-    #[test]
-    fn scoped_default_preserves_shared_source_rows_across_callback_variance() {
-        let binder = RuntimeTypeBinder::new(0, 0, 2);
-        let scope = RuntimeTypeScope::root().enter(binder).unwrap();
-        let row = |marker, shape| {
-            AwbcRuntimeType::new(RuntimeSemanticTypeId::from_bytes([marker; 32]), shape)
-        };
-        let function = |parameters, result, effects| AwbcRuntimeTypeShape::Function {
-            contract: RuntimeFunctionTypeContract::new(
-                RuntimeTypeBinder::EMPTY,
-                EffectPredicate::unconstrained(),
-                effects,
-            ),
-            parameters,
-            result,
-        };
-        let header = |parameters, result| AwbcRuntimeTypeShape::Function {
-            contract: RuntimeFunctionTypeContract::new(
-                binder,
-                EffectPredicate::unconstrained(),
-                EffectFormula::empty(),
-            ),
-            parameters,
-            result,
-        };
-        let mut program = AwbcProgram::default();
-        program.runtime_types = vec![
-            row(1, AwbcRuntimeTypeShape::Unit),
-            row(
-                2,
-                function(
-                    vec![],
-                    AwbcTypeId(0),
-                    EffectFormula::literal(
-                        Default::default(),
-                        Some(scope.bound_effect(0, 0).unwrap()),
-                    ),
-                ),
-            )
-            .with_scope(scope.clone()),
-            row(
-                3,
-                function(
-                    vec![],
-                    AwbcTypeId(0),
-                    EffectFormula::literal(
-                        Default::default(),
-                        Some(scope.bound_effect(0, 1).unwrap()),
-                    ),
-                ),
-            )
-            .with_scope(scope.clone()),
-            row(
-                4,
-                function(vec![AwbcTypeId(1)], AwbcTypeId(0), EffectFormula::empty()),
-            )
-            .with_scope(scope.clone()),
-            row(
-                5,
-                function(vec![AwbcTypeId(2)], AwbcTypeId(0), EffectFormula::empty()),
-            )
-            .with_scope(scope.clone()),
-            row(
-                6,
-                AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(1), AwbcTypeId(3)]),
-            )
-            .with_scope(scope.clone()),
-            row(
-                7,
-                AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(2), AwbcTypeId(4)]),
-            )
-            .with_scope(scope),
-            row(8, header(vec![AwbcTypeId(1), AwbcTypeId(6)], AwbcTypeId(0))),
-            row(9, header(vec![AwbcTypeId(1)], AwbcTypeId(5))),
-            row(
-                10,
-                function(
-                    vec![],
-                    AwbcTypeId(0),
-                    EffectFormula::literal(
-                        crate::effect_row::EffectSet::from_labels(["io.read"]).unwrap(),
-                        None,
-                    ),
-                ),
-            ),
-            row(
-                11,
-                header(vec![AwbcTypeId(1), AwbcTypeId(1)], AwbcTypeId(0)),
-            ),
-        ];
-        // Both tuple members refer to the same source row. The destination
-        // can choose that row after the source is fixed, in both variances.
-        assert!(program.parameter_contract_accepts_default(
-            AwbcTypeId(7),
-            1,
-            Some(AwbcTypeId(8)),
-            AwbcTypeId(5)
-        ));
-        assert!(!program.parameter_contract_accepts_default(AwbcTypeId(7), 1, None, AwbcTypeId(5)));
-        // A row already owned by an earlier input is rigid. An IO callback
-        // cannot be a default for every possible earlier row, including empty.
-        assert!(!program.parameter_contract_accepts_default(
-            AwbcTypeId(10),
-            1,
-            None,
-            AwbcTypeId(9)
-        ));
-    }
-
-    #[test]
-    fn shared_effect_bindings_reject_jointly_incompatible_callback_variance() {
-        let binder = RuntimeTypeBinder::new(0, 0, 1);
-        let scope = RuntimeTypeScope::root().enter(binder).unwrap();
-        let reference = scope.bound_effect(0, 0).unwrap();
-        let function = |parameters, effects| AwbcRuntimeTypeShape::Function {
-            contract: RuntimeFunctionTypeContract::new(
-                RuntimeTypeBinder::EMPTY,
-                EffectPredicate::unconstrained(),
-                effects,
-            ),
-            parameters,
-            result: AwbcTypeId(0),
-        };
-        let row = |marker, shape| {
-            AwbcRuntimeType::new(RuntimeSemanticTypeId::from_bytes([marker; 32]), shape)
-        };
-        let mut program = AwbcProgram::default();
-        program.runtime_types = vec![
-            row(1, AwbcRuntimeTypeShape::Unit),
-            row(
-                2,
-                function(
-                    vec![],
-                    EffectFormula::literal(Default::default(), Some(reference)),
-                ),
-            )
-            .with_scope(scope.clone()),
-            row(3, function(vec![], EffectFormula::empty())),
-            row(4, function(vec![AwbcTypeId(1)], EffectFormula::empty())).with_scope(scope),
-            row(5, function(vec![AwbcTypeId(2)], EffectFormula::empty())),
-            row(
-                6,
-                function(
-                    vec![],
-                    EffectFormula::literal(
-                        crate::effect_row::EffectSet::from_labels(["io.read"]).unwrap(),
-                        None,
-                    ),
-                ),
-            ),
-            row(
-                7,
-                AwbcRuntimeTypeShape::Function {
-                    contract: RuntimeFunctionTypeContract::new(
-                        binder,
-                        EffectPredicate::unconstrained(),
-                        EffectFormula::empty(),
-                    ),
-                    parameters: vec![AwbcTypeId(3), AwbcTypeId(1)],
-                    result: AwbcTypeId(0),
-                },
-            ),
-        ];
-        assert!(program.parameter_contract_accepts_types(AwbcTypeId(6), [(0, AwbcTypeId(4))]));
-        assert!(program.parameter_contract_accepts_types(AwbcTypeId(6), [(1, AwbcTypeId(5))]));
-        assert!(!program.parameter_contract_accepts_types(
-            AwbcTypeId(6),
-            [(0, AwbcTypeId(4)), (1, AwbcTypeId(5))]
-        ));
-        assert!(program.parameter_contract_accepts_types(
-            AwbcTypeId(6),
-            [(0, AwbcTypeId(4)), (1, AwbcTypeId(2))]
-        ));
-        assert!(!program.parameter_contract_accepts_types(
-            AwbcTypeId(6),
-            [(0, AwbcTypeId(4)), (0, AwbcTypeId(4))]
-        ));
-        // An input is an instantiated value, never a declaration-scoped type.
-        assert!(!program.parameter_contract_accepts_types(AwbcTypeId(6), [(1, AwbcTypeId(1))]));
-        assert!(!program.parameter_contract_accepts_types(AwbcTypeId(2), []));
-
-        let fixed = |effects| RuntimeFunctionEffectInstantiation {
-            context: program.runtime_types[6].semantic_identity(),
-            effects: vec![effects].into_boxed_slice(),
-        };
-        let relates = |binding: &RuntimeFunctionEffectInstantiation, expected, actual| {
-            let mut matcher = binding.matcher(&program).unwrap();
-            let environment = matcher.parameters.clone();
-            matcher
-                .types(
-                    expected,
-                    actual,
-                    0,
-                    &environment,
-                    &EffectEnvironment::root(),
-                )
-                .is_ok()
-                && matcher.accepted()
-        };
-        let empty = fixed(Default::default());
-        let io = fixed(crate::effect_row::EffectSet::from_labels(["io.read"]).unwrap());
-        assert!(relates(&empty, AwbcTypeId(1), AwbcTypeId(2)));
-        assert!(!relates(&empty, AwbcTypeId(1), AwbcTypeId(5)));
-        assert!(relates(&io, AwbcTypeId(1), AwbcTypeId(5)));
-        assert!(relates(&empty, AwbcTypeId(3), AwbcTypeId(4)));
-        assert!(!relates(&io, AwbcTypeId(3), AwbcTypeId(4)));
-        let encoded = serde_json::to_value(&io).unwrap();
-        assert_eq!(
-            serde_json::from_value::<RuntimeFunctionEffectInstantiation>(encoded.clone()).unwrap(),
-            io
-        );
-        let mut duplicate = encoded;
-        duplicate["effects"][0] = serde_json::json!(["io.read", "io.read"]);
-        assert!(serde_json::from_value::<RuntimeFunctionEffectInstantiation>(duplicate).is_err());
-        assert!(
-            !RuntimeFunctionEffectInstantiation {
-                context: program.runtime_types[6].semantic_identity(),
-                effects: Box::new([]),
-            }
-            .is_valid(&program)
-        );
-    }
-}
+mod tests;
