@@ -155,6 +155,8 @@ pub enum NominalProjectionLimitKind {
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum NominalSchemaProjectionError {
     #[error(transparent)]
+    NominalInstantiation(#[from] super::CheckedProjectNominalInstantiationError),
+    #[error(transparent)]
     ParameterContract(#[from] crate::callable::CheckedCallableParameterContractError),
     #[error(transparent)]
     SourceGraph(Box<RuntimeNominalGraphProjectionError>),
@@ -1083,21 +1085,13 @@ impl<'a> RuntimeNominalProjectionContext<'a> {
                     .map(|(ordinal, field)| {
                         let declaration_ordinal = u32::try_from(ordinal)
                             .map_err(|_| NominalSchemaProjectionError::ArithmeticOverflow)?;
-                        let runtime_field = RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)
-                            .map_err(|_| NominalSchemaProjectionError::ArithmeticOverflow)?;
-                        let declared = self
-                            .types
-                            .get(&field.ty())
-                            .ok_or(NominalSchemaProjectionError::MissingTypeFact {
-                                ty: field.ty(),
-                            })?;
-                        let ty = checked
-                            .instantiate_declaration_type(declaration, declared)
-                            .ok_or_else(|| {
-                                NominalSchemaProjectionError::new(
-                                    "record field cannot be instantiated by its checked nominal owner",
-                                )
-                            })?;
+                        let runtime_field =
+                            RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)
+                                .map_err(|_| NominalSchemaProjectionError::ArithmeticOverflow)?;
+                        let declared = self.types.get(&field.ty()).ok_or(
+                            NominalSchemaProjectionError::MissingTypeFact { ty: field.ty() },
+                        )?;
+                        let ty = checked.instantiate_declaration_type(declaration, declared)?;
                         let field_type = ty.semantic_identity_digest_in_scope(checked.scope())?;
                         Ok::<_, NominalSchemaProjectionError>(RuntimeProjectRecordFieldProjection {
                             runtime_field,

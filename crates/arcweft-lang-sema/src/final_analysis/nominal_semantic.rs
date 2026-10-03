@@ -257,9 +257,7 @@ fn build_semantic_definition(
                 let declared = types
                     .get(&field.ty())
                     .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
-                let ty = nominal
-                    .instantiate_declaration_type(declaration, declared)
-                    .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
+                let ty = nominal.instantiate_declaration_type(declaration, declared)?;
                 accepted.push(ProjectNominalSemanticField {
                     declaration_ordinal: ordinal,
                     semantic_id: AcceptedRecordFieldSemanticId::issue(
@@ -310,7 +308,7 @@ fn build_semantic_variant_definition(
                     .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
                 nominal
                     .instantiate_declaration_type(declaration, declared)
-                    .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)
+                    .map_err(FinalSemanticAnalysisError::from)
             },
             |_| FinalSemanticAnalysisError::InvalidNominalOwner,
         )?;

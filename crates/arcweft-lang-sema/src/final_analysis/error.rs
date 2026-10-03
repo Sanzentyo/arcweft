@@ -343,6 +343,8 @@ pub enum FinalSemanticAnalysisError {
     PoisonedType,
     #[error("semantic fact references an invalid project nominal owner")]
     InvalidNominalOwner,
+    #[error(transparent)]
+    NominalInstantiation(#[from] super::CheckedProjectNominalInstantiationError),
     #[error("projection-dependent semantic owner reached publication before the C2 seal")]
     UnsealedPreparedC2Owner,
     #[error("runtime nominal projection failed: {0}")]

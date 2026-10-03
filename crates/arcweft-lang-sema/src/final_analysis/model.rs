@@ -12,7 +12,6 @@ use super::{
     EnvironmentBindingId, ExprId, GenericParameterOwnerId, GenericTypeParameterId, HirFlowIdentity,
     HirItemFamily, HirLiteral, ItemId, LocalId, PatternId, ProjectNominalDeclaration,
     ProjectNominalDeclarationId, PublicId, SemanticTypeDigest, StmtId, TypeKind,
-    TypeParameterSubstitutions,
 };
 use crate::callable::{
     CallableEvaluatedEffect, CallableLogLevel, CallableReceiverMode, CharacterDialoguePatchContext,
@@ -426,6 +425,22 @@ pub struct CheckedProjectNominal {
     scope: crate::types::GenericScope,
 }
 
+/// A declaration-owned type cannot be instantiated by this checked nominal.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum CheckedProjectNominalInstantiationError {
+    #[error("nominal instantiation expected declaration {expected:?}, found {actual:?}")]
+    Declaration {
+        expected: Box<ProjectNominalDeclarationId>,
+        actual: Box<ProjectNominalDeclarationId>,
+    },
+    #[error("nominal instantiation expected owner {expected:?}, found {actual:?}")]
+    Owner { expected: ItemId, actual: ItemId },
+    #[error("nominal instantiation expected {expected} arguments, found {actual}")]
+    Arity { expected: usize, actual: usize },
+    #[error(transparent)]
+    Type(#[from] crate::types::TypeInstantiationError),
+}
+
 impl CheckedProjectNominal {
     pub fn new(
         declaration: ProjectNominalDeclarationId,
@@ -491,23 +506,42 @@ impl CheckedProjectNominal {
         &self,
         declaration: &ProjectNominalDeclaration,
         ty: &TypeKind,
-    ) -> Option<TypeKind> {
-        if self.declaration() != declaration.id()
-            || self.arguments.len() != declaration.type_parameters().len()
-        {
-            return None;
+    ) -> Result<TypeKind, CheckedProjectNominalInstantiationError> {
+        if self.declaration() != declaration.id() {
+            return Err(CheckedProjectNominalInstantiationError::Declaration {
+                expected: Box::new(self.declaration.clone()),
+                actual: Box::new(declaration.id().clone()),
+            });
         }
-        let mut substitutions = TypeParameterSubstitutions::default();
-        for (parameter, argument) in declaration.type_parameters().iter().zip(self.arguments()) {
-            let parameter = TypeKind::generic_parameter(GenericTypeParameterId::new(
-                GenericParameterOwnerId::Nominal(declaration.id().clone()),
-                parameter.ordinal(),
-            ));
-            if !substitutions.observe(&parameter, argument) {
-                return None;
-            }
+        if self.owner != declaration.owner() {
+            return Err(CheckedProjectNominalInstantiationError::Owner {
+                expected: declaration.owner(),
+                actual: self.owner,
+            });
         }
-        Some(substitutions.apply(ty))
+        if self.arguments.len() != declaration.type_parameters().len() {
+            return Err(CheckedProjectNominalInstantiationError::Arity {
+                expected: declaration.type_parameters().len(),
+                actual: self.arguments.len(),
+            });
+        }
+        let parameters = declaration
+            .type_parameters()
+            .iter()
+            .map(|parameter| {
+                GenericTypeParameterId::new(
+                    GenericParameterOwnerId::Nominal(declaration.id().clone()),
+                    parameter.ordinal(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let substitutions = parameters.iter().zip(self.arguments()).collect();
+        ty.instantiate_type_parameters_with_control(
+            &substitutions,
+            &self.scope,
+            &mut crate::types::UnmeteredTypeProjection,
+        )
+        .map_err(|error| CheckedProjectNominalInstantiationError::Type(error.into_instantiation()))
     }
 }
 

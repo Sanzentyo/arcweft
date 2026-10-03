@@ -47,6 +47,140 @@ fn projection_fixture() -> Fixture {
 }
 
 #[test]
+fn checked_nominal_substitution_preserves_outer_namespaces_under_local_binders() {
+    use crate::types::{
+        ArrayLength, GenericBinder, GenericParameterOwnerId, GenericScope, GenericTypeParameterId,
+        ProjectNominalType,
+    };
+    use crate::{effect_row::EffectRow, effects::EffectSet};
+    let fixture = fixture(
+        "struct Single<T> { value: T }\nfn single(value: Single<i64>) -> Single<i64> { value }",
+        None,
+    );
+    let report = analyze(&fixture).unwrap();
+    let base = checked(&fixture, &report, "Single");
+    let declaration = fixture.symbols.nominal(base.declaration()).unwrap();
+    let caller = GenericScope::default().with_binder(GenericBinder::new(1, 1, 1));
+    let argument = TypeKind::Tuple(vec![
+        TypeKind::GenericParam(caller.bound_type(0, 0).unwrap()),
+        TypeKind::Array {
+            item: Box::new(TypeKind::I64),
+            len: ArrayLength::Generic(caller.bound_const(0, 0).unwrap()),
+        },
+        TypeKind::function_with_binder(
+            GenericBinder::EMPTY,
+            [],
+            TypeKind::Unit,
+            EffectRow::open(EffectSet::new(), caller.bound_effect(0, 0).unwrap()),
+        ),
+    ]);
+    let ty = TypeKind::ProjectNominal(ProjectNominalType::new(
+        base.declaration().clone(),
+        vec![argument.clone()],
+    ));
+    let nominal = CheckedProjectNominal::new(
+        base.declaration().clone(),
+        base.owner(),
+        ty.semantic_identity_digest_in_scope(&caller).unwrap(),
+        vec![argument],
+    )
+    .with_scope(caller.clone());
+    let binder = GenericBinder::new(0, 0, 1);
+    let source_scope = GenericScope::default().with_binder(binder);
+    let template = TypeKind::function_with_binder(
+        binder,
+        [TypeKind::generic_parameter(GenericTypeParameterId::new(
+            GenericParameterOwnerId::Nominal(declaration.id().clone()),
+            0,
+        ))],
+        TypeKind::Unit,
+        EffectRow::open(EffectSet::new(), source_scope.bound_effect(0, 0).unwrap()),
+    );
+    let nested = caller.with_binder(binder);
+    let expected = TypeKind::function_with_binder(
+        binder,
+        [TypeKind::Tuple(vec![
+            TypeKind::GenericParam(nested.bound_type(1, 0).unwrap()),
+            TypeKind::Array {
+                item: Box::new(TypeKind::I64),
+                len: ArrayLength::Generic(nested.bound_const(1, 0).unwrap()),
+            },
+            TypeKind::function_with_binder(
+                GenericBinder::EMPTY,
+                [],
+                TypeKind::Unit,
+                EffectRow::open(EffectSet::new(), nested.bound_effect(1, 0).unwrap()),
+            ),
+        ])],
+        TypeKind::Unit,
+        EffectRow::open(EffectSet::new(), nested.bound_effect(0, 0).unwrap()),
+    );
+    let actual = nominal
+        .instantiate_declaration_type(declaration, &template)
+        .unwrap();
+    assert_eq!(actual, expected);
+    assert!(actual.semantic_identity_digest_in_scope(&caller).is_ok());
+    assert!(actual.semantic_identity_digest().is_err());
+}
+
+#[test]
+fn checked_nominal_substitution_rejects_wrong_declaration_owner_arity_and_scope() {
+    use crate::final_analysis::CheckedProjectNominalInstantiationError as Error;
+    use crate::types::{GenericBinder, GenericScope, TypeInstantiationError};
+    let fixture = fixture(
+        "struct Single<T> { value: T }\nstruct Other { value: i64 }\nfn single(value: Single<i64>) -> Single<i64> { value }\nfn other(value: Other) -> Other { value }",
+        None,
+    );
+    let report = analyze(&fixture).unwrap();
+    let base = checked(&fixture, &report, "Single");
+    let other = checked(&fixture, &report, "Other");
+    let declaration = fixture.symbols.nominal(base.declaration()).unwrap();
+    let other_declaration = fixture.symbols.nominal(other.declaration()).unwrap();
+    assert!(matches!(
+        base.instantiate_declaration_type(other_declaration, &TypeKind::I64),
+        Err(Error::Declaration { .. })
+    ));
+    let wrong_owner = CheckedProjectNominal::new(
+        base.declaration().clone(),
+        other.owner(),
+        base.identity(),
+        base.arguments().to_vec(),
+    );
+    assert!(matches!(
+        wrong_owner.instantiate_declaration_type(declaration, &TypeKind::I64),
+        Err(Error::Owner { .. })
+    ));
+    let wrong_arity = CheckedProjectNominal::new(
+        base.declaration().clone(),
+        base.owner(),
+        base.identity(),
+        vec![],
+    );
+    assert!(matches!(
+        wrong_arity.instantiate_declaration_type(declaration, &TypeKind::I64),
+        Err(Error::Arity {
+            expected: 1,
+            actual: 0
+        })
+    ));
+    let caller = GenericScope::default().with_binder(GenericBinder::new(1, 0, 0));
+    let wrong_scope = CheckedProjectNominal::new(
+        base.declaration().clone(),
+        base.owner(),
+        base.identity(),
+        vec![TypeKind::GenericParam(caller.bound_type(0, 0).unwrap())],
+    );
+    let field = TypeKind::generic_parameter(crate::types::GenericTypeParameterId::new(
+        crate::types::GenericParameterOwnerId::Nominal(declaration.id().clone()),
+        0,
+    ));
+    assert!(matches!(
+        wrong_scope.instantiate_declaration_type(declaration, &field),
+        Err(Error::Type(TypeInstantiationError::Scope(_)))
+    ));
+}
+
+#[test]
 fn generic_argument_limit_is_per_application_across_siblings() {
     let fixture = projection_fixture();
     let report = analyze(&fixture).expect("projection fixture final analysis");
