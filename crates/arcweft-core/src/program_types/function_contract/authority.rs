@@ -19,6 +19,13 @@ pub(crate) trait FunctionTypeAuthority {
         ty: Self::Type,
     ) -> Option<(&RuntimeFunctionTypeContract, &[Self::Type], Self::Type)>;
     fn tuple(&self, ty: Self::Type) -> Option<&[Self::Type]>;
+    fn record_field(
+        &self,
+        ty: Self::Type,
+        header: &crate::value::RuntimePlaceRecordHeader,
+        count: usize,
+        ordinal: usize,
+    ) -> Option<Self::Type>;
     fn is_unit(&self, ty: Self::Type) -> bool;
     fn compatible(&self, expected: Self::Type, actual: Self::Type) -> bool;
     fn value_matches(
@@ -67,6 +74,49 @@ impl FunctionTypeAuthority for AwbcProgram {
         self.runtime_types
             .get(ty.index())
             .is_some_and(|row| matches!(row.shape(), AwbcRuntimeTypeShape::Unit))
+    }
+    fn record_field(
+        &self,
+        ty: Self::Type,
+        header: &crate::value::RuntimePlaceRecordHeader,
+        count: usize,
+        ordinal: usize,
+    ) -> Option<Self::Type> {
+        use crate::value::RuntimePlaceRecordHeader as Header;
+        let row = self.runtime_types.get(ty.index())?;
+        let fields = match (header, row.shape()) {
+            (
+                Header::Nominal {
+                    nominal,
+                    semantic_identity,
+                    layout,
+                },
+                AwbcRuntimeTypeShape::NominalRecord {
+                    public_id,
+                    layout: expected_layout,
+                    fields,
+                    ..
+                },
+            ) if self.strings.get(public_id.index())?.as_str() == nominal.as_str()
+                && *semantic_identity == row.semantic_identity()
+                && *layout == crate::entry::TypeLayoutHash::from_bytes(*expected_layout) =>
+            {
+                fields
+            }
+            (Header::Structural { names }, AwbcRuntimeTypeShape::Record { fields, .. })
+                if names.len() == count
+                    && fields
+                        .get(ordinal)?
+                        .name
+                        .and_then(|name| self.strings.get(name.index()))
+                        == names.get(ordinal) =>
+            {
+                fields
+            }
+            _ => return None,
+        };
+        let field = fields.get(ordinal)?;
+        (fields.len() == count && field.field.zero_based() as usize == ordinal).then_some(field.ty)
     }
     fn compatible(&self, expected: Self::Type, actual: Self::Type) -> bool {
         self.types_compatible(expected, actual)
@@ -125,6 +175,46 @@ impl FunctionTypeAuthority for RuntimePlan {
         self.type_table()
             .get(ty)
             .is_some_and(|row| matches!(row.projection(), RuntimePlanTypeProjection::Unit))
+    }
+    fn record_field(
+        &self,
+        ty: Self::Type,
+        header: &crate::value::RuntimePlaceRecordHeader,
+        count: usize,
+        ordinal: usize,
+    ) -> Option<Self::Type> {
+        use crate::value::RuntimePlaceRecordHeader as Header;
+        let row = self.type_table().get(ty)?;
+        match (header, row.projection()) {
+            (
+                Header::Nominal {
+                    nominal,
+                    semantic_identity,
+                    layout,
+                },
+                RuntimePlanTypeProjection::Nominal {
+                    nominal: expected_nominal,
+                    layout: expected_layout,
+                    ..
+                },
+            ) if nominal == expected_nominal
+                && *semantic_identity == row.semantic_identity()
+                && layout == expected_layout =>
+            {
+                let fields = self.nominal_record_domains().get(ty)?.fields();
+                let field = fields.get(ordinal)?;
+                (fields.len() == count && field.field().zero_based() as usize == ordinal)
+                    .then_some(field.ty())
+            }
+            (Header::Structural { names }, RuntimePlanTypeProjection::Record(fields))
+                if names.len() == count
+                    && fields.len() == count
+                    && names.get(ordinal)?.as_str() == fields.get(ordinal)?.diagnostic_name() =>
+            {
+                Some(*fields[ordinal].ty())
+            }
+            _ => None,
+        }
     }
     fn compatible(&self, expected: Self::Type, actual: Self::Type) -> bool {
         expected == actual

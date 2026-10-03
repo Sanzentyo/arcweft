@@ -4031,9 +4031,22 @@ mod rollback_tests {
 
     #[test]
     fn native_rollback_round_trips_distinct_affine_env_and_ready_owners() {
-        let plan = RuntimePlanBuilder::new()
-            .finish()
-            .expect("empty owner plan");
+        use crate::plan::{
+            RuntimeLocalDeclarationSeed, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+        };
+        let unit = crate::pattern::RuntimeSemanticTypeId::from_bytes([0xe1; 32]);
+        let need = crate::pattern::RuntimeSemanticTypeId::from_bytes([0xe2; 32]);
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [
+                    RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+                    RuntimePlanTypeSeed::new(need, RuntimePlanTypeProjection::Need(unit)),
+                ],
+                [RuntimeLocalDeclarationSeed::new(need)],
+            )
+            .expect("admitted affine local");
+        let plan = builder.finish().expect("typed owner plan");
         let mut engine = Engine::new(plan);
         let local = RuntimeLocalDeclarationId::from_accepted_ordinal(
             NonZeroU32::new(1).expect("nonzero local"),

@@ -4268,86 +4268,24 @@ fn validate_place_storage_at(
     path: String,
     depth: usize,
 ) -> Result<(), FiberStateError> {
-    if depth > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH {
-        return Err(FiberStateError::InvalidFrame);
-    }
-    if let Some(value) = storage.as_ref() {
-        if !FiberFrame::value_matches_instantiation(program, instantiation, value, expected) {
-            return Err(FiberStateError::InvalidRuntimeValue {
-                path,
-                reason: "value does not match the frame's instantiated type".to_owned(),
-            });
-        }
-        return validate_runtime_value_at(program, value, None, path);
-    }
-    if storage.is_vacant() {
-        return Ok(());
-    }
-    let (header, children) = storage
-        .record_parts()
-        .ok_or(FiberStateError::InvalidFrame)?;
-    let ty = program
+    let row = program
         .runtime_types
         .get(expected.index())
         .ok_or(FiberStateError::InvalidFrame)?;
-    let fields = match (header, ty.shape()) {
-        (
-            crate::value::RuntimePlaceRecordHeader::Nominal {
-                nominal,
-                semantic_identity,
-                layout,
-            },
-            AwbcRuntimeTypeShape::NominalRecord {
-                public_id,
-                layout: expected_layout,
-                fields,
-                ..
-            },
-        ) if program
-            .strings
-            .get(public_id.index())
-            .is_some_and(|name| name == nominal.as_str())
-            && *semantic_identity == ty.semantic_identity()
-            && *layout == crate::entry::TypeLayoutHash::from_bytes(*expected_layout) =>
-        {
-            fields
-        }
-        (
-            crate::value::RuntimePlaceRecordHeader::Structural { names },
-            AwbcRuntimeTypeShape::Record { fields, .. },
-        ) if names.len() == fields.len()
-            && names.iter().zip(fields).all(|(name, field)| {
-                field
-                    .name
-                    .and_then(|name| program.strings.get(name.index()))
-                    == Some(name)
-            }) =>
-        {
-            fields
-        }
-        _ => {
-            return Err(FiberStateError::InvalidRuntimeValue {
-                path,
-                reason: "partial place header does not match its exact admitted record schema"
-                    .into(),
-            });
-        }
-    };
-    if children.len() != fields.len() {
-        return Err(FiberStateError::InvalidFrame);
-    }
-    for (ordinal, (child, field)) in children.iter().zip(fields).enumerate() {
-        if field.field.zero_based() as usize != ordinal {
-            return Err(FiberStateError::InvalidFrame);
-        }
-        validate_place_storage_at(
-            program,
+    if depth > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH
+        || !storage.matches_program_type(
+            crate::program_types::RuntimeProgramTypes::Awbc(program),
+            row.semantic_identity(),
             instantiation,
-            child,
-            field.ty,
-            format!("{path}.fields[{ordinal}]"),
-            depth + 1,
-        )?;
+        )
+    {
+        return Err(FiberStateError::InvalidRuntimeValue {
+            path,
+            reason: "place does not match the frame's instantiated type and record schema".into(),
+        });
+    }
+    for (ordinal, value) in storage.values().enumerate() {
+        validate_runtime_value_at(program, value, None, format!("{path}.values[{ordinal}]"))?;
     }
     Ok(())
 }

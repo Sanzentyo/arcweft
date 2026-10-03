@@ -98,7 +98,7 @@ impl RuntimeEnv {
         image: RuntimeEnvRollbackImage,
         owner: &RuntimeProgramOwner,
     ) -> Result<Self, String> {
-        Ok(Self {
+        let env = Self {
             scopes: image
                 .scopes
                 .into_iter()
@@ -137,7 +137,59 @@ impl RuntimeEnv {
                 .collect::<Result<_, String>>()?,
             spare_scopes: Vec::new(),
             assignment_discards: image.assignment_discards,
-        })
+        };
+        if let RuntimeProgramOwner::Plan(plan) = owner {
+            let mut instantiation = None;
+            for scope in &env.scopes {
+                if let super::RuntimeScopeTypeContext::Function {
+                    instantiation: binding,
+                    ..
+                } = &scope.function_context
+                {
+                    instantiation = binding.as_deref();
+                }
+                let mut declarations = std::collections::BTreeSet::new();
+                for slot in &scope.slots {
+                    if !declarations.insert(slot.local()) {
+                        return Err(format!("rollback scope repeats local {}", slot.local()));
+                    }
+                    let declaration = plan
+                        .local_declarations()
+                        .get(slot.local())
+                        .ok_or_else(|| format!("rollback has unknown local {}", slot.local()))?;
+                    if let Some(context) = declaration.context() {
+                        let expected = plan
+                            .type_table()
+                            .get(context)
+                            .ok_or_else(|| {
+                                format!("rollback local {} has unknown context", slot.local())
+                            })?
+                            .semantic_identity();
+                        if instantiation.is_none_or(|binding| binding.context() != expected) {
+                            return Err(format!(
+                                "rollback local {} has a foreign function context",
+                                slot.local()
+                            ));
+                        }
+                    }
+                    let expected = plan
+                        .type_table()
+                        .get(declaration.ty())
+                        .ok_or_else(|| format!("rollback local {} has unknown type", slot.local()))?
+                        .semantic_identity();
+                    if !slot
+                        .storage()
+                        .matches_program_type(owner.types(), expected, instantiation)
+                    {
+                        return Err(format!(
+                            "rollback local {} has invalid typed place storage",
+                            slot.local()
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(env)
     }
     pub(crate) fn try_duplicate_unrestricted(&self) -> Result<Self, RuntimeEvalError> {
         for (local, value) in self.bindings() {
@@ -675,6 +727,7 @@ mod tests {
         }
         let unit = RuntimeSemanticTypeId::from_bytes([0xc1; 32]);
         let header = RuntimeSemanticTypeId::from_bytes([0xc2; 32]);
+        let scoped_tuple = RuntimeSemanticTypeId::from_bytes([0xc3; 32]);
         let binder = RuntimeTypeBinder::new(0, 0, 1);
         let scope = RuntimeTypeScope::root().enter(binder).unwrap();
         let io = EffectFormula::literal(
@@ -690,6 +743,11 @@ mod tests {
                 [
                     RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
                     RuntimePlanTypeSeed::new(
+                        scoped_tuple,
+                        RuntimePlanTypeProjection::Tuple(Box::new([unit])),
+                    )
+                    .with_scope(scope.clone()),
+                    RuntimePlanTypeSeed::new(
                         header,
                         RuntimePlanTypeProjection::Function {
                             contract: RuntimeFunctionTypeContract::new(
@@ -702,7 +760,10 @@ mod tests {
                         },
                     ),
                 ],
-                [],
+                [crate::plan::RuntimeLocalDeclarationSeed::in_function(
+                    scoped_tuple,
+                    header,
+                )],
             )
             .unwrap();
         let mut sites = Vec::new();
@@ -743,6 +804,9 @@ mod tests {
         let mut env = RuntimeEnv::default();
         env.push_function_scope(sites[0], 0, Some(binding.clone()));
         env.push_scope();
+        let declaration = local(1);
+        let value = RuntimeValue::Tuple(vec![RuntimeValue::Unit]);
+        env.set(declaration, value.clone());
         assert_eq!(env.function_instantiation(), Some(binding.as_ref()));
         env.push_function_scope(sites[1], 0, None);
         assert!(env.function_instantiation().is_none());
@@ -751,6 +815,26 @@ mod tests {
         let image = env.inert_rollback_image(&owner).unwrap();
         let restored = RuntimeEnv::from_rollback_image(image.clone(), &owner).unwrap();
         assert_eq!(restored.function_instantiation(), Some(binding.as_ref()));
+        assert_eq!(restored.get(declaration), Some(&value));
+        let mut wrong_value = image.clone();
+        wrong_value.scopes[2].slots[0].value =
+            super::super::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                &RuntimeValue::Bool(true),
+                &owner,
+            )
+            .unwrap()
+            .into();
+        assert!(RuntimeEnv::from_rollback_image(wrong_value, &owner).is_err());
+        let mut duplicate = image.clone();
+        let repeated = duplicate.scopes[2].slots[0].clone();
+        duplicate.scopes[2].slots.push(repeated);
+        assert!(RuntimeEnv::from_rollback_image(duplicate, &owner).is_err());
+        let mut unknown = image.clone();
+        unknown.scopes[2].slots[0].local = local(99);
+        assert!(RuntimeEnv::from_rollback_image(unknown, &owner).is_err());
+        let mut detached = image.clone();
+        detached.scopes[1].function_context = super::super::RuntimeScopeTypeContext::Lexical;
+        assert!(RuntimeEnv::from_rollback_image(detached, &owner).is_err());
         let mut missing = image.clone();
         missing.scopes[1].function_context = super::super::RuntimeScopeTypeContext::Function {
             site: sites[0],
@@ -921,6 +1005,11 @@ mod tests {
 
     #[test]
     fn partial_field_move_preserves_siblings_and_rollback_then_restores_the_slot() {
+        use crate::pattern::RuntimeSemanticTypeId;
+        use crate::plan::{
+            RuntimeLocalDeclarationSeed, RuntimePlanBuilder, RuntimePlanRecordField,
+            RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+        };
         let source = local(1);
         let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap();
         let other = RuntimeRecordFieldId::try_from_zero_based_ordinal(1).unwrap();
@@ -955,10 +1044,46 @@ mod tests {
         assert_eq!(env.bindings().count(), 1);
         assert_eq!(env.bindings_snapshot().len(), 1);
         assert!(!env.bindings_snapshot()[0].storage().is_vacant());
-        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(
-            crate::awbc::schema::AwbcProgram::default(),
-        ));
+        let identity = |value| RuntimeSemanticTypeId::from_bytes([value; 32]);
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [
+                    RuntimePlanTypeSeed::new(identity(1), RuntimePlanTypeProjection::Unit),
+                    RuntimePlanTypeSeed::new(identity(2), RuntimePlanTypeProjection::Bool),
+                    RuntimePlanTypeSeed::new(
+                        identity(3),
+                        RuntimePlanTypeProjection::Need(identity(1)),
+                    ),
+                    RuntimePlanTypeSeed::new(
+                        identity(4),
+                        RuntimePlanTypeProjection::Record(Box::new([
+                            RuntimePlanRecordField::new("owner", identity(3)),
+                            RuntimePlanRecordField::new("other", identity(2)),
+                        ])),
+                    ),
+                ],
+                [RuntimeLocalDeclarationSeed::new(identity(4))],
+            )
+            .unwrap();
+        let owner = RuntimeProgramOwner::Plan(std::sync::Arc::new(builder.finish().unwrap()));
         let image = env.inert_rollback_image(&owner).unwrap();
+        let mut wrong_child = image.clone();
+        let encoded = serde_json::to_value(&wrong_child.scopes[0].slots[0].value).unwrap();
+        let mut forged = encoded;
+        let wrong = super::super::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+            &RuntimeValue::Unit,
+            &owner,
+        )
+        .unwrap();
+        forged["Record"]["fields"][1] = serde_json::json!({"Initialized": wrong});
+        wrong_child.scopes[0].slots[0].value = serde_json::from_value(forged).unwrap();
+        assert!(RuntimeEnv::from_rollback_image(wrong_child, &owner).is_err());
+        let mut wrong_header = image.clone();
+        let mut forged = serde_json::to_value(&wrong_header.scopes[0].slots[0].value).unwrap();
+        forged["Record"]["header"]["Structural"]["names"][1] = serde_json::json!("foreign");
+        wrong_header.scopes[0].slots[0].value = serde_json::from_value(forged).unwrap();
+        assert!(RuntimeEnv::from_rollback_image(wrong_header, &owner).is_err());
         let mut restored = RuntimeEnv::from_rollback_image(image, &owner).unwrap();
         assert_eq!(
             restored.read(&move_field),

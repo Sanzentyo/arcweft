@@ -11,6 +11,63 @@ mod authority;
 use crate::pattern::RuntimeSemanticTypeId;
 use authority::FunctionTypeAuthority;
 
+impl crate::value::RuntimePlaceStorage<RuntimeValue> {
+    /// Checks initialized descendants and partial record headers against the
+    /// same selected executable and immutable frame binding as complete values.
+    pub(crate) fn matches_program_type(
+        &self,
+        program: super::RuntimeProgramTypes<'_>,
+        expected: RuntimeSemanticTypeId,
+        binding: Option<&RuntimeFunctionEffectInstantiation>,
+    ) -> bool {
+        match program {
+            super::RuntimeProgramTypes::Plan(plan) => plan
+                .by_semantic(expected)
+                .is_some_and(|ty| self.matches_authority_type(plan, ty, binding, 0)),
+            super::RuntimeProgramTypes::Awbc(program) => program
+                .by_semantic(expected)
+                .is_some_and(|ty| self.matches_authority_type(program, ty, binding, 0)),
+        }
+    }
+
+    fn matches_authority_type<A: FunctionTypeAuthority>(
+        &self,
+        program: &A,
+        expected: A::Type,
+        binding: Option<&RuntimeFunctionEffectInstantiation>,
+        depth: usize,
+    ) -> bool {
+        if depth > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH
+            || program.scope(expected).is_none()
+        {
+            return false;
+        }
+        if let Some(value) = self.as_ref() {
+            return match binding {
+                Some(binding) => binding.value_matches(program, expected, value),
+                None => {
+                    program
+                        .scope(expected)
+                        .is_some_and(RuntimeTypeScope::is_root)
+                        && program.value_matches(expected, value.view(), depth)
+                }
+            };
+        }
+        if self.is_vacant() {
+            return true;
+        }
+        let Some((header, children)) = self.record_parts() else {
+            return false;
+        };
+        !children.is_empty()
+            && children.iter().enumerate().all(|(ordinal, child)| {
+                program
+                    .record_field(expected, header, children.len(), ordinal)
+                    .is_some_and(|ty| child.matches_authority_type(program, ty, binding, depth + 1))
+            })
+    }
+}
+
 /// One immutable solution of a function frame's declaration effect scope.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "EffectInstantiationWire", into = "EffectInstantiationWire")]
