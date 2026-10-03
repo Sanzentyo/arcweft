@@ -144,6 +144,7 @@ fn error_payload(ok: TypeKind) -> TypeKind {
         identity,
         1,
         [TypeKind::String],
+        &crate::types::GenericScope::default(),
     )
     .expect("Err payload schema");
     let case = AcceptedVariantCaseSemanticId::issue(
@@ -153,8 +154,15 @@ fn error_payload(ok: TypeKind) -> TypeKind {
         &shape,
     );
     TypeKind::VariantPayload(Box::new(
-        VariantPayloadType::try_new(VariantPayloadOwnerFamily::Result, owner, 1, case, shape)
-            .expect("payload keeps its typed owner"),
+        VariantPayloadType::try_new(
+            VariantPayloadOwnerFamily::Result,
+            owner,
+            1,
+            case,
+            shape,
+            &crate::types::GenericScope::default(),
+        )
+        .expect("payload keeps its typed owner"),
     ))
 }
 

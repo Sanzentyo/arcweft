@@ -25,9 +25,9 @@ pub use codec_use::{
     RuntimeVariantCodecUse,
 };
 pub use nominal::{
-    RuntimeNominalSchemaBody, RuntimeNominalSchemaCase, RuntimeNominalSchemaDefinition,
-    RuntimeNominalSchemaField, RuntimeNominalSchemaGraph, RuntimeNominalSchemaGraphError,
-    RuntimeNominalSchemaIdentity, RuntimeSchemaValueField,
+    RuntimeNominalDeclarationId, RuntimeNominalSchemaBody, RuntimeNominalSchemaCase,
+    RuntimeNominalSchemaDefinition, RuntimeNominalSchemaField, RuntimeNominalSchemaGraph,
+    RuntimeNominalSchemaGraphError, RuntimeNominalSchemaIdentity, RuntimeSchemaValueField,
 };
 pub use record_shape::{RuntimeNominalRecordShape, RuntimeNominalRecordShapeError};
 

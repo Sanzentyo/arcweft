@@ -176,6 +176,11 @@ impl CharacterDialoguePolicyTypeGraph {
             .iter()
             .map(|variant| {
                 RuntimeNominalSchemaDefinition::new(
+                    arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(
+                        *(variant.owner.schema_identity())
+                            .semantic_identity()
+                            .as_bytes(),
+                    ),
                     variant.owner.schema_identity(),
                     Box::<[RuntimeTypeSchema]>::default(),
                     RuntimeNominalSchemaBody::Variant {

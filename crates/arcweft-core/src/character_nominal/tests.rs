@@ -68,6 +68,7 @@ fn program(characters: &[CharacterId]) -> RuntimeProgramOwner {
             .runtime_semantic_identity();
             let nominal = RuntimeNominalTypeId::from_checked_digest(*semantic.as_bytes());
             RuntimeNominalSchemaDefinition::new(
+                crate::entry::RuntimeNominalDeclarationId::from_bytes(*semantic.as_bytes()),
                 RuntimeNominalSchemaIdentity::new(nominal, semantic),
                 vec![],
                 RuntimeNominalSchemaBody::Variant {

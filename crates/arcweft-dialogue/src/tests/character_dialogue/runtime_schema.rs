@@ -292,6 +292,11 @@ fn test_payload_graph() -> (
     let graph = RuntimeNominalSchemaGraph::try_new(
         vec![
             RuntimeNominalSchemaDefinition::new(
+                arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(
+                    *(RuntimeNominalSchemaIdentity::new(nominal.clone(), identity))
+                        .semantic_identity()
+                        .as_bytes(),
+                ),
                 RuntimeNominalSchemaIdentity::new(nominal.clone(), identity),
                 vec![],
                 RuntimeNominalSchemaBody::Record {
@@ -305,6 +310,14 @@ fn test_payload_graph() -> (
                 },
             ),
             RuntimeNominalSchemaDefinition::new(
+                arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(
+                    *(RuntimeNominalSchemaIdentity::new(
+                        voice_source_nominal(),
+                        voice_source_type(),
+                    ))
+                    .semantic_identity()
+                    .as_bytes(),
+                ),
                 RuntimeNominalSchemaIdentity::new(voice_source_nominal(), voice_source_type()),
                 vec![],
                 RuntimeNominalSchemaBody::Variant {
@@ -312,6 +325,11 @@ fn test_payload_graph() -> (
                 },
             ),
             RuntimeNominalSchemaDefinition::new(
+                arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(
+                    *(RuntimeNominalSchemaIdentity::new(look_source_nominal(), look_source_type()))
+                        .semantic_identity()
+                        .as_bytes(),
+                ),
                 RuntimeNominalSchemaIdentity::new(look_source_nominal(), look_source_type()),
                 vec![],
                 RuntimeNominalSchemaBody::Variant {

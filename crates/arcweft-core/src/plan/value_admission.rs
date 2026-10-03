@@ -136,6 +136,15 @@ impl<'a> PlanValueAuthority<'a> {
         self.get(ty)
             .expect("admission established every type/domain reference")
     }
+    fn by_semantic(
+        &self,
+        semantic: crate::pattern::RuntimeSemanticTypeId,
+    ) -> Option<RuntimePlanTypeId> {
+        match self {
+            Self::Sealed(plan) => plan.type_table().id_for_semantic(semantic),
+            Self::Building { types, .. } => types.id_for_semantic(semantic),
+        }
+    }
 
     fn record(&self, ty: RuntimePlanTypeId) -> Option<&'a RuntimeNominalRecordDomain> {
         match self {
@@ -254,7 +263,7 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
     }
 
     fn variant(
-        &self,
+        &mut self,
         ty: RuntimePlanTypeId,
         value: View<'_>,
     ) -> Result<Children<'a>, RuntimeSchemaError> {
@@ -274,7 +283,29 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
                 path: "$".to_owned(),
                 variant: name.to_owned(),
             })?;
-        if case.owner() != owner || case.name() != name {
+        let actual_ty = match owner {
+            crate::pattern::RuntimeVariantIdentity::Nominal {
+                semantic_identity, ..
+            } => self
+                .authority
+                .by_semantic(*semantic_identity)
+                .ok_or_else(|| Self::mismatch(value))?,
+            crate::pattern::RuntimeVariantIdentity::Builtin(_) => ty,
+        };
+        let actual_case = self
+            .authority
+            .declaration(actual_ty)
+            .select_variant_case(actual_ty, self.authority.variant(actual_ty), ordinal)
+            .map_err(|_| Self::mismatch(value))?;
+        if actual_case.owner() != owner
+            || actual_case.name() != name
+            || actual_case.payload().is_some() != payload.is_some()
+            || case.name() != name
+            || (matches!(
+                owner,
+                crate::pattern::RuntimeVariantIdentity::Nominal { .. }
+            ) && !self.context.nominal(ty, actual_ty))
+        {
             return Err(Self::mismatch(value));
         }
         match (case.payload(), payload.is_some()) {
@@ -287,10 +318,9 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
     }
 
     fn nominal(
-        &self,
+        &mut self,
         ty: RuntimePlanTypeId,
         nominal: &crate::entry::RuntimeNominalTypeId,
-        layout: crate::entry::TypeLayoutHash,
         value: View<'_>,
     ) -> Result<Children<'a>, RuntimeSchemaError> {
         if self.authority.variant(ty).is_some() {
@@ -308,32 +338,44 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
         let View::NominalRecord(record) = value else {
             return Err(Self::mismatch(value));
         };
-        if record.type_id() != nominal {
+        let actual_ty = self
+            .authority
+            .by_semantic(record.semantic_identity())
+            .ok_or_else(|| Self::mismatch(value))?;
+        let Type::Nominal {
+            nominal: actual_nominal,
+            layout: actual_layout,
+            ..
+        } = self.authority.declaration(actual_ty).projection()
+        else {
+            return Err(Self::mismatch(value));
+        };
+        if record.type_id() != actual_nominal {
             return Err(RuntimeSchemaError::NominalIdentity {
                 path: "$".to_owned(),
-                expected: nominal.as_str().to_owned(),
+                expected: actual_nominal.as_str().to_owned(),
                 actual: record.type_id().as_str().to_owned(),
             });
         }
-        let semantic_identity = self.authority.declaration(ty).semantic_identity();
-        if record.semantic_identity() != semantic_identity {
-            return Err(RuntimeSchemaError::NominalSemanticIdentity {
-                path: "$".to_owned(),
-                expected: semantic_identity,
-                actual: record.semantic_identity(),
-            });
-        }
-        if record.layout() != layout {
+        if record.layout() != *actual_layout {
             return Err(RuntimeSchemaError::NominalLayout {
                 path: "$".to_owned(),
             });
+        }
+        let actual_domain = self
+            .authority
+            .record(actual_ty)
+            .ok_or_else(|| Self::mismatch(value))?;
+        Self::arity(actual_domain.fields().len(), record.fields().len())?;
+        if !self.context.nominal(ty, actual_ty) {
+            return Err(Self::mismatch(value));
         }
         Self::arity(domain.fields().len(), record.fields().len())?;
         Ok(Children::NominalRecord(domain.fields()))
     }
 
     fn opaque(
-        &self,
+        &mut self,
         ty: RuntimePlanTypeId,
         owner: &RuntimeOpaqueTypeOwner,
         arguments: &[RuntimePlanTypeId],
@@ -468,12 +510,7 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
                 }
                 Ok(Children::Record(fields))
             }
-            (
-                Type::Nominal {
-                    nominal, layout, ..
-                },
-                _,
-            ) => self.nominal(ty, nominal, *layout, value),
+            (Type::Nominal { nominal, .. }, _) => self.nominal(ty, nominal, value),
             (Type::Option { .. } | Type::Result { .. } | Type::BuiltinVariant { .. }, _) => {
                 self.variant(ty, value)
             }

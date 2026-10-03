@@ -86,6 +86,9 @@ impl Fixture {
         let graph = RuntimeNominalSchemaGraph::try_new(
             vec![
                 RuntimeNominalSchemaDefinition::new(
+                    crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                        *(identity(1)).semantic_identity().as_bytes(),
+                    ),
                     identity(1),
                     vec![],
                     RuntimeNominalSchemaBody::Record {
@@ -99,6 +102,9 @@ impl Fixture {
                     },
                 ),
                 RuntimeNominalSchemaDefinition::new(
+                    crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                        *(identity(2)).semantic_identity().as_bytes(),
+                    ),
                     identity(2),
                     vec![],
                     RuntimeNominalSchemaBody::Variant {
@@ -121,6 +127,9 @@ impl Fixture {
                     },
                 ),
                 RuntimeNominalSchemaDefinition::new(
+                    crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                        *(identity(3)).semantic_identity().as_bytes(),
+                    ),
                     identity(3),
                     vec![],
                     RuntimeNominalSchemaBody::Record {

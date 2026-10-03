@@ -62,6 +62,9 @@ impl NominalGraphProjection<'_> {
             })
             .collect::<Result<_, Error>>()?;
         self.definitions.push(RuntimeNominalSchemaDefinition::new(
+            arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(
+                *(identity.clone()).semantic_identity().as_bytes(),
+            ),
             identity.clone(),
             vec![],
             RuntimeNominalSchemaBody::Variant { cases },

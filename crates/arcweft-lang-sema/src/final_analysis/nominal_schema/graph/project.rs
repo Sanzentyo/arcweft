@@ -186,6 +186,7 @@ impl NominalGraphProjection<'_> {
             }
         };
         self.definitions.push(RuntimeNominalSchemaDefinition::new(
+            nominal.declaration_identity(),
             identity.clone(),
             arguments,
             body,
@@ -204,7 +205,7 @@ impl NominalGraphProjection<'_> {
         self.types
             .get(&owner)
             .ok_or(ProjectError::MissingTypeFact { ty: owner })?
-            .instantiate_type_parameters_with_control(substitutions, &mut self.budget)
+            .instantiate_type_parameters_with_control(substitutions, &self.scope, &mut self.budget)
             .map_err(|error| match error {
                 TypeProjectionError::Instantiation(error) => Error::Instantiation(error),
                 TypeProjectionError::Control(error) => error,

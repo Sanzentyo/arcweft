@@ -1164,6 +1164,34 @@ impl CheckedCallableCatalog {
         Ok(())
     }
 
+    /// Visits the canonical declaration binder used by executable inputs.
+    pub(crate) fn visit_parameter_contracts<E: From<CheckedCallableParameterContractError>>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        for facts in self.records() {
+            if !matches!(facts.record().id(), CallableCandidateId::Project(_)) {
+                continue;
+            }
+            for group in facts.signature().groups() {
+                // Only complete declared groups have an executable template.
+                // Inferred applications are already visited through their
+                // checked instance types; evidence-only builtin slots do not
+                // introduce a declaration frame.
+                if group
+                    .parameters()
+                    .iter()
+                    .any(|parameter| parameter.declared_type().is_none())
+                {
+                    continue;
+                }
+                let contract = facts.parameter_contract(group.index())?;
+                visitor(contract.schema())?;
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn visit_types<E>(
         &self,
         visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,

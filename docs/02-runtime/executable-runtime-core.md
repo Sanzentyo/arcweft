@@ -207,6 +207,21 @@ Records store `{ public_id?, fields: [{ field, name, ty }] }`; variants store
 row retains its semantic identity. An executable nominal record also retains
 its public ID, source layout digest, ordered arguments, and record shape.
 
+Nominal rows also retain a source declaration identity independent of their
+instantiated arguments. The source graph supplies it during the same atomic
+type/domain admission; a later proof cannot replace it for an admitted instance.
+Plan-to-AWBC lowering and the version-one row codec preserve this identity.
+Relations between instances require the same declaration and domain kind, then
+compare ordered arguments in both directions under their respective scopes.
+This invariant argument relation also applies to callback effect rows.
+
+Live nominal admission first resolves the carrier's semantic identity in the
+selected executable and authenticates its public ID, layout, field/case shape
+and arity against that actual row. The active type context then relates that
+row to the expected declaration template. It does not substitute the expected
+template's layout into the carrier. A carrier with an open nominal header needs
+its own origin instantiation; the destination frame alone cannot supply it.
+
 Record shape uses the shared core `RuntimeNominalRecordShape`:
 Unit, Tuple, Record, and Newtype have wire tags 0, 1, 2, and 3. Each field
 encodes its explicit one-based ID, optional string-table name, and type ID.

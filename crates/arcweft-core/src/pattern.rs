@@ -3922,6 +3922,11 @@ mod tests {
         let nominal = RuntimeNominalTypeId::try_new("game.Pair").unwrap();
         let schema = RuntimeNominalSchemaGraph::try_new(
             vec![RuntimeNominalSchemaDefinition::new(
+                crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                    *(RuntimeNominalSchemaIdentity::new(nominal.clone(), identity(1)))
+                        .semantic_identity()
+                        .as_bytes(),
+                ),
                 RuntimeNominalSchemaIdentity::new(nominal.clone(), identity(1)),
                 vec![],
                 RuntimeNominalSchemaBody::Record {

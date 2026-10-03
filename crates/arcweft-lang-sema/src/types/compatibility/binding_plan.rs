@@ -618,12 +618,24 @@ where
                 arguments: found_arguments,
             },
         ) if expected.same_owner(found) && expected_arguments.len() == found_arguments.len() => {
-            relate_slices(
+            let paths = relate_slices(
                 expected_arguments,
                 found_arguments,
                 path,
                 context,
-                acceptance,
+                ConstraintAcceptance::PatternAcceptsActual,
+            )?;
+            expected_arguments.iter().zip(found_arguments).try_fold(
+                paths,
+                |paths, (expected, found)| {
+                    relate_many(
+                        expected,
+                        found,
+                        paths,
+                        context,
+                        ConstraintAcceptance::ActualAcceptsPattern,
+                    )
+                },
             )
         }
         (TypeConstraintShape::Ref(expected), TypeConstraintShape::Ref(found))

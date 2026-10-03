@@ -1329,6 +1329,11 @@ mod dynamic_character_dialogue_context_tests {
             .expect("canonical DialogueVoice nominal id");
         let voice_graph = RuntimeNominalSchemaGraph::try_new(
             [RuntimeNominalSchemaDefinition::new(
+                arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(
+                    *(RuntimeNominalSchemaIdentity::new(voice_nominal.clone(), voice_type))
+                        .semantic_identity()
+                        .as_bytes(),
+                ),
                 RuntimeNominalSchemaIdentity::new(voice_nominal.clone(), voice_type),
                 Vec::<arcweft_core::entry::RuntimeTypeSchema>::new(),
                 RuntimeNominalSchemaBody::Variant {

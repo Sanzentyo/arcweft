@@ -183,6 +183,11 @@ impl RuntimeCharacterLookSourceAuthority {
         let nominal = RuntimeNominalTypeId::from_checked_digest(*semantic.as_bytes());
         let graph = RuntimeNominalSchemaGraph::try_new(
             [RuntimeNominalSchemaDefinition::new(
+                crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                    *(RuntimeNominalSchemaIdentity::new(nominal.clone(), semantic))
+                        .semantic_identity()
+                        .as_bytes(),
+                ),
                 RuntimeNominalSchemaIdentity::new(nominal.clone(), semantic),
                 Vec::<crate::entry::RuntimeTypeSchema>::new(),
                 RuntimeNominalSchemaBody::Variant {

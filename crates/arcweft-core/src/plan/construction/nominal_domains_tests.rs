@@ -17,6 +17,14 @@ fn semantic(tag: u8) -> RuntimeSemanticTypeId {
 fn schema(shape: Shape, names: &[Option<&str>]) -> RuntimeNominalSchemaGraph {
     RuntimeNominalSchemaGraph::try_new(
         vec![RuntimeNominalSchemaDefinition::new(
+            crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                *(RuntimeNominalSchemaIdentity::new(
+                    RuntimeNominalTypeId::try_new("fixture.RecordDomain").unwrap(),
+                    semantic(1),
+                ))
+                .semantic_identity()
+                .as_bytes(),
+            ),
             RuntimeNominalSchemaIdentity::new(
                 RuntimeNominalTypeId::try_new("fixture.RecordDomain").unwrap(),
                 semantic(1),
@@ -254,5 +262,41 @@ fn conflicting_shapes_do_not_replace_an_already_admitted_domain() {
     assert_eq!(
         plan.nominal_record_domains().get(owner).unwrap().shape(),
         Shape::Tuple
+    );
+}
+
+#[test]
+fn conflicting_declaration_proof_leaves_admitted_nominal_unchanged() {
+    let schema = schema(Shape::Tuple, &[None]);
+    let domain = RuntimeNominalRecordDomainSeed::new(semantic(1), Shape::Tuple, fields(&[None]));
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_semantic_batch(types(&schema), [], [domain.clone()], [], &schema)
+        .unwrap();
+    let original = schema.definitions().next().unwrap();
+    let forged = RuntimeNominalSchemaGraph::try_new(
+        vec![RuntimeNominalSchemaDefinition::new(
+            crate::entry::RuntimeNominalDeclarationId::from_bytes([0x91; 32]),
+            original.identity().clone(),
+            vec![],
+            original.body().clone(),
+        )],
+        RuntimeSchemaLimits::engine_default(),
+    )
+    .unwrap();
+    assert!(matches!(
+        builder.admit_semantic_batch(types(&schema), [], [domain], [], &forged),
+        Err(RuntimePlanBuildError::NominalSchema(
+            RuntimePlanNominalSchemaError::Mismatch {
+                component: RuntimePlanSchemaComponent::NominalDeclaration,
+                ..
+            }
+        ))
+    ));
+    let plan = builder.finish().unwrap();
+    let ty = plan.type_table().id_for_semantic(semantic(1)).unwrap();
+    assert_eq!(
+        plan.type_table().get(ty).unwrap().nominal_declaration(),
+        Some(original.declaration())
     );
 }

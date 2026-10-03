@@ -32,7 +32,12 @@ impl CheckedVariantCase {
         payload: VariantPayloadShape,
         diagnostic_name: Option<String>,
     ) -> Result<Self, CheckedVariantOwnerError> {
-        if !payload.has_valid_rows(family, semantic_type, ordinal) {
+        if !payload.has_valid_rows(
+            family,
+            semantic_type,
+            ordinal,
+            &crate::types::GenericScope::default(),
+        ) {
             return Err(CheckedVariantOwnerError::Payload {
                 ordinal,
                 reason: VariantPayloadSealError::InvalidFieldRows,
@@ -81,6 +86,7 @@ impl CheckedVariantCase {
             self.ordinal,
             self.semantic_id,
             self.payload.clone(),
+            &crate::types::GenericScope::default(),
         )
         .ok()
         .map(|payload| Some(TypeKind::VariantPayload(Box::new(payload))))
@@ -241,13 +247,14 @@ impl CheckedVariantOwner {
                         .map_err(|_| CheckedVariantOwnerError::CaseOrdinalOverflow)?;
                     let payload = match payload {
                         None => VariantPayloadShape::Unit,
-                        Some(ty) => {
-                            VariantPayloadShape::try_tuple(family, semantic_type, ordinal, [ty])
-                                .map_err(|reason| CheckedVariantOwnerError::Payload {
-                                    ordinal,
-                                    reason,
-                                })?
-                        }
+                        Some(ty) => VariantPayloadShape::try_tuple(
+                            family,
+                            semantic_type,
+                            ordinal,
+                            [ty],
+                            &crate::types::GenericScope::default(),
+                        )
+                        .map_err(|reason| CheckedVariantOwnerError::Payload { ordinal, reason })?,
                     };
                     CheckedVariantCase::seal(family, semantic_type, ordinal, payload, name)
                 })

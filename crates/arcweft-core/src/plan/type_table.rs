@@ -76,6 +76,7 @@ impl RuntimePlanTypeSeed {
 /// One exact semantic identity and its final plan-local projection.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimePlanTypeDeclaration {
+    nominal_declaration: Option<crate::entry::RuntimeNominalDeclarationId>,
     semantic_identity: RuntimeSemanticTypeId,
     scope: super::RuntimeTypeScope,
     projection: RuntimePlanTypeProjection<RuntimePlanTypeId>,
@@ -83,6 +84,9 @@ pub struct RuntimePlanTypeDeclaration {
 }
 
 impl RuntimePlanTypeDeclaration {
+    pub const fn nominal_declaration(&self) -> Option<crate::entry::RuntimeNominalDeclarationId> {
+        self.nominal_declaration
+    }
     #[must_use]
     pub const fn scope(&self) -> &super::RuntimeTypeScope {
         &self.scope
@@ -307,6 +311,16 @@ pub(crate) struct PreparedRuntimePlanTypeBatch {
 }
 
 impl PreparedRuntimePlanTypeBatch {
+    pub(crate) fn retain_nominal_declarations(
+        &mut self,
+        graph: &crate::entry::RuntimeNominalSchemaGraph,
+    ) {
+        for row in &mut self.candidate_rows {
+            if let Some(definition) = graph.definition(row.semantic_identity) {
+                row.nominal_declaration = Some(definition.declaration());
+            }
+        }
+    }
     pub(crate) fn result_ids(&self) -> &[RuntimePlanTypeId] {
         &self.result_ids
     }
@@ -476,6 +490,11 @@ impl RuntimePlanTypeTableBuilder {
         for seed in unique {
             let projection = rewrite_projection(&seed, &candidate_ids)?;
             let declaration = RuntimePlanTypeDeclaration {
+                nominal_declaration: self
+                    .by_semantic_identity
+                    .get(&seed.semantic_identity)
+                    .and_then(|id| self.get(*id))
+                    .and_then(RuntimePlanTypeDeclaration::nominal_declaration),
                 semantic_identity: seed.semantic_identity,
                 scope: seed.scope.clone(),
                 projection,

@@ -905,6 +905,11 @@ fn assignment_nominal(
     let runtime_nominal = RuntimeNominalTypeId::try_new("test::assignment::Point").unwrap();
     let graph = RuntimeNominalSchemaGraph::try_new(
         vec![RuntimeNominalSchemaDefinition::new(
+            arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(
+                *(RuntimeNominalSchemaIdentity::new(runtime_nominal.clone(), identity))
+                    .semantic_identity()
+                    .as_bytes(),
+            ),
             RuntimeNominalSchemaIdentity::new(runtime_nominal.clone(), identity),
             vec![],
             RuntimeNominalSchemaBody::Record {
@@ -2738,6 +2743,14 @@ fn variant_source_graph(
     Arc::new(
         RuntimeNominalSchemaGraph::try_new(
             vec![RuntimeNominalSchemaDefinition::new(
+                arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(
+                    *(RuntimeNominalSchemaIdentity::new(
+                        RuntimeNominalTypeId::try_new(nominal).unwrap(),
+                        RuntimeSemanticTypeId::from_bytes([marker; 32]),
+                    ))
+                    .semantic_identity()
+                    .as_bytes(),
+                ),
                 RuntimeNominalSchemaIdentity::new(
                     RuntimeNominalTypeId::try_new(nominal).unwrap(),
                     RuntimeSemanticTypeId::from_bytes([marker; 32]),

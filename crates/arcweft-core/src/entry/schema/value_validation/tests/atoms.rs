@@ -250,6 +250,9 @@ fn nominal_variant_payloads_use_runtime_scalar_schema_authority() {
     );
     let graph = RuntimeNominalSchemaGraph::try_new(
         vec![RuntimeNominalSchemaDefinition::new(
+            crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                *(identity.clone()).semantic_identity().as_bytes(),
+            ),
             identity.clone(),
             vec![],
             RuntimeNominalSchemaBody::Variant {

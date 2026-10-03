@@ -306,6 +306,15 @@ impl<A: FunctionTypeAuthority> RuntimeValueTypeContext<A::Type>
             .is_ok()
             && !self.matcher.predicate.is_impossible()
     }
+    fn nominal(&mut self, expected: A::Type, actual: A::Type) -> bool {
+        // A carrier with an open header needs its own origin instantiation;
+        // the destination frame cannot supply that evidence.
+        self.matcher
+            .program
+            .scope(actual)
+            .is_some_and(RuntimeTypeScope::is_root)
+            && self.callable(expected, actual)
+    }
     fn begin_choice(&mut self) {
         self.choices.push(ValueChoiceRelation {
             before: self.matcher.predicate.clone(),
@@ -672,6 +681,29 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
         {
             return Ok(());
         }
+        if let Some(arguments) = self.program.nominal_arguments(expected, actual) {
+            let (expected, actual) = arguments?;
+            if expected.len() != actual.len() {
+                return Err(());
+            }
+            for (expected, actual) in expected.iter().zip(actual) {
+                self.types(
+                    *expected,
+                    *actual,
+                    depth + 1,
+                    &expected_environment,
+                    &actual_environment,
+                )?;
+                self.types(
+                    *actual,
+                    *expected,
+                    depth + 1,
+                    &actual_environment,
+                    &expected_environment,
+                )?;
+            }
+            return Ok(());
+        }
         match (
             self.program.function(expected),
             self.program.function(actual),
@@ -841,6 +873,74 @@ mod tests {
         pattern::RuntimeSemanticTypeId,
         plan::{RuntimeFunctionTypeContract, RuntimeTypeBinder, RuntimeTypeScope},
     };
+
+    #[test]
+    fn nominal_arguments_preserve_declaration_identity_and_invariant_effects() {
+        let row = |marker, shape| {
+            AwbcRuntimeType::new(RuntimeSemanticTypeId::from_bytes([marker; 32]), shape)
+        };
+        let declaration = crate::entry::RuntimeNominalDeclarationId::from_bytes([0x81; 32]);
+        let callback = |effects| AwbcRuntimeTypeShape::Function {
+            contract: RuntimeFunctionTypeContract::new(
+                RuntimeTypeBinder::EMPTY,
+                EffectPredicate::unconstrained(),
+                effects,
+            ),
+            parameters: vec![],
+            result: AwbcTypeId(0),
+        };
+        let nominal = |argument| AwbcRuntimeTypeShape::NominalRecord {
+            public_id: crate::awbc::schema::AwbcStringId(0),
+            layout: [0x82; 32],
+            arguments: vec![argument],
+            shape: crate::entry::RuntimeNominalRecordShape::Unit,
+            fields: vec![],
+        };
+        let mut program = AwbcProgram::default();
+        program.runtime_types = vec![
+            row(1, AwbcRuntimeTypeShape::Unit),
+            row(2, callback(EffectFormula::empty())),
+            row(
+                3,
+                callback(EffectFormula::literal(
+                    crate::effect_row::EffectSet::from_labels(["io.read"]).unwrap(),
+                    None,
+                )),
+            ),
+            row(4, nominal(AwbcTypeId(1))).with_nominal_declaration(declaration),
+            row(5, nominal(AwbcTypeId(2))).with_nominal_declaration(declaration),
+            row(6, nominal(AwbcTypeId(1))).with_nominal_declaration(
+                crate::entry::RuntimeNominalDeclarationId::from_bytes([0x83; 32]),
+            ),
+            row(
+                7,
+                AwbcRuntimeTypeShape::Function {
+                    contract: RuntimeFunctionTypeContract::new(
+                        RuntimeTypeBinder::new(0, 0, 1),
+                        EffectPredicate::unconstrained(),
+                        EffectFormula::empty(),
+                    ),
+                    parameters: vec![AwbcTypeId(4)],
+                    result: AwbcTypeId(0),
+                },
+            ),
+        ];
+        assert!(program.parameter_contract_accepts_types(AwbcTypeId(6), [(0, AwbcTypeId(4))]));
+        assert!(!program.parameter_contract_accepts_types(AwbcTypeId(6), [(0, AwbcTypeId(3))]));
+        program.runtime_types[6] = row(
+            8,
+            AwbcRuntimeTypeShape::Function {
+                contract: RuntimeFunctionTypeContract::new(
+                    RuntimeTypeBinder::new(0, 0, 1),
+                    EffectPredicate::unconstrained(),
+                    EffectFormula::empty(),
+                ),
+                parameters: vec![AwbcTypeId(3)],
+                result: AwbcTypeId(0),
+            },
+        );
+        assert!(!program.parameter_contract_accepts_types(AwbcTypeId(6), [(0, AwbcTypeId(5))]));
+    }
 
     #[test]
     fn failed_value_choice_does_not_leak_callback_effect_constraints() {

@@ -218,7 +218,7 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
     }
 
     fn variant(
-        &self,
+        &mut self,
         ty: AwbcTypeId,
         row: &AwbcRuntimeType,
         value: View<'_>,
@@ -252,16 +252,46 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
                 expected == actual
             }
             (
-                AwbcVariantIdentity::Nominal { public_id, layout },
+                AwbcVariantIdentity::Nominal { .. },
                 RuntimeVariantIdentity::Nominal {
                     nominal,
                     semantic_identity,
                     layout: actual_layout,
                 },
             ) => {
+                let actual_ty = self
+                    .program
+                    .semantic_type_id(*semantic_identity)
+                    .ok_or_else(|| Self::mismatch(value))?;
+                let actual_row = self.row(actual_ty)?;
+                let Type::Variant {
+                    owner: AwbcVariantIdentity::Nominal { public_id, layout },
+                    arguments,
+                    cases,
+                } = actual_row.shape()
+                else {
+                    return Err(Self::mismatch(value));
+                };
+                self.program
+                    .validate_variant_fields(
+                        actual_ty,
+                        &AwbcVariantIdentity::Nominal {
+                            public_id: *public_id,
+                            layout: *layout,
+                        },
+                        arguments,
+                        cases,
+                    )
+                    .map_err(|_| Self::mismatch(value))?;
+                let actual_case = usize::try_from(ordinal)
+                    .ok()
+                    .and_then(|index| cases.get(index))
+                    .ok_or_else(|| Self::mismatch(value))?;
                 self.string(*public_id)? == nominal.as_str()
-                    && row.semantic_identity() == *semantic_identity
                     && layout == actual_layout.as_bytes()
+                    && self.string(actual_case.name)? == name
+                    && actual_case.payload.is_some() == payload.is_some()
+                    && self.context.nominal(ty, actual_ty)
             }
             _ => false,
         };
@@ -367,17 +397,24 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
                 }
                 Ok(Children::Record(fields))
             }
-            (
-                Type::NominalRecord {
+            (Type::NominalRecord { shape, fields, .. }, View::NominalRecord(actual)) => {
+                self.fields(ty, *shape, fields)?;
+                let actual_ty = self
+                    .program
+                    .semantic_type_id(actual.semantic_identity())
+                    .ok_or_else(|| Self::mismatch(value))?;
+                let actual_row = self.row(actual_ty)?;
+                let Type::NominalRecord {
                     public_id,
                     layout,
                     shape,
-                    fields,
+                    fields: actual_fields,
                     ..
-                },
-                View::NominalRecord(actual),
-            ) => {
-                self.fields(ty, *shape, fields)?;
+                } = actual_row.shape()
+                else {
+                    return Err(Self::mismatch(value));
+                };
+                self.fields(actual_ty, *shape, actual_fields)?;
                 if self.string(*public_id)? != actual.type_id().as_str() {
                     return Err(RuntimeSchemaError::NominalIdentity {
                         path: "$".to_owned(),
@@ -385,17 +422,14 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
                         actual: actual.type_id().as_str().to_owned(),
                     });
                 }
-                if actual.semantic_identity() != row.semantic_identity() {
-                    return Err(RuntimeSchemaError::NominalSemanticIdentity {
-                        path: "$".to_owned(),
-                        expected: row.semantic_identity(),
-                        actual: actual.semantic_identity(),
-                    });
-                }
                 if layout != actual.layout().as_bytes() {
                     return Err(RuntimeSchemaError::NominalLayout {
                         path: "$".to_owned(),
                     });
+                }
+                Self::arity(actual_fields.len(), actual.fields().len())?;
+                if !self.context.nominal(ty, actual_ty) {
+                    return Err(Self::mismatch(value));
                 }
                 Self::arity(fields.len(), actual.fields().len())?;
                 Ok(Children::Record(fields))

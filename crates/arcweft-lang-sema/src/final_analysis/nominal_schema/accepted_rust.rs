@@ -115,6 +115,7 @@ impl RuntimeAcceptedRustNominalProjection {
                 semantic_type,
                 ordinal,
                 fields.iter().cloned(),
+                &crate::types::GenericScope::default(),
             )?,
             EnumVariantPayload::Record(fields) => VariantPayloadShape::try_record(
                 family,
@@ -123,11 +124,19 @@ impl RuntimeAcceptedRustNominalProjection {
                 fields
                     .iter()
                     .map(|field| (field.name().to_owned(), field.ty().clone())),
+                &crate::types::GenericScope::default(),
             )?,
         };
         let case = AcceptedVariantCaseSemanticId::issue(family, semantic_type, ordinal, &shape);
-        VariantPayloadType::try_new(family, owner, ordinal, case, shape)
-            .map(|payload| Some(TypeKind::VariantPayload(Box::new(payload))))
+        VariantPayloadType::try_new(
+            family,
+            owner,
+            ordinal,
+            case,
+            shape,
+            &crate::types::GenericScope::default(),
+        )
+        .map(|payload| Some(TypeKind::VariantPayload(Box::new(payload))))
     }
 
     pub const fn stamp(&self) -> AcceptedRustProjectionStamp {

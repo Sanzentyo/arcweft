@@ -774,7 +774,7 @@ impl RuntimePlanBuilder {
         nominal_schema: &crate::entry::RuntimeNominalSchemaGraph,
     ) -> Result<RuntimePlanSemanticAdmission, RuntimePlanBuildError> {
         self.ensure_usable()?;
-        let prepared_types = self.types.prepare_batch(types)?;
+        let mut prepared_types = self.types.prepare_batch(types)?;
         let locals = locals.into_iter().collect::<Box<[_]>>();
         let declared_local_types = locals
             .iter()
@@ -851,6 +851,8 @@ impl RuntimePlanBuilder {
             variants: &prepared_variants,
         }
         .validate(nominal_schema, domain_owners)?;
+
+        prepared_types.retain_nominal_declarations(nominal_schema);
 
         let type_ids = self.types.commit_batch(prepared_types);
         let admitted_local_ids = self.locals.commit_batch(prepared_locals);
@@ -3123,6 +3125,11 @@ mod tests {
     fn schema(body: RuntimeNominalSchemaBody) -> RuntimeNominalSchemaGraph {
         RuntimeNominalSchemaGraph::try_new(
             vec![RuntimeNominalSchemaDefinition::new(
+                crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                    *(RuntimeNominalSchemaIdentity::new(nominal(), identity(1)))
+                        .semantic_identity()
+                        .as_bytes(),
+                ),
                 RuntimeNominalSchemaIdentity::new(nominal(), identity(1)),
                 vec![],
                 body,

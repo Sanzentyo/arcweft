@@ -103,11 +103,16 @@ impl VariantPayloadTypeShape {
         family: VariantPayloadOwnerFamily,
         owner: super::SemanticTypeDigest,
         ordinal: u32,
+        scope: &super::super::GenericScope,
     ) -> Result<VariantPayloadShape, VariantPayloadSealError> {
         match self {
-            Self::Tuple(fields) => {
-                VariantPayloadShape::try_tuple(family, owner, ordinal, fields.iter().cloned())
-            }
+            Self::Tuple(fields) => VariantPayloadShape::try_tuple(
+                family,
+                owner,
+                ordinal,
+                fields.iter().cloned(),
+                scope,
+            ),
             Self::Record(fields) => VariantPayloadShape::try_record(
                 family,
                 owner,
@@ -115,6 +120,7 @@ impl VariantPayloadTypeShape {
                 fields
                     .iter()
                     .map(|field| (field.diagnostic_name.clone(), field.ty.clone())),
+                scope,
             ),
         }
     }
@@ -222,8 +228,9 @@ impl VariantPayloadType {
         case_ordinal: u32,
         case: AcceptedVariantCaseSemanticId,
         shape: VariantPayloadShape,
+        scope: &super::super::GenericScope,
     ) -> Result<Self, VariantPayloadSealError> {
-        CheckedVariantPayload::try_new(owner_family, owner_type, case_ordinal, case, shape)
+        CheckedVariantPayload::try_new(owner_family, owner_type, case_ordinal, case, shape, scope)
             .map(CheckedVariantPayload::into_type)
     }
 
@@ -378,9 +385,12 @@ impl VariantPayloadType {
             return Err(VariantPayloadSealError::PoisonedOwnerType);
         }
         let owner_semantic_type = self.owner_type.semantic_identity_digest()?;
-        let shape =
-            self.shape
-                .try_seal(self.owner_family, owner_semantic_type, self.case_ordinal)?;
+        let shape = self.shape.try_seal(
+            self.owner_family,
+            owner_semantic_type,
+            self.case_ordinal,
+            &super::super::GenericScope::default(),
+        )?;
         let case = AcceptedVariantCaseSemanticId::issue(
             self.owner_family,
             owner_semantic_type,

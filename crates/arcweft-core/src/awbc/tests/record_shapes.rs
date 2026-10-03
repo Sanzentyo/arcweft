@@ -21,6 +21,11 @@ fn record_program(shape: Shape, count: usize) -> (AwbcProgram, RuntimeNominalSch
         .collect::<Vec<_>>();
     let graph = RuntimeNominalSchemaGraph::try_new(
         vec![RuntimeNominalSchemaDefinition::new(
+            crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                *(RuntimeNominalSchemaIdentity::new(nominal.clone(), identity))
+                    .semantic_identity()
+                    .as_bytes(),
+            ),
             RuntimeNominalSchemaIdentity::new(nominal.clone(), identity),
             vec![],
             RuntimeNominalSchemaBody::Record {
@@ -309,6 +314,9 @@ fn recursive_nominal_schema_verifies_without_unfolding_a_checked_type_tree() {
     let reference = RuntimeNominalSchemaIdentity::new(nominal.clone(), identity);
     let graph = RuntimeNominalSchemaGraph::try_new(
         vec![RuntimeNominalSchemaDefinition::new(
+            crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                *(reference.clone()).semantic_identity().as_bytes(),
+            ),
             reference.clone(),
             vec![],
             RuntimeNominalSchemaBody::Record {
@@ -446,6 +454,14 @@ fn anonymous_record_and_variant_constants_read_names_only_from_the_type_table() 
     let variant_identity = RuntimeSemanticTypeId::from_bytes([3; 32]);
     let variant_graph = RuntimeNominalSchemaGraph::try_new(
         vec![RuntimeNominalSchemaDefinition::new(
+            crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                *(RuntimeNominalSchemaIdentity::new(
+                    RuntimeNominalTypeId::try_new("Cases").unwrap(),
+                    variant_identity,
+                ))
+                .semantic_identity()
+                .as_bytes(),
+            ),
             RuntimeNominalSchemaIdentity::new(
                 RuntimeNominalTypeId::try_new("Cases").unwrap(),
                 variant_identity,

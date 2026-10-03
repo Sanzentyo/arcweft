@@ -63,6 +63,26 @@ impl ConstraintDomain for DefaultTypeRelation {
 }
 
 impl CheckedDeclarationDefault {
+    /// One declaration-owned eligibility rule shared by contextual checking
+    /// and the final default relation.
+    pub(crate) fn effect_variables(
+        signature: &CallableSignatureSchema,
+        coordinate: CallableParameterCoordinate,
+    ) -> Result<Vec<EffectConstraintVariable>, FinalSemanticAnalysisError> {
+        let expected = signature
+            .parameter_type(coordinate)
+            .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+        let used = TypeGenericUseCollector::collect(expected)
+            .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+        Ok(signature.generic_inventory().effects().iter().map(|entry| {
+            let bindable = entry.role() == crate::callable::CallableSchemaGenericRole::Candidate
+                && matches!(entry.parameter(), GenericEffectReference::Free(parameter) if used.effects().contains(parameter));
+            EffectConstraintVariable::new(entry.parameter().clone(), if bindable {
+                EffectConstraintEligibility::Bindable
+            } else { EffectConstraintEligibility::Rigid })
+        }).collect())
+    }
+
     /// Omitted parameter effects may be chosen for this default invocation.
     /// Earlier input effects remain rigid; the declared binding is not narrowed.
     pub(crate) fn check_type(
@@ -79,16 +99,7 @@ impl CheckedDeclarationDefault {
         if expected.accepts(actual) {
             return Ok(true);
         }
-        let used = TypeGenericUseCollector::collect(expected)
-            .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-        let inventory = signature.generic_inventory();
-        let variables = inventory.effects().iter().map(|entry| {
-            let bindable = entry.role() == crate::callable::CallableSchemaGenericRole::Candidate
-                && matches!(entry.parameter(), GenericEffectReference::Free(parameter) if used.effects().contains(parameter));
-            EffectConstraintVariable::new(entry.parameter().clone(), if bindable {
-                EffectConstraintEligibility::Bindable
-            } else { EffectConstraintEligibility::Rigid })
-        }).collect::<Vec<_>>();
+        let variables = Self::effect_variables(signature, coordinate)?;
         let effects = TypeConstraintEffectScope::seal_call_scope_with_predicate(
             variables,
             [],

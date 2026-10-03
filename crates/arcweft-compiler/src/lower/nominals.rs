@@ -445,18 +445,30 @@ pub(super) fn definition(
                         .map(RuntimeNominalDefinition::Record)
                 }
                 RuntimeProjectNominalKind::Variant => {
-                    let owner =
-                        analysis
-                            .project_variant_owner(semantic_type)?
-                            .ok_or_else(|| RuntimeSemanticProjectionError::Type {
-                                reason: "source nominal variant definition is missing".to_owned(),
-                            })?;
-                    Ok(RuntimeNominalDefinition::nominal_variant(
-                        ty,
-                        variants::runtime_checked_variant_cases_under(
-                            &owner, symbols, world, analysis, None,
-                        )?,
-                    )?)
+                    let cases = projection
+                        .variant_cases()
+                        .iter()
+                        .map(|case| {
+                            let payload = case
+                                .payload()
+                                .map(|payload| {
+                                    runtime_type_scoped_at(
+                                        payload,
+                                        symbols,
+                                        world,
+                                        analysis,
+                                        &RuntimeTypeProjectionPath::root(),
+                                        projection.checked().scope(),
+                                    )
+                                })
+                                .transpose()?;
+                            Ok(RuntimeNormalizedVariantCase::new(
+                                case.diagnostic_name().as_str().to_owned(),
+                                payload,
+                            ))
+                        })
+                        .collect::<Result<Box<[_]>, RuntimeSemanticProjectionError>>()?;
+                    Ok(RuntimeNominalDefinition::nominal_variant(ty, cases)?)
                 }
             }
         }

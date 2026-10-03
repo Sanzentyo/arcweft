@@ -7,8 +7,23 @@ use crate::{
 
 fn view_defaults(source: &str) -> (Vec<CheckedDeclarationDefault>, [u8; 32]) {
     let world = super::fixture(source, None);
-    let report = super::analyze(&world)
-        .unwrap_or_else(|error| panic!("View defaults check: {error:?}\n{source}"));
+    let report = super::analyze(&world).unwrap_or_else(|error| {
+        let expression = match &error {
+            FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner } => world
+                .project
+                .analysis_view()
+                .unwrap()
+                .modules()
+                .find_map(|(_, module)| {
+                    module
+                        .resolve_expr(*owner)
+                        .ok()
+                        .map(|expr| expr.kind().clone())
+                }),
+            _ => None,
+        };
+        panic!("View defaults check: {error:?}\nexpression: {expression:?}\n{source}")
+    });
     let symbol = world
         .symbols
         .callable_symbols()
@@ -73,7 +88,11 @@ fn view_defaults(source: &str) -> (Vec<CheckedDeclarationDefault>, [u8; 32]) {
             panic!("general expression input ABI for a default: {error:?}\n{source}")
         });
         assert_eq!(abi.coordinate().path(), path);
-        assert_eq!(abi.result().value_type(), checked.value_type());
+        let projected_result = abi
+            .environment()
+            .instantiate_type(checked.value_type().expect("typed default"))
+            .expect("default result in its checked lexical environment");
+        assert_eq!(abi.result().value_type(), Some(&projected_result));
         assert_eq!(abi.effects(), checked.effects());
         assert_eq!(abi.suspension(), default.suspension());
         assert_eq!(abi.control(), default.control());
@@ -81,10 +100,15 @@ fn view_defaults(source: &str) -> (Vec<CheckedDeclarationDefault>, [u8; 32]) {
             .captures()
             .iter()
             .flat_map(|capture| {
-                capture
-                    .used_locals()
-                    .iter()
-                    .map(|local| (local.local(), local.origin(), local.ty()))
+                capture.used_locals().iter().map(|local| {
+                    (
+                        local.local(),
+                        local.origin(),
+                        abi.environment()
+                            .instantiate_type(local.ty())
+                            .expect("captured type in its checked lexical environment"),
+                    )
+                })
             })
             .collect::<Vec<_>>();
         expected.sort_by(|left, right| left.1.cmp(right.1));
@@ -94,7 +118,7 @@ fn view_defaults(source: &str) -> (Vec<CheckedDeclarationDefault>, [u8; 32]) {
                 .map(|input| {
                     let binding = input.binding();
                     assert!(!input.uses().is_empty());
-                    (binding.local(), binding.origin(), binding.ty())
+                    (binding.local(), binding.origin(), binding.ty().clone())
                 })
                 .collect::<Vec<_>>(),
             expected,
@@ -114,6 +138,12 @@ fn view_parameter_defaults_accept_general_checked_values_and_earlier_inputs() {
         r#"view Main(first: i64, callback: i64 -> i64 = |value: i64| value + first) { Text("value") }"#,
         r#"view Main(first: i64, callback: i64 -> i64 = _ + first) { Text("value") }"#,
         r#"view Main(first: i64 = 1, second: i64 = first + 1, third: i64 = second + first) { Text(third) }"#,
+        r#"struct Holder<T> { callback: T }
+view Main(first: Holder<i64 -> i64> = Holder { callback = |input: i64| input + 1 }) { Text("static") }"#,
+        r#"struct Holder<T> { callback: T }
+view Main(first: Holder<i64 -> i64> = Holder { callback = |input: i64| input + 1 }, value: Holder<i64 -> i64> = first) { Text("static") }"#,
+        r#"enum Slot<T> { Empty, Full T }
+view Main(first: Slot<i64 -> i64> = .Full(|input: i64| input + 1), value: Slot<i64 -> i64> = first) { Text("static") }"#,
         r#"view Main(first: f32 = 1.0, second: f32 = first + 1.0) { Button().fx(wave(speed = second)) }"#,
     ] {
         let (defaults, _) = view_defaults(source);

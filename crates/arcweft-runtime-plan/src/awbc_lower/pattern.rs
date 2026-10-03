@@ -276,7 +276,12 @@ pub(crate) fn preflight_plan_types(
                 .expect("reserved plan type")
                 .scope()
                 .clone();
-            inventory.define_plan_type(ty, shape, scope, codec, arguments)
+            let declaration = plan
+                .type_table()
+                .get(ty)
+                .expect("reserved plan type")
+                .nominal_declaration();
+            inventory.define_plan_type(ty, shape, scope, declaration, codec, arguments)
         });
         match result {
             Ok(()) => {}

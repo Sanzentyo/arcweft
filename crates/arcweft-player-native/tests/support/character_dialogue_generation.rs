@@ -95,6 +95,11 @@ pub(crate) fn admit_generation_types(builder: &mut RuntimePlanBuilder, character
     let producer = CharacterDialogueRuntimeSchema::opaque_type_producer();
     let voice_graph = RuntimeNominalSchemaGraph::try_new(
         vec![RuntimeNominalSchemaDefinition::new(
+            arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(
+                *(RuntimeNominalSchemaIdentity::new(voice_nominal(), voice_type()))
+                    .semantic_identity()
+                    .as_bytes(),
+            ),
             RuntimeNominalSchemaIdentity::new(voice_nominal(), voice_type()),
             vec![],
             RuntimeNominalSchemaBody::Variant {

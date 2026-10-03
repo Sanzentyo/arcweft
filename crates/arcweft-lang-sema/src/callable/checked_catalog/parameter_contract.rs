@@ -15,7 +15,7 @@ pub struct CheckedCallableParameterContract {
     declaration: crate::types::GenericDeclarationBinder,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum CheckedCallableParameterContractError {
     #[error("parameter contract has no group {group:?}")]
     MissingGroup {

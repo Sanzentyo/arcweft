@@ -25,6 +25,11 @@ fn nominal() -> RuntimeNominalTypeId {
 fn schema(body: RuntimeNominalSchemaBody) -> RuntimeNominalSchemaGraph {
     RuntimeNominalSchemaGraph::try_new(
         vec![RuntimeNominalSchemaDefinition::new(
+            crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                *(RuntimeNominalSchemaIdentity::new(nominal(), semantic(1)))
+                    .semantic_identity()
+                    .as_bytes(),
+            ),
             RuntimeNominalSchemaIdentity::new(nominal(), semantic(1)),
             vec![],
             body,

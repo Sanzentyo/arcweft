@@ -571,6 +571,7 @@ impl Wire for AwbcRuntimeType {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.semantic_identity().write_wire(writer)?;
         self.scope().write_wire(writer)?;
+        self.nominal_declaration().write_wire(writer)?;
         write_runtime_type_shape(self.shape(), writer)?;
         match self.data_codec() {
             Some(codec) => {
@@ -592,6 +593,7 @@ impl Wire for AwbcRuntimeType {
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         let semantic_identity = crate::pattern::RuntimeSemanticTypeId::read_wire(reader)?;
         let scope = RuntimeTypeScope::read_wire(reader)?;
+        let declaration = Option::<crate::entry::RuntimeNominalDeclarationId>::read_wire(reader)?;
         let offset = reader.offset();
         let shape = match reader.read_u8()? {
             38 => AwbcRuntimeTypeShape::BoundType(read_bound_type_reference(reader)?),
@@ -685,6 +687,9 @@ impl Wire for AwbcRuntimeType {
         let data_codec = Option::<RuntimeCodecUse>::read_wire(reader)?;
         let data_codec_arguments = Option::<Vec<RuntimeCodecUse>>::read_wire(reader)?;
         let mut ty = AwbcRuntimeType::new(semantic_identity, shape).with_scope(scope);
+        if let Some(declaration) = declaration {
+            ty = ty.with_nominal_declaration(declaration);
+        }
         if let Some(codec) = data_codec {
             ty = ty.with_data_codec(codec);
         }
@@ -1350,6 +1355,7 @@ mod opaque_wire_tests {
         ty.write_wire(&mut writer).expect("encode opaque type");
         let mut expected = vec![9; 32];
         expected.push(0); // Root runtime type scope.
+        expected.push(0); // No nominal declaration.
         expected.extend([23, 7]);
         expected.extend([0, 0, 0, 0]);
         expected.extend([0, 0]);
@@ -1370,6 +1376,7 @@ mod opaque_wire_tests {
     fn opaque_type_decode_rejects_unknown_admission_tag() {
         let mut bytes = vec![0; 32];
         bytes.push(0); // Root runtime type scope.
+        bytes.push(0); // No nominal declaration.
         bytes.extend([23, 0]);
         bytes.push(2);
         let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
@@ -1379,7 +1386,7 @@ mod opaque_wire_tests {
             AwbcCodecError::UnknownTag {
                 kind: "opaque type admission",
                 tag: 2,
-                offset: 35,
+                offset: 36,
             }
         );
     }
@@ -1468,6 +1475,7 @@ mod map_kind_wire_tests {
 
             let mut expected = vec![0x5a; 32];
             expected.push(0); // Root runtime type scope.
+            expected.push(0); // No nominal declaration.
             expected.extend([32, tag, 0, 1]);
             expected.extend([0, 0]);
             assert_eq!(bytes, expected);
@@ -1485,6 +1493,7 @@ mod map_kind_wire_tests {
     fn map_runtime_type_wire_rejects_unknown_ordering_kind() {
         let mut bytes = vec![0x5a; 32];
         bytes.push(0); // Root runtime type scope.
+        bytes.push(0); // No nominal declaration.
         bytes.extend([32, 3, 0, 1]);
         let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
 
@@ -1493,7 +1502,7 @@ mod map_kind_wire_tests {
             AwbcCodecError::UnknownTag {
                 kind: "runtime map kind",
                 tag: 3,
-                offset: 34,
+                offset: 35,
             }
         );
     }
@@ -1517,6 +1526,9 @@ mod map_kind_wire_tests {
                 arguments: vec![AwbcTypeId(1), AwbcTypeId(2)],
             },
         )
+        .with_nominal_declaration(crate::entry::RuntimeNominalDeclarationId::from_bytes(
+            [0x72; 32],
+        ))
         .with_data_codec(codec.clone())
         .with_data_codec_arguments(vec![codec.clone(), RuntimeCodecUse::NominalRef]);
         let mut writer = Writer::default();
@@ -1529,6 +1541,7 @@ mod map_kind_wire_tests {
         reader.finish().expect("consume runtime type codec policy");
 
         assert_eq!(decoded, ty);
+        assert_eq!(decoded.nominal_declaration(), ty.nominal_declaration());
         assert_eq!(decoded.data_codec(), Some(&codec));
         assert_eq!(
             decoded.data_codec_arguments(),

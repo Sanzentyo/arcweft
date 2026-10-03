@@ -459,7 +459,7 @@ fn predicate_binders_survive_known_scheme_substitution_and_bounded_copy() {
     let bindings = BTreeMap::from([(&parameter, &replacement)]);
     let mut budget = ProjectionBudget(65_536);
     let projected = template
-        .instantiate_type_parameters_with_control(&bindings, &mut budget)
+        .instantiate_type_parameters_with_control(&bindings, &GenericScope::default(), &mut budget)
         .unwrap();
     let TypeKind::Function { params, .. } = &projected else {
         unreachable!()
@@ -469,9 +469,73 @@ fn predicate_binders_survive_known_scheme_substitution_and_bounded_copy() {
     for budget in 0..65_536 - budget.0 {
         assert!(
             template
-                .instantiate_type_parameters_with_control(&bindings, &mut ProjectionBudget(budget))
+                .instantiate_type_parameters_with_control(
+                    &bindings,
+                    &GenericScope::default(),
+                    &mut ProjectionBudget(budget)
+                )
                 .is_err()
         );
     }
     assert_eq!(replacement, scheme());
+}
+
+#[test]
+fn scoped_nominal_replacements_lift_all_namespaces_past_a_local_function_binder() {
+    use crate::types::ArrayLength;
+    let caller = GenericScope::default().with_binder(GenericBinder::new(1, 1, 1));
+    let local_binder = GenericBinder::new(0, 0, 1);
+    let nested = caller.with_binder(local_binder);
+    let parameter = GenericTypeParameterId::new(
+        GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(87_533)),
+        0,
+    );
+    let replacement = TypeKind::Tuple(vec![
+        TypeKind::GenericParam(caller.bound_type(0, 0).unwrap()),
+        TypeKind::Array {
+            item: Box::new(TypeKind::I64),
+            len: ArrayLength::Generic(caller.bound_const(0, 0).unwrap()),
+        },
+        TypeKind::function_with_binder(
+            GenericBinder::EMPTY,
+            [],
+            TypeKind::Unit,
+            EffectRow::open(EffectSet::new(), caller.bound_effect(0, 0).unwrap()),
+        ),
+    ]);
+    let source_scope = GenericScope::default().with_binder(local_binder);
+    let template = TypeKind::function_with_binder(
+        local_binder,
+        [TypeKind::generic_parameter(parameter.clone())],
+        TypeKind::Unit,
+        EffectRow::open(EffectSet::new(), source_scope.bound_effect(0, 0).unwrap()),
+    );
+    let projected = template
+        .instantiate_type_parameters_with_control(
+            &BTreeMap::from([(&parameter, &replacement)]),
+            &caller,
+            &mut ProjectionBudget(65_536),
+        )
+        .unwrap();
+    let expected = TypeKind::function_with_binder(
+        local_binder,
+        [TypeKind::Tuple(vec![
+            TypeKind::GenericParam(nested.bound_type(1, 0).unwrap()),
+            TypeKind::Array {
+                item: Box::new(TypeKind::I64),
+                len: ArrayLength::Generic(nested.bound_const(1, 0).unwrap()),
+            },
+            TypeKind::function_with_binder(
+                GenericBinder::EMPTY,
+                [],
+                TypeKind::Unit,
+                EffectRow::open(EffectSet::new(), nested.bound_effect(1, 0).unwrap()),
+            ),
+        ])],
+        TypeKind::Unit,
+        EffectRow::open(EffectSet::new(), nested.bound_effect(0, 0).unwrap()),
+    );
+    assert_eq!(projected, expected);
+    assert!(projected.semantic_identity_digest_in_scope(&caller).is_ok());
+    assert!(projected.semantic_identity_digest().is_err());
 }

@@ -872,6 +872,7 @@ impl AcceptedEnumVariantCase {
                     prepared.owner().payload_owner_family(),
                     owner,
                     selected.ordinal(),
+                    &crate::types::GenericScope::default(),
                 )
                 .map_err(|_| super::CallableSchemaError::FamilyInvariant {
                     family: super::CallableFamily::EnumConstructor,

@@ -80,6 +80,14 @@ fn nominal_layout_commits_field_wire_policy_and_rejects_changed_nested_bytes() {
     }));
     let make = |wire_name: &str, format| {
         let definition = RuntimeNominalSchemaDefinition::new(
+            crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                *(RuntimeNominalSchemaIdentity::new(
+                    RuntimeNominalTypeId::try_new("fixture.WirePolicy").unwrap(),
+                    identity,
+                ))
+                .semantic_identity()
+                .as_bytes(),
+            ),
             RuntimeNominalSchemaIdentity::new(
                 RuntimeNominalTypeId::try_new("fixture.WirePolicy").unwrap(),
                 identity,
@@ -135,6 +143,14 @@ fn nominal_layout_commits_the_exact_default_program_identity() {
         RuntimeNominalSchemaGraph::try_new(
             vec![
                 RuntimeNominalSchemaDefinition::new(
+                    crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                        *(RuntimeNominalSchemaIdentity::new(
+                            RuntimeNominalTypeId::try_new("fixture.WithDefault").unwrap(),
+                            semantic,
+                        ))
+                        .semantic_identity()
+                        .as_bytes(),
+                    ),
                     RuntimeNominalSchemaIdentity::new(
                         RuntimeNominalTypeId::try_new("fixture.WithDefault").unwrap(),
                         semantic,

@@ -178,6 +178,7 @@ impl AcceptedVariantPayloadFieldSemanticId {
         shape_tag: u8,
         field_ordinal: u32,
         ty: &TypeKind,
+        scope: &super::GenericScope,
     ) -> Result<Self, GenericScopeError> {
         Ok(Self::issue_from_type_digest(
             owner_family,
@@ -185,7 +186,7 @@ impl AcceptedVariantPayloadFieldSemanticId {
             case_ordinal,
             shape_tag,
             field_ordinal,
-            ty.semantic_identity_digest()?,
+            ty.semantic_identity_digest_in_scope(scope)?,
         ))
     }
 
@@ -283,6 +284,7 @@ impl VariantPayloadShape {
         owner_type: SemanticTypeDigest,
         case_ordinal: u32,
         fields: impl IntoIterator<Item = TypeKind>,
+        scope: &super::GenericScope,
     ) -> Result<Self, VariantPayloadSealError> {
         fields
             .into_iter()
@@ -302,6 +304,7 @@ impl VariantPayloadShape {
                         1,
                         ordinal,
                         &ty,
+                        scope,
                     )
                     .map_err(|error| {
                         VariantPayloadSealError::InvalidFieldScope { ordinal, error }
@@ -318,6 +321,7 @@ impl VariantPayloadShape {
         owner_type: SemanticTypeDigest,
         case_ordinal: u32,
         fields: impl IntoIterator<Item = (String, TypeKind)>,
+        scope: &super::GenericScope,
     ) -> Result<Self, VariantPayloadSealError> {
         let mut names = HashSet::new();
         let mut checked = Vec::new();
@@ -339,6 +343,7 @@ impl VariantPayloadShape {
                     2,
                     ordinal,
                     &ty,
+                    scope,
                 )
                 .map_err(|error| VariantPayloadSealError::InvalidFieldScope { ordinal, error })?,
                 diagnostic_name,
@@ -412,6 +417,7 @@ impl VariantPayloadShape {
         owner_family: VariantPayloadOwnerFamily,
         owner_type: SemanticTypeDigest,
         case_ordinal: u32,
+        scope: &super::GenericScope,
     ) -> bool {
         match self {
             Self::Unit => true,
@@ -425,6 +431,7 @@ impl VariantPayloadShape {
                             1,
                             ordinal,
                             &field.ty,
+                            scope,
                         )
                         .is_ok_and(|identity| field.semantic_id == identity)
                 }) && !field.ty.contains_nominal_poison()
@@ -443,6 +450,7 @@ impl VariantPayloadShape {
                                 2,
                                 ordinal,
                                 &field.ty,
+                                scope,
                             )
                             .is_ok_and(|identity| field.semantic_id == identity)
                     })
@@ -477,15 +485,16 @@ impl CheckedVariantPayload {
         case_ordinal: u32,
         case: AcceptedVariantCaseSemanticId,
         shape: VariantPayloadShape,
+        scope: &super::GenericScope,
     ) -> Result<Self, VariantPayloadSealError> {
         if owner_type.contains_nominal_poison() {
             return Err(VariantPayloadSealError::PoisonedOwnerType);
         }
-        let owner_semantic_type = owner_type.semantic_identity_digest()?;
+        let owner_semantic_type = owner_type.semantic_identity_digest_in_scope(scope)?;
         if shape.is_unit() {
             return Err(VariantPayloadSealError::UnitPayloadType);
         }
-        if !shape.has_valid_rows(owner_family, owner_semantic_type, case_ordinal) {
+        if !shape.has_valid_rows(owner_family, owner_semantic_type, case_ordinal, scope) {
             return Err(VariantPayloadSealError::InvalidFieldRows);
         }
         if AcceptedVariantCaseSemanticId::issue(
@@ -561,21 +570,34 @@ mod tests {
             case_ordinal,
             &shape,
         );
-        VariantPayloadType::try_new(owner_family, owner_type, case_ordinal, case, shape)
-            .expect("fixture payload schema is internally consistent")
+        VariantPayloadType::try_new(
+            owner_family,
+            owner_type,
+            case_ordinal,
+            case,
+            shape,
+            &crate::types::GenericScope::default(),
+        )
+        .expect("fixture payload schema is internally consistent")
     }
 
     #[test]
     fn unit_empty_tuple_and_empty_record_are_distinct_payload_shapes() {
         let owner = owner("EmptyShapes");
-        let tuple =
-            VariantPayloadShape::try_tuple(VariantPayloadOwnerFamily::Project, owner, 0, [])
-                .expect("empty tuple remains an explicit tuple payload");
+        let tuple = VariantPayloadShape::try_tuple(
+            VariantPayloadOwnerFamily::Project,
+            owner,
+            0,
+            [],
+            &crate::types::GenericScope::default(),
+        )
+        .expect("empty tuple remains an explicit tuple payload");
         let record = VariantPayloadShape::try_record(
             VariantPayloadOwnerFamily::Project,
             owner,
             0,
             std::iter::empty::<(String, TypeKind)>(),
+            &crate::types::GenericScope::default(),
         )
         .expect("empty record remains an explicit record payload");
         assert_ne!(VariantPayloadShape::Unit, tuple);
@@ -620,6 +642,7 @@ mod tests {
             project_owner,
             0,
             [nested_tuple.clone()],
+            &crate::types::GenericScope::default(),
         )
         .expect("project payload is one authored field");
         let environment = VariantPayloadShape::try_tuple(
@@ -627,6 +650,7 @@ mod tests {
             owner("EnvironmentTuple"),
             0,
             [TypeKind::I64, TypeKind::Bool],
+            &crate::types::GenericScope::default(),
         )
         .expect("environment tuple payload retains its explicit Rust fields");
 
@@ -648,6 +672,7 @@ mod tests {
                 ("z".to_owned(), TypeKind::I64),
                 ("a".to_owned(), TypeKind::Bool),
             ],
+            &crate::types::GenericScope::default(),
         )
         .expect("original record schema");
         let renamed = VariantPayloadShape::try_record(
@@ -658,6 +683,7 @@ mod tests {
                 ("left".to_owned(), TypeKind::I64),
                 ("right".to_owned(), TypeKind::Bool),
             ],
+            &crate::types::GenericScope::default(),
         )
         .expect("renamed record schema");
         let original_type = payload_type(
@@ -707,6 +733,7 @@ mod tests {
                 ("first".to_owned(), TypeKind::I64),
                 ("second".to_owned(), TypeKind::Bool),
             ],
+            &crate::types::GenericScope::default(),
         )
         .expect("base schema");
         let base_case = AcceptedVariantCaseSemanticId::issue(
@@ -723,6 +750,7 @@ mod tests {
                 ("first".to_owned(), TypeKind::U64),
                 ("second".to_owned(), TypeKind::Bool),
             ],
+            &crate::types::GenericScope::default(),
         )
         .expect("changed field type");
         let reversed = VariantPayloadShape::try_record(
@@ -733,6 +761,7 @@ mod tests {
                 ("second".to_owned(), TypeKind::Bool),
                 ("first".to_owned(), TypeKind::I64),
             ],
+            &crate::types::GenericScope::default(),
         )
         .expect("changed declaration ordinals");
         let tuple = VariantPayloadShape::try_tuple(
@@ -740,6 +769,7 @@ mod tests {
             owner_type,
             0,
             [TypeKind::I64, TypeKind::Bool],
+            &crate::types::GenericScope::default(),
         )
         .expect("changed payload family");
 
@@ -798,6 +828,7 @@ mod tests {
                         ("field".to_owned(), TypeKind::I64),
                         ("field".to_owned(), second)
                     ],
+                    &crate::types::GenericScope::default(),
                 ),
                 Err(VariantPayloadSealError::DuplicateRecordFieldName)
             );

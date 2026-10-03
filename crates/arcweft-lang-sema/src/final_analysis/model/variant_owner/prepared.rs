@@ -311,16 +311,20 @@ impl PreparedVariantOwnerSeed {
                 .into_vec()
                 .into_iter()
                 .map(|case| {
-                    let payload =
-                        match case.payload {
-                            None => VariantPayloadShape::Unit,
-                            Some(shape) => shape.try_seal(family, identity, case.ordinal).map_err(
-                                |reason| CheckedVariantOwnerError::Payload {
-                                    ordinal: case.ordinal,
-                                    reason,
-                                },
-                            )?,
-                        };
+                    let payload = match case.payload {
+                        None => VariantPayloadShape::Unit,
+                        Some(shape) => shape
+                            .try_seal(
+                                family,
+                                identity,
+                                case.ordinal,
+                                &crate::types::GenericScope::default(),
+                            )
+                            .map_err(|reason| CheckedVariantOwnerError::Payload {
+                                ordinal: case.ordinal,
+                                reason,
+                            })?,
+                    };
                     CheckedVariantCase::seal(
                         family,
                         identity,

@@ -96,6 +96,7 @@ impl ProjectNominalSemanticCase {
                     self.ordinal,
                     self.semantic_id,
                     shape.clone(),
+                    nominal.scope(),
                 )?,
             )))),
         }
@@ -264,7 +265,7 @@ fn build_semantic_definition(
                     semantic_id: AcceptedRecordFieldSemanticId::issue(
                         nominal.identity(),
                         ordinal,
-                        ty.semantic_identity_digest()?,
+                        ty.semantic_identity_digest_in_scope(nominal.scope())?,
                     ),
                     ty,
                 });
@@ -320,6 +321,7 @@ fn build_semantic_variant_definition(
                     VariantPayloadOwnerFamily::Project,
                     nominal.identity(),
                     ordinal,
+                    nominal.scope(),
                 )
             })
             .transpose()
@@ -353,7 +355,12 @@ fn record_digest(
     for field in fields {
         hasher.update(&field.declaration_ordinal.to_le_bytes());
         hasher.update(field.semantic_id.as_bytes());
-        hasher.update(field.ty.semantic_identity_digest()?.as_bytes());
+        hasher.update(
+            field
+                .ty
+                .semantic_identity_digest_in_scope(nominal.scope())?
+                .as_bytes(),
+        );
     }
     Ok(ProjectNominalSemanticDigest(hasher.finalize().into()))
 }

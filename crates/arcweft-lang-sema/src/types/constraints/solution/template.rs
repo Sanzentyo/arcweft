@@ -961,16 +961,17 @@ impl TypeKind {
             &crate::types::GenericTypeParameterId,
             &TypeKind,
         >,
+        replacement_scope: &GenericScope,
         control: &mut C,
     ) -> Result<Self, TypeProjectionError<C::Error>> {
         let root = GenericScope::default();
         map_term_with_control(
             self,
             &root,
-            &root,
+            replacement_scope,
             1,
             control,
-            &|reference, scope, _, depth, control| match reference {
+            &|reference, scope, target, depth, control| match reference {
                 GenericTypeReference::Free(parameter) => {
                     control
                         .visit_binding()
@@ -980,7 +981,12 @@ impl TypeKind {
                             parameter: reference.clone(),
                         }
                     })?;
-                    clone_term_with_control(replacement, depth, control)
+                    lift_value(
+                        ScopedTypeView::sealed(replacement, replacement_scope),
+                        target,
+                        depth,
+                        control,
+                    )
                 }
                 _ => keep_type(reference, scope).map_err(Into::into),
             },

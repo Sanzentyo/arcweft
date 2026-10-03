@@ -59,6 +59,7 @@ pub(super) struct NominalGraphProjection<'a> {
     types: &'a BTreeMap<TypeId, TypeKind>,
     semantic_shapes: Option<&'a super::super::AcceptedSemanticShapeCatalog>,
     project_nominals: &'a super::super::nominal_semantic::ProjectNominalSemanticCatalog,
+    scope: GenericScope,
     budget: ProjectionBudget,
     states: BTreeMap<SemanticTypeDigest, VisitState>,
     definitions: Vec<RuntimeNominalSchemaDefinition>,
@@ -89,6 +90,7 @@ impl<'a> NominalGraphProjection<'a> {
             types,
             semantic_shapes,
             project_nominals,
+            scope: GenericScope::default(),
             budget,
             states: BTreeMap::new(),
             definitions: Vec::new(),
@@ -158,6 +160,7 @@ impl<'a> NominalGraphProjection<'a> {
         control: crate::final_analysis::FinalSemanticAnalysisControl<'a>,
     ) -> Result<RuntimeNominalSchemaGraph, Error> {
         self.project_budget = Some((budget, control));
+        self.scope = checked.scope().clone();
         self.schema(&checked.ty(), 1)?;
         Ok(RuntimeNominalSchemaGraph::try_new(
             self.definitions,
@@ -201,14 +204,11 @@ impl<'a> NominalGraphProjection<'a> {
     }
 
     fn semantic_identity(&mut self, ty: &TypeKind) -> Result<SemanticTypeDigest, Error> {
-        ty.semantic_identity_digest_in_scope_with_control(
-            &GenericScope::default(),
-            &mut self.budget,
-        )
-        .map_err(|error| match error {
-            TypeProjectionError::Instantiation(error) => Error::Instantiation(error),
-            TypeProjectionError::Control(error) => error,
-        })
+        ty.semantic_identity_digest_in_scope_with_control(&self.scope, &mut self.budget)
+            .map_err(|error| match error {
+                TypeProjectionError::Instantiation(error) => Error::Instantiation(error),
+                TypeProjectionError::Control(error) => error,
+            })
     }
 
     fn nominal(
@@ -300,7 +300,14 @@ impl<'a> NominalGraphProjection<'a> {
         let arguments = self.sequence(nominal.arguments(), depth + 1)?;
         let body = self.body(instantiated.kind(), depth + 1)?;
         let codec = self.rust_default_codec(&instantiated, &body)?;
-        let mut definition = RuntimeNominalSchemaDefinition::new(identity.clone(), arguments, body);
+        let mut definition = RuntimeNominalSchemaDefinition::new(
+            arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(
+                *nominal.declaration().semantic_digest().as_bytes(),
+            ),
+            identity.clone(),
+            arguments,
+            body,
+        );
         if let Some(codec) = codec {
             definition = definition.with_data_codec(codec);
         }
@@ -640,6 +647,9 @@ impl<'a> NominalGraphProjection<'a> {
             })
             .collect::<Result<Box<[_]>, Error>>()?;
         self.definitions.push(RuntimeNominalSchemaDefinition::new(
+            arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(
+                *(identity.clone()).semantic_identity().as_bytes(),
+            ),
             identity.clone(),
             vec![],
             RuntimeNominalSchemaBody::Record {

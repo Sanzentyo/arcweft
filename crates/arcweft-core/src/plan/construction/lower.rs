@@ -5738,6 +5738,11 @@ mod tests {
     fn record_binding_path_uses_retained_pattern_order_not_domain_ordinal() {
         let schema = RuntimeNominalSchemaGraph::try_new(
             vec![RuntimeNominalSchemaDefinition::new(
+                crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                    *(RuntimeNominalSchemaIdentity::new(nominal("game.Pair"), identity(1)))
+                        .semantic_identity()
+                        .as_bytes(),
+                ),
                 RuntimeNominalSchemaIdentity::new(nominal("game.Pair"), identity(1)),
                 vec![],
                 RuntimeNominalSchemaBody::Record {
@@ -5834,6 +5839,11 @@ mod tests {
         let owner = nominal("game.Recursive");
         let schema = RuntimeNominalSchemaGraph::try_new(
             vec![RuntimeNominalSchemaDefinition::new(
+                crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                    *(RuntimeNominalSchemaIdentity::new(owner.clone(), identity(1)))
+                        .semantic_identity()
+                        .as_bytes(),
+                ),
                 RuntimeNominalSchemaIdentity::new(owner.clone(), identity(1)),
                 vec![],
                 RuntimeNominalSchemaBody::Variant {

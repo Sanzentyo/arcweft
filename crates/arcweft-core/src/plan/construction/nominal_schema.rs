@@ -65,6 +65,7 @@ pub enum RuntimePlanNominalSchemaError {
 pub enum RuntimePlanSchemaComponent {
     Projection,
     NominalIdentity,
+    NominalDeclaration,
     Arguments,
     DomainKind,
     RecordShape,
@@ -185,6 +186,14 @@ impl DefinitionComparison<'_, '_> {
         use RuntimePlanSchemaComponent as Component;
         let name = definition.identity().nominal().as_str();
         let path = SchemaPath::root(name);
+        if self
+            .tables
+            .declaration(ty)
+            .nominal_declaration()
+            .is_some_and(|actual| actual != definition.declaration())
+        {
+            return Err(self.mismatch(ty, &path, Component::NominalDeclaration));
+        }
         let Type::Nominal {
             nominal,
             layout,

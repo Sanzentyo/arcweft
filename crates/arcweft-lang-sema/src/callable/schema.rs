@@ -4607,6 +4607,7 @@ mod accepted_variant_schema_tests {
             owner,
             case,
             [(label.to_owned(), field_type)],
+            &crate::types::GenericScope::default(),
         )
         .expect("accepted record payload");
         CallableSignatureSchema::for_accepted_enum_case(
@@ -4655,6 +4656,7 @@ mod accepted_variant_schema_tests {
             owner,
             2,
             [TypeKind::I64, TypeKind::Bool],
+            &crate::types::GenericScope::default(),
         )
         .expect("accepted tuple payload");
         let schema = CallableSignatureSchema::for_accepted_enum_case(

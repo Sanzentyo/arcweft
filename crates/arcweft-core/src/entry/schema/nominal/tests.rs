@@ -21,6 +21,9 @@ fn record(
     fields: Vec<(Option<&str>, RuntimeTypeSchema)>,
 ) -> RuntimeNominalSchemaDefinition {
     RuntimeNominalSchemaDefinition::new(
+        crate::entry::RuntimeNominalDeclarationId::from_bytes(
+            *(identity(byte)).semantic_identity().as_bytes(),
+        ),
         identity(byte),
         arguments,
         RuntimeNominalSchemaBody::Record {
@@ -404,6 +407,9 @@ fn recursive_nominal_values_follow_typed_references_and_builtin_payloads() {
 fn graph_variants_require_exact_owner_layout_case_and_payload_shape() {
     use crate::pattern::RuntimeVariantIdentity;
     let graph = graph(vec![RuntimeNominalSchemaDefinition::new(
+        crate::entry::RuntimeNominalDeclarationId::from_bytes(
+            *(identity(7)).semantic_identity().as_bytes(),
+        ),
         identity(7),
         vec![],
         RuntimeNominalSchemaBody::Variant {
@@ -659,7 +665,9 @@ fn unit_graph_has_an_exact_version_one_document() {
     let mut expected = b"arcweft.nominal-schema-graph\0".to_vec();
     expected.push(1);
     expected.extend_from_slice(&[1; 32]);
-    expected.extend_from_slice(&[1, 2, b'n', b'1']);
+    expected.push(1); // One definition.
+    expected.extend_from_slice(&[1; 32]); // Stable declaration identity.
+    expected.extend_from_slice(&[2, b'n', b'1']);
     expected.extend_from_slice(&[1; 32]);
     // Version one commits the optional codec policy after the nominal body;
     // this annotation-free unit has the explicit absent-policy marker.
@@ -713,6 +721,9 @@ fn recursive_definitions() -> Vec<RuntimeNominalSchemaDefinition> {
             vec![(None, RuntimeTypeSchema::NominalRef(identity(2)))],
         ),
         RuntimeNominalSchemaDefinition::new(
+            crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                *(identity(2)).semantic_identity().as_bytes(),
+            ),
             identity(2),
             vec![],
             RuntimeNominalSchemaBody::Variant {
@@ -856,6 +867,9 @@ fn field_names_ids_and_variant_ordinals_are_checked_before_publication() {
     ));
     let variant = |cases: Vec<_>| {
         RuntimeNominalSchemaDefinition::new(
+            crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                *(identity(1)).semantic_identity().as_bytes(),
+            ),
             identity(1),
             vec![],
             RuntimeNominalSchemaBody::Variant {

@@ -423,6 +423,7 @@ pub struct CheckedProjectNominal {
     owner: ItemId,
     identity: SemanticTypeDigest,
     arguments: Box<[TypeKind]>,
+    scope: crate::types::GenericScope,
 }
 
 impl CheckedProjectNominal {
@@ -437,7 +438,18 @@ impl CheckedProjectNominal {
             owner,
             identity,
             arguments: arguments.into(),
+            scope: crate::types::GenericScope::default(),
         }
+    }
+
+    /// Retains the lexical scope that authenticates bound argument references.
+    pub(crate) fn with_scope(mut self, scope: crate::types::GenericScope) -> Self {
+        self.scope = scope;
+        self
+    }
+
+    pub const fn scope(&self) -> &crate::types::GenericScope {
+        &self.scope
     }
 
     pub const fn declaration(&self) -> &ProjectNominalDeclarationId {

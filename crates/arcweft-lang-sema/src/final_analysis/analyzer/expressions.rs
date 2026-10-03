@@ -178,9 +178,19 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
             }
             Self::Parametric {
                 expected,
-                scope_lease: Some(_),
+                unbound,
+                scope_lease,
                 ..
-            } => Some(expected),
+            } if scope_lease.is_some()
+                || unbound.iter().all(|parameter| {
+                    matches!(
+                        parameter,
+                        crate::types::constraints::ConstraintGenericParameterId::Effect(_)
+                    )
+                }) =>
+            {
+                Some(expected)
+            }
             Self::Parametric { .. } => None,
         }
     }

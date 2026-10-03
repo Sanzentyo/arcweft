@@ -5876,7 +5876,8 @@ fn runtime_nominal_record_under(
                     ),
                 });
             }
-            let normalized = runtime_type(field.ty(), symbols, world, analysis)?;
+            let normalized = runtime_type_scoped_at(field.ty(), symbols, world, analysis,
+                &RuntimeTypeProjectionPath::root(), projection.checked().scope())?;
             let checked_type = normalized.checked_type().map_err(|reason| {
                 RuntimeSemanticProjectionError::Type {
                     reason: reason.to_string(),
@@ -5897,11 +5898,18 @@ fn runtime_nominal_record_under(
         .arguments()
         .iter()
         .map(|argument| {
-            runtime_type(argument, symbols, world, analysis)?
-                .checked_type()
-                .map_err(|reason| RuntimeSemanticProjectionError::Type {
-                    reason: reason.to_string(),
-                })
+            runtime_type_scoped_at(
+                argument,
+                symbols,
+                world,
+                analysis,
+                &RuntimeTypeProjectionPath::root(),
+                projection.checked().scope(),
+            )?
+            .checked_type()
+            .map_err(|reason| RuntimeSemanticProjectionError::Type {
+                reason: reason.to_string(),
+            })
         })
         .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
     let layout = RuntimeNominalRecordLayout::try_from_checked_projection(

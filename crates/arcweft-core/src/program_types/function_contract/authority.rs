@@ -12,6 +12,9 @@ use crate::{
 pub(crate) trait RuntimeValueTypeContext<T: Copy + Eq> {
     fn permits_scope(&self, scope: &RuntimeTypeScope) -> bool;
     fn callable(&mut self, expected: T, actual: T) -> bool;
+    fn nominal(&mut self, expected: T, actual: T) -> bool {
+        expected == actual
+    }
     fn begin_choice(&mut self) {}
     fn begin_alternative(&mut self) {}
     fn finish_alternative(&mut self, _accepted: bool) {}
@@ -34,6 +37,9 @@ impl<T: Copy + Eq, C: RuntimeValueTypeContext<T>> RuntimeValueTypeContext<T> for
     fn callable(&mut self, expected: T, actual: T) -> bool {
         (**self).callable(expected, actual)
     }
+    fn nominal(&mut self, expected: T, actual: T) -> bool {
+        (**self).nominal(expected, actual)
+    }
     fn begin_choice(&mut self) {
         (**self).begin_choice();
     }
@@ -53,6 +59,11 @@ pub(crate) trait FunctionTypeAuthority {
     fn scope(&self, ty: Self::Type) -> Option<&RuntimeTypeScope>;
     fn semantic(&self, ty: Self::Type) -> Option<RuntimeSemanticTypeId>;
     fn by_semantic(&self, ty: RuntimeSemanticTypeId) -> Option<Self::Type>;
+    fn nominal_arguments(
+        &self,
+        expected: Self::Type,
+        actual: Self::Type,
+    ) -> Option<Result<(&[Self::Type], &[Self::Type]), ()>>;
     fn function(
         &self,
         ty: Self::Type,
@@ -88,6 +99,37 @@ pub(crate) trait FunctionTypeAuthority {
 
 impl FunctionTypeAuthority for AwbcProgram {
     type Type = AwbcTypeId;
+    fn nominal_arguments(
+        &self,
+        expected: Self::Type,
+        actual: Self::Type,
+    ) -> Option<Result<(&[Self::Type], &[Self::Type]), ()>> {
+        let expected = self.runtime_types.get(expected.index())?;
+        let actual = self.runtime_types.get(actual.index())?;
+        let (Some(a), Some(b)) = (expected.nominal_declaration(), actual.nominal_declaration())
+        else {
+            return None;
+        };
+        use AwbcRuntimeTypeShape as T;
+        Some(match (expected.shape(), actual.shape()) {
+            (
+                T::NominalRecord {
+                    arguments: x,
+                    shape: p,
+                    ..
+                },
+                T::NominalRecord {
+                    arguments: y,
+                    shape: q,
+                    ..
+                },
+            ) if a == b && p == q => Ok((x, y)),
+            (T::Variant { arguments: x, .. }, T::Variant { arguments: y, .. }) if a == b => {
+                Ok((x, y))
+            }
+            _ => Err(()),
+        })
+    }
     fn scope(&self, ty: Self::Type) -> Option<&RuntimeTypeScope> {
         self.runtime_types.get(ty.index()).map(|row| row.scope())
     }
@@ -264,6 +306,40 @@ impl FunctionTypeAuthority for AwbcProgram {
 
 impl FunctionTypeAuthority for RuntimePlan {
     type Type = RuntimePlanTypeId;
+    fn nominal_arguments(
+        &self,
+        expected: Self::Type,
+        actual: Self::Type,
+    ) -> Option<Result<(&[Self::Type], &[Self::Type]), ()>> {
+        let x = self.type_table().get(expected)?;
+        let y = self.type_table().get(actual)?;
+        let (Some(a), Some(b)) = (x.nominal_declaration(), y.nominal_declaration()) else {
+            return None;
+        };
+        let (
+            RuntimePlanTypeProjection::Nominal { arguments: x, .. },
+            RuntimePlanTypeProjection::Nominal { arguments: y, .. },
+        ) = (x.projection(), y.projection())
+        else {
+            return Some(Err(()));
+        };
+        let same_kind = match (
+            self.nominal_record_domains().get(expected),
+            self.nominal_record_domains().get(actual),
+        ) {
+            (Some(p), Some(q)) => p.shape() == q.shape(),
+            (None, None) => {
+                self.variant_domains().get(expected).is_some()
+                    && self.variant_domains().get(actual).is_some()
+            }
+            _ => false,
+        };
+        Some(if a == b && same_kind {
+            Ok((x, y))
+        } else {
+            Err(())
+        })
+    }
     fn scope(&self, ty: Self::Type) -> Option<&RuntimeTypeScope> {
         self.type_table().get(ty).map(|row| row.scope())
     }

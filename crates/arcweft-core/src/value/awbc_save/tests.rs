@@ -160,6 +160,9 @@ fn owners() -> [RuntimeProgramOwner; 2] {
     let graph = RuntimeNominalSchemaGraph::try_new(
         vec![
             RuntimeNominalSchemaDefinition::new(
+                crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                    *(record_identity.clone()).semantic_identity().as_bytes(),
+                ),
                 record_identity.clone(),
                 vec![],
                 RuntimeNominalSchemaBody::Record {
@@ -173,6 +176,11 @@ fn owners() -> [RuntimeProgramOwner; 2] {
                 },
             ),
             RuntimeNominalSchemaDefinition::new(
+                crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                    *(RuntimeNominalSchemaIdentity::new(event.clone(), semantic(3)))
+                        .semantic_identity()
+                        .as_bytes(),
+                ),
                 RuntimeNominalSchemaIdentity::new(event.clone(), semantic(3)),
                 vec![],
                 RuntimeNominalSchemaBody::Variant {

@@ -33,6 +33,9 @@ fn seed(tag: u8, ty: Type<RuntimeSemanticTypeId>) -> RuntimePlanTypeSeed {
 fn definitions() -> Vec<RuntimeNominalSchemaDefinition> {
     vec![
         RuntimeNominalSchemaDefinition::new(
+            arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(
+                *(identity(1)).semantic_identity().as_bytes(),
+            ),
             identity(1),
             vec![Schema::Bool],
             RuntimeNominalSchemaBody::Record {
@@ -49,6 +52,9 @@ fn definitions() -> Vec<RuntimeNominalSchemaDefinition> {
             },
         ),
         RuntimeNominalSchemaDefinition::new(
+            arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(
+                *(identity(5)).semantic_identity().as_bytes(),
+            ),
             identity(5),
             vec![],
             RuntimeNominalSchemaBody::Variant {
@@ -263,6 +269,9 @@ fn every_proof_definition_needs_a_type_and_correlation_work_is_bounded() {
     let original = graph();
     let mut extended = definitions();
     extended.push(RuntimeNominalSchemaDefinition::new(
+        arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(
+            *(identity(8)).semantic_identity().as_bytes(),
+        ),
         identity(8),
         vec![],
         RuntimeNominalSchemaBody::Record {

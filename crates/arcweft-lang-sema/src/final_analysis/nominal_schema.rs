@@ -155,6 +155,8 @@ pub enum NominalProjectionLimitKind {
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum NominalSchemaProjectionError {
     #[error(transparent)]
+    ParameterContract(#[from] crate::callable::CheckedCallableParameterContractError),
+    #[error(transparent)]
     SourceGraph(Box<RuntimeNominalGraphProjectionError>),
     #[error(transparent)]
     GenericUse(#[from] crate::types::TypeGenericUseError),
@@ -425,12 +427,19 @@ impl NominalProjectionRequestSet {
                 actual: nominal.arguments().len(),
             });
         }
-        self.insert_checked(&CheckedProjectNominal::new(
-            nominal.declaration().clone(),
-            declaration.owner(),
-            view.value().semantic_identity_digest()?,
-            nominal.arguments().to_vec(),
-        ))
+        let (identity, scope) = match view.value().semantic_identity_digest() {
+            Ok(identity) => (identity, crate::types::GenericScope::default()),
+            Err(_) => (view.semantic_identity_digest()?, view.scope().clone()),
+        };
+        self.insert_checked(
+            &CheckedProjectNominal::new(
+                nominal.declaration().clone(),
+                declaration.owner(),
+                identity,
+                nominal.arguments().to_vec(),
+            )
+            .with_scope(scope),
+        )
     }
 }
 
@@ -504,6 +513,9 @@ impl RuntimeNominalProjectionRequestInventory {
         for item in draft.items.values() {
             item.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
         }
+        draft
+            .checked_callables
+            .visit_parameter_contracts(&mut |ty| inventory.visit_type(symbols, ty))?;
         Ok(inventory)
     }
 
@@ -543,6 +555,9 @@ impl RuntimeNominalProjectionRequestInventory {
         for item in draft.items.values() {
             item.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
         }
+        draft
+            .checked_callables
+            .visit_parameter_contracts(&mut |ty| inventory.visit_type(symbols, ty))?;
         Ok(inventory)
     }
 }
@@ -692,7 +707,10 @@ fn collect_prepared_semantic_nominals(
     }
     draft
         .checked_callables
-        .visit_types(&mut |ty| inventory.visit_type(symbols, ty))
+        .visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+    draft
+        .checked_callables
+        .visit_parameter_contracts(&mut |ty| inventory.visit_type(symbols, ty))
 }
 
 fn collect_post_entry_semantic_nominals(
@@ -732,7 +750,10 @@ fn collect_post_entry_semantic_nominals(
     }
     draft
         .checked_callables
-        .visit_types(&mut |ty| inventory.visit_type(symbols, ty))
+        .visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+    draft
+        .checked_callables
+        .visit_parameter_contracts(&mut |ty| inventory.visit_type(symbols, ty))
 }
 
 /// Immutable complete runtime-nominal catalog published by final analysis.
@@ -1077,7 +1098,7 @@ impl<'a> RuntimeNominalProjectionContext<'a> {
                                     "record field cannot be instantiated by its checked nominal owner",
                                 )
                             })?;
-                        let field_type = ty.semantic_identity_digest()?;
+                        let field_type = ty.semantic_identity_digest_in_scope(checked.scope())?;
                         Ok::<_, NominalSchemaProjectionError>(RuntimeProjectRecordFieldProjection {
                             runtime_field,
                             declaration_ordinal,
@@ -1288,7 +1309,9 @@ pub(super) fn validate_checked_nominal(
             actual: checked.arguments().len(),
         });
     }
-    let projected = checked.ty().semantic_identity_digest()?;
+    let projected = checked
+        .ty()
+        .semantic_identity_digest_in_scope(checked.scope())?;
     if checked.identity() != projected {
         return Err(NominalSchemaProjectionError::IdentityMismatch {
             requested: checked.identity(),
@@ -2157,6 +2180,7 @@ fn seal_variant_owner(
                             crate::types::VariantPayloadOwnerFamily::Project,
                             definition.nominal().identity(),
                             prepared.ordinal(),
+                            definition.nominal().scope(),
                         )
                         .map_err(|reason| super::CheckedVariantOwnerError::Payload {
                             ordinal: prepared.ordinal(),

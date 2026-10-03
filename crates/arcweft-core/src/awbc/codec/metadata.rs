@@ -588,6 +588,7 @@ wire_digest!(
     FlowContractHash,
     AgentPolicyHash,
     RuntimeSemanticTypeId,
+    crate::entry::RuntimeNominalDeclarationId,
 );
 
 impl Wire for RuntimeNominalTypeId {

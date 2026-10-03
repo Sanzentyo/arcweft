@@ -495,6 +495,18 @@ impl AcceptedNominalId {
     }
 }
 
+impl super::ProjectNominalType {
+    pub(crate) fn declaration_identity(&self) -> arcweft_core::entry::RuntimeNominalDeclarationId {
+        let mut encoder = Encoder::new(GenericScope::default());
+        encoder.tag(64);
+        encoder.project_nominal_declaration(self.declaration());
+        encoder.len(0);
+        arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(
+            *encoder.bytes.finish().as_bytes(),
+        )
+    }
+}
+
 struct Encoder {
     bytes: RuntimeSemanticTypeIdentityEncoder,
     scope: GenericScope,

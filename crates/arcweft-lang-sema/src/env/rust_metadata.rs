@@ -446,7 +446,11 @@ impl AcceptedRustTypeMetadataCatalog {
         let kind = metadata
             .kind
             .try_map_types(&mut |ty| {
-                ty.instantiate_type_parameters_with_control(&substitutions, control)
+                ty.instantiate_type_parameters_with_control(
+                    &substitutions,
+                    &crate::types::GenericScope::default(),
+                    control,
+                )
             })
             .map_err(|error| match error {
                 TypeProjectionError::Instantiation(error) => {

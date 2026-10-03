@@ -875,6 +875,10 @@ fn compiler_defaults_execute_general_values_and_refresh_preceding_inputs() {
         r#"view Main(first: Array<i64 -> i64, 1> = [|input: i64| input + 1], value: Array<i64 -> i64, 1> = first) { Text("static") }"#,
         r#"struct Handler { callback: i64 -> i64 effects {} }
 view Main(first: Handler = Handler { callback = |input: i64| input + 1 }, value: Handler = first) { Text("static") }"#,
+        r#"struct Holder<T> { callback: T }
+view Main(first: Holder<i64 -> i64> = Holder { callback = |input: i64| input + 1 }, value: Holder<i64 -> i64> = first) { Text("static") }"#,
+        r#"enum Slot<T> { Empty, Full T }
+view Main(first: Slot<i64 -> i64> = .Full(|input: i64| input + 1), value: Slot<i64 -> i64> = first) { Text("static") }"#,
     ].into_iter().enumerate() {
         let source = format!(
             "entry cli @entry.main {{ goto @flow.main }}\nflow main() -> String {{ return \"done\" }}\n{source}"
@@ -942,7 +946,7 @@ view Main(first: Handler = Handler { callback = |input: i64| input + 1 }, value:
             if let RuntimeValue::Callable(native_value) = native_value {
                 assert!(matches!(native_value.owner(), arcweft_core::task::RuntimeProgramOwner::Plan(owner) if Arc::ptr_eq(owner, &native_plan)));
             }
-            if case <= 9 {
+            if case <= 9 || case >= 11 {
             let first = snapshot.mounts[0].runtime_parameters.iter().find(|binding| binding.name == "first").unwrap().value.clone();
             let executor = AwbcProductStepExecutor::for_program_invocation(Arc::clone(&awbc), program, vec![first], arcweft_core::task::GenerationId::new(0), 64).unwrap();
             let owner = arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&awbc));
@@ -984,14 +988,24 @@ view Main(first: Handler = Handler { callback = |input: i64| input + 1 }, value:
             4 => assert!(matches!(value, RuntimeValue::Variant { name, ordinal: 0, .. } if name == "On")),
             5 | 6 | 7 => assert!(matches!(value, RuntimeValue::Callable(_))),
             8 | 9 => { let RuntimeValue::Seq(values) = value else { panic!("expected callback container: {value:?}") }; assert_eq!(values.len(), 1); assert!(matches!(values.value_at(0), RuntimeValue::Callable(_))); }
-            10 => {
+            10 | 11 => {
                 let RuntimeValue::NominalRecord(record) = value else { panic!("expected callback record: {value:?}") };
                 assert!(matches!(record.fields(), [RuntimeValue::Callable(_)]));
                 let ordinal = awbc.runtime_types.iter().position(|row| row.semantic_identity() == record.semantic_identity()).unwrap();
                 let ty = arcweft_core::awbc::schema::AwbcTypeId(u32::try_from(ordinal).unwrap());
                 let wrong_field = RuntimeValue::NominalRecord(arcweft_core::value::RuntimeNominalRecordValue::new(record.type_id().clone(), record.semantic_identity(), record.layout(), vec![RuntimeValue::Unit]));
                 assert!(awbc.validate_live_value(ty, &wrong_field, arcweft_core::entry::RuntimeSchemaLimits::engine_default()).is_err());
+                for (nominal, semantic, layout, fields) in [
+                    (arcweft_core::entry::RuntimeNominalTypeId::from_checked_digest([0xa1; 32]), record.semantic_identity(), record.layout(), record.fields().to_vec()),
+                    (record.type_id().clone(), arcweft_core::pattern::RuntimeSemanticTypeId::from_bytes([0xa2; 32]), record.layout(), record.fields().to_vec()),
+                    (record.type_id().clone(), record.semantic_identity(), arcweft_core::entry::TypeLayoutHash::from_bytes([0xa3; 32]), record.fields().to_vec()),
+                    (record.type_id().clone(), record.semantic_identity(), record.layout(), vec![]),
+                ] {
+                    let forged = RuntimeValue::NominalRecord(arcweft_core::value::RuntimeNominalRecordValue::new(nominal, semantic, layout, fields));
+                    assert!(awbc.validate_live_value(ty, &forged, arcweft_core::entry::RuntimeSchemaLimits::engine_default()).is_err());
+                }
             }
+            12 => assert!(matches!(value, RuntimeValue::Variant { name, ordinal: 1, payload: Some(payload), .. } if name == "Full" && matches!(payload.as_ref(), RuntimeValue::Tuple(fields) if matches!(fields.as_slice(), [RuntimeValue::Callable(_)]))), "{value:?}"),
             _ => unreachable!(),
         }
         runtime.restore(&snapshot, &handles).unwrap();

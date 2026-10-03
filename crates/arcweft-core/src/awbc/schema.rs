@@ -766,6 +766,7 @@ impl Default for AwbcHeader {
 /// operational ABI is structurally primitive.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcRuntimeType {
+    nominal_declaration: Option<crate::entry::RuntimeNominalDeclarationId>,
     semantic_identity: RuntimeSemanticTypeId,
     scope: RuntimeTypeScope,
     shape: AwbcRuntimeTypeShape,
@@ -780,12 +781,26 @@ impl AwbcRuntimeType {
         shape: AwbcRuntimeTypeShape,
     ) -> Self {
         Self {
+            nominal_declaration: None,
             semantic_identity,
             scope: RuntimeTypeScope::root(),
             shape,
             data_codec: None,
             data_codec_arguments: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_nominal_declaration(
+        mut self,
+        declaration: crate::entry::RuntimeNominalDeclarationId,
+    ) -> Self {
+        self.nominal_declaration = Some(declaration);
+        self
+    }
+
+    pub const fn nominal_declaration(&self) -> Option<crate::entry::RuntimeNominalDeclarationId> {
+        self.nominal_declaration
     }
 
     /// Attaches the incoming lexical scope for bound references in this row.

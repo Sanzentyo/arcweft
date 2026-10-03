@@ -350,6 +350,7 @@ fn assert_tuple_variant_witness(owner: SemanticTypeDigest, coordinate: &StableSe
         owner,
         1,
         [TypeKind::Bool, TypeKind::Bool],
+        &crate::types::GenericScope::default(),
     )
     .expect("two-field tuple payload");
     let case = AcceptedVariantCaseSemanticId::issue(
@@ -397,6 +398,7 @@ fn assert_record_variant_witness(owner: SemanticTypeDigest, coordinate: &StableS
             ("diagnostic-z".to_owned(), TypeKind::Bool),
             ("diagnostic-a".to_owned(), TypeKind::Bool),
         ],
+        &crate::types::GenericScope::default(),
     )
     .expect("two-field record payload");
     let record_ids = shape

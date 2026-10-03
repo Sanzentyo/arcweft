@@ -784,6 +784,11 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
         RuntimeNominalTypeId::try_new("test.ProjectCallState").expect("state nominal identity");
     let schema = RuntimeNominalSchemaGraph::try_new(
         vec![RuntimeNominalSchemaDefinition::new(
+            crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                *(RuntimeNominalSchemaIdentity::new(state_nominal.clone(), state_ty))
+                    .semantic_identity()
+                    .as_bytes(),
+            ),
             RuntimeNominalSchemaIdentity::new(state_nominal.clone(), state_ty),
             vec![],
             RuntimeNominalSchemaBody::Record {
@@ -1483,6 +1488,11 @@ fn native_nominal_field_pop_front_drains_a_vec_and_handles_an_empty_field() {
     let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(0).expect("field identity");
     let schema = RuntimeNominalSchemaGraph::try_new(
         vec![RuntimeNominalSchemaDefinition::new(
+            crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                *(RuntimeNominalSchemaIdentity::new(nominal.clone(), record_type))
+                    .semantic_identity()
+                    .as_bytes(),
+            ),
             RuntimeNominalSchemaIdentity::new(nominal.clone(), record_type),
             vec![],
             RuntimeNominalSchemaBody::Record {

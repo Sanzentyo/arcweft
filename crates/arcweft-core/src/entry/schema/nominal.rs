@@ -18,6 +18,19 @@ mod validation;
 #[cfg(test)]
 mod tests;
 
+/// Stable source declaration identity shared by its nominal instances.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct RuntimeNominalDeclarationId([u8; 32]);
+
+impl RuntimeNominalDeclarationId {
+    pub const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
 /// Exact nominal instance identity. Membership is established by a graph.
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct RuntimeNominalSchemaIdentity {
@@ -173,6 +186,7 @@ pub enum RuntimeNominalSchemaBody {
 /// Definition and ordered arguments, supplied together before graph admission.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RuntimeNominalSchemaDefinition {
+    declaration: RuntimeNominalDeclarationId,
     identity: RuntimeNominalSchemaIdentity,
     arguments: Box<[RuntimeTypeSchema]>,
     body: RuntimeNominalSchemaBody,
@@ -182,16 +196,22 @@ pub struct RuntimeNominalSchemaDefinition {
 impl RuntimeNominalSchemaDefinition {
     #[must_use]
     pub fn new(
+        declaration: RuntimeNominalDeclarationId,
         identity: RuntimeNominalSchemaIdentity,
         arguments: impl Into<Box<[RuntimeTypeSchema]>>,
         body: RuntimeNominalSchemaBody,
     ) -> Self {
         Self {
+            declaration,
             identity,
             arguments: arguments.into(),
             body,
             data_codec: None,
         }
+    }
+
+    pub const fn declaration(&self) -> RuntimeNominalDeclarationId {
+        self.declaration
     }
 
     #[must_use]

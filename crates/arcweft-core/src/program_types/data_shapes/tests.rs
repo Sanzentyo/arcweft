@@ -300,6 +300,9 @@ fn recursive_codec_fixture() -> (RuntimePlan, AwbcProgram) {
     let graph = RuntimeNominalSchemaGraph::try_new(
         vec![
             RuntimeNominalSchemaDefinition::new(
+                crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                    *(identity).semantic_identity().as_bytes(),
+                ),
                 identity,
                 vec![argument.clone()],
                 RuntimeNominalSchemaBody::Record {
@@ -647,6 +650,11 @@ fn variant_codec_fixture(with_payload: bool) -> (RuntimePlan, AwbcProgram) {
     let graph = RuntimeNominalSchemaGraph::try_new(
         vec![
             RuntimeNominalSchemaDefinition::new(
+                crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                    *(RuntimeNominalSchemaIdentity::new(nominal.clone(), semantic(1)))
+                        .semantic_identity()
+                        .as_bytes(),
+                ),
                 RuntimeNominalSchemaIdentity::new(nominal.clone(), semantic(1)),
                 vec![],
                 RuntimeNominalSchemaBody::Variant {
