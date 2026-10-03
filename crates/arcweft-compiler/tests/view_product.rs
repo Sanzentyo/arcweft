@@ -921,6 +921,20 @@ fn compiler_defaults_execute_general_values_and_refresh_preceding_inputs() {
             use arcweft_core::awbc::{fiber::AwbcFiberStateSnapshot, product_step::AwbcProductStepExecutor};
             let definition = resource.definitions.iter().find(|definition| definition.public_id.as_str() == "view.Main").unwrap();
             let program = definition.parameters.iter().find(|parameter| parameter.name == "value").unwrap().default_program.as_ref().unwrap().program;
+            let first_program = definition.parameters.iter().find(|parameter| parameter.name == "first").unwrap().default_program.as_ref().unwrap().program;
+            let native_plan = Arc::new(compiled.runtime_plan().plan.clone());
+            let finish_native = |mut engine: arcweft_core::engine::Engine| {
+                for _ in 0..64 {
+                    let output = engine.step(Default::default(), Default::default()).output;
+                    assert!(output.diagnostics.is_empty(), "{output:?}");
+                    if let Some((_, value)) = engine.take_program_result().unwrap() { return value; }
+                }
+                panic!("native default exceeded its deterministic step limit");
+            };
+            let native_first = finish_native(arcweft_core::engine::Engine::for_program_invocation(Arc::clone(&native_plan), first_program, vec![]).unwrap());
+            let native_value = finish_native(arcweft_core::engine::Engine::for_program_invocation(Arc::clone(&native_plan), program, vec![native_first]).unwrap());
+            let RuntimeValue::Callable(native_value) = native_value else { panic!("native default did not retain its callback") };
+            assert!(matches!(native_value.owner(), arcweft_core::task::RuntimeProgramOwner::Plan(owner) if Arc::ptr_eq(owner, &native_plan)));
             let first = snapshot.mounts[0].runtime_parameters.iter().find(|binding| binding.name == "first").unwrap().value.clone();
             let executor = AwbcProductStepExecutor::for_program_invocation(Arc::clone(&awbc), program, vec![first], arcweft_core::task::GenerationId::new(0), 64).unwrap();
             let owner = arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&awbc));

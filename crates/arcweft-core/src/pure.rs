@@ -2068,7 +2068,10 @@ impl<'a> PureEvaluator<'a> {
                 self.evaluate_reduction_unchanged(expr.ty(), state)
             }
         }?;
-        if !self.plan.value_matches_type(expr.ty(), &value)? {
+        if !self
+            .env
+            .value_matches_type(self.plan.as_ref(), expr.ty(), &value)?
+        {
             return Err(RuntimeEvalError::InvalidExpressionType(expr.ty()));
         }
         Ok(value)
@@ -2476,7 +2479,10 @@ impl<'a> PureEvaluator<'a> {
                 .fields()
                 .get(ordinal)
                 .ok_or(RuntimeEvalError::InvalidExpressionType(ty))?;
-            if !plan.value_matches_type(field.ty(), &value)? {
+            if !self
+                .env
+                .value_matches_type(plan.as_ref(), field.ty(), &value)?
+            {
                 return Err(RuntimeEvalError::InvalidExpressionType(
                     initializer.value().ty(),
                 ));
@@ -2518,7 +2524,10 @@ impl<'a> PureEvaluator<'a> {
         let case = plan.variant_case(ty, ordinal)?;
         let payload = payload.map(|expr| self.evaluate_expr(expr)).transpose()?;
         match (case.payload(), payload.as_ref()) {
-            (Some(expected), Some(value)) if plan.value_matches_type(expected, value)? => {}
+            (Some(expected), Some(value))
+                if self
+                    .env
+                    .value_matches_type(plan.as_ref(), expected, value)? => {}
             (None, None) => {}
             _ => return Err(RuntimeEvalError::InvalidExpressionType(ty)),
         }
@@ -2568,7 +2577,10 @@ impl<'a> PureEvaluator<'a> {
         let producer = producer.clone();
         let semantic_identity = declaration.semantic_identity();
         let state = self.evaluate_expr(state)?;
-        if !plan.value_matches_type(state_ty, &state)? {
+        if !self
+            .env
+            .value_matches_type(plan.as_ref(), state_ty, &state)?
+        {
             return Err(RuntimeEvalError::InvalidExpressionType(ty));
         }
         let owner = RuntimeOpaqueTypeOwner::exact(producer, semantic_identity);
@@ -2686,7 +2698,10 @@ impl<'a> PureEvaluator<'a> {
                         .local_declarations()
                         .get(local)
                         .ok_or(RuntimeEvalError::UnknownLocal(local))?;
-                    if !self.plan.value_matches_type(declaration.ty(), &value)? {
+                    if !self
+                        .env
+                        .value_matches_type(self.plan.as_ref(), declaration.ty(), &value)?
+                    {
                         return Err(RuntimeEvalError::InvalidExpressionType(declaration.ty()));
                     }
                     Ok(RuntimeLocalBinding { local, value })
@@ -2734,20 +2749,34 @@ impl<'a> PureEvaluator<'a> {
         else_expr: &RuntimeExpr,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr(expr)?;
-        if !crate::pattern::inspect_runtime_pattern_owned(self.plan, pattern, &value)? {
+        if !crate::pattern::inspect_runtime_pattern_owned(
+            self.plan,
+            pattern,
+            &value,
+            self.env.function_instantiation(),
+        )? {
             return self.evaluate_expr(else_expr);
         }
         let guard_matched = if let Some(guard) = guard {
             let projected = crate::pattern::prepare_runtime_pattern_guard_bindings(
-                self.plan, pattern, &value, guard,
+                self.plan,
+                pattern,
+                &value,
+                guard,
+                self.env.function_instantiation(),
             )?;
             self.with_temp_bindings(projected, |this| this.evaluate_bool(guard))?
         } else {
             true
         };
         if guard_matched {
-            let bindings = crate::pattern::match_runtime_pattern_owned(self.plan, pattern, value)?
-                .expect("checked pure if-let pattern remains matched");
+            let bindings = crate::pattern::match_runtime_pattern_owned(
+                self.plan,
+                pattern,
+                value,
+                self.env.function_instantiation(),
+            )?
+            .expect("checked pure if-let pattern remains matched");
             self.with_temp_bindings(bindings, |this| this.evaluate_expr(then_expr))
         } else {
             self.evaluate_expr(else_expr)
@@ -2761,7 +2790,12 @@ impl<'a> PureEvaluator<'a> {
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr(scrutinee)?;
         for arm in arms {
-            if !crate::pattern::inspect_runtime_pattern_owned(self.plan, arm.pattern(), &value)? {
+            if !crate::pattern::inspect_runtime_pattern_owned(
+                self.plan,
+                arm.pattern(),
+                &value,
+                self.env.function_instantiation(),
+            )? {
                 continue;
             }
             if let Some(guard) = arm.guard() {
@@ -2770,14 +2804,19 @@ impl<'a> PureEvaluator<'a> {
                     arm.pattern(),
                     &value,
                     guard,
+                    self.env.function_instantiation(),
                 )?;
                 if !self.with_temp_bindings(projected, |this| this.evaluate_bool(guard))? {
                     continue;
                 }
             }
-            let bindings =
-                crate::pattern::match_runtime_pattern_owned(self.plan, arm.pattern(), value)?
-                    .expect("checked pure match arm remains selected");
+            let bindings = crate::pattern::match_runtime_pattern_owned(
+                self.plan,
+                arm.pattern(),
+                value,
+                self.env.function_instantiation(),
+            )?
+            .expect("checked pure match arm remains selected");
             return self.with_temp_bindings(bindings, |this| this.evaluate_expr(arm.value()));
         }
         Err(RuntimeEvalError::PatternMismatch(runtime_value_label(

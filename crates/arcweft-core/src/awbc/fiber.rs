@@ -107,7 +107,7 @@ pub(crate) struct PreparedCallableCallbackActivation {
 #[derive(Debug)]
 pub(crate) struct PreparedFunctionInputBinding {
     function: AwbcFunctionId,
-    type_instantiation: Option<super::AwbcFunctionEffectInstantiation>,
+    type_instantiation: Option<crate::program_types::RuntimeFunctionEffectInstantiation>,
     parameter_registers: Box<[AwbcRegisterId]>,
 }
 
@@ -161,7 +161,7 @@ pub struct FiberCursor {
 pub struct FiberFrame {
     pub instance: RuntimeFrameInstanceId,
     pub function: AwbcFunctionId,
-    pub type_instantiation: Option<super::AwbcFunctionEffectInstantiation>,
+    pub type_instantiation: Option<crate::program_types::RuntimeFunctionEffectInstantiation>,
     pub layout: AwbcFrameLayoutId,
     pub return_to: Option<FiberReturnPoint>,
     pub registers: Vec<RuntimePlaceStorage<RuntimeValue>>,
@@ -519,7 +519,7 @@ pub struct AwbcFiberStateSnapshot {
 pub struct AwbcFiberFrameSnapshot {
     pub instance: RuntimeFrameInstanceId,
     pub function: AwbcFunctionId,
-    pub type_instantiation: Option<super::AwbcFunctionEffectInstantiation>,
+    pub type_instantiation: Option<crate::program_types::RuntimeFunctionEffectInstantiation>,
     pub layout: AwbcFrameLayoutId,
     pub return_to: Option<AwbcFiberReturnPointSnapshot>,
     pub registers: Vec<RuntimePlaceStorage<AwbcRuntimeValueSnapshot>>,
@@ -4105,7 +4105,11 @@ fn validate_frame(
     match (function.type_context, frame.type_instantiation.as_ref()) {
         (None, None) => {}
         (Some(context), Some(binding))
-            if binding.context() == context && binding.is_valid(program) => {}
+            if program
+                .runtime_types
+                .get(context.index())
+                .is_some_and(|row| row.semantic_identity() == binding.context())
+                && binding.is_valid(program) => {}
         _ => return Err(FiberStateError::InvalidFrame),
     }
     let layout = program
@@ -4258,7 +4262,7 @@ fn validate_deferred(
 
 fn validate_place_storage_at(
     program: &AwbcProgram,
-    instantiation: Option<&super::AwbcFunctionEffectInstantiation>,
+    instantiation: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
     storage: &RuntimePlaceStorage<RuntimeValue>,
     expected: AwbcTypeId,
     path: String,
@@ -6017,7 +6021,8 @@ impl FiberFrame {
         &self,
         program: &AwbcProgram,
         values: &[&RuntimeValue],
-    ) -> Result<Option<super::AwbcFunctionEffectInstantiation>, FiberStateError> {
+    ) -> Result<Option<crate::program_types::RuntimeFunctionEffectInstantiation>, FiberStateError>
+    {
         let function = program
             .functions
             .get(self.function.index())
@@ -6029,7 +6034,8 @@ impl FiberFrame {
         program: &AwbcProgram,
         context: Option<AwbcTypeId>,
         values: &[&RuntimeValue],
-    ) -> Result<Option<super::AwbcFunctionEffectInstantiation>, FiberStateError> {
+    ) -> Result<Option<crate::program_types::RuntimeFunctionEffectInstantiation>, FiberStateError>
+    {
         context
             .map(|context| {
                 program.instantiate_function_effects(context, values).ok_or(
@@ -6045,7 +6051,7 @@ impl FiberFrame {
 
     fn value_matches_instantiation(
         program: &AwbcProgram,
-        instantiation: Option<&super::AwbcFunctionEffectInstantiation>,
+        instantiation: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
         value: &RuntimeValue,
         expected: super::schema::AwbcTypeId,
     ) -> bool {

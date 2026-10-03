@@ -127,6 +127,7 @@ impl PureEvaluator<'_> {
         let declaration = self
             .plan
             .validate_function_site_inputs(site, &captures, &arguments)?;
+        let type_instantiation = declaration.type_instantiation.clone();
         let RuntimeFunctionSiteBody::Expression(body) = declaration.body() else {
             return Err(RuntimeEvalError::UnsupportedPure {
                 name: "structured.function".to_owned(),
@@ -148,18 +149,39 @@ impl PureEvaluator<'_> {
                 .ok_or(
                     crate::value::RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site },
                 )?;
-            let bindings = match_runtime_pattern_owned(self.plan, input.pattern(), value)?
-                .ok_or_else(|| {
-                    RuntimeEvalError::PatternMismatch(format!(
-                        "function site {site} input {:?}",
-                        input.source()
-                    ))
-                })?;
+            let bindings = match_runtime_pattern_owned(
+                self.plan,
+                input.pattern(),
+                value,
+                type_instantiation.as_deref(),
+            )?
+            .ok_or_else(|| {
+                RuntimeEvalError::PatternMismatch(format!(
+                    "function site {site} input {:?}",
+                    input.source()
+                ))
+            })?;
             staged.extend(bindings);
         }
-        self.env.push_scope_with_capacity(staged.len());
+        self.env
+            .push_function_scope(site, staged.len(), type_instantiation.clone());
         self.env.bind_all(staged);
         let value = self.evaluate_expr(body);
+        let value = value.and_then(|value| {
+            let matches = match &type_instantiation {
+                Some(binding) => {
+                    binding.value_matches(self.plan.as_ref(), declaration.result(), &value)
+                }
+                None => self.plan.value_matches_type(declaration.result(), &value)?,
+            };
+            if matches {
+                Ok(value)
+            } else {
+                Err(RuntimeEvalError::InvalidExpressionType(
+                    declaration.result(),
+                ))
+            }
+        });
         self.env.pop_scope();
         value
     }

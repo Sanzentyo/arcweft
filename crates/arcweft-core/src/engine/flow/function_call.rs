@@ -28,6 +28,7 @@ impl Engine {
         let declaration = self
             .plan
             .validate_function_site_inputs(site, &captures, &args)?;
+        frame.type_instantiation = declaration.type_instantiation.clone();
         let body = declaration.body().clone();
         let inputs = declaration.inputs().to_vec();
         if let RuntimeFunctionSiteBody::Expression(_) = &body
@@ -62,19 +63,26 @@ impl Engine {
                     })?)
                     .and_then(Option::take)
                     .ok_or(RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site })?;
-                let bindings = match_runtime_pattern_owned(&self.plan, input.pattern(), value)?
-                    .ok_or_else(|| {
-                        RuntimeEvalError::PatternMismatch(format!(
-                            "function site {site} input {:?}",
-                            input.source()
-                        ))
-                    })?;
+                let bindings = match_runtime_pattern_owned(
+                    &self.plan,
+                    input.pattern(),
+                    value,
+                    frame.type_instantiation.as_deref(),
+                )?
+                .ok_or_else(|| {
+                    RuntimeEvalError::PatternMismatch(format!(
+                        "function site {site} input {:?}",
+                        input.source()
+                    ))
+                })?;
                 staged.extend(bindings);
             }
             Ok::<Vec<crate::value::RuntimeLocalBinding>, RuntimeEvalError>(staged)
         })();
         let staged = setup?;
-        self.fiber.env.push_scope_with_capacity(staged.len());
+        self.fiber
+            .env
+            .push_function_scope(site, staged.len(), frame.type_instantiation.clone());
         self.fiber.env.bind_all(staged);
         frame.function_scope = true;
         frame.caller_pending_ops = std::mem::take(&mut self.fiber.pending_ops);
@@ -102,7 +110,13 @@ impl Engine {
             );
             return;
         };
-        match plan_owner.value_matches_type(declaration.result(), &value) {
+        let matches = match &frame.type_instantiation {
+            Some(binding) => {
+                Ok(binding.value_matches(plan_owner.as_ref(), declaration.result(), &value))
+            }
+            None => plan_owner.value_matches_type(declaration.result(), &value),
+        };
+        match matches {
             Ok(true) => {}
             Ok(false) => {
                 self.fail_eval(

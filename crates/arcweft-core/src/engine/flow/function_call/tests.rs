@@ -8,6 +8,101 @@ use crate::tests::function_application::{
 };
 use crate::value::{RuntimeCallableValue, RuntimeEvalError, RuntimeValue};
 
+#[test]
+fn active_effect_frame_rollback_rejects_a_missing_frame_binding() {
+    use crate::effect_row::{DecisionControl, DecisionWork, EffectFormula};
+    use crate::pattern::RuntimeSemanticTypeId;
+    use crate::plan::{
+        RuntimeEffectSet, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFunctionSiteDeclarationSeed,
+        RuntimeFunctionTypeContract, RuntimePlanBuilder, RuntimePlanTypeProjection,
+        RuntimePlanTypeSeed, RuntimeTypeBinder, RuntimeTypeScope,
+    };
+    struct Work;
+    impl DecisionControl for Work {
+        type Error = std::convert::Infallible;
+        fn charge(&mut self, _: DecisionWork) -> Result<(), Self::Error> {
+            Ok(())
+        }
+    }
+    let unit = RuntimeSemanticTypeId::from_bytes([0xd1; 32]);
+    let header = RuntimeSemanticTypeId::from_bytes([0xd2; 32]);
+    let binder = RuntimeTypeBinder::new(0, 0, 1);
+    let scope = RuntimeTypeScope::root().enter(binder).unwrap();
+    let io = EffectFormula::literal(
+        crate::effect_row::EffectSet::from_labels(["io.read"]).unwrap(),
+        None,
+    );
+    let variable =
+        EffectFormula::literal(Default::default(), Some(scope.bound_effect(0, 0).unwrap()));
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+                RuntimePlanTypeSeed::new(
+                    header,
+                    RuntimePlanTypeProjection::Function {
+                        contract: RuntimeFunctionTypeContract::new(
+                            binder,
+                            io.subset(&variable, &mut Work).unwrap(),
+                            EffectFormula::empty(),
+                        ),
+                        parameters: Box::new([]),
+                        result: unit,
+                    },
+                ),
+            ],
+            [],
+        )
+        .unwrap();
+    let site = builder
+        .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            function_type: Some(header),
+            inputs: Box::new([]),
+            result: unit,
+            body_kind: RuntimeFunctionSiteBodyKind::Expression,
+            effects: RuntimeEffectSet::empty(),
+        })
+        .unwrap();
+    builder
+        .define_function_site_seed(
+            &site,
+            RuntimeExprSeed::new(unit, RuntimeExprSeedKind::Value(RuntimeValue::Unit)),
+        )
+        .unwrap();
+    let program =
+        arcweft_id::runtime_program::RuntimePureProgramId::from_checked_digest([0xd3; 32]);
+    builder
+        .push_pure_program_binding_seed(&crate::plan::RuntimePureProgramBindingSeed {
+            program,
+            site,
+        })
+        .unwrap();
+    let plan = Arc::new(builder.finish().unwrap());
+    let engine = Engine::for_program_invocation(plan, program, vec![]).unwrap();
+    let image = engine.inert_rollback_image().unwrap();
+    let restored = Engine::from_rollback_image(image.clone()).unwrap();
+    assert_eq!(
+        restored
+            .fiber
+            .env
+            .function_instantiation()
+            .unwrap()
+            .context(),
+        header
+    );
+    let mut missing = image;
+    let Some(crate::engine::FlowControlStackEntryRollbackImage::FunctionCall {
+        type_instantiation,
+        ..
+    }) = missing.fiber.control_stack.last_mut()
+    else {
+        panic!("program did not retain its active function frame")
+    };
+    *type_instantiation = None;
+    assert!(Engine::from_rollback_image(missing).is_err());
+}
+
 fn completed_handle_program() -> (
     Engine,
     arcweft_id::runtime_program::RuntimePureProgramId,

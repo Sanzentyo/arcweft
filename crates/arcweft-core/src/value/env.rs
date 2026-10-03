@@ -32,6 +32,7 @@ impl RuntimePlaceWriteError {
 #[derive(Clone, Debug, PartialEq)]
 struct RuntimeScopeRollbackImage {
     identity: RuntimeScopeIdentity,
+    function_context: super::RuntimeScopeTypeContext,
     slots: Vec<RuntimeLocalSlot<super::AwbcRuntimeValueSnapshot>>,
 }
 
@@ -74,6 +75,7 @@ impl RuntimeEnv {
                 .map(|scope| {
                     Ok(RuntimeScopeRollbackImage {
                         identity: scope.identity.clone(),
+                        function_context: scope.function_context.clone(),
                         slots: scope
                             .slots
                             .iter()
@@ -101,8 +103,22 @@ impl RuntimeEnv {
                 .scopes
                 .into_iter()
                 .map(|scope| {
+                    if let super::RuntimeScopeTypeContext::Function {
+                        site,
+                        instantiation,
+                    } = &scope.function_context
+                    {
+                        let RuntimeProgramOwner::Plan(plan) = owner else {
+                            return Err(
+                                "native function scope has a foreign program kind".to_owned()
+                            );
+                        };
+                        plan.validate_function_instantiation(*site, instantiation.as_deref())
+                            .map_err(|error| error.to_string())?;
+                    }
                     Ok(RuntimeScope {
                         identity: scope.identity,
+                        function_context: scope.function_context,
                         slots: scope
                             .slots
                             .into_iter()
@@ -141,6 +157,52 @@ impl RuntimeEnv {
             RuntimeScopeIdentity::Anonymous,
             binding_capacity,
         );
+    }
+
+    pub(crate) fn push_function_scope(
+        &mut self,
+        site: crate::runtime_id::RuntimeFunctionSiteId,
+        binding_capacity: usize,
+        binding: Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
+    ) {
+        self.push_scope_with_capacity(binding_capacity);
+        self.scopes
+            .last_mut()
+            .expect("function scope was pushed")
+            .function_context = super::RuntimeScopeTypeContext::Function {
+            site,
+            instantiation: binding,
+        };
+    }
+
+    pub(crate) fn function_instantiation(
+        &self,
+    ) -> Option<&crate::program_types::RuntimeFunctionEffectInstantiation> {
+        self.scopes
+            .iter()
+            .rev()
+            .find_map(|scope| match &scope.function_context {
+                super::RuntimeScopeTypeContext::Lexical => None,
+                super::RuntimeScopeTypeContext::Function { instantiation, .. } => {
+                    Some(instantiation.as_deref())
+                }
+            })
+            .flatten()
+    }
+
+    pub(crate) fn value_matches_type(
+        &self,
+        plan: &crate::plan::RuntimePlan,
+        ty: crate::runtime_id::RuntimePlanTypeId,
+        value: &RuntimeValue,
+    ) -> Result<bool, crate::plan::RuntimePlanValueTypeError> {
+        if plan.type_table().get(ty).is_none() {
+            return Err(crate::plan::RuntimePlanValueTypeError::UnknownType { ty });
+        }
+        match self.function_instantiation() {
+            Some(binding) => Ok(binding.value_matches(plan, ty, value)),
+            None => plan.value_matches_type(ty, value),
+        }
     }
 
     pub(crate) fn push_scope_with_identity(&mut self, identity: RuntimeScopeIdentity) {
@@ -508,6 +570,7 @@ impl RuntimeScope {
     fn with_capacity(binding_capacity: usize) -> Self {
         Self {
             identity: RuntimeScopeIdentity::Anonymous,
+            function_context: super::RuntimeScopeTypeContext::Lexical,
             slots: Vec::with_capacity(binding_capacity),
         }
     }
@@ -569,6 +632,7 @@ impl RuntimeScope {
 
     fn clear(&mut self) {
         self.identity = RuntimeScopeIdentity::Anonymous;
+        self.function_context = super::RuntimeScopeTypeContext::Lexical;
         self.slots.clear();
     }
 
@@ -592,6 +656,125 @@ impl RuntimeScope {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn function_scope_binding_survives_lexical_scopes_and_authenticated_rollback() {
+        use crate::effect_row::{DecisionControl, DecisionWork, EffectFormula};
+        use crate::pattern::RuntimeSemanticTypeId;
+        use crate::plan::{
+            RuntimeEffectSet, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFunctionSiteBodyKind,
+            RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionTypeContract, RuntimePlanBuilder,
+            RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimeTypeBinder, RuntimeTypeScope,
+        };
+        struct Work;
+        impl DecisionControl for Work {
+            type Error = std::convert::Infallible;
+            fn charge(&mut self, _: DecisionWork) -> Result<(), Self::Error> {
+                Ok(())
+            }
+        }
+        let unit = RuntimeSemanticTypeId::from_bytes([0xc1; 32]);
+        let header = RuntimeSemanticTypeId::from_bytes([0xc2; 32]);
+        let binder = RuntimeTypeBinder::new(0, 0, 1);
+        let scope = RuntimeTypeScope::root().enter(binder).unwrap();
+        let io = EffectFormula::literal(
+            crate::effect_row::EffectSet::from_labels(["io.read"]).unwrap(),
+            None,
+        );
+        let variable =
+            EffectFormula::literal(Default::default(), Some(scope.bound_effect(0, 0).unwrap()));
+        let predicate = io.subset(&variable, &mut Work).unwrap();
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [
+                    RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+                    RuntimePlanTypeSeed::new(
+                        header,
+                        RuntimePlanTypeProjection::Function {
+                            contract: RuntimeFunctionTypeContract::new(
+                                binder,
+                                predicate,
+                                EffectFormula::empty(),
+                            ),
+                            parameters: Box::new([]),
+                            result: unit,
+                        },
+                    ),
+                ],
+                [],
+            )
+            .unwrap();
+        let mut sites = Vec::new();
+        for function_type in [Some(header), None] {
+            let site = builder
+                .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+                    function_type,
+                    inputs: Box::new([]),
+                    result: unit,
+                    body_kind: RuntimeFunctionSiteBodyKind::Expression,
+                    effects: RuntimeEffectSet::empty(),
+                })
+                .unwrap();
+            builder
+                .define_function_site_seed(
+                    &site,
+                    RuntimeExprSeed::new(unit, RuntimeExprSeedKind::Value(RuntimeValue::Unit)),
+                )
+                .unwrap();
+            sites.push(site);
+        }
+        let plan = std::sync::Arc::new(builder.finish().unwrap());
+        let sites = plan
+            .function_sites()
+            .iter()
+            .enumerate()
+            .map(|(index, _)| {
+                crate::runtime_id::RuntimeFunctionSiteId::from_accepted_ordinal(
+                    std::num::NonZeroU32::new(u32::try_from(index + 1).unwrap()).unwrap(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let owner = RuntimeProgramOwner::Plan(std::sync::Arc::clone(&plan));
+        let admission = plan
+            .validate_function_site_input_refs(sites[0], &[], &[])
+            .unwrap();
+        let binding = admission.type_instantiation.unwrap();
+        let mut env = RuntimeEnv::default();
+        env.push_function_scope(sites[0], 0, Some(binding.clone()));
+        env.push_scope();
+        assert_eq!(env.function_instantiation(), Some(binding.as_ref()));
+        env.push_function_scope(sites[1], 0, None);
+        assert!(env.function_instantiation().is_none());
+        env.pop_scope();
+        assert_eq!(env.function_instantiation(), Some(binding.as_ref()));
+        let image = env.inert_rollback_image(&owner).unwrap();
+        let restored = RuntimeEnv::from_rollback_image(image.clone(), &owner).unwrap();
+        assert_eq!(restored.function_instantiation(), Some(binding.as_ref()));
+        let mut missing = image.clone();
+        missing.scopes[1].function_context = super::super::RuntimeScopeTypeContext::Function {
+            site: sites[0],
+            instantiation: None,
+        };
+        assert!(RuntimeEnv::from_rollback_image(missing, &owner).is_err());
+        let mut wrong_owner = image.clone();
+        wrong_owner.scopes[1].function_context = super::super::RuntimeScopeTypeContext::Function {
+            site: sites[1],
+            instantiation: Some(binding.clone()),
+        };
+        assert!(RuntimeEnv::from_rollback_image(wrong_owner, &owner).is_err());
+        let mut encoded = serde_json::to_value(binding.as_ref()).unwrap();
+        encoded["effects"][0] = serde_json::json!([]);
+        let forged: crate::program_types::RuntimeFunctionEffectInstantiation =
+            serde_json::from_value(encoded).unwrap();
+        let mut wrong_effects = image;
+        wrong_effects.scopes[1].function_context =
+            super::super::RuntimeScopeTypeContext::Function {
+                site: sites[0],
+                instantiation: Some(std::sync::Arc::new(forged)),
+            };
+        assert!(RuntimeEnv::from_rollback_image(wrong_effects, &owner).is_err());
+    }
     use crate::entry::{RuntimeNominalTypeId, TypeLayoutHash};
     use crate::value::{RuntimeNominalRecordValue, RuntimeSeq};
     use std::num::NonZeroU32;

@@ -196,6 +196,10 @@ pub struct RuntimeLocalBinding {
 /// Validation failures at a native FunctionSite input boundary.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeFunctionApplyError {
+    #[error("function site {site} inputs have no joint declaration effect instantiation")]
+    InvalidEffectInstantiation {
+        site: crate::runtime_id::RuntimeFunctionSiteId,
+    },
     #[error("structured function site {site} does not belong to its owning plan")]
     UnknownStructuredSite { site: RuntimeFunctionSiteId },
     #[error("structured function site {site} requires {expected} captures, received {actual}")]
@@ -2172,7 +2176,20 @@ pub struct RuntimeEnv {
 #[derive(Clone, Debug, Default, PartialEq)]
 struct RuntimeScope {
     identity: RuntimeScopeIdentity,
+    function_context: RuntimeScopeTypeContext,
     slots: Vec<RuntimeLocalSlot>,
+}
+
+/// Lexical inheritance or the authenticated type environment of a function.
+#[derive(Clone, Debug, Default, PartialEq)]
+enum RuntimeScopeTypeContext {
+    #[default]
+    Lexical,
+    Function {
+        site: crate::runtime_id::RuntimeFunctionSiteId,
+        instantiation:
+            Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
+    },
 }
 
 /// One declaration identity and its current complete or partial place storage.

@@ -50,9 +50,18 @@ impl RuntimePlan {
         value: &RuntimeValue,
         limits: RuntimeSchemaLimits,
     ) -> Result<(), RuntimePlanValueAdmissionError> {
+        self.validate_live_value_view(ty, value.view(), limits)
+    }
+
+    pub(crate) fn validate_live_value_view(
+        &self,
+        ty: RuntimePlanTypeId,
+        value: View<'_>,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<(), RuntimePlanValueAdmissionError> {
         let mut validation =
             PlanValueValidation::new(PlanValueAuthority::Sealed(self), ty, limits)?;
-        value_encoding::validate_live(value, limits, &mut validation, Expected::Type(ty))
+        value_encoding::validate_live_view(value, limits, &mut validation, Expected::Type(ty))
             .map_err(|source| RuntimePlanValueAdmissionError::Value { ty, source })
     }
 

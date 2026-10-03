@@ -1,29 +1,32 @@
 //! Joint effect binding and declaration-scoped default relations.
 
-use super::schema::{AwbcProgram, AwbcRuntimeTypeShape, AwbcTypeId};
+use crate::awbc::schema::{AwbcProgram, AwbcRuntimeTypeShape, AwbcTypeId};
 use crate::{
     effect_row::{DecisionControl, DecisionWork, EffectPredicate},
     plan::{RuntimeBoundEffectReference, RuntimeTypeBinder, RuntimeTypeScope},
     value::RuntimeValue,
 };
 use std::collections::{BTreeMap, BTreeSet};
+mod authority;
+use crate::pattern::RuntimeSemanticTypeId;
+use authority::FunctionTypeAuthority;
 
 /// One immutable solution of a function frame's declaration effect scope.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "EffectInstantiationWire", into = "EffectInstantiationWire")]
-pub struct AwbcFunctionEffectInstantiation {
-    context: AwbcTypeId,
+pub struct RuntimeFunctionEffectInstantiation {
+    context: RuntimeSemanticTypeId,
     effects: Box<[crate::effect_row::EffectSet]>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EffectInstantiationWire {
-    context: AwbcTypeId,
+    context: RuntimeSemanticTypeId,
     effects: Box<[Box<[String]>]>,
 }
-impl From<AwbcFunctionEffectInstantiation> for EffectInstantiationWire {
-    fn from(value: AwbcFunctionEffectInstantiation) -> Self {
+impl From<RuntimeFunctionEffectInstantiation> for EffectInstantiationWire {
+    fn from(value: RuntimeFunctionEffectInstantiation) -> Self {
         Self {
             context: value.context,
             effects: value
@@ -38,7 +41,7 @@ impl From<AwbcFunctionEffectInstantiation> for EffectInstantiationWire {
         }
     }
 }
-impl TryFrom<EffectInstantiationWire> for AwbcFunctionEffectInstantiation {
+impl TryFrom<EffectInstantiationWire> for RuntimeFunctionEffectInstantiation {
     type Error = &'static str;
     fn try_from(value: EffectInstantiationWire) -> Result<Self, Self::Error> {
         let effects = value
@@ -65,12 +68,13 @@ impl TryFrom<EffectInstantiationWire> for AwbcFunctionEffectInstantiation {
     }
 }
 
-impl AwbcFunctionEffectInstantiation {
-    fn matcher<'program>(
+impl RuntimeFunctionEffectInstantiation {
+    fn matcher<'program, A: FunctionTypeAuthority>(
         &self,
-        program: &'program AwbcProgram,
-    ) -> Option<ParameterMatcher<'program>> {
-        let (_, mut matcher) = ParameterMatcher::for_function(program, self.context, None)?;
+        program: &'program A,
+    ) -> Option<ParameterMatcher<'program, A>> {
+        let context = program.by_semantic(self.context)?;
+        let (_, mut matcher) = ParameterMatcher::for_function(program, context, None)?;
         let count = matcher
             .parameters
             .scope
@@ -100,24 +104,24 @@ impl AwbcFunctionEffectInstantiation {
         }
         Some(matcher)
     }
-    pub(crate) fn context(&self) -> AwbcTypeId {
+    pub(crate) fn context(&self) -> RuntimeSemanticTypeId {
         self.context
     }
-    pub(crate) fn is_valid(&self, program: &AwbcProgram) -> bool {
+    pub(crate) fn is_valid<A: FunctionTypeAuthority>(&self, program: &A) -> bool {
         self.matcher(program).is_some()
     }
-    pub(crate) fn value_matches(
+    pub(crate) fn value_matches<A: FunctionTypeAuthority>(
         &self,
-        program: &AwbcProgram,
-        ty: AwbcTypeId,
+        program: &A,
+        ty: A::Type,
         value: &RuntimeValue,
     ) -> bool {
         self.value_view_matches(program, ty, value.view())
     }
-    pub(crate) fn value_view_matches(
+    pub(crate) fn value_view_matches<A: FunctionTypeAuthority>(
         &self,
-        program: &AwbcProgram,
-        ty: AwbcTypeId,
+        program: &A,
+        ty: A::Type,
         value: crate::value::RuntimeValueView<'_>,
     ) -> bool {
         let Some(mut matcher) = self.matcher(program) else {
@@ -204,8 +208,8 @@ impl DecisionControl for ContractWork {
         Ok(())
     }
 }
-struct ParameterMatcher<'a> {
-    program: &'a AwbcProgram,
+struct ParameterMatcher<'a, A: FunctionTypeAuthority> {
+    program: &'a A,
     predicate: EffectPredicate<ContractVariable>,
     source_predicate: EffectPredicate<ContractVariable>,
     parameters: EffectEnvironment,
@@ -221,8 +225,35 @@ impl AwbcProgram {
         &self,
         context: AwbcTypeId,
         inputs: &[&RuntimeValue],
-    ) -> Option<AwbcFunctionEffectInstantiation> {
-        let (parameters, mut matcher) = ParameterMatcher::for_function(self, context, None)?;
+    ) -> Option<RuntimeFunctionEffectInstantiation> {
+        ParameterMatcher::instantiate(self, context, inputs)
+    }
+}
+
+impl super::RuntimeProgramTypes<'_> {
+    pub(crate) fn instantiate_function_effects(
+        &self,
+        context: RuntimeSemanticTypeId,
+        inputs: &[&RuntimeValue],
+    ) -> Option<RuntimeFunctionEffectInstantiation> {
+        match self {
+            Self::Plan(plan) => {
+                ParameterMatcher::instantiate(*plan, plan.by_semantic(context)?, inputs)
+            }
+            Self::Awbc(program) => {
+                ParameterMatcher::instantiate(*program, program.by_semantic(context)?, inputs)
+            }
+        }
+    }
+}
+
+impl<A: FunctionTypeAuthority> ParameterMatcher<'_, A> {
+    fn instantiate(
+        program: &A,
+        context: A::Type,
+        inputs: &[&RuntimeValue],
+    ) -> Option<RuntimeFunctionEffectInstantiation> {
+        let (parameters, mut matcher) = ParameterMatcher::for_function(program, context, None)?;
         if parameters.len() != inputs.len() {
             return None;
         }
@@ -253,8 +284,13 @@ impl AwbcProgram {
                     .ok()?
             })
             .collect::<Option<Box<[_]>>>()?;
-        Some(AwbcFunctionEffectInstantiation { context, effects })
+        Some(RuntimeFunctionEffectInstantiation {
+            context: program.semantic(context)?,
+            effects,
+        })
     }
+}
+impl AwbcProgram {
     /// Jointly binds concrete supplied types; declaration-scoped rows require
     /// their owning source contract through the separate default boundary.
     pub fn parameter_contract_accepts_types(
@@ -410,47 +446,29 @@ impl AwbcProgram {
             && matcher.accepted()
     }
 }
-impl<'a> ParameterMatcher<'a> {
+impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
     fn new(
-        program: &'a AwbcProgram,
-        contract: AwbcTypeId,
+        program: &'a A,
+        contract: A::Type,
         bindable: Option<BTreeSet<u32>>,
-    ) -> Option<(&'a [AwbcTypeId], Self)> {
-        let row = program.runtime_types.get(contract.index())?;
-        let AwbcRuntimeTypeShape::Function {
-            contract: header,
-            result,
-            ..
-        } = row.shape()
-        else {
-            return None;
-        };
+    ) -> Option<(&'a [A::Type], Self)> {
+        let (header, _, result) = program.function(contract)?;
         if header.binder().effects() == 0
             || header.invocation() != &crate::effect_row::EffectFormula::empty()
-            || !matches!(
-                program.runtime_types.get(result.index())?.shape(),
-                AwbcRuntimeTypeShape::Unit
-            )
+            || !program.is_unit(result)
         {
             return None;
         }
         Self::for_function(program, contract, bindable)
     }
     fn for_function(
-        program: &'a AwbcProgram,
-        contract: AwbcTypeId,
+        program: &'a A,
+        contract: A::Type,
         bindable: Option<BTreeSet<u32>>,
-    ) -> Option<(&'a [AwbcTypeId], Self)> {
-        let row = program.runtime_types.get(contract.index())?;
-        let AwbcRuntimeTypeShape::Function {
-            contract,
-            parameters,
-            result: _,
-        } = row.shape()
-        else {
-            return None;
-        };
-        if !row.scope().is_root()
+    ) -> Option<(&'a [A::Type], Self)> {
+        let scope = program.scope(contract)?;
+        let (contract, parameters, _) = program.function(contract)?;
+        if !scope.is_root()
             || contract.binder().types() != 0
             || contract.binder().const_lengths() != 0
             || contract.invocation().variables().next().is_some()
@@ -526,34 +544,29 @@ impl<'a> ParameterMatcher<'a> {
     }
     fn types(
         &mut self,
-        expected: AwbcTypeId,
-        actual: AwbcTypeId,
+        expected: A::Type,
+        actual: A::Type,
         depth: usize,
         expected_environment: &EffectEnvironment,
         actual_environment: &EffectEnvironment,
     ) -> Result<(), ()> {
         self.enter(depth)?;
-        let expected_row = self.program.runtime_types.get(expected.index()).ok_or(())?;
-        let actual_row = self.program.runtime_types.get(actual.index()).ok_or(())?;
-        let expected_environment = expected_environment.at_scope(expected_row.scope())?;
-        let actual_environment = actual_environment.at_scope(actual_row.scope())?;
+        let expected_scope = self.program.scope(expected).ok_or(())?;
+        let actual_scope = self.program.scope(actual).ok_or(())?;
+        let expected_environment = expected_environment.at_scope(expected_scope)?;
+        let actual_environment = actual_environment.at_scope(actual_scope)?;
         if expected == actual
-            && (expected_row.scope().is_root() || expected_environment == actual_environment)
+            && (expected_scope.is_root() || expected_environment == actual_environment)
         {
             return Ok(());
         }
-        match (expected_row.shape(), actual_row.shape()) {
+        match (
+            self.program.function(expected),
+            self.program.function(actual),
+        ) {
             (
-                AwbcRuntimeTypeShape::Function {
-                    contract: expected_contract,
-                    parameters: expected_parameters,
-                    result: expected_result,
-                },
-                AwbcRuntimeTypeShape::Function {
-                    contract: actual_contract,
-                    parameters: actual_parameters,
-                    result: actual_result,
-                },
+                Some((expected_contract, expected_parameters, expected_result)),
+                Some((actual_contract, actual_parameters, actual_result)),
             ) => {
                 if expected_contract.binder() != actual_contract.binder()
                     || expected_contract.binder().types() != 0
@@ -578,8 +591,8 @@ impl<'a> ParameterMatcher<'a> {
                     )?;
                 }
                 self.types(
-                    *expected_result,
-                    *actual_result,
+                    expected_result,
+                    actual_result,
                     depth + 1,
                     &expected_environment,
                     &actual_environment,
@@ -615,32 +628,38 @@ impl<'a> ParameterMatcher<'a> {
                 self.predicate = self.predicate.and(&relation, &mut self.work)?;
                 Ok(())
             }
-            (AwbcRuntimeTypeShape::Tuple(expected), AwbcRuntimeTypeShape::Tuple(actual))
-                if expected.len() == actual.len() =>
-            {
-                for (expected, actual) in expected.iter().zip(actual) {
-                    self.types(
-                        *expected,
-                        *actual,
-                        depth + 1,
-                        &expected_environment,
-                        &actual_environment,
-                    )?;
+            _ => {
+                if let (Some(expected), Some(actual)) =
+                    (self.program.tuple(expected), self.program.tuple(actual))
+                {
+                    if expected.len() != actual.len() {
+                        return Err(());
+                    }
+                    for (expected, actual) in expected.iter().zip(actual) {
+                        self.types(
+                            *expected,
+                            *actual,
+                            depth + 1,
+                            &expected_environment,
+                            &actual_environment,
+                        )?;
+                    }
+                    return Ok(());
                 }
-                Ok(())
+                if (expected_scope.is_root() && actual_scope.is_root()
+                    || expected_environment == actual_environment)
+                    && self.program.compatible(expected, actual)
+                {
+                    Ok(())
+                } else {
+                    Err(())
+                }
             }
-            _ if (expected_row.scope().is_root() && actual_row.scope().is_root()
-                || expected_environment == actual_environment)
-                && self.program.types_compatible(expected, actual) =>
-            {
-                Ok(())
-            }
-            _ => Err(()),
         }
     }
     fn value(
         &mut self,
-        expected: AwbcTypeId,
+        expected: A::Type,
         value: &RuntimeValue,
         depth: usize,
         environment: &EffectEnvironment,
@@ -649,28 +668,20 @@ impl<'a> ParameterMatcher<'a> {
     }
     fn value_view(
         &mut self,
-        expected: AwbcTypeId,
+        expected: A::Type,
         value: crate::value::RuntimeValueView<'_>,
         depth: usize,
         environment: &EffectEnvironment,
     ) -> Result<(), ()> {
         self.enter(depth)?;
-        let row = self.program.runtime_types.get(expected.index()).ok_or(())?;
-        let environment = environment.at_scope(row.scope())?;
-        match (row.shape(), value) {
+        let scope = self.program.scope(expected).ok_or(())?;
+        let environment = environment.at_scope(scope)?;
+        match (self.program.function(expected), value) {
             (
-                AwbcRuntimeTypeShape::Function { .. },
+                Some(_),
                 crate::value::RuntimeValueView::RuntimeOnly(RuntimeValue::Callable(value)),
             ) => {
-                if !matches!(value.owner(), crate::task::RuntimeProgramOwner::Awbc(owner) if std::ptr::eq(owner.as_ref(), self.program))
-                    || value.validate_retained().is_err()
-                {
-                    return Err(());
-                }
-                let actual = self
-                    .program
-                    .semantic_type_id(value.function_type().map_err(|_| ())?)
-                    .ok_or(())?;
+                let actual = self.program.callable_type(value).ok_or(())?;
                 self.types(
                     expected,
                     actual,
@@ -679,24 +690,19 @@ impl<'a> ParameterMatcher<'a> {
                     &EffectEnvironment::root(),
                 )
             }
-            (AwbcRuntimeTypeShape::Tuple(types), crate::value::RuntimeValueView::Tuple(values))
-                if types.len() == values.len() =>
+            (_, crate::value::RuntimeValueView::Tuple(values))
+                if self.program.tuple(expected).is_some() =>
             {
+                let types = self.program.tuple(expected).ok_or(())?;
+                if types.len() != values.len() {
+                    return Err(());
+                }
                 for (index, ty) in types.iter().enumerate() {
                     self.value_view(*ty, values.get(index).ok_or(())?, depth + 1, &environment)?;
                 }
                 Ok(())
             }
-            _ if row.scope().is_root()
-                && super::vm::runtime_value_view_matches_type(
-                    self.program,
-                    value,
-                    expected,
-                    depth,
-                ) =>
-            {
-                Ok(())
-            }
+            _ if scope.is_root() && self.program.value_matches(expected, value, depth) => Ok(()),
             _ => Err(()),
         }
     }
@@ -926,11 +932,11 @@ mod tests {
         assert!(!program.parameter_contract_accepts_types(AwbcTypeId(6), [(1, AwbcTypeId(1))]));
         assert!(!program.parameter_contract_accepts_types(AwbcTypeId(2), []));
 
-        let fixed = |effects| AwbcFunctionEffectInstantiation {
-            context: AwbcTypeId(6),
+        let fixed = |effects| RuntimeFunctionEffectInstantiation {
+            context: program.runtime_types[6].semantic_identity(),
             effects: vec![effects].into_boxed_slice(),
         };
-        let relates = |binding: &AwbcFunctionEffectInstantiation, expected, actual| {
+        let relates = |binding: &RuntimeFunctionEffectInstantiation, expected, actual| {
             let mut matcher = binding.matcher(&program).unwrap();
             let environment = matcher.parameters.clone();
             matcher
@@ -953,15 +959,15 @@ mod tests {
         assert!(!relates(&io, AwbcTypeId(3), AwbcTypeId(4)));
         let encoded = serde_json::to_value(&io).unwrap();
         assert_eq!(
-            serde_json::from_value::<AwbcFunctionEffectInstantiation>(encoded.clone()).unwrap(),
+            serde_json::from_value::<RuntimeFunctionEffectInstantiation>(encoded.clone()).unwrap(),
             io
         );
         let mut duplicate = encoded;
         duplicate["effects"][0] = serde_json::json!(["io.read", "io.read"]);
-        assert!(serde_json::from_value::<AwbcFunctionEffectInstantiation>(duplicate).is_err());
+        assert!(serde_json::from_value::<RuntimeFunctionEffectInstantiation>(duplicate).is_err());
         assert!(
-            !AwbcFunctionEffectInstantiation {
-                context: AwbcTypeId(6),
+            !RuntimeFunctionEffectInstantiation {
+                context: program.runtime_types[6].semantic_identity(),
                 effects: Box::new([]),
             }
             .is_valid(&program)

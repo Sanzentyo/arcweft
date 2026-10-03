@@ -61,12 +61,21 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<Vec<RuntimeLocalBinding>>, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
-        if !crate::pattern::inspect_runtime_pattern_owned(&self.plan, pattern, &value)? {
+        if !crate::pattern::inspect_runtime_pattern_owned(
+            &self.plan,
+            pattern,
+            &value,
+            self.fiber.env.function_instantiation(),
+        )? {
             return Ok(None);
         }
         if let Some(guard) = guard {
             let projected = crate::pattern::prepare_runtime_pattern_guard_bindings(
-                &self.plan, pattern, &value, guard,
+                &self.plan,
+                pattern,
+                &value,
+                guard,
+                self.fiber.env.function_instantiation(),
             )?;
             let matched = self.with_temp_bindings(projected, |this| {
                 this.evaluate_bool_with_backend(guard, pure_backend)
@@ -75,8 +84,13 @@ impl Engine {
                 return Ok(None);
             }
         }
-        let bindings = crate::pattern::match_runtime_pattern_owned(&self.plan, pattern, value)?
-            .expect("checked owned pattern remains matched");
+        let bindings = crate::pattern::match_runtime_pattern_owned(
+            &self.plan,
+            pattern,
+            value,
+            self.fiber.env.function_instantiation(),
+        )?
+        .expect("checked owned pattern remains matched");
         Ok(Some(bindings))
     }
 
@@ -88,7 +102,12 @@ impl Engine {
     ) -> Result<RuntimeMatchSelection, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(scrutinee, pure_backend)?;
         for arm in arms {
-            if !crate::pattern::inspect_runtime_pattern_owned(&self.plan, &arm.pattern, &value)? {
+            if !crate::pattern::inspect_runtime_pattern_owned(
+                &self.plan,
+                &arm.pattern,
+                &value,
+                self.fiber.env.function_instantiation(),
+            )? {
                 continue;
             }
             if let Some(guard) = arm.guard.as_ref() {
@@ -97,6 +116,7 @@ impl Engine {
                     &arm.pattern,
                     &value,
                     guard,
+                    self.fiber.env.function_instantiation(),
                 )?;
                 if !self.with_temp_bindings(projected, |this| {
                     this.evaluate_bool_with_backend(guard, pure_backend)
@@ -104,9 +124,13 @@ impl Engine {
                     continue;
                 }
             }
-            let bindings =
-                crate::pattern::match_runtime_pattern_owned(&self.plan, &arm.pattern, value)?
-                    .expect("checked owned pattern remains matched");
+            let bindings = crate::pattern::match_runtime_pattern_owned(
+                &self.plan,
+                &arm.pattern,
+                value,
+                self.fiber.env.function_instantiation(),
+            )?
+            .expect("checked owned pattern remains matched");
             return Ok(Some((bindings, arm.ops)));
         }
         Ok(None)
@@ -623,7 +647,11 @@ impl Engine {
                         .get(*receiver_local)
                         .ok_or(RuntimeEvalError::UnknownLocal(*receiver_local))?
                         .ty();
-                    if !self.plan.value_matches_type(receiver_ty, &receiver)? {
+                    if !self.fiber.env.value_matches_type(
+                        self.plan.as_ref(),
+                        receiver_ty,
+                        &receiver,
+                    )? {
                         return Err(RuntimeEvalError::InvalidExpressionType(receiver_ty));
                     }
                     match crate::value::project_display_context(
@@ -876,7 +904,11 @@ impl Engine {
             let Some(field) = domain.fields().get(ordinal) else {
                 return Err(RuntimeEvalError::InvalidExpressionType(ty));
             };
-            if !plan.value_matches_type(field.ty(), &value)? {
+            if !self
+                .fiber
+                .env
+                .value_matches_type(plan.as_ref(), field.ty(), &value)?
+            {
                 return Err(RuntimeEvalError::InvalidExpressionType(
                     initializer.value().ty(),
                 ));
@@ -919,7 +951,11 @@ impl Engine {
             .map(|expr| self.evaluate_expr_with_backend(expr, pure_backend))
             .transpose()?;
         match (case.payload(), payload.as_ref()) {
-            (Some(expected), Some(value)) if plan.value_matches_type(expected, value)? => {}
+            (Some(expected), Some(value))
+                if self
+                    .fiber
+                    .env
+                    .value_matches_type(plan.as_ref(), expected, value)? => {}
             (None, None) => {}
             _ => return Err(RuntimeEvalError::InvalidExpressionType(ty)),
         }
@@ -966,7 +1002,11 @@ impl Engine {
         let producer = producer.clone();
         let semantic_identity = declaration.semantic_identity();
         let state = self.evaluate_expr_with_backend(state, pure_backend)?;
-        if !plan.value_matches_type(state_ty, &state)? {
+        if !self
+            .fiber
+            .env
+            .value_matches_type(plan.as_ref(), state_ty, &state)?
+        {
             return Err(RuntimeEvalError::InvalidExpressionType(ty));
         }
         RuntimeReductionValue::try_unchanged(
@@ -1168,12 +1208,21 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
-        if !crate::pattern::inspect_runtime_pattern_owned(&self.plan, pattern, &value)? {
+        if !crate::pattern::inspect_runtime_pattern_owned(
+            &self.plan,
+            pattern,
+            &value,
+            self.fiber.env.function_instantiation(),
+        )? {
             return self.evaluate_expr_with_backend(else_expr, pure_backend);
         }
         let guard_matched = if let Some(guard) = guard {
             let projected = crate::pattern::prepare_runtime_pattern_guard_bindings(
-                &self.plan, pattern, &value, guard,
+                &self.plan,
+                pattern,
+                &value,
+                guard,
+                self.fiber.env.function_instantiation(),
             )?;
             self.with_temp_bindings(projected, |this| {
                 this.evaluate_bool_with_backend(guard, pure_backend)
@@ -1182,8 +1231,13 @@ impl Engine {
             true
         };
         if guard_matched {
-            let bindings = crate::pattern::match_runtime_pattern_owned(&self.plan, pattern, value)?
-                .expect("checked owned pattern remains matched");
+            let bindings = crate::pattern::match_runtime_pattern_owned(
+                &self.plan,
+                pattern,
+                value,
+                self.fiber.env.function_instantiation(),
+            )?
+            .expect("checked owned pattern remains matched");
             self.with_temp_bindings(bindings, |this| {
                 this.evaluate_expr_with_backend(then_expr, pure_backend)
             })
@@ -1200,7 +1254,12 @@ impl Engine {
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(scrutinee, pure_backend)?;
         for arm in arms {
-            if !crate::pattern::inspect_runtime_pattern_owned(&self.plan, arm.pattern(), &value)? {
+            if !crate::pattern::inspect_runtime_pattern_owned(
+                &self.plan,
+                arm.pattern(),
+                &value,
+                self.fiber.env.function_instantiation(),
+            )? {
                 continue;
             }
             if let Some(guard) = arm.guard() {
@@ -1209,6 +1268,7 @@ impl Engine {
                     arm.pattern(),
                     &value,
                     guard,
+                    self.fiber.env.function_instantiation(),
                 )?;
                 if !self.with_temp_bindings(projected, |this| {
                     this.evaluate_bool_with_backend(guard, pure_backend)
@@ -1216,9 +1276,13 @@ impl Engine {
                     continue;
                 }
             }
-            let bindings =
-                crate::pattern::match_runtime_pattern_owned(&self.plan, arm.pattern(), value)?
-                    .expect("checked owned pattern remains matched");
+            let bindings = crate::pattern::match_runtime_pattern_owned(
+                &self.plan,
+                arm.pattern(),
+                value,
+                self.fiber.env.function_instantiation(),
+            )?
+            .expect("checked owned pattern remains matched");
             return self.with_temp_bindings(bindings, |this| {
                 this.evaluate_expr_with_backend(arm.value(), pure_backend)
             });
@@ -1302,11 +1366,20 @@ impl Engine {
         pattern: &RuntimePattern,
         value: RuntimeValue,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
-        if !crate::pattern::inspect_runtime_pattern_owned(&self.plan, pattern, &value)? {
+        if !crate::pattern::inspect_runtime_pattern_owned(
+            &self.plan,
+            pattern,
+            &value,
+            self.fiber.env.function_instantiation(),
+        )? {
             return Ok(Some(value));
         }
-        let Some(bindings) =
-            crate::pattern::match_runtime_pattern_owned(&self.plan, pattern, value)?
+        let Some(bindings) = crate::pattern::match_runtime_pattern_owned(
+            &self.plan,
+            pattern,
+            value,
+            self.fiber.env.function_instantiation(),
+        )?
         else {
             unreachable!("borrowed pattern preflight sealed the owning match")
         };

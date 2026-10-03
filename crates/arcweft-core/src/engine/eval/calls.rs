@@ -460,7 +460,11 @@ impl Engine {
             .local_declarations()
             .get(local)
             .ok_or(RuntimeEvalError::UnknownLocal(local))?;
-        if !self.plan.value_matches_type(declaration.ty(), value)? {
+        let matches =
+            self.fiber
+                .env
+                .value_matches_type(self.plan.as_ref(), declaration.ty(), value)?;
+        if !matches {
             return Err(RuntimeEvalError::InvalidExpressionType(declaration.ty()));
         }
         Ok(())

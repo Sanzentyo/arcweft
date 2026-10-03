@@ -69,9 +69,14 @@ fn prepare_program_inputs(
             matches!(input.source(), RuntimeFunctionInputSource::Parameter { .. }).then_some(*value)
         })
         .collect::<Vec<_>>();
-    plan.validate_function_site_input_refs(site, &captures, &parameters)?;
+    let admission = plan.validate_function_site_input_refs(site, &captures, &parameters)?;
     for (input, value) in declaration.inputs().iter().zip(inputs) {
-        if !inspect_runtime_pattern_owned(plan, input.pattern(), value)? {
+        if !inspect_runtime_pattern_owned(
+            plan,
+            input.pattern(),
+            value,
+            admission.type_instantiation.as_deref(),
+        )? {
             return Err(RuntimeEvalError::PatternMismatch(format!(
                 "program {program} input {:?}",
                 input.source()

@@ -163,6 +163,7 @@ struct NativePreparedLineTaskCommands {
 }
 
 struct NativePreparedDeferredLineChild {
+    type_instantiation: Option<Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
     site_id: crate::runtime_id::RuntimeFunctionSiteId,
     capture_tokens: BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
     ordinal: u64,
@@ -171,6 +172,7 @@ struct NativePreparedDeferredLineChild {
 }
 
 pub(super) struct NativePreparedDialogueEffectCallback {
+    type_instantiation: Option<Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
     key: crate::runtime_id::RuntimeDialogueEffectCallbackActivationId,
     ordinal: u64,
     allocated: std::num::NonZeroU64,
@@ -749,6 +751,7 @@ pub(crate) struct NativeFormatOperandFrame {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct FunctionCallFrame {
     site: crate::runtime_id::RuntimeFunctionSiteId,
+    type_instantiation: Option<Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
     function_scope: bool,
     resume: Option<FlowCursor>,
     caller_pending_ops: VecDeque<FlowOp>,
@@ -761,6 +764,7 @@ enum FlowControlStackEntryRollbackImage {
     FormatAttempt(NativeFormatAttemptRollbackImage),
     FunctionCall {
         site: crate::runtime_id::RuntimeFunctionSiteId,
+        type_instantiation: Option<Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
         function_scope: bool,
         resume: Option<FlowCursor>,
         caller_pending_ops: VecDeque<FlowOpRollbackImage>,
@@ -782,6 +786,7 @@ impl FlowControlStackEntry {
             FlowControlStackEntryKind::FunctionCall(frame) => {
                 FlowControlStackEntryRollbackImage::FunctionCall {
                     site: frame.site,
+                    type_instantiation: frame.type_instantiation.clone(),
                     function_scope: frame.function_scope,
                     resume: frame.resume,
                     caller_pending_ops: frame
@@ -809,24 +814,33 @@ impl FlowControlStackEntry {
             }
             FlowControlStackEntryRollbackImage::FunctionCall {
                 site,
+                type_instantiation,
                 function_scope,
                 resume,
                 caller_pending_ops,
                 continuation,
-            } => FlowControlStackEntryKind::FunctionCall(FunctionCallFrame {
-                site,
-                function_scope,
-                resume,
-                caller_pending_ops: caller_pending_ops
-                    .into_iter()
-                    .map(|op| op.into_live(owner))
-                    .collect::<Result<_, String>>()?,
-                continuation: FunctionReturnContinuation::from_rollback_image(
-                    continuation,
+            } => {
+                let crate::task::RuntimeProgramOwner::Plan(plan) = owner else {
+                    return Err("native function frame has a foreign program kind".to_owned());
+                };
+                plan.validate_function_instantiation(site, type_instantiation.as_deref())
+                    .map_err(|error| error.to_string())?;
+                FlowControlStackEntryKind::FunctionCall(FunctionCallFrame {
                     site,
-                    owner,
-                )?,
-            }),
+                    type_instantiation,
+                    function_scope,
+                    resume,
+                    caller_pending_ops: caller_pending_ops
+                        .into_iter()
+                        .map(|op| op.into_live(owner))
+                        .collect::<Result<_, String>>()?,
+                    continuation: FunctionReturnContinuation::from_rollback_image(
+                        continuation,
+                        site,
+                        owner,
+                    )?,
+                })
+            }
         };
         Ok(Self { kind })
     }
@@ -840,6 +854,7 @@ impl FunctionCallFrame {
     ) -> Self {
         Self {
             site,
+            type_instantiation: None,
             function_scope: false,
             resume,
             caller_pending_ops: VecDeque::new(),
@@ -2768,7 +2783,12 @@ impl Engine {
                     site: function,
                 },
             )?;
-            if !crate::pattern::inspect_runtime_pattern_owned(&self.plan, input.pattern(), value)? {
+            if !crate::pattern::inspect_runtime_pattern_owned(
+                &self.plan,
+                input.pattern(),
+                value,
+                declaration.type_instantiation.as_deref(),
+            )? {
                 return Err(RuntimeEvalError::PatternMismatch(format!(
                     "function site {function} callback input {:?}",
                     input.source()
@@ -2780,6 +2800,7 @@ impl Engine {
             .and_then(std::num::NonZeroU64::new)
             .ok_or(RuntimeEvalError::FiberIdentityOverflow)?;
         Ok(NativePreparedDialogueEffectCallback {
+            type_instantiation: declaration.type_instantiation.clone(),
             key: crate::runtime_id::RuntimeDialogueEffectCallbackActivationId::new(
                 activation.clone(),
                 site,
@@ -2810,6 +2831,11 @@ impl Engine {
             unreachable!("prepared callback selected executable body")
         };
         let mut env = RuntimeEnv::default();
+        env.push_function_scope(
+            prepared.site,
+            site.inputs().len(),
+            prepared.type_instantiation.clone(),
+        );
         let mut captures = invocation
             .captures
             .into_iter()
@@ -2829,10 +2855,14 @@ impl Engine {
                 .get_mut(position as usize)
                 .and_then(Option::take)
                 .expect("prepared callback capture source remains present");
-            let bindings =
-                crate::pattern::match_runtime_pattern_owned(&self.plan, input.pattern(), value)
-                    .expect("prepared callback pattern remains valid")
-                    .expect("prepared callback pattern remains matched");
+            let bindings = crate::pattern::match_runtime_pattern_owned(
+                &self.plan,
+                input.pattern(),
+                value,
+                prepared.type_instantiation.as_deref(),
+            )
+            .expect("prepared callback pattern remains valid")
+            .expect("prepared callback pattern remains matched");
             env.bind_all(bindings);
         }
         let mut pending_ops = VecDeque::with_capacity(executable.ops().len().saturating_add(2));
@@ -3255,7 +3285,12 @@ impl Engine {
             let value = captures
                 .get(position as usize)
                 .ok_or(crate::line_task::LineRuntimeError::InvalidActivationOperation)?;
-            if !crate::pattern::inspect_runtime_pattern_owned(&self.plan, input.pattern(), value)? {
+            if !crate::pattern::inspect_runtime_pattern_owned(
+                &self.plan,
+                input.pattern(),
+                value,
+                site.type_instantiation.as_deref(),
+            )? {
                 return Err(RuntimeEvalError::PatternMismatch(format!(
                     "function site {site_id} deferred capture {:?}",
                     input.source()
@@ -3289,6 +3324,7 @@ impl Engine {
         let allocated = std::num::NonZeroU64::new(next_fiber_id)
             .ok_or(RuntimeEvalError::FiberIdentityOverflow)?;
         Ok(NativePreparedDeferredLineChild {
+            type_instantiation: site.type_instantiation.clone(),
             site_id,
             capture_tokens,
             ordinal,
@@ -3316,6 +3352,11 @@ impl Engine {
             unreachable!("checked deferred function body remains executable")
         };
         let mut env = RuntimeEnv::default();
+        env.push_function_scope(
+            prepared.site_id,
+            site.inputs().len(),
+            prepared.type_instantiation.clone(),
+        );
         let mut captures = captures.into_iter().map(Some).collect::<Vec<_>>();
         for input in site.inputs() {
             let RuntimeFunctionInputSource::Capture { position } = input.source() else {
@@ -3325,10 +3366,14 @@ impl Engine {
                 .get_mut(position as usize)
                 .and_then(Option::take)
                 .expect("checked deferred capture position remains unique");
-            let bindings =
-                crate::pattern::match_runtime_pattern_owned(&self.plan, input.pattern(), value)
-                    .expect("checked deferred pattern projection remains valid")
-                    .expect("checked deferred pattern remains matched");
+            let bindings = crate::pattern::match_runtime_pattern_owned(
+                &self.plan,
+                input.pattern(),
+                value,
+                prepared.type_instantiation.as_deref(),
+            )
+            .expect("checked deferred pattern projection remains valid")
+            .expect("checked deferred pattern remains matched");
             env.bind_all(bindings);
         }
         let mut pending_ops = VecDeque::with_capacity(body.ops().len().saturating_add(2));

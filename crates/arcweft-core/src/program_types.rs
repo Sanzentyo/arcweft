@@ -21,6 +21,8 @@ use crate::{
 };
 
 mod construction;
+mod function_contract;
+pub use function_contract::RuntimeFunctionEffectInstantiation;
 mod data_shapes;
 pub use construction::RuntimeProgramValueConstructionError;
 pub use data_shapes::{

@@ -441,6 +441,7 @@ impl Engine {
                             &self.plan,
                             binding,
                             value.value(),
+                            self.fiber.env.function_instantiation(),
                         ) {
                             Ok(true) => {}
                             Ok(false) => {
@@ -468,6 +469,7 @@ impl Engine {
                             &self.plan,
                             binding,
                             value.into_value(),
+                            self.fiber.env.function_instantiation(),
                         )
                         .expect("checked external Need binding remains valid")
                         .expect("checked external Need binding matches");
@@ -525,6 +527,7 @@ impl Engine {
                                 &self.plan,
                                 binding,
                                 value.value(),
+                                self.fiber.env.function_instantiation(),
                             ) {
                                 Ok(true) => {}
                                 Ok(false) => {
@@ -554,6 +557,7 @@ impl Engine {
                                 &self.plan,
                                 binding,
                                 value.into_value(),
+                                self.fiber.env.function_instantiation(),
                             )
                             .expect("checked await binding remains valid")
                             .expect("checked await binding matches");
@@ -947,7 +951,12 @@ impl Engine {
             }
         };
         let need_value = RuntimeValue::Need(proof.admission().need().clone());
-        match crate::pattern::inspect_runtime_pattern_owned(&self.plan, &binding, &need_value) {
+        match crate::pattern::inspect_runtime_pattern_owned(
+            &self.plan,
+            &binding,
+            &need_value,
+            self.fiber.env.function_instantiation(),
+        ) {
             Ok(true) => {}
             Ok(false) => {
                 self.fail_eval(
@@ -969,10 +978,14 @@ impl Engine {
             );
             return;
         }
-        let bindings =
-            crate::pattern::match_runtime_pattern_owned(&self.plan, &binding, need_value)
-                .expect("checked Need binding remains valid")
-                .expect("checked Need binding matches");
+        let bindings = crate::pattern::match_runtime_pattern_owned(
+            &self.plan,
+            &binding,
+            need_value,
+            self.fiber.env.function_instantiation(),
+        )
+        .expect("checked Need binding remains valid")
+        .expect("checked Need binding matches");
         let admission = self.need_producers.commit_start_visit(proof);
         if ensure {
             self.task_request_quota_remaining -= 1;

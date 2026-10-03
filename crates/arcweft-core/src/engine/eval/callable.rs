@@ -173,6 +173,7 @@ impl Engine {
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let plan = Arc::clone(&self.plan);
         let declaration = plan.validate_function_site_inputs(site, &captures, &arguments)?;
+        let type_instantiation = declaration.type_instantiation.clone();
         let RuntimeFunctionSiteBody::Expression(body) = declaration.body() else {
             return Err(RuntimeEvalError::UnsupportedPure {
                 name: "structured.function".to_owned(),
@@ -194,18 +195,38 @@ impl Engine {
                 .ok_or(
                     crate::value::RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site },
                 )?;
-            let bindings =
-                match_runtime_pattern_owned(&plan, input.pattern(), value)?.ok_or_else(|| {
-                    RuntimeEvalError::PatternMismatch(format!(
-                        "function site {site} input {:?}",
-                        input.source()
-                    ))
-                })?;
+            let bindings = match_runtime_pattern_owned(
+                &plan,
+                input.pattern(),
+                value,
+                type_instantiation.as_deref(),
+            )?
+            .ok_or_else(|| {
+                RuntimeEvalError::PatternMismatch(format!(
+                    "function site {site} input {:?}",
+                    input.source()
+                ))
+            })?;
             staged.extend(bindings);
         }
-        self.fiber.env.push_scope_with_capacity(staged.len());
+        self.fiber
+            .env
+            .push_function_scope(site, staged.len(), type_instantiation.clone());
         self.fiber.env.bind_all(staged);
         let value = self.evaluate_expr_with_backend(body, backend);
+        let value = value.and_then(|value| {
+            let matches = match &type_instantiation {
+                Some(binding) => binding.value_matches(plan.as_ref(), declaration.result(), &value),
+                None => plan.value_matches_type(declaration.result(), &value)?,
+            };
+            if matches {
+                Ok(value)
+            } else {
+                Err(RuntimeEvalError::InvalidExpressionType(
+                    declaration.result(),
+                ))
+            }
+        });
         self.fiber.env.pop_scope();
         value
     }

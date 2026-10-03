@@ -93,6 +93,15 @@ pub(crate) fn validate_live<V: ValueValidation>(
     validate_without_digest(value, limits, validation, expected, ValueEncoding::Live)
 }
 
+pub(crate) fn validate_live_view<V: ValueValidation>(
+    value: RuntimeValueView<'_>,
+    limits: super::RuntimeSchemaLimits,
+    validation: &mut V,
+    expected: V::Expected,
+) -> Result<(), RuntimeSchemaError> {
+    validate_view_without_digest(value, limits, validation, expected, ValueEncoding::Live)
+}
+
 /// Validates a decoded snapshot candidate before it becomes live.
 pub(crate) fn validate_snapshot<V: ValueValidation>(
     value: &RuntimeValue,
@@ -133,6 +142,16 @@ fn validate_without_digest<V: ValueValidation>(
     expected: V::Expected,
     encoding: ValueEncoding,
 ) -> Result<(), RuntimeSchemaError> {
+    validate_view_without_digest(value.view(), limits, validation, expected, encoding)
+}
+
+fn validate_view_without_digest<V: ValueValidation>(
+    value: RuntimeValueView<'_>,
+    limits: super::RuntimeSchemaLimits,
+    validation: &mut V,
+    expected: V::Expected,
+    encoding: ValueEncoding,
+) -> Result<(), RuntimeSchemaError> {
     let mut budget = ValueBudget::new(limits);
     let mut sink = VisitOutput::<super::CanonicalBlake3Sink>::Probe;
     let mut writer = CanonicalWriter {
@@ -141,7 +160,7 @@ fn validate_without_digest<V: ValueValidation>(
         max_string_bytes: Some(limits.max_string_bytes),
     };
     visit_with_encoding(
-        value.view(),
+        value,
         0,
         &mut writer,
         Some(&mut budget),

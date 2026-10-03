@@ -881,6 +881,7 @@ impl Engine {
                     &self.plan,
                     binding,
                     value.into_value(),
+                    self.fiber.env.function_instantiation(),
                 )?
                 .ok_or_else(|| RuntimeEvalError::PatternMismatch("host result".to_owned()))?;
                 frame.locals.bind_all(bindings);
@@ -1442,7 +1443,12 @@ impl Engine {
             }
             _ => None,
         };
-        if !crate::pattern::inspect_runtime_pattern_owned(&self.plan, pattern, &value)? {
+        if !crate::pattern::inspect_runtime_pattern_owned(
+            &self.plan,
+            pattern,
+            &value,
+            self.fiber.env.function_instantiation(),
+        )? {
             return Err(
                 RuntimeEvalError::PatternMismatch(super::runtime_value_label(&value)).into(),
             );
@@ -1533,9 +1539,14 @@ impl Engine {
                 .take(local)
                 .ok_or(RuntimeEvalError::UnknownLocal(local))?;
         }
-        let bindings = crate::pattern::match_runtime_pattern_owned(&self.plan, pattern, value)
-            .expect("checked dialogue let projection remains valid")
-            .expect("checked dialogue let pattern remains matched");
+        let bindings = crate::pattern::match_runtime_pattern_owned(
+            &self.plan,
+            pattern,
+            value,
+            self.fiber.env.function_instantiation(),
+        )
+        .expect("checked dialogue let projection remains valid")
+        .expect("checked dialogue let pattern remains matched");
         frame.locals.bind_all(bindings);
         Ok(())
     }
@@ -2118,7 +2129,12 @@ impl Engine {
         let Some(pattern) = pattern else {
             return Ok(());
         };
-        if !crate::pattern::inspect_runtime_pattern_owned(&self.plan, pattern, value)? {
+        if !crate::pattern::inspect_runtime_pattern_owned(
+            &self.plan,
+            pattern,
+            value,
+            self.fiber.env.function_instantiation(),
+        )? {
             return Err(LineRuntimeError::ResultPatternOrTypeMismatch.into());
         }
         for handle in unique_affine_line_handles(value)? {
@@ -2149,9 +2165,14 @@ impl Engine {
         let Some(pattern) = pattern else {
             return Vec::new();
         };
-        crate::pattern::match_runtime_pattern_owned(&self.plan, pattern, value)
-            .expect("preflighted operation pattern remains valid")
-            .expect("preflighted operation pattern remains matched")
+        crate::pattern::match_runtime_pattern_owned(
+            &self.plan,
+            pattern,
+            value,
+            self.fiber.env.function_instantiation(),
+        )
+        .expect("preflighted operation pattern remains valid")
+        .expect("preflighted operation pattern remains matched")
     }
 
     fn stage_dialogue_result(
@@ -2323,6 +2344,7 @@ impl Engine {
             &self.plan,
             state.result_target.pattern(),
             value,
+            self.fiber.env.function_instantiation(),
         )? {
             return Err(LineRuntimeError::ResultPatternOrTypeMismatch.into());
         }
@@ -2425,6 +2447,7 @@ impl Engine {
             &self.plan,
             state.result_target.pattern(),
             value,
+            self.fiber.env.function_instantiation(),
         )
         .expect("prepared publication pattern remains valid")
         .expect("publication pattern passed borrowed owning preflight");

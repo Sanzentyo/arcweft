@@ -153,6 +153,7 @@ impl Engine {
                 &self.plan,
                 args.pattern,
                 item.into_value(),
+                self.fiber.env.function_instantiation(),
             ) {
                 Ok(Some(bindings)) => {
                     let should_continue = self.with_temp_bindings(bindings, |this| {
@@ -230,9 +231,12 @@ impl Engine {
             }
         };
         for arm in arms {
-            let Ok(true) =
-                crate::pattern::inspect_runtime_pattern_owned(&self.plan, &arm.pattern, &value)
-            else {
+            let Ok(true) = crate::pattern::inspect_runtime_pattern_owned(
+                &self.plan,
+                &arm.pattern,
+                &value,
+                self.fiber.env.function_instantiation(),
+            ) else {
                 continue;
             };
             let guard_matches = if let Some(guard) = arm.guard.as_ref() {
@@ -241,6 +245,7 @@ impl Engine {
                     &arm.pattern,
                     &value,
                     guard,
+                    self.fiber.env.function_instantiation(),
                 ) {
                     Ok(projected) => projected,
                     Err(error) => {
@@ -255,10 +260,14 @@ impl Engine {
                 Ok(true)
             };
             if matches!(guard_matches, Ok(true)) {
-                let bindings =
-                    crate::pattern::match_runtime_pattern_owned(&self.plan, &arm.pattern, value)
-                        .expect("checked stream match remains valid")
-                        .expect("checked stream match remains selected");
+                let bindings = crate::pattern::match_runtime_pattern_owned(
+                    &self.plan,
+                    &arm.pattern,
+                    value,
+                    self.fiber.env.function_instantiation(),
+                )
+                .expect("checked stream match remains valid")
+                .expect("checked stream match remains selected");
                 return self.with_temp_bindings(bindings, |this| {
                     this.execute_stream_ops(stream, &arm.ops, budget, output, pure_backend)
                 });

@@ -1519,8 +1519,9 @@ pub(crate) fn project_runtime_pattern_guard_bindings(
     pattern: &RuntimePattern,
     value: &RuntimeValue,
     required: &[RuntimeLocalDeclarationId],
+    instantiation: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
 ) -> Result<Option<Vec<RuntimeLocalBinding>>, RuntimePatternMatchError> {
-    if !inspect_runtime_pattern_owned(plan, pattern, value)? {
+    if !inspect_runtime_pattern_owned(plan, pattern, value, instantiation)? {
         return Ok(None);
     }
     let required = required.iter().copied().collect::<BTreeSet<_>>();
@@ -1544,6 +1545,7 @@ pub(crate) fn prepare_runtime_pattern_guard_bindings(
     pattern: &RuntimePattern,
     value: &RuntimeValue,
     guard: &RuntimeExpr,
+    instantiation: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
 ) -> Result<Vec<RuntimeLocalBinding>, RuntimeEvalError> {
     let selected = guard.guard_copy_locals();
     for (local, mode) in guard.evaluation_free_local_reads(plan)?.iter().copied() {
@@ -1557,7 +1559,7 @@ pub(crate) fn prepare_runtime_pattern_guard_bindings(
             return Err(RuntimeEvalError::MissingGuardCopyRequirement { local });
         }
     }
-    project_runtime_pattern_guard_bindings(plan, pattern, value, selected)?
+    project_runtime_pattern_guard_bindings(plan, pattern, value, selected, instantiation)?
         .ok_or_else(|| RuntimeEvalError::PatternMismatch(crate::value::runtime_value_label(value)))
 }
 
@@ -1906,8 +1908,9 @@ pub(crate) fn match_runtime_pattern_owned(
     plan: &RuntimePlan,
     pattern: &RuntimePattern,
     value: RuntimeValue,
+    instantiation: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
 ) -> Result<Option<Vec<RuntimeLocalBinding>>, RuntimePatternMatchError> {
-    if !inspect_runtime_pattern_owned(plan, pattern, &value)? {
+    if !inspect_runtime_pattern_owned(plan, pattern, &value, instantiation)? {
         return Ok(None);
     }
     let mut bindings = Vec::with_capacity(pattern_binding_capacity(pattern));
@@ -1921,6 +1924,7 @@ pub(crate) fn inspect_runtime_pattern_owned(
     plan: &RuntimePlan,
     pattern: &RuntimePattern,
     value: &RuntimeValue,
+    instantiation: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
 ) -> Result<bool, RuntimePatternMatchError> {
     validate_runtime_pattern(plan, pattern)?;
     let need_handle = plan
@@ -1932,7 +1936,10 @@ pub(crate) fn inspect_runtime_pattern_owned(
     let type_matches = if need_handle {
         matches!(&value, RuntimeValue::Need(need) if !need.0.is_empty())
     } else {
-        plan.value_matches_type(pattern.ty(), &value)?
+        match instantiation {
+            Some(binding) => binding.value_matches(plan, pattern.ty(), value),
+            None => plan.value_matches_type(pattern.ty(), value)?,
+        }
     };
     if !type_matches || !pattern_matches_borrowed(pattern, value) {
         return Ok(false);
@@ -3712,8 +3719,9 @@ mod tests {
             ),
         )
         .with_guard_copy_locals(vec![scalar]);
-        let projected = prepare_runtime_pattern_guard_bindings(&plan, &pattern, &value, &guard)
-            .expect("Copy scalar guard projection");
+        let projected =
+            prepare_runtime_pattern_guard_bindings(&plan, &pattern, &value, &guard, None)
+                .expect("Copy scalar guard projection");
         assert_eq!(
             projected,
             vec![RuntimeLocalBinding {
@@ -3721,7 +3729,7 @@ mod tests {
                 value: RuntimeValue::i64(7),
             }]
         );
-        let bindings = match_runtime_pattern_owned(&plan, &pattern, value)
+        let bindings = match_runtime_pattern_owned(&plan, &pattern, value, None)
             .expect("owned tuple bind")
             .expect("matched tuple");
         assert!(bindings.iter().any(|binding| {
@@ -3745,7 +3753,7 @@ mod tests {
             RuntimeValue::Need(crate::task::NeedId("need.guard.affine".to_owned())),
         ]);
         assert!(matches!(
-            prepare_runtime_pattern_guard_bindings(&plan, &pattern, &value, &affine_guard),
+            prepare_runtime_pattern_guard_bindings(&plan, &pattern, &value, &affine_guard, None),
             Err(RuntimeEvalError::Pattern(
                 RuntimePatternMatchError::AffineGuardBinding { local }
             )) if local == affine
