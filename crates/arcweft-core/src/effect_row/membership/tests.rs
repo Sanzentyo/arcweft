@@ -24,6 +24,35 @@ fn variable(index: u8) -> EffectFormula<u8> {
 }
 
 #[test]
+fn local_universal_rows_are_eliminated_before_input_existentials() {
+    let mut meter = Meter::default();
+    let equality = variable(0)
+        .subset(&variable(1), &mut meter)
+        .unwrap()
+        .and(
+            &variable(1).subset(&variable(0), &mut meter).unwrap(),
+            &mut meter,
+        )
+        .unwrap();
+    assert!(
+        equality
+            .project(&BTreeSet::from([0]), &mut meter)
+            .unwrap()
+            .universally_quantified(&BTreeSet::from([1]), &mut meter)
+            .unwrap()
+            .is_unconstrained()
+    );
+    assert!(
+        equality
+            .universally_quantified(&BTreeSet::from([1]), &mut meter)
+            .unwrap()
+            .project(&BTreeSet::from([0]), &mut meter)
+            .unwrap()
+            .is_impossible()
+    );
+}
+
+#[test]
 fn finite_set_operations_preserve_distinct_labels_and_canonical_identity() {
     let mut meter = Meter::default();
     let read = row(&["fs.read"]);

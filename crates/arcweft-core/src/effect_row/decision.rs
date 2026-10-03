@@ -282,8 +282,7 @@ impl<V: Clone + Ord> EffectDecision<V> {
         self.conditional(&Self::constant(true), other, control)
     }
 
-    #[cfg(test)]
-    fn not<C: DecisionControl>(&self, control: &mut C) -> Result<Self, C::Error> {
+    pub(super) fn not<C: DecisionControl>(&self, control: &mut C) -> Result<Self, C::Error> {
         self.conditional(&Self::constant(false), &Self::constant(true), control)
     }
 
@@ -296,6 +295,14 @@ impl<V: Clone + Ord> EffectDecision<V> {
         let root = builder.import(self)?;
         let root = builder.exists(root, quantified)?;
         builder.finish(root)
+    }
+
+    pub(super) fn forall<C: DecisionControl>(
+        &self,
+        quantified: &BTreeSet<V>,
+        control: &mut C,
+    ) -> Result<Self, C::Error> {
+        self.not(control)?.exists(quantified, control)?.not(control)
     }
 
     /// Simultaneous substitution: references inside a replacement are not

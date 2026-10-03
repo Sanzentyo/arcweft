@@ -445,6 +445,28 @@ impl<V: Clone + Ord> EffectPredicate<V> {
             .map(Self::normalized)
     }
 
+    /// Eliminates function-local rigid rows before a surrounding input scope is solved.
+    pub fn universally_quantified<C: DecisionControl>(
+        &self,
+        quantified: &BTreeSet<V>,
+        control: &mut C,
+    ) -> Result<Self, C::Error> {
+        let default = self.0.default.forall(quantified, control)?;
+        let mut membership = Membership {
+            default,
+            overrides: BTreeMap::new(),
+        };
+        for (label, relation) in &self.0.overrides {
+            control.charge(DecisionWork::Visit)?;
+            membership.insert_override(
+                label.clone(),
+                relation.forall(quantified, control)?,
+                control,
+            )?;
+        }
+        Ok(Self::normalized(membership))
+    }
+
     pub fn substitute<C: DecisionControl>(
         &self,
         replacements: &BTreeMap<V, EffectFormula<V>>,
