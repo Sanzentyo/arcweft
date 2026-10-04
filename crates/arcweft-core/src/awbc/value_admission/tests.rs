@@ -42,6 +42,54 @@ fn color_values_are_admitted_only_by_the_awbc_color_type() {
 }
 
 #[test]
+fn live_iterator_admission_checks_each_remaining_tuple_item() {
+    let program = program([
+        Type::Int(AwbcSignedIntKind::I32),
+        Type::String,
+        Type::Tuple(vec![AwbcTypeId(0), AwbcTypeId(1)]),
+        Type::Iterator(AwbcTypeId(2)),
+    ]);
+    let iterator = |items| RuntimeValue::Iterator(RuntimeIterator::values(items));
+    let valid = iterator(vec![RuntimeValue::Tuple(vec![
+        RuntimeValue::Int(RuntimeInt::I32(1)),
+        RuntimeValue::String("first".to_owned()),
+    ])]);
+    let limits = RuntimeSchemaLimits::engine_default();
+    assert!(
+        program
+            .validate_live_value(AwbcTypeId(3), &valid, limits)
+            .is_ok()
+    );
+    assert!(
+        program
+            .validate_live_value(AwbcTypeId(3), &iterator(vec![]), limits)
+            .is_ok()
+    );
+    for invalid in [
+        iterator(vec![RuntimeValue::Unit]),
+        iterator(vec![RuntimeValue::Tuple(vec![RuntimeValue::Int(
+            RuntimeInt::I32(1),
+        )])]),
+        iterator(vec![RuntimeValue::Tuple(vec![
+            RuntimeValue::Int(RuntimeInt::I64(1)),
+            RuntimeValue::String("first".to_owned()),
+        ])]),
+    ] {
+        assert!(
+            program
+                .validate_live_value(AwbcTypeId(3), &invalid, limits)
+                .is_err()
+        );
+    }
+    assert!(admits(&program, 3, &valid).is_err());
+    assert!(
+        program
+            .validate_snapshot_value(AwbcTypeId(3), &valid, limits)
+            .is_err()
+    );
+}
+
+#[test]
 fn record_names_ids_order_and_nested_types_are_checked() {
     let mut program = program([
         Type::Bool,

@@ -17,8 +17,8 @@ use crate::pattern::{RuntimeOpaqueTypeAdmission, RuntimeVariantIdentity};
 use crate::plan::RuntimeAgentTypeProjection;
 use crate::task::RuntimeProgramOwner;
 use crate::value::{
-    RuntimeReductionProducer, RuntimeScalarView as Scalar, RuntimeUnsignedIntWidth, RuntimeValue,
-    RuntimeValueView as View,
+    RuntimeIterator, RuntimeRangeIterator, RuntimeReductionProducer, RuntimeScalarView as Scalar,
+    RuntimeUnsignedIntWidth, RuntimeValue, RuntimeValueView as View,
 };
 
 /// Failure to admit a finite persistent value under an executable program type.
@@ -514,6 +514,28 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
                 }
                 Self::arity(state.retained.len(), callable.retained().len())?;
                 Ok(Children::Callable(&state.retained))
+            }
+            (Type::Iterator(item), View::RuntimeOnly(RuntimeValue::Iterator(iterator))) => {
+                match iterator {
+                    RuntimeIterator::Values { .. } => Ok(Children::Repeated(Expected::Type(*item))),
+                    RuntimeIterator::Range(range) => {
+                        let matches = match (self.row(*item)?.shape(), range) {
+                            (Type::Int(expected), RuntimeRangeIterator::Int { width, .. }) => {
+                                crate::value::RuntimeSignedIntWidth::from(*expected) == *width
+                            }
+                            (Type::UInt(expected), RuntimeRangeIterator::UInt { width, .. }) => {
+                                crate::value::RuntimeUnsignedIntWidth::from(*expected) == *width
+                            }
+                            _ => false,
+                        };
+                        if matches {
+                            Ok(Children::None)
+                        } else {
+                            Err(Self::mismatch(value))
+                        }
+                    }
+                    RuntimeIterator::Witness { .. } => Err(Self::mismatch(value)),
+                }
             }
             (Type::Variant { .. }, _) => self.variant(ty, row, value),
             (Type::Opaque { arguments, .. }, _) => {
