@@ -78,7 +78,7 @@ fn project_mount(
         .collect::<BTreeSet<_>>();
     project_images(mount, input, projected);
     project_text_inputs(mount, input, &active, projected);
-    project_action_buttons(frame, mount, input, &active, projected);
+    project_action_buttons(frame, mount, &active, projected);
     project_layout_resources(mount, input, &active, projected);
     project_focus(mount, input, &active, projected);
 }
@@ -147,13 +147,12 @@ fn project_text_inputs(
 fn project_action_buttons(
     frame: &BundleViewFrame,
     mount: &BundleViewMountOutput,
-    input: &ViewProjectionInput<'_>,
     active: &BTreeSet<&str>,
     projected: &mut ProjectedViewResources,
 ) {
     let dialogue_mount = dialogue_root_mount(frame, mount);
     projected.action_buttons.extend(
-        input
+        mount
             .action_buttons
             .iter()
             .filter(|button| {
@@ -434,7 +433,7 @@ mod tests {
             Some(dialogue_state()),
             vec!["button.cancel".to_owned()],
         );
-        let frame = BundleViewFrame {
+        let mut frame = BundleViewFrame {
             mounts: vec![other_root, root, child],
             diagnostics: Vec::new(),
         };
@@ -454,6 +453,13 @@ mod tests {
             style: ViewRuntimeControlVisualStyle::default(),
         };
         let executable_definitions = BTreeSet::from([root_view, child_view]);
+        frame
+            .mounts
+            .iter_mut()
+            .find(|mount| mount.view.as_str() == button.view.as_deref().unwrap())
+            .unwrap()
+            .action_buttons
+            .push(button.clone());
         let projected = project_view_resources(
             &frame,
             &ViewProjectionInput {
@@ -485,7 +491,7 @@ mod tests {
             r#"[{"kind":"call","instruction":3,"authored_key":null}]"#,
         )
         .unwrap();
-        let frame = BundleViewFrame {
+        let mut frame = BundleViewFrame {
             mounts: vec![mount(
                 handle,
                 ViewMountId::from_raw(18),
@@ -512,6 +518,13 @@ mod tests {
             style: ViewRuntimeControlVisualStyle::default(),
         };
         let executable_definitions = BTreeSet::from([child_view]);
+        frame
+            .mounts
+            .iter_mut()
+            .find(|mount| mount.view.as_str() == button.view.as_deref().unwrap())
+            .unwrap()
+            .action_buttons
+            .push(button.clone());
         let projected = project_view_resources(
             &frame,
             &ViewProjectionInput {
@@ -549,6 +562,7 @@ mod tests {
             dialogue,
             active_targets,
             active_images: Vec::new(),
+            action_buttons: Vec::new(),
             paint: Vec::new(),
             text: Vec::new(),
             fx: Vec::new(),

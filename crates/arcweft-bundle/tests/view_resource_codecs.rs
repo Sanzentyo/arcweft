@@ -394,7 +394,7 @@ fn dialogue_parameter_rejects_a_forged_semantic_identity() {
     );
 
     let error = program
-        .validate_awbc_programs(&awbc, None)
+        .validate_awbc_programs(&awbc, Some(&arcweft_bundle::standard_view::dialogue_text()))
         .expect_err("same-producer forged DialogueView identity must reject");
 
     assert_eq!(
@@ -428,7 +428,7 @@ fn dialogue_action_result_rejects_a_same_producer_forged_semantic_identity() {
 
     assert_eq!(
         program
-            .validate_awbc_programs(&awbc, None)
+            .validate_awbc_programs(&awbc, Some(&arcweft_bundle::standard_view::dialogue_text()))
             .expect_err("same-producer forged DialogueAction identity must reject"),
         arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
             "view_handler_result_owner"
@@ -447,7 +447,10 @@ fn view_handler_cross_section_rejects_missing_binding_and_nonempty_effects() {
     missing.pure_programs.clear();
     assert_eq!(
         program
-            .validate_awbc_programs(&missing, None)
+            .validate_awbc_programs(
+                &missing,
+                Some(&arcweft_bundle::standard_view::dialogue_text())
+            )
             .expect_err("missing pure-program binding must reject"),
         arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
             "view_handler_pure_program_binding"
@@ -471,7 +474,10 @@ fn view_handler_cross_section_rejects_missing_binding_and_nonempty_effects() {
     effectful.signatures[function.signature.index()].effects = effects;
     assert_eq!(
         program
-            .validate_awbc_programs(&effectful, None)
+            .validate_awbc_programs(
+                &effectful,
+                Some(&arcweft_bundle::standard_view::dialogue_text())
+            )
             .expect_err("effectful handler helper must reject"),
         arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
             "view_handler_pure_program_signature"

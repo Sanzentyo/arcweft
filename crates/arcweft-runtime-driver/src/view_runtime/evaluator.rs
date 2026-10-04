@@ -111,6 +111,7 @@ struct MountRenderBuilder {
     targets: BTreeSet<String>,
     images: BTreeSet<String>,
     text: Vec<BundleViewTextOutput>,
+    action_buttons: Vec<arcweft_bundle::resource_codec::ViewRuntimeActionButton>,
     paint: Vec<BundleViewPaintItem>,
     fx: Vec<BundleViewFxApplication>,
     style_scopes: ViewStyleScopeRuntime,
@@ -129,6 +130,7 @@ impl MountRenderBuilder {
             targets: BTreeSet::new(),
             images: BTreeSet::new(),
             text: Vec::new(),
+            action_buttons: Vec::new(),
             paint: Vec::new(),
             fx: Vec::new(),
             style_scopes: ViewStyleScopeRuntime::new(style_scopes),
@@ -1350,6 +1352,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                     dialogue,
                     active_targets: builder.targets.into_iter().collect(),
                     active_images: builder.images.into_iter().collect(),
+                    action_buttons: builder.action_buttons,
                     paint: builder.paint,
                     text: builder.text,
                     fx: builder.fx,
@@ -1871,6 +1874,55 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                             target: target.clone(),
                         });
                     }
+                    if element.is_action_control()
+                        && let Some(target) = target
+                    {
+                        let button = self
+                            .program
+                            .action_buttons
+                            .iter()
+                            .find(|button| {
+                                button.public_id == *target
+                                    && button.view.as_deref() == Some(definition.public_id.as_str())
+                            })
+                            .ok_or_else(|| {
+                                EvaluationFailure::new(
+                                    BundleViewDiagnosticCode::InvalidControlFlow,
+                                    Some(cursor),
+                                    "action control has no exact resource owner",
+                                )
+                            })?;
+                        let mut label = None;
+                        let mut enabled = None;
+                        for input in button.inputs.iter() {
+                            match input {
+                                arcweft_bundle::resource_codec::view::ViewActionButtonInput::Label { text_source } => {
+                                    let text = self.resolve_text(&key.handle, definition, mounted, text_source, cursor)?.value;
+                                    let super::BundleViewTextValue::Plain { value } = text else { return Err(EvaluationFailure::new(BundleViewDiagnosticCode::UnsupportedTextValue, Some(cursor), "button label is not plain String text")); };
+                                    label = Some(value);
+                                }
+                                arcweft_bundle::resource_codec::view::ViewActionButtonInput::Enabled { value } => {
+                                    enabled = Some(match value {
+                                        arcweft_view::ViewExpressionValue::Constant { value } => *value,
+                                        arcweft_view::ViewExpressionValue::Program { program } => {
+                                            let RuntimeValue::Bool(value) = self.evaluate_expression_program(&key.handle, definition, mounted, cursor, program)? else { return Err(EvaluationFailure::new(BundleViewDiagnosticCode::InputType, Some(cursor), "button enabled expression is not bool")); };
+                                            value
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                        let (Some(label), Some(enabled)) = (label, enabled) else {
+                            return Err(EvaluationFailure::new(
+                                BundleViewDiagnosticCode::InvalidControlFlow,
+                                Some(cursor),
+                                "button input inventory is incomplete",
+                            ));
+                        };
+                        builder
+                            .action_buttons
+                            .push(button.runtime_value(label, enabled));
+                    }
                     builder.element_targets.push(target.clone());
                     cursor += 1;
                 }
@@ -2122,6 +2174,18 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
             .last_node
             .clone()
             .ok_or_else(|| failure("View handler has no retained node target".to_owned()))?;
+        if event == EventKind::Activate
+            && let Some(ViewProgramInstruction::OpenElement {
+                target: Some(control),
+                ..
+            }) = self.program.instructions.get(target_instruction as usize)
+            && builder
+                .action_buttons
+                .iter()
+                .any(|button| button.public_id == *control && !button.enabled)
+        {
+            return Ok(());
+        }
         let authored_target = authored_target.ok_or_else(|| {
             failure("View handler target node has no authored interaction target".to_owned())
         })?;

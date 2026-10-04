@@ -217,8 +217,15 @@ pub fn dialogue_program() -> ViewProgramResource {
             public_id: ACTION_PART.to_owned(),
             view: Some(DIALOGUE_VIEW_ID.to_owned()),
             containing_scroll_region: None,
-            label_text_source: ACTION_LABEL_SOURCE.to_owned(),
-            enabled: true,
+            inputs: vec![
+                crate::resource_codec::view::ViewActionButtonInput::Label {
+                    text_source: ACTION_LABEL_SOURCE.to_owned(),
+                },
+                crate::resource_codec::view::ViewActionButtonInput::Enabled {
+                    value: arcweft_view::ViewExpressionValue::constant(true),
+                },
+            ]
+            .into_boxed_slice(),
             action: ViewActionButtonActionResource::Noop,
             bounds: ViewRuntimeButtonBounds::new(57_600, 460_800, 1_164_800, 201_600),
             source: None,

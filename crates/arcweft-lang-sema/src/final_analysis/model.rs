@@ -1774,9 +1774,52 @@ impl CheckedCharacterDialogueReconfigure {
 /// Closed semantic classification for a call executed by the View evaluator.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedViewCall {
-    Element(arcweft_view::ViewElementKind),
+    Element(CheckedViewElementCall),
     Text,
     RichText,
+}
+
+/// The builtin element and its source-ordered, schema-checked arguments.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedViewElementCall {
+    element: arcweft_view::ViewElementKind,
+    arguments: Box<[CheckedViewElementArgument]>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedViewElementArgument {
+    role: arcweft_view::ViewElementArgumentRole,
+    value: ExprId,
+}
+
+impl CheckedViewElementCall {
+    pub(crate) fn new(
+        element: arcweft_view::ViewElementKind,
+        arguments: Vec<CheckedViewElementArgument>,
+    ) -> Self {
+        Self {
+            element,
+            arguments: arguments.into_boxed_slice(),
+        }
+    }
+    pub const fn element(&self) -> arcweft_view::ViewElementKind {
+        self.element
+    }
+    pub fn arguments(&self) -> &[CheckedViewElementArgument] {
+        &self.arguments
+    }
+}
+
+impl CheckedViewElementArgument {
+    pub(crate) const fn new(role: arcweft_view::ViewElementArgumentRole, value: ExprId) -> Self {
+        Self { role, value }
+    }
+    pub const fn role(&self) -> arcweft_view::ViewElementArgumentRole {
+        self.role
+    }
+    pub const fn value(&self) -> ExprId {
+        self.value
+    }
 }
 
 /// Exact semantic identity of one compile-time callable leaf.

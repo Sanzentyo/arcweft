@@ -369,9 +369,11 @@ pub(super) fn build_session_runtime(
     let action_buttons = bundle
         .view_program
         .as_ref()
-        .map_or_else(Vec::new, |program| {
-            program.runtime_action_buttons(bundle.view_text.as_ref())
-        });
+        .map_or_else(
+            || Ok(Vec::new()),
+            |program| program.runtime_action_buttons(bundle.view_text.as_ref()),
+        )
+        .map_err(BundleViewRuntimeError::from)?;
     let scroll_regions = bundle
         .view_program
         .as_ref()

@@ -761,6 +761,7 @@ mod tests {
             path: BundleViewInstancePath::default(),
             active_targets: Vec::new(),
             active_images: Vec::new(),
+            action_buttons: Vec::new(),
             paint: vec![
                 BundleViewPaintItem::Text {
                     source_id: "before".to_owned(),
@@ -786,6 +787,7 @@ mod tests {
             path: BundleViewInstancePath::default(),
             active_targets: Vec::new(),
             active_images: Vec::new(),
+            action_buttons: Vec::new(),
             paint: vec![BundleViewPaintItem::Text {
                 source_id: "child".to_owned(),
                 target: "child.target".to_owned(),

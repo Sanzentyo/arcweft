@@ -1318,6 +1318,7 @@ fn empty_mount() -> BundleViewMountOutput {
         dialogue: None,
         active_targets: Vec::new(),
         active_images: Vec::new(),
+        action_buttons: Vec::new(),
         paint: Vec::new(),
         text: Vec::new(),
         fx: Vec::new(),

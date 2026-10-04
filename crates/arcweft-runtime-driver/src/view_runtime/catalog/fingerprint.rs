@@ -29,6 +29,7 @@ struct LocalTranscript<'a> {
     value_programs: Vec<&'a ViewValueProgram>,
     value_inputs: Vec<&'a ViewValueInputResource>,
     handlers: Vec<&'a ViewHandlerRef>,
+    action_buttons: Vec<arcweft_bundle::resource_codec::view::ViewActionButtonResource>,
 }
 
 #[derive(Serialize)]
@@ -98,6 +99,16 @@ impl ViewDefinitionFingerprints {
             value_programs,
             value_inputs,
             handlers,
+            action_buttons: resource
+                .action_buttons
+                .iter()
+                .filter(|button| button.view.as_deref() == Some(view.as_str()))
+                .cloned()
+                .map(|mut button| {
+                    button.source = None;
+                    button
+                })
+                .collect(),
         };
         let exports = exports_for(resource, definition);
         let export_transcript = ExportTranscript {

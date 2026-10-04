@@ -354,8 +354,9 @@ fn vertical_ruby_dialogue_view() -> BundlePresentationSnapshot {
             surface
         })
         .collect();
-    presentation.action_buttons = program
-        .runtime_action_buttons(Some(&text))
+    presentation.action_buttons = mount
+        .action_buttons
+        .clone()
         .into_iter()
         .map(|mut button| {
             button.public_id = mount.scoped_id(&button.public_id);

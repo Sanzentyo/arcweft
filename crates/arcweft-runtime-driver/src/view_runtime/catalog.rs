@@ -110,7 +110,12 @@ impl ViewProgramCatalog {
     ) -> Result<Option<Self>, ViewProgramCatalogError> {
         if text.is_some_and(|text| text.requires_program_runtime())
             || product.program().is_some_and(|program| {
-                !program.resource().handlers.is_empty()
+                program.resource().action_buttons.iter().any(|button| {
+                    button
+                        .enabled_value()
+                        .and_then(|value| value.program())
+                        .is_some()
+                }) || !program.resource().handlers.is_empty()
                     || program.resource().definitions.iter().any(|definition| {
                         definition.parameter_contract.is_some()
                             || definition

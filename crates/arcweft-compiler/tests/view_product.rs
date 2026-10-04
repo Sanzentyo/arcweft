@@ -144,7 +144,7 @@ fn compiler_lowers_checked_on_click_to_typed_bundle_handler_without_fx_conflatio
     let fixture = project_view_fixture_with_entry(
         "entry cli @entry.main { goto @flow.main }\n\
          flow main() -> String { return \"done\" }\n\
-         view Main(dialogue: DialogueView) {\n  Button().on_click { dialogue.primary_action }\n}\n",
+         view Main(dialogue: DialogueView, enabled: bool = true) {\n  Button(enabled = enabled).on_click { dialogue.primary_action }\n}\n",
         "arcweft-test://compiler-view-on-click",
     );
     let compiled = fixture.compile().expect("typed on_click View product");
@@ -316,7 +316,7 @@ fn compiler_lowers_checked_on_click_to_typed_bundle_handler_without_fx_conflatio
             },
         },
     };
-    let mounted = runtime.evaluate_with_dialogue(&[], &[dialogue_input], &[], false);
+    let mounted = runtime.evaluate_with_dialogue(&[], &[dialogue_input.clone()], &[], false);
     assert!(mounted.diagnostics.is_empty(), "{mounted:#?}");
     let [mount] = mounted.mounts.as_slice() else {
         panic!("compiled handler must publish exactly one View mount")
@@ -340,6 +340,27 @@ fn compiler_lowers_checked_on_click_to_typed_bundle_handler_without_fx_conflatio
             ),
         )
     );
+    let disabled = [arcweft_core::value::RuntimeBinding {
+        name: "enabled".to_owned(),
+        value: arcweft_core::value::RuntimeValue::Bool(false),
+    }];
+    let disabled_frame =
+        runtime.evaluate_with_dialogue(&[], &[dialogue_input.clone()], &disabled, false);
+    assert!(disabled_frame.diagnostics.is_empty(), "{disabled_frame:?}");
+    assert!(!disabled_frame.mounts[0].action_buttons[0].enabled);
+    assert!(disabled_frame.mounts[0].events.is_empty());
+    assert!(
+        runtime.dispatch_invocation(&invocation).is_err(),
+        "disabled controls revoke their previous route"
+    );
+    let enabled = [arcweft_core::value::RuntimeBinding {
+        name: "enabled".to_owned(),
+        value: arcweft_core::value::RuntimeValue::Bool(true),
+    }];
+    let enabled_frame = runtime.evaluate_with_dialogue(&[], &[dialogue_input], &enabled, false);
+    assert!(enabled_frame.diagnostics.is_empty(), "{enabled_frame:?}");
+    assert!(enabled_frame.mounts[0].action_buttons[0].enabled);
+    assert_eq!(enabled_frame.mounts[0].events.len(), 1);
 }
 
 #[test]
@@ -814,44 +835,19 @@ fn compiler_rejects_nested_view_recovery_before_product_acceptance() {
 }
 
 #[test]
-fn compiler_rejects_well_formed_view_values_without_a_typed_runtime_contract() {
-    let cases = [
-        (
-            "view Good() { Text(\"ok\") }\n\nview Broken(label: String) {\n  Button(label)\n}\n",
-            "compiler.view.literal_text",
-        ),
-        (
-            "view Good() { Text(\"ok\") }\n\nview Broken(enabled: bool) {\n  Button(\"x\", enabled = enabled)\n}\n",
-            "compiler.view.static_boolean",
-        ),
-    ];
-
-    for (source, _previous_leaf_diagnostic) in cases {
-        let fixture = project_view_fixture(source, "arcweft-test://compiler-view-typed-rejection");
-        let error = fixture
+fn compiler_rejects_invalid_builtin_view_arguments() {
+    for head in [
+        "Button(42)",
+        "Button(\"x\", enabled = \"no\")",
+        "Button(\"x\", label = \"duplicate\")",
+        "Button(\"x\", unknown = true)",
+        "Button(\"x\", \"extra\")",
+    ] {
+        let source = format!("view Good() {{ Text(\"ok\") }}\nview Broken() {{ {head} }}\n");
+        let error = project_view_fixture(&source, "arcweft-test://view-argument-rejection")
             .compile()
-            .expect_err("unimplemented runtime semantics must not be accepted or defaulted");
-        assert_eq!(
-            error.diagnostics().len(),
-            1,
-            "unexpected diagnostics: {error:?}"
-        );
-        let diagnostic = &error.diagnostics()[0];
-        assert_eq!(
-            diagnostic.stage(),
-            ProjectCompileStage::ViewLower,
-            "unexpected rejection stage for {source}: {error:?}"
-        );
-        assert_eq!(
-            diagnostic
-                .diagnostic()
-                .code()
-                .map(arcweft_source::DiagnosticCode::as_str),
-            Some("compiler.view.lower"),
-            "unexpected structured rejection for {source}: {error:?}"
-        );
-        assert!(diagnostic.source().is_none());
-        assert!(diagnostic.diagnostic().labels().is_empty());
+            .expect_err("invalid builtin arguments must not publish a product");
+        assert!(!error.diagnostics().is_empty(), "{head}: {error:?}");
     }
 }
 
@@ -1887,6 +1883,157 @@ fn source_text<'a>(document: &'a SourceDocument, span: &arcweft_source::SourceSp
 }
 
 #[test]
+fn authored_button_inputs_use_typed_expression_execution() {
+    use arcweft_core::value::{RuntimeBinding, RuntimeValue};
+    use arcweft_runtime_driver::presentation_handles::{
+        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    };
+    for head in [
+        "Button(identity(label), enabled = enabled)",
+        "Button(identity(label), enabled)",
+        "Button(enabled = enabled, label = identity(label))",
+    ] {
+        let source = r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+fn identity(value: String) -> String { value }
+view Main(label: String = "hello", enabled: bool = true) {
+    BUTTON_INPUT_HEAD
+}
+"#;
+        let source = source.replace("BUTTON_INPUT_HEAD", head);
+        let compiled =
+            project_view_fixture_with_entry(&source, "arcweft-test://view-button-expression")
+                .compile()
+                .expect("typed Button arguments compile");
+        let product = compiled.view_product().product().as_ref().clone();
+        let text = compiled.view_product().text().cloned();
+        let awbc = AwbcLowerer::new(
+            &compiled.runtime_plan().plan,
+            &compiled.runtime_plan().dialogue_content_catalog,
+            "main.arcw",
+        )
+        .lower()
+        .unwrap()
+        .program;
+        let awbc =
+            Arc::new(arcweft_bundle::standard_view::install_dialogue_handler_awbc(awbc).unwrap());
+        let resource = product.program().unwrap().resource();
+        assert_eq!(
+            ViewProgramResource::decode_canonical_section(
+                &resource.encode_canonical_section().unwrap()
+            )
+            .unwrap(),
+            *resource
+        );
+        let button = resource
+            .action_buttons
+            .iter()
+            .find(|button| button.view.as_deref() == Some("view.Main"))
+            .unwrap();
+        assert_eq!(
+            matches!(
+                button.inputs[0],
+                arcweft_bundle::resource_codec::view::ViewActionButtonInput::Enabled { .. }
+            ),
+            head.starts_with("Button(enabled")
+        );
+        for forged_kind in 0..5 {
+            let mut forged = resource.clone();
+            let button = forged
+                .action_buttons
+                .iter_mut()
+                .find(|button| button.view.as_deref() == Some("view.Main"))
+                .unwrap();
+            match forged_kind {
+                0 => {
+                    let label = text
+                        .as_ref()
+                        .unwrap()
+                        .sources
+                        .iter()
+                        .find(|source| Some(source.public_id.as_str()) == button.label_source())
+                        .unwrap();
+                    let arcweft_bundle::resource_codec::view::ViewTextSourceKind::Program {
+                        program,
+                    } = &label.kind
+                    else {
+                        panic!("authored label program")
+                    };
+                    let enabled = button.inputs.iter_mut().find(|input| matches!(input, arcweft_bundle::resource_codec::view::ViewActionButtonInput::Enabled { .. })).unwrap();
+                    *enabled =
+                        arcweft_bundle::resource_codec::view::ViewActionButtonInput::Enabled {
+                            value: arcweft_view::ViewExpressionValue::Program {
+                                program: program.clone(),
+                            },
+                        };
+                }
+                1 => button.view = Some("view.missing".to_owned()),
+                2 => {
+                    button.inputs =
+                        vec![button.inputs[0].clone(), button.inputs[0].clone()].into_boxed_slice()
+                }
+                3 => button.inputs = vec![button.inputs[0].clone()].into_boxed_slice(),
+                _ => {
+                    let target = button.public_id.clone();
+                    let instruction = forged.instructions.iter_mut().find(|instruction| matches!(instruction, ViewProgramInstruction::OpenElement { target: Some(candidate), .. } if candidate == &target)).unwrap();
+                    let ViewProgramInstruction::OpenElement { element, .. } = instruction else {
+                        unreachable!()
+                    };
+                    *element = arcweft_view::ViewElementKind::Box;
+                }
+            }
+            assert!(
+                forged.validate_awbc_programs(&awbc, text.as_ref()).is_err(),
+                "control forgery {forged_kind}"
+            );
+        }
+        let mut runtime =
+            BundleViewRuntime::try_new_with_awbc(product.clone(), text.clone(), Arc::clone(&awbc))
+                .unwrap();
+        let handles = [PresentationHandleRecord::new(
+            PresentationHandleId::try_new("view.button.expression").unwrap(),
+            PresentationHandleKind::View,
+            "view.Main".to_owned(),
+            None,
+            PresentationResourceState::Mounted,
+            None,
+            0,
+        )];
+        for (label, enabled) in [
+            ("hello", true),
+            ("changed", false),
+            ("changed", false),
+            ("again", true),
+        ] {
+            let bindings = [
+                RuntimeBinding {
+                    name: "label".to_owned(),
+                    value: RuntimeValue::String(label.to_owned()),
+                },
+                RuntimeBinding {
+                    name: "enabled".to_owned(),
+                    value: RuntimeValue::Bool(enabled),
+                },
+            ];
+            let output = runtime.evaluate(&handles, &bindings, false);
+            assert!(output.diagnostics.is_empty(), "{output:?}");
+            assert_eq!(output.mounts[0].action_buttons.len(), 1);
+            let button = &output.mounts[0].action_buttons[0];
+            assert_eq!(button.label, label);
+            assert_eq!(button.enabled, enabled);
+        }
+        let saved = runtime.snapshot().unwrap();
+        let mut restored = BundleViewRuntime::try_new_with_awbc(product, text, awbc).unwrap();
+        restored.restore(&saved, &handles).unwrap();
+        let output = restored.evaluate(&handles, &[], false);
+        assert!(output.diagnostics.is_empty(), "{output:?}");
+        assert_eq!(output.mounts[0].action_buttons[0].label, "again");
+        assert!(output.mounts[0].action_buttons[0].enabled);
+    }
+}
+
+#[test]
 fn authored_text_expression_executes_and_refreshes_typed_parameter_inputs() {
     use arcweft_bundle::resource_codec::view::{ViewTextResource, ViewTextSourceKind};
     use arcweft_core::value::{RuntimeBinding, RuntimeValue};
@@ -2216,4 +2363,89 @@ view Main(label: String, callback: String -> String effects {}) { Text(callback(
             .message()
             .contains("may suspend")
     );
+}
+
+#[test]
+fn authored_button_input_failures_preserve_authored_evaluation_order() {
+    use arcweft_bundle::resource_codec::view::{ViewActionButtonInput, ViewTextSourceKind};
+    use arcweft_core::value::{RuntimeBinding, RuntimeValue};
+    use arcweft_runtime_driver::presentation_handles::{
+        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    };
+    for head in [
+        "Button(label = fail_text(zero), enabled = fail_bool(zero))",
+        "Button(enabled = fail_bool(zero), label = fail_text(zero))",
+    ] {
+        let source = format!(
+            r#"
+entry cli @entry.main {{ goto @flow.main }}
+flow main() -> String {{ return "done" }}
+fn fail_bool(value: i64) -> bool {{ (1i64 / value) == 0i64 }}
+fn fail_text(value: i64) -> String {{ match (1i64 / value) == 0i64 {{ true => "a", false => "b" }} }}
+view Main(zero: i64) {{ {head} }}
+"#
+        );
+        let compiled = project_view_fixture_with_entry(&source, "arcweft-test://view-button-order")
+            .compile()
+            .unwrap();
+        let product = compiled.view_product().product().as_ref().clone();
+        let text = compiled.view_product().text().cloned().unwrap();
+        let resource = product.program().unwrap().resource();
+        let button = resource
+            .action_buttons
+            .iter()
+            .find(|button| button.view.as_deref() == Some("view.Main"))
+            .unwrap();
+        let first = match &button.inputs[0] {
+            ViewActionButtonInput::Label { text_source } => {
+                let source = text
+                    .sources
+                    .iter()
+                    .find(|source| source.public_id == *text_source)
+                    .unwrap();
+                let ViewTextSourceKind::Program { program } = &source.kind else {
+                    panic!("text program")
+                };
+                program.program
+            }
+            ViewActionButtonInput::Enabled { value } => value.program().unwrap().program,
+        };
+        let awbc = AwbcLowerer::new(
+            &compiled.runtime_plan().plan,
+            &compiled.runtime_plan().dialogue_content_catalog,
+            "main.arcw",
+        )
+        .lower()
+        .unwrap()
+        .program;
+        let awbc =
+            Arc::new(arcweft_bundle::standard_view::install_dialogue_handler_awbc(awbc).unwrap());
+        let mut runtime = BundleViewRuntime::try_new_with_awbc(product, Some(text), awbc).unwrap();
+        let handles = [PresentationHandleRecord::new(
+            PresentationHandleId::try_new("view.button.order").unwrap(),
+            PresentationHandleKind::View,
+            "view.Main".to_owned(),
+            None,
+            PresentationResourceState::Mounted,
+            None,
+            0,
+        )];
+        let bindings = [RuntimeBinding {
+            name: "zero".to_owned(),
+            value: RuntimeValue::i64(0),
+        }];
+        let frame = runtime.evaluate(&handles, &bindings, false);
+        assert!(frame.mounts.is_empty(), "failed control publishes no mount");
+        assert!(
+            frame.diagnostics[0]
+                .message
+                .contains("did not complete purely"),
+            "{frame:?}"
+        );
+        assert_eq!(frame.diagnostics.len(), 1, "{frame:?}");
+        assert!(
+            frame.diagnostics[0].message.contains(&first.to_string()),
+            "{head}: {frame:?}"
+        );
+    }
 }

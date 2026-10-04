@@ -410,61 +410,131 @@ impl ViewProgramResource {
                 }
             }
         }
-        if let Some(text) = text {
-            let mut referenced = BTreeSet::new();
-            for definition in &self.definitions {
-                let instructions = self
-                    .instructions
-                    .get(
-                        definition.body.start_instruction as usize
-                            ..definition.body.end_instruction as usize,
-                    )
-                    .ok_or(SectionCodecError::NonCanonicalTable(
-                        "view_expression_owner_span",
-                    ))?;
-                for instruction in instructions {
-                    let ViewProgramInstruction::EmitText { text_source, .. } = instruction else {
-                        continue;
-                    };
-                    let source = text
-                        .sources
+        let mut referenced_text = BTreeSet::new();
+        for definition in &self.definitions {
+            let instructions = self
+                .instructions
+                .get(
+                    definition.body.start_instruction as usize
+                        ..definition.body.end_instruction as usize,
+                )
+                .ok_or(SectionCodecError::NonCanonicalTable(
+                    "view_expression_owner_span",
+                ))?;
+            let mut sources = Vec::new();
+            if text.is_some() {
+                sources.extend(
+                    instructions
                         .iter()
-                        .find(|source| source.public_id == *text_source)
-                        .ok_or(SectionCodecError::NonCanonicalTable(
-                            "view_expression_text_source",
-                        ))?;
-                    if let ViewTextSourceKind::Program {
-                        program: expression,
-                    } = &source.kind
+                        .filter_map(|instruction| match instruction {
+                            ViewProgramInstruction::EmitText { text_source, .. } => {
+                                Some(text_source.as_str())
+                            }
+                            _ => None,
+                        }),
+                );
+            }
+            for button in self
+                .action_buttons
+                .iter()
+                .filter(|button| button.view.as_deref() == Some(definition.public_id.as_str()))
+            {
+                if instructions
+                    .iter()
+                    .filter(|instruction| {
+                        matches!(instruction,
+                    ViewProgramInstruction::OpenElement { element, target: Some(target), .. }
+                        if element.is_action_control() && target == &button.public_id)
+                    })
+                    .count()
+                    != 1
+                {
+                    return Err(SectionCodecError::NonCanonicalTable(
+                        "view_control_element_owner",
+                    ));
+                }
+                if let Some(expression) = button.enabled_value().and_then(|value| value.program()) {
+                    let signature =
+                        self.validate_expression_program(program, definition, expression)?;
+                    if !signature
+                        .result
+                        .and_then(|ty| program.runtime_types.get(ty.index()))
+                        .is_some_and(|ty| {
+                            matches!(
+                                ty.shape(),
+                                arcweft_core::awbc::schema::AwbcRuntimeTypeShape::Bool
+                            )
+                        })
                     {
-                        let signature =
-                            self.validate_expression_program(program, definition, expression)?;
-                        if !signature
-                            .result
-                            .and_then(|ty| program.runtime_types.get(ty.index()))
-                            .is_some_and(|ty| {
-                                matches!(
-                                    ty.shape(),
-                                    arcweft_core::awbc::schema::AwbcRuntimeTypeShape::String
-                                )
-                            })
-                        {
-                            return Err(SectionCodecError::NonCanonicalTable(
-                                "view_expression_text_result",
-                            ));
-                        }
-                        referenced.insert(source.public_id.as_str());
+                        return Err(SectionCodecError::NonCanonicalTable(
+                            "view_control_enabled_result",
+                        ));
                     }
                 }
+                button.validate_inputs()?;
+                sources.push(
+                    button
+                        .label_source()
+                        .expect("validated control label input"),
+                );
             }
-            if text.sources.iter().any(|source| {
+            for source in sources {
+                let source = text
+                    .and_then(|text| {
+                        text.sources
+                            .iter()
+                            .find(|candidate| candidate.public_id == source)
+                    })
+                    .ok_or(SectionCodecError::NonCanonicalTable(
+                        "view_expression_text_source",
+                    ))?;
+                if let ViewTextSourceKind::Program {
+                    program: expression,
+                } = &source.kind
+                {
+                    let signature =
+                        self.validate_expression_program(program, definition, expression)?;
+                    if !signature
+                        .result
+                        .and_then(|ty| program.runtime_types.get(ty.index()))
+                        .is_some_and(|ty| {
+                            matches!(
+                                ty.shape(),
+                                arcweft_core::awbc::schema::AwbcRuntimeTypeShape::String
+                            )
+                        })
+                    {
+                        return Err(SectionCodecError::NonCanonicalTable(
+                            "view_expression_text_result",
+                        ));
+                    }
+                    referenced_text.insert(source.public_id.as_str());
+                }
+            }
+        }
+        if self.action_buttons.iter().any(|button| {
+            button
+                .enabled_value()
+                .and_then(|value| value.program())
+                .is_some()
+                && !self
+                    .definitions
+                    .iter()
+                    .any(|definition| button.view.as_deref() == Some(definition.public_id.as_str()))
+        }) {
+            return Err(SectionCodecError::NonCanonicalTable(
+                "view_dynamic_control_owner",
+            ));
+        }
+        if text.is_some_and(|text| {
+            text.sources.iter().any(|source| {
                 matches!(source.kind, ViewTextSourceKind::Program { .. })
-                    && !referenced.contains(source.public_id.as_str())
-            }) {
-                return Err(SectionCodecError::NonCanonicalTable(
-                    "view_expression_text_owner",
-                ));
-            }
+                    && !referenced_text.contains(source.public_id.as_str())
+            })
+        }) {
+            return Err(SectionCodecError::NonCanonicalTable(
+                "view_expression_text_owner",
+            ));
         }
         for handler in &self.handlers {
             let binding =
@@ -1068,6 +1138,9 @@ impl ViewProgramResource {
                 .map(super::model::ViewLayoutBoundsResource::identity_key),
             "view_layout_bounds",
         )?;
+        for button in &self.action_buttons {
+            button.validate_inputs()?;
+        }
         reject_duplicates(
             self.action_buttons
                 .iter()
@@ -1497,7 +1570,7 @@ fn action_button_public_ids(button: &super::model::ViewActionButtonResource) -> 
         Some(button.public_id.clone()),
         button.view.clone(),
         button.containing_scroll_region.clone(),
-        Some(button.label_text_source.clone()),
+        button.label_source().map(str::to_owned),
     ]
     .into_iter()
     .flatten()

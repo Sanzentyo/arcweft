@@ -458,13 +458,24 @@ pub struct ViewActionButtonResource {
     pub view: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub containing_scroll_region: Option<String>,
-    pub label_text_source: String,
-    #[serde(default = "default_true")]
-    pub enabled: bool,
+    /// Supplied inputs in authored order, followed by declared defaults.
+    pub inputs: Box<[ViewActionButtonInput]>,
     pub action: ViewActionButtonActionResource,
     pub bounds: ViewRuntimeButtonBounds,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<SourceRangeRef>,
+}
+
+/// A control input whose role and value source remain one ordered record.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
+pub enum ViewActionButtonInput {
+    Label {
+        text_source: String,
+    },
+    Enabled {
+        value: arcweft_view::ViewExpressionValue<bool>,
+    },
 }
 
 /// Product-authored player-rendered text metadata.
@@ -1166,6 +1177,66 @@ impl ViewTextResource {
     }
 }
 
+impl ViewActionButtonResource {
+    pub fn label_source(&self) -> Option<&str> {
+        self.inputs.iter().find_map(|input| match input {
+            ViewActionButtonInput::Label { text_source } => Some(text_source.as_str()),
+            _ => None,
+        })
+    }
+    pub fn enabled_value(&self) -> Option<&arcweft_view::ViewExpressionValue<bool>> {
+        self.inputs.iter().find_map(|input| match input {
+            ViewActionButtonInput::Enabled { value } => Some(value),
+            _ => None,
+        })
+    }
+    pub fn validate_inputs(&self) -> Result<(), crate::resource_codec::SectionCodecError> {
+        if self.inputs.len() != 2
+            || self
+                .inputs
+                .iter()
+                .filter(|input| matches!(input, ViewActionButtonInput::Label { .. }))
+                .count()
+                != 1
+            || self
+                .inputs
+                .iter()
+                .filter(|input| matches!(input, ViewActionButtonInput::Enabled { .. }))
+                .count()
+                != 1
+        {
+            return Err(crate::resource_codec::SectionCodecError::NonCanonicalTable(
+                "view_control_inputs",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Constructs a resolved control from values admitted by its execution owner.
+    pub fn runtime_value(&self, label: String, enabled: bool) -> ViewRuntimeActionButton {
+        ViewRuntimeActionButton {
+            public_id: self.public_id.clone(),
+            target: self.public_id.clone(),
+            dialogue_mount: None,
+            view: self.view.clone(),
+            containing_scroll_region: self.containing_scroll_region.clone(),
+            label,
+            enabled,
+            bounds: self.bounds,
+            action: match &self.action {
+                ViewActionButtonActionResource::Noop => ViewRuntimeActionButtonAction::Noop,
+                ViewActionButtonActionResource::ActionInvoke { action, payload } => {
+                    ViewRuntimeActionButtonAction::ActionInvoke {
+                        action: action.clone(),
+                        payload: payload.clone(),
+                    }
+                }
+            },
+            style: ViewRuntimeControlVisualStyle::default(),
+        }
+    }
+}
+
 impl ViewProgramResource {
     pub fn handler_ref(&self, program: ViewHandlerProgramId) -> Option<&ViewHandlerRef> {
         self.handlers
@@ -1173,34 +1244,41 @@ impl ViewProgramResource {
             .find(|handler| handler.program == program)
     }
 
+    /// Projects controls without executable definitions; mounted controls are
+    /// evaluated by the retained runtime instead of receiving placeholder values.
     pub fn runtime_action_buttons(
         &self,
         text: Option<&ViewTextResource>,
-    ) -> Vec<ViewRuntimeActionButton> {
+    ) -> Result<Vec<ViewRuntimeActionButton>, crate::resource_codec::SectionCodecError> {
         self.action_buttons
             .iter()
-            .map(|button| ViewRuntimeActionButton {
-                public_id: button.public_id.clone(),
-                target: button.public_id.clone(),
-                dialogue_mount: None,
-                view: button.view.clone(),
-                containing_scroll_region: button.containing_scroll_region.clone(),
-                label: text
-                    .and_then(|resource| resource.literal_text(&button.label_text_source))
-                    .unwrap_or(&button.public_id)
-                    .to_owned(),
-                enabled: button.enabled,
-                bounds: button.bounds,
-                action: match &button.action {
-                    ViewActionButtonActionResource::Noop => ViewRuntimeActionButtonAction::Noop,
-                    ViewActionButtonActionResource::ActionInvoke { action, payload } => {
-                        ViewRuntimeActionButtonAction::ActionInvoke {
-                            action: action.clone(),
-                            payload: payload.clone(),
-                        }
-                    }
-                },
-                style: ViewRuntimeControlVisualStyle::default(),
+            .filter(|button| {
+                !self
+                    .definitions
+                    .iter()
+                    .any(|definition| button.view.as_deref() == Some(definition.public_id.as_str()))
+            })
+            .map(|button| {
+                button.validate_inputs()?;
+                let Some(arcweft_view::ViewExpressionValue::Constant { value: enabled }) =
+                    button.enabled_value()
+                else {
+                    return Err(crate::resource_codec::SectionCodecError::NonCanonicalTable(
+                        "view_dynamic_control_owner",
+                    ));
+                };
+                let label = text
+                    .and_then(|text| {
+                        text.literal_text(
+                            button
+                                .label_source()
+                                .expect("validated control label input"),
+                        )
+                    })
+                    .ok_or(crate::resource_codec::SectionCodecError::NonCanonicalTable(
+                        "view_static_control_label",
+                    ))?;
+                Ok(button.runtime_value(label.to_owned(), *enabled))
             })
             .collect()
     }
@@ -1771,10 +1849,6 @@ impl ViewRuntimeScrollRegionBounds {
             height_milli,
         }
     }
-}
-
-const fn default_true() -> bool {
-    true
 }
 
 const fn default_surface_element() -> ViewElementKind {

@@ -3927,7 +3927,7 @@ impl Analyzer<'_, '_, '_> {
             return Ok(None);
         };
 
-        let classification = match call.callee() {
+        let mut classification = match call.callee() {
             super::HirCallCallee::Value { value } => {
                 let Some(callee) = self.view_direct_callee(module, *value)? else {
                     return Ok(None);
@@ -3952,9 +3952,9 @@ impl Analyzer<'_, '_, '_> {
                         )
                     })?;
                 match callee {
-                    crate::types::ViewCallableId::Element(element) => {
-                        CheckedViewCall::Element(element)
-                    }
+                    crate::types::ViewCallableId::Element(element) => CheckedViewCall::Element(
+                        crate::final_analysis::CheckedViewElementCall::new(element, Vec::new()),
+                    ),
                     crate::types::ViewCallableId::Text => CheckedViewCall::Text,
                     crate::types::ViewCallableId::RichText => CheckedViewCall::RichText,
                 }
@@ -3964,9 +3964,62 @@ impl Analyzer<'_, '_, '_> {
         };
 
         let mut effects = EffectSet::new();
+        let mut arguments = Vec::new();
+        let mut seen = BTreeSet::new();
+        let mut positional = 0;
         for argument in call.arguments() {
-            let checked = self.evaluate_expression(context, argument.value(), None)?;
+            let role = if let CheckedViewCall::Element(element) = &classification {
+                use arcweft_view::ViewElementArgumentRole;
+                let role = match argument {
+                    HirCallArgument::Positional { .. } => {
+                        let role =
+                            ViewElementArgumentRole::positional(element.element(), positional);
+                        positional += 1;
+                        role
+                    }
+                    HirCallArgument::Named { name, .. } => name
+                        .resolved()
+                        .and_then(|name| ViewElementArgumentRole::from_source_name(name.as_str())),
+                    HirCallArgument::Spread { .. } => None,
+                }
+                .filter(|role| role.accepts_element(element.element()))
+                .ok_or_else(|| AnalyzerExpressionError::rejected(argument.value()))?;
+                if !seen.insert(role) {
+                    return Err(AnalyzerExpressionError::rejected(argument.value()));
+                }
+                Some(role)
+            } else {
+                None
+            };
+            let expected = role.map(|role| match role {
+                arcweft_view::ViewElementArgumentRole::Label => TypeKind::String,
+                arcweft_view::ViewElementArgumentRole::Enabled => TypeKind::Bool,
+                arcweft_view::ViewElementArgumentRole::Spacing => TypeKind::I32,
+                _ => self
+                    .catalogs
+                    .world
+                    .environment()
+                    .compile_time_scalars()
+                    .type_for(crate::registration::CompileTimeScalarTypeRoleId::Length)
+                    .clone(),
+            });
+            let checked = self.evaluate_expression(context, argument.value(), expected.as_ref())?;
+            if let Some(expected) = &expected {
+                if !checked.value_type().is_some_and(|ty| expected.accepts(ty)) {
+                    return Err(AnalyzerExpressionError::rejected(argument.value()));
+                }
+            }
             effects.union_with(checked.effects());
+            if let Some(role) = role {
+                arguments.push(crate::final_analysis::CheckedViewElementArgument::new(
+                    role,
+                    argument.value(),
+                ));
+            }
+        }
+        if let CheckedViewCall::Element(element) = &mut classification {
+            *element =
+                crate::final_analysis::CheckedViewElementCall::new(element.element(), arguments);
         }
         Ok(Some(CheckedExpression::value(
             TypeKind::ViewValue,

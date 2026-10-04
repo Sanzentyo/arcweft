@@ -289,6 +289,7 @@ fn mount_with_node(
         dialogue: None,
         active_targets,
         active_images: Vec::new(),
+        action_buttons: Vec::new(),
         paint: Vec::new(),
         text: Vec::new(),
         fx: Vec::new(),

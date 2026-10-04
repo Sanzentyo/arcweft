@@ -89,6 +89,19 @@ String 以外の結果を文字列へ暗黙変換しない。Dialogue の型付�
 projection を保つ。affine な入力・結果は resource owner の接続が必要であり、
 copy として複製しない。
 
+`Button` の label は String、enabled は bool であり、省略時の宣言値はそれぞれ
+空文字列と true。位置引数と名前付き引数は同じ typed role に束縛し、未知・重複・
+型不一致の引数を拒否する。supplied expression は authored order で評価し、
+省略された宣言値はその後に補う。bundle は `ViewActionButtonInput` の順序付き
+record で label source と enabled value を保持し、別の並び順 table を作らない。
+各 program は Text と同じ input ABI、結果型、pure effect と executable owner
+の検証を受ける。失敗した control は部分的な mount を公開しない。
+
+mount の `action_buttons` は評価済みの label／enabled を持つ。セッションはこの
+値を描画・入力・観測へ投影し、静的な初期値で上書きしない。disabled の Button
+は activation route を公開せず、以前の route を失効させる。restore 後も retained
+parameter と同じ式から control value を再評価する。
+
 ## Binding
 
 Binding は直接 state を破壊的に書き換えず、lens + event/command。

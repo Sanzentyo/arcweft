@@ -2808,6 +2808,14 @@ fn write_resolution_payload(
         CheckedExpressionResolution::ViewCall(view) => {
             transcript_update!(hasher, &[8]);
             transcript_update!(hasher, &[view_call_tag(view)]);
+            if let super::CheckedViewCall::Element(element) = view {
+                transcript_update!(hasher, &[element.element().semantic_tag()]);
+                write_len(hasher, element.arguments().len())?;
+                for argument in element.arguments() {
+                    transcript_update!(hasher, &[argument.role().semantic_tag()]);
+                    write_child_expression_digest(hasher, expression_digests, argument.value())?;
+                }
+            }
         }
         CheckedExpressionResolution::StyleValue(value) => {
             transcript_update!(hasher, &[9]);

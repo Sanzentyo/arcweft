@@ -274,6 +274,7 @@ pub struct BundleViewMountOutput {
     pub dialogue: Option<DialogueViewState>,
     pub active_targets: Vec<String>,
     pub active_images: Vec<String>,
+    pub action_buttons: Vec<arcweft_bundle::resource_codec::ViewRuntimeActionButton>,
     pub paint: Vec<BundleViewPaintItem>,
     pub text: Vec<BundleViewTextOutput>,
     pub fx: Vec<BundleViewFxApplication>,

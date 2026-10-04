@@ -24,8 +24,15 @@ fn runtime_action_button_resolves_label_and_noop_action() {
             public_id: "button.submit_feedback".to_owned(),
             view: None,
             containing_scroll_region: None,
-            label_text_source: "text.label.submit_feedback".to_owned(),
-            enabled: true,
+            inputs: vec![
+                arcweft_bundle::resource_codec::view::ViewActionButtonInput::Label {
+                    text_source: "text.label.submit_feedback".to_owned(),
+                },
+                arcweft_bundle::resource_codec::view::ViewActionButtonInput::Enabled {
+                    value: arcweft_view::ViewExpressionValue::constant(true),
+                },
+            ]
+            .into_boxed_slice(),
             action: ViewActionButtonActionResource::Noop,
             bounds: ViewRuntimeButtonBounds::new(484_000, 48_000, 128_000, 48_000),
             source: None,
@@ -45,7 +52,7 @@ fn runtime_action_button_resolves_label_and_noop_action() {
         ..ViewTextResource::default()
     };
 
-    let buttons = program.runtime_action_buttons(Some(&text));
+    let buttons = program.runtime_action_buttons(Some(&text)).unwrap();
 
     assert_eq!(buttons.len(), 1);
     assert_eq!(buttons[0].target, "button.submit_feedback");
@@ -73,8 +80,15 @@ fn runtime_action_button_resolves_action_invoke_action() {
             public_id: "button.continue".to_owned(),
             view: None,
             containing_scroll_region: None,
-            label_text_source: "text.label.continue".to_owned(),
-            enabled: true,
+            inputs: vec![
+                arcweft_bundle::resource_codec::view::ViewActionButtonInput::Label {
+                    text_source: "text.label.continue".to_owned(),
+                },
+                arcweft_bundle::resource_codec::view::ViewActionButtonInput::Enabled {
+                    value: arcweft_view::ViewExpressionValue::constant(true),
+                },
+            ]
+            .into_boxed_slice(),
             action: ViewActionButtonActionResource::ActionInvoke {
                 action: "action.feedback.submit_name".to_owned(),
                 payload: Some(ViewActionPayloadResource::TextControlProjection {
@@ -100,7 +114,7 @@ fn runtime_action_button_resolves_action_invoke_action() {
         ..ViewTextResource::default()
     };
 
-    let buttons = program.runtime_action_buttons(Some(&text));
+    let buttons = program.runtime_action_buttons(Some(&text)).unwrap();
 
     assert_eq!(buttons.len(), 1);
     assert!(matches!(

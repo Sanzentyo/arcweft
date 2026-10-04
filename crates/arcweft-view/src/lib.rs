@@ -52,8 +52,10 @@ pub use handler_program::{
     ViewHandlerProgramId, ViewHandlerResult, ViewHandlerResultRole, ViewHandlerValueTypeId,
     ViewParameterCoordinate, ViewParameterInput,
 };
+mod element_argument;
 mod expression_program;
-pub use expression_program::ViewExpressionProgram;
+pub use element_argument::ViewElementArgumentRole;
+pub use expression_program::{ViewExpressionProgram, ViewExpressionValue};
 pub use image::{
     ImageAlignment, ImageFit, ImagePlayback, ViewImagePresentationMetadata, ViewImageSource,
     ViewImageSourceTable, ViewResolvedImageFrame,

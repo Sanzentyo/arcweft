@@ -1045,8 +1045,17 @@ impl AuthoredViewBodyLowerer<'_> {
             };
         };
         match kind {
-            CheckedViewCall::Element(element) => {
-                if !call.arguments().is_empty() {
+            CheckedViewCall::Element(element_call) => {
+                let element = element_call.element();
+                if (!element_call.arguments().is_empty() && !element.is_action_control())
+                    || element_call.arguments().iter().any(|argument| {
+                        !matches!(
+                            argument.role(),
+                            arcweft_view::ViewElementArgumentRole::Label
+                                | arcweft_view::ViewElementArgumentRole::Enabled
+                        )
+                    })
+                {
                     return Err(ViewProjectLowerError::MissingCheckedViewProjection {
                         owner: self.owner,
                     });
@@ -1059,7 +1068,7 @@ impl AuthoredViewBodyLowerer<'_> {
                 self.output
                     .instructions
                     .push(ViewProgramInstruction::OpenElement {
-                        element: *element,
+                        element,
                         target: Some(target.clone()),
                         styles: Vec::new(),
                         part: None,
@@ -1068,19 +1077,48 @@ impl AuthoredViewBodyLowerer<'_> {
                     });
                 if element.is_action_control() {
                     let label = format!("button.label.{}.{}", self.view.as_str(), ordinal);
+                    let mut label_kind = ViewTextSourceKind::Literal {
+                        value: arcweft_view::ViewElementArgumentRole::DEFAULT_LABEL.to_owned(),
+                    };
+                    let mut inputs = Vec::new();
+                    for argument in element_call.arguments() {
+                        let program = ViewExpressionLowerer {
+                            project: self.project,
+                            analysis: self.analysis,
+                            world: self.registered_world,
+                            owner: self.owner,
+                            view: self.view,
+                            parameters: self.parameters,
+                            output: self.output,
+                        }
+                        .lower(argument.value())?;
+                        match argument.role() {
+                            arcweft_view::ViewElementArgumentRole::Label => {
+                                label_kind = ViewTextSourceKind::Program { program };
+                                inputs.push(arcweft_bundle::resource_codec::view::ViewActionButtonInput::Label { text_source: label.clone() });
+                            }
+                            arcweft_view::ViewElementArgumentRole::Enabled => {
+                                inputs.push(arcweft_bundle::resource_codec::view::ViewActionButtonInput::Enabled { value: arcweft_view::ViewExpressionValue::Program { program } });
+                            }
+                            _ => unreachable!("element argument projection was checked"),
+                        }
+                    }
+                    if !inputs.iter().any(|input| matches!(input, arcweft_bundle::resource_codec::view::ViewActionButtonInput::Label { .. })) {
+                        inputs.push(arcweft_bundle::resource_codec::view::ViewActionButtonInput::Label { text_source: label.clone() });
+                    }
+                    if !inputs.iter().any(|input| matches!(input, arcweft_bundle::resource_codec::view::ViewActionButtonInput::Enabled { .. })) {
+                        inputs.push(arcweft_bundle::resource_codec::view::ViewActionButtonInput::Enabled { value: arcweft_view::ViewExpressionValue::constant(arcweft_view::ViewElementArgumentRole::DEFAULT_ENABLED) });
+                    }
                     self.output.text.sources.push(ViewTextSourceRecord {
                         public_id: label.clone(),
-                        kind: ViewTextSourceKind::Literal {
-                            value: String::new(),
-                        },
+                        kind: label_kind,
                         source: None,
                     });
                     self.output.action_buttons.push(ViewActionButtonResource {
                         public_id: target.clone(),
                         view: Some(self.view.as_str().to_owned()),
                         containing_scroll_region: None,
-                        label_text_source: label,
-                        enabled: true,
+                        inputs: inputs.into_boxed_slice(),
                         action: ViewActionButtonActionResource::Noop,
                         bounds: ViewRuntimeButtonBounds::new(
                             VIEW_ROOT_X_MILLI,
