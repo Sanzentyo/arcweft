@@ -928,9 +928,6 @@ fn remap_program_references(
             remap_program(source_program, offset)?;
             remap_program(key_program, offset)?;
         }
-        ViewProgramInstruction::Await { source_program, .. } => {
-            remap_program(source_program, offset)?;
-        }
         ViewProgramInstruction::ApplyFx {
             arguments,
             key_program,

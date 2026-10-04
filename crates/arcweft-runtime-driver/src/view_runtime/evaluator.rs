@@ -4,8 +4,8 @@ mod support;
 mod text;
 
 use support::{
-    await_extent, branch_bounds, checked_span_end, control_flow_failure, derive_fx_instance,
-    instruction_ordinal, resolve_path,
+    branch_bounds, checked_span_end, control_flow_failure, derive_fx_instance, instruction_ordinal,
+    resolve_path,
 };
 
 use super::style_scope::{
@@ -1683,78 +1683,6 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                         )?;
                     }
                     cursor = body_end;
-                }
-                ViewProgramInstruction::Await {
-                    source_program,
-                    pending_branch,
-                    ready_branch,
-                    error_branch,
-                    denied_branch,
-                    ..
-                } => {
-                    let context = self.sample_context(mounted, instruction_ordinal(cursor)?)?;
-                    let state = evaluate_value(
-                        mounted,
-                        *source_program,
-                        self.inventory,
-                        context,
-                        &mut self.value_budget,
-                        Some(cursor),
-                    )?;
-                    let FxRuntimeValue::I32(state) = state else {
-                        return Err(EvaluationFailure::new(
-                            BundleViewDiagnosticCode::InvalidAwaitState,
-                            Some(cursor),
-                            "await state program must return I32",
-                        ));
-                    };
-                    let selected = match state {
-                        0 => pending_branch,
-                        1 => ready_branch,
-                        2 => error_branch,
-                        3 => denied_branch,
-                        _ => {
-                            return Err(EvaluationFailure::new(
-                                BundleViewDiagnosticCode::InvalidAwaitState,
-                                Some(cursor),
-                                format!(
-                                    "await state discriminant {state} is not pending=0, ready=1, error=2, or denied=3"
-                                ),
-                            ));
-                        }
-                    };
-                    let await_end = await_extent(
-                        cursor,
-                        end,
-                        [
-                            pending_branch.as_ref(),
-                            ready_branch.as_ref(),
-                            error_branch.as_ref(),
-                            denied_branch.as_ref(),
-                        ],
-                    )?;
-                    if let Some(branch) = selected {
-                        let branch_start = cursor
-                            .checked_add(1)
-                            .and_then(|start| start.checked_add(branch.start_offset as usize))
-                            .ok_or_else(|| {
-                                control_flow_failure(cursor, "await branch start overflow")
-                            })?;
-                        let branch_end =
-                            checked_span_end(branch_start, branch.body_span, end, cursor)?;
-                        self.execute_span(
-                            key,
-                            definition,
-                            mounted,
-                            structural_path,
-                            branch_start,
-                            branch_end,
-                            depth,
-                            builder,
-                            descendants,
-                        )?;
-                    }
-                    cursor = await_end;
                 }
                 ViewProgramInstruction::CallView {
                     view,

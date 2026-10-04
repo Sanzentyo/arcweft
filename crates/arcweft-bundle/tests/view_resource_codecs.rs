@@ -2,11 +2,11 @@ use arcweft_bundle::container::BundleSectionKind;
 use arcweft_bundle::patch::PatchCompatibility;
 use arcweft_bundle::resource_codec::view::{
     CompositionOnBlurPolicy, DialogueTextProjection, EnterKeyHint, EventKind, SystemColorOverride,
-    TextAssistPolicy, TextCapitalization, ViewAwaitBranchSpan, ViewCallArgumentBindingRef,
-    ViewDefinitionRef, ViewDefinitionResource, ViewElementKind, ViewExportValidationError,
-    ViewExportedPart, ViewFocusAutoScrollPolicy, ViewFxArgumentBindingRef, ViewFxArgumentSourceRef,
-    ViewHandlerRef, ViewInputKind, ViewInputOptions, ViewInputPurpose, ViewInputResource,
-    ViewInstructionSpan, ViewLayoutBoundsResource, ViewLocalizedTextResource, ViewLogicalRect,
+    TextAssistPolicy, TextCapitalization, ViewCallArgumentBindingRef, ViewDefinitionRef,
+    ViewDefinitionResource, ViewElementKind, ViewExportValidationError, ViewExportedPart,
+    ViewFocusAutoScrollPolicy, ViewFxArgumentBindingRef, ViewFxArgumentSourceRef, ViewHandlerRef,
+    ViewInputKind, ViewInputOptions, ViewInputPurpose, ViewInputResource, ViewInstructionSpan,
+    ViewLayoutBoundsResource, ViewLocalizedTextResource, ViewLogicalRect,
     ViewObserveClassification, ViewOwnedPartRef, ViewParameterResource, ViewPartExportSourceRef,
     ViewProgramInstruction, ViewProgramResource, ViewProgramStyleResources, ViewResourceBudget,
     ViewResourceCompatibility, ViewScrollAxis, ViewScrollIndicatorsPolicy,
@@ -924,6 +924,43 @@ fn scalar_branch_record_has_no_compatibility_reader() {
 }
 
 #[test]
+fn scalar_await_record_is_rejected_at_instruction_and_section_ingress() {
+    let old = serde_json::json!({"await": {
+        "source_program": 0,
+        "pending_branch": {"start_offset": 0, "body_span": 0},
+        "ready_branch": {"start_offset": 0, "body_span": 0},
+        "error_branch": null,
+        "denied_branch": null,
+        "source": null
+    }});
+    assert!(serde_json::from_value::<ViewProgramInstruction>(old.clone()).is_err());
+
+    let bytes = fixture_program()
+        .encode_canonical_section()
+        .expect("View encodes");
+    let envelope = ProductResourceEnvelope::decode_all_fields(
+        &bytes,
+        ProductSectionCodecKind::ViewProgram,
+        SectionCodecBudget::default(),
+    )
+    .expect("View envelope decodes");
+    let transcript = envelope
+        .fields
+        .iter()
+        .find(|field| field.id == FieldId(1))
+        .expect("View transcript exists");
+    let mut payload: serde_json::Value =
+        serde_json::from_slice(&transcript.payload).expect("View transcript is JSON");
+    payload["instructions"][3] = old;
+    let payload = serde_json::to_vec(&payload).expect("tampered transcript encodes");
+    let bytes = envelope_with_replaced_field_payload(&envelope, FieldId(1), &payload);
+    assert_eq!(
+        ViewProgramResource::decode_canonical_section(&bytes).expect_err("retired Await rejects"),
+        arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable("view_program"),
+    );
+}
+
+#[test]
 fn view_value_program_references_require_existing_programs_and_result_types() {
     let mut missing = fixture_program();
     missing
@@ -1564,18 +1601,10 @@ fn fixture_program() -> ViewProgramResource {
                 handler: ViewHandlerProgramId::from_checked_digest([7; 32]),
                 source: None,
             },
-            ViewProgramInstruction::Await {
+            ViewProgramInstruction::RepeatKeyed {
                 source_program: ViewValueProgramId(0),
-                pending_branch: Some(ViewAwaitBranchSpan {
-                    start_offset: 0,
-                    body_span: 0,
-                }),
-                ready_branch: Some(ViewAwaitBranchSpan {
-                    start_offset: 0,
-                    body_span: 0,
-                }),
-                error_branch: None,
-                denied_branch: None,
+                key_program: ViewValueProgramId(0),
+                body_span: 0,
                 source: None,
             },
             ViewProgramInstruction::CloseElement,

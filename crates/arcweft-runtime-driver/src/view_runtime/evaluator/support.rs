@@ -1,6 +1,5 @@
 use super::EvaluationFailure;
 use crate::view_runtime::{BundleViewDiagnosticCode, BundleViewInstancePath, ViewOccurrenceKey};
-use arcweft_bundle::resource_codec::ViewAwaitBranchSpan;
 use arcweft_core::value::RuntimeValue;
 use arcweft_presentation::fx::{FxId, FxInstanceIdentity, FxInstanceOwnerKey};
 use std::collections::BTreeMap;
@@ -33,26 +32,6 @@ pub(super) fn branch_bounds(
         ranges.then_range().end as usize,
         ranges.continuation() as usize,
     ))
-}
-
-pub(super) fn await_extent(
-    instruction: usize,
-    enclosing_end: usize,
-    branches: [Option<&ViewAwaitBranchSpan>; 4],
-) -> Result<usize, EvaluationFailure> {
-    let body_start = instruction
-        .checked_add(1)
-        .ok_or_else(|| control_flow_failure(instruction, "await body start overflow"))?;
-    branches
-        .into_iter()
-        .flatten()
-        .try_fold(body_start, |extent, branch| {
-            let start = body_start
-                .checked_add(branch.start_offset as usize)
-                .ok_or_else(|| control_flow_failure(instruction, "await branch start overflow"))?;
-            checked_span_end(start, branch.body_span, enclosing_end, instruction)
-                .map(|end| extent.max(end))
-        })
 }
 
 pub(super) fn checked_span_end(

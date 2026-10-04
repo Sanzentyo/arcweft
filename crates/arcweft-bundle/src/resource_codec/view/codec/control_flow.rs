@@ -116,37 +116,6 @@ impl<'a> ScopedInstructions<'a> {
                             children.push((body, &[][..]));
                             body.end
                         }
-                        ViewProgramInstruction::Await {
-                            pending_branch,
-                            ready_branch,
-                            error_branch,
-                            denied_branch,
-                            ..
-                        } => {
-                            for branch in
-                                [pending_branch, ready_branch, error_branch, denied_branch]
-                                    .into_iter()
-                                    .flatten()
-                            {
-                                children.push((
-                                    subrange(
-                                        start,
-                                        branch.start_offset,
-                                        branch.body_span,
-                                        range.end,
-                                    )?,
-                                    &[][..],
-                                ));
-                            }
-                            children.sort_by_key(|(range, _)| (range.start, range.end));
-                            if children
-                                .windows(2)
-                                .any(|pair| pair[0].0.end > pair[1].0.start)
-                            {
-                                return Err(invalid_span());
-                            }
-                            children.last().map_or(start, |(range, _)| range.end)
-                        }
                         _ => start,
                     };
                     match instruction {

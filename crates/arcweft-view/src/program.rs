@@ -57,7 +57,6 @@ pub enum ViewInstruction {
     Branch(ViewBranch),
     Match(crate::ViewMatchProgram),
     RepeatKeyed(ViewRepeat),
-    Await(ViewAwait),
     BeginScope,
     EndScope,
     BindLocal(crate::ViewBindingProgram),
@@ -342,21 +341,6 @@ pub struct ViewRepeat {
     pub source: ViewValueProgramId,
     pub key: ViewValueProgramId,
     pub body: ViewInstructionRange,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ViewAwaitBranch {
-    pub start_offset: u32,
-    pub body_span: u32,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ViewAwait {
-    pub source: ViewValueProgramId,
-    pub pending: Option<ViewAwaitBranch>,
-    pub ready: Option<ViewAwaitBranch>,
-    pub error: Option<ViewAwaitBranch>,
-    pub denied: Option<ViewAwaitBranch>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -729,7 +713,6 @@ fn validate_handlers(
             ViewInstruction::Branch(_)
             | ViewInstruction::Match(_)
             | ViewInstruction::RepeatKeyed(_)
-            | ViewInstruction::Await(_)
             | ViewInstruction::BindLocal(_) => target = None,
             ViewInstruction::BeginScope
             | ViewInstruction::EndScope
@@ -794,7 +777,6 @@ impl ViewInstruction {
             | Self::Branch(_)
             | Self::Match(_)
             | Self::RepeatKeyed(_)
-            | Self::Await(_)
             | Self::BindLocal(_)
             | Self::BeginScope
             | Self::EndScope
@@ -815,7 +797,6 @@ impl ViewInstruction {
             | Self::Branch(_)
             | Self::Match(_)
             | Self::RepeatKeyed(_)
-            | Self::Await(_)
             | Self::BindLocal(_)
             | Self::BeginScope
             | Self::EndScope
@@ -836,7 +817,6 @@ impl ViewInstruction {
             | Self::Branch(_)
             | Self::Match(_)
             | Self::RepeatKeyed(_)
-            | Self::Await(_)
             | Self::BindLocal(_)
             | Self::BeginScope
             | Self::EndScope

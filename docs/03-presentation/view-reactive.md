@@ -250,7 +250,9 @@ glyph-target sampler の ordinal は Fx application ごとに最初の対象 gly
 reduce-motion 時は sampler time を 0 に固定する。
 
 Reactive Need observation is an ordinary checked `match`, not a retained
-`Await` discriminant. The temporal owner has `NotStarted`, `Pending(Progress)`,
+`Await` discriminant. The retained instruction and bundle grammar contains no
+scalar `Await` opcode; a bundle carrying that former opcode is rejected during
+decoding. The temporal owner has `NotStarted`, `Pending(Progress)`,
 `Ready(T)`, and `Cancelled`; a fallible payload is matched as
 `Ready(Result::Err(error))`. There is no Need-owned `error` or `denied` branch.
 `Branch`, `Match`, keyed `Repeat`, nested `CallView`, `BindLocal`, and `ApplyFx`
@@ -385,7 +387,6 @@ View context, `await` remains continuation suspension rather than reactive
 branch selection. Need itself owns no domain-error or denial branch; those are
 represented by the Ready payload or by a typed admission result. Cancellation
 remains a separate control outcome.
-```
 
 ## Retained list virtualization
 

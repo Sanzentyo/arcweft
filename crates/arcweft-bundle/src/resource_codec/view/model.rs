@@ -125,14 +125,6 @@ pub enum ViewProgramInstruction {
         body_span: u32,
         source: Option<SourceRangeRef>,
     },
-    Await {
-        source_program: ViewValueProgramId,
-        pending_branch: Option<ViewAwaitBranchSpan>,
-        ready_branch: Option<ViewAwaitBranchSpan>,
-        error_branch: Option<ViewAwaitBranchSpan>,
-        denied_branch: Option<ViewAwaitBranchSpan>,
-        source: Option<SourceRangeRef>,
-    },
     BeginScope,
     EndScope,
     BindLocal {
@@ -174,7 +166,6 @@ impl ViewProgramInstruction {
             | Self::Branch { .. }
             | Self::Match { .. }
             | Self::RepeatKeyed { .. }
-            | Self::Await { .. }
             | Self::BindLocal { .. }
             | Self::BeginScope
             | Self::EndScope
@@ -195,7 +186,6 @@ impl ViewProgramInstruction {
             | Self::Branch { .. }
             | Self::Match { .. }
             | Self::RepeatKeyed { .. }
-            | Self::Await { .. }
             | Self::BindLocal { .. }
             | Self::BeginScope
             | Self::EndScope
@@ -217,7 +207,6 @@ impl ViewProgramInstruction {
             | Self::Branch { .. }
             | Self::Match { .. }
             | Self::RepeatKeyed { .. }
-            | Self::Await { .. }
             | Self::BindLocal { .. }
             | Self::BeginScope
             | Self::EndScope
@@ -237,7 +226,6 @@ impl ViewProgramInstruction {
             | Self::Branch { source, .. }
             | Self::Match { source, .. }
             | Self::RepeatKeyed { source, .. }
-            | Self::Await { source, .. }
             | Self::BindLocal { source, .. }
             | Self::ApplyFx { source, .. }
             | Self::BindHandler { source, .. }
@@ -256,7 +244,6 @@ impl ViewProgramInstruction {
             | Self::Branch { source, .. }
             | Self::Match { source, .. }
             | Self::RepeatKeyed { source, .. }
-            | Self::Await { source, .. }
             | Self::BindLocal { source, .. }
             | Self::ApplyFx { source, .. }
             | Self::BindHandler { source, .. }
@@ -402,12 +389,6 @@ pub enum ViewValueInputSource {
         view: String,
         binding: String,
     },
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ViewAwaitBranchSpan {
-    pub start_offset: u32,
-    pub body_span: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

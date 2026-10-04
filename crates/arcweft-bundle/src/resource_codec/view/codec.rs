@@ -1090,9 +1090,6 @@ impl ViewProgramResource {
                     validate_program(&inventory, *source_program, Some(FxRuntimeType::I32))?;
                     validate_program(&inventory, *key_program, Some(FxRuntimeType::I32))?;
                 }
-                ViewProgramInstruction::Await { source_program, .. } => {
-                    validate_program(&inventory, *source_program, None)?;
-                }
                 ViewProgramInstruction::ApplyFx {
                     arguments,
                     key_program,
@@ -1566,8 +1563,7 @@ impl ViewProgramResource {
                         }
                     }
                     ViewProgramInstruction::Branch { .. }
-                    | ViewProgramInstruction::RepeatKeyed { .. }
-                    | ViewProgramInstruction::Await { .. } => target = None,
+                    | ViewProgramInstruction::RepeatKeyed { .. } => target = None,
                     _ => {}
                 }
             }
@@ -2136,7 +2132,6 @@ fn instruction_public_ids(instruction: &ViewProgramInstruction) -> Vec<String> {
         | ViewProgramInstruction::Branch { .. }
         | ViewProgramInstruction::Match { .. }
         | ViewProgramInstruction::RepeatKeyed { .. }
-        | ViewProgramInstruction::Await { .. }
         | ViewProgramInstruction::BindLocal { .. }
         | ViewProgramInstruction::ApplyFx { .. } => Vec::new(),
         ViewProgramInstruction::EmitText {

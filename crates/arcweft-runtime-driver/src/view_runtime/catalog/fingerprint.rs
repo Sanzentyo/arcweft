@@ -178,9 +178,6 @@ fn referenced_value_programs(body: &[ViewProgramInstruction]) -> BTreeSet<ViewVa
             } => {
                 programs.extend([*source_program, *key_program]);
             }
-            ViewProgramInstruction::Await { source_program, .. } => {
-                programs.insert(*source_program);
-            }
             ViewProgramInstruction::ApplyFx {
                 arguments,
                 key_program,
@@ -231,7 +228,6 @@ fn without_instruction_source(mut instruction: ViewProgramInstruction) -> ViewPr
         | ViewProgramInstruction::Branch { source, .. }
         | ViewProgramInstruction::Match { source, .. }
         | ViewProgramInstruction::RepeatKeyed { source, .. }
-        | ViewProgramInstruction::Await { source, .. }
         | ViewProgramInstruction::BindLocal { source, .. }
         | ViewProgramInstruction::ApplyFx { source, .. }
         | ViewProgramInstruction::BindHandler { source, .. }

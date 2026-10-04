@@ -80,9 +80,9 @@ pub use part::{
 };
 pub use presentation_image::{ViewImagePresentationFrame, ViewImagePresentationInput};
 pub use program::{
-    BindEvent, BindHandler, EventKind, ViewAwait, ViewAwaitBranch, ViewBranch, ViewBranchRanges,
-    ViewCall, ViewCallArgument, ViewCustomSpec, ViewElementKind, ViewElementLayoutKind,
-    ViewElementSpec, ViewElementTextInputKind, ViewFxApplicationInstruction, ViewFxArgumentSource,
+    BindEvent, BindHandler, EventKind, ViewBranch, ViewBranchRanges, ViewCall, ViewCallArgument,
+    ViewCustomSpec, ViewElementKind, ViewElementLayoutKind, ViewElementSpec,
+    ViewElementTextInputKind, ViewFxApplicationInstruction, ViewFxArgumentSource,
     ViewFxCallArgument, ViewImageSpec, ViewInstruction, ViewInstructionRange, ViewProgram,
     ViewProgramBuilder, ViewRepeat, ViewSemanticSpec, ViewStableKey, ViewTextSpec,
 };

@@ -10,13 +10,13 @@ use arcweft_core::awbc::schema::{AwbcFunctionId, AwbcProgram};
 use arcweft_id::PublicId;
 use arcweft_view::{
     AcceptedViewProgramRevision, BindEvent, BindHandler, CustomElementId, HandlerId, ImageId,
-    SemanticSpecId, TextSourceId, ViewAwait, ViewAwaitBranch, ViewBranch, ViewCall,
-    ViewCallArgument, ViewCustomSpec, ViewElementSpec, ViewEvaluationSiteId, ViewExecutionInput,
-    ViewFxApplicationInstruction, ViewFxArgumentSource, ViewFxCallArgument, ViewHandlerProgramId,
-    ViewHandlerResult, ViewId, ViewImageSpec, ViewInstruction, ViewInstructionRange, ViewPartId,
-    ViewPartStaticReachability, ViewProgram, ViewProgramBuildError, ViewProgramBuilder,
-    ViewProgramId, ViewRepeat, ViewSemanticSpec, ViewStableKey, ViewTextSpec,
-    ViewValueInventoryError, ViewValueProgramInventory,
+    SemanticSpecId, TextSourceId, ViewBranch, ViewCall, ViewCallArgument, ViewCustomSpec,
+    ViewElementSpec, ViewEvaluationSiteId, ViewExecutionInput, ViewFxApplicationInstruction,
+    ViewFxArgumentSource, ViewFxCallArgument, ViewHandlerProgramId, ViewHandlerResult, ViewId,
+    ViewImageSpec, ViewInstruction, ViewInstructionRange, ViewPartId, ViewPartStaticReachability,
+    ViewProgram, ViewProgramBuildError, ViewProgramBuilder, ViewProgramId, ViewRepeat,
+    ViewSemanticSpec, ViewStableKey, ViewTextSpec, ViewValueInventoryError,
+    ViewValueProgramInventory,
 };
 use thiserror::Error;
 
@@ -588,20 +588,6 @@ fn map_instruction(
                 body: ViewInstructionRange::new(start, end),
             })
         }
-        ViewProgramInstruction::Await {
-            source_program,
-            pending_branch,
-            ready_branch,
-            error_branch,
-            denied_branch,
-            ..
-        } => ViewInstruction::Await(ViewAwait {
-            source: *source_program,
-            pending: pending_branch.as_ref().map(map_await_branch),
-            ready: ready_branch.as_ref().map(map_await_branch),
-            error: error_branch.as_ref().map(map_await_branch),
-            denied: denied_branch.as_ref().map(map_await_branch),
-        }),
         ViewProgramInstruction::BeginScope => ViewInstruction::BeginScope,
         ViewProgramInstruction::EndScope => ViewInstruction::EndScope,
         ViewProgramInstruction::BindLocal { program, .. } => {
@@ -673,13 +659,4 @@ fn canonical_ids<'a>(
                 .map_err(|_| ViewProgramCatalogError::InstructionIndexOverflow)
         })
         .collect()
-}
-
-fn map_await_branch(
-    branch: &arcweft_bundle::resource_codec::view::ViewAwaitBranchSpan,
-) -> ViewAwaitBranch {
-    ViewAwaitBranch {
-        start_offset: branch.start_offset,
-        body_span: branch.body_span,
-    }
 }
