@@ -331,7 +331,7 @@ pub struct ViewCallArgument {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewBranch {
-    pub condition: ViewValueProgramId,
+    pub condition: crate::ViewExpressionProgram,
     pub then_range: ViewInstructionRange,
     pub else_range: Option<ViewInstructionRange>,
 }
@@ -383,6 +383,50 @@ pub struct ViewFxApplicationInstruction {
 pub struct ViewInstructionRange {
     pub start: u32,
     pub end: u32,
+}
+
+/// Checked contiguous arm ranges inside one enclosing instruction region.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ViewBranchRanges {
+    then_range: ViewInstructionRange,
+    else_range: Option<ViewInstructionRange>,
+}
+
+impl ViewBranchRanges {
+    pub const fn then_range(self) -> ViewInstructionRange {
+        self.then_range
+    }
+    pub const fn else_range(self) -> Option<ViewInstructionRange> {
+        self.else_range
+    }
+    pub fn try_from_spans(
+        instruction: u32,
+        then_span: u32,
+        else_span: Option<u32>,
+        enclosing_end: u32,
+    ) -> Option<Self> {
+        let start = instruction.checked_add(1)?;
+        let then_end = start.checked_add(then_span)?;
+        let else_range = match else_span {
+            Some(span) => Some(ViewInstructionRange::new(
+                then_end,
+                then_end.checked_add(span)?,
+            )),
+            None => None,
+        };
+        let ranges = Self {
+            then_range: ViewInstructionRange::new(start, then_end),
+            else_range,
+        };
+        (ranges.continuation() <= enclosing_end).then_some(ranges)
+    }
+
+    pub const fn continuation(self) -> u32 {
+        match self.else_range {
+            Some(range) => range.end,
+            None => self.then_range.end,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

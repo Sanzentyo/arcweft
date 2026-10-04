@@ -110,7 +110,7 @@ pub enum ViewProgramInstruction {
         source: Option<SourceRangeRef>,
     },
     Branch {
-        condition_program: ViewValueProgramId,
+        condition: arcweft_view::ViewExpressionProgram,
         then_span: u32,
         else_span: Option<u32>,
         source: Option<SourceRangeRef>,

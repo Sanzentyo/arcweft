@@ -1060,7 +1060,11 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                                 .runtime_parameters
                                 .get(&source.name)
                                 .ok_or_else(|| {
-                                    failure(format!("parameter '{}' is uninitialized", source.name))
+                                    EvaluationFailure::new(
+                                        BundleViewDiagnosticCode::MissingInput,
+                                        Some(instruction),
+                                        format!("parameter '{}' is uninitialized", source.name),
+                                    )
                                 })?;
                         if !value.ownership().permits_copy() {
                             return Err(failure(
@@ -1404,10 +1408,6 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[expect(
-        clippy::too_many_lines,
-        reason = "the bounded instruction dispatch is one cohesive interpreter loop; state transitions remain visible in one exhaustive match"
-    )]
     fn execute_span(
         &mut self,
         key: &ViewOccurrenceKey,
@@ -1420,6 +1420,41 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
         builder: &mut MountRenderBuilder,
         descendants: &mut Vec<BundleViewMountOutput>,
     ) -> Result<(), EvaluationFailure> {
+        let prior_depth = mounted.execution_locals.len();
+        mounted.execution_locals.push(BTreeMap::new());
+        let result = self.execute_span_body(
+            key,
+            definition,
+            mounted,
+            structural_path,
+            start,
+            end,
+            depth,
+            builder,
+            descendants,
+        );
+        mounted.execution_locals.truncate(prior_depth);
+        result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one exhaustive retained instruction dispatch keeps its state transitions together"
+    )]
+    fn execute_span_body(
+        &mut self,
+        key: &ViewOccurrenceKey,
+        definition: &ViewDefinitionResource,
+        mounted: &mut MountedView,
+        structural_path: &BundleViewInstancePath,
+        start: usize,
+        end: usize,
+        depth: usize,
+        builder: &mut MountRenderBuilder,
+        descendants: &mut Vec<BundleViewMountOutput>,
+    ) -> Result<(), EvaluationFailure> {
+        let scope_floor = mounted.execution_locals.len();
         let mut cursor = start;
         while cursor < end {
             self.charge_instruction(cursor)?;
@@ -1432,24 +1467,22 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
             })?;
             match instruction {
                 ViewProgramInstruction::Branch {
-                    condition_program,
+                    condition: program,
                     then_span,
                     else_span,
                     ..
                 } => {
                     let (then_start, then_end, else_end) =
                         branch_bounds(cursor, *then_span, *else_span, end)?;
-                    let context = self.sample_context(mounted, instruction_ordinal(cursor)?)?;
-                    let condition = evaluate_value(
+                    let condition = self.evaluate_expression_program(
+                        &key.handle,
+                        definition,
                         mounted,
-                        *condition_program,
-                        self.inventory,
-                        context,
-                        &mut self.value_budget,
-                        Some(cursor),
+                        cursor,
+                        program,
                     )?;
                     match condition {
-                        FxRuntimeValue::Bool(true) => self.execute_span(
+                        RuntimeValue::Bool(true) => self.execute_span(
                             key,
                             definition,
                             mounted,
@@ -1460,7 +1493,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                             builder,
                             descendants,
                         )?,
-                        FxRuntimeValue::Bool(false) if else_span.is_some() => self.execute_span(
+                        RuntimeValue::Bool(false) if else_span.is_some() => self.execute_span(
                             key,
                             definition,
                             mounted,
@@ -1471,15 +1504,12 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                             builder,
                             descendants,
                         )?,
-                        FxRuntimeValue::Bool(false) => {}
+                        RuntimeValue::Bool(false) => {}
                         value => {
                             return Err(EvaluationFailure::new(
                                 BundleViewDiagnosticCode::InvalidValueProgram,
                                 Some(cursor),
-                                format!(
-                                    "branch program returned {:?}, expected Bool",
-                                    value.value_type()
-                                ),
+                                format!("branch program returned {:?}, expected Bool", value),
                             ));
                         }
                     }
@@ -1762,7 +1792,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                     cursor += 1;
                 }
                 ViewProgramInstruction::EndScope => {
-                    if mounted.execution_locals.len() <= 1 {
+                    if mounted.execution_locals.len() <= scope_floor {
                         return Err(EvaluationFailure::new(
                             BundleViewDiagnosticCode::InvalidControlFlow,
                             Some(cursor),
@@ -2130,6 +2160,12 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                     cursor += 1;
                 }
             }
+        }
+        if mounted.execution_locals.len() != scope_floor {
+            return Err(control_flow_failure(
+                end,
+                "unbalanced local scope at region exit",
+            ));
         }
         Ok(())
     }

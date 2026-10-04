@@ -116,7 +116,11 @@ impl ViewProgramCatalog {
                         .and_then(|value| value.program())
                         .is_some()
                 }) || program.resource().instructions.iter().any(|instruction| {
-                    matches!(instruction, ViewProgramInstruction::BindLocal { .. })
+                    matches!(
+                        instruction,
+                        ViewProgramInstruction::BindLocal { .. }
+                            | ViewProgramInstruction::Branch { .. }
+                    )
                 }) || !program.resource().handlers.is_empty()
                     || program.resource().definitions.iter().any(|definition| {
                         definition.parameter_contract.is_some()
@@ -546,28 +550,23 @@ fn map_instruction(
             key: key.map(ViewStableKey),
         }),
         ViewProgramInstruction::Branch {
-            condition_program,
+            condition,
             then_span,
             else_span,
             ..
         } => {
-            let start = u32::try_from(local_index + 1)
-                .map_err(|_| ViewProgramCatalogError::InstructionIndexOverflow)?;
-            let then_end = start
-                .checked_add(*then_span)
-                .ok_or(ViewProgramCatalogError::InstructionIndexOverflow)?;
-            let else_range = else_span
-                .map(|span| {
-                    then_end
-                        .checked_add(span)
-                        .map(|end| ViewInstructionRange::new(then_end, end))
-                        .ok_or(ViewProgramCatalogError::InstructionIndexOverflow)
-                })
-                .transpose()?;
+            let ranges = arcweft_view::ViewBranchRanges::try_from_spans(
+                u32::try_from(local_index)
+                    .map_err(|_| ViewProgramCatalogError::InstructionIndexOverflow)?,
+                *then_span,
+                *else_span,
+                u32::MAX,
+            )
+            .ok_or(ViewProgramCatalogError::InstructionIndexOverflow)?;
             ViewInstruction::Branch(ViewBranch {
-                condition: *condition_program,
-                then_range: ViewInstructionRange::new(start, then_end),
-                else_range,
+                condition: condition.clone(),
+                then_range: ranges.then_range(),
+                else_range: ranges.else_range(),
             })
         }
         ViewProgramInstruction::RepeatKeyed {

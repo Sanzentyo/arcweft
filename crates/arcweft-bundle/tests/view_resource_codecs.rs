@@ -904,24 +904,32 @@ fn instruction_parts_reject_malformed_resource_ids() {
 }
 
 #[test]
+fn scalar_branch_record_has_no_compatibility_reader() {
+    let old = serde_json::json!({"branch": {"condition_program": 0, "then_span": 0, "else_span": null, "source": null}});
+    assert!(serde_json::from_value::<ViewProgramInstruction>(old).is_err());
+}
+
+#[test]
 fn view_value_program_references_require_existing_programs_and_result_types() {
     let mut missing = fixture_program();
-    missing.instructions.push(ViewProgramInstruction::Branch {
-        condition_program: ViewValueProgramId(99),
-        then_span: 0,
-        else_span: None,
-        source: None,
-    });
+    missing
+        .instructions
+        .push(ViewProgramInstruction::RepeatKeyed {
+            source_program: ViewValueProgramId(99),
+            key_program: ViewValueProgramId(0),
+            body_span: 0,
+            source: None,
+        });
     missing.definitions[0].body.end_instruction = missing.instructions.len().try_into().unwrap();
     assert!(missing.encode_canonical_section().is_err());
 
     let mut wrong_type = fixture_program();
     wrong_type
         .instructions
-        .push(ViewProgramInstruction::Branch {
-            condition_program: ViewValueProgramId(0),
-            then_span: 0,
-            else_span: None,
+        .push(ViewProgramInstruction::RepeatKeyed {
+            source_program: ViewValueProgramId(1),
+            key_program: ViewValueProgramId(0),
+            body_span: 0,
             source: None,
         });
     wrong_type.definitions[0].body.end_instruction =

@@ -81,13 +81,27 @@ cache hit も初回実行と同じ論理 operation cost を評価予算から消
 
 `Text` の String 式も同じ `ViewExpressionProgram` と通常の Core pure program
 を使う。checked expression transcript から意味を含む program identity を導き、
-その式が読む View parameter と canonical input ABI を照合する。内部の local、
+その式が読む View parameter／派生 local と canonical input ABI を照合する。内部の local、
 純粋な呼び出し、Match は Core の通常の式意味論に従う。入力の変更は再評価し、
 cache は executable owner・program・ordered input snapshot に結び付ける。
 result も inert snapshot として保存し、restore 時は派生 cache を破棄する。
 String 以外の結果を文字列へ暗黙変換しない。Dialogue の型付き表示は専用の
 projection を保つ。affine な入力・結果は resource owner の接続が必要であり、
 copy として複製しない。
+
+通常の block 内の `let` は派生値であり、retained な `local state` と区別する。
+pattern の実行と型付き出力は Core の checked binding program が所有する。
+View は program identity と canonical output ordinal で local を識別し、parameter の
+ordinal や名前付き scalar slot へ変換しない。nested scope と shadowing は通常の
+lexical binding に従う。派生 local は frame の scope を出ると破棄し、snapshot には
+含めず、restore 後は同じ入力と program から再構築する。
+
+View の `if` 式・statement、`else if` は通常の checked bool 式を条件に使う。
+条件は同じ Core program／input ABI／評価予算で評価し、選択した arm だけを実行する。
+各 arm は独立した lexical region を持ち、arm の local を他の arm や後続の region
+から読めない。bundle は enclosing region 内の arm 範囲と scope を検証し、
+Core signature の結果が bool であることを確認する。失敗した arm は部分的な frame
+を公開せず、cache hit／cold restore でも評価結果と operation cost を保つ。
 
 `Button` の label は String、enabled は bool であり、省略時の宣言値はそれぞれ
 空文字列と true。位置引数と名前付き引数は同じ typed role に束縛し、未知・重複・

@@ -174,11 +174,6 @@ fn referenced_value_programs(body: &[ViewProgramInstruction]) -> BTreeSet<ViewVa
             ViewProgramInstruction::CallView { arguments, .. } => {
                 programs.extend(arguments.iter().map(|argument| argument.value_program));
             }
-            ViewProgramInstruction::Branch {
-                condition_program, ..
-            } => {
-                programs.insert(*condition_program);
-            }
             ViewProgramInstruction::RepeatKeyed {
                 source_program,
                 key_program,
@@ -204,6 +199,7 @@ fn referenced_value_programs(body: &[ViewProgramInstruction]) -> BTreeSet<ViewVa
             | ViewProgramInstruction::CloseElement
             | ViewProgramInstruction::BeginScope
             | ViewProgramInstruction::EndScope
+            | ViewProgramInstruction::Branch { .. }
             | ViewProgramInstruction::BindLocal { .. }
             | ViewProgramInstruction::EmitText { .. }
             | ViewProgramInstruction::EmitImage { .. }

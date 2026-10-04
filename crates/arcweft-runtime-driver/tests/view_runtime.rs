@@ -1594,6 +1594,7 @@ fn style_scope_rejects_inline_patch_on_non_rendered_definition_root() {
     reason = "the complete typed IR fixture is kept beside all three frame assertions"
 )]
 fn branch_reacts_per_mount_and_missing_input_never_uses_placeholder() {
+    let (condition, awbc) = branch_fixture_awbc();
     let branch_style = ViewStyleSheetId::try_new("style.branch.inventory").unwrap();
     let program = ViewProgramResource {
         program_id: program_id("view.program.branch"),
@@ -1607,35 +1608,16 @@ fn branch_reacts_per_mount_and_missing_input_never_uses_placeholder() {
                 role: arcweft_bundle::resource_codec::view::ViewParameterRole::Value,
                 semantic_type: arcweft_core::pattern::RuntimeCheckedType::Bool
                     .semantic_identity_digest(),
-                value_type: Some(FxRuntimeType::Bool),
-                value_slot: Some(0),
+                value_type: None,
+                value_slot: None,
                 default_program: None,
             }],
             parameter_contract: None,
             state_schema_hash: 11,
         }],
-        value_programs: vec![value_program(
-            0,
-            vec![FxRuntimeType::Bool],
-            Vec::new(),
-            FxRuntimeType::Bool,
-            vec![
-                load_parameter(FxRuntimeType::Bool),
-                ValueInstruction::Return,
-            ],
-        )],
-        value_inputs: vec![ViewValueInputResource {
-            namespace: ViewValueInputNamespace::Parameter,
-            slot: 0,
-            value_type: FxRuntimeType::Bool,
-            source: ViewValueInputSource::DefinitionParameter {
-                view: definition_ref("view.Root"),
-                parameter: ViewParameterCoordinate::try_from_index(0).unwrap(),
-            },
-        }],
         instructions: vec![
             ViewProgramInstruction::Branch {
-                condition_program: ViewValueProgramId(0),
+                condition,
                 then_span: 1,
                 else_span: Some(1),
                 source: None,
@@ -1694,8 +1676,18 @@ fn branch_reacts_per_mount_and_missing_input_never_uses_placeholder() {
     });
     let mounted = handle("handle.root", "view.Root");
 
-    let mut missing =
-        BundleViewRuntime::try_new(Some(program.clone()), Some(text.clone()), None).unwrap();
+    let mut missing = AcceptedBundleViewRuntime::try_new_with_awbc(
+        ValidatedViewProduct::try_new(
+            None,
+            Some(program.clone()),
+            None,
+            ViewProductValidationLimits::default(),
+        )
+        .unwrap(),
+        Some(text.clone()),
+        Arc::clone(&awbc),
+    )
+    .unwrap();
     let frame = missing.evaluate(std::slice::from_ref(&mounted), &[], false);
     assert!(frame.mounts.is_empty());
     assert_eq!(
@@ -1703,7 +1695,18 @@ fn branch_reacts_per_mount_and_missing_input_never_uses_placeholder() {
         BundleViewDiagnosticCode::MissingInput
     );
 
-    let mut runtime = BundleViewRuntime::try_new(Some(program), Some(text), None).unwrap();
+    let mut runtime = AcceptedBundleViewRuntime::try_new_with_awbc(
+        ValidatedViewProduct::try_new(
+            None,
+            Some(program),
+            None,
+            ViewProductValidationLimits::default(),
+        )
+        .unwrap(),
+        Some(text),
+        awbc,
+    )
+    .unwrap();
     let active = runtime.evaluate(
         std::slice::from_ref(&mounted),
         &[RuntimeBinding {
@@ -2927,4 +2930,73 @@ fn logical_time_updates_context_cache_and_reduce_motion_freezes_it() {
         );
         assert_eq!(evaluation.status(), status);
     }
+}
+
+fn branch_fixture_awbc() -> (
+    arcweft_view::ViewExpressionProgram,
+    Arc<arcweft_core::awbc::schema::AwbcProgram>,
+) {
+    use arcweft_core::awbc::schema::*;
+    let id = arcweft_id::runtime_program::RuntimePureProgramId::from_checked_digest([0xbc; 32]);
+    let ty = arcweft_core::pattern::RuntimeCheckedType::Bool.semantic_identity_digest();
+    let mut program = AwbcProgram::default();
+    let bool_type = AwbcTypeId(u32::try_from(program.runtime_types.len()).unwrap());
+    program
+        .runtime_types
+        .push(AwbcRuntimeType::new(ty, AwbcRuntimeTypeShape::Bool));
+    program.signatures.push(AwbcSignature {
+        params: vec![bool_type],
+        result: Some(bool_type),
+        effects: AwbcEffectSetId(0),
+    });
+    program.frame_layouts.push(AwbcFrameLayout {
+        scopes: Vec::new(),
+        slots: vec![AwbcFrameSlot {
+            name: None,
+            ty: bool_type,
+            role: AwbcFrameSlotRole::Parameter,
+            scope_depth: 0,
+        }],
+        max_scope_depth: 0,
+    });
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(0),
+        instructions: AwbcTableRange::new(0, 0),
+        terminator: AwbcTerminator::Return {
+            value: Some(AwbcRegisterId(0)),
+        },
+        safe_point: AwbcSafePointKind::CallableBoundary,
+        source_map: None,
+    });
+    program.functions.push(AwbcFunction {
+        public_id: None,
+        kind: AwbcFunctionKind::Ordinary,
+        signature: AwbcSignatureId(0),
+        type_context: None,
+        input_ownership: vec![AwbcFunctionInputOwnership::default()],
+        frame_layout: AwbcFrameLayoutId(0),
+        blocks: AwbcTableRange::new(0, 1),
+        entry_block: AwbcBlockId(0),
+        flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
+    });
+    program.pure_programs.push(AwbcPureProgramBinding {
+        program: id,
+        function: AwbcFunctionId(0),
+        function_type: None,
+        input_types: vec![ty],
+        result_type: ty,
+    });
+    let expression = arcweft_view::ViewExpressionProgram {
+        program: id,
+        inputs: vec![
+            arcweft_view::ViewParameterInput::new(
+                ViewParameterCoordinate::try_from_index(0).unwrap(),
+                ty,
+            )
+            .into(),
+        ]
+        .into_boxed_slice(),
+        result_type: ty,
+    };
+    (expression, Arc::new(program))
 }

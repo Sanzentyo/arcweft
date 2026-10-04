@@ -2906,3 +2906,330 @@ view Main(label: String = "seed") {
         );
     }
 }
+
+#[test]
+fn authored_view_conditionals_use_core_and_isolate_arm_locals() {
+    use arcweft_core::value::{RuntimeBinding, RuntimeValue};
+    use arcweft_runtime_driver::presentation_handles::{
+        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    };
+    use arcweft_runtime_driver::view_runtime::BundleViewTextValue;
+    for body in [
+        "if active { Text(label) } else { Text(\"no\") }",
+        "{ let visible = choose(active); if visible { let label = label; Text(label); } else if !visible { let label = \"no\"; Text(label); }; Text(\"tail\") }",
+        "{ if active { Text(label); }; Text(\"tail\") }",
+    ] {
+        let source = format!(
+            "entry cli @entry.main {{ goto @flow.main }}\nflow main() -> String {{ return \"done\" }}\nfn choose(value: bool) -> bool {{ value }}\nview Main(active: bool, label: String = \"yes\") {{ {body} }}"
+        );
+        let compiled = project_view_fixture_with_entry(&source, "arcweft-test://view-conditional")
+            .compile()
+            .expect("authored View conditional compiles");
+        let product = compiled.view_product().product().as_ref().clone();
+        let text = compiled.view_product().text().unwrap().clone();
+        let resource = product.program().unwrap().resource();
+        assert_eq!(
+            ViewProgramResource::decode_canonical_section(
+                &resource.encode_canonical_section().unwrap()
+            )
+            .unwrap(),
+            *resource
+        );
+        let awbc = Arc::new(
+            arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+                AwbcLowerer::new(
+                    &compiled.runtime_plan().plan,
+                    &compiled.runtime_plan().dialogue_content_catalog,
+                    "main.arcw",
+                )
+                .lower()
+                .unwrap()
+                .program,
+            )
+            .unwrap(),
+        );
+        resource.validate_awbc_programs(&awbc, Some(&text)).unwrap();
+        for forgery in 0..3 {
+            let mut forged = resource.clone();
+            let ViewProgramInstruction::Branch {
+                condition,
+                then_span,
+                ..
+            } = forged
+                .instructions
+                .iter_mut()
+                .find(|instruction| matches!(instruction, ViewProgramInstruction::Branch { .. }))
+                .unwrap()
+            else {
+                panic!("branch")
+            };
+            match forgery {
+                0 => {
+                    condition.program =
+                        arcweft_id::runtime_program::RuntimePureProgramId::from_checked_digest(
+                            [0xfc; 32],
+                        )
+                }
+                1 => {
+                    let string = text
+                        .sources
+                        .iter()
+                        .find_map(|source| match &source.kind {
+                            arcweft_bundle::resource_codec::view::ViewTextSourceKind::Program {
+                                program,
+                            } => Some(program),
+                            _ => None,
+                        })
+                        .unwrap();
+                    *condition = string.clone();
+                }
+                _ => *then_span = u32::MAX,
+            }
+            assert!(
+                forged.validate_awbc_programs(&awbc, Some(&text)).is_err(),
+                "forgery {forgery}"
+            );
+        }
+        if body.contains("visible") {
+            let mut forged = resource.clone();
+            let branch_index = forged
+                .instructions
+                .iter()
+                .position(|instruction| {
+                    matches!(instruction, ViewProgramInstruction::Branch { .. })
+                })
+                .unwrap();
+            let ViewProgramInstruction::Branch {
+                condition,
+                then_span,
+                else_span,
+                ..
+            } = &forged.instructions[branch_index]
+            else {
+                panic!("branch")
+            };
+            let condition = condition.clone();
+            let ranges = arcweft_view::ViewBranchRanges::try_from_spans(
+                u32::try_from(branch_index).unwrap(),
+                *then_span,
+                *else_span,
+                u32::try_from(forged.instructions.len()).unwrap(),
+            )
+            .unwrap();
+            for instruction in &mut forged.instructions
+                [ranges.then_range().start as usize..ranges.then_range().end as usize]
+            {
+                if matches!(
+                    instruction,
+                    ViewProgramInstruction::BeginScope | ViewProgramInstruction::EndScope
+                ) {
+                    *instruction = ViewProgramInstruction::Branch {
+                        condition: condition.clone(),
+                        then_span: 0,
+                        else_span: None,
+                        source: None,
+                    };
+                }
+            }
+            forged
+                .encode_canonical_section()
+                .expect("implicit arm scopes are independently valid");
+            let mut forged_text = text.clone();
+            let arm_program = forged_text
+                .sources
+                .iter()
+                .find_map(|source| match &source.kind {
+                    arcweft_bundle::resource_codec::view::ViewTextSourceKind::Program {
+                        program,
+                    } if program.inputs.iter().any(|input| {
+                        matches!(
+                            input.source,
+                            arcweft_view::ViewExecutionInputSource::Local(_)
+                        )
+                    }) =>
+                    {
+                        Some(program.clone())
+                    }
+                    _ => None,
+                })
+                .unwrap();
+            let source = forged_text.sources.last_mut().unwrap();
+            source.kind = arcweft_bundle::resource_codec::view::ViewTextSourceKind::Program {
+                program: arm_program,
+            };
+            assert_eq!(
+                forged.validate_awbc_programs(&awbc, Some(&forged_text)),
+                Err(
+                    arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
+                        "view_expression_program_binding"
+                    )
+                )
+            );
+            let mut crossed = resource.clone();
+            let nested = crossed
+                .instructions
+                .iter()
+                .enumerate()
+                .skip(branch_index + 1)
+                .find_map(|(index, instruction)| {
+                    matches!(instruction, ViewProgramInstruction::Branch { .. }).then_some(index)
+                })
+                .unwrap();
+            let oversized = u32::try_from(crossed.instructions.len() - nested - 1).unwrap();
+            let ViewProgramInstruction::Branch {
+                then_span,
+                else_span,
+                ..
+            } = &mut crossed.instructions[nested]
+            else {
+                panic!("nested branch")
+            };
+            *then_span = oversized;
+            *else_span = None;
+            assert_eq!(
+                crossed.encode_canonical_section(),
+                Err(
+                    arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
+                        "view_control_flow_spans"
+                    )
+                )
+            );
+        }
+        let handle = PresentationHandleRecord::new(
+            PresentationHandleId::try_new("view.conditionals").unwrap(),
+            PresentationHandleKind::View,
+            "view.Main".to_owned(),
+            None,
+            PresentationResourceState::Mounted,
+            None,
+            0,
+        );
+        let mut runtime = BundleViewRuntime::try_new_with_awbc(
+            product.clone(),
+            Some(text.clone()),
+            Arc::clone(&awbc),
+        )
+        .unwrap();
+        for active in [true, false, true] {
+            let inputs = [RuntimeBinding {
+                name: "active".to_owned(),
+                value: RuntimeValue::Bool(active),
+            }];
+            let frame = runtime.evaluate(std::slice::from_ref(&handle), &inputs, false);
+            assert!(frame.diagnostics.is_empty(), "{frame:?}");
+            let values = frame.mounts[0]
+                .text
+                .iter()
+                .map(|output| match &output.value {
+                    BundleViewTextValue::Plain { value } => value.as_str(),
+                    _ => panic!("plain text"),
+                })
+                .collect::<Vec<_>>();
+            let expected = if body.contains("else") {
+                if active { vec!["yes"] } else { vec!["no"] }
+            } else if active {
+                vec!["yes"]
+            } else {
+                Vec::new()
+            };
+            let mut expected = expected;
+            if body.contains("tail") {
+                expected.push("tail");
+            }
+            assert_eq!(values, expected);
+            let saved = runtime.snapshot().unwrap();
+            let mut cold = BundleViewRuntime::try_new_with_awbc(
+                product.clone(),
+                Some(text.clone()),
+                Arc::clone(&awbc),
+            )
+            .unwrap();
+            cold.restore(&saved, std::slice::from_ref(&handle)).unwrap();
+            assert_eq!(
+                frame,
+                cold.evaluate(std::slice::from_ref(&handle), &inputs, false)
+            );
+        }
+    }
+}
+
+#[test]
+fn authored_view_conditional_does_not_execute_the_unselected_arm_and_recovers_from_failure() {
+    use arcweft_core::value::{RuntimeBinding, RuntimeValue};
+    use arcweft_runtime_driver::presentation_handles::{
+        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    };
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+fn fail(divisor: i64) -> String { match (1i64 / divisor) == 0i64 { true => "zero", false => "one" } }
+view Main(active: bool, label: String = "yes", divisor: i64 = 0i64) {
+    { let label = label; if active { Text(label); } else { Text(fail(divisor)); }; Text(label) }
+}
+"#;
+    let compiled =
+        project_view_fixture_with_entry(source, "arcweft-test://view-conditional-failure")
+            .compile()
+            .unwrap();
+    let product = compiled.view_product().product().as_ref().clone();
+    let text = compiled.view_product().text().unwrap().clone();
+    let awbc = Arc::new(
+        arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+            AwbcLowerer::new(
+                &compiled.runtime_plan().plan,
+                &compiled.runtime_plan().dialogue_content_catalog,
+                "main.arcw",
+            )
+            .lower()
+            .unwrap()
+            .program,
+        )
+        .unwrap(),
+    );
+    let handle = PresentationHandleRecord::new(
+        PresentationHandleId::try_new("view.conditional.failure").unwrap(),
+        PresentationHandleKind::View,
+        "view.Main".to_owned(),
+        None,
+        PresentationResourceState::Mounted,
+        None,
+        0,
+    );
+    let mut runtime = BundleViewRuntime::try_new_with_awbc(
+        product.clone(),
+        Some(text.clone()),
+        Arc::clone(&awbc),
+    )
+    .unwrap();
+    let inputs = |active| {
+        [RuntimeBinding {
+            name: "active".to_owned(),
+            value: RuntimeValue::Bool(active),
+        }]
+    };
+    let success = runtime.evaluate(std::slice::from_ref(&handle), &inputs(true), false);
+    assert!(success.diagnostics.is_empty(), "{success:?}");
+    let saved = runtime.snapshot().unwrap();
+    let mut cold = BundleViewRuntime::try_new_with_awbc(product, Some(text), awbc).unwrap();
+    cold.restore(&saved, std::slice::from_ref(&handle)).unwrap();
+    let failure = runtime.evaluate(std::slice::from_ref(&handle), &inputs(false), false);
+    assert!(failure.mounts.is_empty());
+    assert!(
+        failure.diagnostics[0]
+            .message
+            .contains("did not complete purely"),
+        "{failure:?}"
+    );
+    assert_eq!(
+        failure,
+        cold.evaluate(std::slice::from_ref(&handle), &inputs(false), false)
+    );
+    assert_eq!(
+        success,
+        runtime.evaluate(std::slice::from_ref(&handle), &inputs(true), false)
+    );
+    assert_eq!(
+        success,
+        cold.evaluate(std::slice::from_ref(&handle), &inputs(true), false)
+    );
+}

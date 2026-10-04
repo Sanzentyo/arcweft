@@ -21,14 +21,18 @@ pub(super) fn branch_bounds(
     else_span: Option<u32>,
     enclosing_end: usize,
 ) -> Result<(usize, usize, usize), EvaluationFailure> {
-    let then_start = instruction
-        .checked_add(1)
-        .ok_or_else(|| control_flow_failure(instruction, "branch start overflow"))?;
-    let then_end = checked_span_end(then_start, then_span, enclosing_end, instruction)?;
-    let else_end = else_span.map_or(Ok(then_end), |span| {
-        checked_span_end(then_end, span, enclosing_end, instruction)
-    })?;
-    Ok((then_start, then_end, else_end))
+    let ranges = arcweft_view::ViewBranchRanges::try_from_spans(
+        instruction_ordinal(instruction)?,
+        then_span,
+        else_span,
+        instruction_ordinal(enclosing_end)?,
+    )
+    .ok_or_else(|| control_flow_failure(instruction, "branch exceeds its enclosing region"))?;
+    Ok((
+        ranges.then_range().start as usize,
+        ranges.then_range().end as usize,
+        ranges.continuation() as usize,
+    ))
 }
 
 pub(super) fn await_extent(

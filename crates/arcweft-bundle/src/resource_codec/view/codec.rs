@@ -23,6 +23,8 @@ use super::model::{
     ViewTextSourceKind, ViewThemeResource, ViewValueInputNamespace, ViewValueInputSource,
 };
 
+mod control_flow;
+use control_flow::{ScopeEvent, ScopedInstructions};
 mod part;
 mod style;
 pub(in crate::resource_codec::view) mod style_environment;
@@ -421,15 +423,6 @@ impl ViewProgramResource {
         }
         let mut referenced_text = BTreeSet::new();
         for definition in &self.definitions {
-            let instructions = self
-                .instructions
-                .get(
-                    definition.body.start_instruction as usize
-                        ..definition.body.end_instruction as usize,
-                )
-                .ok_or(SectionCodecError::NonCanonicalTable(
-                    "view_expression_owner_span",
-                ))?;
             let mut locals = vec![BTreeMap::new()];
             let mut declared = BTreeSet::new();
             let buttons = self
@@ -439,7 +432,18 @@ impl ViewProgramResource {
                 .map(|button| (button.public_id.as_str(), button))
                 .collect::<BTreeMap<_, _>>();
             let mut visited_buttons = BTreeSet::new();
-            for instruction in instructions {
+            for event in ScopedInstructions::new(&self.instructions, definition.body)? {
+                let instruction = match event? {
+                    ScopeEvent::Enter => {
+                        locals.push(BTreeMap::new());
+                        continue;
+                    }
+                    ScopeEvent::Exit => {
+                        locals.pop();
+                        continue;
+                    }
+                    ScopeEvent::Instruction(instruction) => instruction,
+                };
                 let mut sources = Vec::new();
                 match instruction {
                     ViewProgramInstruction::BeginScope => locals.push(BTreeMap::new()),
@@ -448,6 +452,24 @@ impl ViewProgramResource {
                             return Err(SectionCodecError::NonCanonicalTable("view_local_scope"));
                         }
                         locals.pop();
+                    }
+                    ViewProgramInstruction::Branch { condition, .. } => {
+                        let signature = self
+                            .validate_expression_program(program, definition, condition, &locals)?;
+                        if !signature
+                            .result
+                            .and_then(|ty| program.runtime_types.get(ty.index()))
+                            .is_some_and(|ty| {
+                                matches!(
+                                    ty.shape(),
+                                    arcweft_core::awbc::schema::AwbcRuntimeTypeShape::Bool
+                                )
+                            })
+                        {
+                            return Err(SectionCodecError::NonCanonicalTable(
+                                "view_branch_condition_result",
+                            ));
+                        }
                     }
                     ViewProgramInstruction::BindLocal {
                         program: binding, ..
@@ -741,7 +763,7 @@ impl ViewProgramResource {
         self.validate_value_programs()?;
         self.validate_definitions(budget)?;
         self.validate_exported_parts()?;
-        self.validate_control_flow_spans()?;
+        self.validate_control_flow_spans(budget)?;
         self.validate_unique_ids()?;
         self.validate_handlers()?;
         self.validate_layout_bounds()?;
@@ -918,9 +940,6 @@ impl ViewProgramResource {
                         validate_program(&inventory, argument.value_program, expected)?;
                     }
                 }
-                ViewProgramInstruction::Branch {
-                    condition_program, ..
-                } => validate_program(&inventory, *condition_program, Some(FxRuntimeType::Bool))?,
                 ViewProgramInstruction::RepeatKeyed {
                     source_program,
                     key_program,
@@ -948,6 +967,7 @@ impl ViewProgramResource {
                 | ViewProgramInstruction::CloseElement
                 | ViewProgramInstruction::BeginScope
                 | ViewProgramInstruction::EndScope
+                | ViewProgramInstruction::Branch { .. }
                 | ViewProgramInstruction::BindLocal { .. }
                 | ViewProgramInstruction::EmitText { .. }
                 | ViewProgramInstruction::EmitImage { .. }
@@ -1050,21 +1070,11 @@ impl ViewProgramResource {
         ViewValueProgramInventory::from_programs(self.value_programs.clone())
             .map_err(|_| SectionCodecError::NonCanonicalTable("view_value_program_inventory"))?;
         for definition in &self.definitions {
-            let mut scope_depth = 0usize;
             let mut outputs = BTreeSet::new();
             for instruction in &self.instructions[definition.body.start_instruction as usize
                 ..definition.body.end_instruction as usize]
             {
                 match instruction {
-                    ViewProgramInstruction::BeginScope => {
-                        scope_depth += 1;
-                        check_budget(scope_depth, budget.common.depth, "view_local_scope_depth")?;
-                    }
-                    ViewProgramInstruction::EndScope => {
-                        scope_depth = scope_depth
-                            .checked_sub(1)
-                            .ok_or(SectionCodecError::NonCanonicalTable("view_local_scope"))?;
-                    }
                     ViewProgramInstruction::BindLocal { program, .. } => {
                         check_budget(
                             program.outputs.len(),
@@ -1089,9 +1099,6 @@ impl ViewProgramResource {
                     }
                     _ => {}
                 }
-            }
-            if scope_depth != 0 {
-                return Err(SectionCodecError::NonCanonicalTable("view_local_scope"));
             }
             let mut names = BTreeSet::new();
             for (ordinal, parameter) in definition.parameters.iter().enumerate() {
@@ -1171,57 +1178,27 @@ impl ViewProgramResource {
         part::validate_exports(self).map_err(Into::into)
     }
 
-    fn validate_control_flow_spans(&self) -> Result<(), SectionCodecError> {
-        for (index, instruction) in self.instructions.iter().enumerate() {
-            let definition_end = self
-                .definitions
-                .iter()
-                .find(|definition| {
-                    definition.body.start_instruction as usize <= index
-                        && index < definition.body.end_instruction as usize
-                })
-                .map(|definition| definition.body.end_instruction as usize)
-                .ok_or(SectionCodecError::NonCanonicalTable(
-                    "view_definition_coverage",
-                ))?;
-            let body_start = index.saturating_add(1);
-            let valid_end = |offset: u32, span: u32| {
-                usize::try_from(offset)
-                    .ok()
-                    .and_then(|offset| body_start.checked_add(offset))
-                    .and_then(|start| {
-                        usize::try_from(span)
-                            .ok()
-                            .and_then(|span| start.checked_add(span))
-                    })
-                    .is_some_and(|end| end <= definition_end)
-            };
-            let valid = match instruction {
-                ViewProgramInstruction::Branch {
-                    then_span,
-                    else_span,
-                    ..
-                } => {
-                    valid_end(0, *then_span)
-                        && else_span.is_none_or(|else_span| valid_end(*then_span, else_span))
+    fn validate_control_flow_spans(
+        &self,
+        budget: &ViewResourceBudget,
+    ) -> Result<(), SectionCodecError> {
+        for definition in &self.definitions {
+            let mut depth = 0usize;
+            for event in ScopedInstructions::new(&self.instructions, definition.body)? {
+                match event? {
+                    ScopeEvent::Enter
+                    | ScopeEvent::Instruction(ViewProgramInstruction::BeginScope) => {
+                        depth += 1;
+                        check_budget(depth, budget.common.depth, "view_local_scope_depth")?;
+                    }
+                    ScopeEvent::Exit
+                    | ScopeEvent::Instruction(ViewProgramInstruction::EndScope) => {
+                        depth = depth
+                            .checked_sub(1)
+                            .ok_or(SectionCodecError::NonCanonicalTable("view_local_scope"))?;
+                    }
+                    ScopeEvent::Instruction(_) => {}
                 }
-                ViewProgramInstruction::RepeatKeyed { body_span, .. } => valid_end(0, *body_span),
-                ViewProgramInstruction::Await {
-                    pending_branch,
-                    ready_branch,
-                    error_branch,
-                    denied_branch,
-                    ..
-                } => [pending_branch, ready_branch, error_branch, denied_branch]
-                    .into_iter()
-                    .flatten()
-                    .all(|branch| valid_end(branch.start_offset, branch.body_span)),
-                _ => true,
-            };
-            if !valid {
-                return Err(SectionCodecError::NonCanonicalTable(
-                    "view_control_flow_spans",
-                ));
             }
         }
         Ok(())

@@ -1083,13 +1083,114 @@ struct CheckedViewParameter {
     value_type: ViewHandlerValueTypeId,
 }
 
+enum AuthoredViewBranchBody<'a> {
+    Value(ExprId),
+    Statements(&'a [arcweft_lang_hir::identity::StmtId]),
+    Statement(arcweft_lang_hir::identity::StmtId),
+}
+
 impl AuthoredViewBodyLowerer<'_> {
+    fn lower_branch_body(
+        &mut self,
+        body: AuthoredViewBranchBody<'_>,
+    ) -> Result<(), ViewProjectLowerError> {
+        let outer = self.locals.clone();
+        self.output
+            .instructions
+            .push(ViewProgramInstruction::BeginScope);
+        match body {
+            AuthoredViewBranchBody::Value(value) => self.lower_value(value)?,
+            AuthoredViewBranchBody::Statements(statements) => {
+                for &statement in statements {
+                    self.lower_statement(statement)?;
+                }
+            }
+            AuthoredViewBranchBody::Statement(statement) => self.lower_statement(statement)?,
+        }
+        self.output
+            .instructions
+            .push(ViewProgramInstruction::EndScope);
+        self.locals = outer;
+        Ok(())
+    }
+
+    fn lower_conditional(
+        &mut self,
+        condition: ExprId,
+        then_body: AuthoredViewBranchBody<'_>,
+        else_body: Option<AuthoredViewBranchBody<'_>>,
+    ) -> Result<(), ViewProjectLowerError> {
+        let owner = self.owner;
+        let invalid = || ViewProjectLowerError::MissingCheckedViewProjection { owner };
+        let condition = ViewExpressionLowerer {
+            project: self.project,
+            analysis: self.analysis,
+            world: self.registered_world,
+            owner: self.owner,
+            view: self.view,
+            parameters: self.parameters,
+            locals: &self.locals,
+            output: self.output,
+        }
+        .lower(condition)?;
+        let branch = self.output.instructions.len();
+        self.output
+            .instructions
+            .push(ViewProgramInstruction::Branch {
+                condition,
+                then_span: 0,
+                else_span: None,
+                source: None,
+            });
+        self.lower_branch_body(then_body)?;
+        let then_end = self.output.instructions.len();
+        let then_span = u32::try_from(then_end - branch - 1).map_err(|_| invalid())?;
+        let else_span = if let Some(body) = else_body {
+            self.lower_branch_body(body)?;
+            Some(u32::try_from(self.output.instructions.len() - then_end).map_err(|_| invalid())?)
+        } else {
+            None
+        };
+        let ViewProgramInstruction::Branch {
+            then_span: stored_then,
+            else_span: stored_else,
+            ..
+        } = &mut self.output.instructions[branch]
+        else {
+            return Err(invalid());
+        };
+        *stored_then = then_span;
+        *stored_else = else_span;
+        Ok(())
+    }
+
     fn lower_statement(
         &mut self,
         statement: arcweft_lang_hir::identity::StmtId,
     ) -> Result<(), ViewProjectLowerError> {
         let invalid = || ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner };
         let row = self.module.resolve_stmt(statement).map_err(|_| invalid())?;
+        if let arcweft_lang_hir::stmt::HirStmtKind::If(branch) = row.kind() {
+            let then_body = AuthoredViewBranchBody::Statements(
+                branch
+                    .then_body()
+                    .ordinary_statements()
+                    .ok_or_else(invalid)?,
+            );
+            let else_body = match branch.else_branch() {
+                Some(arcweft_lang_hir::stmt::HirConditionalElseBranch::Body(body)) => {
+                    Some(AuthoredViewBranchBody::Statements(
+                        body.ordinary_statements().ok_or_else(invalid)?,
+                    ))
+                }
+                Some(arcweft_lang_hir::stmt::HirConditionalElseBranch::ElseIf(statement)) => {
+                    Some(AuthoredViewBranchBody::Statement(*statement))
+                }
+                None => None,
+            };
+            return self.lower_conditional(branch.condition(), then_body, else_body);
+        }
+
         match row.kind().evaluation_plan() {
             arcweft_lang_hir::stmt::HirStmtEvaluationPlan::Binding { .. } => {
                 let execution = ViewExpressionLowerer {
@@ -1163,6 +1264,13 @@ impl AuthoredViewBodyLowerer<'_> {
             .analysis
             .expression(value)
             .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
+        if let arcweft_lang_hir::expr::HirExprKind::If(branch) = expression.kind() {
+            return self.lower_conditional(
+                branch.condition(),
+                AuthoredViewBranchBody::Value(branch.then_branch()),
+                Some(AuthoredViewBranchBody::Value(branch.else_branch())),
+            );
+        }
         if let arcweft_lang_hir::expr::HirExprKind::Block(block) = expression.kind() {
             let outer = self.locals.clone();
             self.output

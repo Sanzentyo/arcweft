@@ -925,9 +925,6 @@ fn remap_program_references(
                 remap_program(&mut argument.value_program, offset)?;
             }
         }
-        ViewProgramInstruction::Branch {
-            condition_program, ..
-        } => remap_program(condition_program, offset)?,
         ViewProgramInstruction::RepeatKeyed {
             source_program,
             key_program,
@@ -957,6 +954,7 @@ fn remap_program_references(
         | ViewProgramInstruction::CloseElement
         | ViewProgramInstruction::BeginScope
         | ViewProgramInstruction::EndScope
+        | ViewProgramInstruction::Branch { .. }
         | ViewProgramInstruction::BindLocal { .. }
         | ViewProgramInstruction::EmitText { .. }
         | ViewProgramInstruction::EmitImage { .. }
