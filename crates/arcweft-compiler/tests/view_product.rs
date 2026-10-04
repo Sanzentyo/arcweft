@@ -1883,6 +1883,101 @@ fn source_text<'a>(document: &'a SourceDocument, span: &arcweft_source::SourceSp
 }
 
 #[test]
+fn authored_expression_programs_keep_distinct_operation_roots() {
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+view Main(label: String = "seed") {
+    Text(label)
+    Text(label)
+    Button(label, enabled = true)
+}
+"#;
+    let compiled =
+        project_view_fixture_with_entry(source, "arcweft-test://view-expression-sharing")
+            .compile()
+            .expect("equivalent expressions retain their accepted roots");
+    use arcweft_bundle::resource_codec::view::ViewTextSourceKind;
+    use arcweft_runtime_driver::presentation_handles::{
+        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    };
+    let product = compiled.view_product().product().as_ref().clone();
+    let text = compiled.view_product().text().unwrap().clone();
+    let expressions = text
+        .sources
+        .iter()
+        .filter_map(|source| match &source.kind {
+            ViewTextSourceKind::Program { program } => Some(program),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(expressions.len(), 3);
+    assert_eq!(
+        expressions
+            .iter()
+            .map(|expression| expression.program)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        3
+    );
+    for expression in &expressions[1..] {
+        assert_eq!(expression.inputs, expressions[0].inputs);
+        assert_eq!(expression.result_type, expressions[0].result_type);
+    }
+    let awbc = AwbcLowerer::new(
+        &compiled.runtime_plan().plan,
+        &compiled.runtime_plan().dialogue_content_catalog,
+        "main.arcw",
+    )
+    .lower()
+    .unwrap()
+    .program;
+    let awbc =
+        Arc::new(arcweft_bundle::standard_view::install_dialogue_handler_awbc(awbc).unwrap());
+    product
+        .program()
+        .unwrap()
+        .resource()
+        .validate_awbc_programs(&awbc, Some(&text))
+        .unwrap();
+    for expression in &expressions {
+        assert!(awbc.pure_program_binding(expression.program).is_some());
+    }
+    let mut runtime = BundleViewRuntime::try_new_with_awbc(
+        product.clone(),
+        Some(text.clone()),
+        Arc::clone(&awbc),
+    )
+    .unwrap();
+    let handle = PresentationHandleRecord::new(
+        PresentationHandleId::try_new("view.expression.roots").unwrap(),
+        PresentationHandleKind::View,
+        "view.Main".to_owned(),
+        None,
+        PresentationResourceState::Mounted,
+        None,
+        0,
+    );
+    let frame = runtime.evaluate(std::slice::from_ref(&handle), &[], false);
+    assert!(frame.diagnostics.is_empty(), "{frame:?}");
+    assert_eq!(frame.mounts[0].text.len(), 2);
+    for output in &frame.mounts[0].text {
+        assert!(
+            matches!(&output.value, arcweft_runtime_driver::view_runtime::BundleViewTextValue::Plain { value } if value == "seed")
+        );
+    }
+    assert_eq!(frame.mounts[0].action_buttons[0].label, "seed");
+    let snapshot = runtime.snapshot().unwrap();
+    let mut restored = BundleViewRuntime::try_new_with_awbc(product, Some(text), awbc).unwrap();
+    restored
+        .restore(&snapshot, std::slice::from_ref(&handle))
+        .unwrap();
+    let cold = restored.evaluate(&[handle], &[], false);
+    assert!(cold.diagnostics.is_empty(), "{cold:?}");
+    assert_eq!(frame, cold);
+}
+
+#[test]
 fn authored_element_geometry_inputs_reach_typed_layout() {
     use arcweft_presentation::appearance::PresentationEnvironment;
     use arcweft_view::geometry::*;
