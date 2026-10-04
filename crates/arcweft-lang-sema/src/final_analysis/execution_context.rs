@@ -20,6 +20,8 @@ use super::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedExecutionSource {
     EvaluateValue(ExprId),
+    /// Executes a binding and exports its owned values in canonical binding order.
+    ExportBinding(arcweft_lang_hir::identity::StmtId),
     InvokeBody(CheckedExecutionBodyOwner),
 }
 
@@ -254,6 +256,17 @@ impl FinalSemanticAnalysis {
     ) -> Result<HirSemanticPathRoot, FinalSemanticAnalysisError> {
         match source {
             CheckedExecutionSource::EvaluateValue(source) => self.execution_source_scope(*source),
+            CheckedExecutionSource::ExportBinding(source) => {
+                let location = self
+                    .hir_topology()
+                    .semantic_path((*source).into())
+                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+                    .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+                self.accepted_root_catalog()
+                    .root_for_hir(location.root())
+                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+                Ok(location.root().clone())
+            }
             CheckedExecutionSource::InvokeBody(owner) => {
                 if !self.has_execution_body(owner) {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);

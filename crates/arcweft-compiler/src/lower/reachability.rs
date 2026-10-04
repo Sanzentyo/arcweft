@@ -443,7 +443,9 @@ fn checked_call_edge(
                 declaration: declaration.clone(),
             }
         }
-        HirRuntimeExecutableOwner::Value(_) | HirRuntimeExecutableOwner::DeclarationBody { .. } => {
+        HirRuntimeExecutableOwner::Value(_)
+        | HirRuntimeExecutableOwner::Statement(_)
+        | HirRuntimeExecutableOwner::DeclarationBody { .. } => {
             return Err(RuntimeReachabilityProjectionError::MissingCheckedEdge {
                 site: source,
                 expected_target: Box::new(target),

@@ -55,13 +55,13 @@ impl From<HirBodyChild> for CheckedExecutionOperation {
 pub(crate) struct PreparedExecutableSuspensionCatalog {
     expressions: BTreeMap<ExprId, PreparedExecutableSuspensionRow>,
     bodies: BTreeMap<Arc<CheckedExecutionBodyOwner>, PreparedExecutableSuspensionRow>,
-    statements: BTreeMap<StmtId, Box<[CheckedExecutionOperation]>>,
+    statements: BTreeMap<StmtId, PreparedExecutableSuspensionRow>,
 }
 
 impl PreparedExecutableSuspensionCatalog {
     pub(crate) fn new(
         expressions: BTreeMap<ExprId, PreparedExecutableSuspensionRow>,
-        statements: BTreeMap<StmtId, Box<[CheckedExecutionOperation]>>,
+        statements: BTreeMap<StmtId, PreparedExecutableSuspensionRow>,
         bodies: BTreeMap<Arc<CheckedExecutionBodyOwner>, PreparedExecutableSuspensionRow>,
     ) -> Self {
         Self {
@@ -163,7 +163,11 @@ impl PreparedExecutableSuspensionCatalog {
             .values()
             .chain(self.bodies.values())
             .map(PreparedExecutableSuspensionRow::children)
-            .chain(self.statements.values().map(AsRef::as_ref))
+            .chain(
+                self.statements
+                    .values()
+                    .map(PreparedExecutableSuspensionRow::children),
+            )
         {
             if edges.windows(2).any(|pair| pair[0] >= pair[1])
                 || edges.iter().any(|edge| match edge {
@@ -203,7 +207,11 @@ impl PreparedExecutableSuspensionCatalog {
             .values()
             .chain(self.bodies.values())
             .map(PreparedExecutableSuspensionRow::children)
-            .chain(self.statements.values().map(AsRef::as_ref))
+            .chain(
+                self.statements
+                    .values()
+                    .map(PreparedExecutableSuspensionRow::children),
+            )
         {
             for child in edges {
                 if matches!(child, CheckedExecutionOperation::Place(_)) {
@@ -225,7 +233,7 @@ impl PreparedExecutableSuspensionCatalog {
                 CheckedExecutionOperation::Value(owner) => self.expressions[&owner].children(),
                 CheckedExecutionOperation::Body(ref owner) => self.bodies[owner].children(),
                 CheckedExecutionOperation::Place(_) => &[],
-                CheckedExecutionOperation::Statement(owner) => &self.statements[&owner],
+                CheckedExecutionOperation::Statement(owner) => self.statements[&owner].children(),
             };
             for child in children {
                 let count = incoming
@@ -252,7 +260,7 @@ impl PreparedExecutableSuspensionCatalog {
 pub(super) struct CheckedExecutionCatalog {
     expressions: BTreeMap<ExprId, PreparedExecutableSuspensionRow>,
     bodies: BTreeMap<Arc<CheckedExecutionBodyOwner>, PreparedExecutableSuspensionRow>,
-    statements: BTreeMap<StmtId, Box<[CheckedExecutionOperation]>>,
+    statements: BTreeMap<StmtId, PreparedExecutableSuspensionRow>,
 }
 
 impl CheckedExecutionCatalog {
@@ -290,9 +298,8 @@ impl CheckedExecutionCatalog {
         let row = match &root {
             CheckedExecutionOperation::Value(owner) => self.expressions.get(owner)?,
             CheckedExecutionOperation::Body(owner) => self.bodies.get(owner)?,
-            CheckedExecutionOperation::Place(_) | CheckedExecutionOperation::Statement(_) => {
-                return None;
-            }
+            CheckedExecutionOperation::Statement(owner) => self.statements.get(owner)?,
+            CheckedExecutionOperation::Place(_) => return None,
         };
         let mut visited = BTreeSet::new();
         let mut pending = vec![root];
@@ -316,7 +323,7 @@ impl CheckedExecutionCatalog {
                 }
                 CheckedExecutionOperation::Statement(owner) => {
                     statements.insert(owner);
-                    pending.extend(self.statements.get(&owner)?.iter().cloned());
+                    pending.extend(self.statements.get(&owner)?.children().iter().cloned());
                 }
             }
         }

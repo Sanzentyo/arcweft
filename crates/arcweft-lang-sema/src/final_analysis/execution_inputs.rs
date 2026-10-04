@@ -40,6 +40,7 @@ use super::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedExecutionCoordinate {
     Value(CheckedSemanticPath),
+    Binding(CheckedSemanticPath),
     CallableBody(CheckedSemanticPath),
     DeclarationBody(StableCheckedBodyCoordinate),
 }
@@ -47,7 +48,7 @@ pub enum CheckedExecutionCoordinate {
 impl CheckedExecutionCoordinate {
     pub const fn path(&self) -> &CheckedSemanticPath {
         match self {
-            Self::Value(path) | Self::CallableBody(path) => path,
+            Self::Value(path) | Self::Binding(path) | Self::CallableBody(path) => path,
             Self::DeclarationBody(body) => body.path(),
         }
     }
@@ -167,6 +168,7 @@ pub struct CheckedExecutionInputAbi {
     inputs: Box<[CheckedExecutionInput]>,
     parameters: Box<[CheckedExecutionParameter]>,
     synthetic_uses: Box<[CheckedExecutionSyntheticUse]>,
+    binding_outputs: Box<[CheckedExecutableCapture]>,
 }
 
 impl CheckedExecutionInputAbi {
@@ -268,6 +270,11 @@ impl CheckedExecutionInputAbi {
         self.execution.operations()
     }
 
+    /// Canonical source-order owned outputs of a binding extraction.
+    pub fn binding_outputs(&self) -> &[CheckedExecutableCapture] {
+        &self.binding_outputs
+    }
+
     pub const fn result(&self) -> &crate::callable::CallableResultSchema {
         &self.result
     }
@@ -313,6 +320,7 @@ impl super::CheckedClosedExecutionContext<'_> {
         self.admit_root(&source)?;
         let analysis = self.analysis();
         let coordinates = SemanticCoordinateIndex::new(analysis.accepted_root_catalog(), analysis);
+        let mut binding_outputs = Vec::new();
         let (execution, coordinate, input_scope, result, effects) = match &source {
             CheckedExecutionSource::EvaluateValue(owner) => {
                 let expression = analysis.expression(*owner).ok_or(
@@ -333,6 +341,64 @@ impl super::CheckedClosedExecutionContext<'_> {
                     path,
                     crate::callable::CallableResultSchema::Value(self.instantiate_type(result)?),
                     expression.effects().clone(),
+                )
+            }
+            CheckedExecutionSource::ExportBinding(owner) => {
+                let module = self
+                    .project()
+                    .modules()
+                    .find(|(_, module)| module.module_id() == owner.module())
+                    .map(|(_, module)| module)
+                    .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+                let statement = module
+                    .resolve_stmt(*owner)
+                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+                let locals = match statement.kind().evaluation_plan() {
+                    arcweft_lang_hir::stmt::HirStmtEvaluationPlan::Binding { locals, .. } => locals,
+                    arcweft_lang_hir::stmt::HirStmtEvaluationPlan::LetElse {
+                        success_locals,
+                        ..
+                    } => success_locals,
+                    _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into()),
+                };
+                let checked = analysis
+                    .statement(*owner)
+                    .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+                let execution = analysis
+                    .statement_execution_region(*owner)
+                    .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+                let coordinate = coordinates
+                    .statement(*owner)
+                    .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                let path = coordinate.path().clone();
+                for &local in locals {
+                    let binding = analysis
+                        .local(local)
+                        .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local })?;
+                    binding_outputs.push(CheckedExecutableCapture::new(
+                        local,
+                        coordinates
+                            .binding(local)
+                            .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?,
+                        self.instantiate_type(binding.ty())?,
+                    ));
+                }
+                let result = if binding_outputs.is_empty() {
+                    TypeKind::Unit
+                } else {
+                    TypeKind::Tuple(
+                        binding_outputs
+                            .iter()
+                            .map(|binding| binding.ty().clone())
+                            .collect(),
+                    )
+                };
+                (
+                    execution,
+                    CheckedExecutionCoordinate::Binding(path.clone()),
+                    path,
+                    crate::callable::CallableResultSchema::Value(result),
+                    checked.effects().clone(),
                 )
             }
             CheckedExecutionSource::InvokeBody(owner) => {
@@ -648,6 +714,7 @@ impl super::CheckedClosedExecutionContext<'_> {
             inputs: inputs.into_boxed_slice(),
             parameters,
             synthetic_uses: synthetic_uses.into_boxed_slice(),
+            binding_outputs: binding_outputs.into_boxed_slice(),
         })
     }
 }

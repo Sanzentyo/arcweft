@@ -307,65 +307,63 @@ impl<'a> CallableEffectGraph<'a> {
         crate::final_analysis::execution_regions::PreparedExecutableSuspensionCatalog,
         FinalSemanticAnalysisError,
     > {
-        let mut closed = BTreeMap::new();
-        let mut bodies = BTreeMap::new();
-        for (owner, direct, expressions, children, requires_flow) in
-            execution.expression_execution_rows()
-        {
-            control.check()?;
-            let suspension = if direct
-                || self.selected_expressions_may_suspend(expressions.iter().copied(), rows)
-            {
-                crate::final_analysis::CheckedSuspensionRole::MaySuspend
-            } else {
-                crate::final_analysis::CheckedSuspensionRole::NonSuspending
-            };
-            let control_role =
-                self.selected_expressions_control_role(expressions.iter().copied(), requires_flow);
-            if closed
-                .insert(
-                    owner,
+        let project_row =
+            |direct: bool,
+             expressions: &BTreeSet<ExprId>,
+             children: &BTreeSet<crate::final_analysis::CheckedExecutionOperation>,
+             requires_flow: bool| {
+                control.check()?;
+                let suspension = if direct
+                    || self.selected_expressions_may_suspend(expressions.iter().copied(), rows)
+                {
+                    crate::final_analysis::CheckedSuspensionRole::MaySuspend
+                } else {
+                    crate::final_analysis::CheckedSuspensionRole::NonSuspending
+                };
+                let control_role = self
+                    .selected_expressions_control_role(expressions.iter().copied(), requires_flow);
+                Ok::<_, FinalSemanticAnalysisError>(
                     crate::final_analysis::statement_effects::PreparedExecutableSuspensionRow::new(
-                        children
-                            .iter()
-                            .cloned()
-                            .collect::<Vec<_>>()
-                            .into_boxed_slice(),
+                        children.iter().cloned().collect(),
                         suspension,
                         control_role,
                     ),
+                )
+            };
+        let mut closed = BTreeMap::new();
+        for (owner, direct, expressions, children, requires_flow) in
+            execution.expression_execution_rows()
+        {
+            if closed
+                .insert(
+                    owner,
+                    project_row(direct, expressions, children, requires_flow)?,
                 )
                 .is_some()
             {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             }
         }
+        let mut bodies = BTreeMap::new();
         for (owner, direct, expressions, children, requires_flow) in execution.body_execution_rows()
         {
-            control.check()?;
-            let suspension = if direct
-                || self.selected_expressions_may_suspend(expressions.iter().copied(), rows)
-            {
-                crate::final_analysis::CheckedSuspensionRole::MaySuspend
-            } else {
-                crate::final_analysis::CheckedSuspensionRole::NonSuspending
-            };
-            let control_role =
-                self.selected_expressions_control_role(expressions.iter().copied(), requires_flow);
             bodies.insert(
                 owner,
-                crate::final_analysis::statement_effects::PreparedExecutableSuspensionRow::new(
-                    children.iter().cloned().collect(),
-                    suspension,
-                    control_role,
-                ),
+                project_row(direct, expressions, children, requires_flow)?,
+            );
+        }
+        let mut statements = BTreeMap::new();
+        for (owner, direct, expressions, children, requires_flow) in
+            execution.statement_execution_rows()
+        {
+            statements.insert(
+                owner,
+                project_row(direct, expressions, children, requires_flow)?,
             );
         }
         Ok(
             crate::final_analysis::execution_regions::PreparedExecutableSuspensionCatalog::new(
-                closed,
-                execution.statement_execution_edges(),
-                bodies,
+                closed, statements, bodies,
             ),
         )
     }

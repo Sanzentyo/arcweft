@@ -3687,6 +3687,7 @@ fn define_pure_programs(
         let abi = program.admission().input_abi();
         let body = (|| -> Result<RuntimeFunctionSiteBodySeed, RuntimePlanLowerError> {
             let module_id = match program.source() {
+                CheckedExecutionSource::ExportBinding(owner) => owner.module(),
                 CheckedExecutionSource::EvaluateValue(owner)
                 | CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(
                     owner,
@@ -3719,6 +3720,56 @@ fn define_pure_programs(
             let expression_compatible =
                 definition.body_kind == RuntimeFunctionSiteBodyKind::Expression;
             let ops = match program.source() {
+                CheckedExecutionSource::ExportBinding(statement) => {
+                    let fields = if abi.binding_outputs().is_empty() {
+                        Vec::new()
+                    } else {
+                        let RuntimeTypeShape::Tuple(types) = program.result().shape() else {
+                            return Err(RuntimePlanLowerError::new(
+                                "binding export has no tuple result contract",
+                            ));
+                        };
+                        if types.len() != abi.binding_outputs().len() {
+                            return Err(RuntimePlanLowerError::new(
+                                "binding export output arity disagrees with ABI",
+                            ));
+                        }
+                        let locals = context.executable_locals(definition.scope.scope())?;
+                        abi.binding_outputs()
+                            .iter()
+                            .zip(types)
+                            .map(|(binding, ty)| {
+                                let local = locals.get(&binding.local()).ok_or_else(|| {
+                                    RuntimePlanLowerError::new(
+                                        "binding output has no admitted local",
+                                    )
+                                })?;
+                                Ok(RuntimeExprSeed::new(
+                                    ty.identity(),
+                                    RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                        local.clone(),
+                                        RuntimeLocalReadMode::Move,
+                                    )),
+                                ))
+                            })
+                            .collect::<Result<Vec<_>, RuntimePlanLowerError>>()?
+                    };
+                    let result = if fields.is_empty() {
+                        RuntimeExprSeedKind::Value(RuntimeValue::Unit)
+                    } else {
+                        RuntimeExprSeedKind::Tuple(fields.into_boxed_slice())
+                    };
+                    flow.lower_statement_ids_with_tail(
+                        &[*statement],
+                        RuntimeFlowTail::PreparedOps(
+                            vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                                program.result().identity(),
+                                result,
+                            ))]
+                            .into_boxed_slice(),
+                        ),
+                    )?
+                }
                 CheckedExecutionSource::EvaluateValue(owner) => {
                     if expression_compatible {
                         return lowerer

@@ -51,6 +51,8 @@ pub enum HirRuntimeExecutableOwner {
     },
     /// Evaluates an expression value; a callable's latent body is a separate owner.
     Value(ExprId),
+    /// Executes a checked statement within its accepted lexical owner.
+    Statement(StmtId),
     /// Invokes an explicit or implicit callable expression's body.
     CallableBody(ExprId),
 }
@@ -1292,6 +1294,7 @@ impl<'project> HirAnalysisProjectView<'project> {
         let active_closure = match owner {
             HirRuntimeExecutableOwner::CallableBody(expression) => Some(*expression),
             HirRuntimeExecutableOwner::Value(_)
+            | HirRuntimeExecutableOwner::Statement(_)
             | HirRuntimeExecutableOwner::DeclarationBody { .. }
             | HirRuntimeExecutableOwner::Item(_)
             | HirRuntimeExecutableOwner::ImplMethod(_) => None,
@@ -1610,6 +1613,25 @@ fn execution_roots(
                     }),
             );
             Ok(roots)
+        }
+        HirRuntimeExecutableOwner::Statement(statement) => {
+            let module = project
+                .modules()
+                .find_map(|(_, module)| {
+                    (module.module_id() == statement.module()).then_some(module.as_ref())
+                })
+                .ok_or_else(|| HirRuntimeReachabilityError::UnknownRoot {
+                    owner: owner.clone(),
+                })?;
+            module.resolve_stmt(*statement).map_err(|_| {
+                HirRuntimeReachabilityError::UnknownRoot {
+                    owner: owner.clone(),
+                }
+            })?;
+            Ok(HirRuntimeExecutionRoots {
+                statements: vec![*statement],
+                ..HirRuntimeExecutionRoots::default()
+            })
         }
         HirRuntimeExecutableOwner::Value(owner) => {
             let module = project

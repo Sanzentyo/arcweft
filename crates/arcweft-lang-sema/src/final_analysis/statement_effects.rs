@@ -275,13 +275,26 @@ impl PreparedExecutionEffectCatalog {
         })
     }
 
-    pub(crate) fn statement_execution_edges(
+    pub(crate) fn statement_execution_rows(
         &self,
-    ) -> BTreeMap<StmtId, Box<[CheckedExecutionOperation]>> {
-        self.statement_rows
-            .iter()
-            .map(|(&owner, row)| (owner, row.children.iter().cloned().collect()))
-            .collect()
+    ) -> impl Iterator<
+        Item = (
+            StmtId,
+            bool,
+            &BTreeSet<ExprId>,
+            &BTreeSet<CheckedExecutionOperation>,
+            bool,
+        ),
+    > + '_ {
+        self.statement_rows.iter().map(|(&owner, row)| {
+            (
+                owner,
+                row.direct_suspension,
+                &row.expressions,
+                &row.children,
+                row.requires_flow,
+            )
+        })
     }
     pub(crate) fn declaration_effects(
         &self,

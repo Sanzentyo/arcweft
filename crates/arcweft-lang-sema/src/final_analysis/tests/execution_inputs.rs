@@ -645,3 +645,104 @@ fn deterministic_defer_checks_control_in_its_own_cleanup_frame() {
         }
     }
 }
+
+#[test]
+fn binding_export_abi_retains_owned_pattern_outputs_and_root_membership() {
+    let world = fixture(
+        "fn root(value: (String, i64)) { let (label, count) = value; }\nflow other() { return () }",
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let project = world.project.analysis_view().unwrap();
+    let binding = project
+        .modules()
+        .flat_map(|(_, module)| module.statements())
+        .find_map(|(owner, statement)| {
+            matches!(
+                statement.kind(),
+                arcweft_lang_hir::stmt::HirStmtKind::Let { .. }
+            )
+            .then_some(owner)
+        })
+        .unwrap();
+    let source = CheckedExecutionSource::ExportBinding(binding);
+    let context = report
+        .checked_execution_context(project, &world.symbols, source.clone(), None)
+        .unwrap();
+    let admission = context.checked_deterministic_program(source).unwrap();
+    let abi = admission.input_abi();
+    abi.validate_for(&context).unwrap();
+    assert!(
+        abi.operations()
+            .contains(&CheckedExecutionOperation::Statement(binding))
+    );
+    assert!(matches!(
+        abi.coordinate(),
+        CheckedExecutionCoordinate::Binding(_)
+    ));
+    assert!(abi.parameters().is_empty());
+    assert_eq!(abi.inputs().len(), 1);
+    assert_eq!(
+        abi.binding_outputs()
+            .iter()
+            .map(|output| output.ty())
+            .collect::<Vec<_>>(),
+        vec![&TypeKind::String, &TypeKind::I64]
+    );
+    assert_eq!(
+        abi.result().value_type(),
+        Some(&TypeKind::Tuple(vec![TypeKind::String, TypeKind::I64]))
+    );
+    for output in abi.binding_outputs() {
+        assert!(
+            output
+                .origin()
+                .path()
+                .is_at_or_below(abi.coordinate().path())
+        );
+    }
+    let foreign = project
+        .modules()
+        .flat_map(|(_, module)| module.statements())
+        .find_map(|(owner, statement)| {
+            matches!(
+                statement.kind(),
+                arcweft_lang_hir::stmt::HirStmtKind::Return { .. }
+            )
+            .then_some(owner)
+        })
+        .unwrap();
+    assert!(matches!(
+        context.checked_execution_input_abi(CheckedExecutionSource::ExportBinding(foreign)),
+        Err(CheckedExecutionContextError::ScopeMismatch { .. })
+    ));
+}
+
+#[test]
+fn binding_export_retains_dynamic_call_suspension_refusal() {
+    let world = fixture(
+        "fn root(callback: i64 -> i64 effects {}) { let value = callback(41i64); }",
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let project = world.project.analysis_view().unwrap();
+    let binding = project
+        .modules()
+        .flat_map(|(_, module)| module.statements())
+        .find_map(|(owner, statement)| {
+            matches!(
+                statement.kind(),
+                arcweft_lang_hir::stmt::HirStmtKind::Let { .. }
+            )
+            .then_some(owner)
+        })
+        .unwrap();
+    let source = CheckedExecutionSource::ExportBinding(binding);
+    let context = report
+        .checked_execution_context(project, &world.symbols, source.clone(), None)
+        .unwrap();
+    assert!(matches!(
+        context.checked_deterministic_program(source),
+        Err(crate::final_analysis::CheckedProgramAdmissionError::Suspension)
+    ));
+}

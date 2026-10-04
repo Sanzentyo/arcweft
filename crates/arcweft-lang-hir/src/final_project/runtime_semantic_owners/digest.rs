@@ -106,6 +106,10 @@ fn digest_typed_ids<T: HirTypedId>(
 
 fn digest_executable(hasher: &mut Sha256, owner: &HirRuntimeExecutableOwner) {
     match owner {
+        HirRuntimeExecutableOwner::Statement(owner) => {
+            hasher.update([5]);
+            hasher.update(owner.raw().cache_fingerprint_input());
+        }
         HirRuntimeExecutableOwner::Item(owner) => {
             hasher.update([0]);
             hasher.update(owner.raw().cache_fingerprint_input());

@@ -263,6 +263,13 @@ fn root_kind_matches(
     root: &HirRuntimeReachabilityRoot,
 ) -> bool {
     match (root.kind, &root.owner) {
+        (
+            HirRuntimeReachabilityRootKind::CheckedProgram,
+            HirRuntimeExecutableOwner::Statement(owner),
+        ) => project
+            .modules()
+            .find(|(_, module)| module.module_id() == owner.module())
+            .is_some_and(|(_, module)| module.resolve_stmt(*owner).is_ok()),
         (HirRuntimeReachabilityRootKind::CheckedFlow, HirRuntimeExecutableOwner::Item(owner)) => {
             resolve_item_kind(project, *owner)
                 .is_some_and(|kind| matches!(kind, HirItemKind::Flow(_)))

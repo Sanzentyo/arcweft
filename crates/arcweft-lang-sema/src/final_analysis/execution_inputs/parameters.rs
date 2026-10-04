@@ -60,7 +60,8 @@ impl super::super::CheckedClosedExecutionContext<'_> {
         let coordinates = SemanticCoordinateIndex::new(analysis.accepted_root_catalog(), analysis);
         let mut parameters = Vec::new();
         match source {
-            CheckedExecutionSource::EvaluateValue(_) => {}
+            CheckedExecutionSource::EvaluateValue(_) | CheckedExecutionSource::ExportBinding(_) => {
+            }
             CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
                 declaration,
                 ..

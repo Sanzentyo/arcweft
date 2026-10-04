@@ -31,6 +31,9 @@ impl CheckedDeterministicProgram {
     pub fn reachability_owner(&self) -> arcweft_lang_hir::project::HirRuntimeExecutableOwner {
         use arcweft_lang_hir::project::HirRuntimeExecutableOwner;
         match self.inputs.source() {
+            CheckedExecutionSource::ExportBinding(owner) => {
+                HirRuntimeExecutableOwner::Statement(*owner)
+            }
             CheckedExecutionSource::EvaluateValue(owner) => {
                 HirRuntimeExecutableOwner::Value(*owner)
             }

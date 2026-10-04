@@ -205,6 +205,78 @@ mod tests {
     }
 
     #[test]
+    fn binding_program_exports_selected_pattern_locals_through_native_and_awbc() {
+        for (source, args, expected, output_count) in [
+            (
+                "fn evidence(value: (String, i64)) { let (label, count) = value; }\nflow main() -> String { return \"ok\" }\n",
+                vec![RuntimeValue::Tuple(vec![
+                    RuntimeValue::String("seed".to_owned()),
+                    RuntimeValue::i64(42),
+                ])],
+                RuntimeValue::Tuple(vec![
+                    RuntimeValue::String("seed".to_owned()),
+                    RuntimeValue::i64(42),
+                ]),
+                2,
+            ),
+            (
+                "struct Row { label: String, count: i64 }\nfn evidence(value: i64) { let Row { label, count } = Row { label: \"seed\", count: value }; }\nflow main() -> String { return \"ok\" }\n",
+                vec![RuntimeValue::i64(42)],
+                RuntimeValue::Tuple(vec![
+                    RuntimeValue::String("seed".to_owned()),
+                    RuntimeValue::i64(42),
+                ]),
+                2,
+            ),
+            (
+                "fn evidence(value: i64) { let _ = value; }\nflow main() -> String { return \"ok\" }\n",
+                vec![RuntimeValue::i64(42)],
+                RuntimeValue::Unit,
+                0,
+            ),
+        ] {
+            let compiled = crate::source::compile_source(source).unwrap();
+            let lease = &compiled.analysis;
+            let analysis = lease.final_analysis();
+            let statement = lease
+                .hir_project()
+                .analysis_view()
+                .unwrap()
+                .modules()
+                .flat_map(|(_, module)| module.statements())
+                .find_map(|(owner, statement)| {
+                    matches!(
+                        statement.kind(),
+                        arcweft_lang_hir::stmt::HirStmtKind::Let { .. }
+                    )
+                    .then_some(owner)
+                })
+                .unwrap();
+            let source = CheckedExecutionSource::ExportBinding(statement);
+            let context = analysis
+                .checked_execution_context(
+                    lease.hir_project().analysis_view().unwrap(),
+                    lease.project_symbols(),
+                    source.clone(),
+                    None,
+                )
+                .unwrap();
+            let admission = Arc::new(context.checked_deterministic_program(source).unwrap());
+            assert_eq!(admission.input_abi().binding_outputs().len(), output_count);
+            assert_eq!(admission.input_abi().inputs().len(), 1);
+            let fact = project(
+                id(),
+                admission,
+                lease.project_symbols(),
+                lease.registered_world(),
+                analysis,
+            )
+            .unwrap();
+            assert_program_execution(&compiled, fact, &args, expected);
+        }
+    }
+
+    #[test]
     fn declared_program_executes_full_formal_inputs_through_native_and_awbc() {
         assert_declared_program(
             "pub fn root(value: i64, unused: i64) -> i64 { value + 1i64 }\nflow main() -> String { return \"ok\" }\n",
