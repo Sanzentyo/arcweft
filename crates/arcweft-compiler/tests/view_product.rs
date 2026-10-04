@@ -1883,6 +1883,151 @@ fn source_text<'a>(document: &'a SourceDocument, span: &arcweft_source::SourceSp
 }
 
 #[test]
+fn authored_element_geometry_inputs_reach_typed_layout() {
+    use arcweft_presentation::appearance::PresentationEnvironment;
+    use arcweft_view::geometry::*;
+    use arcweft_view::{ViewMountId, style::*};
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+view Main() { Panel(x = 12px, y = 34px, width = 200px, height = 90px) }
+view Other() { Panel(width = 17px, height = 18px) }
+style Primary { Panel { color = rgba(10, 20, 30, 255) } }
+"#;
+    let compiled = project_view_fixture_with_entry(source, "arcweft-test://view-element-geometry")
+        .compile()
+        .expect("checked element geometry compiles");
+    let product = compiled.view_product().product();
+    let program = product.program().unwrap().resource();
+    let style = product.style().unwrap().resource();
+    assert_eq!(
+        arcweft_bundle::resource_codec::view::ViewStyleResource::decode_canonical_section(
+            &style.encode_canonical_section().unwrap()
+        )
+        .unwrap(),
+        *style
+    );
+    let main = program
+        .definitions
+        .iter()
+        .find(|view| view.public_id.as_str() == "view.Main")
+        .unwrap();
+    let ViewProgramInstruction::OpenElement {
+        element, styles, ..
+    } = &program.instructions[main.body.start_instruction as usize]
+    else {
+        panic!("element instruction");
+    };
+    assert_eq!(styles.len(), 1);
+    let ViewStyleApplicationTarget::Inline { patch } = styles[0] else {
+        panic!("inline geometry");
+    };
+    let patch = style.inline_patch(patch).unwrap();
+    assert_eq!(patch.declarations().len(), 5);
+    for declaration in patch.declarations() {
+        let range = &style.source_map_refs[declaration.source().value() as usize];
+        let expected = match declaration.property() {
+            ViewPropertyKind::Position | ViewPropertyKind::Left => "12px",
+            ViewPropertyKind::Top => "34px",
+            ViewPropertyKind::Width => "200px",
+            ViewPropertyKind::Height => "90px",
+            _ => panic!("geometry property"),
+        };
+        assert_eq!(
+            &source[range.start_byte() as usize..range.end_byte() as usize],
+            expected
+        );
+    }
+    let mount = ViewMountId::from_raw(7);
+    let key = ViewStyleNodeKey::new(mount, Vec::new(), main.body.start_instruction);
+    let node = ViewStyleNodeFacts::new(Some(*element));
+    let applications = [ViewStyleApplication::new(
+        styles[0].clone(),
+        ViewStyleScopeId::new(1),
+        0,
+        0,
+        ViewStyleBoundaryFacts::SAME_VIEW,
+    )];
+    let environment = PresentationEnvironment::initial(
+        arcweft_presentation::appearance::PresentationEnvironmentValues::ENGINE_DEFAULT,
+    );
+    let mut resolver = ViewStyleResolver::new(ViewStyleResolverLimits::default());
+    let context = ViewStyleResolveContext {
+        node_key: &key,
+        node: &node,
+        ancestors: &[],
+        applications: &applications,
+        parent: None,
+        parent_node_key: None,
+        inherited_axes: ViewInheritedBoxAxes::for_host_seed(
+            mount,
+            ViewBoxAxisSeedGeneration::INITIAL,
+            ViewBoxAxisHostSeed::Default,
+        ),
+        axis_provider_participation: ViewAxisProviderParticipation::ProjectionOnly,
+        environment: &environment,
+        revisions: ViewStyleRevisionSet::default(),
+        trace: ViewStyleTraceMode::Off,
+    };
+    let computed = resolver
+        .resolve(&style.program, &context)
+        .unwrap()
+        .computed()
+        .clone();
+    let physical = computed.physical_box();
+    assert_eq!(physical.position, ViewPosition::Absolute);
+    let intrinsic = ViewIntrinsicMeasure {
+        content_size: ViewGeometrySize::new(0, 0),
+        revision: ViewIntrinsicMeasureRevision::new(1),
+    };
+    let measured = measure_box(&key, &physical, intrinsic).unwrap();
+    let placed = place_box(
+        &key,
+        &physical,
+        measured,
+        ViewGeometryRect::new(10_000, 20_000, 600_000, 500_000).unwrap(),
+        ViewGeometryPoint::new(100_000, 100_000),
+    )
+    .unwrap();
+    assert_eq!(
+        placed.border_box,
+        ViewGeometryRect::new(22_000, 54_000, 222_000, 144_000).unwrap()
+    );
+    assert!(
+        resolver
+            .resolve(&style.program, &context)
+            .unwrap()
+            .cache_hit()
+    );
+    let other = program
+        .definitions
+        .iter()
+        .find(|view| view.public_id.as_str() == "view.Other")
+        .unwrap();
+    let ViewProgramInstruction::OpenElement {
+        styles: other_styles,
+        ..
+    } = &program.instructions[other.body.start_instruction as usize]
+    else {
+        panic!("other element");
+    };
+    assert_ne!(styles, other_styles, "each element owns its patch");
+}
+
+#[test]
+fn authored_element_geometry_refuses_units_without_a_layout_conversion() {
+    for value in ["2pt", "2e0em"] {
+        let source = format!(
+            "entry cli @entry.main {{ goto @flow.main }}\nflow main() -> String {{ return \"done\" }}\nview Main() {{ Panel(width = {value}) }}"
+        );
+        let error = project_view_fixture_with_entry(&source, "arcweft-test://view-geometry-unit")
+            .compile()
+            .unwrap_err();
+        assert_eq!(error.stage(), "view-lower");
+    }
+}
+
+#[test]
 fn authored_button_inputs_use_typed_expression_execution() {
     use arcweft_core::value::{RuntimeBinding, RuntimeValue};
     use arcweft_runtime_driver::presentation_handles::{
@@ -1892,6 +2037,7 @@ fn authored_button_inputs_use_typed_expression_execution() {
         "Button(identity(label), enabled = enabled)",
         "Button(identity(label), enabled)",
         "Button(enabled = enabled, label = identity(label))",
+        "Button(identity(label), width = 200px, y = 12px, enabled = enabled)",
     ] {
         let source = r#"
 entry cli @entry.main { goto @flow.main }

@@ -4009,6 +4009,29 @@ impl Analyzer<'_, '_, '_> {
                     return Err(AnalyzerExpressionError::rejected(argument.value()));
                 }
             }
+            if role.is_some_and(|role| {
+                matches!(
+                    role,
+                    arcweft_view::ViewElementArgumentRole::X
+                        | arcweft_view::ViewElementArgumentRole::Y
+                        | arcweft_view::ViewElementArgumentRole::Width
+                        | arcweft_view::ViewElementArgumentRole::Height
+                )
+            }) {
+                self.materialize_compile_time_scalar_fact(
+                    module,
+                    argument.value(),
+                    &crate::checked_text_proxy::CheckedCompileTimeScalarKind::Length,
+                    expected
+                        .clone()
+                        .ok_or_else(|| AnalyzerExpressionError::rejected(argument.value()))?,
+                    self.facts
+                        .expressions()
+                        .get(&argument.value())
+                        .cloned()
+                        .ok_or_else(|| AnalyzerExpressionError::rejected(argument.value()))?,
+                )?;
+            }
             effects.union_with(checked.effects());
             if let Some(role) = role {
                 arguments.push(crate::final_analysis::CheckedViewElementArgument::new(

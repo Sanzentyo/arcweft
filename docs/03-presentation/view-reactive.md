@@ -102,6 +102,14 @@ mount の `action_buttons` は評価済みの label／enabled を持つ。セッ
 は activation route を公開せず、以前の route を失効させる。restore 後も retained
 parameter と同じ式から control value を再評価する。
 
+builtin element の x／y／width／height は registered Length 型で検査し、受理した
+compile-time scalar fact をその要素の inline Style patch へ投影する。現在の layout
+profile は px の固定小数点 thousandths を使い、pt／em は換算規則を持たない
+ため拒否する。width／height は border-box 寸法。x／y の指定は Position.Absolute
+と物理 Left／Top を与え、包含領域の原点からの位置とする。省略した軸や寸法は
+既存の Style/layout 規則に従う。これらの入力は新しい runtime scalar interpreter
+や別の bounds table を作らず、既存の cascade、geometry、paint、hit-test 境界を使う。
+
 ## Binding
 
 Binding は直接 state を破壊的に書き換えず、lens + event/command。

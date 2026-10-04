@@ -33,7 +33,8 @@ use arcweft_lang_hir::{
     project::HirProject,
     scope::CaptureAccess,
     source_index::{
-        HirItemSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite, HirViewSourceRole,
+        HirExprSourceRole, HirItemSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite,
+        HirViewSourceRole,
     },
     symbol::ProjectSymbolTable,
 };
@@ -199,6 +200,10 @@ pub(crate) enum ViewProjectLowerError {
     SourceMap(#[from] SourceMapBuildError),
     #[error(transparent)]
     Merge(#[from] ViewResourceMergeError),
+    #[error(transparent)]
+    StyleModel(#[from] arcweft_view::style::ViewStyleModelError),
+    #[error(transparent)]
+    SourceIdentity(#[from] arcweft_source::ProductSourceIdentityError),
 }
 
 impl CompiledViewProduct {
@@ -326,9 +331,12 @@ impl<'a> ViewProjectLowerer<'a> {
             .source_map
             .try_with_document(&standard_view_source)?
             .try_with_document(&standard_style_source)?;
-        let resources =
-            ViewProgramStyleResources::new(authored.program, Some(self.style.resource().clone()))
-                .merge(ViewProgramStyleResources::new(
+        let resources = ViewProgramStyleResources::new(None, Some(self.style.resource().clone()))
+            .merge(ViewProgramStyleResources::new(
+                authored.program,
+                Some(authored.style),
+            ))?
+            .merge(ViewProgramStyleResources::new(
                 Some(standard_view::dialogue_program()),
                 Some(standard_view::dialogue_style()),
             ))?;
@@ -379,6 +387,7 @@ impl<'a> ViewProjectLowerer<'a> {
 }
 
 struct AuthoredViewArtifact {
+    style: arcweft_bundle::resource_codec::view::ViewStyleResource,
     program: Option<ViewProgramResource>,
     text: ViewTextResource,
     sources: BTreeMap<ViewId, SourceSpan>,
@@ -386,6 +395,9 @@ struct AuthoredViewArtifact {
 }
 
 struct AuthoredViewLowering {
+    style_patches: Vec<arcweft_view::style::ViewStylePatch>,
+    style_sources: Vec<arcweft_source::ProductSourceRef>,
+    style_ranges: Vec<arcweft_bundle::resource_codec::SourceRangeRef>,
     definitions: Vec<ViewDefinitionResource>,
     value_programs: Vec<ViewValueProgram>,
     value_inputs: Vec<ViewValueInputResource>,
@@ -591,6 +603,9 @@ fn lower_authored_views(
         })
         .collect();
     let mut output = AuthoredViewLowering {
+        style_patches: Vec::new(),
+        style_sources: Vec::new(),
+        style_ranges: Vec::new(),
         definitions: Vec::new(),
         value_programs: Vec::new(),
         value_inputs,
@@ -647,6 +662,16 @@ fn lower_authored_views(
         ..ViewProgramResource::default()
     });
     Ok(AuthoredViewArtifact {
+        style: arcweft_bundle::resource_codec::view::ViewStyleResource {
+            style_program_id: "view.style.elements".to_owned(),
+            program: arcweft_view::style::ViewStyleProgram::try_new(
+                Vec::new(),
+                output.style_patches,
+            )?,
+            source_refs: output.style_sources,
+            source_map_refs: output.style_ranges,
+            ..Default::default()
+        },
         program,
         text: output.text,
         sources: output.sources,
@@ -1047,19 +1072,19 @@ impl AuthoredViewBodyLowerer<'_> {
         match kind {
             CheckedViewCall::Element(element_call) => {
                 let element = element_call.element();
-                if (!element_call.arguments().is_empty() && !element.is_action_control())
-                    || element_call.arguments().iter().any(|argument| {
-                        !matches!(
-                            argument.role(),
-                            arcweft_view::ViewElementArgumentRole::Label
-                                | arcweft_view::ViewElementArgumentRole::Enabled
-                        )
-                    })
-                {
+                if element_call.arguments().iter().any(|argument| {
+                    matches!(
+                        argument.role(),
+                        arcweft_view::ViewElementArgumentRole::Label
+                            | arcweft_view::ViewElementArgumentRole::Enabled
+                    ) && !element.is_action_control()
+                        || argument.role() == arcweft_view::ViewElementArgumentRole::Spacing
+                }) {
                     return Err(ViewProjectLowerError::MissingCheckedViewProjection {
                         owner: self.owner,
                     });
                 }
+                let styles = self.lower_element_style(element_call)?;
                 let ordinal = self.element_ordinal;
                 self.element_ordinal = self.element_ordinal.checked_add(1).ok_or(
                     ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner },
@@ -1070,7 +1095,7 @@ impl AuthoredViewBodyLowerer<'_> {
                     .push(ViewProgramInstruction::OpenElement {
                         element,
                         target: Some(target.clone()),
-                        styles: Vec::new(),
+                        styles,
                         part: None,
                         key: None,
                         source: None,
@@ -1081,7 +1106,13 @@ impl AuthoredViewBodyLowerer<'_> {
                         value: arcweft_view::ViewElementArgumentRole::DEFAULT_LABEL.to_owned(),
                     };
                     let mut inputs = Vec::new();
-                    for argument in element_call.arguments() {
+                    for argument in element_call.arguments().iter().filter(|argument| {
+                        matches!(
+                            argument.role(),
+                            arcweft_view::ViewElementArgumentRole::Label
+                                | arcweft_view::ViewElementArgumentRole::Enabled
+                        )
+                    }) {
                         let program = ViewExpressionLowerer {
                             project: self.project,
                             analysis: self.analysis,
@@ -1149,6 +1180,113 @@ impl AuthoredViewBodyLowerer<'_> {
             }
         }
         Ok(())
+    }
+
+    fn lower_element_style(
+        &mut self,
+        call: &arcweft_lang_sema::final_analysis::CheckedViewElementCall,
+    ) -> Result<Vec<arcweft_view::style::ViewStyleApplicationTarget>, ViewProjectLowerError> {
+        use arcweft_lang_sema::{
+            checked_rich_text::LengthUnit, final_analysis::CheckedCompileTimeScalar,
+        };
+        use arcweft_view::{
+            ViewElementArgumentRole,
+            style::{
+                ViewLengthMilli, ViewPosition, ViewPropertyKind, ViewSpecifiedValue,
+                ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleDeclaration,
+                ViewStylePatch, ViewStylePatchId, ViewStyleSourceId,
+            },
+        };
+        let invalid = || ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner };
+        let mut declarations = Vec::new();
+        for argument in call.arguments() {
+            let property = match argument.role() {
+                ViewElementArgumentRole::X => ViewPropertyKind::Left,
+                ViewElementArgumentRole::Y => ViewPropertyKind::Top,
+                ViewElementArgumentRole::Width => ViewPropertyKind::Width,
+                ViewElementArgumentRole::Height => ViewPropertyKind::Height,
+                ViewElementArgumentRole::Label | ViewElementArgumentRole::Enabled => continue,
+                ViewElementArgumentRole::Spacing => return Err(invalid()),
+            };
+            let checked = self
+                .analysis
+                .expression(argument.value())
+                .ok_or_else(invalid)?;
+            let CheckedExpressionResolution::CompileTimeScalar(scalar) = checked.resolution()
+            else {
+                return Err(invalid());
+            };
+            let CheckedCompileTimeScalar::Length(length) = scalar.value() else {
+                return Err(invalid());
+            };
+            if length.unit != LengthUnit::Px {
+                return Err(invalid());
+            }
+            let lookup = self
+                .module
+                .source_site(
+                    self.module.provenance().source_identity(),
+                    HirSourceQuery::Expr {
+                        owner: argument.value(),
+                        role: HirExprSourceRole::Whole,
+                    },
+                )
+                .map_err(|_| invalid())?;
+            let HirSourcePresence::Present(HirSourceSite::Span(span)) = lookup.presence() else {
+                return Err(invalid());
+            };
+            let source = arcweft_source::ProductSourceRef::try_for_identity(span.source())?;
+            if !self.output.style_sources.contains(&source) {
+                self.output.style_sources.push(source.clone());
+            }
+            let source_id = ViewStyleSourceId::new(
+                u32::try_from(self.output.style_ranges.len()).map_err(|_| invalid())?,
+            );
+            self.output.style_ranges.push(
+                arcweft_bundle::resource_codec::SourceRangeRef::try_for_source(
+                    &self.output.style_sources,
+                    &source,
+                    u32::try_from(span.range().start()).map_err(|_| invalid())?,
+                    u32::try_from(span.range().end()).map_err(|_| invalid())?,
+                )?,
+            );
+            if matches!(
+                argument.role(),
+                ViewElementArgumentRole::X | ViewElementArgumentRole::Y
+            ) && !declarations
+                .iter()
+                .any(|declaration: &ViewStyleDeclaration| {
+                    declaration.property() == ViewPropertyKind::Position
+                })
+            {
+                declarations.push(ViewStyleDeclaration::new(
+                    ViewPropertyKind::Position,
+                    ViewSpecifiedValue::Position {
+                        value: ViewPosition::Absolute,
+                    },
+                    ViewStyleAssignOp::Replace,
+                    source_id,
+                )?);
+            }
+            declarations.push(ViewStyleDeclaration::new(
+                property,
+                ViewSpecifiedValue::Length {
+                    value: ViewLengthMilli::new(length.milli),
+                },
+                ViewStyleAssignOp::Replace,
+                source_id,
+            )?);
+        }
+        if declarations.is_empty() {
+            return Ok(Vec::new());
+        }
+        let id = ViewStylePatchId::new(
+            u32::try_from(self.output.style_patches.len()).map_err(|_| invalid())?,
+        );
+        self.output
+            .style_patches
+            .push(ViewStylePatch::new(id, declarations));
+        Ok(vec![ViewStyleApplicationTarget::inline(id)])
     }
 
     fn lower_fx_modifier(
