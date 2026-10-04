@@ -147,6 +147,7 @@ impl ViewProgramResource {
         program: &'a AwbcProgram,
         definition: &super::model::ViewDefinitionResource,
         expression: &arcweft_view::ViewExpressionProgram,
+        locals: &[BTreeMap<arcweft_view::ViewLocalCoordinate, arcweft_id::RuntimeSemanticTypeId>],
     ) -> Result<&'a arcweft_core::awbc::schema::AwbcSignature, SectionCodecError> {
         let invalid = || SectionCodecError::NonCanonicalTable("view_expression_program_binding");
         let binding = program
@@ -180,11 +181,19 @@ impl ViewProgramResource {
                 .zip(&binding.input_types)
                 .zip(&signature.params)
                 .any(|((input, ty), signature_type)| {
-                    !parameters.insert(input.parameter())
-                        || definition
-                            .parameters
-                            .get(input.parameter().index())
-                            .is_none_or(|parameter| parameter.semantic_type != input.value_type())
+                    !parameters.insert(input.source)
+                        || match input.source {
+                            arcweft_view::ViewExecutionInputSource::Parameter(parameter) => {
+                                definition.parameters.get(parameter.index()).is_none_or(
+                                    |parameter| parameter.semantic_type != input.value_type(),
+                                )
+                            }
+                            arcweft_view::ViewExecutionInputSource::Local(local) => locals
+                                .iter()
+                                .rev()
+                                .find_map(|scope| scope.get(&local))
+                                .is_none_or(|ty| *ty != input.value_type()),
+                        }
                         || *ty != input.value_type()
                         || program
                             .runtime_types
@@ -357,53 +366,53 @@ impl ViewProgramResource {
                 let Some(default) = &parameter.default_program else {
                     continue;
                 };
-                let signature = self.validate_expression_program(program, definition, default)?;
+                let signature =
+                    self.validate_expression_program(program, definition, default, &[])?;
                 let binding = bindings[&default.program];
-                if default
-                    .inputs
-                    .iter()
-                    .any(|input| input.parameter().index() >= usize::from(parameter.ordinal))
-                    || !match definition.parameter_contract {
-                        Some(contract) => {
-                            let source_contract = binding
-                                .function_type
-                                .map(|identity| {
-                                    program.semantic_type_id(identity).ok_or(
-                                        SectionCodecError::NonCanonicalTable(
-                                            "view_default_program_context",
-                                        ),
-                                    )
-                                })
-                                .transpose()?;
-                            program.semantic_type_id(contract).is_some_and(|contract| {
-                                signature.result.is_some_and(|result| {
-                                    program.parameter_contract_accepts_default(
-                                        contract,
-                                        usize::from(parameter.ordinal),
-                                        source_contract,
-                                        result,
-                                    )
-                                })
+                if default.inputs.iter().any(|input| {
+                    input
+                        .parameter()
+                        .is_none_or(|input| input.index() >= usize::from(parameter.ordinal))
+                }) || !match definition.parameter_contract {
+                    Some(contract) => {
+                        let source_contract = binding
+                            .function_type
+                            .map(|identity| {
+                                program.semantic_type_id(identity).ok_or(
+                                    SectionCodecError::NonCanonicalTable(
+                                        "view_default_program_context",
+                                    ),
+                                )
                             })
-                        }
-                        None => program.types_compatible(
-                            program
-                                .runtime_types
-                                .iter()
-                                .position(|ty| ty.semantic_identity() == parameter.semantic_type)
-                                .and_then(|index| u32::try_from(index).ok())
-                                .map(arcweft_core::awbc::schema::AwbcTypeId)
-                                .ok_or(SectionCodecError::NonCanonicalTable(
-                                    "view_default_parameter_type",
-                                ))?,
-                            signature
-                                .result
-                                .ok_or(SectionCodecError::NonCanonicalTable(
-                                    "view_default_result_type",
-                                ))?,
-                        ),
+                            .transpose()?;
+                        program.semantic_type_id(contract).is_some_and(|contract| {
+                            signature.result.is_some_and(|result| {
+                                program.parameter_contract_accepts_default(
+                                    contract,
+                                    usize::from(parameter.ordinal),
+                                    source_contract,
+                                    result,
+                                )
+                            })
+                        })
                     }
-                {
+                    None => program.types_compatible(
+                        program
+                            .runtime_types
+                            .iter()
+                            .position(|ty| ty.semantic_identity() == parameter.semantic_type)
+                            .and_then(|index| u32::try_from(index).ok())
+                            .map(arcweft_core::awbc::schema::AwbcTypeId)
+                            .ok_or(SectionCodecError::NonCanonicalTable(
+                                "view_default_parameter_type",
+                            ))?,
+                        signature
+                            .result
+                            .ok_or(SectionCodecError::NonCanonicalTable(
+                                "view_default_result_type",
+                            ))?,
+                    ),
+                } {
                     return Err(SectionCodecError::NonCanonicalTable(
                         "view_default_program_signature",
                     ));
@@ -421,95 +430,164 @@ impl ViewProgramResource {
                 .ok_or(SectionCodecError::NonCanonicalTable(
                     "view_expression_owner_span",
                 ))?;
-            let mut sources = Vec::new();
-            if text.is_some() {
-                sources.extend(
-                    instructions
-                        .iter()
-                        .filter_map(|instruction| match instruction {
-                            ViewProgramInstruction::EmitText { text_source, .. } => {
-                                Some(text_source.as_str())
-                            }
-                            _ => None,
-                        }),
-                );
-            }
-            for button in self
+            let mut locals = vec![BTreeMap::new()];
+            let mut declared = BTreeSet::new();
+            let buttons = self
                 .action_buttons
                 .iter()
                 .filter(|button| button.view.as_deref() == Some(definition.public_id.as_str()))
-            {
-                if instructions
-                    .iter()
-                    .filter(|instruction| {
-                        matches!(instruction,
-                    ViewProgramInstruction::OpenElement { element, target: Some(target), .. }
-                        if element.is_action_control() && target == &button.public_id)
-                    })
-                    .count()
-                    != 1
-                {
-                    return Err(SectionCodecError::NonCanonicalTable(
-                        "view_control_element_owner",
-                    ));
+                .map(|button| (button.public_id.as_str(), button))
+                .collect::<BTreeMap<_, _>>();
+            let mut visited_buttons = BTreeSet::new();
+            for instruction in instructions {
+                let mut sources = Vec::new();
+                match instruction {
+                    ViewProgramInstruction::BeginScope => locals.push(BTreeMap::new()),
+                    ViewProgramInstruction::EndScope => {
+                        if locals.len() <= 1 {
+                            return Err(SectionCodecError::NonCanonicalTable("view_local_scope"));
+                        }
+                        locals.pop();
+                    }
+                    ViewProgramInstruction::BindLocal {
+                        program: binding, ..
+                    } => {
+                        let signature = self.validate_expression_program(
+                            program,
+                            definition,
+                            &binding.execution,
+                            &locals,
+                        )?;
+                        let shape = signature
+                            .result
+                            .and_then(|ty| program.runtime_types.get(ty.index()))
+                            .map(|ty| ty.shape())
+                            .ok_or(SectionCodecError::NonCanonicalTable("view_binding_result"))?;
+                        let output_types: &[arcweft_core::awbc::schema::AwbcTypeId] = match shape {
+                            arcweft_core::awbc::schema::AwbcRuntimeTypeShape::Unit
+                                if binding.outputs.is_empty() =>
+                            {
+                                &[]
+                            }
+                            arcweft_core::awbc::schema::AwbcRuntimeTypeShape::Tuple(types)
+                                if types.len() == binding.outputs.len() && !types.is_empty() =>
+                            {
+                                types
+                            }
+                            _ => {
+                                return Err(SectionCodecError::NonCanonicalTable(
+                                    "view_binding_result",
+                                ));
+                            }
+                        };
+                        for (ordinal, (output, ty)) in
+                            binding.outputs.iter().zip(output_types).enumerate()
+                        {
+                            if output.coordinate.program != binding.execution.program
+                                || usize::from(output.coordinate.output) != ordinal
+                                || !declared.insert(output.coordinate)
+                                || program
+                                    .runtime_types
+                                    .get(ty.index())
+                                    .is_none_or(|ty| ty.semantic_identity() != output.value_type)
+                            {
+                                return Err(SectionCodecError::NonCanonicalTable(
+                                    "view_binding_outputs",
+                                ));
+                            }
+                            locals
+                                .last_mut()
+                                .expect("root scope remains")
+                                .insert(output.coordinate, output.value_type);
+                        }
+                    }
+                    ViewProgramInstruction::EmitText { text_source, .. } if text.is_some() => {
+                        sources.push(text_source.as_str())
+                    }
+                    ViewProgramInstruction::OpenElement {
+                        element,
+                        target: Some(target),
+                        ..
+                    } if element.is_action_control() => {
+                        if let Some(button) = buttons.get(target.as_str()) {
+                            if !visited_buttons.insert(target.as_str()) {
+                                return Err(SectionCodecError::NonCanonicalTable(
+                                    "view_control_element_owner",
+                                ));
+                            }
+                            if let Some(expression) =
+                                button.enabled_value().and_then(|value| value.program())
+                            {
+                                let signature = self.validate_expression_program(
+                                    program, definition, expression, &locals,
+                                )?;
+                                if !signature
+                                    .result
+                                    .and_then(|ty| program.runtime_types.get(ty.index()))
+                                    .is_some_and(|ty| {
+                                        matches!(
+                                            ty.shape(),
+                                            arcweft_core::awbc::schema::AwbcRuntimeTypeShape::Bool
+                                        )
+                                    })
+                                {
+                                    return Err(SectionCodecError::NonCanonicalTable(
+                                        "view_control_enabled_result",
+                                    ));
+                                }
+                            }
+                            button.validate_inputs()?;
+                            sources.push(
+                                button
+                                    .label_source()
+                                    .expect("validated control label input"),
+                            );
+                        }
+                    }
+                    _ => {}
                 }
-                if let Some(expression) = button.enabled_value().and_then(|value| value.program()) {
-                    let signature =
-                        self.validate_expression_program(program, definition, expression)?;
-                    if !signature
-                        .result
-                        .and_then(|ty| program.runtime_types.get(ty.index()))
-                        .is_some_and(|ty| {
-                            matches!(
-                                ty.shape(),
-                                arcweft_core::awbc::schema::AwbcRuntimeTypeShape::Bool
-                            )
+                for source in sources {
+                    let source = text
+                        .and_then(|text| {
+                            text.sources
+                                .iter()
+                                .find(|candidate| candidate.public_id == source)
                         })
+                        .ok_or(SectionCodecError::NonCanonicalTable(
+                            "view_expression_text_source",
+                        ))?;
+                    if let ViewTextSourceKind::Program {
+                        program: expression,
+                    } = &source.kind
                     {
-                        return Err(SectionCodecError::NonCanonicalTable(
-                            "view_control_enabled_result",
-                        ));
+                        let signature = self.validate_expression_program(
+                            program, definition, expression, &locals,
+                        )?;
+                        if !signature
+                            .result
+                            .and_then(|ty| program.runtime_types.get(ty.index()))
+                            .is_some_and(|ty| {
+                                matches!(
+                                    ty.shape(),
+                                    arcweft_core::awbc::schema::AwbcRuntimeTypeShape::String
+                                )
+                            })
+                        {
+                            return Err(SectionCodecError::NonCanonicalTable(
+                                "view_expression_text_result",
+                            ));
+                        }
+                        referenced_text.insert(source.public_id.as_str());
                     }
                 }
-                button.validate_inputs()?;
-                sources.push(
-                    button
-                        .label_source()
-                        .expect("validated control label input"),
-                );
             }
-            for source in sources {
-                let source = text
-                    .and_then(|text| {
-                        text.sources
-                            .iter()
-                            .find(|candidate| candidate.public_id == source)
-                    })
-                    .ok_or(SectionCodecError::NonCanonicalTable(
-                        "view_expression_text_source",
-                    ))?;
-                if let ViewTextSourceKind::Program {
-                    program: expression,
-                } = &source.kind
-                {
-                    let signature =
-                        self.validate_expression_program(program, definition, expression)?;
-                    if !signature
-                        .result
-                        .and_then(|ty| program.runtime_types.get(ty.index()))
-                        .is_some_and(|ty| {
-                            matches!(
-                                ty.shape(),
-                                arcweft_core::awbc::schema::AwbcRuntimeTypeShape::String
-                            )
-                        })
-                    {
-                        return Err(SectionCodecError::NonCanonicalTable(
-                            "view_expression_text_result",
-                        ));
-                    }
-                    referenced_text.insert(source.public_id.as_str());
-                }
+            if locals.len() != 1 {
+                return Err(SectionCodecError::NonCanonicalTable("view_local_scope"));
+            }
+            if visited_buttons.len() != buttons.len() {
+                return Err(SectionCodecError::NonCanonicalTable(
+                    "view_control_element_owner",
+                ));
             }
         }
         if self.action_buttons.iter().any(|button| {
@@ -661,7 +739,7 @@ impl ViewProgramResource {
         self.validate_budgets(budget)?;
         self.validate_identity_contracts()?;
         self.validate_value_programs()?;
-        self.validate_definitions()?;
+        self.validate_definitions(budget)?;
         self.validate_exported_parts()?;
         self.validate_control_flow_spans()?;
         self.validate_unique_ids()?;
@@ -854,16 +932,6 @@ impl ViewProgramResource {
                 ViewProgramInstruction::Await { source_program, .. } => {
                     validate_program(&inventory, *source_program, None)?;
                 }
-                ViewProgramInstruction::BindLocal {
-                    binding,
-                    value_program,
-                    ..
-                } => {
-                    if !valid_identifier(binding) {
-                        return Err(SectionCodecError::NonCanonicalTable("view_local_binding"));
-                    }
-                    validate_program(&inventory, *value_program, None)?;
-                }
                 ViewProgramInstruction::ApplyFx {
                     arguments,
                     key_program,
@@ -878,6 +946,9 @@ impl ViewProgramResource {
                 }
                 ViewProgramInstruction::OpenElement { .. }
                 | ViewProgramInstruction::CloseElement
+                | ViewProgramInstruction::BeginScope
+                | ViewProgramInstruction::EndScope
+                | ViewProgramInstruction::BindLocal { .. }
                 | ViewProgramInstruction::EmitText { .. }
                 | ViewProgramInstruction::EmitImage { .. }
                 | ViewProgramInstruction::EmitCustom { .. }
@@ -910,7 +981,6 @@ impl ViewProgramResource {
                     ViewValueInputNamespace::State,
                     ViewValueInputSource::Projection { .. }
                         | ViewValueInputSource::LifetimeProjection { .. }
-                        | ViewValueInputSource::Local { .. }
                         | ViewValueInputSource::RepeatOrdinal { .. }
                 )
             );
@@ -926,7 +996,6 @@ impl ViewProgramResource {
                     }),
                 ViewValueInputSource::Projection { .. }
                 | ViewValueInputSource::LifetimeProjection { .. }
-                | ViewValueInputSource::Local { .. }
                 | ViewValueInputSource::RepeatOrdinal { .. } => true,
             };
             if !slots.insert(input.slot)
@@ -948,7 +1017,7 @@ impl ViewProgramResource {
         Ok(())
     }
 
-    fn validate_definitions(&self) -> Result<(), SectionCodecError> {
+    fn validate_definitions(&self, budget: &ViewResourceBudget) -> Result<(), SectionCodecError> {
         reject_duplicates(
             self.definitions
                 .iter()
@@ -981,6 +1050,49 @@ impl ViewProgramResource {
         ViewValueProgramInventory::from_programs(self.value_programs.clone())
             .map_err(|_| SectionCodecError::NonCanonicalTable("view_value_program_inventory"))?;
         for definition in &self.definitions {
+            let mut scope_depth = 0usize;
+            let mut outputs = BTreeSet::new();
+            for instruction in &self.instructions[definition.body.start_instruction as usize
+                ..definition.body.end_instruction as usize]
+            {
+                match instruction {
+                    ViewProgramInstruction::BeginScope => {
+                        scope_depth += 1;
+                        check_budget(scope_depth, budget.common.depth, "view_local_scope_depth")?;
+                    }
+                    ViewProgramInstruction::EndScope => {
+                        scope_depth = scope_depth
+                            .checked_sub(1)
+                            .ok_or(SectionCodecError::NonCanonicalTable("view_local_scope"))?;
+                    }
+                    ViewProgramInstruction::BindLocal { program, .. } => {
+                        check_budget(
+                            program.outputs.len(),
+                            budget.common.items,
+                            "view_binding_outputs",
+                        )?;
+                        check_budget(
+                            program.execution.inputs.len(),
+                            budget.common.items,
+                            "view_binding_inputs",
+                        )?;
+                        for (ordinal, output) in program.outputs.iter().enumerate() {
+                            if output.coordinate.program != program.execution.program
+                                || usize::from(output.coordinate.output) != ordinal
+                                || !outputs.insert(output.coordinate)
+                            {
+                                return Err(SectionCodecError::NonCanonicalTable(
+                                    "view_binding_outputs",
+                                ));
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if scope_depth != 0 {
+                return Err(SectionCodecError::NonCanonicalTable("view_local_scope"));
+            }
             let mut names = BTreeSet::new();
             for (ordinal, parameter) in definition.parameters.iter().enumerate() {
                 if usize::from(parameter.ordinal) != ordinal
@@ -995,10 +1107,16 @@ impl ViewProgramResource {
                     let mut inputs = BTreeSet::new();
                     if default.inputs.iter().any(|input| {
                         !inputs.insert(input.parameter())
-                            || input.parameter().index() >= ordinal
+                            || input
+                                .parameter()
+                                .is_none_or(|parameter| parameter.index() >= ordinal)
                             || definition
                                 .parameters
-                                .get(input.parameter().index())
+                                .get(
+                                    input
+                                        .parameter()
+                                        .map_or(usize::MAX, |parameter| parameter.index()),
+                                )
                                 .is_none_or(|source| source.semantic_type != input.value_type())
                     }) {
                         return Err(SectionCodecError::NonCanonicalTable(
@@ -1853,7 +1971,6 @@ fn valid_value_input_source(source: &ViewValueInputSource) -> bool {
                 && !path.is_empty()
                 && path.iter().all(|segment| valid_identifier(segment))
         }
-        ViewValueInputSource::Local { view, name } => !view.is_empty() && valid_identifier(name),
         ViewValueInputSource::RepeatOrdinal { view, binding } => {
             !view.is_empty() && valid_identifier(binding)
         }
@@ -1889,7 +2006,9 @@ fn instruction_public_ids(instruction: &ViewProgramInstruction) -> Vec<String> {
             )
             .chain(style_apply_public_ids(styles))
             .collect(),
-        ViewProgramInstruction::CloseElement
+        ViewProgramInstruction::BeginScope
+        | ViewProgramInstruction::EndScope
+        | ViewProgramInstruction::CloseElement
         | ViewProgramInstruction::Branch { .. }
         | ViewProgramInstruction::RepeatKeyed { .. }
         | ViewProgramInstruction::Await { .. }

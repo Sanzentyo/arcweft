@@ -5764,7 +5764,8 @@ impl<'a> FinalFlowLowerer<'a> {
             .expression_children(expression)
             .ok_or_else(|| {
                 RuntimePlanLowerError::new(format!(
-                    "checked expression row is missing for {expression:?}"
+                    "checked expression row is missing for {expression:?} in executable {:?}",
+                    self.semantic_facts.scope()
                 ))
             })
     }

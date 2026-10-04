@@ -232,39 +232,6 @@ pub(super) fn runtime_scalar_text(value: &RuntimeValue) -> Option<String> {
     }
 }
 
-pub(super) fn fx_scalar_text(value: FxRuntimeValue) -> String {
-    match value {
-        FxRuntimeValue::Bool(value) => value.to_string(),
-        FxRuntimeValue::I32(value) => value.to_string(),
-        FxRuntimeValue::U32(value) => value.to_string(),
-        FxRuntimeValue::F32(value) => value.to_string(),
-        FxRuntimeValue::Length(value) => format!("{}px", value.pixels()),
-        FxRuntimeValue::Angle(value) => format!("{}rad", value.radians()),
-        FxRuntimeValue::Seconds(value) => format!("{}s", value.seconds()),
-        FxRuntimeValue::Color(value) => format!(
-            "color({}, {}, {}, {})",
-            value.red().value(),
-            value.green().value(),
-            value.blue().value(),
-            value.alpha().value()
-        ),
-        FxRuntimeValue::Vec2(value) => format!("vec2({}, {})", value.x, value.y),
-        FxRuntimeValue::Transform2D(value) => format!(
-            "transform2d({}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
-            value.translate_x.pixels(),
-            value.translate_y.pixels(),
-            value.scale_x,
-            value.scale_y,
-            value.skew_x.radians(),
-            value.skew_y.radians(),
-            value.rotation.radians(),
-            value.origin_x.pixels(),
-            value.origin_y.pixels(),
-            value.opacity
-        ),
-    }
-}
-
 pub(super) fn fx_to_runtime(
     value: FxRuntimeValue,
 ) -> Result<RuntimeValue, BundleViewValueConversionError> {

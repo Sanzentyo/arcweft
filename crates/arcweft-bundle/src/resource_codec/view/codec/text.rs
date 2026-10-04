@@ -130,7 +130,6 @@ impl ViewTextResource {
             ViewTextSourceKind::Projection { path } => {
                 !path.is_empty() && path.iter().all(|segment| valid_identifier(segment))
             }
-            ViewTextSourceKind::Local { name } => valid_identifier(name),
             ViewTextSourceKind::RichTextDocument { document } => self
                 .rich_text_documents
                 .iter()
@@ -217,7 +216,6 @@ fn text_source_kind_public_ids(kind: &ViewTextSourceKind) -> impl Iterator<Item 
         ViewTextSourceKind::Program { .. }
         | ViewTextSourceKind::Literal { .. }
         | ViewTextSourceKind::Projection { .. }
-        | ViewTextSourceKind::Local { .. }
         | ViewTextSourceKind::Dialogue { .. } => Vec::new(),
         ViewTextSourceKind::RichTextDocument { document } => vec![document.clone()],
         ViewTextSourceKind::DisplayFrame { frame } => vec![frame.clone()],

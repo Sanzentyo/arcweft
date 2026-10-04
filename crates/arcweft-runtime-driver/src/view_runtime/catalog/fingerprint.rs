@@ -189,9 +189,6 @@ fn referenced_value_programs(body: &[ViewProgramInstruction]) -> BTreeSet<ViewVa
             ViewProgramInstruction::Await { source_program, .. } => {
                 programs.insert(*source_program);
             }
-            ViewProgramInstruction::BindLocal { value_program, .. } => {
-                programs.insert(*value_program);
-            }
             ViewProgramInstruction::ApplyFx {
                 arguments,
                 key_program,
@@ -205,6 +202,9 @@ fn referenced_value_programs(body: &[ViewProgramInstruction]) -> BTreeSet<ViewVa
             }
             ViewProgramInstruction::OpenElement { .. }
             | ViewProgramInstruction::CloseElement
+            | ViewProgramInstruction::BeginScope
+            | ViewProgramInstruction::EndScope
+            | ViewProgramInstruction::BindLocal { .. }
             | ViewProgramInstruction::EmitText { .. }
             | ViewProgramInstruction::EmitImage { .. }
             | ViewProgramInstruction::EmitCustom { .. }
@@ -240,7 +240,9 @@ fn without_instruction_source(mut instruction: ViewProgramInstruction) -> ViewPr
         | ViewProgramInstruction::ApplyFx { source, .. }
         | ViewProgramInstruction::BindHandler { source, .. }
         | ViewProgramInstruction::AttachSemantic { source, .. } => *source = None,
-        ViewProgramInstruction::CloseElement => {}
+        ViewProgramInstruction::CloseElement
+        | ViewProgramInstruction::BeginScope
+        | ViewProgramInstruction::EndScope => {}
     }
     instruction
 }

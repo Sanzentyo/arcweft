@@ -1,7 +1,7 @@
 use super::support::resolve_mount_path;
 use super::{EvaluationFailure, ViewEvaluator};
 use crate::presentation_handles::PresentationHandleId;
-use crate::view_runtime::value::{fx_scalar_text, runtime_scalar_text};
+use crate::view_runtime::value::runtime_scalar_text;
 use crate::view_runtime::{
     BundleViewDiagnosticCode, BundleViewTextOutput, BundleViewTextTarget, BundleViewTextValue,
     MountedView,
@@ -100,9 +100,6 @@ impl<B: super::RuntimeCallBackend> ViewEvaluator<'_, B> {
             }),
             ViewTextSourceKind::Projection { path } => {
                 self.resolve_projected_text(mounted, path, instruction)
-            }
-            ViewTextSourceKind::Local { name } => {
-                self.resolve_local_text(definition, mounted, name, instruction)
             }
             ViewTextSourceKind::Localized { key, locale } => {
                 self.resolve_localized_text(key, locale.as_deref(), instruction)
@@ -215,38 +212,6 @@ impl<B: super::RuntimeCallBackend> ViewEvaluator<'_, B> {
             )
         })?;
         Ok(BundleViewTextValue::Plain { value })
-    }
-
-    fn resolve_local_text(
-        &self,
-        definition: &ViewDefinitionResource,
-        mounted: &MountedView,
-        name: &str,
-        instruction: usize,
-    ) -> Result<BundleViewTextValue, EvaluationFailure> {
-        let slots = self.local_slots(definition.public_id.as_str(), name);
-        let slot = slots.first().copied().ok_or_else(|| {
-            EvaluationFailure::new(
-                BundleViewDiagnosticCode::MissingInput,
-                Some(instruction),
-                format!("text local `{name}` has no typed slot"),
-            )
-        })?;
-        if !mounted.initialized_state.contains(&slot) {
-            return Err(EvaluationFailure::new(
-                BundleViewDiagnosticCode::MissingInput,
-                Some(instruction),
-                format!("text local `{name}` is not initialized"),
-            ));
-        }
-        let value = mounted
-            .state
-            .state()
-            .nth(usize::from(slot))
-            .expect("validated local slot exists");
-        Ok(BundleViewTextValue::Plain {
-            value: fx_scalar_text(value),
-        })
     }
 
     fn resolve_localized_text(

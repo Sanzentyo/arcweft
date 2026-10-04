@@ -470,18 +470,18 @@ impl CheckedRichTextSemanticDigest {
 
 /// Version-one semantic identity of one checked statement.
 ///
-/// Statement digests are private to the final semantic authority.  A caller
-/// can observe the enclosing expression/body products, but cannot mint or
-/// deserialize a statement digest independently of the accepted report.
+/// Issued only by the final semantic authority. Consumers can observe an
+/// accepted statement digest but cannot mint or deserialize one independently
+/// of the accepted report.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct CheckedStatementSemanticDigest([u8; 32]);
+pub struct CheckedStatementSemanticDigest([u8; 32]);
 
 impl CheckedStatementSemanticDigest {
     const fn from_bytes(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }
 
-    pub(crate) const fn as_bytes(&self) -> &[u8; 32] {
+    pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 }
@@ -736,6 +736,33 @@ pub(crate) fn checked_declaration_default_pattern_digest(
 }
 
 impl FinalSemanticAnalysis {
+    /// Commits one accepted statement through the same rooted transcript graph.
+    pub fn checked_statement_semantic_digest(
+        &self,
+        project: HirAnalysisProjectView<'_>,
+        symbols: &ProjectSymbolTable,
+        statement: arcweft_lang_hir::identity::StmtId,
+        limits: CheckedMatchLimits,
+    ) -> Result<CheckedStatementSemanticDigest, CheckedSemanticTranscriptError> {
+        static NOT_CANCELLED: std::sync::atomic::AtomicBool =
+            std::sync::atomic::AtomicBool::new(false);
+        self.validate_generation(project, symbols)?;
+        let module = project
+            .modules()
+            .find_map(|(_, module)| {
+                (module.module_id() == statement.module()).then_some(module.as_ref())
+            })
+            .ok_or(CheckedSemanticTranscriptError::MissingExpression)?;
+        SemanticTranscriptGraph::new(
+            self,
+            module,
+            limits,
+            FinalSemanticAnalysisControl::new(&NOT_CANCELLED),
+        )
+        .statement_digest_at(statement, 0)
+        .map_err(CheckedSemanticTranscriptError::from)
+    }
+
     /// Commits the complete accepted expression subtree, including exhaustive
     /// nested Match products, from this exact HIR generation.
     pub fn checked_expression_semantic_digest(

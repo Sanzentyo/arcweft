@@ -98,7 +98,9 @@ fn without_instruction_source(mut instruction: ViewProgramInstruction) -> ViewPr
         | ViewProgramInstruction::ApplyFx { source, .. }
         | ViewProgramInstruction::BindHandler { source, .. }
         | ViewProgramInstruction::AttachSemantic { source, .. } => *source = None,
-        ViewProgramInstruction::CloseElement => {}
+        ViewProgramInstruction::CloseElement
+        | ViewProgramInstruction::BeginScope
+        | ViewProgramInstruction::EndScope => {}
     }
     instruction
 }

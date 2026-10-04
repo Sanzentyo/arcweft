@@ -733,6 +733,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 initialized_parameters: BTreeSet::new(),
                 initialized_state: BTreeSet::new(),
                 runtime_parameters: BTreeMap::new(),
+                execution_locals: Vec::new(),
                 expression_evaluations: BTreeMap::new(),
                 handler_seals: BTreeMap::new(),
                 next_handler_seal_revision: 1,
@@ -772,7 +773,6 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                         .collect()
                 }
                 ViewValueInputSource::DefinitionParameter { .. }
-                | ViewValueInputSource::Local { .. }
                 | ViewValueInputSource::RepeatOrdinal { .. } => unreachable!(),
             };
             let Some(value) = resolve_path(self.view_root_bindings, &path) else {
@@ -1039,33 +1039,63 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
         let mut inputs = Vec::with_capacity(expression.inputs.len());
         let mut snapshots = Vec::with_capacity(expression.inputs.len());
         for input in expression.inputs.iter() {
-            let source = definition
-                .parameters
-                .get(input.parameter().index())
-                .filter(|source| source.semantic_type == input.value_type())
-                .ok_or_else(|| failure("stale parameter input".to_owned()))?;
-            let value = if source.role == ViewParameterRole::Dialogue {
-                dialogue_view_runtime_value(
-                    source.semantic_type,
-                    self.dialogue_inputs
-                        .get(handle)
-                        .ok_or_else(|| failure("missing dialogue input".to_owned()))?,
-                )
-                .map_err(failure)?
-            } else {
-                let value = mounted
-                    .runtime_parameters
-                    .get(&source.name)
-                    .ok_or_else(|| {
-                        failure(format!("parameter `{}` is uninitialized", source.name))
-                    })?;
-                if !value.ownership().permits_copy() {
-                    return Err(failure(format!(
-                        "parameter `{}` requires its retained resource owner",
-                        source.name
-                    )));
+            let value = match input.source {
+                arcweft_view::ViewExecutionInputSource::Parameter(parameter) => {
+                    let source = definition
+                        .parameters
+                        .get(parameter.index())
+                        .filter(|source| source.semantic_type == input.value_type())
+                        .ok_or_else(|| failure("stale parameter input".to_owned()))?;
+                    if source.role == ViewParameterRole::Dialogue {
+                        dialogue_view_runtime_value(
+                            source.semantic_type,
+                            self.dialogue_inputs
+                                .get(handle)
+                                .ok_or_else(|| failure("missing dialogue input".to_owned()))?,
+                        )
+                        .map_err(failure)?
+                    } else {
+                        let value =
+                            mounted
+                                .runtime_parameters
+                                .get(&source.name)
+                                .ok_or_else(|| {
+                                    failure(format!("parameter '{}' is uninitialized", source.name))
+                                })?;
+                        if !value.ownership().permits_copy() {
+                            return Err(failure(
+                                "input requires its retained resource owner".to_owned(),
+                            ));
+                        }
+                        value.clone()
+                    }
                 }
-                value.clone()
+                arcweft_view::ViewExecutionInputSource::Local(coordinate) => {
+                    let value = mounted
+                        .execution_locals
+                        .iter()
+                        .rev()
+                        .find_map(|scope| scope.get(&coordinate))
+                        .ok_or_else(|| {
+                            failure(
+                                "local input is outside its initialized lexical scope".to_owned(),
+                            )
+                        })?;
+                    if !value.ownership().permits_copy() {
+                        return Err(failure(
+                            "input requires its retained resource owner".to_owned(),
+                        ));
+                    }
+                    let ty = program
+                        .semantic_type_id(input.value_type())
+                        .ok_or_else(|| failure("local type is missing".to_owned()))?;
+                    if !program.value_matches_type(value, ty) {
+                        return Err(failure(
+                            "local input type disagrees with its ABI".to_owned(),
+                        ));
+                    }
+                    value.clone()
+                }
             };
             snapshots.push(
                 AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner)
@@ -1256,6 +1286,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
             .remove(&key)
             .expect("visible occurrence was prepared before evaluation");
         let rollback = mounted.clone();
+        mounted.execution_locals = vec![BTreeMap::new()];
         let mut style_scopes = style_scopes;
         let root_style_result = style_scopes
             .enter_definition(&definition.styles, &mut self.style_scope_allocator)
@@ -1294,6 +1325,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 &mut descendants,
             )
         });
+        mounted.execution_locals.clear();
         match result {
             Ok(()) => {
                 let host_axis_seed = if key.path.segments().is_empty() {
@@ -1725,34 +1757,59 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                     }
                     cursor += 1;
                 }
-                ViewProgramInstruction::BindLocal {
-                    binding,
-                    value_program,
-                    ..
-                } => {
-                    let context = self.sample_context(mounted, instruction_ordinal(cursor)?)?;
-                    let value = evaluate_value(
-                        mounted,
-                        *value_program,
-                        self.inventory,
-                        context,
-                        &mut self.value_budget,
-                        Some(cursor),
-                    )?;
-                    let slots = self.local_slots(definition.public_id.as_str(), binding);
-                    if slots.is_empty() {
+                ViewProgramInstruction::BeginScope => {
+                    mounted.execution_locals.push(BTreeMap::new());
+                    cursor += 1;
+                }
+                ViewProgramInstruction::EndScope => {
+                    if mounted.execution_locals.len() <= 1 {
                         return Err(EvaluationFailure::new(
                             BundleViewDiagnosticCode::InvalidControlFlow,
                             Some(cursor),
-                            format!("local `{binding}` has no typed input slot"),
+                            "unbalanced local scope",
                         ));
                     }
-                    for slot in slots {
-                        mounted
-                            .state
-                            .set_state(slot, value, self.inventory)
-                            .map_err(|error| EvaluationFailure::value(Some(cursor), &error))?;
-                        mounted.initialized_state.insert(slot);
+                    mounted.execution_locals.pop();
+                    cursor += 1;
+                }
+                ViewProgramInstruction::BindLocal {
+                    program: binding, ..
+                } => {
+                    let value = self.evaluate_expression_program(
+                        &key.handle,
+                        definition,
+                        mounted,
+                        cursor,
+                        &binding.execution,
+                    )?;
+                    let values = match value {
+                        RuntimeValue::Unit if binding.outputs.is_empty() => Vec::new(),
+                        RuntimeValue::Tuple(values) if values.len() == binding.outputs.len() => {
+                            values
+                        }
+                        _ => {
+                            return Err(EvaluationFailure::new(
+                                BundleViewDiagnosticCode::InvalidValueProgram,
+                                Some(cursor),
+                                "binding output does not match its transport contract",
+                            ));
+                        }
+                    };
+                    let scope = mounted.execution_locals.last_mut().ok_or_else(|| {
+                        EvaluationFailure::new(
+                            BundleViewDiagnosticCode::InvalidControlFlow,
+                            Some(cursor),
+                            "binding has no lexical scope",
+                        )
+                    })?;
+                    for (output, value) in binding.outputs.iter().zip(values) {
+                        if scope.insert(output.coordinate, value).is_some() {
+                            return Err(EvaluationFailure::new(
+                                BundleViewDiagnosticCode::InvalidControlFlow,
+                                Some(cursor),
+                                "binding output is declared twice",
+                            ));
+                        }
                     }
                     cursor += 1;
                 }
@@ -2292,27 +2349,6 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 })
             })
             .collect())
-    }
-
-    fn local_slots(&self, definition: &str, name: &str) -> Vec<u16> {
-        self.program
-            .value_inputs
-            .iter()
-            .filter_map(|input| match &input.source {
-                ViewValueInputSource::Local { view, name: local }
-                    if input.namespace == ViewValueInputNamespace::State
-                        && view == definition
-                        && local == name =>
-                {
-                    Some(input.slot)
-                }
-                ViewValueInputSource::DefinitionParameter { .. }
-                | ViewValueInputSource::Projection { .. }
-                | ViewValueInputSource::LifetimeProjection { .. }
-                | ViewValueInputSource::Local { .. }
-                | ViewValueInputSource::RepeatOrdinal { .. } => None,
-            })
-            .collect()
     }
 
     fn sample_context(

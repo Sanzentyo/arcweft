@@ -548,6 +548,8 @@ struct MountedView {
     initialized_parameters: BTreeSet<u16>,
     initialized_state: BTreeSet<u16>,
     runtime_parameters: BTreeMap<String, RuntimeValue>,
+    /// Frame-derived lexical values; cleared before publication and never persisted.
+    execution_locals: Vec<BTreeMap<arcweft_view::ViewLocalCoordinate, RuntimeValue>>,
     expression_evaluations: BTreeMap<
         arcweft_id::runtime_program::RuntimePureProgramId,
         MountedViewExpressionEvaluation,
@@ -1394,6 +1396,7 @@ impl BundleViewRuntime {
                         initialized_parameters,
                         initialized_state,
                         runtime_parameters,
+                        execution_locals: Vec::new(),
                         expression_evaluations: BTreeMap::new(),
                         handler_seals: BTreeMap::new(),
                         next_handler_seal_revision: saved.next_handler_seal_revision,

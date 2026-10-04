@@ -2230,79 +2230,6 @@ fn style_path_words_are_little_endian_injective_and_feed_the_single_node_key() {
 }
 
 #[test]
-fn logical_time_updates_context_cache_and_reduce_motion_freezes_it() {
-    let program = ViewProgramResource {
-        program_id: program_id("view.program.time"),
-        definitions: vec![ViewDefinitionResource {
-            public_id: definition_ref("view.Time"),
-            body: ViewInstructionSpan::new(0, 2),
-            styles: Vec::new(),
-            parameters: Vec::new(),
-            parameter_contract: None,
-            state_schema_hash: 41,
-        }],
-        value_programs: vec![value_program(
-            0,
-            Vec::new(),
-            vec![FxRuntimeType::F32],
-            FxRuntimeType::F32,
-            vec![
-                ValueInstruction::LoadContext {
-                    slot: FxContextSlot::Time,
-                },
-                ValueInstruction::Return,
-            ],
-        )],
-        value_inputs: vec![ViewValueInputResource {
-            namespace: ViewValueInputNamespace::State,
-            slot: 0,
-            value_type: FxRuntimeType::F32,
-            source: ViewValueInputSource::Local {
-                view: "view.Time".to_owned(),
-                name: "elapsed".to_owned(),
-            },
-        }],
-        instructions: vec![
-            ViewProgramInstruction::BindLocal {
-                binding: "elapsed".to_owned(),
-                value_program: ViewValueProgramId(0),
-                source: None,
-            },
-            ViewProgramInstruction::EmitText {
-                text_source: "text.elapsed".to_owned(),
-                text_block: "text.block.elapsed".to_owned(),
-                styles: Vec::new(),
-                part: None,
-                source: None,
-            },
-        ],
-        text_blocks: vec![ViewTextBlockResource::new(
-            "text.block.elapsed",
-            Some("view.Time".to_owned()),
-            None,
-            "text.elapsed",
-            ViewTextBlockBounds::from_px(0, 0, 100, 20),
-        )],
-        ..ViewProgramResource::default()
-    };
-    let text = text_resource([(
-        "text.elapsed",
-        ViewTextSourceKind::Local {
-            name: "elapsed".to_owned(),
-        },
-    )]);
-    let mounted = handle("handle.time", "view.Time");
-    let mut runtime = BundleViewRuntime::try_new(Some(program), Some(text), None).unwrap();
-    let initial = runtime.evaluate(std::slice::from_ref(&mounted), &[], false);
-    assert_eq!(plain_text(&initial), "0");
-    runtime.advance_millis(1_000).unwrap();
-    let advanced = runtime.evaluate(std::slice::from_ref(&mounted), &[], false);
-    assert_eq!(plain_text(&advanced), "1");
-    let reduced = runtime.evaluate(std::slice::from_ref(&mounted), &[], true);
-    assert_eq!(plain_text(&reduced), "0");
-}
-
-#[test]
 fn exact_i32_width_is_enforced_at_the_runtime_boundary() {
     let program = ViewProgramResource {
         program_id: program_id("view.program.i32"),
@@ -2944,4 +2871,60 @@ fn standard_dialogue_handler_seals_once_reseals_on_capture_change_and_rejects_st
         changed_binding.route()
     );
     assert_eq!(restored_backend.stats().awbc_pure_program_calls, 1);
+}
+
+#[test]
+fn logical_time_updates_context_cache_and_reduce_motion_freezes_it() {
+    use arcweft_presentation::fx::{FxEvaluationBudget, FxLogicalTime, FxSampleContext};
+    use arcweft_view::{ViewMountState, ViewValueEvaluationStatus, ViewValueProgramInventory};
+    let inventory = ViewValueProgramInventory::from_programs([value_program(
+        0,
+        Vec::new(),
+        Vec::new(),
+        FxRuntimeType::F32,
+        vec![
+            ValueInstruction::LoadContext {
+                slot: FxContextSlot::Time,
+            },
+            ValueInstruction::Return,
+        ],
+    )])
+    .unwrap();
+    let mut state = ViewMountState::new(
+        ViewMountId::from_raw(1),
+        program_id("view.program.time"),
+        41,
+        Vec::new(),
+        Vec::new(),
+        &inventory,
+    )
+    .unwrap();
+    for (millis, reduced, expected, status) in [
+        (0, false, 0.0, ViewValueEvaluationStatus::Evaluated),
+        (1000, false, 1.0, ViewValueEvaluationStatus::Evaluated),
+        (1000, false, 1.0, ViewValueEvaluationStatus::Reused),
+        (1000, true, 0.0, ViewValueEvaluationStatus::Evaluated),
+    ] {
+        let context = FxSampleContext::from_logical_times(
+            FxLogicalTime::zero().try_advance_millis(millis).unwrap(),
+            FxLogicalTime::zero(),
+            0,
+            7,
+            reduced,
+        )
+        .unwrap();
+        let evaluation = state
+            .evaluate(
+                ViewValueProgramId(0),
+                &inventory,
+                context,
+                &mut FxEvaluationBudget::new(2),
+            )
+            .unwrap();
+        assert_eq!(
+            evaluation.value(),
+            FxRuntimeValue::F32(arcweft_presentation::fx::FiniteF32::try_new(expected).unwrap())
+        );
+        assert_eq!(evaluation.status(), status);
+    }
 }

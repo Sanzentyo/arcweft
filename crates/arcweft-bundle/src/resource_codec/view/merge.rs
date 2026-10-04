@@ -939,9 +939,6 @@ fn remap_program_references(
         ViewProgramInstruction::Await { source_program, .. } => {
             remap_program(source_program, offset)?;
         }
-        ViewProgramInstruction::BindLocal { value_program, .. } => {
-            remap_program(value_program, offset)?;
-        }
         ViewProgramInstruction::ApplyFx {
             arguments,
             key_program,
@@ -958,6 +955,9 @@ fn remap_program_references(
         }
         ViewProgramInstruction::OpenElement { .. }
         | ViewProgramInstruction::CloseElement
+        | ViewProgramInstruction::BeginScope
+        | ViewProgramInstruction::EndScope
+        | ViewProgramInstruction::BindLocal { .. }
         | ViewProgramInstruction::EmitText { .. }
         | ViewProgramInstruction::EmitImage { .. }
         | ViewProgramInstruction::EmitCustom { .. }

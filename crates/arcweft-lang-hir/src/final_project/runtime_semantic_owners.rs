@@ -1290,7 +1290,32 @@ impl<'project> HirAnalysisProjectView<'project> {
         owner: &HirRuntimeExecutableOwner,
     ) -> Result<(StructuralOwners, Vec<ExprId>), HirRuntimeReachabilityError> {
         let roots = execution_roots(self, index.topology, owner)?;
-        let expression_roots = roots.expressions.clone();
+        let mut expression_roots = roots.expressions.clone();
+        // Statement roots enter the same selected expression traversal as
+        // declaration/value roots. Follow statement containers only here;
+        // expression child selection remains owned by that traversal.
+        let mut statements = roots.statements.clone();
+        let mut visited = BTreeSet::new();
+        while let Some(statement) = statements.pop() {
+            if !visited.insert(statement) {
+                continue;
+            }
+            let children = index
+                .statement_edges
+                .get(&statement)
+                .ok_or(HirRuntimeReachabilityError::UnresolvedStatement { statement })?;
+            for child in children {
+                match child {
+                    HirStatementChild::Expression(expression) => expression_roots.push(*expression),
+                    HirStatementChild::Statement(statement) => statements.push(*statement),
+                    HirStatementChild::Pattern(_)
+                    | HirStatementChild::Type(_)
+                    | HirStatementChild::Local(_) => {}
+                }
+            }
+        }
+        expression_roots.sort_unstable();
+        expression_roots.dedup();
         let active_closure = match owner {
             HirRuntimeExecutableOwner::CallableBody(expression) => Some(*expression),
             HirRuntimeExecutableOwner::Value(_)

@@ -14,9 +14,9 @@ use arcweft_view::{
     ViewCallArgument, ViewCustomSpec, ViewElementSpec, ViewEvaluationSiteId,
     ViewFxApplicationInstruction, ViewFxArgumentSource, ViewFxCallArgument, ViewHandlerProgramId,
     ViewHandlerResult, ViewId, ViewImageSpec, ViewInstruction, ViewInstructionRange,
-    ViewLocalBinding, ViewParameterInput, ViewPartId, ViewPartStaticReachability, ViewProgram,
-    ViewProgramBuildError, ViewProgramBuilder, ViewProgramId, ViewRepeat, ViewSemanticSpec,
-    ViewStableKey, ViewTextSpec, ViewValueInventoryError, ViewValueProgramInventory,
+    ViewParameterInput, ViewPartId, ViewPartStaticReachability, ViewProgram, ViewProgramBuildError,
+    ViewProgramBuilder, ViewProgramId, ViewRepeat, ViewSemanticSpec, ViewStableKey, ViewTextSpec,
+    ViewValueInventoryError, ViewValueProgramInventory,
 };
 use thiserror::Error;
 
@@ -115,6 +115,8 @@ impl ViewProgramCatalog {
                         .enabled_value()
                         .and_then(|value| value.program())
                         .is_some()
+                }) || program.resource().instructions.iter().any(|instruction| {
+                    matches!(instruction, ViewProgramInstruction::BindLocal { .. })
                 }) || !program.resource().handlers.is_empty()
                     || program.resource().definitions.iter().any(|definition| {
                         definition.parameter_contract.is_some()
@@ -599,14 +601,11 @@ fn map_instruction(
             error: error_branch.as_ref().map(map_await_branch),
             denied: denied_branch.as_ref().map(map_await_branch),
         }),
-        ViewProgramInstruction::BindLocal {
-            binding,
-            value_program,
-            ..
-        } => ViewInstruction::BindLocal(ViewLocalBinding {
-            binding: binding.clone(),
-            value: *value_program,
-        }),
+        ViewProgramInstruction::BeginScope => ViewInstruction::BeginScope,
+        ViewProgramInstruction::EndScope => ViewInstruction::EndScope,
+        ViewProgramInstruction::BindLocal { program, .. } => {
+            ViewInstruction::BindLocal(program.clone())
+        }
         ViewProgramInstruction::ApplyFx {
             fx,
             parameter_layout,

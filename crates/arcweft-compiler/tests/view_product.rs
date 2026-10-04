@@ -2361,12 +2361,14 @@ view Main(label: String = "hello", enabled: bool = true,
                         arcweft_view::ViewParameterCoordinate::try_from_index(999).unwrap(),
                         expression.inputs[0].value_type(),
                     )
+                    .into()
                 }
                 3 => {
                     expression.inputs[0] = arcweft_view::ViewParameterInput::new(
-                        expression.inputs[0].parameter(),
+                        expression.inputs[0].parameter().unwrap(),
                         definition.parameters[1].semantic_type,
                     )
+                    .into()
                 }
                 _ => expression.inputs = vec![expression.inputs[0]; 2].into_boxed_slice(),
             }
@@ -2507,14 +2509,16 @@ view Main(label: String = "hello", enabled: bool = true,
             let inputs = default
                 .inputs
                 .iter()
-                .map(|input| values[input.parameter().index()].clone())
+                .map(|input| {
+                    values[input.parameter().expect("parameter-only fixture").index()].clone()
+                })
                 .collect();
             values.push(execute(default.program, inputs));
         }
         let inputs = binding
             .inputs
             .iter()
-            .map(|input| values[input.parameter().index()].clone())
+            .map(|input| values[input.parameter().expect("parameter-only fixture").index()].clone())
             .collect();
         assert_eq!(
             execute(binding.program, inputs),
@@ -2687,6 +2691,218 @@ view Main(zero: i64) {{ {head} }}
         assert!(
             frame.diagnostics[0].message.contains(&first.to_string()),
             "{head}: {frame:?}"
+        );
+    }
+}
+
+#[test]
+fn authored_view_block_locals_keep_patterns_scopes_and_cold_restore() {
+    use arcweft_core::value::{RuntimeBinding, RuntimeValue};
+    use arcweft_runtime_driver::presentation_handles::{
+        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    };
+    use arcweft_runtime_driver::view_runtime::BundleViewTextValue;
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+struct Row { label: String, count: i64 }
+view Main(label: String = "seed") {
+    {
+        let pair = (label, 42i64);
+        let (inner, count) = pair;
+        Text(inner);
+        { let inner = "shadow"; Text(inner) };
+        let Row { label: inner, count } = Row { label: inner, count };
+        Text(inner);
+        Button(inner, enabled = count == 42i64)
+    }
+}
+"#;
+    let compiled = project_view_fixture_with_entry(source, "arcweft-test://view-block-local")
+        .compile()
+        .expect("View locals execute through Core");
+    let product = compiled.view_product().product().as_ref().clone();
+    let text = compiled.view_product().text().unwrap().clone();
+    let resource = product.program().unwrap().resource();
+    assert_eq!(
+        ViewProgramResource::decode_canonical_section(
+            &resource.encode_canonical_section().unwrap()
+        )
+        .unwrap(),
+        *resource
+    );
+    let awbc = Arc::new(
+        arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+            AwbcLowerer::new(
+                &compiled.runtime_plan().plan,
+                &compiled.runtime_plan().dialogue_content_catalog,
+                "main.arcw",
+            )
+            .lower()
+            .unwrap()
+            .program,
+        )
+        .unwrap(),
+    );
+    resource.validate_awbc_programs(&awbc, Some(&text)).unwrap();
+    for forgery in 0..8 {
+        let mut forged = resource.clone();
+        let mut forged_text = text.clone();
+        let binding_positions = forged
+            .instructions
+            .iter()
+            .enumerate()
+            .filter_map(|(index, instruction)| {
+                matches!(instruction, ViewProgramInstruction::BindLocal { .. }).then_some(index)
+            })
+            .collect::<Vec<_>>();
+        let nested_local = forged_text
+            .sources
+            .iter()
+            .filter_map(|source| match &source.kind {
+                arcweft_bundle::resource_codec::view::ViewTextSourceKind::Program { program } => {
+                    Some(program.inputs[0])
+                }
+                _ => None,
+            })
+            .nth(1)
+            .unwrap();
+        match forgery {
+            0 => {
+                let ViewProgramInstruction::BindLocal { program, .. } =
+                    &mut forged.instructions[binding_positions[1]]
+                else {
+                    panic!("binding")
+                };
+                program.outputs.swap(0, 1);
+            }
+            1 => {
+                let ViewProgramInstruction::BindLocal { program, .. } =
+                    &mut forged.instructions[binding_positions[1]]
+                else {
+                    panic!("binding")
+                };
+                let arcweft_view::ViewExecutionInputSource::Local(ref mut local) =
+                    program.execution.inputs[0].source
+                else {
+                    panic!("local")
+                };
+                local.output = u16::MAX;
+            }
+            2 => {
+                let ViewProgramInstruction::BindLocal { program, .. } =
+                    &mut forged.instructions[binding_positions[1]]
+                else {
+                    panic!("binding")
+                };
+                program.outputs = Box::new([]);
+            }
+            3 => {
+                let ViewProgramInstruction::BindLocal { program, .. } =
+                    &mut forged.instructions[binding_positions[1]]
+                else {
+                    panic!("binding")
+                };
+                program.outputs[0].value_type = program.outputs[1].value_type;
+            }
+            4 => {
+                let ViewProgramInstruction::BindLocal { program, .. } =
+                    &mut forged.instructions[binding_positions[1]]
+                else {
+                    panic!("binding")
+                };
+                program.outputs[1].coordinate = program.outputs[0].coordinate;
+            }
+            5 => {
+                let target = forged_text
+                    .sources
+                    .iter_mut()
+                    .filter_map(|source| match &mut source.kind {
+                        arcweft_bundle::resource_codec::view::ViewTextSourceKind::Program {
+                            program,
+                        } => Some(program),
+                        _ => None,
+                    })
+                    .nth(2)
+                    .unwrap();
+                target.inputs[0] = nested_local;
+            }
+            6 => {
+                let ViewProgramInstruction::BindLocal { program, .. } =
+                    &forged.instructions[binding_positions[1]]
+                else {
+                    panic!("binding")
+                };
+                let output = program.outputs[0];
+                let ViewProgramInstruction::BindLocal { program, .. } =
+                    &mut forged.instructions[binding_positions[0]]
+                else {
+                    panic!("binding")
+                };
+                program.execution.inputs[0].source =
+                    arcweft_view::ViewExecutionInputSource::Local(output.coordinate);
+            }
+            _ => {
+                let close = forged
+                    .instructions
+                    .iter()
+                    .position(|instruction| matches!(instruction, ViewProgramInstruction::EndScope))
+                    .unwrap();
+                forged.instructions[close] = ViewProgramInstruction::BeginScope;
+            }
+        }
+        assert!(
+            forged
+                .validate_awbc_programs(&awbc, Some(&forged_text))
+                .is_err(),
+            "forgery {forgery}"
+        );
+    }
+    assert!(BundleViewRuntime::try_new(product.clone(), Some(text.clone())).is_err());
+    let handle = PresentationHandleRecord::new(
+        PresentationHandleId::try_new("view.block.locals").unwrap(),
+        PresentationHandleKind::View,
+        "view.Main".to_owned(),
+        None,
+        PresentationResourceState::Mounted,
+        None,
+        0,
+    );
+    let mut runtime = BundleViewRuntime::try_new_with_awbc(
+        product.clone(),
+        Some(text.clone()),
+        Arc::clone(&awbc),
+    )
+    .unwrap();
+    for label in ["first", "second"] {
+        let inputs = [RuntimeBinding {
+            name: "label".to_owned(),
+            value: RuntimeValue::String(label.to_owned()),
+        }];
+        let frame = runtime.evaluate(std::slice::from_ref(&handle), &inputs, false);
+        assert!(frame.diagnostics.is_empty(), "{frame:?}");
+        let values = frame.mounts[0]
+            .text
+            .iter()
+            .map(|output| match &output.value {
+                BundleViewTextValue::Plain { value } => value.as_str(),
+                _ => panic!("plain text"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(values, [label, "shadow", label]);
+        assert_eq!(frame.mounts[0].action_buttons[0].label, label);
+        assert!(frame.mounts[0].action_buttons[0].enabled);
+        let saved = runtime.snapshot().unwrap();
+        let mut cold = BundleViewRuntime::try_new_with_awbc(
+            product.clone(),
+            Some(text.clone()),
+            Arc::clone(&awbc),
+        )
+        .unwrap();
+        cold.restore(&saved, std::slice::from_ref(&handle)).unwrap();
+        assert_eq!(
+            frame,
+            cold.evaluate(std::slice::from_ref(&handle), &inputs, false)
         );
     }
 }

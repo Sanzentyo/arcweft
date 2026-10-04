@@ -55,7 +55,10 @@ pub use handler_program::{
 mod element_argument;
 mod expression_program;
 pub use element_argument::ViewElementArgumentRole;
-pub use expression_program::{ViewExpressionProgram, ViewExpressionValue};
+pub use expression_program::{
+    ViewBindingProgram, ViewExecutionInput, ViewExecutionInputSource, ViewExpressionProgram,
+    ViewExpressionValue, ViewLocalCoordinate, ViewLocalOutput,
+};
 pub use image::{
     ImageAlignment, ImageFit, ImagePlayback, ViewImagePresentationMetadata, ViewImageSource,
     ViewImageSourceTable, ViewResolvedImageFrame,
@@ -79,8 +82,8 @@ pub use program::{
     BindEvent, BindHandler, EventKind, ViewAwait, ViewAwaitBranch, ViewBranch, ViewCall,
     ViewCallArgument, ViewCustomSpec, ViewElementKind, ViewElementLayoutKind, ViewElementSpec,
     ViewElementTextInputKind, ViewFxApplicationInstruction, ViewFxArgumentSource,
-    ViewFxCallArgument, ViewImageSpec, ViewInstruction, ViewInstructionRange, ViewLocalBinding,
-    ViewProgram, ViewProgramBuilder, ViewRepeat, ViewSemanticSpec, ViewStableKey, ViewTextSpec,
+    ViewFxCallArgument, ViewImageSpec, ViewInstruction, ViewInstructionRange, ViewProgram,
+    ViewProgramBuilder, ViewRepeat, ViewSemanticSpec, ViewStableKey, ViewTextSpec,
 };
 pub use reactive::{EntityInvalidation, ReactiveGraph, ReactiveInvalidation, Revision};
 pub use semantics::{

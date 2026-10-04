@@ -837,20 +837,21 @@ fn lower_view_parameter_defaults(
             owner: view.owner,
             view: &view.id,
             parameters: &view.parameters,
+            locals: &BTreeMap::new(),
             output,
         }
         .lower(default.source())?;
-        if binding
-            .inputs
-            .iter()
-            .any(|input| input.parameter().index() >= ordinal)
-            || analysis
-                .expression(default.source())
-                .and_then(|expression| expression.value_type())
-                .ok_or_else(invalid)?
-                .semantic_identity_digest()?
-                .as_bytes()
-                != default.result().as_bytes()
+        if binding.inputs.iter().any(|input| {
+            input
+                .parameter()
+                .is_none_or(|parameter| parameter.index() >= ordinal)
+        }) || analysis
+            .expression(default.source())
+            .and_then(|expression| expression.value_type())
+            .ok_or_else(invalid)?
+            .semantic_identity_digest()?
+            .as_bytes()
+            != default.result().as_bytes()
         {
             return Err(invalid());
         }
@@ -888,6 +889,7 @@ fn lower_authored_view(
             view: &view.id,
             text_ordinal: 0,
             element_ordinal: 0,
+            locals: BTreeMap::new(),
             output,
         };
         for value in view.declaration.values() {
@@ -928,6 +930,7 @@ struct ViewExpressionLowerer<'a> {
     owner: ItemId,
     view: &'a ViewId,
     parameters: &'a BTreeMap<LocalId, CheckedViewParameter>,
+    locals: &'a BTreeMap<LocalId, arcweft_view::ViewLocalOutput>,
     output: &'a mut AuthoredViewLowering,
 }
 
@@ -936,11 +939,18 @@ impl ViewExpressionLowerer<'_> {
         &mut self,
         value: ExprId,
     ) -> Result<arcweft_view::ViewExpressionProgram, ViewProjectLowerError> {
+        use arcweft_lang_sema::final_analysis::CheckedExecutionSource;
+        self.lower_source(CheckedExecutionSource::EvaluateValue(value))
+    }
+
+    fn lower_source(
+        &mut self,
+        source: arcweft_lang_sema::final_analysis::CheckedExecutionSource,
+    ) -> Result<arcweft_view::ViewExpressionProgram, ViewProjectLowerError> {
         use arcweft_lang_sema::final_analysis::{
             CheckedExecutionInputRole, CheckedExecutionSource, CheckedMatchLimits,
         };
         let invalid = || ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner };
-        let source = CheckedExecutionSource::EvaluateValue(value);
         let context = self
             .analysis
             .checked_execution_context(self.project, self.world.symbols(), source.clone(), None)
@@ -948,12 +958,14 @@ impl ViewExpressionLowerer<'_> {
                 owner: self.owner,
                 source: Box::new(source),
             })?;
-        let admission = Arc::new(context.checked_deterministic_program(source).map_err(
-            |source| ViewProjectLowerError::InvalidProgramAdmission {
-                owner: self.owner,
-                source: Box::new(source),
-            },
-        )?);
+        let admission = Arc::new(
+            context
+                .checked_deterministic_program(source.clone())
+                .map_err(|source| ViewProjectLowerError::InvalidProgramAdmission {
+                    owner: self.owner,
+                    source: Box::new(source),
+                })?,
+        );
         let abi = admission.input_abi();
         if !abi.parameters().is_empty() {
             return Err(invalid());
@@ -967,42 +979,64 @@ impl ViewExpressionLowerer<'_> {
             .iter()
             .filter(|input| matches!(input.role(), CheckedExecutionInputRole::Free))
             .map(|input| {
-                let binding = self
-                    .parameters
-                    .get(&input.binding().local())
-                    .ok_or_else(invalid)?;
-                if abi
-                    .environment()
-                    .semantic_type_identity(input.binding().ty())?
-                    .as_bytes()
-                    != binding.value_type.as_bytes()
-                {
-                    return Err(invalid());
-                }
-                Ok(arcweft_view::ViewParameterInput::new(
-                    binding.coordinate,
-                    binding.value_type,
-                ))
+                let value_type = ViewHandlerValueTypeId::from_semantic_digest(
+                    *abi.environment()
+                        .semantic_type_identity(input.binding().ty())?
+                        .as_bytes(),
+                );
+                let source = if let Some(binding) = self.parameters.get(&input.binding().local()) {
+                    if value_type != binding.value_type {
+                        return Err(invalid());
+                    }
+                    arcweft_view::ViewExecutionInputSource::Parameter(binding.coordinate)
+                } else {
+                    let binding = self
+                        .locals
+                        .get(&input.binding().local())
+                        .ok_or_else(invalid)?;
+                    if value_type != binding.value_type {
+                        return Err(invalid());
+                    }
+                    arcweft_view::ViewExecutionInputSource::Local(binding.coordinate)
+                };
+                Ok(arcweft_view::ViewExecutionInput { source, value_type })
             })
             .collect::<Result<Vec<_>, ViewProjectLowerError>>()?
             .into_boxed_slice();
-        let semantic = self
-            .analysis
-            .checked_expression_semantic_digest(
-                self.project,
-                self.world.symbols(),
-                value,
-                CheckedMatchLimits::PRODUCTION,
-            )
-            .map_err(|source| ViewProjectLowerError::InvalidProgramTranscript {
-                owner: self.owner,
-                source: Box::new(source),
-            })?;
+        let semantic = match source {
+            CheckedExecutionSource::EvaluateValue(value) => *self
+                .analysis
+                .checked_expression_semantic_digest(
+                    self.project,
+                    self.world.symbols(),
+                    value,
+                    CheckedMatchLimits::PRODUCTION,
+                )
+                .map_err(|source| ViewProjectLowerError::InvalidProgramTranscript {
+                    owner: self.owner,
+                    source: Box::new(source),
+                })?
+                .as_bytes(),
+            CheckedExecutionSource::ExportBinding(statement) => *self
+                .analysis
+                .checked_statement_semantic_digest(
+                    self.project,
+                    self.world.symbols(),
+                    statement,
+                    CheckedMatchLimits::PRODUCTION,
+                )
+                .map_err(|source| ViewProjectLowerError::InvalidProgramTranscript {
+                    owner: self.owner,
+                    source: Box::new(source),
+                })?
+                .as_bytes(),
+            CheckedExecutionSource::InvokeBody(_) => return Err(invalid()),
+        };
         let mut digest = blake3::Hasher::new();
         digest.update(b"arcweft.view.expression.v1\0");
         digest.update(&(self.view.as_str().len() as u64).to_le_bytes());
         digest.update(self.view.as_str().as_bytes());
-        digest.update(semantic.as_bytes());
+        digest.update(&semantic);
         let id = ViewHandlerProgramId::from_checked_digest(*digest.finalize().as_bytes());
         if self
             .output
@@ -1038,6 +1072,7 @@ struct AuthoredViewBodyLowerer<'a> {
     view: &'a ViewId,
     text_ordinal: u32,
     element_ordinal: u32,
+    locals: BTreeMap<LocalId, arcweft_view::ViewLocalOutput>,
     output: &'a mut AuthoredViewLowering,
 }
 
@@ -1049,6 +1084,77 @@ struct CheckedViewParameter {
 }
 
 impl AuthoredViewBodyLowerer<'_> {
+    fn lower_statement(
+        &mut self,
+        statement: arcweft_lang_hir::identity::StmtId,
+    ) -> Result<(), ViewProjectLowerError> {
+        let invalid = || ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner };
+        let row = self.module.resolve_stmt(statement).map_err(|_| invalid())?;
+        match row.kind().evaluation_plan() {
+            arcweft_lang_hir::stmt::HirStmtEvaluationPlan::Binding { .. } => {
+                let execution = ViewExpressionLowerer {
+                    project: self.project,
+                    analysis: self.analysis,
+                    world: self.registered_world,
+                    owner: self.owner,
+                    view: self.view,
+                    parameters: self.parameters,
+                    locals: &self.locals,
+                    output: self.output,
+                }
+                .lower_source(
+                    arcweft_lang_sema::final_analysis::CheckedExecutionSource::ExportBinding(
+                        statement,
+                    ),
+                )?;
+                let admission = self.output.runtime_programs.last().ok_or_else(invalid)?;
+                let mut outputs = Vec::new();
+                for (index, binding) in admission
+                    .admission
+                    .input_abi()
+                    .binding_outputs()
+                    .iter()
+                    .enumerate()
+                {
+                    let output = arcweft_view::ViewLocalOutput {
+                        coordinate: arcweft_view::ViewLocalCoordinate {
+                            program: execution.program,
+                            output: u16::try_from(index).map_err(|_| invalid())?,
+                        },
+                        value_type: ViewHandlerValueTypeId::from_semantic_digest(
+                            *admission
+                                .admission
+                                .input_abi()
+                                .environment()
+                                .semantic_type_identity(binding.ty())?
+                                .as_bytes(),
+                        ),
+                    };
+                    if self.locals.insert(binding.local(), output).is_some() {
+                        return Err(invalid());
+                    }
+                    outputs.push(output);
+                }
+                self.output
+                    .instructions
+                    .push(ViewProgramInstruction::BindLocal {
+                        program: arcweft_view::ViewBindingProgram {
+                            execution,
+                            outputs: outputs.into_boxed_slice(),
+                        },
+                        source: None,
+                    });
+                Ok(())
+            }
+            arcweft_lang_hir::stmt::HirStmtEvaluationPlan::Value {
+                kind: arcweft_lang_hir::stmt::HirStmtValuePlanKind::Expression,
+                expression: Some(expression),
+                ..
+            } => self.lower_value(expression),
+            _ => Err(invalid()),
+        }
+    }
+
     fn lower_value(&mut self, value: ExprId) -> Result<(), ViewProjectLowerError> {
         let expression = self.module.resolve_expr(value).map_err(|_| {
             ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner }
@@ -1057,6 +1163,24 @@ impl AuthoredViewBodyLowerer<'_> {
             .analysis
             .expression(value)
             .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
+        if let arcweft_lang_hir::expr::HirExprKind::Block(block) = expression.kind() {
+            let outer = self.locals.clone();
+            self.output
+                .instructions
+                .push(ViewProgramInstruction::BeginScope);
+            for &statement in block.statements() {
+                self.lower_statement(statement)?;
+            }
+            self.lower_value(block.tail())?;
+            self.output
+                .instructions
+                .push(ViewProgramInstruction::EndScope);
+            self.locals = outer;
+            return Ok(());
+        }
+        if matches!(expression.kind(), arcweft_lang_hir::expr::HirExprKind::Unit) {
+            return Ok(());
+        }
         let arcweft_lang_hir::expr::HirExprKind::Call(call) = expression.kind() else {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         };
@@ -1120,6 +1244,7 @@ impl AuthoredViewBodyLowerer<'_> {
                             owner: self.owner,
                             view: self.view,
                             parameters: self.parameters,
+                            locals: &self.locals,
                             output: self.output,
                         }
                         .lower(argument.value())?;
@@ -1822,6 +1947,7 @@ impl AuthoredViewBodyLowerer<'_> {
                     owner,
                     view: self.view,
                     parameters: self.parameters,
+                    locals: &self.locals,
                     output: self.output,
                 }
                 .lower(value)?;

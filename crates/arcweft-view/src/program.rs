@@ -57,7 +57,9 @@ pub enum ViewInstruction {
     Branch(ViewBranch),
     RepeatKeyed(ViewRepeat),
     Await(ViewAwait),
-    BindLocal(ViewLocalBinding),
+    BeginScope,
+    EndScope,
+    BindLocal(crate::ViewBindingProgram),
     ApplyFx(ViewFxApplicationInstruction),
     BindEvent(BindEvent),
     AttachSemantic(ViewSemanticSpec),
@@ -354,12 +356,6 @@ pub struct ViewAwait {
     pub ready: Option<ViewAwaitBranch>,
     pub error: Option<ViewAwaitBranch>,
     pub denied: Option<ViewAwaitBranch>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ViewLocalBinding {
-    pub binding: String,
-    pub value: ViewValueProgramId,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -688,7 +684,9 @@ fn validate_handlers(
             | ViewInstruction::RepeatKeyed(_)
             | ViewInstruction::Await(_)
             | ViewInstruction::BindLocal(_) => target = None,
-            ViewInstruction::CloseElement
+            ViewInstruction::BeginScope
+            | ViewInstruction::EndScope
+            | ViewInstruction::CloseElement
             | ViewInstruction::ApplyFx(_)
             | ViewInstruction::AttachSemantic(_) => {}
         }
@@ -750,6 +748,8 @@ impl ViewInstruction {
             | Self::RepeatKeyed(_)
             | Self::Await(_)
             | Self::BindLocal(_)
+            | Self::BeginScope
+            | Self::EndScope
             | Self::ApplyFx(_)
             | Self::BindEvent(_)
             | Self::AttachSemantic(_) => None,
@@ -768,6 +768,8 @@ impl ViewInstruction {
             | Self::RepeatKeyed(_)
             | Self::Await(_)
             | Self::BindLocal(_)
+            | Self::BeginScope
+            | Self::EndScope
             | Self::ApplyFx(_)
             | Self::BindEvent(_)
             | Self::AttachSemantic(_) => None,
@@ -786,6 +788,8 @@ impl ViewInstruction {
             | Self::RepeatKeyed(_)
             | Self::Await(_)
             | Self::BindLocal(_)
+            | Self::BeginScope
+            | Self::EndScope
             | Self::ApplyFx(_)
             | Self::BindEvent(_)
             | Self::AttachSemantic(_) => {

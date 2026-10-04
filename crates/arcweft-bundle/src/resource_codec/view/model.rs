@@ -129,9 +129,10 @@ pub enum ViewProgramInstruction {
         denied_branch: Option<ViewAwaitBranchSpan>,
         source: Option<SourceRangeRef>,
     },
+    BeginScope,
+    EndScope,
     BindLocal {
-        binding: String,
-        value_program: ViewValueProgramId,
+        program: arcweft_view::ViewBindingProgram,
         source: Option<SourceRangeRef>,
     },
     /// Applies a resolved `#[fx] fn -> Fx` graph to the current retained node.
@@ -170,6 +171,8 @@ impl ViewProgramInstruction {
             | Self::RepeatKeyed { .. }
             | Self::Await { .. }
             | Self::BindLocal { .. }
+            | Self::BeginScope
+            | Self::EndScope
             | Self::ApplyFx { .. }
             | Self::BindHandler { .. }
             | Self::AttachSemantic { .. } => &[],
@@ -188,6 +191,8 @@ impl ViewProgramInstruction {
             | Self::RepeatKeyed { .. }
             | Self::Await { .. }
             | Self::BindLocal { .. }
+            | Self::BeginScope
+            | Self::EndScope
             | Self::ApplyFx { .. }
             | Self::BindHandler { .. }
             | Self::AttachSemantic { .. } => None,
@@ -207,6 +212,8 @@ impl ViewProgramInstruction {
             | Self::RepeatKeyed { .. }
             | Self::Await { .. }
             | Self::BindLocal { .. }
+            | Self::BeginScope
+            | Self::EndScope
             | Self::ApplyFx { .. }
             | Self::BindHandler { .. }
             | Self::AttachSemantic { .. } => None,
@@ -227,7 +234,7 @@ impl ViewProgramInstruction {
             | Self::ApplyFx { source, .. }
             | Self::BindHandler { source, .. }
             | Self::AttachSemantic { source, .. } => source.as_ref(),
-            Self::CloseElement => None,
+            Self::CloseElement | Self::BeginScope | Self::EndScope => None,
         }
     }
 
@@ -245,7 +252,7 @@ impl ViewProgramInstruction {
             | Self::ApplyFx { source, .. }
             | Self::BindHandler { source, .. }
             | Self::AttachSemantic { source, .. } => source.as_mut(),
-            Self::CloseElement => None,
+            Self::CloseElement | Self::BeginScope | Self::EndScope => None,
         }
     }
 }
@@ -381,10 +388,6 @@ pub enum ViewValueInputSource {
     LifetimeProjection {
         scope: String,
         path: Vec<String>,
-    },
-    Local {
-        view: String,
-        name: String,
     },
     RepeatOrdinal {
         view: String,
@@ -959,9 +962,6 @@ pub enum ViewTextSourceKind {
     Projection {
         path: Vec<String>,
     },
-    Local {
-        name: String,
-    },
     Localized {
         key: String,
         locale: Option<String>,
@@ -1145,7 +1145,6 @@ impl ViewTextResource {
                 ViewTextSourceKind::Literal { value } => Some(value.as_str()),
                 ViewTextSourceKind::Program { .. }
                 | ViewTextSourceKind::Projection { .. }
-                | ViewTextSourceKind::Local { .. }
                 | ViewTextSourceKind::Localized { .. }
                 | ViewTextSourceKind::RichTextDocument { .. }
                 | ViewTextSourceKind::DisplayFrame { .. }

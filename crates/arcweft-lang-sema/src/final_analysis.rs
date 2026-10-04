@@ -255,7 +255,7 @@ pub use semantic_transcript::{
     CheckedMatchSequencePartition, CheckedMatchVariantFieldList, CheckedMatchVariantFieldRef,
     CheckedMatchVariantPayloadView, CheckedMatchWitness, CheckedMatchWitnessKind,
     CheckedMatchWitnessList, CheckedMatchWitnessRef, CheckedMatchWitnessView,
-    CheckedSemanticTranscriptError, MatchSemanticTranscript,
+    CheckedSemanticTranscriptError, CheckedStatementSemanticDigest, MatchSemanticTranscript,
 };
 pub(crate) use transcript_writer::{
     CheckedTranscriptByteBudget, TranscriptHasher, TranscriptWriteError,
