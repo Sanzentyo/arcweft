@@ -2016,7 +2016,7 @@ style Primary { Panel { color = rgba(10, 20, 30, 255) } }
 
 #[test]
 fn authored_element_geometry_refuses_units_without_a_layout_conversion() {
-    for value in ["2pt", "2e0em"] {
+    for value in ["2pt", "2em", "2e0em"] {
         let source = format!(
             "entry cli @entry.main {{ goto @flow.main }}\nflow main() -> String {{ return \"done\" }}\nview Main() {{ Panel(width = {value}) }}"
         );

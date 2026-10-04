@@ -503,15 +503,19 @@ pub struct KeywordHit { channel: Option<String> }
 
 pub character alice { display = "Alice" }
 flow main() -> String {
-    alice[#object(id = @.hotspot, type = KeywordHit, depth = 2em)[invalid]]
+    alice[#object(id = @.hotspot, type = KeywordHit, depth = 2px)[#ruby(17)[invalid]]]
     return "done"
 }
 "#,
         None,
     );
+    fixture
+        .project
+        .analysis_view()
+        .expect("RichText syntax enters semantic analysis");
     assert!(
-        fixture.project.analysis_view().is_err(),
-        "invalid Object metadata unit must be rejected before semantic analysis"
+        analyze(&fixture).is_err(),
+        "invalid Object input cannot publish an insertion"
     );
 }
 

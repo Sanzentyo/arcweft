@@ -416,6 +416,14 @@ fn number_body_bounds(source: &str) -> (usize, usize) {
         }
     }
     if matches!(bytes.get(cursor), Some(b'e' | b'E')) {
+        let suffix_end = cursor
+            + bytes[cursor..]
+                .iter()
+                .take_while(|byte| byte.is_ascii_alphanumeric() || **byte == b'_')
+                .count();
+        if crate::literal::UnitNumberSuffix::parse(&source[cursor..suffix_end]).is_some() {
+            return (0, cursor);
+        }
         cursor += 1;
         if matches!(bytes.get(cursor), Some(b'+' | b'-')) {
             cursor += 1;
@@ -549,6 +557,42 @@ fn is_keyword(spelling: &str) -> bool {
 mod tests {
     use super::DocumentLexer;
     use crate::grammar::kinds::SyntaxKind;
+
+    #[test]
+    fn registered_units_starting_with_e_are_distinct_from_exponents() {
+        use crate::literal::{SyntaxLiteralValue, UnitNumberSuffix};
+        for source in ["2em", "2.5em", "2e3em", "2e-3em", "2e+3em"] {
+            let tokens = DocumentLexer::new(source).lex();
+            assert_eq!(tokens.len(), 1, "{source}");
+            let literal = super::typed_literal(tokens[0], source);
+            assert!(
+                matches!(
+                    literal.syntax().value(),
+                    SyntaxLiteralValue::Unit {
+                        unit: UnitNumberSuffix::Em,
+                        ..
+                    }
+                ),
+                "{source}: {:?}",
+                literal.syntax()
+            );
+        }
+        for source in ["2e", "2e+", "2e-", "2emissing"] {
+            let tokens = DocumentLexer::new(source).lex();
+            assert_eq!(tokens.len(), 1, "{source}");
+            let literal = super::typed_literal(tokens[0], source);
+            assert!(
+                matches!(literal.syntax().value(), SyntaxLiteralValue::Invalid(_)),
+                "{source}"
+            );
+        }
+        let source = "2em+3px";
+        let tokens = DocumentLexer::new(source).lex();
+        assert_eq!(tokens.len(), 3);
+        assert_eq!(&source[tokens[0].range().as_range()], "2em");
+        assert_eq!(&source[tokens[1].range().as_range()], "+");
+        assert_eq!(&source[tokens[2].range().as_range()], "3px");
+    }
 
     #[test]
     fn closed_string_keeps_square_close_inside_one_token() {

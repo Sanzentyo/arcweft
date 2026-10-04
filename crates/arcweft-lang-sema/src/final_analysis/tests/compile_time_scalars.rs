@@ -491,8 +491,12 @@ flow main() -> String {
 "#,
         None,
     );
+    fixture
+        .project
+        .analysis_view()
+        .expect("unit syntax enters semantic analysis");
     assert!(
-        fixture.project.analysis_view().is_err(),
-        "invalid Object metadata unit must be rejected before semantic analysis"
+        analyze(&fixture).is_err(),
+        "invalid Object input cannot publish an insertion"
     );
 }
