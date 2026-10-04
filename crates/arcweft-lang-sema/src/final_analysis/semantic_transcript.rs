@@ -666,29 +666,7 @@ fn build_checked_match_transaction(
         .modules()
         .find_map(|(_, module)| (module.module_id() == owner.module()).then_some(module.as_ref()))
         .ok_or(SemanticTranscriptError::MissingExpression)?;
-    let coordinates = SemanticCoordinateIndex::new(analysis.accepted_root_catalog(), analysis);
-    let mut builder = MatchTranscriptBuilder {
-        analysis,
-        module,
-        coordinates,
-        control,
-        budget: CheckedMatchBudget::new(limits),
-        expression_digests: BTreeMap::new(),
-        expression_paths: BTreeMap::new(),
-        expression_visiting: BTreeSet::new(),
-        pattern_digests: BTreeMap::new(),
-        pattern_coordinates: BTreeMap::new(),
-        pattern_paths: BTreeMap::new(),
-        pattern_visiting: BTreeSet::new(),
-        coverage_pattern_visiting: BTreeSet::new(),
-        observed_patterns: Vec::new(),
-        statement_digests: BTreeMap::new(),
-        statement_visiting: BTreeSet::new(),
-        body_digests: BTreeMap::new(),
-        body_visiting: BTreeSet::new(),
-        match_products: BTreeMap::new(),
-    };
-    builder.build_match_products(owner)?;
+    let mut builder = SemanticTranscriptGraph::new(analysis, module, limits, control);
     builder.expression_digest(owner)?;
     let mut product = builder
         .match_products
@@ -730,28 +708,8 @@ pub(crate) fn checked_declaration_default_expression_digest(
     ) {
         return Err(SemanticTranscriptError::MissingIdentity);
     }
-    let mut builder = MatchTranscriptBuilder {
-        analysis,
-        module,
-        coordinates,
-        control,
-        budget: CheckedMatchBudget::new(CheckedMatchLimits::PRODUCTION),
-        expression_digests: BTreeMap::new(),
-        expression_paths: BTreeMap::new(),
-        expression_visiting: BTreeSet::new(),
-        pattern_digests: BTreeMap::new(),
-        pattern_coordinates: BTreeMap::new(),
-        pattern_paths: BTreeMap::new(),
-        pattern_visiting: BTreeSet::new(),
-        coverage_pattern_visiting: BTreeSet::new(),
-        observed_patterns: Vec::new(),
-        statement_digests: BTreeMap::new(),
-        statement_visiting: BTreeSet::new(),
-        body_digests: BTreeMap::new(),
-        body_visiting: BTreeSet::new(),
-        match_products: BTreeMap::new(),
-    };
-    builder.build_match_products(owner)?;
+    let mut builder =
+        SemanticTranscriptGraph::new(analysis, module, CheckedMatchLimits::PRODUCTION, control);
     let expression = builder.expression_digest(owner)?;
     let mut hasher = TranscriptHasher::new(&mut builder.budget);
     transcript_update!(
@@ -771,17 +729,10 @@ pub(crate) fn checked_declaration_default_pattern_digest(
     analysis: &FinalSemanticAnalysis,
     module: &HirModule,
     owner: PatternId,
+    control: FinalSemanticAnalysisControl<'_>,
 ) -> Result<CheckedPatternSemanticDigest, SemanticTranscriptError> {
-    let coordinates = SemanticCoordinateIndex::new(analysis.accepted_root_catalog(), analysis);
-    generic_pattern_digest_at_with_state(
-        analysis,
-        module,
-        &coordinates,
-        &mut CheckedMatchBudget::new(CheckedMatchLimits::PRODUCTION),
-        &mut BTreeMap::new(),
-        &mut BTreeSet::new(),
-        owner,
-    )
+    SemanticTranscriptGraph::new(analysis, module, CheckedMatchLimits::PRODUCTION, control)
+        .generic_pattern_digest(owner)
 }
 
 impl FinalSemanticAnalysis {
@@ -848,10 +799,10 @@ impl FinalSemanticAnalysis {
     }
 }
 
-struct MatchTranscriptBuilder<'analysis, 'paths, 'edges, 'control> {
+struct SemanticTranscriptGraph<'analysis, 'control> {
     analysis: &'analysis FinalSemanticAnalysis,
     module: &'analysis HirModule,
-    coordinates: SemanticCoordinateIndex<'paths, 'edges>,
+    coordinates: SemanticCoordinateIndex<'analysis, 'analysis>,
     control: FinalSemanticAnalysisControl<'control>,
     budget: CheckedMatchBudget,
     expression_digests: BTreeMap<ExprId, CheckedExpressionSemanticDigest>,
@@ -873,47 +824,35 @@ struct MatchTranscriptBuilder<'analysis, 'paths, 'edges, 'control> {
     match_products: BTreeMap<ExprId, CheckedMatch>,
 }
 
-impl MatchTranscriptBuilder<'_, '_, '_, '_> {
-    fn build_match_products(&mut self, root: ExprId) -> Result<(), SemanticTranscriptError> {
-        let root_path = self.checked_path(root)?;
-        let mut owners = self
-            .module
-            .expressions()
-            .filter_map(|(owner, expression)| {
-                matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
-            })
-            .filter(|owner| {
-                self.coordinates.expression(*owner).is_ok_and(|path| {
-                    path.root() == root_path.root() && path.steps().starts_with(root_path.steps())
-                })
-            })
-            .collect::<Vec<_>>();
-        owners.sort_by_key(|owner| {
-            std::cmp::Reverse(
-                self.coordinates
-                    .expression(*owner)
-                    .map(|coordinate| coordinate.steps().len())
-                    .unwrap_or_default(),
-            )
-        });
-        for owner in owners {
-            self.control.check()?;
-            if self.match_products.contains_key(&owner) {
-                continue;
-            }
-            let authored = self
-                .module
-                .resolve_expr(owner)
-                .map_err(|_| SemanticTranscriptError::MissingExpression)?;
-            let HirExprKind::Match(authored) = authored.kind() else {
-                return Err(SemanticTranscriptError::NotMatch);
-            };
-            let checked_match = self.build(owner, authored)?;
-            self.match_products.insert(owner, checked_match);
+impl<'analysis, 'control> SemanticTranscriptGraph<'analysis, 'control> {
+    fn new(
+        analysis: &'analysis FinalSemanticAnalysis,
+        module: &'analysis HirModule,
+        limits: CheckedMatchLimits,
+        control: FinalSemanticAnalysisControl<'control>,
+    ) -> Self {
+        Self {
+            analysis,
+            module,
+            coordinates: SemanticCoordinateIndex::new(analysis.accepted_root_catalog(), analysis),
+            control,
+            budget: CheckedMatchBudget::new(limits),
+            expression_digests: BTreeMap::new(),
+            expression_paths: BTreeMap::new(),
+            expression_visiting: BTreeSet::new(),
+            pattern_digests: BTreeMap::new(),
+            pattern_coordinates: BTreeMap::new(),
+            pattern_paths: BTreeMap::new(),
+            pattern_visiting: BTreeSet::new(),
+            coverage_pattern_visiting: BTreeSet::new(),
+            observed_patterns: Vec::new(),
+            statement_digests: BTreeMap::new(),
+            statement_visiting: BTreeSet::new(),
+            body_digests: BTreeMap::new(),
+            body_visiting: BTreeSet::new(),
+            match_products: BTreeMap::new(),
         }
-        Ok(())
     }
-
     fn build(
         &mut self,
         owner: ExprId,
@@ -1048,31 +987,6 @@ impl MatchTranscriptBuilder<'_, '_, '_, '_> {
         self.expression_digest_at(owner, 0)
     }
 
-    fn expression_digest_at(
-        &mut self,
-        owner: ExprId,
-        depth: u64,
-    ) -> Result<CheckedExpressionSemanticDigest, SemanticTranscriptError> {
-        expression_digest_at_with_state(
-            self.analysis,
-            self.module,
-            &self.coordinates,
-            &mut self.budget,
-            &mut self.expression_digests,
-            &mut self.expression_paths,
-            &mut self.expression_visiting,
-            &mut self.statement_digests,
-            &mut self.statement_visiting,
-            &mut self.body_digests,
-            &mut self.body_visiting,
-            &mut self.pattern_digests,
-            &mut self.pattern_visiting,
-            &self.match_products,
-            owner,
-            depth,
-        )
-    }
-
     fn checked_path(&self, owner: ExprId) -> Result<CheckedSemanticPath, SemanticTranscriptError> {
         Ok(self.coordinates.expression(owner)?)
     }
@@ -1083,6 +997,7 @@ impl MatchTranscriptBuilder<'_, '_, '_, '_> {
         arm: &StableMatchArmCoordinate,
         coordinate: &StablePatternCoordinate,
     ) -> Result<CheckedPatternSemanticDigest, SemanticTranscriptError> {
+        self.control.check()?;
         let depth = u64::try_from(coordinate.steps().len())
             .map_err(|_| SemanticTranscriptError::WorkLimit)?;
         self.budget.observe_depth(depth)?;
@@ -1165,15 +1080,7 @@ impl MatchTranscriptBuilder<'_, '_, '_, '_> {
         // The digest itself is issued by the one accepted-rooted generic
         // pattern memo.  The arm coordinate above is coverage evidence only;
         // it is never a second digest grammar.
-        let digest = generic_pattern_digest_at_with_state(
-            self.analysis,
-            self.module,
-            &self.coordinates,
-            &mut self.budget,
-            &mut self.pattern_digests,
-            &mut self.pattern_visiting,
-            owner,
-        )?;
+        let digest = self.generic_pattern_digest(owner)?;
         self.coverage_pattern_visiting.remove(&owner);
         Ok(digest)
     }
@@ -1184,6 +1091,7 @@ impl MatchTranscriptBuilder<'_, '_, '_, '_> {
         coordinate: &StablePatternCoordinate,
         bindings: &mut Vec<CheckedMatchBinding>,
     ) -> Result<(), SemanticTranscriptError> {
+        self.control.check()?;
         let hir = self
             .module
             .resolve_pattern(owner)
@@ -1251,453 +1159,6 @@ impl MatchTranscriptBuilder<'_, '_, '_, '_> {
         }
         Ok(())
     }
-}
-
-fn expression_digest_at_with_state(
-    analysis: &FinalSemanticAnalysis,
-    module: &HirModule,
-    coordinates: &SemanticCoordinateIndex<'_, '_>,
-    budget: &mut CheckedMatchBudget,
-    expression_digests: &mut BTreeMap<ExprId, CheckedExpressionSemanticDigest>,
-    expression_paths: &mut BTreeMap<StableSemanticCoordinate, ExprId>,
-    expression_visiting: &mut BTreeSet<ExprId>,
-    statement_digests: &mut BTreeMap<
-        arcweft_lang_hir::identity::StmtId,
-        CheckedStatementSemanticDigest,
-    >,
-    statement_visiting: &mut BTreeSet<arcweft_lang_hir::identity::StmtId>,
-    body_digests: &mut BTreeMap<
-        crate::semantic_coordinate::StableCheckedBodyCoordinate,
-        CheckedBodySemanticDigest,
-    >,
-    body_visiting: &mut BTreeSet<crate::semantic_coordinate::StableCheckedBodyCoordinate>,
-    pattern_digests: &mut BTreeMap<PatternId, CheckedPatternSemanticDigest>,
-    pattern_visiting: &mut BTreeSet<PatternId>,
-    match_products: &BTreeMap<ExprId, CheckedMatch>,
-    owner: ExprId,
-    depth: u64,
-) -> Result<CheckedExpressionSemanticDigest, SemanticTranscriptError> {
-    budget.observe_depth(depth)?;
-    let checked = analysis
-        .expression(owner)
-        .ok_or(SemanticTranscriptError::MissingExpression)?;
-    let hir = module
-        .resolve_expr(owner)
-        .map_err(|_| SemanticTranscriptError::MissingExpression)?;
-    if matches!(hir.kind(), HirExprKind::Error(_)) {
-        return Err(SemanticTranscriptError::RecoveredOwner);
-    }
-    let checked_type = checked.value_type();
-    let path = coordinates.expression(owner)?;
-    let semantic_coordinate = StableSemanticCoordinate::new(path.clone());
-    if expression_paths
-        .get(&semantic_coordinate)
-        .is_some_and(|existing| *existing != owner)
-    {
-        return Err(CheckedMatchBuildError::DuplicateSemanticPath {
-            coordinate: semantic_coordinate,
-        }
-        .into());
-    }
-    if expression_visiting.contains(&owner) {
-        return Err(CheckedMatchBuildError::DuplicateSemanticPath {
-            coordinate: semantic_coordinate,
-        }
-        .into());
-    }
-    if let Some(digest) = expression_digests.get(&owner) {
-        return Ok(*digest);
-    }
-    budget.charge(CheckedMatchLimitKind::ExpressionNodes, 1)?;
-    expression_paths.insert(semantic_coordinate, owner);
-    expression_visiting.insert(owner);
-    let path_depth = u64::try_from(path.steps().len()).map_err(|_| {
-        CheckedMatchBuildError::ArithmeticOverflow {
-            kind: CheckedMatchLimitKind::Depth,
-        }
-    })?;
-    budget.observe_depth(path_depth)?;
-    let edges = analysis
-        .checked_expression_edge_fact(owner)
-        .map_err(|_| SemanticTranscriptError::MissingChildEdges)?;
-    let child_depth = depth
-        .checked_add(1)
-        .ok_or(CheckedMatchBuildError::ArithmeticOverflow {
-            kind: CheckedMatchLimitKind::Depth,
-        })?;
-    let mut child_digests = Vec::new();
-    for edge in edges.edges() {
-        let digest = expression_digest_at_with_state(
-            analysis,
-            module,
-            coordinates,
-            budget,
-            expression_digests,
-            expression_paths,
-            expression_visiting,
-            statement_digests,
-            statement_visiting,
-            body_digests,
-            body_visiting,
-            pattern_digests,
-            pattern_visiting,
-            match_products,
-            edge.child(),
-            child_depth,
-        )?;
-        child_digests.try_reserve_exact(1).map_err(|_| {
-            CheckedMatchBuildError::ArithmeticOverflow {
-                kind: CheckedMatchLimitKind::ExpressionNodes,
-            }
-        })?;
-        child_digests.push(digest);
-    }
-    let mut owned_body_digests = Vec::new();
-    let mut owned_child_digests = Vec::new();
-    for edge in hir
-        .kind()
-        .expression_owned_child_edges()
-        .map_err(|_| SemanticTranscriptError::RecoveredOwner)?
-    {
-        let role = crate::semantic_coordinate::expression_owned_role_transcript_bytes(edge.role())?;
-        match edge.child() {
-            arcweft_lang_hir::expr::HirExpressionOwnedChild::Pattern(pattern) => {
-                let digest = generic_pattern_digest_at_with_state(
-                    analysis,
-                    module,
-                    coordinates,
-                    budget,
-                    pattern_digests,
-                    pattern_visiting,
-                    pattern,
-                )?;
-                owned_child_digests.push((role, digest.as_bytes().to_vec()));
-            }
-            arcweft_lang_hir::expr::HirExpressionOwnedChild::Statement(statement) => {
-                let digest = statement_digest_at_with_state(
-                    analysis,
-                    module,
-                    coordinates,
-                    budget,
-                    expression_digests,
-                    expression_paths,
-                    expression_visiting,
-                    statement_digests,
-                    statement_visiting,
-                    body_digests,
-                    body_visiting,
-                    pattern_digests,
-                    pattern_visiting,
-                    match_products,
-                    statement,
-                    child_depth,
-                )?;
-                owned_child_digests.push((role, digest.as_bytes().to_vec()));
-            }
-            arcweft_lang_hir::expr::HirExpressionOwnedChild::Body(_) => {}
-        }
-    }
-    if let Some(body) = hir
-        .kind()
-        .try_body_projection()
-        .map_err(|_| SemanticTranscriptError::RecoveredOwner)?
-    {
-        let owner = HirSemanticBodyOwner::direct_expression(owner);
-        let (coordinate, digest) = body_digest_at_with_state(
-            analysis,
-            module,
-            coordinates,
-            budget,
-            expression_digests,
-            expression_paths,
-            expression_visiting,
-            statement_digests,
-            statement_visiting,
-            body_digests,
-            body_visiting,
-            pattern_digests,
-            pattern_visiting,
-            match_products,
-            owner,
-            &body,
-            None,
-            child_depth,
-        )?;
-        owned_body_digests.push((coordinate, digest));
-    }
-    for owned in hir
-        .kind()
-        .expression_owned_body_projections()
-        .map_err(|_| SemanticTranscriptError::RecoveredOwner)?
-    {
-        let owner = HirSemanticBodyOwner::try_expression_owned(owner, owned.role().clone())
-            .map_err(|_| SemanticTranscriptError::RecoveredOwner)?;
-        let (coordinate, digest) = body_digest_at_with_state(
-            analysis,
-            module,
-            coordinates,
-            budget,
-            expression_digests,
-            expression_paths,
-            expression_visiting,
-            statement_digests,
-            statement_visiting,
-            body_digests,
-            body_visiting,
-            pattern_digests,
-            pattern_visiting,
-            match_products,
-            owner,
-            owned.projection(),
-            None,
-            child_depth,
-        )?;
-        owned_body_digests.push((coordinate, digest));
-    }
-    let content_body_digest = match checked.resolution() {
-        CheckedExpressionResolution::ContentApplication(_) => None,
-        CheckedExpressionResolution::DialogueApplication { rich_text, .. } => {
-            Some(rich_text_semantic_digest_with_state(
-                analysis,
-                module,
-                coordinates,
-                budget,
-                expression_digests,
-                expression_paths,
-                expression_visiting,
-                statement_digests,
-                statement_visiting,
-                body_digests,
-                body_visiting,
-                pattern_digests,
-                pattern_visiting,
-                match_products,
-                rich_text,
-                child_depth,
-            )?)
-        }
-        _ => None,
-    };
-    let owner_coordinate = path.canonical_bytes()?;
-    let mut hasher = TranscriptHasher::new(budget);
-    transcript_update!(hasher, b"arcweft.lang.checked-expression-semantic.v1\0");
-    transcript_update!(hasher, &owner_coordinate);
-    transcript_update!(hasher, &hir.kind().semantic_transcript_tag().to_le_bytes());
-    transcript_update!(hasher, &checked.resolution().semantic_tag().to_le_bytes());
-    match checked.result() {
-        super::CheckedExpressionResult::Value(value) => {
-            if let Some(specialization) = value.specialization() {
-                transcript_update!(hasher, &[3]);
-                transcript_update!(hasher, specialization.digest().as_bytes());
-            } else {
-                transcript_update!(hasher, &[0]);
-            }
-            transcript_update!(hasher, value.ty().semantic_identity_digest()?.as_bytes());
-        }
-        super::CheckedExpressionResult::NonValue(
-            super::CheckedNonValueExpressionResult::ContentEmission(callable),
-        ) => {
-            transcript_update!(hasher, &[1, callable.semantic_tag()]);
-        }
-        super::CheckedExpressionResult::Unavailable => {
-            transcript_update!(hasher, &[2]);
-        }
-    }
-    if let CheckedExpressionResolution::Literal(literal) = checked.resolution() {
-        write_literal(
-            &mut hasher,
-            literal,
-            checked_type.ok_or_else(|| {
-                SemanticTranscriptError::from(
-                    super::FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
-                )
-            })?,
-        )?;
-    }
-    write_expression_shape_atoms(&mut hasher, owner, hir.kind(), checked, analysis)?;
-    write_resolution_payload(
-        &mut hasher,
-        owner,
-        &owner_coordinate,
-        checked.resolution(),
-        checked.source_value_type(),
-        coordinates,
-        analysis,
-        expression_digests,
-        pattern_digests,
-        match_products,
-        content_body_digest.as_ref(),
-        None,
-    )?;
-    write_mutable_place_payload(&mut hasher, checked, coordinates, analysis)?;
-    write_record_expression_fields(&mut hasher, edges)?;
-    write_effects(&mut hasher, checked.effects())?;
-    match checked.evaluated_effect() {
-        Some(effect) => {
-            transcript_update!(hasher, &[1]);
-            write_evaluated_effect(&mut hasher, effect)?;
-        }
-        None => transcript_update!(hasher, &[0]),
-    }
-    if matches!(hir.kind(), HirExprKind::Match(_)) {
-        // Match patterns, arm bindings, coverage, witnesses, and unreachable
-        // rows are not ordinary expression edges.  The complete accepted
-        // Match product is therefore an explicit atom of its expression;
-        // hashing only the lightweight CheckedMatchFact would lose those
-        // semantics when a Match is nested in another expression.
-        let checked_match = match_products
-            .get(&owner)
-            .ok_or(SemanticTranscriptError::MissingMatchFact)?;
-        transcript_update!(hasher, checked_match.semantic_digest().as_bytes());
-    }
-    write_len(&mut hasher, owned_body_digests.len())?;
-    for (coordinate, digest) in owned_body_digests {
-        write_bytes(&mut hasher, &coordinate.canonical_bytes()?)?;
-        transcript_update!(hasher, digest.as_bytes());
-    }
-    write_len(&mut hasher, owned_child_digests.len())?;
-    for (role, digest) in owned_child_digests {
-        write_bytes(&mut hasher, &role)?;
-        transcript_update!(hasher, &digest);
-    }
-    if let Some(site) = checked.resolution().checked_call_site(owner) {
-        let callable = edges
-            .callable()
-            .ok_or(SemanticTranscriptError::MissingCallableJoin)?;
-        transcript_update!(
-            hasher,
-            callable
-                .stable_transcript_digest(coordinates)
-                .map_err(|_| SemanticTranscriptError::MissingCallableJoin)?
-                .as_bytes(),
-        );
-        let application = analysis
-            .call(owner)
-            .and_then(super::CallTargetFacts::selected_application)
-            .ok_or(SemanticTranscriptError::MissingSelectedCallApplication)?;
-        if application.core().site() != site
-            || application.core().stable_site()
-                != &StableCheckedValueCoordinate::Expression(coordinates.expression(owner)?)
-        {
-            return Err(SemanticTranscriptError::MissingSelectedCallApplication);
-        }
-        let arguments = application.core().execution().arguments();
-        write_len(&mut hasher, arguments.len())?;
-        for argument in arguments {
-            transcript_update!(hasher, &[argument.passing().semantic_tag()]);
-        }
-    }
-    write_len(&mut hasher, child_digests.len())?;
-    for (edge, child_digest) in edges.edges().iter().zip(child_digests) {
-        write_bytes(&mut hasher, &edge.role().transcript_bytes()?)?;
-        transcript_update!(hasher, child_digest.as_bytes());
-    }
-    let digest = CheckedExpressionSemanticDigest::from_bytes(hasher.finalize());
-    expression_visiting.remove(&owner);
-    expression_digests.insert(owner, digest);
-    Ok(digest)
-}
-
-fn generic_pattern_digest_at_with_state(
-    analysis: &FinalSemanticAnalysis,
-    module: &HirModule,
-    coordinates: &SemanticCoordinateIndex<'_, '_>,
-    budget: &mut CheckedMatchBudget,
-    pattern_digests: &mut BTreeMap<PatternId, CheckedPatternSemanticDigest>,
-    pattern_visiting: &mut BTreeSet<PatternId>,
-    owner: PatternId,
-) -> Result<CheckedPatternSemanticDigest, SemanticTranscriptError> {
-    if let Some(digest) = pattern_digests.get(&owner) {
-        return Ok(*digest);
-    }
-    if !pattern_visiting.insert(owner) {
-        return Err(SemanticTranscriptError::MissingChildEdges);
-    }
-    let checked = analysis
-        .pattern(owner)
-        .ok_or(SemanticTranscriptError::MissingPattern)?;
-    let hir = module
-        .resolve_pattern(owner)
-        .map_err(|_| SemanticTranscriptError::MissingPattern)?;
-    if matches!(hir.kind(), HirPatternKind::Error(_)) {
-        return Err(SemanticTranscriptError::RecoveredOwner);
-    }
-    let coordinate = coordinates.pattern(owner)?.canonical_bytes()?;
-    budget.charge(CheckedMatchLimitKind::PatternNodes, 1)?;
-    let mut children = Vec::new();
-    for edge in hir.kind().child_edges() {
-        let child = match edge.child() {
-            HirPatternChild::Pattern(child) => {
-                let digest = generic_pattern_digest_at_with_state(
-                    analysis,
-                    module,
-                    coordinates,
-                    budget,
-                    pattern_digests,
-                    pattern_visiting,
-                    child,
-                )?;
-                Some(digest.as_bytes().to_vec())
-            }
-            HirPatternChild::Local(local) => {
-                let binding = analysis
-                    .local(local)
-                    .ok_or(SemanticTranscriptError::MissingIdentity)?;
-                let mut hasher = TranscriptHasher::new(budget);
-                transcript_update!(hasher, b"arcweft.lang.checked-pattern-binding.v1\0");
-                transcript_update!(hasher, &coordinates.binding(local)?.canonical_bytes()?);
-                transcript_update!(hasher, binding.ty().semantic_identity_digest()?.as_bytes());
-                Some(
-                    CheckedPatternSemanticDigest::from_bytes(hasher.finalize())
-                        .as_bytes()
-                        .to_vec(),
-                )
-            }
-            HirPatternChild::Type(type_id) => {
-                let ty = analysis
-                    .ty(type_id)
-                    .ok_or(SemanticTranscriptError::MissingIdentity)?;
-                let mut hasher = TranscriptHasher::new(budget);
-                transcript_update!(hasher, b"arcweft.lang.checked-pattern-type.v1\0");
-                transcript_update!(hasher, ty.semantic_identity_digest()?.as_bytes());
-                Some(
-                    CheckedPatternSemanticDigest::from_bytes(hasher.finalize())
-                        .as_bytes()
-                        .to_vec(),
-                )
-            }
-        };
-        if let Some(child) = child {
-            children.push((
-                crate::semantic_coordinate::pattern_child_role_transcript_bytes(edge.role())?,
-                child,
-            ));
-        }
-    }
-    let mut hasher = TranscriptHasher::new(budget);
-    transcript_update!(hasher, b"arcweft.lang.checked-pattern-semantic.v1\0");
-    write_bytes(&mut hasher, &coordinate)?;
-    transcript_update!(hasher, &hir.kind().semantic_transcript_tag().to_le_bytes());
-    transcript_update!(hasher, &checked.resolution().semantic_tag().to_le_bytes());
-    transcript_update!(hasher, checked.ty().semantic_identity_digest()?.as_bytes());
-    if let HirPatternKind::BracketSequence { rest, .. } = hir.kind() {
-        transcript_update!(
-            hasher,
-            &[rest
-                .semantic_transcript_tag()
-                .ok_or(SemanticTranscriptError::RecoveredOwner)?],
-        );
-    }
-    write_generic_pattern_resolution(&mut hasher, checked.resolution(), checked.ty(), analysis)?;
-    write_len(&mut hasher, children.len())?;
-    for (role, digest) in children {
-        write_bytes(&mut hasher, &role)?;
-        transcript_update!(hasher, &digest);
-    }
-    let digest = CheckedPatternSemanticDigest::from_bytes(hasher.finalize());
-    pattern_visiting.remove(&owner);
-    pattern_digests.insert(owner, digest);
-    Ok(digest)
 }
 
 fn write_generic_pattern_resolution(
@@ -1770,326 +1231,6 @@ fn coordinates_for_pattern(
 {
     let coordinates = SemanticCoordinateIndex::new(analysis.accepted_root_catalog(), analysis);
     coordinates.pattern(pattern).map_err(Into::into)
-}
-
-fn statement_digest_at_with_state(
-    analysis: &FinalSemanticAnalysis,
-    module: &HirModule,
-    coordinates: &SemanticCoordinateIndex<'_, '_>,
-    budget: &mut CheckedMatchBudget,
-    expression_digests: &mut BTreeMap<ExprId, CheckedExpressionSemanticDigest>,
-    expression_paths: &mut BTreeMap<StableSemanticCoordinate, ExprId>,
-    expression_visiting: &mut BTreeSet<ExprId>,
-    statement_digests: &mut BTreeMap<
-        arcweft_lang_hir::identity::StmtId,
-        CheckedStatementSemanticDigest,
-    >,
-    statement_visiting: &mut BTreeSet<arcweft_lang_hir::identity::StmtId>,
-    body_digests: &mut BTreeMap<StableCheckedBodyCoordinate, CheckedBodySemanticDigest>,
-    body_visiting: &mut BTreeSet<StableCheckedBodyCoordinate>,
-    pattern_digests: &mut BTreeMap<PatternId, CheckedPatternSemanticDigest>,
-    pattern_visiting: &mut BTreeSet<PatternId>,
-    match_products: &BTreeMap<ExprId, CheckedMatch>,
-    owner: arcweft_lang_hir::identity::StmtId,
-    depth: u64,
-) -> Result<CheckedStatementSemanticDigest, SemanticTranscriptError> {
-    budget.observe_depth(depth)?;
-    if let Some(digest) = statement_digests.get(&owner) {
-        return Ok(*digest);
-    }
-    if !statement_visiting.insert(owner) {
-        return Err(SemanticTranscriptError::MissingChildEdges);
-    }
-    let hir = module
-        .resolve_stmt(owner)
-        .map_err(|_| SemanticTranscriptError::MissingIdentity)?;
-    if hir.is_poisoned() || matches!(hir.kind(), HirStmtKind::Error) {
-        return Err(SemanticTranscriptError::RecoveredOwner);
-    }
-    let checked = analysis
-        .statement(owner)
-        .ok_or(SemanticTranscriptError::MissingIdentity)?;
-    let mut children = Vec::new();
-    for edge in hir
-        .kind()
-        .try_child_edges()
-        .map_err(|_| SemanticTranscriptError::RecoveredOwner)?
-    {
-        let role = crate::semantic_coordinate::statement_child_role_transcript_bytes(edge.role())?;
-        let child = match edge.child() {
-            HirStatementChild::Expression(expression) => {
-                let digest = expression_digest_at_with_state(
-                    analysis,
-                    module,
-                    coordinates,
-                    budget,
-                    expression_digests,
-                    expression_paths,
-                    expression_visiting,
-                    statement_digests,
-                    statement_visiting,
-                    body_digests,
-                    body_visiting,
-                    pattern_digests,
-                    pattern_visiting,
-                    match_products,
-                    expression,
-                    depth
-                        .checked_add(1)
-                        .ok_or(SemanticTranscriptError::WorkLimit)?,
-                )?;
-                Some(digest.as_bytes().to_vec())
-            }
-            HirStatementChild::Pattern(pattern) => {
-                let digest = generic_pattern_digest_at_with_state(
-                    analysis,
-                    module,
-                    coordinates,
-                    budget,
-                    pattern_digests,
-                    pattern_visiting,
-                    pattern,
-                )?;
-                Some(digest.as_bytes().to_vec())
-            }
-            HirStatementChild::Statement(_statement)
-                if matches!(edge.role(), HirStatementChildRole::BodyItem { .. }) =>
-            {
-                None
-            }
-            HirStatementChild::Statement(statement) => {
-                let digest = statement_digest_at_with_state(
-                    analysis,
-                    module,
-                    coordinates,
-                    budget,
-                    expression_digests,
-                    expression_paths,
-                    expression_visiting,
-                    statement_digests,
-                    statement_visiting,
-                    body_digests,
-                    body_visiting,
-                    pattern_digests,
-                    pattern_visiting,
-                    match_products,
-                    statement,
-                    depth
-                        .checked_add(1)
-                        .ok_or(SemanticTranscriptError::WorkLimit)?,
-                )?;
-                Some(digest.as_bytes().to_vec())
-            }
-            HirStatementChild::Type(type_id) => Some(
-                analysis
-                    .ty(type_id)
-                    .ok_or(SemanticTranscriptError::MissingIdentity)?
-                    .semantic_identity_digest()?
-                    .as_bytes()
-                    .to_vec(),
-            ),
-            HirStatementChild::Local(local) => {
-                let binding = analysis
-                    .local(local)
-                    .ok_or(SemanticTranscriptError::MissingIdentity)?;
-                let mut value = coordinates.binding(local)?.canonical_bytes()?;
-                value.extend_from_slice(binding.ty().semantic_identity_digest()?.as_bytes());
-                Some(value)
-            }
-        };
-        children.push((role, child));
-    }
-    let mut bodies = Vec::new();
-    for body in hir
-        .kind()
-        .body_projections()
-        .map_err(|_| SemanticTranscriptError::RecoveredOwner)?
-    {
-        let (coordinate, digest) = body_digest_at_with_state(
-            analysis,
-            module,
-            coordinates,
-            budget,
-            expression_digests,
-            expression_paths,
-            expression_visiting,
-            statement_digests,
-            statement_visiting,
-            body_digests,
-            body_visiting,
-            pattern_digests,
-            pattern_visiting,
-            match_products,
-            HirSemanticBodyOwner::statement_body(owner, *body.role()),
-            body.projection(),
-            None,
-            depth
-                .checked_add(1)
-                .ok_or(SemanticTranscriptError::WorkLimit)?,
-        )?;
-        bodies.push((coordinate, digest));
-    }
-    let coordinate = coordinates.statement(owner)?.canonical_bytes()?;
-    let mut hasher = TranscriptHasher::new(budget);
-    transcript_update!(hasher, b"arcweft.lang.checked-statement-semantic.v1\0");
-    write_bytes(&mut hasher, &coordinate)?;
-    transcript_update!(hasher, &hir.kind().semantic_transcript_tag().to_le_bytes());
-    transcript_update!(hasher, &[checked.payload().semantic_tag()]);
-    write_statement_payload(
-        &mut hasher,
-        checked.payload(),
-        &coordinate,
-        analysis,
-        coordinates,
-    )?;
-    write_effects(&mut hasher, checked.effects())?;
-    write_len(&mut hasher, children.len())?;
-    for (role, child) in children {
-        write_bytes(&mut hasher, &role)?;
-        match child {
-            Some(child) => {
-                transcript_update!(hasher, &[1]);
-                write_bytes(&mut hasher, &child)?;
-            }
-            None => transcript_update!(hasher, &[0]),
-        }
-    }
-    write_len(&mut hasher, bodies.len())?;
-    for (coordinate, digest) in bodies {
-        write_bytes(&mut hasher, &coordinate.canonical_bytes()?)?;
-        transcript_update!(hasher, digest.as_bytes());
-    }
-    let digest = CheckedStatementSemanticDigest::from_bytes(hasher.finalize());
-    statement_visiting.remove(&owner);
-    statement_digests.insert(owner, digest);
-    Ok(digest)
-}
-
-fn body_digest_at_with_state(
-    analysis: &FinalSemanticAnalysis,
-    module: &HirModule,
-    coordinates: &SemanticCoordinateIndex<'_, '_>,
-    budget: &mut CheckedMatchBudget,
-    expression_digests: &mut BTreeMap<ExprId, CheckedExpressionSemanticDigest>,
-    expression_paths: &mut BTreeMap<StableSemanticCoordinate, ExprId>,
-    expression_visiting: &mut BTreeSet<ExprId>,
-    statement_digests: &mut BTreeMap<
-        arcweft_lang_hir::identity::StmtId,
-        CheckedStatementSemanticDigest,
-    >,
-    statement_visiting: &mut BTreeSet<arcweft_lang_hir::identity::StmtId>,
-    body_digests: &mut BTreeMap<StableCheckedBodyCoordinate, CheckedBodySemanticDigest>,
-    body_visiting: &mut BTreeSet<StableCheckedBodyCoordinate>,
-    pattern_digests: &mut BTreeMap<PatternId, CheckedPatternSemanticDigest>,
-    pattern_visiting: &mut BTreeSet<PatternId>,
-    match_products: &BTreeMap<ExprId, CheckedMatch>,
-    owner: HirSemanticBodyOwner,
-    projection: &HirBodyProjection,
-    root_override: Option<HirSemanticPathRoot>,
-    depth: u64,
-) -> Result<(StableCheckedBodyCoordinate, CheckedBodySemanticDigest), SemanticTranscriptError> {
-    let root = match root_override {
-        Some(root) => root,
-        None => match owner.expression_owner() {
-            Some(expression) => analysis
-                .hir_topology()
-                .semantic_path(expression.into())
-                .map_err(|_| SemanticTranscriptError::MissingIdentity)?
-                .ok_or(SemanticTranscriptError::MissingIdentity)?
-                .root()
-                .clone(),
-            None => match owner.statement_owner() {
-                Some(statement) => analysis
-                    .hir_topology()
-                    .semantic_path(statement.into())
-                    .map_err(|_| SemanticTranscriptError::MissingIdentity)?
-                    .ok_or(SemanticTranscriptError::MissingIdentity)?
-                    .root()
-                    .clone(),
-                None => return Err(SemanticTranscriptError::MissingIdentity),
-            },
-        },
-    };
-    let locator = HirSemanticBodyLocator::new(root, owner);
-    let coordinate = coordinates.body(&locator)?;
-    if let Some(digest) = body_digests.get(&coordinate) {
-        return Ok((coordinate, *digest));
-    }
-    if !body_visiting.insert(coordinate.clone()) {
-        return Err(SemanticTranscriptError::MissingChildEdges);
-    }
-    budget.observe_depth(depth)?;
-    let mut children = Vec::new();
-    for edge in projection.children() {
-        let role = crate::semantic_coordinate::body_child_role_transcript_bytes(edge.role())?;
-        let digest = match edge.child() {
-            HirBodyChild::Expression(expression) => expression_digest_at_with_state(
-                analysis,
-                module,
-                coordinates,
-                budget,
-                expression_digests,
-                expression_paths,
-                expression_visiting,
-                statement_digests,
-                statement_visiting,
-                body_digests,
-                body_visiting,
-                pattern_digests,
-                pattern_visiting,
-                match_products,
-                expression,
-                depth
-                    .checked_add(1)
-                    .ok_or(SemanticTranscriptError::WorkLimit)?,
-            )?
-            .as_bytes()
-            .to_owned(),
-            HirBodyChild::Statement(statement) => statement_digest_at_with_state(
-                analysis,
-                module,
-                coordinates,
-                budget,
-                expression_digests,
-                expression_paths,
-                expression_visiting,
-                statement_digests,
-                statement_visiting,
-                body_digests,
-                body_visiting,
-                pattern_digests,
-                pattern_visiting,
-                match_products,
-                statement,
-                depth
-                    .checked_add(1)
-                    .ok_or(SemanticTranscriptError::WorkLimit)?,
-            )?
-            .as_bytes()
-            .to_owned(),
-        };
-        children.push((role, digest));
-    }
-    let mut hasher = TranscriptHasher::new(budget);
-    transcript_update!(hasher, b"arcweft.lang.checked-body-semantic.v1\0");
-    write_bytes(&mut hasher, &coordinate.canonical_bytes()?)?;
-    transcript_update!(
-        hasher,
-        &[match projection.kind() {
-            arcweft_lang_hir::body_edges::HirBodyKind::Expression => 0,
-            arcweft_lang_hir::body_edges::HirBodyKind::Ordinary => 1,
-            arcweft_lang_hir::body_edges::HirBodyKind::Thread => 2,
-        }]
-    );
-    write_len(&mut hasher, children.len())?;
-    for (role, digest) in children {
-        write_bytes(&mut hasher, &role)?;
-        transcript_update!(hasher, &digest);
-    }
-    let digest = CheckedBodySemanticDigest::from_bytes(hasher.finalize());
-    body_visiting.remove(&coordinate);
-    body_digests.insert(coordinate.clone(), digest);
-    Ok((coordinate, digest))
 }
 
 fn write_statement_payload(
@@ -2501,370 +1642,6 @@ fn write_drop_policy(
         super::CheckedExplicitDropPolicy::Finish => transcript_update!(hasher, &[2]),
         super::CheckedExplicitDropPolicy::Release => transcript_update!(hasher, &[3]),
         super::CheckedExplicitDropPolicy::Detach => transcript_update!(hasher, &[4]),
-    }
-    Ok(())
-}
-
-fn rich_text_semantic_digest_with_state(
-    analysis: &FinalSemanticAnalysis,
-    module: &HirModule,
-    coordinates: &SemanticCoordinateIndex<'_, '_>,
-    budget: &mut CheckedMatchBudget,
-    expression_digests: &mut BTreeMap<ExprId, CheckedExpressionSemanticDigest>,
-    expression_paths: &mut BTreeMap<StableSemanticCoordinate, ExprId>,
-    expression_visiting: &mut BTreeSet<ExprId>,
-    statement_digests: &mut BTreeMap<
-        arcweft_lang_hir::identity::StmtId,
-        CheckedStatementSemanticDigest,
-    >,
-    statement_visiting: &mut BTreeSet<arcweft_lang_hir::identity::StmtId>,
-    body_digests: &mut BTreeMap<
-        crate::semantic_coordinate::StableCheckedBodyCoordinate,
-        CheckedBodySemanticDigest,
-    >,
-    body_visiting: &mut BTreeSet<crate::semantic_coordinate::StableCheckedBodyCoordinate>,
-    pattern_digests: &mut BTreeMap<PatternId, CheckedPatternSemanticDigest>,
-    pattern_visiting: &mut BTreeSet<PatternId>,
-    match_products: &BTreeMap<ExprId, CheckedMatch>,
-    report: &CheckedRichTextReport,
-    depth: u64,
-) -> Result<CheckedRichTextSemanticDigest, SemanticTranscriptError> {
-    budget.observe_depth(depth)?;
-    if !report.is_valid() {
-        return Err(SemanticTranscriptError::MissingIdentity);
-    }
-    let token_depth = depth
-        .checked_add(1)
-        .ok_or(CheckedMatchBuildError::ArithmeticOverflow {
-            kind: CheckedMatchLimitKind::Depth,
-        })?;
-    let mut child_digests = BTreeMap::new();
-    let mut content_body_digests = BTreeMap::new();
-    collect_rich_text_expression_digests_with_state(
-        analysis,
-        module,
-        coordinates,
-        budget,
-        expression_digests,
-        expression_paths,
-        expression_visiting,
-        statement_digests,
-        statement_visiting,
-        body_digests,
-        body_visiting,
-        pattern_digests,
-        pattern_visiting,
-        match_products,
-        report,
-        token_depth,
-        &mut child_digests,
-        &mut content_body_digests,
-    )?;
-    let mut hasher = TranscriptHasher::new(budget);
-    transcript_update!(hasher, b"arcweft.lang.checked-rich-text-semantic.v1\0");
-    let fragment_digest = report
-        .fragment_coordinate()
-        .semantic_digest()
-        .map_err(|_| SemanticTranscriptError::MissingIdentity)?;
-    transcript_update!(hasher, fragment_digest.as_bytes());
-    transcript_update!(hasher, &[report.admission().semantic_tag()]);
-    write_len(&mut hasher, report.content().tokens().len())?;
-    for token in report.content().tokens() {
-        transcript_update!(hasher, &[token.semantic_tag()]);
-        write_rich_text_token(&mut hasher, token, &child_digests, &content_body_digests)?;
-    }
-    write_effect_plan(&mut hasher, report.effect_plan())?;
-    Ok(CheckedRichTextSemanticDigest::from_bytes(hasher.finalize()))
-}
-
-fn collect_rich_text_expression_digests_with_state(
-    analysis: &FinalSemanticAnalysis,
-    module: &HirModule,
-    coordinates: &SemanticCoordinateIndex<'_, '_>,
-    budget: &mut CheckedMatchBudget,
-    expression_digests: &mut BTreeMap<ExprId, CheckedExpressionSemanticDigest>,
-    expression_paths: &mut BTreeMap<StableSemanticCoordinate, ExprId>,
-    expression_visiting: &mut BTreeSet<ExprId>,
-    statement_digests: &mut BTreeMap<
-        arcweft_lang_hir::identity::StmtId,
-        CheckedStatementSemanticDigest,
-    >,
-    statement_visiting: &mut BTreeSet<arcweft_lang_hir::identity::StmtId>,
-    body_digests: &mut BTreeMap<
-        crate::semantic_coordinate::StableCheckedBodyCoordinate,
-        CheckedBodySemanticDigest,
-    >,
-    body_visiting: &mut BTreeSet<crate::semantic_coordinate::StableCheckedBodyCoordinate>,
-    pattern_digests: &mut BTreeMap<PatternId, CheckedPatternSemanticDigest>,
-    pattern_visiting: &mut BTreeSet<PatternId>,
-    match_products: &BTreeMap<ExprId, CheckedMatch>,
-    report: &CheckedRichTextReport,
-    depth: u64,
-    digests: &mut BTreeMap<ExprId, CheckedExpressionSemanticDigest>,
-    content_body_digests: &mut BTreeMap<ExprId, CheckedRichTextSemanticDigest>,
-) -> Result<(), SemanticTranscriptError> {
-    for token in report.content().tokens() {
-        match token {
-            CheckedDialogueToken::Interpolation { expression, .. } => {
-                remember_rich_text_expression(
-                    analysis,
-                    module,
-                    coordinates,
-                    budget,
-                    expression_digests,
-                    expression_paths,
-                    expression_visiting,
-                    statement_digests,
-                    statement_visiting,
-                    body_digests,
-                    body_visiting,
-                    pattern_digests,
-                    pattern_visiting,
-                    match_products,
-                    *expression,
-                    depth,
-                    digests,
-                )?;
-            }
-            CheckedDialogueToken::ContentInsert(insertion) => {
-                if let Some(checked_content) = insertion.argument().checked_content() {
-                    let digest = rich_text_semantic_digest_with_state(
-                        analysis,
-                        module,
-                        coordinates,
-                        budget,
-                        expression_digests,
-                        expression_paths,
-                        expression_visiting,
-                        statement_digests,
-                        statement_visiting,
-                        body_digests,
-                        body_visiting,
-                        pattern_digests,
-                        pattern_visiting,
-                        match_products,
-                        checked_content,
-                        depth,
-                    )?;
-                    if content_body_digests
-                        .insert(insertion.site().raw(), digest)
-                        .is_some_and(|existing| existing != digest)
-                    {
-                        return Err(SemanticTranscriptError::MissingIdentity);
-                    }
-                }
-                remember_rich_text_expression(
-                    analysis,
-                    module,
-                    coordinates,
-                    budget,
-                    expression_digests,
-                    expression_paths,
-                    expression_visiting,
-                    statement_digests,
-                    statement_visiting,
-                    body_digests,
-                    body_visiting,
-                    pattern_digests,
-                    pattern_visiting,
-                    match_products,
-                    insertion.site().raw(),
-                    depth,
-                    digests,
-                )?;
-            }
-            CheckedDialogueToken::PointAction(action) => {
-                collect_rich_text_action_expressions(
-                    analysis,
-                    module,
-                    coordinates,
-                    budget,
-                    expression_digests,
-                    expression_paths,
-                    expression_visiting,
-                    statement_digests,
-                    statement_visiting,
-                    body_digests,
-                    body_visiting,
-                    pattern_digests,
-                    pattern_visiting,
-                    match_products,
-                    action,
-                    depth,
-                    digests,
-                )?;
-            }
-            CheckedDialogueToken::Text(_)
-            | CheckedDialogueToken::Escape(_)
-            | CheckedDialogueToken::RawLiteral(_)
-            | CheckedDialogueToken::LineBreak(_) => {}
-        }
-    }
-    Ok(())
-}
-
-fn remember_rich_text_expression(
-    analysis: &FinalSemanticAnalysis,
-    module: &HirModule,
-    coordinates: &SemanticCoordinateIndex<'_, '_>,
-    budget: &mut CheckedMatchBudget,
-    expression_digests: &mut BTreeMap<ExprId, CheckedExpressionSemanticDigest>,
-    expression_paths: &mut BTreeMap<StableSemanticCoordinate, ExprId>,
-    expression_visiting: &mut BTreeSet<ExprId>,
-    statement_digests: &mut BTreeMap<
-        arcweft_lang_hir::identity::StmtId,
-        CheckedStatementSemanticDigest,
-    >,
-    statement_visiting: &mut BTreeSet<arcweft_lang_hir::identity::StmtId>,
-    body_digests: &mut BTreeMap<
-        crate::semantic_coordinate::StableCheckedBodyCoordinate,
-        CheckedBodySemanticDigest,
-    >,
-    body_visiting: &mut BTreeSet<crate::semantic_coordinate::StableCheckedBodyCoordinate>,
-    pattern_digests: &mut BTreeMap<PatternId, CheckedPatternSemanticDigest>,
-    pattern_visiting: &mut BTreeSet<PatternId>,
-    match_products: &BTreeMap<ExprId, CheckedMatch>,
-    expression: ExprId,
-    depth: u64,
-    digests: &mut BTreeMap<ExprId, CheckedExpressionSemanticDigest>,
-) -> Result<(), SemanticTranscriptError> {
-    let digest = expression_digest_at_with_state(
-        analysis,
-        module,
-        coordinates,
-        budget,
-        expression_digests,
-        expression_paths,
-        expression_visiting,
-        statement_digests,
-        statement_visiting,
-        body_digests,
-        body_visiting,
-        pattern_digests,
-        pattern_visiting,
-        match_products,
-        expression,
-        depth,
-    )?;
-    if digests
-        .insert(expression, digest)
-        .is_some_and(|existing| existing != digest)
-    {
-        return Err(SemanticTranscriptError::MissingIdentity);
-    }
-    Ok(())
-}
-
-fn collect_rich_text_action_expressions(
-    analysis: &FinalSemanticAnalysis,
-    module: &HirModule,
-    coordinates: &SemanticCoordinateIndex<'_, '_>,
-    budget: &mut CheckedMatchBudget,
-    expression_digests: &mut BTreeMap<ExprId, CheckedExpressionSemanticDigest>,
-    expression_paths: &mut BTreeMap<StableSemanticCoordinate, ExprId>,
-    expression_visiting: &mut BTreeSet<ExprId>,
-    statement_digests: &mut BTreeMap<
-        arcweft_lang_hir::identity::StmtId,
-        CheckedStatementSemanticDigest,
-    >,
-    statement_visiting: &mut BTreeSet<arcweft_lang_hir::identity::StmtId>,
-    body_digests: &mut BTreeMap<
-        crate::semantic_coordinate::StableCheckedBodyCoordinate,
-        CheckedBodySemanticDigest,
-    >,
-    body_visiting: &mut BTreeSet<crate::semantic_coordinate::StableCheckedBodyCoordinate>,
-    pattern_digests: &mut BTreeMap<PatternId, CheckedPatternSemanticDigest>,
-    pattern_visiting: &mut BTreeSet<PatternId>,
-    match_products: &BTreeMap<ExprId, CheckedMatch>,
-    action: &crate::checked_rich_text::CheckedRichTextAction,
-    depth: u64,
-    digests: &mut BTreeMap<ExprId, CheckedExpressionSemanticDigest>,
-) -> Result<(), SemanticTranscriptError> {
-    if let CheckedRichTextAction::Host { action, fields, .. } = action {
-        use crate::checked_rich_text::CheckedDialogueHostEvent;
-        let expression = match action {
-            CheckedDialogueHostEvent::TimedCue { call, .. }
-            | CheckedDialogueHostEvent::Call { call } => Some(*call),
-            CheckedDialogueHostEvent::Voice { .. }
-            | CheckedDialogueHostEvent::Face { .. }
-            | CheckedDialogueHostEvent::Pose { .. }
-            | CheckedDialogueHostEvent::Show { .. }
-            | CheckedDialogueHostEvent::Hide { .. }
-            | CheckedDialogueHostEvent::Move { .. }
-            | CheckedDialogueHostEvent::Scale { .. }
-            | CheckedDialogueHostEvent::Rotate { .. }
-            | CheckedDialogueHostEvent::Animation { .. }
-            | CheckedDialogueHostEvent::Shake { .. }
-            | CheckedDialogueHostEvent::Signal { .. } => None,
-        };
-        if let Some(expression) = expression {
-            remember_rich_text_expression(
-                analysis,
-                module,
-                coordinates,
-                budget,
-                expression_digests,
-                expression_paths,
-                expression_visiting,
-                statement_digests,
-                statement_visiting,
-                body_digests,
-                body_visiting,
-                pattern_digests,
-                pattern_visiting,
-                match_products,
-                expression,
-                depth,
-                digests,
-            )?;
-        }
-        for field in fields.fields() {
-            if let CheckedFieldOrigin::TextProxyDefault { expression } = field.origin() {
-                remember_rich_text_expression(
-                    analysis,
-                    module,
-                    coordinates,
-                    budget,
-                    expression_digests,
-                    expression_paths,
-                    expression_visiting,
-                    statement_digests,
-                    statement_visiting,
-                    body_digests,
-                    body_visiting,
-                    pattern_digests,
-                    pattern_visiting,
-                    match_products,
-                    *expression,
-                    depth,
-                    digests,
-                )?;
-            }
-        }
-    } else if let Some(fields) = action.fields() {
-        for field in fields.fields() {
-            if let CheckedFieldOrigin::TextProxyDefault { expression } = field.origin() {
-                remember_rich_text_expression(
-                    analysis,
-                    module,
-                    coordinates,
-                    budget,
-                    expression_digests,
-                    expression_paths,
-                    expression_visiting,
-                    statement_digests,
-                    statement_visiting,
-                    body_digests,
-                    body_visiting,
-                    pattern_digests,
-                    pattern_visiting,
-                    match_products,
-                    *expression,
-                    depth,
-                    digests,
-                )?;
-            }
-        }
     }
     Ok(())
 }
@@ -5106,5 +3883,716 @@ fn root(flag: bool) -> bool {
             checked_match_digest(named_scope),
             checked_match_digest(anonymous_scope),
         );
+    }
+}
+
+impl SemanticTranscriptGraph<'_, '_> {
+    fn expression_digest_at(
+        &mut self,
+        owner: ExprId,
+        depth: u64,
+    ) -> Result<CheckedExpressionSemanticDigest, SemanticTranscriptError> {
+        self.control.check()?;
+        let analysis = self.analysis;
+        let module = self.module;
+        self.budget.observe_depth(depth)?;
+        let checked = analysis
+            .expression(owner)
+            .ok_or(SemanticTranscriptError::MissingExpression)?;
+        let hir = module
+            .resolve_expr(owner)
+            .map_err(|_| SemanticTranscriptError::MissingExpression)?;
+        if matches!(hir.kind(), HirExprKind::Error(_)) {
+            return Err(SemanticTranscriptError::RecoveredOwner);
+        }
+        let checked_type = checked.value_type();
+        let path = self.coordinates.expression(owner)?;
+        let semantic_coordinate = StableSemanticCoordinate::new(path.clone());
+        if self
+            .expression_paths
+            .get(&semantic_coordinate)
+            .is_some_and(|existing| *existing != owner)
+        {
+            return Err(CheckedMatchBuildError::DuplicateSemanticPath {
+                coordinate: semantic_coordinate,
+            }
+            .into());
+        }
+        if self.expression_visiting.contains(&owner) {
+            return Err(CheckedMatchBuildError::DuplicateSemanticPath {
+                coordinate: semantic_coordinate,
+            }
+            .into());
+        }
+        if let Some(digest) = self.expression_digests.get(&owner) {
+            return Ok(*digest);
+        }
+        self.budget
+            .charge(CheckedMatchLimitKind::ExpressionNodes, 1)?;
+        self.expression_paths.insert(semantic_coordinate, owner);
+        self.expression_visiting.insert(owner);
+        let path_depth = u64::try_from(path.steps().len()).map_err(|_| {
+            CheckedMatchBuildError::ArithmeticOverflow {
+                kind: CheckedMatchLimitKind::Depth,
+            }
+        })?;
+        self.budget.observe_depth(path_depth)?;
+        let edges = analysis
+            .checked_expression_edge_fact(owner)
+            .map_err(|_| SemanticTranscriptError::MissingChildEdges)?;
+        let child_depth =
+            depth
+                .checked_add(1)
+                .ok_or(CheckedMatchBuildError::ArithmeticOverflow {
+                    kind: CheckedMatchLimitKind::Depth,
+                })?;
+        let mut child_digests = Vec::new();
+        for edge in edges.edges() {
+            let digest = self.expression_digest_at(edge.child(), child_depth)?;
+            child_digests.try_reserve_exact(1).map_err(|_| {
+                CheckedMatchBuildError::ArithmeticOverflow {
+                    kind: CheckedMatchLimitKind::ExpressionNodes,
+                }
+            })?;
+            child_digests.push(digest);
+        }
+        let mut owned_body_digests = Vec::new();
+        let mut owned_child_digests = Vec::new();
+        for edge in hir
+            .kind()
+            .expression_owned_child_edges()
+            .map_err(|_| SemanticTranscriptError::RecoveredOwner)?
+        {
+            let role =
+                crate::semantic_coordinate::expression_owned_role_transcript_bytes(edge.role())?;
+            match edge.child() {
+                arcweft_lang_hir::expr::HirExpressionOwnedChild::Pattern(pattern) => {
+                    let digest = self.generic_pattern_digest(pattern)?;
+                    owned_child_digests.push((role, digest.as_bytes().to_vec()));
+                }
+                arcweft_lang_hir::expr::HirExpressionOwnedChild::Statement(statement) => {
+                    let digest = self.statement_digest_at(statement, child_depth)?;
+                    owned_child_digests.push((role, digest.as_bytes().to_vec()));
+                }
+                arcweft_lang_hir::expr::HirExpressionOwnedChild::Body(_) => {}
+            }
+        }
+        if let Some(body) = hir
+            .kind()
+            .try_body_projection()
+            .map_err(|_| SemanticTranscriptError::RecoveredOwner)?
+        {
+            let owner = HirSemanticBodyOwner::direct_expression(owner);
+            let (coordinate, digest) = self.body_digest_at(owner, &body, None, child_depth)?;
+            owned_body_digests.push((coordinate, digest));
+        }
+        for owned in hir
+            .kind()
+            .expression_owned_body_projections()
+            .map_err(|_| SemanticTranscriptError::RecoveredOwner)?
+        {
+            let owner = HirSemanticBodyOwner::try_expression_owned(owner, owned.role().clone())
+                .map_err(|_| SemanticTranscriptError::RecoveredOwner)?;
+            let (coordinate, digest) =
+                self.body_digest_at(owner, owned.projection(), None, child_depth)?;
+            owned_body_digests.push((coordinate, digest));
+        }
+        let content_body_digest = match checked.resolution() {
+            CheckedExpressionResolution::ContentApplication(_) => None,
+            CheckedExpressionResolution::DialogueApplication { rich_text, .. } => {
+                Some(self.rich_text_semantic_digest(rich_text, child_depth)?)
+            }
+            _ => None,
+        };
+        if let HirExprKind::Match(authored) = hir.kind() {
+            let product = self.build(owner, authored)?;
+            if self.match_products.insert(owner, product).is_some() {
+                return Err(SemanticTranscriptError::MissingMatchFact);
+            }
+        }
+        let owner_coordinate = path.canonical_bytes()?;
+        let mut hasher = TranscriptHasher::new(&mut self.budget);
+        transcript_update!(hasher, b"arcweft.lang.checked-expression-semantic.v1\0");
+        transcript_update!(hasher, &owner_coordinate);
+        transcript_update!(hasher, &hir.kind().semantic_transcript_tag().to_le_bytes());
+        transcript_update!(hasher, &checked.resolution().semantic_tag().to_le_bytes());
+        match checked.result() {
+            super::CheckedExpressionResult::Value(value) => {
+                if let Some(specialization) = value.specialization() {
+                    transcript_update!(hasher, &[3]);
+                    transcript_update!(hasher, specialization.digest().as_bytes());
+                } else {
+                    transcript_update!(hasher, &[0]);
+                }
+                transcript_update!(hasher, value.ty().semantic_identity_digest()?.as_bytes());
+            }
+            super::CheckedExpressionResult::NonValue(
+                super::CheckedNonValueExpressionResult::ContentEmission(callable),
+            ) => {
+                transcript_update!(hasher, &[1, callable.semantic_tag()]);
+            }
+            super::CheckedExpressionResult::Unavailable => {
+                transcript_update!(hasher, &[2]);
+            }
+        }
+        if let CheckedExpressionResolution::Literal(literal) = checked.resolution() {
+            write_literal(
+                &mut hasher,
+                literal,
+                checked_type.ok_or_else(|| {
+                    SemanticTranscriptError::from(
+                        super::FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
+                    )
+                })?,
+            )?;
+        }
+        write_expression_shape_atoms(&mut hasher, owner, hir.kind(), checked, analysis)?;
+        write_resolution_payload(
+            &mut hasher,
+            owner,
+            &owner_coordinate,
+            checked.resolution(),
+            checked.source_value_type(),
+            &self.coordinates,
+            analysis,
+            &self.expression_digests,
+            &self.pattern_digests,
+            &self.match_products,
+            content_body_digest.as_ref(),
+            None,
+        )?;
+        write_mutable_place_payload(&mut hasher, checked, &self.coordinates, analysis)?;
+        write_record_expression_fields(&mut hasher, edges)?;
+        write_effects(&mut hasher, checked.effects())?;
+        match checked.evaluated_effect() {
+            Some(effect) => {
+                transcript_update!(hasher, &[1]);
+                write_evaluated_effect(&mut hasher, effect)?;
+            }
+            None => transcript_update!(hasher, &[0]),
+        }
+        if matches!(hir.kind(), HirExprKind::Match(_)) {
+            // Match patterns, arm bindings, coverage, witnesses, and unreachable
+            // rows are not ordinary expression edges.  The complete accepted
+            // Match product is therefore an explicit atom of its expression;
+            // hashing only the lightweight CheckedMatchFact would lose those
+            // semantics when a Match is nested in another expression.
+            let checked_match = self
+                .match_products
+                .get(&owner)
+                .ok_or(SemanticTranscriptError::MissingMatchFact)?;
+            transcript_update!(hasher, checked_match.semantic_digest().as_bytes());
+        }
+        write_len(&mut hasher, owned_body_digests.len())?;
+        for (coordinate, digest) in owned_body_digests {
+            write_bytes(&mut hasher, &coordinate.canonical_bytes()?)?;
+            transcript_update!(hasher, digest.as_bytes());
+        }
+        write_len(&mut hasher, owned_child_digests.len())?;
+        for (role, digest) in owned_child_digests {
+            write_bytes(&mut hasher, &role)?;
+            transcript_update!(hasher, &digest);
+        }
+        if let Some(site) = checked.resolution().checked_call_site(owner) {
+            let callable = edges
+                .callable()
+                .ok_or(SemanticTranscriptError::MissingCallableJoin)?;
+            transcript_update!(
+                hasher,
+                callable
+                    .stable_transcript_digest(&self.coordinates)
+                    .map_err(|_| SemanticTranscriptError::MissingCallableJoin)?
+                    .as_bytes(),
+            );
+            let application = analysis
+                .call(owner)
+                .and_then(super::CallTargetFacts::selected_application)
+                .ok_or(SemanticTranscriptError::MissingSelectedCallApplication)?;
+            if application.core().site() != site
+                || application.core().stable_site()
+                    != &StableCheckedValueCoordinate::Expression(
+                        self.coordinates.expression(owner)?,
+                    )
+            {
+                return Err(SemanticTranscriptError::MissingSelectedCallApplication);
+            }
+            let arguments = application.core().execution().arguments();
+            write_len(&mut hasher, arguments.len())?;
+            for argument in arguments {
+                transcript_update!(hasher, &[argument.passing().semantic_tag()]);
+            }
+        }
+        write_len(&mut hasher, child_digests.len())?;
+        for (edge, child_digest) in edges.edges().iter().zip(child_digests) {
+            write_bytes(&mut hasher, &edge.role().transcript_bytes()?)?;
+            transcript_update!(hasher, child_digest.as_bytes());
+        }
+        let digest = CheckedExpressionSemanticDigest::from_bytes(hasher.finalize());
+        self.expression_visiting.remove(&owner);
+        self.expression_digests.insert(owner, digest);
+        Ok(digest)
+    }
+
+    fn generic_pattern_digest(
+        &mut self,
+        owner: PatternId,
+    ) -> Result<CheckedPatternSemanticDigest, SemanticTranscriptError> {
+        self.control.check()?;
+        let analysis = self.analysis;
+        let module = self.module;
+        let coordinate = self.coordinates.pattern(owner)?;
+        let depth = u64::try_from(coordinate.path().steps().len()).map_err(|_| {
+            CheckedMatchBuildError::ArithmeticOverflow {
+                kind: CheckedMatchLimitKind::Depth,
+            }
+        })?;
+        self.budget.observe_depth(depth)?;
+        if let Some(digest) = self.pattern_digests.get(&owner) {
+            return Ok(*digest);
+        }
+        if !self.pattern_visiting.insert(owner) {
+            return Err(SemanticTranscriptError::MissingChildEdges);
+        }
+        let checked = analysis
+            .pattern(owner)
+            .ok_or(SemanticTranscriptError::MissingPattern)?;
+        let hir = module
+            .resolve_pattern(owner)
+            .map_err(|_| SemanticTranscriptError::MissingPattern)?;
+        if matches!(hir.kind(), HirPatternKind::Error(_)) {
+            return Err(SemanticTranscriptError::RecoveredOwner);
+        }
+        let coordinate = coordinate.canonical_bytes()?;
+        self.budget.charge(CheckedMatchLimitKind::PatternNodes, 1)?;
+        let mut children = Vec::new();
+        for edge in hir.kind().child_edges() {
+            let child = match edge.child() {
+                HirPatternChild::Pattern(child) => {
+                    let digest = self.generic_pattern_digest(child)?;
+                    Some(digest.as_bytes().to_vec())
+                }
+                HirPatternChild::Local(local) => {
+                    let binding = analysis
+                        .local(local)
+                        .ok_or(SemanticTranscriptError::MissingIdentity)?;
+                    let mut hasher = TranscriptHasher::new(&mut self.budget);
+                    transcript_update!(hasher, b"arcweft.lang.checked-pattern-binding.v1\0");
+                    transcript_update!(
+                        hasher,
+                        &self.coordinates.binding(local)?.canonical_bytes()?
+                    );
+                    transcript_update!(hasher, binding.ty().semantic_identity_digest()?.as_bytes());
+                    Some(
+                        CheckedPatternSemanticDigest::from_bytes(hasher.finalize())
+                            .as_bytes()
+                            .to_vec(),
+                    )
+                }
+                HirPatternChild::Type(type_id) => {
+                    let ty = analysis
+                        .ty(type_id)
+                        .ok_or(SemanticTranscriptError::MissingIdentity)?;
+                    let mut hasher = TranscriptHasher::new(&mut self.budget);
+                    transcript_update!(hasher, b"arcweft.lang.checked-pattern-type.v1\0");
+                    transcript_update!(hasher, ty.semantic_identity_digest()?.as_bytes());
+                    Some(
+                        CheckedPatternSemanticDigest::from_bytes(hasher.finalize())
+                            .as_bytes()
+                            .to_vec(),
+                    )
+                }
+            };
+            if let Some(child) = child {
+                children.push((
+                    crate::semantic_coordinate::pattern_child_role_transcript_bytes(edge.role())?,
+                    child,
+                ));
+            }
+        }
+        let mut hasher = TranscriptHasher::new(&mut self.budget);
+        transcript_update!(hasher, b"arcweft.lang.checked-pattern-semantic.v1\0");
+        write_bytes(&mut hasher, &coordinate)?;
+        transcript_update!(hasher, &hir.kind().semantic_transcript_tag().to_le_bytes());
+        transcript_update!(hasher, &checked.resolution().semantic_tag().to_le_bytes());
+        transcript_update!(hasher, checked.ty().semantic_identity_digest()?.as_bytes());
+        if let HirPatternKind::BracketSequence { rest, .. } = hir.kind() {
+            transcript_update!(
+                hasher,
+                &[rest
+                    .semantic_transcript_tag()
+                    .ok_or(SemanticTranscriptError::RecoveredOwner)?],
+            );
+        }
+        write_generic_pattern_resolution(
+            &mut hasher,
+            checked.resolution(),
+            checked.ty(),
+            analysis,
+        )?;
+        write_len(&mut hasher, children.len())?;
+        for (role, digest) in children {
+            write_bytes(&mut hasher, &role)?;
+            transcript_update!(hasher, &digest);
+        }
+        let digest = CheckedPatternSemanticDigest::from_bytes(hasher.finalize());
+        self.pattern_visiting.remove(&owner);
+        self.pattern_digests.insert(owner, digest);
+        Ok(digest)
+    }
+
+    fn statement_digest_at(
+        &mut self,
+        owner: arcweft_lang_hir::identity::StmtId,
+        depth: u64,
+    ) -> Result<CheckedStatementSemanticDigest, SemanticTranscriptError> {
+        self.control.check()?;
+        let analysis = self.analysis;
+        let module = self.module;
+        self.budget.observe_depth(depth)?;
+        if let Some(digest) = self.statement_digests.get(&owner) {
+            return Ok(*digest);
+        }
+        if !self.statement_visiting.insert(owner) {
+            return Err(SemanticTranscriptError::MissingChildEdges);
+        }
+        let hir = module
+            .resolve_stmt(owner)
+            .map_err(|_| SemanticTranscriptError::MissingIdentity)?;
+        if hir.is_poisoned() || matches!(hir.kind(), HirStmtKind::Error) {
+            return Err(SemanticTranscriptError::RecoveredOwner);
+        }
+        let checked = analysis
+            .statement(owner)
+            .ok_or(SemanticTranscriptError::MissingIdentity)?;
+        let mut children = Vec::new();
+        for edge in hir
+            .kind()
+            .try_child_edges()
+            .map_err(|_| SemanticTranscriptError::RecoveredOwner)?
+        {
+            let role =
+                crate::semantic_coordinate::statement_child_role_transcript_bytes(edge.role())?;
+            let child = match edge.child() {
+                HirStatementChild::Expression(expression) => {
+                    let digest = self.expression_digest_at(
+                        expression,
+                        depth
+                            .checked_add(1)
+                            .ok_or(SemanticTranscriptError::WorkLimit)?,
+                    )?;
+                    Some(digest.as_bytes().to_vec())
+                }
+                HirStatementChild::Pattern(pattern) => {
+                    let digest = self.generic_pattern_digest(pattern)?;
+                    Some(digest.as_bytes().to_vec())
+                }
+                HirStatementChild::Statement(_statement)
+                    if matches!(edge.role(), HirStatementChildRole::BodyItem { .. }) =>
+                {
+                    None
+                }
+                HirStatementChild::Statement(statement) => {
+                    let digest = self.statement_digest_at(
+                        statement,
+                        depth
+                            .checked_add(1)
+                            .ok_or(SemanticTranscriptError::WorkLimit)?,
+                    )?;
+                    Some(digest.as_bytes().to_vec())
+                }
+                HirStatementChild::Type(type_id) => Some(
+                    analysis
+                        .ty(type_id)
+                        .ok_or(SemanticTranscriptError::MissingIdentity)?
+                        .semantic_identity_digest()?
+                        .as_bytes()
+                        .to_vec(),
+                ),
+                HirStatementChild::Local(local) => {
+                    let binding = analysis
+                        .local(local)
+                        .ok_or(SemanticTranscriptError::MissingIdentity)?;
+                    let mut value = self.coordinates.binding(local)?.canonical_bytes()?;
+                    value.extend_from_slice(binding.ty().semantic_identity_digest()?.as_bytes());
+                    Some(value)
+                }
+            };
+            children.push((role, child));
+        }
+        let mut bodies = Vec::new();
+        for body in hir
+            .kind()
+            .body_projections()
+            .map_err(|_| SemanticTranscriptError::RecoveredOwner)?
+        {
+            let (coordinate, digest) = self.body_digest_at(
+                HirSemanticBodyOwner::statement_body(owner, *body.role()),
+                body.projection(),
+                None,
+                depth
+                    .checked_add(1)
+                    .ok_or(SemanticTranscriptError::WorkLimit)?,
+            )?;
+            bodies.push((coordinate, digest));
+        }
+        let coordinate = self.coordinates.statement(owner)?.canonical_bytes()?;
+        let mut hasher = TranscriptHasher::new(&mut self.budget);
+        transcript_update!(hasher, b"arcweft.lang.checked-statement-semantic.v1\0");
+        write_bytes(&mut hasher, &coordinate)?;
+        transcript_update!(hasher, &hir.kind().semantic_transcript_tag().to_le_bytes());
+        transcript_update!(hasher, &[checked.payload().semantic_tag()]);
+        write_statement_payload(
+            &mut hasher,
+            checked.payload(),
+            &coordinate,
+            analysis,
+            &self.coordinates,
+        )?;
+        write_effects(&mut hasher, checked.effects())?;
+        write_len(&mut hasher, children.len())?;
+        for (role, child) in children {
+            write_bytes(&mut hasher, &role)?;
+            match child {
+                Some(child) => {
+                    transcript_update!(hasher, &[1]);
+                    write_bytes(&mut hasher, &child)?;
+                }
+                None => transcript_update!(hasher, &[0]),
+            }
+        }
+        write_len(&mut hasher, bodies.len())?;
+        for (coordinate, digest) in bodies {
+            write_bytes(&mut hasher, &coordinate.canonical_bytes()?)?;
+            transcript_update!(hasher, digest.as_bytes());
+        }
+        let digest = CheckedStatementSemanticDigest::from_bytes(hasher.finalize());
+        self.statement_visiting.remove(&owner);
+        self.statement_digests.insert(owner, digest);
+        Ok(digest)
+    }
+
+    fn body_digest_at(
+        &mut self,
+        owner: HirSemanticBodyOwner,
+        projection: &HirBodyProjection,
+        root_override: Option<HirSemanticPathRoot>,
+        depth: u64,
+    ) -> Result<(StableCheckedBodyCoordinate, CheckedBodySemanticDigest), SemanticTranscriptError>
+    {
+        self.control.check()?;
+        let analysis = self.analysis;
+        let root = match root_override {
+            Some(root) => root,
+            None => match owner.expression_owner() {
+                Some(expression) => analysis
+                    .hir_topology()
+                    .semantic_path(expression.into())
+                    .map_err(|_| SemanticTranscriptError::MissingIdentity)?
+                    .ok_or(SemanticTranscriptError::MissingIdentity)?
+                    .root()
+                    .clone(),
+                None => match owner.statement_owner() {
+                    Some(statement) => analysis
+                        .hir_topology()
+                        .semantic_path(statement.into())
+                        .map_err(|_| SemanticTranscriptError::MissingIdentity)?
+                        .ok_or(SemanticTranscriptError::MissingIdentity)?
+                        .root()
+                        .clone(),
+                    None => return Err(SemanticTranscriptError::MissingIdentity),
+                },
+            },
+        };
+        let locator = HirSemanticBodyLocator::new(root, owner);
+        let coordinate = self.coordinates.body(&locator)?;
+        if let Some(digest) = self.body_digests.get(&coordinate) {
+            return Ok((coordinate, *digest));
+        }
+        if !self.body_visiting.insert(coordinate.clone()) {
+            return Err(SemanticTranscriptError::MissingChildEdges);
+        }
+        self.budget.observe_depth(depth)?;
+        let mut children = Vec::new();
+        for edge in projection.children() {
+            let role = crate::semantic_coordinate::body_child_role_transcript_bytes(edge.role())?;
+            let digest = match edge.child() {
+                HirBodyChild::Expression(expression) => self
+                    .expression_digest_at(
+                        expression,
+                        depth
+                            .checked_add(1)
+                            .ok_or(SemanticTranscriptError::WorkLimit)?,
+                    )?
+                    .as_bytes()
+                    .to_owned(),
+                HirBodyChild::Statement(statement) => self
+                    .statement_digest_at(
+                        statement,
+                        depth
+                            .checked_add(1)
+                            .ok_or(SemanticTranscriptError::WorkLimit)?,
+                    )?
+                    .as_bytes()
+                    .to_owned(),
+            };
+            children.push((role, digest));
+        }
+        let mut hasher = TranscriptHasher::new(&mut self.budget);
+        transcript_update!(hasher, b"arcweft.lang.checked-body-semantic.v1\0");
+        write_bytes(&mut hasher, &coordinate.canonical_bytes()?)?;
+        transcript_update!(
+            hasher,
+            &[match projection.kind() {
+                arcweft_lang_hir::body_edges::HirBodyKind::Expression => 0,
+                arcweft_lang_hir::body_edges::HirBodyKind::Ordinary => 1,
+                arcweft_lang_hir::body_edges::HirBodyKind::Thread => 2,
+            }]
+        );
+        write_len(&mut hasher, children.len())?;
+        for (role, digest) in children {
+            write_bytes(&mut hasher, &role)?;
+            transcript_update!(hasher, &digest);
+        }
+        let digest = CheckedBodySemanticDigest::from_bytes(hasher.finalize());
+        self.body_visiting.remove(&coordinate);
+        self.body_digests.insert(coordinate.clone(), digest);
+        Ok((coordinate, digest))
+    }
+
+    fn rich_text_semantic_digest(
+        &mut self,
+        report: &CheckedRichTextReport,
+        depth: u64,
+    ) -> Result<CheckedRichTextSemanticDigest, SemanticTranscriptError> {
+        self.control.check()?;
+        self.budget.observe_depth(depth)?;
+        if !report.is_valid() {
+            return Err(SemanticTranscriptError::MissingIdentity);
+        }
+        let token_depth =
+            depth
+                .checked_add(1)
+                .ok_or(CheckedMatchBuildError::ArithmeticOverflow {
+                    kind: CheckedMatchLimitKind::Depth,
+                })?;
+        let mut child_digests = BTreeMap::new();
+        let mut content_body_digests = BTreeMap::new();
+        self.collect_rich_text_expression_digests(
+            report,
+            token_depth,
+            &mut child_digests,
+            &mut content_body_digests,
+        )?;
+        let mut hasher = TranscriptHasher::new(&mut self.budget);
+        transcript_update!(hasher, b"arcweft.lang.checked-rich-text-semantic.v1\0");
+        let fragment_digest = report
+            .fragment_coordinate()
+            .semantic_digest()
+            .map_err(|_| SemanticTranscriptError::MissingIdentity)?;
+        transcript_update!(hasher, fragment_digest.as_bytes());
+        transcript_update!(hasher, &[report.admission().semantic_tag()]);
+        write_len(&mut hasher, report.content().tokens().len())?;
+        for token in report.content().tokens() {
+            transcript_update!(hasher, &[token.semantic_tag()]);
+            write_rich_text_token(&mut hasher, token, &child_digests, &content_body_digests)?;
+        }
+        write_effect_plan(&mut hasher, report.effect_plan())?;
+        Ok(CheckedRichTextSemanticDigest::from_bytes(hasher.finalize()))
+    }
+
+    fn collect_rich_text_expression_digests(
+        &mut self,
+        report: &CheckedRichTextReport,
+        depth: u64,
+        digests: &mut BTreeMap<ExprId, CheckedExpressionSemanticDigest>,
+        content_body_digests: &mut BTreeMap<ExprId, CheckedRichTextSemanticDigest>,
+    ) -> Result<(), SemanticTranscriptError> {
+        self.control.check()?;
+        for token in report.content().tokens() {
+            match token {
+                CheckedDialogueToken::Interpolation { expression, .. } => {
+                    self.remember_rich_text_expression(*expression, depth, digests)?;
+                }
+                CheckedDialogueToken::ContentInsert(insertion) => {
+                    if let Some(checked_content) = insertion.argument().checked_content() {
+                        let digest = self.rich_text_semantic_digest(checked_content, depth)?;
+                        if content_body_digests
+                            .insert(insertion.site().raw(), digest)
+                            .is_some_and(|existing| existing != digest)
+                        {
+                            return Err(SemanticTranscriptError::MissingIdentity);
+                        }
+                    }
+                    self.remember_rich_text_expression(insertion.site().raw(), depth, digests)?;
+                }
+                CheckedDialogueToken::PointAction(action) => {
+                    self.collect_rich_text_action_expressions(action, depth, digests)?;
+                }
+                CheckedDialogueToken::Text(_)
+                | CheckedDialogueToken::Escape(_)
+                | CheckedDialogueToken::RawLiteral(_)
+                | CheckedDialogueToken::LineBreak(_) => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn remember_rich_text_expression(
+        &mut self,
+        expression: ExprId,
+        depth: u64,
+        digests: &mut BTreeMap<ExprId, CheckedExpressionSemanticDigest>,
+    ) -> Result<(), SemanticTranscriptError> {
+        self.control.check()?;
+        let digest = self.expression_digest_at(expression, depth)?;
+        if digests
+            .insert(expression, digest)
+            .is_some_and(|existing| existing != digest)
+        {
+            return Err(SemanticTranscriptError::MissingIdentity);
+        }
+        Ok(())
+    }
+
+    fn collect_rich_text_action_expressions(
+        &mut self,
+        action: &crate::checked_rich_text::CheckedRichTextAction,
+        depth: u64,
+        digests: &mut BTreeMap<ExprId, CheckedExpressionSemanticDigest>,
+    ) -> Result<(), SemanticTranscriptError> {
+        self.control.check()?;
+        if let CheckedRichTextAction::Host { action, fields, .. } = action {
+            use crate::checked_rich_text::CheckedDialogueHostEvent;
+            let expression = match action {
+                CheckedDialogueHostEvent::TimedCue { call, .. }
+                | CheckedDialogueHostEvent::Call { call } => Some(*call),
+                CheckedDialogueHostEvent::Voice { .. }
+                | CheckedDialogueHostEvent::Face { .. }
+                | CheckedDialogueHostEvent::Pose { .. }
+                | CheckedDialogueHostEvent::Show { .. }
+                | CheckedDialogueHostEvent::Hide { .. }
+                | CheckedDialogueHostEvent::Move { .. }
+                | CheckedDialogueHostEvent::Scale { .. }
+                | CheckedDialogueHostEvent::Rotate { .. }
+                | CheckedDialogueHostEvent::Animation { .. }
+                | CheckedDialogueHostEvent::Shake { .. }
+                | CheckedDialogueHostEvent::Signal { .. } => None,
+            };
+            if let Some(expression) = expression {
+                self.remember_rich_text_expression(expression, depth, digests)?;
+            }
+            for field in fields.fields() {
+                if let CheckedFieldOrigin::TextProxyDefault { expression } = field.origin() {
+                    self.remember_rich_text_expression(*expression, depth, digests)?;
+                }
+            }
+        } else if let Some(fields) = action.fields() {
+            for field in fields.fields() {
+                if let CheckedFieldOrigin::TextProxyDefault { expression } = field.origin() {
+                    self.remember_rich_text_expression(*expression, depth, digests)?;
+                }
+            }
+        }
+        Ok(())
     }
 }

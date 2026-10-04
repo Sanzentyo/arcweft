@@ -98,6 +98,7 @@ pub(super) fn checked_view_parameter_defaults(
             source,
             &execution,
             coordinates,
+            control,
         )?;
         if let Some(capture) = captures
             .iter()
@@ -151,6 +152,7 @@ pub(super) fn checked_declaration_default_captures(
     root: ExprId,
     execution: &super::execution_regions::CheckedExecutionRegion,
     coordinates: &crate::semantic_coordinate::SemanticCoordinateIndex<'_, '_>,
+    control: FinalSemanticAnalysisControl<'_>,
 ) -> Result<Box<[crate::callable::CheckedDeclarationDefaultCapture]>, FinalSemanticAnalysisError> {
     use arcweft_lang_hir::item::HirItemKind;
 
@@ -266,8 +268,14 @@ pub(super) fn checked_declaration_default_captures(
                     analysis,
                     module,
                     parameter.pattern(),
+                    control,
                 )
-                .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+                .map_err(|error| match error {
+                    super::semantic_transcript::SemanticTranscriptError::Generation(error) => {
+                        *error
+                    }
+                    _ => FinalSemanticAnalysisError::CheckedCallableCatalog,
+                })?;
             let binding_evidence = parameter
                 .locals()
                 .iter()

@@ -1534,6 +1534,7 @@ fn seal_checked_callable_interfaces(
                             value,
                             &execution,
                             &coordinates,
+                            control,
                         )?;
                         Some(CheckedDeclarationDefault::new(
                             value,

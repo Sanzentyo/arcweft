@@ -617,6 +617,8 @@ impl Number {
         }
     }
 }
+
+
 "#;
     let changed = original.replace("true => self.value", "true => 1i64");
     let revised = r#"
@@ -637,5 +639,105 @@ impl Number {
         original,
         &changed,
         revised,
+    );
+}
+
+#[test]
+fn nested_non_exhaustive_match_rejects_outer_product_without_poisoning_other_roots() {
+    use crate::final_analysis::{CheckedMatchLimits, CheckedMatchQueryError};
+    let source = r#"
+fn good(flag: bool) -> i64 {
+    match flag {
+        true => 1i64
+        false => 2i64
+    }
+}
+fn bad(outer: bool, inner: bool) -> i64 {
+    match outer {
+        true => match inner { true => 3i64 }
+        false => 4i64
+    }
+}
+"#;
+    let world = super::fixture(source, None);
+    let report =
+        super::analyze(&world).expect("checked Match facts precede exhaustive publication");
+    let project = world.project.analysis_view().unwrap();
+    let module = project.module(&CanonicalModulePath::crate_root()).unwrap();
+    let mut good = None;
+    let mut bad = Vec::new();
+    for (owner, expression) in module.expressions() {
+        let HirExprKind::Match(authored) = expression.kind() else {
+            continue;
+        };
+        let contains_match = authored.arms().iter().any(|arm| {
+            matches!(
+                module.resolve_expr(arm.value()).unwrap().kind(),
+                HirExprKind::Match(_)
+            )
+        });
+        if authored.arms().len() == 1 || contains_match {
+            bad.push(owner);
+        } else {
+            assert!(good.replace(owner).is_none());
+        }
+    }
+    assert_eq!(
+        bad.len(),
+        2,
+        "one incomplete nested Match and its complete outer Match"
+    );
+    let good = good.unwrap();
+    let accepted = report
+        .checked_match(
+            project,
+            &world.symbols,
+            good,
+            CheckedMatchLimits::PRODUCTION,
+        )
+        .unwrap();
+    for _ in 0..2 {
+        for owner in &bad {
+            assert!(matches!(
+                report.checked_match(project, &world.symbols, *owner, CheckedMatchLimits::PRODUCTION),
+                Err(CheckedMatchQueryError::NonExhaustive { witness }) if witness.boolean() == Some(false)
+            ));
+        }
+        let after = report
+            .checked_match(
+                project,
+                &world.symbols,
+                good,
+                CheckedMatchLimits::PRODUCTION,
+            )
+            .unwrap();
+        assert_eq!(accepted.semantic_digest(), after.semantic_digest());
+        assert!(after.coverage().exhaustive());
+    }
+}
+
+#[test]
+fn declaration_pattern_transcript_observes_caller_cancellation() {
+    use crate::final_analysis::semantic_transcript::{
+        SemanticTranscriptError, checked_declaration_default_pattern_digest,
+    };
+    use crate::final_analysis::{FinalSemanticAnalysisControl, FinalSemanticAnalysisError};
+    let world = super::fixture("fn root(flag: bool) -> bool { flag }", None);
+    let report = super::analyze(&world).unwrap();
+    let project = world.project.analysis_view().unwrap();
+    let module = project.module(&CanonicalModulePath::crate_root()).unwrap();
+    let (pattern, _) = module.patterns().next().unwrap();
+    let cancellation = std::sync::atomic::AtomicBool::new(true);
+    assert!(matches!(
+        checked_declaration_default_pattern_digest(&report, module, pattern, FinalSemanticAnalysisControl::new(&cancellation)),
+        Err(SemanticTranscriptError::Generation(error)) if matches!(*error, FinalSemanticAnalysisError::Cancelled)
+    ));
+    cancellation.store(false, std::sync::atomic::Ordering::Relaxed);
+    let control = FinalSemanticAnalysisControl::new(&cancellation);
+    let digest =
+        checked_declaration_default_pattern_digest(&report, module, pattern, control).unwrap();
+    assert_eq!(
+        checked_declaration_default_pattern_digest(&report, module, pattern, control).unwrap(),
+        digest
     );
 }
