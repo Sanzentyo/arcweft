@@ -106,6 +106,14 @@ pattern と型付き出力を所有する。式・handler の Local input は現
 projection であり、frame の終了で破棄する。保持値の正本は mount に残る。
 初期化に失敗した frame はフィールドの変更をまとめて rollback する。
 
+評価した keyed iteration の完全な有限ソースから key が消えた場合、その occurrence
+と子 occurrence の state を成功した frame の公開時に除去する。同じ key が再び
+現れた場合は新しい occurrence として現在の入力から初期化する。非表示の branch
+などでソース自体を評価しなかった scope の state は保持する。virtualization の
+非 materialized window はソース inventory からの key 削除と区別する。key の検証は
+通常の Core collector と既存の preflight が所有し、frame はその検証済み inventory
+を使って一度だけ保持フィールドを整理する。
+
 snapshot は occurrence、field identity、semantic type と保持値を保存する。
 restore は宣言・型・occurrence と重複を公開前に検証する。replacement は同じ
 identity と型のフィールドを保持し、新規フィールドを初回評価で初期化し、削除された

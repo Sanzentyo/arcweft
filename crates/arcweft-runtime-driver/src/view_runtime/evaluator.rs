@@ -120,6 +120,8 @@ struct MountRenderBuilder {
     events: Vec<BundleViewEventBinding>,
     event_tokens: BTreeMap<ViewHandlerRouteId, PublishedViewEventToken>,
     handler_seals: BTreeSet<MountedViewHandlerKey>,
+    /// Current finite source domains, issued by the existing key preflight.
+    repeat_keys: BTreeMap<(BundleViewInstancePath, u32), BTreeSet<arcweft_view::ViewRepeatKey>>,
 }
 
 impl MountRenderBuilder {
@@ -139,11 +141,36 @@ impl MountRenderBuilder {
             events: Vec::new(),
             event_tokens: BTreeMap::new(),
             handler_seals: BTreeSet::new(),
+            repeat_keys: BTreeMap::new(),
         }
     }
 
     fn is_root_node(&self) -> bool {
         self.element_targets.is_empty()
+    }
+
+    /// One pass after successful evaluation; inactive source scopes retain
+    /// their fields, while removed keys retire all descendant occurrences.
+    fn retire_absent_repeat_state(&self, mounted: &mut MountedView) {
+        mounted.local_state.retain(|_, field| {
+            let mut prefix = BundleViewInstancePath::default();
+            for segment in field.path.segments() {
+                if let BundleViewInstancePathSegment::Repeat { instruction, key } = segment {
+                    if self
+                        .repeat_keys
+                        .get(&(prefix.clone(), *instruction))
+                        .is_some_and(|keys| !keys.contains(key))
+                    {
+                        return false;
+                    }
+                }
+                let Ok(next) = prefix.with_segment(segment.clone()) else {
+                    return false;
+                };
+                prefix = next;
+            }
+            true
+        });
     }
 
     fn retain_target(&mut self, target: &str) {
@@ -1375,6 +1402,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 }
                 self.staged_event_tokens
                     .extend(builder.event_tokens.clone());
+                builder.retire_absent_repeat_state(&mut mounted);
                 mounted
                     .handler_seals
                     .retain(|key, _| builder.handler_seals.contains(key));
@@ -1692,6 +1720,10 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                         }
                         items.push((item_key, item));
                     }
+                    builder.repeat_keys.insert(
+                        (structural_path.clone(), instruction_ordinal(cursor)?),
+                        keys,
+                    );
                     for (item_key, item) in items {
                         let repeated_path = structural_path
                             .with_segment(BundleViewInstancePathSegment::Repeat {

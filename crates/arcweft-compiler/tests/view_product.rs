@@ -4783,21 +4783,33 @@ view Main(items: Vec<String>, initial: String, denominator: i64) {
     let mut runtime =
         BundleViewRuntime::try_new_with_awbc(product.clone(), text.clone(), Arc::clone(&awbc))
             .unwrap();
-    for (keys, initial, denominator, expected) in [
-        (vec!["a", "b"], "first", 1, vec!["first", "first"]),
-        (vec!["b", "a"], "changed", 0, vec!["first", "first"]),
-        (vec!["b", "a", "c"], "failing", 0, vec![]),
+    for (keys, initial, denominator, expected, failed) in [
+        (vec!["a", "b"], "first", 1, vec!["first", "first"], false),
+        (vec!["b", "a"], "changed", 0, vec!["first", "first"], false),
+        (vec!["b", "a", "c"], "failing", 0, vec![], true),
         (
             vec!["b", "a", "c"],
             "third",
             1,
             vec!["first", "first", "third"],
+            false,
         ),
+        (vec!["b", "d"], "failed removal", 0, vec![], true),
+        (vec!["b"], "unchanged", 0, vec!["first"], false),
+        (
+            vec!["b", "a"],
+            "reintroduced",
+            1,
+            vec!["first", "reintroduced"],
+            false,
+        ),
+        (vec![], "empty", 0, vec![], false),
+        (vec!["b"], "after empty", 1, vec!["after empty"], false),
     ] {
         let before = runtime.snapshot().unwrap();
         let inputs = inputs(&keys, initial, denominator);
         let frame = runtime.evaluate(handles, &inputs, false);
-        if expected.is_empty() {
+        if failed {
             assert!(
                 !frame.diagnostics.is_empty(),
                 "new key initializer must fail"
@@ -4827,17 +4839,18 @@ view Main(items: Vec<String>, initial: String, denominator: i64) {
         cold.restore(&snapshot, handles).unwrap();
         assert_eq!(cold.evaluate(handles, &inputs, false), frame);
         let mut forged = snapshot.clone();
-        let field = forged.mounts[0]
+        if let Some(field) = forged.mounts[0]
             .local_state
             .iter_mut()
             .find(|field| !field.path.segments().is_empty())
-            .unwrap();
-        field.path = Default::default();
-        assert!(
-            runtime.restore(&forged, handles).is_err(),
-            "repeat field cannot be restored outside its keyed occurrence"
-        );
-        assert_eq!(runtime.snapshot().unwrap(), snapshot);
+        {
+            field.path = Default::default();
+            assert!(
+                runtime.restore(&forged, handles).is_err(),
+                "repeat field cannot be restored outside its keyed occurrence"
+            );
+            assert_eq!(runtime.snapshot().unwrap(), snapshot);
+        }
     }
 }
 
@@ -5057,4 +5070,112 @@ view Different() { let replacement: bool = true; Text("different type") }
     );
     assert!(frame.mounts.iter().all(|mount| matches!(&mount.text[0].value, BundleViewTextValue::Plain { value } if value == "second")));
     assert!(before.mounts.iter().all(|mount| matches!(&mount.local_state[0].value, RuntimeValue::String(value) if value == "first")));
+}
+
+#[test]
+fn authored_local_state_scope_retirement_keeps_inactive_sources_and_retires_descendants() {
+    use arcweft_core::value::{RuntimeBinding, RuntimeSeq, RuntimeValue};
+    use arcweft_runtime_driver::{
+        presentation_handles::{
+            PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        },
+        view_runtime::BundleViewTextValue,
+    };
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+view Main(items: Vec<String>, initial: String, show: bool) {
+    local state heading: String = initial
+    for item in items key = item {
+        local state caption: String = initial
+        Text(caption)
+        if show {
+            for child in ["x", "y"] key = child {
+                local state child_caption: String = initial
+                Text(child_caption)
+            }
+        }
+    }
+}
+"#;
+    let compiled = project_view_fixture_with_entry(source, "arcweft-test://nested-state-scope")
+        .compile()
+        .unwrap();
+    let product = compiled.view_product().product().as_ref().clone();
+    let text = compiled.view_product().text().cloned();
+    let awbc = Arc::new(
+        arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+            AwbcLowerer::new(
+                &compiled.runtime_plan().plan,
+                &compiled.runtime_plan().dialogue_content_catalog,
+                "main.arcw",
+            )
+            .lower()
+            .unwrap()
+            .program,
+        )
+        .unwrap(),
+    );
+    let handle = PresentationHandleRecord::new(
+        PresentationHandleId::try_new("view.nested.state.scope").unwrap(),
+        PresentationHandleKind::View,
+        "view.Main".to_owned(),
+        None,
+        PresentationResourceState::Mounted,
+        None,
+        0,
+    );
+    let handles = std::slice::from_ref(&handle);
+    let mut runtime =
+        BundleViewRuntime::try_new_with_awbc(product.clone(), text.clone(), Arc::clone(&awbc))
+            .unwrap();
+    for (keys, initial, show, cells, expected) in [
+        (vec!["a", "b"], "first", true, 7, vec!["first"; 6]),
+        (vec!["a", "b"], "changed", false, 7, vec!["first"; 2]),
+        (vec!["b"], "hidden", false, 4, vec!["first"]),
+        (
+            vec!["b", "a"],
+            "fresh",
+            true,
+            7,
+            vec!["first", "first", "first", "fresh", "fresh", "fresh"],
+        ),
+    ] {
+        let inputs = [
+            RuntimeBinding {
+                name: "items".to_owned(),
+                value: RuntimeValue::Seq(RuntimeSeq::values(
+                    keys.iter()
+                        .map(|key| RuntimeValue::String((*key).to_owned()))
+                        .collect(),
+                )),
+            },
+            RuntimeBinding {
+                name: "initial".to_owned(),
+                value: RuntimeValue::String(initial.to_owned()),
+            },
+            RuntimeBinding {
+                name: "show".to_owned(),
+                value: RuntimeValue::Bool(show),
+            },
+        ];
+        let frame = runtime.evaluate(handles, &inputs, false);
+        assert!(frame.diagnostics.is_empty(), "{frame:#?}");
+        let labels: Vec<_> = frame.mounts[0]
+            .text
+            .iter()
+            .map(|text| match &text.value {
+                BundleViewTextValue::Plain { value } => value.as_str(),
+                _ => panic!("plain state text"),
+            })
+            .collect();
+        assert_eq!(labels, expected);
+        let saved = runtime.snapshot().unwrap();
+        assert_eq!(saved.mounts[0].local_state.len(), cells);
+        let mut cold =
+            BundleViewRuntime::try_new_with_awbc(product.clone(), text.clone(), Arc::clone(&awbc))
+                .unwrap();
+        cold.restore(&saved, handles).unwrap();
+        assert_eq!(cold.evaluate(handles, &inputs, false), frame);
+    }
 }
