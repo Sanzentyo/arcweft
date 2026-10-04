@@ -4533,3 +4533,528 @@ fn keyed_iteration_uses_checked_ranges_discard_patterns_and_nested_scopes() {
         );
     }
 }
+
+#[test]
+fn authored_local_state_initializes_once_per_mount_and_survives_cold_restore() {
+    use arcweft_core::value::{RuntimeBinding, RuntimeValue};
+    use arcweft_runtime_driver::presentation_handles::{
+        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    };
+    use arcweft_runtime_driver::view_runtime::BundleViewTextValue;
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+view Main(initial: String) {
+    local state caption: String = initial
+    Text(caption)
+}
+"#;
+    let compiled = project_view_fixture_with_entry(source, "arcweft-test://view-local-state")
+        .compile()
+        .expect("authored typed local state");
+    let product = compiled.view_product().product().as_ref().clone();
+    let text = compiled.view_product().text().cloned();
+    let awbc = Arc::new(
+        arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+            AwbcLowerer::new(
+                &compiled.runtime_plan().plan,
+                &compiled.runtime_plan().dialogue_content_catalog,
+                "main.arcw",
+            )
+            .lower()
+            .unwrap()
+            .program,
+        )
+        .unwrap(),
+    );
+    let handle = |id: &str| {
+        PresentationHandleRecord::new(
+            PresentationHandleId::try_new(id).unwrap(),
+            PresentationHandleKind::View,
+            "view.Main".to_owned(),
+            None,
+            PresentationResourceState::Mounted,
+            None,
+            0,
+        )
+    };
+    let first = handle("view.state.first");
+    let second = handle("view.state.second");
+    let mut runtime =
+        BundleViewRuntime::try_new_with_awbc(product.clone(), text.clone(), Arc::clone(&awbc))
+            .unwrap();
+    for (handles, supplied, expected) in [
+        (vec![first.clone()], "first", vec!["first"]),
+        (
+            vec![first.clone(), second.clone()],
+            "second",
+            vec!["first", "second"],
+        ),
+        (
+            vec![first.clone(), second.clone()],
+            "third",
+            vec!["first", "second"],
+        ),
+    ] {
+        let inputs = [RuntimeBinding {
+            name: "initial".to_owned(),
+            value: RuntimeValue::String(supplied.to_owned()),
+        }];
+        let frame = runtime.evaluate(&handles, &inputs, false);
+        assert!(frame.diagnostics.is_empty(), "{frame:#?}");
+        let labels = frame
+            .mounts
+            .iter()
+            .map(|mount| match &mount.text[0].value {
+                BundleViewTextValue::Plain { value } => value.as_str(),
+                _ => panic!("plain state String"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(labels, expected);
+        let saved = runtime.snapshot().unwrap();
+        assert!(
+            saved
+                .mounts
+                .iter()
+                .all(|mount| mount.local_state.len() == 1)
+        );
+        let mut forged = saved.clone();
+        forged.mounts[0].local_state[0].value = RuntimeValue::Bool(true);
+        let before = runtime.snapshot().unwrap();
+        assert!(runtime.restore(&forged, &handles).is_err());
+        assert_eq!(
+            runtime.snapshot().unwrap(),
+            before,
+            "failed restore is atomic"
+        );
+        let mut duplicate = saved.clone();
+        let duplicate_field = duplicate.mounts[0].local_state[0].clone();
+        duplicate.mounts[0].local_state.push(duplicate_field);
+        assert!(runtime.restore(&duplicate, &handles).is_err());
+        assert_eq!(runtime.snapshot().unwrap(), before);
+        let mut cold =
+            BundleViewRuntime::try_new_with_awbc(product.clone(), text.clone(), Arc::clone(&awbc))
+                .unwrap();
+        cold.restore(&saved, &handles).unwrap();
+        assert_eq!(frame, cold.evaluate(&handles, &inputs, false));
+    }
+}
+
+#[test]
+fn authored_local_state_identity_uses_name_and_scope_instead_of_initializer_or_position() {
+    let source = r#"view Main() { local state value: String = "first"; Text(value) }"#;
+    let fields = |source: &str| {
+        let compiled = project_view_fixture(source, "arcweft-test://state-identity")
+            .compile()
+            .unwrap();
+        let mut fields = Vec::new();
+        for instruction in &compiled
+            .view_product()
+            .product()
+            .program()
+            .unwrap()
+            .resource()
+            .instructions
+        {
+            if let ViewProgramInstruction::BindLocal { program, .. } = instruction
+                && let arcweft_view::ViewBindingLifetime::Retained { fields: identities } =
+                    &program.lifetime
+            {
+                fields.extend(
+                    identities
+                        .iter()
+                        .copied()
+                        .zip(program.outputs.iter().map(|output| output.value_type)),
+                );
+            }
+        }
+        fields
+    };
+    let original = fields(source);
+    assert_eq!(original.len(), 1);
+    assert_eq!(
+        original,
+        fields(&source.replace("first", "changed initializer"))
+    );
+    assert_eq!(
+        original,
+        fields(&source.replace("local state", "let unrelated: i32 = 1; local state"))
+    );
+    let renamed = fields(&source.replace("value", "renamed"));
+    assert_ne!(original[0].0, renamed[0].0);
+    let shadowed = fields(&source.replace(
+        "Text(value)",
+        "local state value: String = \"second\"; Text(value)",
+    ));
+    assert_eq!(shadowed.len(), 2);
+    assert_ne!(shadowed[0].0, shadowed[1].0);
+    let changed_type = fields("view Main() { local state value: bool = true; Text(\"text\") }");
+    assert_eq!(original[0].0, changed_type[0].0);
+    assert_ne!(original[0].1, changed_type[0].1);
+}
+
+#[test]
+fn authored_local_state_rejects_nonretained_and_latent_scopes() {
+    for source in [
+        "fn invalid() -> String { local state value: String = \"first\"; value } view Main() { Text(\"text\") }",
+        "view Main() { let latent = || { local state value: String = \"first\"; value }; Text(\"text\") }",
+        "view Main() { local state () = (); Text(\"text\") }",
+    ] {
+        assert!(
+            project_view_fixture(source, "arcweft-test://state-rejection")
+                .compile()
+                .is_err(),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn authored_local_state_follows_repeat_keys_and_rolls_back_failed_initialization() {
+    use arcweft_core::value::{RuntimeBinding, RuntimeInt, RuntimeValue};
+    use arcweft_runtime_driver::{
+        presentation_handles::{
+            PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        },
+        view_runtime::BundleViewTextValue,
+    };
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+fn initialize(label: String, denominator: i64) -> String {
+    match (1i64 / denominator) == 0i64 { true => label, false => label }
+}
+view Main(items: Vec<String>, initial: String, denominator: i64) {
+    local state heading: String = initial
+    for item in items key = item {
+        local state caption: String = initialize(initial, denominator)
+        Text(caption)
+    }
+}
+"#;
+    let compiled = project_view_fixture_with_entry(source, "arcweft-test://keyed-local-state")
+        .compile()
+        .unwrap();
+    let product = compiled.view_product().product().as_ref().clone();
+    let text = compiled.view_product().text().cloned();
+    let awbc = Arc::new(
+        arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+            AwbcLowerer::new(
+                &compiled.runtime_plan().plan,
+                &compiled.runtime_plan().dialogue_content_catalog,
+                "main.arcw",
+            )
+            .lower()
+            .unwrap()
+            .program,
+        )
+        .unwrap(),
+    );
+    let handle = PresentationHandleRecord::new(
+        PresentationHandleId::try_new("view.keyed.state").unwrap(),
+        PresentationHandleKind::View,
+        "view.Main".to_owned(),
+        None,
+        PresentationResourceState::Mounted,
+        None,
+        0,
+    );
+    let handles = std::slice::from_ref(&handle);
+    let inputs = |keys: &[&str], initial: &str, denominator| {
+        vec![
+            RuntimeBinding {
+                name: "items".to_owned(),
+                value: RuntimeValue::Seq(arcweft_core::value::RuntimeSeq::values(
+                    keys.iter()
+                        .map(|key| RuntimeValue::String((*key).to_owned()))
+                        .collect(),
+                )),
+            },
+            RuntimeBinding {
+                name: "initial".to_owned(),
+                value: RuntimeValue::String(initial.to_owned()),
+            },
+            RuntimeBinding {
+                name: "denominator".to_owned(),
+                value: RuntimeValue::Int(RuntimeInt::i64(denominator)),
+            },
+        ]
+    };
+    let mut runtime =
+        BundleViewRuntime::try_new_with_awbc(product.clone(), text.clone(), Arc::clone(&awbc))
+            .unwrap();
+    for (keys, initial, denominator, expected) in [
+        (vec!["a", "b"], "first", 1, vec!["first", "first"]),
+        (vec!["b", "a"], "changed", 0, vec!["first", "first"]),
+        (vec!["b", "a", "c"], "failing", 0, vec![]),
+        (
+            vec!["b", "a", "c"],
+            "third",
+            1,
+            vec!["first", "first", "third"],
+        ),
+    ] {
+        let before = runtime.snapshot().unwrap();
+        let inputs = inputs(&keys, initial, denominator);
+        let frame = runtime.evaluate(handles, &inputs, false);
+        if expected.is_empty() {
+            assert!(
+                !frame.diagnostics.is_empty(),
+                "new key initializer must fail"
+            );
+            let after = runtime.snapshot().unwrap();
+            assert_eq!(
+                after.mounts[0].local_state, before.mounts[0].local_state,
+                "failed initialization rolls back every retained field"
+            );
+            continue;
+        }
+        assert!(frame.diagnostics.is_empty(), "{frame:#?}");
+        let labels: Vec<_> = frame.mounts[0]
+            .text
+            .iter()
+            .map(|text| match &text.value {
+                BundleViewTextValue::Plain { value } => value.as_str(),
+                _ => panic!("plain state label"),
+            })
+            .collect();
+        assert_eq!(labels, expected);
+        let snapshot = runtime.snapshot().unwrap();
+        assert_eq!(snapshot.mounts[0].local_state.len(), keys.len() + 1);
+        let mut cold =
+            BundleViewRuntime::try_new_with_awbc(product.clone(), text.clone(), Arc::clone(&awbc))
+                .unwrap();
+        cold.restore(&snapshot, handles).unwrap();
+        assert_eq!(cold.evaluate(handles, &inputs, false), frame);
+        let mut forged = snapshot.clone();
+        let field = forged.mounts[0]
+            .local_state
+            .iter_mut()
+            .find(|field| !field.path.segments().is_empty())
+            .unwrap();
+        field.path = Default::default();
+        assert!(
+            runtime.restore(&forged, handles).is_err(),
+            "repeat field cannot be restored outside its keyed occurrence"
+        );
+        assert_eq!(runtime.snapshot().unwrap(), snapshot);
+    }
+}
+
+#[test]
+fn authored_local_state_replacement_preserves_fields_rejects_types_and_removes_fields() {
+    use arcweft_core::value::RuntimeValue;
+    use arcweft_runtime_driver::{
+        presentation_handles::{
+            PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        },
+        view_runtime::{BundleViewTextValue, ViewMountReconcileError, ViewProgramReplacementError},
+    };
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+view Main() { local state value: String = "first"; Text(value) }
+view Alternate() { let replacement: String = "second"; Text(replacement) }
+view Different() { let replacement: bool = true; Text("different type") }
+"#;
+    let compiled = project_view_fixture_with_entry(source, "arcweft-test://state-replacement")
+        .compile()
+        .unwrap();
+    let product = compiled.view_product().product().as_ref().clone();
+    let text = compiled.view_product().text().cloned();
+    let awbc = Arc::new(
+        arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+            AwbcLowerer::new(
+                &compiled.runtime_plan().plan,
+                &compiled.runtime_plan().dialogue_content_catalog,
+                "main.arcw",
+            )
+            .lower()
+            .unwrap()
+            .program,
+        )
+        .unwrap(),
+    );
+    let resource = product.program().unwrap().resource();
+    let instructions = |view: &str| {
+        let definition = resource
+            .definitions
+            .iter()
+            .find(|definition| definition.public_id.as_str() == view)
+            .unwrap();
+        resource.instructions
+            [definition.body.start_instruction as usize..definition.body.end_instruction as usize]
+            .iter()
+            .enumerate()
+            .map(|(index, instruction)| {
+                (
+                    definition.body.start_instruction as usize + index,
+                    instruction,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let main = instructions("view.Main");
+    let (binding_index, original_binding) = main
+        .iter()
+        .find_map(|(index, instruction)| match instruction {
+            ViewProgramInstruction::BindLocal { program, .. } => Some((*index, program.clone())),
+            _ => None,
+        })
+        .unwrap();
+    let (text_index, block, original_source) = main
+        .iter()
+        .find_map(|(index, instruction)| match instruction {
+            ViewProgramInstruction::EmitText {
+                text_block,
+                text_source,
+                ..
+            } => Some((*index, text_block.clone(), text_source.clone())),
+            _ => None,
+        })
+        .unwrap();
+    let candidate = |alternate: &str, retain: bool| {
+        let alternate = instructions(alternate);
+        let (alternate_binding_index, mut binding) = alternate
+            .iter()
+            .find_map(|(index, instruction)| match instruction {
+                ViewProgramInstruction::BindLocal { program, .. } => {
+                    Some((*index, program.clone()))
+                }
+                _ => None,
+            })
+            .unwrap();
+        binding.lifetime = if retain {
+            original_binding.lifetime.clone()
+        } else {
+            arcweft_view::ViewBindingLifetime::Derived
+        };
+        let (alternate_text_index, alternate_block, source) = alternate
+            .iter()
+            .find_map(|(index, instruction)| match instruction {
+                ViewProgramInstruction::EmitText {
+                    text_source,
+                    text_block,
+                    ..
+                } => Some((*index, text_block.clone(), text_source.clone())),
+                _ => None,
+            })
+            .unwrap();
+        let mut changed = resource.clone();
+        // Keep every checked text program owned and pair each reader with its
+        // exact binding ABI while replacing the mounted declaration's initializer.
+        let mut displaced = original_binding.clone();
+        displaced.lifetime = arcweft_view::ViewBindingLifetime::Derived;
+        changed.instructions[alternate_binding_index] = ViewProgramInstruction::BindLocal {
+            program: displaced,
+            source: None,
+        };
+        let ViewProgramInstruction::EmitText { text_source, .. } =
+            &mut changed.instructions[alternate_text_index]
+        else {
+            unreachable!()
+        };
+        *text_source = original_source.clone();
+        changed
+            .text_blocks
+            .iter_mut()
+            .find(|text| text.public_id == alternate_block)
+            .unwrap()
+            .text_source = original_source.clone();
+        changed.instructions[binding_index] = ViewProgramInstruction::BindLocal {
+            program: binding,
+            source: None,
+        };
+        let ViewProgramInstruction::EmitText { text_source, .. } =
+            &mut changed.instructions[text_index]
+        else {
+            unreachable!()
+        };
+        *text_source = source.clone();
+        changed
+            .text_blocks
+            .iter_mut()
+            .find(|text| text.public_id == block)
+            .unwrap()
+            .text_source = source;
+        ValidatedViewProduct::try_new(
+            Some(product.source_map().clone()),
+            Some(changed),
+            product.style().map(|style| style.resource().clone()),
+            ViewProductValidationLimits::default(),
+        )
+        .unwrap()
+    };
+    let handle = |id: &str| {
+        PresentationHandleRecord::new(
+            PresentationHandleId::try_new(id).unwrap(),
+            PresentationHandleKind::View,
+            "view.Main".to_owned(),
+            None,
+            PresentationResourceState::Mounted,
+            None,
+            0,
+        )
+    };
+    let first = handle("view.state.replacement.first");
+    let second = handle("view.state.replacement.second");
+    let mut runtime = BundleViewRuntime::try_new_with_awbc(product.clone(), text, awbc).unwrap();
+    assert!(
+        runtime
+            .evaluate(std::slice::from_ref(&first), &[], false)
+            .diagnostics
+            .is_empty()
+    );
+    let before = runtime.snapshot().unwrap();
+    let rejected = runtime.prepare_view_program_replacement(candidate("view.Different", true));
+    assert!(
+        matches!(
+            &rejected,
+            Err(ViewProgramReplacementError::Reconcile(
+                ViewMountReconcileError::LocalStateTypeChanged
+            ))
+        ),
+        "{:?}",
+        rejected.as_ref().err()
+    );
+    assert_eq!(
+        runtime.snapshot().unwrap(),
+        before,
+        "type rejection is atomic"
+    );
+    let prepared = runtime
+        .prepare_view_program_replacement(candidate("view.Alternate", true))
+        .unwrap();
+    runtime.commit_view_program_replacement(prepared).unwrap();
+    let frame = runtime.evaluate(&[first.clone(), second.clone()], &[], false);
+    assert!(frame.diagnostics.is_empty(), "{frame:#?}");
+    let labels: Vec<_> = frame
+        .mounts
+        .iter()
+        .map(|mount| match &mount.text[0].value {
+            BundleViewTextValue::Plain { value } => value.as_str(),
+            _ => panic!("plain retained label"),
+        })
+        .collect();
+    assert_eq!(
+        labels,
+        ["first", "second"],
+        "old mount keeps its value, new mount runs the new initializer"
+    );
+    let prepared = runtime
+        .prepare_view_program_replacement(candidate("view.Alternate", false))
+        .unwrap();
+    runtime.commit_view_program_replacement(prepared).unwrap();
+    let frame = runtime.evaluate(&[first, second], &[], false);
+    assert!(frame.diagnostics.is_empty(), "{frame:#?}");
+    assert!(
+        runtime
+            .snapshot()
+            .unwrap()
+            .mounts
+            .iter()
+            .all(|mount| mount.local_state.is_empty())
+    );
+    assert!(frame.mounts.iter().all(|mount| matches!(&mount.text[0].value, BundleViewTextValue::Plain { value } if value == "second")));
+    assert!(before.mounts.iter().all(|mount| matches!(&mount.local_state[0].value, RuntimeValue::String(value) if value == "first")));
+}

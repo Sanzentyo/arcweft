@@ -385,6 +385,7 @@ impl StagedHirModuleTransaction<'_> {
                 let locals = lowered.locals;
                 (
                     HirStmtKind::Let {
+                        storage: crate::stmt::HirBindingStorage::Derived,
                         pattern: lowered.owner,
                         annotation: None,
                         initializer,

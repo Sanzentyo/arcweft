@@ -458,53 +458,36 @@ fn collect_view_fx_inputs(
     view: &ViewDefinitionRef,
     inputs: &mut BTreeMap<(ViewDefinitionRef, ViewParameterCoordinate), FxRuntimeType>,
 ) -> Result<(), ViewProjectLowerError> {
-    let mut expression = root;
-    loop {
-        let checked = analysis
-            .expression(expression)
-            .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner })?;
-        if let CheckedExpressionResolution::ViewFxApplication(application) = checked.resolution() {
-            for argument in application.arguments() {
-                let CheckedFxBindingDecision::Explicit(CheckedViewFxBinding::Reactive(program)) =
-                    argument.decision()
-                else {
-                    continue;
-                };
-                if program.inputs().len() != program.program().schema().parameter_types().len() {
-                    return Err(ViewProjectLowerError::InvalidViewFxApplication { expression });
-                }
-                for input in program.inputs() {
-                    let key = (view.clone(), input.parameter());
-                    match inputs.entry(key) {
-                        std::collections::btree_map::Entry::Vacant(entry) => {
-                            entry.insert(input.value_type());
-                        }
-                        std::collections::btree_map::Entry::Occupied(entry)
-                            if *entry.get() == input.value_type() => {}
-                        std::collections::btree_map::Entry::Occupied(_) => {
-                            return Err(ViewProjectLowerError::InvalidViewFxApplication {
-                                expression,
-                            });
-                        }
+    let expression = root;
+    let checked = analysis
+        .expression(expression)
+        .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner })?;
+    if let CheckedExpressionResolution::ViewFxApplication(application) = checked.resolution() {
+        for argument in application.arguments() {
+            let CheckedFxBindingDecision::Explicit(CheckedViewFxBinding::Reactive(program)) =
+                argument.decision()
+            else {
+                continue;
+            };
+            if program.inputs().len() != program.program().schema().parameter_types().len() {
+                return Err(ViewProjectLowerError::InvalidViewFxApplication { expression });
+            }
+            for input in program.inputs() {
+                let key = (view.clone(), input.parameter());
+                match inputs.entry(key) {
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        entry.insert(input.value_type());
+                    }
+                    std::collections::btree_map::Entry::Occupied(entry)
+                        if *entry.get() == input.value_type() => {}
+                    std::collections::btree_map::Entry::Occupied(_) => {
+                        return Err(ViewProjectLowerError::InvalidViewFxApplication { expression });
                     }
                 }
             }
         }
-        if checked_nested_view_declaration(analysis, expression).is_some() {
-            return Ok(());
-        }
-        if !matches!(
-            checked.resolution(),
-            CheckedExpressionResolution::ViewFxApplication(_) | CheckedExpressionResolution::Call
-        ) {
-            return Ok(());
-        }
-        let projection = checked_view_modifier_projection(analysis, owner, expression)?;
-        if projection.receiver == expression {
-            return Err(ViewProjectLowerError::InvalidViewFxApplication { expression });
-        }
-        expression = projection.receiver;
     }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -576,8 +559,25 @@ fn lower_authored_views(
     let mut input_types = BTreeMap::new();
     for view in &views {
         let definition = ViewDefinitionRef::new(view.id.clone());
-        for value in view.declaration.values() {
-            collect_view_fx_inputs(view.owner, *value, analysis, &definition, &mut input_types)?;
+        for entry in view.declaration.body() {
+            let region = match entry {
+                arcweft_lang_hir::item::HirViewBodyEntry::Value(value) => {
+                    analysis.expression_execution_region(*value)
+                }
+                arcweft_lang_hir::item::HirViewBodyEntry::Statement(statement) => {
+                    analysis.statement_execution_region(*statement)
+                }
+            }
+            .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: view.owner })?;
+            for expression in region.expressions() {
+                collect_view_fx_inputs(
+                    view.owner,
+                    *expression,
+                    analysis,
+                    &definition,
+                    &mut input_types,
+                )?;
+            }
         }
     }
     let global_value_inputs = input_types
@@ -916,8 +916,15 @@ fn lower_authored_view(
             locals: BTreeMap::new(),
             output,
         };
-        for value in view.declaration.values() {
-            lowerer.lower_value(*value)?;
+        for entry in view.declaration.body() {
+            match entry {
+                arcweft_lang_hir::item::HirViewBodyEntry::Value(value) => {
+                    lowerer.lower_value(*value)?
+                }
+                arcweft_lang_hir::item::HirViewBodyEntry::Statement(statement) => {
+                    lowerer.lower_statement(*statement)?
+                }
+            }
         }
     }
     let end = u32::try_from(output.instructions.len())
@@ -1360,6 +1367,7 @@ impl AuthoredViewBodyLowerer<'_> {
             .push(ViewProgramInstruction::RepeatKeyed {
                 program: arcweft_view::ViewRepeatProgram {
                     source: arcweft_view::ViewBindingProgram {
+                        lifetime: arcweft_view::ViewBindingLifetime::Derived,
                         execution,
                         outputs: outputs.into_boxed_slice(),
                     },
@@ -1419,8 +1427,14 @@ impl AuthoredViewBodyLowerer<'_> {
         }
 
         match row.kind().evaluation_plan() {
-            arcweft_lang_hir::stmt::HirStmtEvaluationPlan::Binding { input, locals, .. } => {
-                if !locals.is_empty()
+            arcweft_lang_hir::stmt::HirStmtEvaluationPlan::Binding {
+                input,
+                locals,
+                storage,
+                ..
+            } => {
+                if storage == arcweft_lang_hir::stmt::HirBindingStorage::Derived
+                    && !locals.is_empty()
                     && locals.iter().all(|local| {
                         self.analysis.local(*local).is_some_and(|local| {
                             matches!(local.ty(), TypeKind::CompileTimeCallable(_))
@@ -1445,6 +1459,28 @@ impl AuthoredViewBodyLowerer<'_> {
                     ),
                 )?;
                 let admission = self.output.runtime_programs.last().ok_or_else(invalid)?;
+                let lifetime = match storage {
+                    arcweft_lang_hir::stmt::HirBindingStorage::Derived => {
+                        arcweft_view::ViewBindingLifetime::Derived
+                    }
+                    arcweft_lang_hir::stmt::HirBindingStorage::RetainedState => {
+                        let fields = admission
+                            .admission
+                            .input_abi()
+                            .binding_outputs()
+                            .iter()
+                            .map(|binding| {
+                                self.analysis
+                                    .retained_state_field_identity(self.module, binding.local())
+                                    .map(arcweft_view::ViewStateFieldId)
+                                    .map_err(|_| invalid())
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                        arcweft_view::ViewBindingLifetime::Retained {
+                            fields: fields.into_boxed_slice(),
+                        }
+                    }
+                };
                 let mut outputs = Vec::new();
                 for (index, binding) in admission
                     .admission
@@ -1476,6 +1512,7 @@ impl AuthoredViewBodyLowerer<'_> {
                     .instructions
                     .push(ViewProgramInstruction::BindLocal {
                         program: arcweft_view::ViewBindingProgram {
+                            lifetime,
                             execution,
                             outputs: outputs.into_boxed_slice(),
                         },

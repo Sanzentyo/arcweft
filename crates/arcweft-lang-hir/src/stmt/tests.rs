@@ -6,18 +6,18 @@ use core::num::{NonZeroU32, NonZeroU64};
 use std::collections::BTreeSet;
 
 use super::{
-    HirAssertionMode, HirConditionalElseBranch, HirContextualStmtBody, HirForStmt, HirIfLetStmt,
-    HirIfStmt, HirIncludeStmt, HirMatchStmt, HirScopeStmt, HirSelectBindingLocal, HirSelectBranch,
-    HirSelectBranchHead, HirSelectStmt, HirSourceLocaleIssue, HirSourceLocaleStmt,
-    HirSourceLocaleValue, HirStatementChildRole, HirStmt, HirStmtBindingPlanKind,
-    HirStmtBranchPublicationKind, HirStmtChildRole, HirStmtEvaluationPlan,
-    HirStmtEvaluationPublicationRole, HirStmtEvaluationStep, HirStmtInvariantError, HirStmtKind,
-    HirStmtMatchArm, HirStmtMatchArmBody, HirStmtOrderedPairPlanKind, HirStmtPoisonState,
-    HirStmtRecoveryIssue, HirStmtSelectEvaluationPlan, HirStmtSelectHeadEvaluation,
-    HirStmtTriggerEvaluationPlan, HirStmtValuePlanKind, HirThreadStmtChildRole,
-    HirThreadStmtInvariantError, HirThreadStmtRecoveryIssue, HirTrigger, HirUnsafeAudit,
-    HirUnsafeAuditIdentity, HirUnsafeAuditIdentityIssue, HirUnsafeLifetimeBody, HirWhileLetStmt,
-    HirWhileStmt,
+    HirAssertionMode, HirBindingStorage, HirConditionalElseBranch, HirContextualStmtBody,
+    HirForStmt, HirIfLetStmt, HirIfStmt, HirIncludeStmt, HirMatchStmt, HirScopeStmt,
+    HirSelectBindingLocal, HirSelectBranch, HirSelectBranchHead, HirSelectStmt,
+    HirSourceLocaleIssue, HirSourceLocaleStmt, HirSourceLocaleValue, HirStatementChildRole,
+    HirStmt, HirStmtBindingPlanKind, HirStmtBranchPublicationKind, HirStmtChildRole,
+    HirStmtEvaluationPlan, HirStmtEvaluationPublicationRole, HirStmtEvaluationStep,
+    HirStmtInvariantError, HirStmtKind, HirStmtMatchArm, HirStmtMatchArmBody,
+    HirStmtOrderedPairPlanKind, HirStmtPoisonState, HirStmtRecoveryIssue,
+    HirStmtSelectEvaluationPlan, HirStmtSelectHeadEvaluation, HirStmtTriggerEvaluationPlan,
+    HirStmtValuePlanKind, HirThreadStmtChildRole, HirThreadStmtInvariantError,
+    HirThreadStmtRecoveryIssue, HirTrigger, HirUnsafeAudit, HirUnsafeAuditIdentity,
+    HirUnsafeAuditIdentityIssue, HirUnsafeLifetimeBody, HirWhileLetStmt, HirWhileStmt,
 };
 use crate::expr::{HirThreadBody, HirThreadBodyOwner, HirThreadFlowItem};
 use crate::identity::{
@@ -251,6 +251,7 @@ fn statement_owner_rejects_foreign_ids_across_nested_payloads() {
             owner_scope,
             HirStmtKind::Let {
                 pattern: foreign_pattern,
+                storage: HirBindingStorage::Derived,
                 annotation: None,
                 initializer: id::<ExprId>(owner_module, 2),
                 locals: Box::new([]),
@@ -532,6 +533,7 @@ fn evaluation_plan_matrix_covers_all_thirty_one_statement_families() {
             "Let",
             HirStmtKind::Let {
                 pattern: first_pattern,
+                storage: HirBindingStorage::Derived,
                 annotation: Some(first_type),
                 initializer: first_expr,
                 locals: Box::new([first_local]),
@@ -923,6 +925,7 @@ fn evaluation_plan_matrix_covers_all_thirty_one_statement_families() {
                 1,
                 HirStmtEvaluationPlan::Binding {
                     kind: HirStmtBindingPlanKind::Let,
+                    storage: HirBindingStorage::Derived,
                     pattern,
                     annotation,
                     input,
@@ -1654,6 +1657,7 @@ fn optional_type_children_are_checked_by_the_statement_owner() {
             scope,
             HirStmtKind::Let {
                 pattern: id::<PatternId>(owner_module, 2),
+                storage: HirBindingStorage::Derived,
                 annotation: Some(id::<TypeId>(foreign_module, 3)),
                 initializer: id::<ExprId>(owner_module, 4),
                 locals: Box::new([]),

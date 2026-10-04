@@ -508,7 +508,7 @@ impl AttachedChoiceItem {
 
     pub fn has_recovery(&self) -> bool {
         match self {
-            Self::Let(statement) => syntax_has_recovery(&statement.syntax()),
+            Self::Let(statement) => statement.syntax().has_recovery(),
             Self::If(value) => value.has_recovery(),
             Self::For(value) => value.has_recovery(),
             Self::Match(value) => value.has_recovery(),
@@ -716,7 +716,7 @@ impl AttachedChoiceMatchArm {
             || self
                 .guard
                 .as_ref()
-                .is_some_and(|guard| syntax_has_recovery(&guard.syntax()))
+                .is_some_and(|guard| guard.syntax().has_recovery())
             || self.body.has_recovery()
     }
 }
@@ -1262,7 +1262,7 @@ fn optional_required_expression<K: AstKind>(
 fn required_expression_has_recovery(value: &RequiredStatementExpressionNode) -> bool {
     match value {
         RequiredStatementExpressionNode::Expression(expression) => {
-            syntax_has_recovery(&expression.syntax())
+            expression.syntax().has_recovery()
         }
         RequiredStatementExpressionNode::Missing(_) => true,
     }
@@ -1284,12 +1284,6 @@ fn is_choice_let_kind(kind: SyntaxKind) -> bool {
             | SyntaxKind::LetScopeStatement
             | SyntaxKind::LetActionReceiveStatement
     )
-}
-
-fn syntax_has_recovery(syntax: &SyntaxNodeHandle) -> bool {
-    syntax.kind().is_missing_node()
-        || syntax.kind().is_error_node()
-        || syntax.children().iter().any(syntax_has_recovery)
 }
 
 fn choice_suite_source<K: AstKind>(

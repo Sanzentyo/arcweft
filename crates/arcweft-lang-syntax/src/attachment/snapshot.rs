@@ -591,6 +591,18 @@ pub struct SyntaxNodeHandle {
 }
 
 impl SyntaxNodeHandle {
+    /// Whether this node's grammar subtree contains a missing or error node.
+    pub fn has_recovery(&self) -> bool {
+        let mut pending = vec![self.clone()];
+        while let Some(node) = pending.pop() {
+            if node.kind().is_missing_node() || node.kind().is_error_node() {
+                return true;
+            }
+            pending.extend(node.children());
+        }
+        false
+    }
+
     fn new(snapshot: Arc<SyntaxSnapshotData>, id: SyntaxNodeId) -> Self {
         Self {
             snapshot,

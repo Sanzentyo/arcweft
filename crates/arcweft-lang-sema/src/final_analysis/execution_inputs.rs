@@ -667,6 +667,8 @@ impl super::CheckedClosedExecutionContext<'_> {
                                 .and_then(super::CheckedExpression::value_type)
                                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
                             crate::callable::CallableResultSchema::Value(self.instantiate_type(ty)?)
+                        } else if matches!(role, HirDeclarationBodyRootRole::ViewStatement { .. }) {
+                            crate::callable::CallableResultSchema::Value(TypeKind::Unit)
                         } else {
                             match analysis.checked_callables().project_callable(declaration).map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?.result_schema() {
                                 crate::callable::CallableResultSchema::Value(ty) => crate::callable::CallableResultSchema::Value(self.instantiate_type(ty)?),

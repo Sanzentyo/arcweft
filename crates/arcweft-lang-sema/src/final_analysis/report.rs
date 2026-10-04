@@ -1319,6 +1319,27 @@ impl FinalSemanticAnalysisPostEntryDraft {
         validate_patterns(symbols, &modules, &types, &patterns)?;
         control.check()?;
         validate_statements(&modules, &locals, &expressions, &statements)?;
+        for module in modules.values() {
+            for (owner, statement) in module.statements() {
+                if let arcweft_lang_hir::stmt::HirStmtKind::Let {
+                    storage: arcweft_lang_hir::stmt::HirBindingStorage::RetainedState,
+                    locals,
+                    ..
+                } = statement.kind()
+                {
+                    if locals.is_empty() {
+                        return Err(FinalSemanticAnalysisError::EmptyRetainedState { owner });
+                    }
+                    for local in locals {
+                        coordinates
+                            .retained_state_field_identity(module, *local)
+                            .map_err(|_| FinalSemanticAnalysisError::InvalidRetainedState {
+                                owner: *local,
+                            })?;
+                    }
+                }
+            }
+        }
         control.check()?;
         validate_items(&modules, &items)?;
         control.check()?;
@@ -1624,7 +1645,8 @@ impl FinalSemanticAnalysis {
             .body_row(owner)
             .map(|row| row.control())
     }
-    pub(super) fn expression_execution_region(
+    /// Selected expression membership from this report's accepted execution DAG.
+    pub fn expression_execution_region(
         &self,
         owner: ExprId,
     ) -> Option<super::execution_regions::CheckedExecutionRegion> {
@@ -1643,7 +1665,8 @@ impl FinalSemanticAnalysis {
         )
     }
 
-    pub(super) fn statement_execution_region(
+    /// Selected statement membership from this report's accepted execution DAG.
+    pub fn statement_execution_region(
         &self,
         owner: StmtId,
     ) -> Option<super::execution_regions::CheckedExecutionRegion> {
@@ -2054,6 +2077,18 @@ impl FinalSemanticAnalysis {
 
     pub fn hir_topology(&self) -> &Arc<HirProjectEvaluationTopology> {
         self.accepted_roots.topology()
+    }
+
+    /// Stable named field identity within the accepted retained lexical scope.
+    /// Initializer, field type, and declaration instruction position are excluded.
+    pub fn retained_state_field_identity(
+        &self,
+        module: &HirModule,
+        local: arcweft_lang_hir::identity::LocalId,
+    ) -> Result<[u8; 32], FinalSemanticAnalysisError> {
+        crate::semantic_coordinate::SemanticCoordinateIndex::new(self.accepted_root_catalog(), self)
+            .retained_state_field_identity(module, local)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidRetainedState { owner: local })
     }
 
     /// Dialogue-line identities accepted from this generation's selected HIR

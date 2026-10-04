@@ -3144,6 +3144,7 @@ fn repeat_fixture_awbc(
     (
         ViewRepeatProgram {
             source: ViewBindingProgram {
+                lifetime: arcweft_view::ViewBindingLifetime::Derived,
                 execution: ViewExpressionProgram {
                     program: source_id,
                     inputs: Box::new([]),

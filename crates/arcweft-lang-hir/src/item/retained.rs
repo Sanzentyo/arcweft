@@ -4,7 +4,7 @@ use arcweft_id::{DeclarationIdentityFamily, DeclarationName, PublicId, PublicIdF
 use arcweft_lang_syntax::ast::module_path::{CanonicalModulePath, ModuleSegment};
 use thiserror::Error;
 
-use crate::identity::{ExprId, HirModuleId, ItemId, LocalId, ScopeId, TypeId};
+use crate::identity::{ExprId, HirModuleId, ItemId, LocalId, ScopeId, StmtId, TypeId};
 use crate::leaf::{HirIdRefRecovery, HirIdRefValue, HirPathValue, HirStringLiteral};
 
 use super::callable::{HirContractScopes, HirParameter};
@@ -181,12 +181,41 @@ impl HirCharacterDeclaration {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum HirViewBodyEntry {
+    Value(ExprId),
+    Statement(StmtId),
+}
+
+impl HirViewBodyEntry {
+    fn validate_module(&self, expected: HirModuleId) -> Result<(), HirItemInvariantError> {
+        let actual = match self {
+            Self::Value(value) => value.module(),
+            Self::Statement(statement) => statement.module(),
+        };
+        if actual != expected {
+            return Err(HirItemInvariantError::ForeignChild { expected, actual });
+        }
+        Ok(())
+    }
+
+    pub(crate) fn body_projection(&self) -> crate::body_edges::HirBodyProjection {
+        match self {
+            Self::Value(value) => crate::body_edges::HirBodyProjection::expression(*value),
+            Self::Statement(statement) => {
+                crate::body_edges::HirBodyProjection::statement(*statement)
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirViewDeclaration {
     header: HirRetainedHeader,
     callable_scope: ScopeId,
+    body_scope: ScopeId,
     parameters: Box<[HirParameter]>,
     exports: Box<[HirDeclarationMemberId]>,
-    values: Box<[ExprId]>,
+    body: Box<[HirViewBodyEntry]>,
 }
 
 impl HirViewDeclaration {
@@ -194,13 +223,15 @@ impl HirViewDeclaration {
         owner: ItemId,
         header: HirRetainedHeader,
         callable_scope: ScopeId,
+        body_scope: ScopeId,
         parameters: Box<[HirParameter]>,
         exports: Box<[HirDeclarationMemberId]>,
-        values: Box<[ExprId]>,
+        body: Box<[HirViewBodyEntry]>,
     ) -> Result<Self, HirItemInvariantError> {
         validate_retained_family(&header, DeclarationIdentityFamily::View)?;
         let expected = owner.module();
         validate_scope(expected, callable_scope)?;
+        validate_scope(expected, body_scope)?;
         validate_parameters(expected, &parameters)?;
         if parameters
             .iter()
@@ -209,13 +240,16 @@ impl HirViewDeclaration {
             return Err(HirItemInvariantError::ViewParameterShape);
         }
         validate_declaration_member_references(owner, &exports)?;
-        validate_exprs(expected, &values)?;
+        for entry in &body {
+            entry.validate_module(expected)?;
+        }
         Ok(Self {
             header,
             callable_scope,
+            body_scope,
             parameters,
             exports,
-            values,
+            body,
         })
     }
 
@@ -231,12 +265,16 @@ impl HirViewDeclaration {
         self.callable_scope
     }
 
+    pub const fn body_scope(&self) -> ScopeId {
+        self.body_scope
+    }
+
     pub const fn exports(&self) -> &[HirDeclarationMemberId] {
         &self.exports
     }
 
-    pub const fn values(&self) -> &[ExprId] {
-        &self.values
+    pub const fn body(&self) -> &[HirViewBodyEntry] {
+        &self.body
     }
 
     pub(crate) fn validate_member_row(
@@ -260,6 +298,7 @@ impl HirViewDeclaration {
     ) -> Result<(), HirItemInvariantError> {
         validate_retained_family(&self.header, DeclarationIdentityFamily::View)?;
         validate_scope(expected, self.callable_scope)?;
+        validate_scope(expected, self.body_scope)?;
         validate_parameters(expected, &self.parameters)?;
         for member in &self.exports {
             if member.module() != expected {
@@ -269,7 +308,10 @@ impl HirViewDeclaration {
                 });
             }
         }
-        validate_exprs(expected, &self.values)
+        for entry in &self.body {
+            entry.validate_module(expected)?;
+        }
+        Ok(())
     }
 }
 

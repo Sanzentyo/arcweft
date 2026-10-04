@@ -1072,6 +1072,7 @@ fn pure_let_initializer_precedes_binding_scope() {
         annotation: None,
         initializer,
         locals,
+        storage: crate::stmt::HirBindingStorage::Derived,
     } = statement.kind()
     else {
         panic!("expected typed pure let payload")

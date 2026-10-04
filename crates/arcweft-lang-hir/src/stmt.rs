@@ -413,6 +413,33 @@ impl HirStatementContext {
     }
 }
 
+/// Lifetime of the value installed by a checked binding declaration.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HirBindingStorage {
+    Derived,
+    RetainedState,
+}
+
+impl HirBindingStorage {
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Derived => 0,
+            Self::RetainedState => 1,
+        }
+    }
+}
+
+impl From<arcweft_lang_syntax::attachment::AttachedLetBindingStorage> for HirBindingStorage {
+    fn from(value: arcweft_lang_syntax::attachment::AttachedLetBindingStorage) -> Self {
+        match value {
+            arcweft_lang_syntax::attachment::AttachedLetBindingStorage::Derived => Self::Derived,
+            arcweft_lang_syntax::attachment::AttachedLetBindingStorage::RetainedState => {
+                Self::RetainedState
+            }
+        }
+    }
+}
+
 /// Exact base statement inventory plus the locally accepted dedicated if-let.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HirStmtKind {
@@ -421,6 +448,7 @@ pub enum HirStmtKind {
         conditions: Box<[ExprId]>,
     },
     Let {
+        storage: HirBindingStorage,
         pattern: PatternId,
         annotation: Option<TypeId>,
         initializer: ExprId,
@@ -521,6 +549,7 @@ pub enum HirStmtEvaluationPlan<'stmt> {
         conditions: &'stmt [ExprId],
     },
     Binding {
+        storage: HirBindingStorage,
         kind: HirStmtBindingPlanKind,
         pattern: PatternId,
         annotation: Option<TypeId>,
@@ -740,6 +769,7 @@ impl<'stmt> HirStmtEvaluationPlan<'stmt> {
                 annotation,
                 input,
                 locals,
+                ..
             } => {
                 if let Some(ty) = annotation {
                     visitor(HirStmtEvaluationStep::Type {
@@ -1426,11 +1456,13 @@ impl HirStmtKind {
                 conditions,
             },
             Self::Let {
+                storage,
                 pattern,
                 annotation,
                 initializer,
                 locals,
             } => Plan::Binding {
+                storage: *storage,
                 kind: HirStmtBindingPlanKind::Let,
                 pattern: *pattern,
                 annotation: *annotation,
@@ -1682,6 +1714,7 @@ impl HirStmtKind {
                 annotation,
                 initializer,
                 locals,
+                ..
             } => {
                 validate_pattern(expected, *pattern)?;
                 validate_optional_type(expected, *annotation)?;

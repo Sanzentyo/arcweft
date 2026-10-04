@@ -157,6 +157,10 @@ fn digest_executable(hasher: &mut Sha256, owner: &HirRuntimeExecutableOwner) {
                     hasher.update([5]);
                     hasher.update(ordinal.to_le_bytes());
                 }
+                super::super::HirDeclarationBodyRootRole::ViewStatement { ordinal } => {
+                    hasher.update([6]);
+                    hasher.update(ordinal.to_le_bytes());
+                }
             }
         }
     }

@@ -542,7 +542,7 @@ impl StagedHirModuleTransaction<'_> {
         let reservation =
             self.arenas
                 .expressions()
-                .reserve_synthetic(&mut self.slots, key, site)?;
+                .reserve_synthetic(&mut self.slots, key, site.clone())?;
         let state = if poisoned {
             HirPoisonState::Poisoned(HirRecoveryIssue::InvalidExpression(
                 HirExpressionRecoveryIssue::RecoveredChild {
@@ -554,10 +554,19 @@ impl StagedHirModuleTransaction<'_> {
         };
         let payload = HirExpr::try_new(scope, HirExprKind::ForSynthetic(expression), state)
             .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-        self.arenas
-            .expressions()
-            .finalize(&mut self.slots, reservation, payload)
-            .map_err(Into::into)
+        let expression =
+            self.arenas
+                .expressions()
+                .finalize(&mut self.slots, reservation, payload)?;
+        if poisoned {
+            let owner = SyntheticOwner::Expr(expression);
+            self.stage_recovery_diagnostic(crate::diagnostic::HirRecoveryDiagnostic::new(
+                owner,
+                crate::diagnostic::HirRecoveryPrimary::owner_whole(owner),
+                site,
+            ));
+        }
+        Ok(expression)
     }
 
     fn lower_ordinary_for_body(

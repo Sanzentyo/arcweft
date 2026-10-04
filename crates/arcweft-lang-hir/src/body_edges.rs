@@ -42,6 +42,16 @@ pub struct HirBodyProjection {
 }
 
 impl HirBodyProjection {
+    pub(crate) fn statement(statement: StmtId) -> Self {
+        Self {
+            kind: HirBodyKind::Ordinary,
+            children: Box::new([HirBodyChildEdge::new(
+                HirBodyChild::Statement(statement),
+                HirBodyChildRole::Statement { ordinal: 0 },
+            )]),
+        }
+    }
+
     pub(crate) fn expression(expression: ExprId) -> Self {
         Self {
             kind: HirBodyKind::Expression,

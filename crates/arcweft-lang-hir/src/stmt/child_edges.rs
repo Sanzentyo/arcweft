@@ -321,7 +321,7 @@ impl HirStmtKind {
                 pattern,
                 annotation,
                 initializer,
-                locals: _,
+                ..
             } => {
                 push_pattern(&mut edges, *pattern, HirStatementChildRole::Pattern);
                 push_optional_type(&mut edges, *annotation);

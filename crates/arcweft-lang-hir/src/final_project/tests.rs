@@ -2006,7 +2006,14 @@ fn view_semantic_paths_cover_parameters_and_source_ordered_values() {
         panic!("View item");
     };
     let parameter = &view.parameters()[0];
-    let values = view.values();
+    let values: Vec<_> = view
+        .body()
+        .iter()
+        .map(|entry| match entry {
+            crate::item::HirViewBodyEntry::Value(value) => *value,
+            crate::item::HirViewBodyEntry::Statement(_) => panic!("expected a View value"),
+        })
+        .collect();
 
     let topology = evaluation_topology(&project, &symbols);
     let paths = topology
@@ -3963,11 +3970,12 @@ fn runtime_semantic_reachability_excludes_presentation_and_unreachable_functions
                         assert!(!inventory.contains_local(*local));
                     }
                 }
-                assert!(
-                    view.values()
-                        .iter()
-                        .all(|owner| !inventory.contains_expression(*owner))
-                );
+                assert!(view.body().iter().all(|entry| match entry {
+                    crate::item::HirViewBodyEntry::Value(owner) =>
+                        !inventory.contains_expression(*owner),
+                    crate::item::HirViewBodyEntry::Statement(owner) =>
+                        !inventory.contains_statement(*owner),
+                }));
             }
             HirItemKind::Style(style) => {
                 assert!(

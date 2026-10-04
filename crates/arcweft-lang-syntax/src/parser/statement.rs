@@ -307,7 +307,8 @@ fn emit_block_sequence(
         let unterminated_value_head = !semicolon
             && !later
             && first.is_some_and(|spelling| matches!(spelling, "if" | "loop" | "match" | "thread"));
-        let statement_shaped = first.is_some_and(is_statement_head) && !unterminated_value_head;
+        let statement_shaped =
+            is_statement_start(parser, start, significant_end) && !unterminated_value_head;
         if sequence_kind != BlockSequenceKind::Value || semicolon || later || statement_shaped {
             let end = if choice_expression_start.is_some() {
                 // Choice owns its indentation newline and comment geometry.
@@ -476,7 +477,7 @@ fn bare_scope_after_postfix_bracket(
     end: usize,
 ) -> Option<usize> {
     let head = first_significant(parser, start, end)?;
-    if token_text(parser, head).is_some_and(is_statement_head) {
+    if is_statement_start(parser, head, end) {
         return None;
     }
     let mut delimiters = Vec::new();
@@ -1485,6 +1486,7 @@ fn classify_statement(
     match parser.current_text() {
         Some("assert") => SyntaxKind::AssertionStatement,
         Some("let") => classify_let_statement(parser, end),
+        Some("local") if is_local_state_start(parser, start, end) => SyntaxKind::LetStatement,
         Some("return") => SyntaxKind::ReturnStatement,
         Some("out") => SyntaxKind::OutStatement,
         Some("goto") => SyntaxKind::GotoStatement,
@@ -1625,7 +1627,15 @@ fn emit_let_children(
     kind: SyntaxKind,
     item_kind: SyntaxKind,
 ) {
-    parser.bump();
+    if is_local_state_start(parser, parser.cursor(), end) {
+        parser.start(SyntaxKind::LocalStateQualifier, SyntaxRole::Token);
+        parser.bump();
+        parser.bump_trivia();
+        parser.bump();
+        parser.finish();
+    } else {
+        parser.bump();
+    }
     let equals = find_top_level_boundary(parser, parser.cursor(), end, &["="]);
     indentation::bump_trivia_before(parser, equals);
     emit_pattern(parser, equals, SyntaxRole::Pattern);
@@ -2491,6 +2501,27 @@ fn find_statement_open_brace(
         }
     }
     None
+}
+
+pub(super) fn is_local_state_start(
+    parser: &DocumentParser<'_, '_>,
+    start: usize,
+    end: usize,
+) -> bool {
+    token_text(parser, start) == Some("local")
+        && next_significant_text(parser, start + 1, end) == Some("state")
+}
+
+pub(super) fn is_statement_start(
+    parser: &DocumentParser<'_, '_>,
+    start: usize,
+    end: usize,
+) -> bool {
+    let Some(first) = first_significant(parser, start, end) else {
+        return false;
+    };
+    token_text(parser, first).is_some_and(is_statement_head)
+        || is_local_state_start(parser, first, end)
 }
 
 pub(super) fn is_statement_head(spelling: &str) -> bool {

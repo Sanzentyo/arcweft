@@ -302,6 +302,7 @@ define_ast_kinds!(DELIMITER_MARKERS, Delimiter;
     ForInKind => ForInNode,
     ExtensionReceiverMarkerKind => ExtensionReceiverMarker,
     RestParameterMarkerKind => RestParameterMarker,
+    LocalStateQualifierKind => LocalStateQualifier,
 );
 
 define_ast_kinds!(RICH_TEXT_MARKERS, RichText;

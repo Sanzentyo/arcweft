@@ -29,6 +29,7 @@ use crate::source_index::expression_manifest::leaf::path_projection_matches;
     reason = "one View projection validates header, parts, retained members, source roles, and poison state together"
 )]
 pub(super) fn payload_matches(
+    parsed: &arcweft_lang_syntax::incremental::ParsedSource,
     owner: ItemId,
     attached: &AttachedViewDeclaration,
     item: &HirItem,
@@ -46,6 +47,14 @@ pub(super) fn payload_matches(
     let Ok(module_scope) = arenas.scopes.resolve_prepared(slots, item.scope()) else {
         return false;
     };
+    let body_scope = view.body_scope();
+    let Ok(body) = arenas.scopes.resolve_prepared(slots, body_scope) else {
+        return false;
+    };
+    if body.kind() != HirScopeKind::Block || body.owner() != &HirScopeOwner::Item(owner)
+        || body.parent() != Some(callable_scope) || !callable.children().contains(&body_scope)
+        || !slots.resolve_prepared(body_scope).is_ok_and(|metadata| metadata.source_site() == &HirSourceSite::Span(attached.body().syntax().source_span()) && matches!(metadata.origin(), crate::slot::HirOrigin::Source(source) if source.syntax() == attached.body().syntax().id()))
+    { return false; }
     let callable_source_matches = slots
         .resolve_prepared(callable_scope)
         .is_ok_and(|metadata| {
@@ -152,22 +161,69 @@ pub(super) fn payload_matches(
         return false;
     }
 
-    let attached_values = attached
+    let attached_entries = attached
         .body()
         .fragment()
-        .map(|fragment| fragment.values().collect::<Vec<_>>())
+        .map(|fragment| {
+            fragment
+                .entries()
+                .iter()
+                .filter(|entry| {
+                    !matches!(
+                        entry,
+                        arcweft_lang_syntax::attachment::AttachedViewFragmentEntry::MisplacedExport(
+                            _
+                        )
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
         .unwrap_or_default();
-    if attached_values.len() != view.values().len() {
+    if attached_entries.len() != view.body().len() {
         return false;
     }
+    let mut expected_locals = Vec::new();
+    let mut generations = std::collections::BTreeMap::new();
     let mut value_issue = None;
-    for (attached_value, retained) in attached_values.into_iter().zip(view.values()) {
-        if !expression_owner_matches(*retained, attached_value, callable_scope, slots, arenas) {
-            return false;
+    for (attached_entry, retained) in attached_entries.into_iter().zip(view.body()) {
+        match (attached_entry, retained) {
+            (
+                arcweft_lang_syntax::attachment::AttachedViewFragmentEntry::Value(value),
+                crate::item::HirViewBodyEntry::Value(retained),
+            ) => {
+                if !expression_owner_matches(*retained, value, body_scope, slots, arenas) {
+                    return false;
+                }
+                if slot_is_poisoned(slots, *retained) {
+                    value_issue.get_or_insert(HirItemIssue::InvalidMember);
+                }
+            }
+            (
+                arcweft_lang_syntax::attachment::AttachedViewFragmentEntry::Statement(statement),
+                crate::item::HirViewBodyEntry::Statement(retained),
+            ) => {
+                let Some(evidence) = crate::source_index::block_projection::statement_matches(
+                    parsed,
+                    slots,
+                    &block_arenas,
+                    *retained,
+                    statement,
+                    body_scope,
+                    &mut generations,
+                    crate::stmt::HirStatementContext::Ordinary,
+                ) else {
+                    return false;
+                };
+                if evidence.is_poisoned() {
+                    value_issue.get_or_insert(HirItemIssue::InvalidMember);
+                }
+                expected_locals.extend_from_slice(evidence.locals());
+            }
+            _ => return false,
         }
-        if slot_is_poisoned(slots, *retained) {
-            value_issue.get_or_insert(HirItemIssue::InvalidMember);
-        }
+    }
+    if body.locals() != expected_locals {
+        return false;
     }
 
     let parameter_issue = first_parameter_issue(attached, view.parameters(), slots);

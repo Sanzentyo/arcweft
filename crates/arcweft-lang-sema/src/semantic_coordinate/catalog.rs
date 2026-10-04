@@ -745,6 +745,101 @@ impl<'catalog, 'edges> SemanticCoordinateIndex<'catalog, 'edges> {
             .map(|coordinate| CheckedBindingCoordinateEvidence::new(local, coordinate))
     }
 
+    pub(crate) fn retained_state_field_identity(
+        &self,
+        module: &arcweft_lang_hir::module::HirModule,
+        local: LocalId,
+    ) -> Result<[u8; 32], SemanticCoordinateIndexError> {
+        self.binding(local)?;
+        if self
+            .catalog
+            .topology()
+            .module(local.module())
+            .is_none_or(|accepted| accepted.snapshot() != module.snapshot_id())
+        {
+            return Err(SemanticCoordinateIndexError::InvalidRootPath);
+        }
+        let binding = module
+            .resolve_local(local)
+            .map_err(|_| SemanticCoordinateIndexError::InvalidRootPath)?;
+        let mut scope = binding.scope();
+        let mut nested = Vec::new();
+        let public_id = loop {
+            let row = module
+                .resolve_scope(scope)
+                .map_err(|_| SemanticCoordinateIndexError::InvalidRootPath)?;
+            if row.kind() == arcweft_lang_hir::scope::HirScopeKind::Closure {
+                return Err(SemanticCoordinateIndexError::InvalidRootPath);
+            }
+            let path = match *row.owner() {
+                arcweft_lang_hir::scope::HirScopeOwner::Item(owner) => {
+                    let item = module
+                        .resolve_item(owner)
+                        .map_err(|_| SemanticCoordinateIndexError::InvalidRootPath)?;
+                    let arcweft_lang_hir::item::HirItemKind::View(view) = item.kind() else {
+                        return Err(SemanticCoordinateIndexError::InvalidRootPath);
+                    };
+                    let arcweft_lang_hir::item::HirRetainedPublicId::Resolved { value, .. } =
+                        view.header().public_id()
+                    else {
+                        return Err(SemanticCoordinateIndexError::InvalidRootPath);
+                    };
+                    break value.as_str();
+                }
+                arcweft_lang_hir::scope::HirScopeOwner::Expr(owner) => self.expression(owner)?,
+                arcweft_lang_hir::scope::HirScopeOwner::Stmt(owner) => {
+                    self.statement(owner)?.path().clone()
+                }
+                arcweft_lang_hir::scope::HirScopeOwner::Module(_) => {
+                    return Err(SemanticCoordinateIndexError::InvalidRootPath);
+                }
+            };
+            let parent = row
+                .parent()
+                .ok_or(SemanticCoordinateIndexError::InvalidRootPath)?;
+            let siblings = module
+                .resolve_scope(parent)
+                .map_err(|_| SemanticCoordinateIndexError::InvalidRootPath)?;
+            let ordinal = siblings
+                .children()
+                .iter()
+                .filter(|child| {
+                    module
+                        .resolve_scope(**child)
+                        .is_ok_and(|child| child.owner() == row.owner())
+                })
+                .position(|child| *child == scope)
+                .ok_or(SemanticCoordinateIndexError::InvalidRootPath)?;
+            let mut bytes = Vec::new();
+            super::write_len(&mut bytes, path.steps().len())
+                .map_err(|_| SemanticCoordinateIndexError::InvalidRootPath)?;
+            for step in path.steps() {
+                super::write_checked_path_step(&mut bytes, step)
+                    .map_err(|_| SemanticCoordinateIndexError::InvalidRootPath)?;
+            }
+            super::write_len(&mut bytes, ordinal)
+                .map_err(|_| SemanticCoordinateIndexError::InvalidRootPath)?;
+            nested.push(bytes);
+            scope = parent;
+        };
+        let mut bytes = Vec::new();
+        super::write_bytes(&mut bytes, public_id.as_bytes())
+            .map_err(|_| SemanticCoordinateIndexError::InvalidRootPath)?;
+        super::write_len(&mut bytes, nested.len())
+            .map_err(|_| SemanticCoordinateIndexError::InvalidRootPath)?;
+        for scope in nested.into_iter().rev() {
+            super::write_bytes(&mut bytes, &scope)
+                .map_err(|_| SemanticCoordinateIndexError::InvalidRootPath)?;
+        }
+        super::write_bytes(&mut bytes, binding.name().as_str().as_bytes())
+            .map_err(|_| SemanticCoordinateIndexError::InvalidRootPath)?;
+        bytes.extend_from_slice(&binding.generation().get().to_le_bytes());
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"arcweft.lang.retained-state-field.v1\0");
+        hasher.update(&bytes);
+        Ok(*hasher.finalize().as_bytes())
+    }
+
     fn coordinate(
         &self,
         owner: HirSemanticPathOwnerId,

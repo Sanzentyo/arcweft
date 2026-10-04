@@ -236,6 +236,7 @@ impl HirSourceIndex {
                 (TypedItemNode::View(view), HirItemKind::View(_)) => {
                     view.semantics().is_ok_and(|attached| {
                         view::payload_matches(
+                            parsed,
                             owner,
                             &attached,
                             item,

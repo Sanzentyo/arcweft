@@ -56,9 +56,9 @@ mod element_argument;
 mod expression_program;
 pub use element_argument::ViewElementArgumentRole;
 pub use expression_program::{
-    ViewBindingProgram, ViewExecutionInput, ViewExecutionInputSource, ViewExpressionProgram,
-    ViewExpressionValue, ViewLocalCoordinate, ViewLocalOutput, ViewMatchArm, ViewMatchProgram,
-    ViewMatchRanges, ViewRepeatKey, ViewRepeatProgram,
+    ViewBindingLifetime, ViewBindingProgram, ViewExecutionInput, ViewExecutionInputSource,
+    ViewExpressionProgram, ViewExpressionValue, ViewLocalCoordinate, ViewLocalOutput, ViewMatchArm,
+    ViewMatchProgram, ViewMatchRanges, ViewRepeatKey, ViewRepeatProgram, ViewStateFieldId,
 };
 pub use image::{
     ImageAlignment, ImageFit, ImagePlayback, ViewImagePresentationMetadata, ViewImageSource,

@@ -838,8 +838,11 @@ pub(super) struct StatementEvidence {
 }
 
 impl StatementEvidence {
-    fn is_poisoned(&self) -> bool {
+    pub(super) fn is_poisoned(&self) -> bool {
         self.state.is_poisoned()
+    }
+    pub(super) fn locals(&self) -> &[LocalId] {
+        &self.locals
     }
 }
 
@@ -875,6 +878,7 @@ pub(super) fn statement_matches(
         (
             SyntaxKind::LetStatement,
             HirStmtKind::Let {
+                storage,
                 pattern,
                 annotation,
                 initializer,
@@ -882,7 +886,8 @@ pub(super) fn statement_matches(
             },
         ) => {
             let attached = attached.cast::<LetStatementKind>().ok()?;
-            if annotation.is_some()
+            if *storage != attached.storage().ok()?.into()
+                || annotation.is_some()
                 || !let_initializer_matches(
                     parsed,
                     slots,

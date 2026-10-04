@@ -1550,6 +1550,10 @@ fn write_declaration_body_role(output: &mut Vec<u8>, role: HirDeclarationBodyRoo
             output.push(5);
             output.extend_from_slice(&ordinal.to_le_bytes());
         }
+        HirDeclarationBodyRootRole::ViewStatement { ordinal } => {
+            output.push(6);
+            output.extend_from_slice(&ordinal.to_le_bytes());
+        }
     }
 }
 

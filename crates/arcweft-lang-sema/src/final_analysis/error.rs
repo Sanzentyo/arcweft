@@ -253,6 +253,10 @@ pub enum CandidateFactTransactionViolation {
 /// Failure to publish final semantic facts.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum FinalSemanticAnalysisError {
+    #[error("local state {owner:?} must be declared in a retained View lexical scope")]
+    InvalidRetainedState { owner: LocalId },
+    #[error("local state {owner:?} must declare at least one retained field")]
+    EmptyRetainedState { owner: StmtId },
     #[error(transparent)]
     DeclarationDefaultConstraintFailure(super::FinalDeclarationDefaultConstraintFailure),
     #[error("return {owner:?} has no selected enclosing callable frame")]

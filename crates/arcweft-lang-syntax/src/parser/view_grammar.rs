@@ -382,7 +382,19 @@ fn emit_view_fragment(parser: &mut DocumentParser<'_, '_>, body_end: usize) {
         }
         let entry_end = view_value_end(parser, parser.cursor(), body_end);
         let is_value = !parser.at("export");
-        if is_value {
+        if is_value
+            && !matches!(
+                parser.current_text(),
+                Some("if" | "match" | "loop" | "thread" | "scope")
+            )
+            && super::statement::is_statement_start(parser, parser.cursor(), entry_end)
+        {
+            super::statement::emit_statement_fragment(
+                parser,
+                entry_end,
+                SyntaxRole::Element(ordinal),
+            );
+        } else if is_value {
             let value_start = parser.cursor();
             let event_start = parser.event_position();
             emit_expression(parser, entry_end, SyntaxRole::Element(ordinal));

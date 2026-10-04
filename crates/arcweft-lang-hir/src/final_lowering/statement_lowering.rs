@@ -53,10 +53,10 @@ use crate::stmt::{
 
 use super::{StagedHirModuleTransaction, require_limit};
 
-struct LoweredStatement {
-    owner: StmtId,
-    locals: Box<[LocalId]>,
-    poisoned: bool,
+pub(super) struct LoweredStatement {
+    pub(super) owner: StmtId,
+    pub(super) locals: Box<[LocalId]>,
+    pub(super) poisoned: bool,
 }
 
 pub(super) struct LoweredThreadFlowStatement {
@@ -546,7 +546,7 @@ impl StagedHirModuleTransaction<'_> {
         clippy::too_many_lines,
         reason = "the closed statement family is one exhaustive typed lowering and source-staging transaction"
     )]
-    fn lower_attached_statement(
+    pub(super) fn lower_attached_statement(
         &mut self,
         attached: &StatementNode,
         scope: ScopeId,
@@ -697,6 +697,10 @@ impl StagedHirModuleTransaction<'_> {
                 let locals = lowered.locals;
                 (
                     HirStmtKind::Let {
+                        storage: statement
+                            .storage()
+                            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
+                            .into(),
                         pattern: lowered.owner,
                         annotation: None,
                         initializer,

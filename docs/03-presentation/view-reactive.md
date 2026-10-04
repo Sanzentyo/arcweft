@@ -96,6 +96,24 @@ ordinal や名前付き scalar slot へ変換しない。nested scope と shadow
 lexical binding に従う。派生 local は frame の scope を出ると破棄し、snapshot には
 含めず、restore 後は同じ入力と program から再構築する。
 
+`local state` の値は mount が所有する型付きフィールドである。field identity は
+View の public ID、accepted lexical scope、宣言名と同名 binding の generation から
+導く。初期化式、値の型、Core program、宣言自身の instruction ordinal は含めない。
+匿名の入れ子 scope は accepted structural coordinate で区別する。keyed iteration
+では item key による occurrence も区別し、item の並べ替えで値を取り違えない。
+初期化は未初期化フィールドにだけ適用し、通常の checked binding program が
+pattern と型付き出力を所有する。式・handler の Local input は現在値の読み取り
+projection であり、frame の終了で破棄する。保持値の正本は mount に残る。
+初期化に失敗した frame はフィールドの変更をまとめて rollback する。
+
+snapshot は occurrence、field identity、semantic type と保持値を保存する。
+restore は宣言・型・occurrence と重複を公開前に検証する。replacement は同じ
+identity と型のフィールドを保持し、新規フィールドを初回評価で初期化し、削除された
+フィールドを除去する。同じ identity の型を変更する場合は、明示的な純粋 migration
+がなければ候補を拒否する。通常の関数や latent closure の body には `local state`
+を宣言できない。affine resource は実際の custody と cleanup authority が必要であり、
+Copy として保持値を複製しない。
+
 View の `if` 式・statement、`else if` は通常の checked bool 式を条件に使う。
 条件は同じ Core program／input ABI／評価予算で評価し、選択した arm だけを実行する。
 各 arm は独立した lexical region を持ち、arm の local を他の arm や後続の region

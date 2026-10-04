@@ -10,8 +10,8 @@ use crate::identity::{HirLimit, ItemId, ScopeId};
 use crate::item::{
     HirDeclarationMember, HirDeclarationMemberArena, HirDeclarationMemberId,
     HirDeclarationMemberIssue, HirDeclarationMemberKind, HirDeclarationMemberPoisonState, HirItem,
-    HirItemFamily, HirItemIssue, HirItemKind, HirParameter, HirParameterKind, HirViewDeclaration,
-    HirViewExportMember,
+    HirItemFamily, HirItemIssue, HirItemKind, HirParameter, HirParameterKind, HirViewBodyEntry,
+    HirViewDeclaration, HirViewExportMember,
 };
 use crate::leaf::{HirPathIssue, HirPathRecovery, HirPathRoot, HirPathValue};
 use crate::lowering::{HirInvariantFailure, HirLowerFailure};
@@ -151,20 +151,43 @@ impl StagedHirModuleTransaction<'_> {
             )
         };
 
-        let mut values = Vec::new();
+        let body_scope = self.allocate_item_body_scope_from_syntax(
+            &attached.body().syntax(),
+            owner,
+            callable_scope,
+            crate::scope::HirScopeKind::Block,
+        )?;
+        let mut body_locals = Vec::new();
+        let mut body = Vec::new();
         let mut value_issue = None;
         if let Some(fragment) = attached.body().fragment() {
             for entry in fragment.entries() {
-                let AttachedViewFragmentEntry::Value(value) = entry else {
-                    continue;
-                };
-                let value = self.lower_attached_expression(value.as_ref(), callable_scope)?;
-                if self.staged_expression_is_poisoned(value)? {
-                    value_issue.get_or_insert(HirItemIssue::InvalidMember);
+                match entry {
+                    AttachedViewFragmentEntry::Value(value) => {
+                        let value = self.lower_attached_expression(value.as_ref(), body_scope)?;
+                        if self.staged_expression_is_poisoned(value)? {
+                            value_issue.get_or_insert(HirItemIssue::InvalidMember);
+                        }
+                        body.push(HirViewBodyEntry::Value(value));
+                    }
+                    AttachedViewFragmentEntry::Statement(statement) => {
+                        let lowered = self.lower_attached_statement(
+                            statement,
+                            body_scope,
+                            crate::stmt::HirStatementContext::Ordinary,
+                        )?;
+                        if lowered.poisoned {
+                            value_issue.get_or_insert(HirItemIssue::InvalidMember);
+                        }
+                        body_locals.extend_from_slice(&lowered.locals);
+                        body.push(HirViewBodyEntry::Statement(lowered.owner));
+                    }
+                    AttachedViewFragmentEntry::MisplacedExport(_) => {}
                 }
-                values.push(value);
             }
         }
+        require_limit(HirLimit::LocalsPerScope, body_locals.len())?;
+        self.close_scope_members(body_scope, body_locals.into_boxed_slice())?;
 
         let issue = prefix_issue
             .or_else(|| retained_header_issue(attached.header()))
@@ -204,9 +227,10 @@ impl StagedHirModuleTransaction<'_> {
             owner,
             header,
             callable_scope,
+            body_scope,
             parameters.into_boxed_slice(),
             member_ids.clone().into_boxed_slice(),
-            values.into_boxed_slice(),
+            body.into_boxed_slice(),
         )
         .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
         let item = HirItem::try_new_with_state(

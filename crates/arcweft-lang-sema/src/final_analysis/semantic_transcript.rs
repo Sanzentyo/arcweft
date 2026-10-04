@@ -4523,6 +4523,9 @@ impl SemanticTranscriptGraph<'_, '_> {
         transcript_update!(hasher, b"arcweft.lang.checked-statement-semantic.v1\0");
         write_bytes(&mut hasher, &coordinate)?;
         transcript_update!(hasher, &hir.kind().semantic_transcript_tag().to_le_bytes());
+        if let HirStmtKind::Let { storage, .. } = hir.kind() {
+            transcript_update!(hasher, &[storage.semantic_tag()]);
+        }
         transcript_update!(hasher, &[checked.payload().semantic_tag()]);
         write_statement_payload(
             &mut hasher,

@@ -119,20 +119,48 @@ impl ViewMatchRanges {
     }
 }
 
+/// Opaque identity minted from an accepted retained field declaration.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
+pub struct ViewStateFieldId(pub [u8; 32]);
+
+/// Retained fields use declaration identities, independently of the Core
+/// initializer program and its transient output coordinates.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ViewBindingLifetime {
+    Derived,
+    Retained { fields: Box<[ViewStateFieldId]> },
+}
+
 /// Owned binding outputs are transported by Core in this exact order.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ViewBindingProgram {
+    pub lifetime: ViewBindingLifetime,
     pub execution: ViewExpressionProgram,
     pub outputs: Box<[ViewLocalOutput]>,
 }
 
 impl ViewBindingProgram {
     pub fn outputs_are_canonical(&self) -> bool {
-        self.outputs.iter().enumerate().all(|(index, output)| {
-            output.coordinate.program == self.execution.program
-                && usize::from(output.coordinate.output) == index
-        })
+        let fields_are_canonical = match &self.lifetime {
+            ViewBindingLifetime::Derived => true,
+            ViewBindingLifetime::Retained { fields } => {
+                !fields.is_empty()
+                    && fields.len() == self.outputs.len()
+                    && fields
+                        .iter()
+                        .collect::<std::collections::BTreeSet<_>>()
+                        .len()
+                        == fields.len()
+            }
+        };
+        fields_are_canonical
+            && self.outputs.iter().enumerate().all(|(index, output)| {
+                output.coordinate.program == self.execution.program
+                    && usize::from(output.coordinate.output) == index
+            })
     }
 }
 
@@ -152,7 +180,9 @@ impl ViewRepeatProgram {
         instruction: u32,
         enclosing_end: u32,
     ) -> Option<crate::ViewInstructionRange> {
-        if !self.source.outputs_are_canonical() {
+        if !matches!(self.source.lifetime, ViewBindingLifetime::Derived)
+            || !self.source.outputs_are_canonical()
+        {
             return None;
         }
         let start = instruction.checked_add(1)?;

@@ -30,6 +30,8 @@ pub enum ViewMountReconcileError {
     MissingRegistryOwner(ViewId),
     #[error(transparent)]
     DialogueContract(#[from] DialogueViewContractError),
+    #[error("replacement changes a retained local state field's semantic type")]
+    LocalStateTypeChanged,
 }
 
 pub(super) fn reconcile_mounts(
@@ -86,6 +88,18 @@ pub(super) fn reconcile_mounts(
             Err(error) => return Err(error.into()),
         };
         let mut next = mounted.clone();
+        for field in mounted.local_state.values() {
+            if candidate
+                .state_field_type(definition, &key.path, &field.path, field.field)
+                .is_some_and(|ty| ty != field.value_type)
+            {
+                return Err(ViewMountReconcileError::LocalStateTypeChanged);
+            }
+        }
+        next.local_state.retain(|_, field| {
+            candidate.state_field_type(definition, &key.path, &field.path, field.field)
+                == Some(field.value_type)
+        });
         next.owner = ResolvedMountedViewOwner::Arcweft {
             view,
             registry: registry_id,

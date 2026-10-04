@@ -92,6 +92,7 @@ define_syntax_kinds! {
     AttachedContentRole,
     ExtensionReceiverMarker,
     RestParameterMarker,
+    LocalStateQualifier,
     WhereClause,
     WherePredicate,
     ReturnType,
@@ -517,6 +518,7 @@ impl SyntaxKind {
             | Self::AttachedContentRole
             | Self::ExtensionReceiverMarker
             | Self::RestParameterMarker
+            | Self::LocalStateQualifier
             | Self::WhereClause
             | Self::WherePredicate
             | Self::ReturnType
@@ -1074,7 +1076,8 @@ impl SyntaxKind {
             | Self::ThinArrowNode
             | Self::ForInNode
             | Self::ExtensionReceiverMarker
-            | Self::RestParameterMarker => Some(AstTag::Delimiter),
+            | Self::RestParameterMarker
+            | Self::LocalStateQualifier => Some(AstTag::Delimiter),
             Self::MissingBody
             | Self::MissingTokenNode
             | Self::ErrorDeclarationMember

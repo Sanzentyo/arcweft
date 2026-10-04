@@ -1241,6 +1241,7 @@ impl ViewProgramResource {
             .map_err(|_| SectionCodecError::NonCanonicalTable("view_value_program_inventory"))?;
         for definition in &self.definitions {
             let mut outputs = BTreeSet::new();
+            let mut state_fields = BTreeSet::new();
             for instruction in &self.instructions[definition.body.start_instruction as usize
                 ..definition.body.end_instruction as usize]
             {
@@ -1274,6 +1275,17 @@ impl ViewProgramResource {
                         }
                     }
                     ViewProgramInstruction::BindLocal { program, .. } => {
+                        if !program.outputs_are_canonical() {
+                            return Err(SectionCodecError::NonCanonicalTable(
+                                "view_binding_outputs",
+                            ));
+                        }
+                        if let arcweft_view::ViewBindingLifetime::Retained { fields } =
+                            &program.lifetime
+                            && fields.iter().any(|field| !state_fields.insert(*field))
+                        {
+                            return Err(SectionCodecError::NonCanonicalTable("view_state_fields"));
+                        }
                         check_budget(
                             program.outputs.len(),
                             budget.common.items,

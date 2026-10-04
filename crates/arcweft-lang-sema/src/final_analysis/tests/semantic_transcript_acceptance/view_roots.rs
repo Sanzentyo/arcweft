@@ -2,7 +2,7 @@ use super::*;
 use crate::semantic_coordinate::{CheckedSemanticPath, CheckedSemanticPathStep};
 use arcweft_lang_hir::{
     body_edges::HirBodyChild,
-    item::HirItemKind,
+    item::{HirItemKind, HirViewBodyEntry},
     project::{
         HirDeclarationBodyRootRole, HirDeclarationParameterRootChild,
         HirDeclarationParameterRootRole,
@@ -83,15 +83,18 @@ fn assert_view_roots(source: &str, parameter_count: usize, match_ordinal: u32) {
         }
         parameter_paths.push(pattern_path.path().clone());
     }
-    assert_eq!(view.values().len(), 3, "prefix, Match, suffix values");
+    assert_eq!(view.body().len(), 3, "prefix, Match, suffix values");
     assert_eq!(declaration.body().roots().len(), 3);
     let mut value_paths = Vec::new();
-    for (index, (value, root)) in view
-        .values()
+    for (index, (entry, root)) in view
+        .body()
         .iter()
         .zip(declaration.body().roots())
         .enumerate()
     {
+        let HirViewBodyEntry::Value(value) = entry else {
+            panic!("expected a View value root");
+        };
         let ordinal = u32::try_from(index).expect("three View values");
         assert_eq!(
             root.role(),
@@ -113,7 +116,11 @@ fn assert_view_roots(source: &str, parameter_count: usize, match_ordinal: u32) {
         );
         value_paths.push(path);
     }
-    let match_owner = view.values()[usize::try_from(match_ordinal).expect("small ordinal")];
+    let HirViewBodyEntry::Value(match_owner) =
+        view.body()[usize::try_from(match_ordinal).expect("small ordinal")]
+    else {
+        panic!("expected a Match value root");
+    };
     assert!(matches!(
         module
             .resolve_expr(match_owner)

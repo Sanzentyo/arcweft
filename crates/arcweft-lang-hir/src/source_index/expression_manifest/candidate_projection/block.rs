@@ -243,6 +243,7 @@ impl CandidateValidationCursor<'_, '_> {
                 let matches = matches!(
                     payload.kind(),
                     HirStmtKind::Let {
+                        storage: crate::stmt::HirBindingStorage::Derived,
                         pattern: actual_pattern,
                         annotation: None,
                         initializer: actual_initializer,

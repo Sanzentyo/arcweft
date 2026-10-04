@@ -45,6 +45,7 @@ pub enum HirDeclarationBodyRootRole {
     FlowBody,
     ImplFunctionBody,
     ViewValue { ordinal: u32 },
+    ViewStatement { ordinal: u32 },
 }
 
 /// Closed parameter-root role vocabulary.
@@ -1251,7 +1252,9 @@ fn validate_body_owner_kind(row: &HirSemanticBodyRow) -> Result<(), HirSemanticP
             row.kind() == HirBodyKind::Thread
         }
         HirSemanticBodyOwnerKind::Declaration(
-            HirDeclarationBodyRootRole::FunctionBody | HirDeclarationBodyRootRole::ImplFunctionBody,
+            HirDeclarationBodyRootRole::FunctionBody
+            | HirDeclarationBodyRootRole::ImplFunctionBody
+            | HirDeclarationBodyRootRole::ViewStatement { .. },
         )
         | HirSemanticBodyOwnerKind::Item(
             HirDeclarationItemRootRole::TestBody | HirDeclarationItemRootRole::BenchBody,
@@ -3594,16 +3597,24 @@ fn declaration_body_roots(
             let HirItemKind::View(view) = item.kind() else {
                 return Err(HirSemanticPathError::MissingBody);
             };
-            view.values()
+            view.body()
                 .iter()
-                .copied()
                 .enumerate()
-                .map(|(ordinal, expression)| {
+                .map(|(ordinal, entry)| {
                     Ok(HirDeclarationBodyRoot {
-                        role: HirDeclarationBodyRootRole::ViewValue {
-                            ordinal: checked_ordinal(ordinal)?,
+                        role: match entry {
+                            crate::item::HirViewBodyEntry::Value(_) => {
+                                HirDeclarationBodyRootRole::ViewValue {
+                                    ordinal: checked_ordinal(ordinal)?,
+                                }
+                            }
+                            crate::item::HirViewBodyEntry::Statement(_) => {
+                                HirDeclarationBodyRootRole::ViewStatement {
+                                    ordinal: checked_ordinal(ordinal)?,
+                                }
+                            }
                         },
-                        projection: HirBodyProjection::expression(expression),
+                        projection: entry.body_projection(),
                     })
                 })
                 .collect()

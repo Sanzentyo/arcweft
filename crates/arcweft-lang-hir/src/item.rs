@@ -41,8 +41,8 @@ pub use self::retained::{
     HirMetricAssignmentState, HirMetricBucketsMember, HirMetricBucketsValue, HirMetricDeclaration,
     HirMetricKind, HirMetricKindIssue, HirMetricLabelMember, HirMetricUnitMember,
     HirMetricUnitValue, HirPublicIdOrigin, HirRenderPhase, HirRetainedHeader, HirRetainedName,
-    HirRetainedPublicId, HirRetainedPublicIdIssue, HirSignalDeclaration, HirViewDeclaration,
-    HirViewExportMember,
+    HirRetainedPublicId, HirRetainedPublicIdIssue, HirSignalDeclaration, HirViewBodyEntry,
+    HirViewDeclaration, HirViewExportMember,
 };
 pub use self::trait_impl::{
     HirImplAssociatedType, HirImplFunction, HirImplItem, HirImplMember, HirMethodParameter,

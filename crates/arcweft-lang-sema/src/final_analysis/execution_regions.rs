@@ -396,8 +396,10 @@ impl CheckedExecutionCatalog {
     }
 }
 
+/// Read-only membership projected from one final accepted execution DAG.
+/// Construction remains private to the semantic owner; IDs are generation-local.
 #[derive(Debug)]
-pub(super) struct CheckedExecutionRegion {
+pub struct CheckedExecutionRegion {
     expressions: Box<[ExprId]>,
     places: Box<[ExprId]>,
     operations: Box<[CheckedExecutionOperation]>,
@@ -407,26 +409,26 @@ pub(super) struct CheckedExecutionRegion {
 }
 
 impl CheckedExecutionRegion {
-    pub(super) fn places(&self) -> &[ExprId] {
+    pub fn places(&self) -> &[ExprId] {
         &self.places
     }
 
-    pub(super) fn operations(&self) -> &[CheckedExecutionOperation] {
+    pub fn operations(&self) -> &[CheckedExecutionOperation] {
         &self.operations
     }
-    pub(super) fn expressions(&self) -> &[ExprId] {
+    pub fn expressions(&self) -> &[ExprId] {
         &self.expressions
     }
 
-    pub(super) fn statements(&self) -> &[StmtId] {
+    pub fn statements(&self) -> &[StmtId] {
         &self.statements
     }
 
-    pub(super) const fn suspension(&self) -> CheckedSuspensionRole {
+    pub const fn suspension(&self) -> CheckedSuspensionRole {
         self.suspension
     }
 
-    pub(super) const fn control(&self) -> CheckedExecutableControlRole {
+    pub const fn control(&self) -> CheckedExecutableControlRole {
         self.control
     }
 }

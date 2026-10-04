@@ -16,7 +16,6 @@ use super::super::thread_body::AttachedRequiredNestedThreadFlowBody;
 use super::{
     AttachedChoiceEntityReference, AttachedChoiceSuiteSource,
     AttachedRequiredChoiceEntityReference, pattern_has_recovery, required_expression_has_recovery,
-    syntax_has_recovery,
 };
 
 /// Full Choice option with an expression/static ID and typed field body.
@@ -188,7 +187,7 @@ impl AttachedChoiceOptionField {
             | Self::Hotkey { value, .. } => required_expression_has_recovery(value),
             Self::View(value) => value.has_recovery(),
             Self::Select(value) => value.has_recovery(),
-            Self::Let(statement) => syntax_has_recovery(&statement.syntax()),
+            Self::Let(statement) => statement.syntax().has_recovery(),
             Self::Recovered(_) => true,
         }
     }

@@ -44,8 +44,8 @@ pub use crate::patterns::{
     VariantPatternHeadPart, VariantPatternPayloadPart,
 };
 pub use access::{
-    BlockTailNode, DeclarationBodyNode, IfStatementElseNode, IfStatementHeadNode,
-    LetInitializerNode, MatchStatementArmBodyNode, MatchStatementBodyNode,
+    AttachedLetBindingStorage, BlockTailNode, DeclarationBodyNode, IfStatementElseNode,
+    IfStatementHeadNode, LetInitializerNode, MatchStatementArmBodyNode, MatchStatementBodyNode,
     MatchStatementExpressionNode, RequiredStatementExpressionNode, UnsafeAuditBodyNode,
     UnsafeAuditIdNode, UnsafeAuditReasonNode,
 };

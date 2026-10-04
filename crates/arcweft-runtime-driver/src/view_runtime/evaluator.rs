@@ -735,6 +735,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 initialized_parameters: BTreeSet::new(),
                 initialized_state: BTreeSet::new(),
                 runtime_parameters: BTreeMap::new(),
+                local_state: BTreeMap::new(),
                 execution_locals: Vec::new(),
                 expression_evaluations: BTreeMap::new(),
                 handler_seals: BTreeMap::new(),
@@ -1851,14 +1852,39 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 ViewProgramInstruction::BindLocal {
                     program: binding, ..
                 } => {
-                    let value = self.evaluate_expression_program(
-                        &key.handle,
-                        definition,
-                        mounted,
-                        cursor,
-                        &binding.execution,
-                    )?;
-                    let values = match value {
+                    let fields = match &binding.lifetime {
+                        arcweft_view::ViewBindingLifetime::Derived => None,
+                        arcweft_view::ViewBindingLifetime::Retained { fields } => Some(fields),
+                    };
+                    let saved = fields.map(|fields| {
+                        fields
+                            .iter()
+                            .map(|field| {
+                                mounted.local_state.get(&(structural_path.clone(), *field))
+                            })
+                            .collect::<Vec<_>>()
+                    });
+                    let initialized = saved
+                        .as_ref()
+                        .is_some_and(|values| values.iter().all(|value| value.is_some()));
+                    let value = if initialized {
+                        RuntimeValue::Tuple(
+                            saved
+                                .expect("retained values checked")
+                                .into_iter()
+                                .map(|value| value.expect("all fields initialized").value.clone())
+                                .collect(),
+                        )
+                    } else {
+                        self.evaluate_expression_program(
+                            &key.handle,
+                            definition,
+                            mounted,
+                            cursor,
+                            &binding.execution,
+                        )?
+                    };
+                    let mut values = match value {
                         RuntimeValue::Unit if binding.outputs.is_empty() => Vec::new(),
                         RuntimeValue::Tuple(values) if values.len() == binding.outputs.len() => {
                             values
@@ -1871,6 +1897,45 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                             ));
                         }
                     };
+                    if let Some(fields) = fields {
+                        for ((field, output), value) in
+                            fields.iter().zip(&binding.outputs).zip(&mut values)
+                        {
+                            if let Some(saved) =
+                                mounted.local_state.get(&(structural_path.clone(), *field))
+                            {
+                                if saved.value_type != output.value_type {
+                                    return Err(EvaluationFailure::new(
+                                        BundleViewDiagnosticCode::InvalidValueProgram,
+                                        Some(cursor),
+                                        "retained field type changed",
+                                    ));
+                                }
+                                *value = saved.value.clone();
+                            }
+                            if !value.ownership().permits_copy() {
+                                return Err(EvaluationFailure::new(
+                                    BundleViewDiagnosticCode::InvalidValueProgram,
+                                    Some(cursor),
+                                    "retained state requires an admitted unrestricted value",
+                                ));
+                            }
+                            if !mounted
+                                .local_state
+                                .contains_key(&(structural_path.clone(), *field))
+                            {
+                                mounted.local_state.insert(
+                                    (structural_path.clone(), *field),
+                                    super::BundleViewStateFieldSnapshot {
+                                        path: structural_path.clone(),
+                                        field: *field,
+                                        value_type: output.value_type,
+                                        value: value.clone(),
+                                    },
+                                );
+                            }
+                        }
+                    }
                     let scope = mounted.execution_locals.last_mut().ok_or_else(|| {
                         EvaluationFailure::new(
                             BundleViewDiagnosticCode::InvalidControlFlow,

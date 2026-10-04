@@ -448,7 +448,18 @@ pub struct BundleViewMountRuntimeSnapshot {
     pub initialized_parameters: Vec<u16>,
     pub initialized_state: Vec<u16>,
     pub runtime_parameters: Vec<RuntimeBinding>,
+    pub local_state: Vec<BundleViewStateFieldSnapshot>,
     pub next_handler_seal_revision: u64,
+}
+
+/// Exact typed retained value at one structural occurrence of a declaration.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BundleViewStateFieldSnapshot {
+    pub path: BundleViewInstancePath,
+    pub field: arcweft_view::ViewStateFieldId,
+    pub value_type: arcweft_id::RuntimeSemanticTypeId,
+    pub value: RuntimeValue,
 }
 
 /// Fatal construction or snapshot restoration failure.
@@ -518,6 +529,8 @@ pub enum BundleViewRuntimeError {
     PresentationFrameMismatch { message: String },
     #[error("View snapshot has an invalid handler seal revision cursor")]
     InvalidHandlerSealRevision,
+    #[error("saved View local state does not match an admitted declaration")]
+    InvalidLocalState,
 }
 
 impl BundleViewRuntimeError {
@@ -546,6 +559,10 @@ struct MountedView {
     initialized_parameters: BTreeSet<u16>,
     initialized_state: BTreeSet<u16>,
     runtime_parameters: BTreeMap<String, RuntimeValue>,
+    local_state: BTreeMap<
+        (BundleViewInstancePath, arcweft_view::ViewStateFieldId),
+        BundleViewStateFieldSnapshot,
+    >,
     /// Frame-derived lexical values; cleared before publication and never persisted.
     execution_locals: Vec<BTreeMap<arcweft_view::ViewLocalCoordinate, RuntimeValue>>,
     expression_evaluations: BTreeMap<
@@ -1167,6 +1184,7 @@ impl BundleViewRuntime {
                             value: value.clone(),
                         })
                         .collect(),
+                    local_state: mount.local_state.values().cloned().collect(),
                     next_handler_seal_revision: mount.next_handler_seal_revision,
                 })
             })
@@ -1202,6 +1220,11 @@ impl BundleViewRuntime {
             for value in mount.runtime_parameters.values() {
                 arcweft_core::value::visit_runtime_value_graph(value, |nested| visitor(nested))?;
             }
+            for field in mount.local_state.values() {
+                arcweft_core::value::visit_runtime_value_graph(&field.value, |nested| {
+                    visitor(nested)
+                })?;
+            }
         }
         Ok(())
     }
@@ -1218,11 +1241,12 @@ impl BundleViewRuntime {
         if self
             .view_root_bindings
             .values()
-            .chain(
-                self.mounts
+            .chain(self.mounts.values().flat_map(|mount| {
+                mount
+                    .runtime_parameters
                     .values()
-                    .flat_map(|mount| mount.runtime_parameters.values()),
-            )
+                    .chain(mount.local_state.values().map(|field| &field.value))
+            }))
             .any(|value| !value.ownership().permits_copy())
         {
             return Err(ViewSaveError::AffineRuntimeBinding);
@@ -1249,6 +1273,7 @@ impl BundleViewRuntime {
                     .runtime_parameters
                     .iter()
                     .map(|binding| &binding.value)
+                    .chain(mount.local_state.iter().map(|field| &field.value))
             }))
             .any(|value| !value.ownership().permits_copy())
         {
@@ -1387,6 +1412,21 @@ impl BundleViewRuntime {
                 handle: saved.handle.clone(),
                 path: saved.path.clone(),
             };
+            let mut local_state = BTreeMap::new();
+            for field in &saved.local_state {
+                if !self.catalog.as_ref().is_some_and(|catalog| {
+                    catalog.state_field_type(definition, &saved.path, &field.path, field.field)
+                        == Some(field.value_type)
+                }) || !matches!(&self.program_runtime, ViewProgramRuntimeAuthority::Awbc(program)
+                    if program.semantic_type_id(field.value_type)
+                        .is_some_and(|ty| program.value_matches_type(&field.value, ty)))
+                    || local_state
+                        .insert((field.path.clone(), field.field), field.clone())
+                        .is_some()
+                {
+                    return Err(BundleViewRuntimeError::InvalidLocalState);
+                }
+            }
             if mounts
                 .insert(
                     key.clone(),
@@ -1398,6 +1438,7 @@ impl BundleViewRuntime {
                         initialized_parameters,
                         initialized_state,
                         runtime_parameters,
+                        local_state,
                         execution_locals: Vec::new(),
                         expression_evaluations: BTreeMap::new(),
                         handler_seals: BTreeMap::new(),

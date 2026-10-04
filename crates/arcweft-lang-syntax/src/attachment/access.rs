@@ -897,7 +897,22 @@ fn match_statement_expression_from_syntax(
     }
 }
 
+/// Storage requested by the authored binding declaration.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AttachedLetBindingStorage {
+    Derived,
+    RetainedState,
+}
+
 impl AstNode<LetStatementKind> {
+    pub fn storage(&self) -> Result<AttachedLetBindingStorage, SyntaxAccessError> {
+        let Some(qualifier) = self.syntax().optional_unique_child(SyntaxRole::Token)? else {
+            return Ok(AttachedLetBindingStorage::Derived);
+        };
+        qualifier.cast::<super::node::LocalStateQualifierKind>()?;
+        Ok(AttachedLetBindingStorage::RetainedState)
+    }
+
     pub fn pattern(&self) -> Result<PatternNode, SyntaxAccessError> {
         self.required_family_child::<PatternFamily>(SyntaxRole::Pattern)
     }

@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::item::{HirDeclarationMemberIssue, HirViewDeclaration};
+use crate::item::{HirDeclarationMemberIssue, HirViewBodyEntry, HirViewDeclaration};
 use crate::source_index::{
     HirCallableSourceOwner, HirCallableSourceRole, HirItemSourceRole, HirSourcePresence,
     HirSourceQuery, HirViewBodySourcePart, HirViewExportSourcePart, HirViewSourceRole,
@@ -69,9 +69,10 @@ fn view_freeze_rejects_a_derived_identity_from_a_different_module() {
                         owner,
                         header,
                         view.callable_scope(),
+                        view.body_scope(),
                         view.parameters().into(),
                         view.exports().into(),
-                        view.values().into(),
+                        view.body().into(),
                     )
                     .unwrap(),
                 ),
@@ -90,7 +91,7 @@ fn view_freeze_rejects_a_derived_identity_from_a_different_module() {
 fn revise_view(
     transaction: &mut StagedHirModuleTransaction<'_>,
     owner: crate::identity::ItemId,
-    mutate: impl FnOnce(&mut Vec<crate::item::HirParameter>, &mut Vec<ExprId>),
+    mutate: impl FnOnce(&mut Vec<crate::item::HirParameter>, &mut Vec<HirViewBodyEntry>),
 ) {
     let (
         scope,
@@ -99,6 +100,7 @@ fn revise_view(
         members,
         header,
         callable_scope,
+        body_scope,
         mut parameters,
         exports,
         mut values,
@@ -115,9 +117,10 @@ fn revise_view(
             item.members().into(),
             view.header().clone(),
             view.callable_scope(),
+            view.body_scope(),
             view.parameters().to_vec(),
             view.exports().into(),
-            view.values().to_vec(),
+            view.body().to_vec(),
         )
     };
     mutate(&mut parameters, &mut values);
@@ -125,6 +128,7 @@ fn revise_view(
         owner,
         header,
         callable_scope,
+        body_scope,
         parameters.into_boxed_slice(),
         exports,
         values.into_boxed_slice(),
@@ -262,14 +266,17 @@ fn canonical_view_freezes_callable_parameters_exports_and_value_owners() {
         1
     );
 
-    assert_eq!(declaration.values().len(), 2);
-    for value in declaration.values().iter().copied() {
+    assert_eq!(declaration.body().len(), 2);
+    for entry in declaration.body() {
+        let HirViewBodyEntry::Value(value) = *entry else {
+            panic!("expected a View value");
+        };
         let expression = module
             .arenas()
             .expressions()
             .resolve(module.slots(), value)
             .unwrap();
-        assert_eq!(expression.scope(), declaration.callable_scope());
+        assert_eq!(expression.scope(), declaration.body_scope());
         assert_source_backed_child(&module, value);
     }
     assert_item_slot_whole(&module, &parsed, owner);
@@ -405,7 +412,7 @@ fn view_recovery_preserves_family_export_ordinals_and_primary_issue_order() {
         &HirItemPoisonState::Poisoned(HirItemIssue::InvalidMember)
     );
     assert_eq!(broken.exports().len(), 2);
-    assert_eq!(broken.values().len(), 2);
+    assert_eq!(broken.body().len(), 2);
     assert_eq!(broken.exports()[0].ordinal(), 0);
     assert_eq!(broken.exports()[1].ordinal(), 1);
     assert_eq!(
@@ -424,7 +431,7 @@ fn view_recovery_preserves_family_export_ordinals_and_primary_issue_order() {
     );
     assert!(missing.parameters().is_empty());
     assert!(missing.exports().is_empty());
-    assert!(missing.values().is_empty());
+    assert!(missing.body().is_empty());
     assert!(matches!(
         module
             .source_site(
@@ -492,15 +499,68 @@ fn view_freeze_rejects_value_order_and_parameter_default_substitution() {
     });
     assert_view_freeze_rejects("parameter-default", source, |transaction, owner| {
         revise_view(transaction, owner, |parameters, values| {
+            let HirViewBodyEntry::Value(value) = values[0] else {
+                panic!("expected a View value");
+            };
             let parameter = &parameters[0];
             parameters[0] = crate::item::HirParameter::try_new(
                 parameter.pattern(),
                 parameter.ty(),
                 parameter.kind(),
-                Some(values[0]),
+                Some(value),
                 parameter.locals().into(),
             )
             .unwrap();
         });
     });
+}
+
+#[test]
+fn recovered_for_sources_publish_complete_synthetic_diagnostics_in_view_and_flow() {
+    for source in [
+        "view Broken(items: Vec<Item>) { for item in items key item.id { Text(\"x\") } }",
+        "flow Broken() { for item in @@@ {} }",
+    ] {
+        let parsed = parse("arcweft-test://recovered-for-source", source);
+        let key = module_key(&parsed);
+        let mut database = HirDatabase::try_new().unwrap();
+        let module = lower(&mut database, &parsed, &key);
+        assert_eq!(module.status(), crate::module::HirModuleStatus::Recovered);
+        let synthetic = module
+            .expressions()
+            .filter_map(|(owner, expression)| {
+                (matches!(expression.kind(), crate::expr::HirExprKind::ForSynthetic(_))
+                    && matches!(expression.state(), crate::expr::HirPoisonState::Poisoned(_)))
+                .then_some(owner)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            synthetic.len(),
+            2,
+            "poison propagates through iterator and next"
+        );
+        for expression in synthetic {
+            let owner = crate::identity::SyntheticOwner::Expr(expression);
+            let diagnostic = module
+                .diagnostics()
+                .iter()
+                .find_map(|diagnostic| match diagnostic {
+                    crate::diagnostic::HirDiagnostic::Recovery(recovery)
+                        if recovery.owner() == owner =>
+                    {
+                        Some(recovery)
+                    }
+                    _ => None,
+                })
+                .expect("each poisoned synthetic node publishes its recovery evidence");
+            assert_eq!(
+                diagnostic.primary_role(),
+                crate::diagnostic::HirRecoveryPrimary::owner_whole(owner)
+            );
+            assert_eq!(
+                diagnostic.primary(),
+                module.slots().resolve(expression).unwrap().source_site()
+            );
+        }
+    }
 }

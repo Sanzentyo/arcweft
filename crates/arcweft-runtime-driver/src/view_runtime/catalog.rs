@@ -263,6 +263,66 @@ impl ViewProgramCatalog {
         &self.resource
     }
 
+    pub(super) fn state_field_type(
+        &self,
+        definition: &ViewDefinitionResource,
+        mount_path: &super::BundleViewInstancePath,
+        path: &super::BundleViewInstancePath,
+        field: arcweft_view::ViewStateFieldId,
+    ) -> Option<arcweft_id::RuntimeSemanticTypeId> {
+        if path.segments().len() > super::MAX_VIEW_INSTANCE_PATH_DEPTH {
+            return None;
+        }
+        let relative = path.segments().strip_prefix(mount_path.segments())?;
+        let mut span = definition.body;
+        for segment in relative {
+            let super::BundleViewInstancePathSegment::Repeat { instruction, key } = segment else {
+                return None;
+            };
+            if *instruction < span.start_instruction || *instruction >= span.end_instruction {
+                return None;
+            }
+            let ViewProgramInstruction::RepeatKeyed { program, .. } =
+                self.resource.instructions.get(*instruction as usize)?
+            else {
+                return None;
+            };
+            if key.value_type() != program.key.result_type {
+                return None;
+            }
+            let range = program.body_range(*instruction, span.end_instruction)?;
+            span = arcweft_bundle::resource_codec::view::ViewInstructionSpan::new(
+                range.start,
+                range.end,
+            );
+        }
+        let mut cursor = span.start_instruction;
+        while cursor < span.end_instruction {
+            match self.resource.instructions.get(cursor as usize)? {
+                ViewProgramInstruction::RepeatKeyed { program, .. } => {
+                    cursor = program.body_range(cursor, span.end_instruction)?.end;
+                    continue;
+                }
+                ViewProgramInstruction::BindLocal { program, .. } => {
+                    if let arcweft_view::ViewBindingLifetime::Retained { fields } =
+                        &program.lifetime
+                    {
+                        if let Some(value_type) = fields
+                            .iter()
+                            .zip(&program.outputs)
+                            .find_map(|(id, output)| (*id == field).then_some(output.value_type))
+                        {
+                            return Some(value_type);
+                        }
+                    }
+                }
+                _ => {}
+            }
+            cursor += 1;
+        }
+        None
+    }
+
     pub(crate) const fn parts(&self) -> &ViewPartRuntimeCatalog {
         &self.parts
     }

@@ -1079,7 +1079,7 @@ fn looks_like_record_literal(parser: &DocumentParser<'_, '_>, start: usize, end:
     let Some(first) = first_significant(parser, start, end) else {
         return false;
     };
-    if token_text(parser, first).is_some_and(crate::parser::statement::is_statement_head) {
+    if crate::parser::statement::is_statement_start(parser, first, end) {
         return false;
     }
     let boundary = find_top_level_boundary(parser, first, end, &["=", ":", ",", ";"]);

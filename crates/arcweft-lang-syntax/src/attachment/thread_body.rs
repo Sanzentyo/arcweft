@@ -129,7 +129,7 @@ impl AttachedThreadFlowItem {
     }
 
     pub fn has_recovery(&self) -> bool {
-        syntax_has_recovery(&self.syntax())
+        self.syntax().has_recovery()
     }
 
     /// Returns the one existing statement-family owner for statement-backed
@@ -285,7 +285,7 @@ impl AttachedForBody {
 
     pub fn has_recovery(&self) -> bool {
         match self {
-            Self::Block(body) => body.is_unclosed() || syntax_has_recovery(&body.syntax.syntax()),
+            Self::Block(body) => body.is_unclosed() || body.syntax.syntax().has_recovery(),
             Self::Missing(_) => true,
         }
     }
@@ -563,10 +563,4 @@ fn attach_body_children(
         .into_boxed_slice();
     let close = body.required_exact_child::<CloseBraceKind>(SyntaxRole::CloseDelimiter)?;
     Ok(AttachedBodyChildren { open, items, close })
-}
-
-fn syntax_has_recovery(syntax: &SyntaxNodeHandle) -> bool {
-    syntax.kind().is_missing_node()
-        || syntax.kind().is_error_node()
-        || syntax.children().iter().any(syntax_has_recovery)
 }

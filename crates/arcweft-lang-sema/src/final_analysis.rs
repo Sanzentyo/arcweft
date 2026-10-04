@@ -53,7 +53,9 @@ mod error;
 mod execution_context;
 mod execution_plan;
 mod execution_regions;
-pub use execution_regions::{CheckedExecutionBodyOwner, CheckedExecutionOperation};
+pub use execution_regions::{
+    CheckedExecutionBodyOwner, CheckedExecutionOperation, CheckedExecutionRegion,
+};
 mod deterministic_program;
 mod execution_inputs;
 pub use deterministic_program::{CheckedDeterministicProgram, CheckedProgramAdmissionError};

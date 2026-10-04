@@ -125,6 +125,7 @@ impl AttachedViewExport {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AttachedViewFragmentEntry {
     Value(Box<AttachedExpressionNode>),
+    Statement(super::StatementNode),
     MisplacedExport(Box<AttachedViewExport>),
 }
 
@@ -198,6 +199,7 @@ impl AttachedViewFragmentEntry {
     pub fn has_recovery(&self) -> bool {
         match self {
             Self::Value(value) => value.projection().has_recovery(),
+            Self::Statement(statement) => statement.syntax().has_recovery(),
             Self::MisplacedExport(export) => export.has_recovery(),
         }
     }
@@ -227,6 +229,7 @@ impl AttachedViewFragment {
     pub fn values(&self) -> impl Iterator<Item = &AttachedExpressionNode> {
         self.entries.iter().filter_map(|entry| match entry {
             AttachedViewFragmentEntry::Value(value) => Some(value.as_ref()),
+            AttachedViewFragmentEntry::Statement(_) => None,
             AttachedViewFragmentEntry::MisplacedExport(_) => None,
         })
     }
@@ -234,6 +237,7 @@ impl AttachedViewFragment {
     pub fn misplaced_exports(&self) -> impl Iterator<Item = &AttachedViewExport> {
         self.entries.iter().filter_map(|entry| match entry {
             AttachedViewFragmentEntry::Value(_) => None,
+            AttachedViewFragmentEntry::Statement(_) => None,
             AttachedViewFragmentEntry::MisplacedExport(export) => Some(export.as_ref()),
         })
     }
@@ -535,6 +539,16 @@ fn attach_fragment(
                 attach_export(child.cast()?, source_ordinal, next_misplaced_ordinal, true)?,
             )));
             next_misplaced_ordinal = next_misplaced_ordinal
+                .checked_add(1)
+                .ok_or(SyntaxAccessError::InvalidViewProjection { id: syntax.id() })?;
+        } else if child.kind().ast_tag() == Some(crate::grammar::kinds::AstTag::Statement) {
+            if child.role() != SyntaxRole::Element(next_value_ordinal) {
+                return Err(SyntaxAccessError::InvalidViewProjection { id: syntax.id() });
+            }
+            entries.push(AttachedViewFragmentEntry::Statement(
+                super::StatementNode::new(child)?,
+            ));
+            next_value_ordinal = next_value_ordinal
                 .checked_add(1)
                 .ok_or(SyntaxAccessError::InvalidViewProjection { id: syntax.id() })?;
         } else if child.expression_projection().is_some() {

@@ -237,3 +237,65 @@ fn malformed_part_modifier_is_typed_recovery_and_not_a_clean_local_name() {
     ));
     assert!(declaration.has_recovery());
 }
+
+#[test]
+fn view_binding_entries_keep_storage_and_source_order_without_reclassifying_values() {
+    use crate::attachment::node::LetStatementKind;
+    use crate::attachment::{AttachedLetBindingStorage, LetInitializerNode};
+    let snapshot = attach(
+        "view Main(initial: String) { local state caption: String = initial; let suffix = \"!\"; if true { Text(caption) } else { Text(suffix) } }",
+    );
+    let declaration = views(&snapshot)[0].semantics().unwrap();
+    let fragment = declaration.body().fragment().unwrap();
+    assert!(!fragment.has_recovery());
+    let [
+        AttachedViewFragmentEntry::Statement(state),
+        AttachedViewFragmentEntry::Statement(derived),
+        AttachedViewFragmentEntry::Value(_),
+    ] = fragment.entries()
+    else {
+        panic!("source-ordered state/binding/value entries");
+    };
+    let state = state.cast::<LetStatementKind>().unwrap();
+    let derived = derived.cast::<LetStatementKind>().unwrap();
+    assert_eq!(
+        state.storage().unwrap(),
+        AttachedLetBindingStorage::RetainedState
+    );
+    assert_eq!(
+        derived.storage().unwrap(),
+        AttachedLetBindingStorage::Derived
+    );
+    assert!(matches!(
+        state.initializer().unwrap(),
+        Some(LetInitializerNode::Expression(_))
+    ));
+    assert!(state.range().end() < derived.range().start());
+
+    let malformed = attach("view Main() { local state caption: String = }");
+    let declaration = views(&malformed)[0].semantics().unwrap();
+    let fragment = declaration.body().fragment().unwrap();
+    assert!(fragment.has_recovery());
+    let [AttachedViewFragmentEntry::Statement(state)] = fragment.entries() else {
+        panic!("recovered state binding remains attached");
+    };
+    assert!(matches!(
+        state
+            .cast::<LetStatementKind>()
+            .unwrap()
+            .initializer()
+            .unwrap(),
+        Some(LetInitializerNode::Missing(_))
+    ));
+
+    let named_local = attach("view Main() { Text({ let local = \"ordinary\"; local }) }");
+    assert!(
+        !views(&named_local)[0]
+            .semantics()
+            .unwrap()
+            .body()
+            .fragment()
+            .unwrap()
+            .has_recovery()
+    );
+}
