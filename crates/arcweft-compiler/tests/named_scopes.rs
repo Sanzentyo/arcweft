@@ -113,3 +113,29 @@ flow done() -> String { return "done" }
         .unwrap();
     assert_eq!(restored, fiber);
 }
+
+#[test]
+fn match_guard_calls_and_return_keep_the_enclosing_control_owner() {
+    for guard in [
+        "return \"early\"",
+        "if condition(value) { return \"early\" }",
+    ] {
+        for (input, expected) in [(true, "early"), (false, "fallback")] {
+            let source = format!(
+                r#"
+entry cli @entry.main {{ goto @flow.main }}
+fn condition(value: bool) -> bool {{ value }}
+fn guarded(value: bool) -> String {{
+    match value {{
+        true when {{ {guard}; false }} => "wrong",
+        _ => "fallback"
+    }}
+}}
+flow main() -> String {{ return guarded({input}) }}
+"#
+            );
+            execution::assert_native_return(&source, expected);
+            execution::assert_awbc_return(&source, RuntimeValue::String(expected.to_owned()));
+        }
+    }
+}

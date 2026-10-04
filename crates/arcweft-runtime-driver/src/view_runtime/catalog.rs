@@ -120,6 +120,7 @@ impl ViewProgramCatalog {
                         instruction,
                         ViewProgramInstruction::BindLocal { .. }
                             | ViewProgramInstruction::Branch { .. }
+                            | ViewProgramInstruction::Match { .. }
                     ) || matches!(instruction, ViewProgramInstruction::CallView { arguments, .. } if !arguments.is_empty())
                 }) || !program.resource().handlers.is_empty()
                     || program.resource().definitions.iter().any(|definition| {
@@ -549,6 +550,7 @@ fn map_instruction(
             part: None,
             key: key.map(ViewStableKey),
         }),
+        ViewProgramInstruction::Match { program, .. } => ViewInstruction::Match(program.clone()),
         ViewProgramInstruction::Branch {
             condition,
             then_span,

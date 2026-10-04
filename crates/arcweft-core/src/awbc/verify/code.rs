@@ -4429,6 +4429,34 @@ fn validate_pattern(
     }
     let program = verifier.program;
     match &program.patterns[pattern.index()] {
+        AwbcPattern::Or(alternatives) => {
+            let initial = state.clone();
+            let mut shared = None;
+            for alternative in alternatives {
+                let mut current = initial.clone();
+                validate_pattern(
+                    verifier,
+                    function,
+                    block,
+                    *alternative,
+                    value_ty,
+                    mode,
+                    &mut current,
+                    depth + 1,
+                )?;
+                if let Some(expected) = &shared {
+                    if expected != &current {
+                        return invalid_type("Or binding state", "identical alternative bindings");
+                    }
+                } else {
+                    shared = Some(current);
+                }
+            }
+            *state = shared.ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                at: "Or pattern".to_owned(),
+                message: "empty alternatives".to_owned(),
+            })?;
+        }
         AwbcPattern::Bind {
             target, expected, ..
         } => {
@@ -4717,6 +4745,34 @@ fn assign_pattern_copy_proofs(
             index: pattern.0,
             at: format!("pattern proof in block {block}"),
         })? {
+        AwbcPattern::Or(alternatives) => {
+            let initial = state.clone();
+            let mut shared: Option<FlowState> = None;
+            for alternative in alternatives {
+                let mut current = initial.clone();
+                assign_pattern_copy_proofs(
+                    verifier,
+                    function,
+                    block,
+                    *alternative,
+                    value_ty,
+                    proof,
+                    &mut current,
+                    depth + 1,
+                )?;
+                if let Some(expected) = &mut shared {
+                    for (left, right) in expected.copy_proofs.iter_mut().zip(&current.copy_proofs) {
+                        *left = left.merge(right);
+                    }
+                } else {
+                    shared = Some(current);
+                }
+            }
+            *state = shared.ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                at: "Or pattern proof".to_owned(),
+                message: "empty alternatives".to_owned(),
+            })?;
+        }
         AwbcPattern::Bind { target, .. } => {
             state.copy_proofs[target.index()] = proof.clone();
         }
@@ -4902,6 +4958,9 @@ fn pattern_has_binding(
                 at: "pattern binding query".to_owned(),
             })?;
     match pattern {
+        AwbcPattern::Or(alternatives) => alternatives.iter().try_fold(false, |found, pattern| {
+            Ok(found || pattern_has_binding(program, *pattern, depth + 1)?)
+        }),
         AwbcPattern::Bind { .. } | AwbcPattern::Whole { .. } => Ok(true),
         AwbcPattern::Tuple(items)
         | AwbcPattern::Sequence {
@@ -4959,6 +5018,39 @@ fn validate_unique_pattern_binding_targets(
     }
     let record = &program.patterns[pattern.index()];
     match record {
+        AwbcPattern::Or(alternatives) => {
+            if alternatives.len() < 2 {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: "Or pattern bindings".to_owned(),
+                    message: "at least two alternatives required".to_owned(),
+                });
+            }
+            let initial = targets.clone();
+            let mut shared = None;
+            for alternative in alternatives {
+                let mut current = initial.clone();
+                validate_unique_pattern_binding_targets(
+                    program,
+                    root,
+                    *alternative,
+                    &mut current,
+                    depth + 1,
+                    limit,
+                )?;
+                if let Some(expected) = &shared {
+                    if expected != &current {
+                        return Err(AwbcVerifyError::InvalidInvariant {
+                            at: "Or pattern bindings".to_owned(),
+                            message: "alternative binding inventories differ".to_owned(),
+                        });
+                    }
+                } else {
+                    shared = Some(current);
+                }
+            }
+            *targets = shared.expect("at least two alternatives");
+            Ok(())
+        }
         AwbcPattern::Bind { target, .. } => insert_pattern_binding(root, *target, targets),
         AwbcPattern::Tuple(children)
         | AwbcPattern::Sequence {

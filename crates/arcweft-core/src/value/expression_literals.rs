@@ -6,7 +6,9 @@ use crate::pattern::{RuntimePattern, RuntimePatternKind};
 fn pattern_literals_permit_copy(pattern: &RuntimePattern) -> bool {
     match pattern.kind() {
         RuntimePatternKind::Literal(value) => value.ownership().permits_copy(),
-        RuntimePatternKind::Tuple(items) | RuntimePatternKind::Sequence { items, .. } => {
+        RuntimePatternKind::Or(items)
+        | RuntimePatternKind::Tuple(items)
+        | RuntimePatternKind::Sequence { items, .. } => {
             items.iter().all(pattern_literals_permit_copy)
         }
         RuntimePatternKind::Record { fields, .. } => fields

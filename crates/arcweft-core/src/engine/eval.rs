@@ -1,9 +1,9 @@
 use super::{
     Engine, FlowFiberStatus, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr, RuntimeExprMatchArm,
-    RuntimeMatchArm, RuntimeMatchSelection, RuntimePattern, RuntimeSeq, RuntimeStepOutput,
-    RuntimeValue, evaluate_binary, evaluate_unary, runtime_sequence_dense_i64,
-    runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_sequence_values,
-    runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
+    RuntimePattern, RuntimeSeq, RuntimeStepOutput, RuntimeValue, evaluate_binary, evaluate_unary,
+    runtime_sequence_dense_i64, runtime_sequence_from_literal_values,
+    runtime_sequence_repeat_value, runtime_sequence_values, runtime_value_into_sequence_values,
+    runtime_value_label, sum_i64_sequence_ref,
 };
 use crate::pattern::{RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner};
 use crate::plan::{
@@ -92,48 +92,6 @@ impl Engine {
         )?
         .expect("checked owned pattern remains matched");
         Ok(Some(bindings))
-    }
-
-    pub(super) fn evaluate_match_with_backend(
-        &mut self,
-        scrutinee: &RuntimeExpr,
-        arms: Vec<RuntimeMatchArm>,
-        pure_backend: &mut impl RuntimeCallBackend,
-    ) -> Result<RuntimeMatchSelection, RuntimeEvalError> {
-        let value = self.evaluate_expr_with_backend(scrutinee, pure_backend)?;
-        for arm in arms {
-            if !crate::pattern::inspect_runtime_pattern_owned(
-                &self.plan,
-                &arm.pattern,
-                &value,
-                self.fiber.env.function_instantiation(),
-            )? {
-                continue;
-            }
-            if let Some(guard) = arm.guard.as_ref() {
-                let projected = crate::pattern::prepare_runtime_pattern_guard_bindings(
-                    &self.plan,
-                    &arm.pattern,
-                    &value,
-                    guard,
-                    self.fiber.env.function_instantiation(),
-                )?;
-                if !self.with_temp_bindings(projected, |this| {
-                    this.evaluate_bool_with_backend(guard, pure_backend)
-                })? {
-                    continue;
-                }
-            }
-            let bindings = crate::pattern::match_runtime_pattern_owned(
-                &self.plan,
-                &arm.pattern,
-                value,
-                self.fiber.env.function_instantiation(),
-            )?
-            .expect("checked owned pattern remains matched");
-            return Ok(Some((bindings, arm.ops)));
-        }
-        Ok(None)
     }
 
     pub(super) fn evaluate_expr(

@@ -92,6 +92,7 @@ fn without_instruction_source(mut instruction: ViewProgramInstruction) -> ViewPr
         | ViewProgramInstruction::EmitCustom { source, .. }
         | ViewProgramInstruction::CallView { source, .. }
         | ViewProgramInstruction::Branch { source, .. }
+        | ViewProgramInstruction::Match { source, .. }
         | ViewProgramInstruction::RepeatKeyed { source, .. }
         | ViewProgramInstruction::Await { source, .. }
         | ViewProgramInstruction::BindLocal { source, .. }

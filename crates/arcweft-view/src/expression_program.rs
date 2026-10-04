@@ -49,6 +49,73 @@ impl From<ViewParameterInput> for ViewExecutionInput {
     }
 }
 
+/// A Core selector returns the selected arm ordinal and its owned binding tuple.
+/// Output ordinals are unique across the complete source-ordered arm inventory.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ViewMatchProgram {
+    pub execution: ViewExpressionProgram,
+    pub arms: Box<[ViewMatchArm]>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ViewMatchArm {
+    pub body_span: u32,
+    pub outputs: Box<[ViewLocalOutput]>,
+}
+
+/// Checked contiguous Match arm ranges within the enclosing region.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ViewMatchRanges {
+    arms: Box<[crate::ViewInstructionRange]>,
+    continuation: u32,
+}
+
+impl ViewMatchProgram {
+    pub fn outputs_are_canonical(&self) -> bool {
+        let mut ordinal = 0usize;
+        self.arms
+            .iter()
+            .flat_map(|arm| arm.outputs.iter())
+            .all(|output| {
+                let valid = output.coordinate.program == self.execution.program
+                    && usize::from(output.coordinate.output) == ordinal;
+                ordinal += 1;
+                valid
+            })
+    }
+
+    pub fn ranges(&self, instruction: u32, enclosing_end: u32) -> Option<ViewMatchRanges> {
+        if self.arms.is_empty() || !self.outputs_are_canonical() {
+            return None;
+        }
+        let mut start = instruction.checked_add(1)?;
+        let mut arms = Vec::with_capacity(self.arms.len());
+        for arm in &self.arms {
+            let end = start.checked_add(arm.body_span)?;
+            if end > enclosing_end {
+                return None;
+            }
+            arms.push(crate::ViewInstructionRange::new(start, end));
+            start = end;
+        }
+        Some(ViewMatchRanges {
+            arms: arms.into_boxed_slice(),
+            continuation: start,
+        })
+    }
+}
+
+impl ViewMatchRanges {
+    pub const fn arms(&self) -> &[crate::ViewInstructionRange] {
+        &self.arms
+    }
+    pub const fn continuation(&self) -> u32 {
+        self.continuation
+    }
+}
+
 /// Owned binding outputs are transported by Core in this exact order.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]

@@ -4981,7 +4981,7 @@ impl RuntimePureProgramFact {
             }
             _ => true,
         };
-        let body_kind = if !matches!(abi.source(), arcweft_lang_sema::final_analysis::CheckedExecutionSource::ExportBinding(_)) && expression_body && abi.control() == arcweft_lang_sema::final_analysis::CheckedExecutableControlRole::ExpressionCompatible {
+        let body_kind = if !matches!(abi.source(), arcweft_lang_sema::final_analysis::CheckedExecutionSource::ExportBinding(_) | arcweft_lang_sema::final_analysis::CheckedExecutionSource::SelectMatch(_)) && expression_body && abi.control() == arcweft_lang_sema::final_analysis::CheckedExecutableControlRole::ExpressionCompatible {
             arcweft_core::plan::RuntimeFunctionSiteBodyKind::Expression
         } else { arcweft_core::plan::RuntimeFunctionSiteBodyKind::Executable };
         let free_inputs = abi
@@ -5934,6 +5934,16 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
         match self {
             Self::Global(facts) => facts.checked_local_value_transfer(site),
             Self::ProjectInstance(facts) => facts.local_uses().value_transfer_at(site),
+        }
+    }
+
+    pub(crate) fn is_pattern_guard(self, guard: ExprId) -> bool {
+        match self {
+            Self::Global(facts) => facts
+                .checked_local_uses
+                .as_ref()
+                .is_some_and(|catalog| catalog.is_pattern_guard(guard)),
+            Self::ProjectInstance(facts) => facts.local_uses().is_pattern_guard(guard),
         }
     }
 

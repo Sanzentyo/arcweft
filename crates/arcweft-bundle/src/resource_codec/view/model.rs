@@ -109,6 +109,10 @@ pub enum ViewProgramInstruction {
         key: Option<u64>,
         source: Option<SourceRangeRef>,
     },
+    Match {
+        program: arcweft_view::ViewMatchProgram,
+        source: Option<SourceRangeRef>,
+    },
     Branch {
         condition: arcweft_view::ViewExpressionProgram,
         then_span: u32,
@@ -168,6 +172,7 @@ impl ViewProgramInstruction {
             | Self::CallView { styles, .. } => styles,
             Self::CloseElement
             | Self::Branch { .. }
+            | Self::Match { .. }
             | Self::RepeatKeyed { .. }
             | Self::Await { .. }
             | Self::BindLocal { .. }
@@ -188,6 +193,7 @@ impl ViewProgramInstruction {
             | Self::CallView { styles, .. } => Some(styles),
             Self::CloseElement
             | Self::Branch { .. }
+            | Self::Match { .. }
             | Self::RepeatKeyed { .. }
             | Self::Await { .. }
             | Self::BindLocal { .. }
@@ -209,6 +215,7 @@ impl ViewProgramInstruction {
             | Self::CallView { part, .. } => part.as_ref(),
             Self::CloseElement
             | Self::Branch { .. }
+            | Self::Match { .. }
             | Self::RepeatKeyed { .. }
             | Self::Await { .. }
             | Self::BindLocal { .. }
@@ -228,6 +235,7 @@ impl ViewProgramInstruction {
             | Self::EmitCustom { source, .. }
             | Self::CallView { source, .. }
             | Self::Branch { source, .. }
+            | Self::Match { source, .. }
             | Self::RepeatKeyed { source, .. }
             | Self::Await { source, .. }
             | Self::BindLocal { source, .. }
@@ -246,6 +254,7 @@ impl ViewProgramInstruction {
             | Self::EmitCustom { source, .. }
             | Self::CallView { source, .. }
             | Self::Branch { source, .. }
+            | Self::Match { source, .. }
             | Self::RepeatKeyed { source, .. }
             | Self::Await { source, .. }
             | Self::BindLocal { source, .. }

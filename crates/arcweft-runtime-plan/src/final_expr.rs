@@ -448,6 +448,12 @@ impl<'hir> FinalExprLowerer<'hir> {
     /// Carries the selected guard's pattern-local Copy obligations on the
     /// guard expression itself, rather than reconstructing reads at runtime.
     pub(crate) fn lower_guard(&self, id: ExprId) -> Result<RuntimeExprSeed, String> {
+        Ok(self
+            .lower(id)?
+            .with_guard_copy_locals(self.guard_copy_locals(id)?))
+    }
+
+    pub(crate) fn guard_copy_locals(&self, id: ExprId) -> Result<Vec<RuntimeLocalSeedId>, String> {
         let locals =
             self.semantic_facts
                 .checked_guard_copy_locals(id)
@@ -458,7 +464,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-        Ok(self.lower(id)?.with_guard_copy_locals(locals))
+        Ok(locals)
     }
 
     pub(crate) fn lower(&self, id: ExprId) -> Result<RuntimeExprSeed, String> {

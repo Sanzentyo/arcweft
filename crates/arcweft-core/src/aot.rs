@@ -371,6 +371,9 @@ impl AotProgramStats {
                 }
                 FlowOp::Match { arms, .. } => {
                     for arm in arms {
+                        if let Some(guard) = &arm.guard {
+                            self.record_ops(&guard.ops);
+                        }
                         self.record_ops(&arm.ops);
                     }
                 }

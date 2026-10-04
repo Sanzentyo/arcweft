@@ -1881,6 +1881,10 @@ impl Wire for AwbcPattern {
                 writer.write_u8(3);
                 value.write_wire(writer)?;
             }
+            Self::Or(items) => {
+                writer.write_u8(9);
+                items.write_wire(writer)?;
+            }
             Self::Tuple(items) => {
                 writer.write_u8(4);
                 items.write_wire(writer)?;
@@ -1929,6 +1933,7 @@ impl Wire for AwbcPattern {
             2 => Self::Literal(AwbcConstantId::read_wire(reader)?),
             3 => Self::Entity(crate::value::RuntimeEntityReference::read_wire(reader)?),
             4 => Self::Tuple(Vec::<AwbcPatternId>::read_wire(reader)?),
+            9 => Self::Or(Vec::<AwbcPatternId>::read_wire(reader)?),
             5 => Self::Record {
                 ty: Option::<AwbcTypeId>::read_wire(reader)?,
                 fields: Vec::<AwbcRecordPatternField>::read_wire(reader)?,

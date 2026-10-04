@@ -43,6 +43,13 @@ impl CheckedLocalUseAuthority {
         }
     }
 
+    pub fn is_pattern_guard(&self, guard: ExprId) -> bool {
+        match self {
+            Self::Global(catalog) => catalog.is_pattern_guard(guard),
+            Self::Instance(catalog) => catalog.is_pattern_guard(guard),
+        }
+    }
+
     pub fn guard_copy_locals(&self, guard: ExprId) -> Vec<LocalId> {
         match self {
             Self::Global(catalog) => catalog.guard_copy_locals(guard).collect(),

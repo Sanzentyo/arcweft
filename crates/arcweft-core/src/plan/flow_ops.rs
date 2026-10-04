@@ -64,6 +64,9 @@ fn visit_ops(ops: &[FlowOp], visitor: &mut impl FnMut(&FlowOp)) {
             }
             FlowOp::Match { arms, .. } => {
                 for arm in arms {
+                    if let Some(guard) = &arm.guard {
+                        visit_ops(&guard.ops, visitor);
+                    }
                     visit_ops(&arm.ops, visitor);
                 }
             }

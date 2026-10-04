@@ -2170,19 +2170,33 @@ fn enter_pattern_scope(
 
 pub(super) fn enter_guard_pattern_scope(
     inventory: &mut AwbcInventory,
-    plan: &RuntimePlan,
+    _plan: &RuntimePlan,
     frame: &mut FrameBuilder,
     pattern: AwbcPatternId,
     value: AwbcRegisterId,
     guard: &RuntimeExpr,
 ) -> AwbcScopeId {
-    let used = guard
-        .evaluation_free_local_reads(plan)
-        .expect("checked guard has authenticated free-local occurrences")
-        .into_iter()
-        .map(|(local, _)| {
+    enter_guard_pattern_scope_for_locals(
+        inventory,
+        frame,
+        pattern,
+        value,
+        guard.guard_copy_locals(),
+    )
+}
+
+pub(super) fn enter_guard_pattern_scope_for_locals(
+    inventory: &mut AwbcInventory,
+    frame: &mut FrameBuilder,
+    pattern: AwbcPatternId,
+    value: AwbcRegisterId,
+    locals: &[arcweft_core::runtime_id::RuntimeLocalDeclarationId],
+) -> AwbcScopeId {
+    let used = locals
+        .iter()
+        .map(|local| {
             frame
-                .register_for_local(local)
+                .register_for_local(*local)
                 .expect("checked guard local has a frame register")
         })
         .collect();

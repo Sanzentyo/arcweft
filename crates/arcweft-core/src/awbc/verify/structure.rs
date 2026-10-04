@@ -963,6 +963,12 @@ fn verify_patterns(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {
     for (index, pattern) in program.patterns.iter().enumerate() {
         let at = format!("pattern {index}");
         match pattern {
+            AwbcPattern::Or(alternatives) if alternatives.len() < 2 => {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at,
+                    message: "Or pattern needs at least two alternatives".to_owned(),
+                });
+            }
             AwbcPattern::Bind { expected, .. } => {
                 if let Some(ty) = expected {
                     check_index(program.runtime_types.len(), ty.0, "runtime_types", &at)?;
@@ -972,7 +978,9 @@ fn verify_patterns(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {
                 check_index(program.constants.len(), constant.0, "constants", &at)?;
             }
             AwbcPattern::Entity(_) | AwbcPattern::Discard => {}
-            AwbcPattern::Tuple(items) | AwbcPattern::Sequence { items, .. } => {
+            AwbcPattern::Or(items)
+            | AwbcPattern::Tuple(items)
+            | AwbcPattern::Sequence { items, .. } => {
                 for child in items {
                     check_index(program.patterns.len(), child.0, "patterns", &at)?;
                 }
@@ -1043,7 +1051,9 @@ fn visit_pattern(
 
 fn pattern_children(pattern: &AwbcPattern) -> Vec<AwbcPatternId> {
     match pattern {
-        AwbcPattern::Tuple(items) | AwbcPattern::Sequence { items, .. } => items.clone(),
+        AwbcPattern::Or(items)
+        | AwbcPattern::Tuple(items)
+        | AwbcPattern::Sequence { items, .. } => items.clone(),
         AwbcPattern::Record { fields, .. } => fields.iter().map(|field| field.pattern).collect(),
         AwbcPattern::Variant {
             payload: Some(payload),

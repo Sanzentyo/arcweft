@@ -1054,6 +1054,12 @@ impl ViewExpressionLowerer<'_> {
                     source: Box::new(source),
                 })?
                 .as_bytes(),
+            CheckedExecutionSource::SelectMatch(_) => *abi
+                .match_selection()
+                .ok_or_else(invalid)?
+                .checked_match()
+                .semantic_digest()
+                .as_bytes(),
             CheckedExecutionSource::InvokeBody(_) => return Err(invalid()),
         };
         let mut digest = blake3::Hasher::new();
@@ -1188,6 +1194,94 @@ impl AuthoredViewBodyLowerer<'_> {
         Ok(())
     }
 
+    fn lower_match(
+        &mut self,
+        owner: ExprId,
+        matched: &arcweft_lang_hir::expr::HirMatchExpr,
+    ) -> Result<(), ViewProjectLowerError> {
+        let view_owner = self.owner;
+        let invalid = || ViewProjectLowerError::MissingCheckedViewProjection { owner: view_owner };
+        let execution = ViewExpressionLowerer {
+            project: self.project,
+            analysis: self.analysis,
+            world: self.registered_world,
+            owner: self.owner,
+            view: self.view,
+            parameters: self.parameters,
+            locals: &self.locals,
+            output: self.output,
+        }
+        .lower_source(
+            arcweft_lang_sema::final_analysis::CheckedExecutionSource::SelectMatch(owner),
+        )?;
+        let admission = Arc::clone(
+            &self
+                .output
+                .runtime_programs
+                .last()
+                .ok_or_else(invalid)?
+                .admission,
+        );
+        let selection = admission
+            .input_abi()
+            .match_selection()
+            .ok_or_else(invalid)?;
+        if selection.outputs().len() != matched.arms().len() {
+            return Err(invalid());
+        }
+        let index = self.output.instructions.len();
+        self.output
+            .instructions
+            .push(ViewProgramInstruction::Match {
+                program: arcweft_view::ViewMatchProgram {
+                    execution: execution.clone(),
+                    arms: Box::new([]),
+                },
+                source: None,
+            });
+        let outer = self.locals.clone();
+        let mut ordinal = 0usize;
+        let mut arms = Vec::new();
+        for (arm, bindings) in matched.arms().iter().zip(selection.outputs()) {
+            self.locals = outer.clone();
+            let mut outputs = Vec::new();
+            for binding in bindings.iter() {
+                let output = arcweft_view::ViewLocalOutput {
+                    coordinate: arcweft_view::ViewLocalCoordinate {
+                        program: execution.program,
+                        output: u16::try_from(ordinal).map_err(|_| invalid())?,
+                    },
+                    value_type: ViewHandlerValueTypeId::from_semantic_digest(
+                        *admission
+                            .input_abi()
+                            .environment()
+                            .semantic_type_identity(binding.ty())?
+                            .as_bytes(),
+                    ),
+                };
+                ordinal += 1;
+                if self.locals.insert(binding.local(), output).is_some() {
+                    return Err(invalid());
+                }
+                outputs.push(output);
+            }
+            let start = self.output.instructions.len();
+            self.lower_branch_body(AuthoredViewBranchBody::Value(arm.value()))?;
+            arms.push(arcweft_view::ViewMatchArm {
+                body_span: u32::try_from(self.output.instructions.len() - start)
+                    .map_err(|_| invalid())?,
+                outputs: outputs.into_boxed_slice(),
+            });
+        }
+        self.locals = outer;
+        let ViewProgramInstruction::Match { program, .. } = &mut self.output.instructions[index]
+        else {
+            return Err(invalid());
+        };
+        program.arms = arms.into_boxed_slice();
+        Ok(())
+    }
+
     fn lower_statement(
         &mut self,
         statement: arcweft_lang_hir::identity::StmtId,
@@ -1297,6 +1391,9 @@ impl AuthoredViewBodyLowerer<'_> {
             .analysis
             .expression(value)
             .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
+        if let arcweft_lang_hir::expr::HirExprKind::Match(matched) = expression.kind() {
+            return self.lower_match(value, matched);
+        }
         if let arcweft_lang_hir::expr::HirExprKind::If(branch) = expression.kind() {
             return self.lower_conditional(
                 branch.condition(),

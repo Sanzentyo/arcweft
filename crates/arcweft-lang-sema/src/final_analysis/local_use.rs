@@ -371,6 +371,10 @@ impl CheckedLocalUseInstanceCatalog {
         self.catalog.copy_requirement(local)
     }
 
+    pub fn is_pattern_guard(&self, guard: ExprId) -> bool {
+        self.catalog.is_pattern_guard(guard)
+    }
+
     pub fn guard_copy_locals(&self, guard: ExprId) -> impl Iterator<Item = LocalId> + '_ {
         self.catalog.guard_copy_locals(guard)
     }
@@ -482,6 +486,11 @@ impl CheckedLocalUseCatalog {
 
     pub fn copy_requirement(&self, local: LocalId) -> Option<&CheckedLocalCopyRequirement> {
         self.copy_requirements.get(&local)
+    }
+
+    /// Includes guards with no pattern-local reads.
+    pub fn is_pattern_guard(&self, guard: ExprId) -> bool {
+        self.guard_copy_locals.contains_key(&guard)
     }
 
     /// Selected pattern-bound locals read by this guard. The runtime must
@@ -1420,6 +1429,7 @@ impl<'a> LocalUseChecker<'a> {
         locals: impl IntoIterator<Item = LocalId>,
         state: &mut Availability,
     ) -> Result<(), CheckedLocalUseError> {
+        self.guard_copy_locals.entry(guard).or_default();
         self.guard_bindings
             .push((guard, locals.into_iter().collect()));
         let result = self.expression(guard, state);

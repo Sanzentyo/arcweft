@@ -4327,6 +4327,35 @@ fn collect_pattern_local_ids(
     let value = module
         .resolve_pattern(pattern)
         .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
+    // Or alternatives declare one shared local inventory, not independent
+    // declarations. Every alternative must retain the same issued coordinates.
+    if let HirPatternKind::Or { alternatives } = value.kind() {
+        let mut shared = None;
+        let mut shared_set = None;
+        for alternative in alternatives {
+            let mut current = Vec::new();
+            collect_pattern_local_ids(module, *alternative, active, visited, &mut current)?;
+            let current_set = current.iter().copied().collect::<BTreeSet<_>>();
+            if let Some(expected) = &shared_set {
+                if expected != &current_set {
+                    return Err(HirSemanticPathError::InvalidOwnedPath);
+                }
+            } else {
+                shared_set = Some(current_set);
+                shared = Some(current);
+            }
+        }
+        for local in shared.into_iter().flatten() {
+            if locals.contains(&local) {
+                return Err(HirSemanticPathError::DuplicatePath {
+                    owner: local.into(),
+                });
+            }
+            locals.push(local);
+        }
+        active.remove(&pattern);
+        return Ok(());
+    }
     let edges = value
         .kind()
         .try_child_edges()
@@ -6209,8 +6238,29 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
             match edge.child() {
                 HirPatternChild::Pattern(owner) => self.walk_pattern(owner, &path, hops)?,
                 HirPatternChild::Type(_) => {}
-                HirPatternChild::Local(owner) => {
-                    insert_unique(&mut self.locals, owner, &path, hops)?;
+                HirPatternChild::Local(local) => {
+                    // A reused Or occurrence refers to the first alternative's
+                    // declaration. Keep that canonical path, and refuse reuse
+                    // across a different owning pattern or declaration.
+                    let declared = self
+                        .module
+                        .resolve_local(local)
+                        .map_err(|_| HirSemanticPathError::UnresolvedOwner)?
+                        .pattern();
+                    let alias = declared != Some(owner)
+                        && self.locals.get(&local).is_some_and(|existing| {
+                            self.active_patterns.iter().any(|ancestor| {
+                                self.module.resolve_pattern(*ancestor).is_ok_and(|pattern| {
+                                    matches!(pattern.kind(), HirPatternKind::Or { .. })
+                                }) && self.patterns.get(ancestor).is_some_and(|root| {
+                                    existing.steps().starts_with(root.steps())
+                                        && path.starts_with(root.steps())
+                                })
+                            })
+                        });
+                    if !alias {
+                        insert_unique(&mut self.locals, local, &path, hops)?;
+                    }
                 }
             }
         }

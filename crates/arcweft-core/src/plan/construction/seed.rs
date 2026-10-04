@@ -899,7 +899,14 @@ fn collect_control_flow_free_locals(
                 let mut arm_bound = bound.clone();
                 arm.pattern.collect_binding_locals(&mut arm_bound);
                 if let Some(guard) = &arm.guard {
-                    guard.collect_free_locals(&arm_bound, locals);
+                    let mut guard_bound = arm_bound.clone();
+                    guard_bound.push(guard.candidate.clone());
+                    for op in &guard.ops {
+                        collect_flow_op_free_locals(op, &mut guard_bound, locals);
+                    }
+                    if let Some(condition) = &guard.condition {
+                        condition.collect_free_locals(&guard_bound, locals);
+                    }
                 }
                 collect_flow_ops_free_locals(&arm.ops, &arm_bound, locals);
             }
@@ -1151,7 +1158,17 @@ pub enum RuntimeIteratorWitnessExecutableSeed {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeFlowMatchArmSeed {
     pub pattern: RuntimePatternSeed,
-    pub guard: Option<RuntimeExprSeed>,
+    pub guard: Option<RuntimeFlowMatchGuardSeed>,
+    pub ops: Vec<RuntimeFlowOpSeed>,
+}
+
+/// Executable guard transaction; the candidate remains owned by a typed slot.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeFlowMatchGuardSeed {
+    pub candidate: RuntimeLocalSeedId,
+    pub result: RuntimeSemanticTypeId,
+    pub condition: Option<RuntimeExprSeed>,
+    pub copy_locals: Box<[RuntimeLocalSeedId]>,
     pub ops: Vec<RuntimeFlowOpSeed>,
 }
 
@@ -2500,6 +2517,7 @@ pub enum RuntimePatternSeedKind {
     Literal(RuntimeValue),
     Entity(RuntimeEntityReference),
     Tuple(Box<[RuntimePatternSeed]>),
+    Or(Box<[RuntimePatternSeed]>),
     Record {
         fields: Box<[RuntimeRecordPatternFieldSeed]>,
         rest: RuntimePatternRestSeed,
@@ -2862,6 +2880,11 @@ impl RuntimePatternSeed {
             RuntimePatternSeedKind::Discard
             | RuntimePatternSeedKind::Literal(_)
             | RuntimePatternSeedKind::Entity(_) => {}
+            RuntimePatternSeedKind::Or(alternatives) => {
+                if let Some(first) = alternatives.first() {
+                    first.collect_binding_locals(locals);
+                }
+            }
             RuntimePatternSeedKind::Tuple(items) => {
                 for item in items {
                     item.collect_binding_locals(locals);

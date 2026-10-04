@@ -908,6 +908,7 @@ fn execute_instruction(
                 let mut bindings = Vec::new();
                 visit_pattern_bindings_view(
                     program,
+                    Some(fiber.active_frame()?),
                     *pattern,
                     value_ref.view(),
                     0,
@@ -4308,6 +4309,16 @@ fn test_pattern_view(
         .get(pattern.index())
         .ok_or(VmError::MissingPattern(pattern))?;
     Ok(match pattern {
+        AwbcPattern::Or(alternatives) => {
+            let mut matched = false;
+            for alternative in alternatives {
+                if test_pattern_view(program, frame, *alternative, value, depth + 1)? {
+                    matched = true;
+                    break;
+                }
+            }
+            matched
+        }
         AwbcPattern::Bind { expected, .. } => expected.is_none_or(|expected| {
             frame.map_or_else(
                 || runtime_value_view_matches_type(program, value, expected, 0),
@@ -4775,24 +4786,31 @@ pub(crate) fn prepare_pattern_binding(
         .get(frame.layout.index())
         .ok_or(FiberStateError::UnknownFrameLayout(frame.layout.0))?;
     let mut registers = Vec::new();
-    visit_pattern_bindings_view(program, pattern, value.view(), 0, &mut |register, view| {
-        let slot =
-            layout
-                .slots
-                .get(register.index())
-                .ok_or(FiberStateError::RegisterOutOfBounds {
-                    register: register.0,
-                    layout: frame.layout.0,
-                })?;
-        if !frame.value_view_matches_type(program, view, slot.ty) {
-            return Err(VmError::Runtime(format!(
-                "pattern target register {} rejects the projected value type",
-                register.0
-            )));
-        }
-        registers.push(register);
-        Ok(())
-    })?;
+    visit_pattern_bindings_view(
+        program,
+        Some(fiber.active_frame()?),
+        pattern,
+        value.view(),
+        0,
+        &mut |register, view| {
+            let slot =
+                layout
+                    .slots
+                    .get(register.index())
+                    .ok_or(FiberStateError::RegisterOutOfBounds {
+                        register: register.0,
+                        layout: frame.layout.0,
+                    })?;
+            if !frame.value_view_matches_type(program, view, slot.ty) {
+                return Err(VmError::Runtime(format!(
+                    "pattern target register {} rejects the projected value type",
+                    register.0
+                )));
+            }
+            registers.push(register);
+            Ok(())
+        },
+    )?;
     registers.sort_unstable();
     let original_len = registers.len();
     registers.dedup();
@@ -4865,6 +4883,20 @@ fn bind_tested_pattern_owned(
         .ok_or(VmError::MissingPattern(pattern))?
         .clone();
     match pattern_record {
+        AwbcPattern::Or(alternatives) => {
+            for alternative in alternatives {
+                if test_pattern_view(
+                    program,
+                    Some(fiber.active_frame()?),
+                    alternative,
+                    value.view(),
+                    0,
+                )? {
+                    return bind_tested_pattern_owned(program, fiber, alternative, value);
+                }
+            }
+            return Err(VmError::PatternMismatch);
+        }
         AwbcPattern::Bind { target, .. } => {
             fiber.active_frame_mut()?.set_register(target, value)?;
         }
@@ -4968,6 +5000,9 @@ fn pattern_has_binding(
         .get(pattern.index())
         .ok_or(VmError::MissingPattern(pattern))?;
     match pattern {
+        AwbcPattern::Or(alternatives) => alternatives.iter().try_fold(false, |found, pattern| {
+            Ok(found || pattern_has_binding(program, *pattern, depth + 1)?)
+        }),
         AwbcPattern::Bind { .. } => Ok(true),
         AwbcPattern::Tuple(items) => items.iter().try_fold(false, |found, item| {
             Ok::<_, VmError>(found || pattern_has_binding(program, *item, depth + 1)?)
@@ -5016,15 +5051,22 @@ pub(crate) fn pattern_handle_destinations(
 ) -> Result<Vec<AwbcRegisterId>, VmError> {
     let prepared = prepare_pattern_binding(program, fiber, pattern, value)?;
     let mut destinations = Vec::new();
-    visit_pattern_bindings_view(program, pattern, value.view(), 0, &mut |register, view| {
-        if view
-            .contains_line_handle(token)
-            .map_err(|error| VmError::Runtime(error.to_string()))?
-        {
-            destinations.push(register);
-        }
-        Ok(())
-    })?;
+    visit_pattern_bindings_view(
+        program,
+        Some(fiber.active_frame()?),
+        pattern,
+        value.view(),
+        0,
+        &mut |register, view| {
+            if view
+                .contains_line_handle(token)
+                .map_err(|error| VmError::Runtime(error.to_string()))?
+            {
+                destinations.push(register);
+            }
+            Ok(())
+        },
+    )?;
     let admitted = prepared.registers.iter().copied().collect::<BTreeSet<_>>();
     if destinations
         .iter()
@@ -5060,6 +5102,7 @@ pub(crate) fn pattern_binding_registers(
 
 fn visit_pattern_bindings_view(
     program: &AwbcProgram,
+    frame: Option<&FiberFrame>,
     pattern: AwbcPatternId,
     value: RuntimeValueView<'_>,
     depth: usize,
@@ -5073,6 +5116,21 @@ fn visit_pattern_bindings_view(
         .get(pattern.index())
         .ok_or(VmError::MissingPattern(pattern))?;
     match row {
+        AwbcPattern::Or(alternatives) => {
+            for alternative in alternatives {
+                if test_pattern_view(program, frame, *alternative, value, depth + 1)? {
+                    return visit_pattern_bindings_view(
+                        program,
+                        frame,
+                        *alternative,
+                        value,
+                        depth + 1,
+                        visitor,
+                    );
+                }
+            }
+            Err(VmError::PatternMismatch)
+        }
         AwbcPattern::Bind { target, .. } => visitor(*target, value),
         AwbcPattern::Discard | AwbcPattern::Literal(_) | AwbcPattern::Entity(_) => Ok(()),
         AwbcPattern::Tuple(patterns) => {
@@ -5081,7 +5139,7 @@ fn visit_pattern_bindings_view(
             };
             for (index, pattern) in patterns.iter().enumerate() {
                 let value = values.get(index).ok_or(VmError::PatternMismatch)?;
-                visit_pattern_bindings_view(program, *pattern, value, depth + 1, visitor)?;
+                visit_pattern_bindings_view(program, frame, *pattern, value, depth + 1, visitor)?;
             }
             Ok(())
         }
@@ -5113,6 +5171,7 @@ fn visit_pattern_bindings_view(
                             .view();
                         visit_pattern_bindings_view(
                             program,
+                            frame,
                             field.pattern,
                             nested,
                             depth + 1,
@@ -5131,7 +5190,14 @@ fn visit_pattern_bindings_view(
                 if identity.zero_based() != field.field {
                     return Err(VmError::PatternMismatch);
                 }
-                visit_pattern_bindings_view(program, field.pattern, nested, depth + 1, visitor)?;
+                visit_pattern_bindings_view(
+                    program,
+                    frame,
+                    field.pattern,
+                    nested,
+                    depth + 1,
+                    visitor,
+                )?;
             }
             Ok(())
         }
@@ -5141,7 +5207,7 @@ fn visit_pattern_bindings_view(
             };
             for (index, pattern) in items.iter().enumerate() {
                 let nested = values.value_view(index).ok_or(VmError::PatternMismatch)?;
-                visit_pattern_bindings_view(program, *pattern, nested, depth + 1, visitor)?;
+                visit_pattern_bindings_view(program, frame, *pattern, nested, depth + 1, visitor)?;
             }
             if let AwbcPatternRest::Bind(register) = rest {
                 for index in items.len()..values.len() {
@@ -5160,7 +5226,14 @@ fn visit_pattern_bindings_view(
                 },
             ) = (payload, value)
             {
-                visit_pattern_bindings_view(program, *pattern, value.view(), depth + 1, visitor)?;
+                visit_pattern_bindings_view(
+                    program,
+                    frame,
+                    *pattern,
+                    value.view(),
+                    depth + 1,
+                    visitor,
+                )?;
             }
             Ok(())
         }
@@ -5171,7 +5244,7 @@ fn visit_pattern_bindings_view(
                         "Whole pattern would duplicate an affine value".to_owned(),
                     ));
                 }
-                visit_pattern_bindings_view(program, *inner, value, depth + 1, visitor)?;
+                visit_pattern_bindings_view(program, frame, *inner, value, depth + 1, visitor)?;
             }
             visitor(*target, value)
         }
@@ -5235,6 +5308,7 @@ pub(crate) fn validate_function_input_ownership_values(
         let mut observed = BTreeSet::new();
         visit_pattern_bindings_view(
             program,
+            None,
             pattern,
             value.view(),
             0,

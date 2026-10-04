@@ -295,14 +295,31 @@ impl CheckedExecutionCatalog {
             .get(&CheckedExecutionBodyOwner::CallableValue(owner))
     }
     pub(super) fn region(&self, root: CheckedExecutionOperation) -> Option<CheckedExecutionRegion> {
-        let row = match &root {
-            CheckedExecutionOperation::Value(owner) => self.expressions.get(owner)?,
-            CheckedExecutionOperation::Body(owner) => self.bodies.get(owner)?,
-            CheckedExecutionOperation::Statement(owner) => self.statements.get(owner)?,
-            CheckedExecutionOperation::Place(_) => return None,
-        };
+        self.region_roots([root])
+    }
+
+    pub(super) fn region_roots(
+        &self,
+        roots: impl IntoIterator<Item = CheckedExecutionOperation>,
+    ) -> Option<CheckedExecutionRegion> {
+        let mut pending = roots.into_iter().collect::<Vec<_>>();
+        let mut suspension = super::CheckedSuspensionRole::NonSuspending;
+        let mut control = super::CheckedExecutableControlRole::ExpressionCompatible;
+        for root in &pending {
+            let row = match root {
+                CheckedExecutionOperation::Value(owner) => self.expressions.get(owner)?,
+                CheckedExecutionOperation::Body(owner) => self.bodies.get(owner)?,
+                CheckedExecutionOperation::Statement(owner) => self.statements.get(owner)?,
+                CheckedExecutionOperation::Place(_) => return None,
+            };
+            if row.suspension() == super::CheckedSuspensionRole::MaySuspend {
+                suspension = super::CheckedSuspensionRole::MaySuspend;
+            }
+            if row.control() == super::CheckedExecutableControlRole::FlowRequired {
+                control = super::CheckedExecutableControlRole::FlowRequired;
+            }
+        }
         let mut visited = BTreeSet::new();
-        let mut pending = vec![root];
         let mut expressions = BTreeSet::new();
         let mut places = BTreeSet::new();
         let mut statements = BTreeSet::new();
@@ -332,8 +349,8 @@ impl CheckedExecutionCatalog {
             places: places.into_iter().collect(),
             operations: visited.into_iter().collect(),
             statements: statements.into_iter().collect(),
-            suspension: row.suspension(),
-            control: row.control(),
+            suspension,
+            control,
         })
     }
 }

@@ -75,7 +75,7 @@ impl FinalFlowLowerer<'_> {
                     .map(|guard| {
                         self.expr_lowerer()
                             .with_overrides(overrides.clone())
-                            .lower(guard)
+                            .lower_guard(guard)
                             .map_err(RuntimePlanLowerError::new)
                     })
                     .transpose()?,
@@ -101,10 +101,7 @@ impl FinalFlowLowerer<'_> {
                         guard: arm
                             .guard()
                             .map(|guard| {
-                                self.expr_lowerer()
-                                    .with_overrides(overrides.clone())
-                                    .lower(guard)
-                                    .map_err(RuntimePlanLowerError::new)
+                                self.lower_match_guard(guard, branch.scrutinee(), overrides.clone())
                             })
                             .transpose()?,
                         ops: self.lower_flow_value_with_overrides(

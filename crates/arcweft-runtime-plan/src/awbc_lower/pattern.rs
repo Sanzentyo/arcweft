@@ -37,6 +37,12 @@ pub(super) fn guard_pattern(
                 return inner;
             }
         }
+        AwbcPattern::Or(items) => AwbcPattern::Or(
+            items
+                .into_iter()
+                .map(|item| guard_pattern(inventory, item, used))
+                .collect(),
+        ),
         AwbcPattern::Tuple(items) => AwbcPattern::Tuple(
             items
                 .into_iter()
@@ -153,6 +159,13 @@ pub(crate) fn lower_pattern(
         }
         RuntimePatternKind::Entity(value) => {
             inventory.intern_pattern(AwbcPattern::Entity(value.clone()))
+        }
+        RuntimePatternKind::Or(items) => {
+            let alternatives = items
+                .iter()
+                .map(|item| lower_pattern(inventory, plan, frame, item))
+                .collect();
+            inventory.intern_pattern(AwbcPattern::Or(alternatives))
         }
         RuntimePatternKind::Tuple(items) => {
             let items = items

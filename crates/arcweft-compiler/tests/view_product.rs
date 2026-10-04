@@ -3428,9 +3428,10 @@ view Main(dialogue: DialogueView, label: String) {
         let current = dialogue;
         let (first, second) = (label, "suffix");
         let transform = echo;
-        Button(first).on_click { let observed = transform(second); let observed = first; current.primary_action }
+        match (first, true) { (label, true) => Button(label).on_click { let observed = transform(second); let observed = label; current.primary_action }, (_, false) => Button("unused") }
     }
 }
+
 "#;
     let compiled = project_view_fixture_with_entry(source, "arcweft-test://view-local-handler")
         .compile()
@@ -3607,4 +3608,441 @@ view Main(dialogue: DialogueView, label: String) {
             .unwrap(),
         expected
     );
+}
+
+#[test]
+fn authored_view_matches_select_core_patterns_and_export_arm_bindings() {
+    use arcweft_core::value::{RuntimeBinding, RuntimeValue};
+    use arcweft_runtime_driver::presentation_handles::{
+        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    };
+    use arcweft_runtime_driver::view_runtime::BundleViewTextValue;
+    for body in [
+        "match choose_pair(value) { (true, label) => Text(label), (false, label) => Button(label) }",
+        "match value { (true, label) when choose(enabled) => { let label = label; Text(label) }, (true, _) => Text(\"fallback\"), (false, label) => match enabled { true => Text(label), false => Button(label) } }",
+    ] {
+        let guarded = body.contains(" when ");
+        let source = format!(
+            "entry cli @entry.main {{ goto @flow.main }}\nflow main() -> String {{ return \"done\" }}\nfn choose(value: bool) -> bool {{ value }}\nfn choose_pair(value: (bool, String)) -> (bool, String) {{ value }}\nview Main(value: (bool, String), enabled: bool = true) {{ {body} }}"
+        );
+        let compiled =
+            project_view_fixture_with_entry(&source, "arcweft-test://view-match-bindings")
+                .compile()
+                .expect("retained Match consumes shared Core selection and owned bindings");
+        let product = compiled.view_product().product().as_ref().clone();
+        let text = compiled.view_product().text().unwrap().clone();
+        let resource = product.program().unwrap().resource();
+        assert_eq!(
+            ViewProgramResource::decode_canonical_section(
+                &resource.encode_canonical_section().unwrap()
+            )
+            .unwrap(),
+            *resource
+        );
+        let awbc = Arc::new(
+            arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+                AwbcLowerer::new(
+                    &compiled.runtime_plan().plan,
+                    &compiled.runtime_plan().dialogue_content_catalog,
+                    "main.arcw",
+                )
+                .lower()
+                .unwrap()
+                .program,
+            )
+            .unwrap(),
+        );
+        resource.validate_awbc_programs(&awbc, Some(&text)).unwrap();
+        let native_plan = Arc::new(compiled.runtime_plan().plan.clone());
+        let selection = resource
+            .instructions
+            .iter()
+            .find_map(|instruction| match instruction {
+                ViewProgramInstruction::Match { program, .. } => Some(program),
+                _ => None,
+            })
+            .unwrap();
+        for forgery in 0..8 {
+            let mut forged = resource.clone();
+            let ViewProgramInstruction::Match { program, .. } = forged
+                .instructions
+                .iter_mut()
+                .find(|instruction| matches!(instruction, ViewProgramInstruction::Match { .. }))
+                .unwrap()
+            else {
+                panic!("Match");
+            };
+            match forgery {
+                0 => {
+                    program.execution.program =
+                        arcweft_id::runtime_program::RuntimePureProgramId::from_checked_digest(
+                            [0xe3; 32],
+                        )
+                }
+                1 => {
+                    program.execution.result_type =
+                        arcweft_core::pattern::RuntimeCheckedType::Bool.semantic_identity_digest()
+                }
+                2 => program.arms.swap(0, 1),
+                3 => {
+                    let output = program.arms[0].outputs[0];
+                    program.arms[0].outputs = vec![output, output].into_boxed_slice();
+                }
+                4 => {
+                    program.arms[0].outputs[0].value_type =
+                        arcweft_core::pattern::RuntimeCheckedType::Bool.semantic_identity_digest()
+                }
+                5 => program.arms[0].body_span = u32::MAX,
+                6 => program.arms[0].body_span = 0,
+                _ => {
+                    program.arms[0].outputs[0].coordinate.program =
+                        arcweft_id::runtime_program::RuntimePureProgramId::from_checked_digest(
+                            [0xe4; 32],
+                        )
+                }
+            }
+            assert!(
+                forged.validate_awbc_programs(&awbc, Some(&text)).is_err(),
+                "forgery {forgery}"
+            );
+        }
+        if !guarded {
+            let first = text
+                .sources
+                .iter()
+                .find_map(|source| match &source.kind {
+                    arcweft_bundle::resource_codec::view::ViewTextSourceKind::Program {
+                        program,
+                    } => Some(program.clone()),
+                    _ => None,
+                })
+                .unwrap();
+            let mut escaped = text.clone();
+            escaped.sources.last_mut().unwrap().kind =
+                arcweft_bundle::resource_codec::view::ViewTextSourceKind::Program {
+                    program: first,
+                };
+            assert!(
+                resource
+                    .validate_awbc_programs(&awbc, Some(&escaped))
+                    .is_err(),
+                "an arm cannot read another arm's binding"
+            );
+        }
+        let handle = PresentationHandleRecord::new(
+            PresentationHandleId::try_new("view.match.bindings").unwrap(),
+            PresentationHandleKind::View,
+            "view.Main".to_owned(),
+            None,
+            PresentationResourceState::Mounted,
+            None,
+            0,
+        );
+        let mut runtime = BundleViewRuntime::try_new_with_awbc(
+            product.clone(),
+            Some(text.clone()),
+            Arc::clone(&awbc),
+        )
+        .unwrap();
+        for (active, enabled, label) in [
+            (true, true, "first"),
+            (true, false, "second"),
+            (false, true, "third"),
+            (false, false, "fourth"),
+            (true, true, "first"),
+        ] {
+            let value = RuntimeValue::Tuple(vec![
+                RuntimeValue::Bool(active),
+                RuntimeValue::String(label.to_owned()),
+            ]);
+            let inputs = [
+                RuntimeBinding {
+                    name: "value".to_owned(),
+                    value: value.clone(),
+                },
+                RuntimeBinding {
+                    name: "enabled".to_owned(),
+                    value: RuntimeValue::Bool(enabled),
+                },
+            ];
+            let core_inputs = selection
+                .execution
+                .inputs
+                .iter()
+                .map(|input| match input.parameter().unwrap().value() {
+                    0 => value.clone(),
+                    1 => RuntimeValue::Bool(enabled),
+                    _ => panic!("unexpected formal"),
+                })
+                .collect::<Vec<_>>();
+            let mut native = arcweft_core::pure::VmRuntimePureCallBackend::default();
+            let selected = arcweft_core::pure::evaluate_pure_program_with_backend(
+                &native_plan,
+                selection.execution.program,
+                &core_inputs,
+                &mut native,
+            )
+            .unwrap();
+            let mut product_backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
+            assert_eq!(
+                selected,
+                arcweft_core::awbc::product_step::evaluate_pure_program_with_backend(
+                    &awbc,
+                    selection.execution.program,
+                    &core_inputs,
+                    &mut product_backend
+                )
+                .unwrap()
+            );
+            let expected_tag = if active {
+                if guarded && !enabled { 1 } else { 0 }
+            } else if guarded {
+                2
+            } else {
+                1
+            };
+            let expected_payload = if guarded && active && !enabled {
+                RuntimeValue::Unit
+            } else {
+                RuntimeValue::Tuple(vec![RuntimeValue::String(label.to_owned())])
+            };
+            assert_eq!(
+                selected,
+                RuntimeValue::Tuple(vec![
+                    RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::U32(expected_tag)),
+                    expected_payload
+                ])
+            );
+            let frame = runtime.evaluate(std::slice::from_ref(&handle), &inputs, false);
+            assert!(frame.diagnostics.is_empty(), "{frame:?}");
+            assert_eq!(frame.mounts.len(), 1);
+            let rendered_text = active || guarded && enabled;
+            let expected_label = if guarded && active && !enabled {
+                "fallback"
+            } else {
+                label
+            };
+            if rendered_text {
+                assert_eq!(frame.mounts[0].text.len(), 1);
+                assert!(
+                    matches!(&frame.mounts[0].text[0].value, BundleViewTextValue::Plain { value } if value == expected_label)
+                );
+                assert!(frame.mounts[0].action_buttons.is_empty());
+            } else {
+                assert_eq!(frame.mounts[0].action_buttons.len(), 1);
+                assert_eq!(frame.mounts[0].action_buttons[0].label, expected_label);
+                assert!(frame.mounts[0].text.is_empty());
+            }
+            let saved = runtime.snapshot().unwrap();
+            let mut cold = BundleViewRuntime::try_new_with_awbc(
+                product.clone(),
+                Some(text.clone()),
+                Arc::clone(&awbc),
+            )
+            .unwrap();
+            cold.restore(&saved, std::slice::from_ref(&handle)).unwrap();
+            assert_eq!(
+                frame,
+                cold.evaluate(std::slice::from_ref(&handle), &inputs, false)
+            );
+        }
+    }
+}
+
+#[test]
+fn authored_view_match_failures_publish_no_partial_frame_and_recover() {
+    use arcweft_core::value::{RuntimeBinding, RuntimeValue};
+    use arcweft_runtime_driver::presentation_handles::{
+        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    };
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+fn choose(divisor: i64) -> bool { (1i64 / divisor) == 0i64 }
+fn fail(divisor: i64) -> String { let observed = 1i64 / divisor; "one" }
+view Main(active: bool, divisor: i64 = 1i64) {
+    Text("prefix");
+    match (active, divisor) {
+        (true, denominator) when choose(denominator) => Text("guard"),
+        (false, _) => Text(fail(divisor)),
+        _ => Text("fallback"),
+    }
+}
+"#;
+    let compiled = project_view_fixture_with_entry(source, "arcweft-test://view-match-failure")
+        .compile()
+        .unwrap();
+    let product = compiled.view_product().product().as_ref().clone();
+    let text = compiled.view_product().text().unwrap().clone();
+    let awbc = Arc::new(
+        arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+            AwbcLowerer::new(
+                &compiled.runtime_plan().plan,
+                &compiled.runtime_plan().dialogue_content_catalog,
+                "main.arcw",
+            )
+            .lower()
+            .unwrap()
+            .program,
+        )
+        .unwrap(),
+    );
+    let handle = PresentationHandleRecord::new(
+        PresentationHandleId::try_new("view.match.failure").unwrap(),
+        PresentationHandleKind::View,
+        "view.Main".to_owned(),
+        None,
+        PresentationResourceState::Mounted,
+        None,
+        0,
+    );
+    let mut runtime = BundleViewRuntime::try_new_with_awbc(
+        product.clone(),
+        Some(text.clone()),
+        Arc::clone(&awbc),
+    )
+    .unwrap();
+    let inputs = |active, divisor| {
+        [
+            RuntimeBinding {
+                name: "active".to_owned(),
+                value: RuntimeValue::Bool(active),
+            },
+            RuntimeBinding {
+                name: "divisor".to_owned(),
+                value: RuntimeValue::i64(divisor),
+            },
+        ]
+    };
+    let success = runtime.evaluate(std::slice::from_ref(&handle), &inputs(false, 1), false);
+    assert!(success.diagnostics.is_empty(), "{success:?}");
+    let saved = runtime.snapshot().unwrap();
+    let mut cold = BundleViewRuntime::try_new_with_awbc(product, Some(text), awbc).unwrap();
+    cold.restore(&saved, std::slice::from_ref(&handle)).unwrap();
+    for active in [true, false] {
+        let failure = runtime.evaluate(std::slice::from_ref(&handle), &inputs(active, 0), false);
+        assert!(
+            failure.mounts.is_empty(),
+            "neither a failed guard nor a failed arm may publish the prefix"
+        );
+        assert!(!failure.diagnostics.is_empty());
+        assert_eq!(
+            failure,
+            cold.evaluate(std::slice::from_ref(&handle), &inputs(active, 0), false)
+        );
+        assert_eq!(
+            success,
+            runtime.evaluate(std::slice::from_ref(&handle), &inputs(false, 1), false)
+        );
+        assert_eq!(
+            success,
+            cold.evaluate(std::slice::from_ref(&handle), &inputs(false, 1), false)
+        );
+    }
+}
+
+#[test]
+fn authored_view_match_pattern_families_share_the_core_selector() {
+    use arcweft_runtime_driver::presentation_handles::{
+        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    };
+    use arcweft_runtime_driver::view_runtime::BundleViewTextValue;
+    let cases = [
+        r#"view Main(value: (bool, String) = (false, "or")) {
+            match value { (true, label) | (false, label) => Text(label) }
+        }"#,
+        r#"view Main(value: Array<String, 2> = ["array", "tail"]) {
+            match value { [label, ..] => Text(label) }
+        }"#,
+        r#"struct Holder { label: String }
+        view Main(value: Holder = Holder { label = "record" }) {
+            match value { Holder { label } => Text(label) }
+        }"#,
+        r#"enum Envelope<T> { Value(T), Empty }
+        view Main(value: Envelope<String> = .Value("variant")) {
+            match value { .Value(label) => Text(label), .Empty => Text("empty") }
+        }"#,
+    ];
+    for (case, label) in cases.into_iter().zip(["or", "array", "record", "variant"]) {
+        let source = format!(
+            "entry cli @entry.main {{ goto @flow.main }}\nflow main() -> String {{ return \"done\" }}\n{case}"
+        );
+        let compiled = project_view_fixture_with_entry(&source, "arcweft-test://view-patterns")
+            .compile()
+            .unwrap_or_else(|error| panic!("{label}: {error:?}"));
+        let product = compiled.view_product().product().as_ref().clone();
+        let text = compiled.view_product().text().unwrap().clone();
+        let resource = product.program().unwrap().resource();
+        assert_eq!(
+            ViewProgramResource::decode_canonical_section(
+                &resource.encode_canonical_section().unwrap()
+            )
+            .unwrap(),
+            *resource
+        );
+        let awbc = Arc::new(
+            arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+                AwbcLowerer::new(
+                    &compiled.runtime_plan().plan,
+                    &compiled.runtime_plan().dialogue_content_catalog,
+                    "main.arcw",
+                )
+                .lower()
+                .unwrap()
+                .program,
+            )
+            .unwrap(),
+        );
+        let bytes = awbc.encode_canonical().unwrap();
+        let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+            &bytes,
+            arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+        )
+        .unwrap();
+        assert_eq!(decoded, *awbc);
+        let awbc = Arc::new(decoded);
+        resource.validate_awbc_programs(&awbc, Some(&text)).unwrap();
+        let handle = PresentationHandleRecord::new(
+            PresentationHandleId::try_new("view.match.patterns").unwrap(),
+            PresentationHandleKind::View,
+            "view.Main".to_owned(),
+            None,
+            PresentationResourceState::Mounted,
+            None,
+            0,
+        );
+        let mut runtime = BundleViewRuntime::try_new_with_awbc(
+            product.clone(),
+            Some(text.clone()),
+            Arc::clone(&awbc),
+        )
+        .unwrap();
+        let frame = runtime.evaluate(std::slice::from_ref(&handle), &[], false);
+        assert!(frame.diagnostics.is_empty(), "{label}: {frame:?}");
+        assert!(matches!(&frame.mounts[0].text[0].value,
+            BundleViewTextValue::Plain { value } if value == label));
+        let saved = runtime.snapshot().unwrap();
+        let mut cold = BundleViewRuntime::try_new_with_awbc(product, Some(text), awbc).unwrap();
+        cold.restore(&saved, std::slice::from_ref(&handle)).unwrap();
+        assert_eq!(
+            frame,
+            cold.evaluate(std::slice::from_ref(&handle), &[], false)
+        );
+    }
+}
+
+#[test]
+fn view_or_patterns_refuse_inconsistent_binding_positions() {
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+view Main(value: (bool, String, String) = (false, "ignored", "other")) {
+    match value { (true, left, right) | (false, right, left) => Text(left) }
+}
+"#;
+    let error = project_view_fixture_with_entry(source, "arcweft-test://view-or-layout")
+        .compile()
+        .expect_err("Or alternatives retain the same binding positions");
+    assert_eq!(error.stage(), "hir-lower");
+    assert!(format!("{error:?}").contains("PositionMismatch"));
 }

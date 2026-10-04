@@ -101,7 +101,7 @@ struct BranchJoin {
 }
 
 struct GuardedCandidate {
-    guard_false_jump: AwbcBlockId,
+    guard_false_jump: Option<AwbcBlockId>,
     fallthrough: Option<AwbcBlockId>,
 }
 
@@ -2452,14 +2452,25 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
 
         let mut join = BranchJoin::new();
         if let Some(guard) = guard {
-            let guarded =
-                self.lower_guarded_candidate(frame, body, pattern, value, guard, then_ops, path);
+            let guarded = self.lower_guarded_candidate(
+                frame,
+                body,
+                pattern,
+                value,
+                Some(guard),
+                guard.guard_copy_locals(),
+                &[],
+                then_ops,
+                path,
+            );
             if let Some(fallthrough) = guarded.fallthrough {
                 join.push(fallthrough);
             }
             let else_block = AwbcBlockId(table_index(self.inventory.program.blocks.len()));
             patch_branch_else_block(self.inventory, branch_block, else_block);
-            patch_jump_target(self.inventory, guarded.guard_false_jump, else_block);
+            if let Some(jump) = guarded.guard_false_jump {
+                patch_jump_target(self.inventory, jump, else_block);
+            }
         } else {
             self.lower_scoped_branch_ops(
                 frame,
@@ -2524,7 +2535,9 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     body,
                     pattern,
                     scrutinee,
-                    guard,
+                    guard.condition.as_ref(),
+                    &guard.copy_locals,
+                    &guard.ops,
                     &arm.ops,
                     &format!("{path}.arm.{index}"),
                 );
@@ -2533,7 +2546,9 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 }
                 let next_arm_block = AwbcBlockId(table_index(self.inventory.program.blocks.len()));
                 patch_branch_else_block(self.inventory, branch_block, next_arm_block);
-                patch_jump_target(self.inventory, guarded.guard_false_jump, next_arm_block);
+                if let Some(jump) = guarded.guard_false_jump {
+                    patch_jump_target(self.inventory, jump, next_arm_block);
+                }
             } else {
                 self.lower_scoped_branch_ops(
                     frame,
@@ -3119,19 +3134,44 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         body: &mut FlowBodyBuilder,
         pattern: AwbcPatternId,
         value: AwbcRegisterId,
-        guard: &RuntimeExpr,
+        guard: Option<&RuntimeExpr>,
+        copy_locals: &[arcweft_core::runtime_id::RuntimeLocalDeclarationId],
+        guard_ops: &[FlowOp],
         ops: &[FlowOp],
         path: &str,
     ) -> GuardedCandidate {
         let restored_scopes = frame.scope_checkpoint();
-        let scope = crate::awbc_lower::expr::enter_guard_pattern_scope(
+        let scope = crate::awbc_lower::expr::enter_guard_pattern_scope_for_locals(
             self.inventory,
-            self.plan,
             frame,
             pattern,
             value,
-            guard,
+            copy_locals,
         );
+        self.lower_ops(frame, body, guard_ops, &format!("{path}.guard.ops"));
+        if body.terminated {
+            // Return/Break/Goto exits the enclosing control owner. There is no
+            // guard condition or false edge on this path.
+            frame.restore_scopes_after_branch(restored_scopes);
+            body.reopen_after_terminated_branch(self.inventory);
+            return GuardedCandidate {
+                guard_false_jump: None,
+                fallthrough: None,
+            };
+        }
+        let Some(guard) = guard else {
+            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                path,
+                "non-returning guard has a normal fallthrough",
+            ));
+            self.terminate_pattern_mismatch(body, "non-returning guard fell through");
+            frame.restore_scopes_after_branch(restored_scopes);
+            body.reopen_after_terminated_branch(self.inventory);
+            return GuardedCandidate {
+                guard_false_jump: None,
+                fallthrough: None,
+            };
+        };
         let guard = AwbcExprLowerer::new(self.inventory, frame, format!("{path}.guard"), self.plan)
             .lower(guard);
         let body_block = AwbcBlockId(table_index(
@@ -3188,7 +3228,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             AwbcSafePointKind::None,
         );
         GuardedCandidate {
-            guard_false_jump,
+            guard_false_jump: Some(guard_false_jump),
             fallthrough,
         }
     }

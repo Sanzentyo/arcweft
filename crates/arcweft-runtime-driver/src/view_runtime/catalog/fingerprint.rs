@@ -198,6 +198,7 @@ fn referenced_value_programs(body: &[ViewProgramInstruction]) -> BTreeSet<ViewVa
             | ViewProgramInstruction::EndScope
             | ViewProgramInstruction::CallView { .. }
             | ViewProgramInstruction::Branch { .. }
+            | ViewProgramInstruction::Match { .. }
             | ViewProgramInstruction::BindLocal { .. }
             | ViewProgramInstruction::EmitText { .. }
             | ViewProgramInstruction::EmitImage { .. }
@@ -228,6 +229,7 @@ fn without_instruction_source(mut instruction: ViewProgramInstruction) -> ViewPr
         | ViewProgramInstruction::EmitCustom { source, .. }
         | ViewProgramInstruction::CallView { source, .. }
         | ViewProgramInstruction::Branch { source, .. }
+        | ViewProgramInstruction::Match { source, .. }
         | ViewProgramInstruction::RepeatKeyed { source, .. }
         | ViewProgramInstruction::Await { source, .. }
         | ViewProgramInstruction::BindLocal { source, .. }

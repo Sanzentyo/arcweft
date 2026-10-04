@@ -218,11 +218,13 @@ impl<'hir> FinalPatternLowerer<'hir> {
             HirPatternKind::TypedBinding { binding, .. } => RuntimePatternSeedKind::Typed {
                 local: self.bound_local(binding)?,
             },
-            HirPatternKind::Or { .. } => {
-                return Err(format!(
-                    "or-pattern {id:?} must be expanded before runtime-plan lowering"
-                ));
-            }
+            HirPatternKind::Or { alternatives } => RuntimePatternSeedKind::Or(
+                alternatives
+                    .iter()
+                    .map(|owner| self.lower(*owner))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_boxed_slice(),
+            ),
             HirPatternKind::Error(_) => {
                 return Err(format!("error pattern {id:?} is not executable"));
             }

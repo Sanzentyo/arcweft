@@ -655,7 +655,7 @@ impl CheckedMatch {
 /// Runs one bounded transcript transaction for a validated Match reference.
 /// The builder is discarded on every error, so no partial Match product can
 /// escape the transaction.
-fn build_checked_match_transaction(
+pub(super) fn build_checked_match_transaction(
     analysis: &FinalSemanticAnalysis,
     project: HirAnalysisProjectView<'_>,
     owner: ExprId,
@@ -1186,6 +1186,36 @@ impl<'analysis, 'control> SemanticTranscriptGraph<'analysis, 'control> {
                     ty,
                 });
             }
+            return Ok(());
+        }
+        if let HirPatternKind::Or { alternatives } = hir.kind() {
+            let mut shared = None;
+            let mut shared_index = None;
+            for (ordinal, alternative) in alternatives.iter().enumerate() {
+                let role = arcweft_lang_hir::pattern::HirPatternChildRole::OrAlternative {
+                    ordinal: u32::try_from(ordinal)
+                        .map_err(|_| SemanticTranscriptError::WorkLimit)?,
+                };
+                let child = child_pattern_coordinate(coordinate, hir.kind(), role)?;
+                let mut current = Vec::new();
+                self.collect_pattern_bindings(*alternative, &child, &mut current)?;
+                let index = current
+                    .iter()
+                    .map(|binding: &CheckedMatchBinding| (binding.coordinate.clone(), binding.ty))
+                    .collect::<BTreeMap<_, _>>();
+                if index.len() != current.len() {
+                    return Err(SemanticTranscriptError::MissingIdentity);
+                }
+                if let Some(expected) = &shared_index {
+                    if expected != &index {
+                        return Err(SemanticTranscriptError::MissingIdentity);
+                    }
+                } else {
+                    shared_index = Some(index);
+                    shared = Some(current);
+                }
+            }
+            bindings.extend(shared.into_iter().flatten());
             return Ok(());
         }
         for edge in hir.kind().child_edges() {

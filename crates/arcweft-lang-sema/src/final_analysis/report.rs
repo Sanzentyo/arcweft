@@ -1632,6 +1632,23 @@ impl FinalSemanticAnalysis {
             .region(super::CheckedExecutionOperation::Value(owner))
     }
 
+    pub(super) fn match_selection_execution_region(
+        &self,
+        owner: ExprId,
+    ) -> Option<super::execution_regions::CheckedExecutionRegion> {
+        let matched = self.expression(owner)?.match_fact()?;
+        self.expression_execution_regions.region_roots(
+            std::iter::once(matched.scrutinee())
+                .chain(
+                    matched
+                        .arms()
+                        .iter()
+                        .filter_map(super::CheckedMatchArmFact::guard),
+                )
+                .map(super::CheckedExecutionOperation::Value),
+        )
+    }
+
     pub(super) fn statement_execution_region(
         &self,
         owner: StmtId,

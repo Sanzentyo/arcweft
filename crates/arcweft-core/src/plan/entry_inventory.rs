@@ -903,6 +903,9 @@ impl RuntimePlan {
                 }
                 FlowOp::Match { arms, .. } => {
                     for arm in arms {
+                        if let Some(guard) = &arm.guard {
+                            self.verify_executable_site_ops(&guard.ops)?;
+                        }
                         self.verify_executable_site_ops(&arm.ops)?;
                     }
                 }

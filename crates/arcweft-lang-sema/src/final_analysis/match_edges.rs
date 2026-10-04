@@ -882,13 +882,17 @@ impl CheckedStructuralEdgeDraft {
                     _ => None,
                 };
                 if matches!(role, HirExpressionChildRole::Guard { .. })
-                    && checked_child.value_type() != Some(&TypeKind::Bool)
+                    && !checked_child
+                        .value_type()
+                        .is_some_and(|ty| TypeKind::Bool.accepts(ty))
                 {
                     first_error = Some(CheckedChildEdgeError::MatchGuardTypeMismatch);
                     break;
                 }
                 if matches!(role, HirExpressionChildRole::ChoiceMatchGuard { .. })
-                    && checked_child.value_type() != Some(&TypeKind::Bool)
+                    && !checked_child
+                        .value_type()
+                        .is_some_and(|ty| TypeKind::Bool.accepts(ty))
                 {
                     first_error = Some(CheckedChildEdgeError::MatchGuardTypeMismatch);
                     break;
@@ -1178,7 +1182,10 @@ fn validate_match_owner(
                 let Some(checked_guard) = expressions.get(&guard) else {
                     return Err(CheckedChildEdgeError::MatchGuardChildMismatch);
                 };
-                if !matches!(checked_guard.value_type(), Some(TypeKind::Bool)) {
+                if !checked_guard
+                    .value_type()
+                    .is_some_and(|ty| TypeKind::Bool.accepts(ty))
+                {
                     return Err(CheckedChildEdgeError::MatchGuardTypeMismatch);
                 }
             }
@@ -1232,7 +1239,10 @@ fn validate_match_edge(
             let Some(checked_guard) = expressions.get(&child) else {
                 return Err(CheckedChildEdgeError::MatchGuardChildMismatch);
             };
-            if !matches!(checked_guard.value_type(), Some(TypeKind::Bool)) {
+            if !checked_guard
+                .value_type()
+                .is_some_and(|ty| TypeKind::Bool.accepts(ty))
+            {
                 return Err(CheckedChildEdgeError::MatchGuardTypeMismatch);
             }
         }

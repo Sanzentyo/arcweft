@@ -444,6 +444,7 @@ fn checked_call_edge(
             }
         }
         HirRuntimeExecutableOwner::Value(_)
+        | HirRuntimeExecutableOwner::MatchSelection(_)
         | HirRuntimeExecutableOwner::Statement(_)
         | HirRuntimeExecutableOwner::DeclarationBody { .. } => {
             return Err(RuntimeReachabilityProjectionError::MissingCheckedEdge {

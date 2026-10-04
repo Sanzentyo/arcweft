@@ -42,8 +42,9 @@ use super::super::{
     RuntimeBuiltinIteratorFamily, RuntimeDialogueResultTarget, RuntimeFunctionInputBinding,
     RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind, RuntimeHostCallTarget,
     RuntimeIteratorEvidence, RuntimeIteratorWitnessEvidence, RuntimeIteratorWitnessExecutable,
-    RuntimeLineOperation, RuntimeMatchArm, RuntimePlanRecordField, RuntimePlanSequenceKind,
-    RuntimePlanTypeProjection, RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode,
+    RuntimeLineOperation, RuntimeMatchArm, RuntimeMatchGuard, RuntimePlanRecordField,
+    RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePureInputType,
+    RuntimePureOutputType, RuntimeReceiverMode,
 };
 use super::{
     RuntimeAgentExprSeed, RuntimeAudioCommandSeed, RuntimeBuiltinIteratorEvidenceSeed,
@@ -74,7 +75,14 @@ enum FlowOpLowerFrame {
     /// Receives the completed arm list and appends it to its owning Match.
     FinishMatchArm {
         pattern: RuntimePattern,
-        guard: Option<RuntimeExpr>,
+        guard: Option<RuntimeMatchGuard>,
+    },
+    FinishMatchGuard {
+        pattern: RuntimePattern,
+        candidate: RuntimeLocalDeclarationId,
+        condition: Option<RuntimeExpr>,
+        copy_locals: Box<[RuntimeLocalDeclarationId]>,
+        arm_ops: Vec<RuntimeFlowOpSeed>,
     },
 }
 
@@ -84,6 +92,7 @@ struct FlowLocalValidationFrame<'a> {
     next: usize,
     scope: BTreeSet<RuntimeLocalDeclarationId>,
     scope_frames: Vec<BTreeSet<RuntimeLocalDeclarationId>>,
+    final_condition: Option<&'a RuntimeExpr>,
 }
 
 enum FlowLocalValidationWork<'a> {
@@ -465,7 +474,7 @@ impl RuntimePlanBodyConstruction<'_> {
                 let mut lowered = Vec::with_capacity(items.len());
                 for (item, expected) in items.into_vec().into_iter().zip(expected) {
                     let item = self.lower_expression(item)?;
-                    require_same("tuple element", *expected, item.ty())?;
+                    self.require_expression_assignable("tuple element", *expected, item.ty())?;
                     lowered.push(item);
                 }
                 RuntimeExprKind::Tuple(lowered)
@@ -1318,6 +1327,10 @@ impl RuntimePlanBodyConstruction<'_> {
         actual: RuntimePlanTypeId,
     ) -> Result<(), RuntimePlanBuildError> {
         if expected == actual {
+            return Ok(());
+        }
+        if matches!(self.projection(expected)?, RuntimePlanTypeProjection::Choice(alternatives) if alternatives.contains(&actual))
+        {
             return Ok(());
         }
         let accepts = matches!(
@@ -2635,6 +2648,31 @@ impl RuntimePlanBodyConstruction<'_> {
                 })?;
                 RuntimePatternKind::Entity(entity)
             }
+            RuntimePatternSeedKind::Or(alternatives) => {
+                if alternatives.len() < 2 {
+                    return invalid_projection("Or alternative count", ty);
+                }
+                let initial = admission.bindings.clone();
+                let mut shared = None;
+                let mut lowered = Vec::with_capacity(alternatives.len());
+                for seed in alternatives.into_vec() {
+                    let mut current = PatternAdmission {
+                        bindings: initial.clone(),
+                    };
+                    let alternative = self.lower_pattern(seed, &mut current, path)?;
+                    require_same("Or alternative", ty, alternative.ty())?;
+                    if let Some(expected) = &shared {
+                        if expected != &current.bindings {
+                            return invalid_projection("Or binding inventory", ty);
+                        }
+                    } else {
+                        shared = Some(current.bindings);
+                    }
+                    lowered.push(alternative);
+                }
+                admission.bindings = shared.expect("at least two alternatives");
+                RuntimePatternKind::Or(lowered.into_boxed_slice())
+            }
             RuntimePatternSeedKind::Tuple(items) => {
                 let expected = match self.projection(ty)? {
                     RuntimePlanTypeProjection::Tuple(items) => items.as_ref(),
@@ -3330,6 +3368,27 @@ impl RuntimePlanBodyConstruction<'_> {
                         lowered.push(operation);
                     }
                     None => match frames.pop() {
+                        Some(FlowOpLowerFrame::FinishMatchGuard {
+                            pattern,
+                            candidate,
+                            condition,
+                            copy_locals,
+                            arm_ops,
+                        }) => {
+                            frames.push(FlowOpLowerFrame::FinishMatchArm {
+                                pattern,
+                                guard: Some(RuntimeMatchGuard {
+                                    candidate,
+                                    condition,
+                                    copy_locals,
+                                    ops: lowered,
+                                }),
+                            });
+                            frames.push(FlowOpLowerFrame::List {
+                                seeds: arm_ops.into_iter(),
+                                lowered: Vec::new(),
+                            });
+                        }
                         Some(FlowOpLowerFrame::FinishMatchArm { pattern, guard }) => {
                             let Some(FlowOpLowerFrame::MatchArms {
                                 lowered: arms_lowered,
@@ -3367,22 +3426,85 @@ impl RuntimePlanBodyConstruction<'_> {
                         } = arm;
                         let pattern = self.lower_pattern_seed(pattern)?;
                         require_same("flow match pattern", scrutinee.ty(), pattern.ty())?;
-                        let guard = guard
-                            .map(|guard| self.lower_guard_expression(guard, &pattern))
-                            .transpose()?;
-                        if let Some(guard) = &guard {
-                            self.require_bool("flow match guard", guard.ty())?;
-                        }
+                        let scrutinee_type = scrutinee.ty();
                         frames.push(FlowOpLowerFrame::MatchArms {
                             scrutinee,
                             arms,
                             lowered,
                         });
-                        frames.push(FlowOpLowerFrame::FinishMatchArm { pattern, guard });
-                        frames.push(FlowOpLowerFrame::List {
-                            seeds: ops.into_iter(),
-                            lowered: Vec::new(),
-                        });
+                        if let Some(guard) = guard {
+                            let (candidate, candidate_type) =
+                                self.resolve_local(&guard.candidate)?;
+                            require_same("flow match candidate", scrutinee_type, candidate_type)?;
+                            if crate::pattern::runtime_pattern_contains_binding(&pattern, candidate)
+                            {
+                                return Err(RuntimePlanBuildError::InvalidGuardCopyBinding {
+                                    local: candidate,
+                                });
+                            }
+                            let result =
+                                self.resolve_seed_type("flow match guard result", guard.result)?;
+                            let condition = guard
+                                .condition
+                                .map(|condition| self.lower_expression(condition))
+                                .transpose()?;
+                            match &condition {
+                                Some(condition) => {
+                                    require_same(
+                                        "flow match guard result",
+                                        result,
+                                        condition.ty(),
+                                    )?;
+                                    self.require_bool("flow match guard", result)?;
+                                }
+                                None => self.require_projection(
+                                    "non-returning guard",
+                                    result,
+                                    |projection| {
+                                        matches!(projection, RuntimePlanTypeProjection::Never)
+                                    },
+                                )?,
+                            }
+                            let copy_locals = guard
+                                .copy_locals
+                                .into_vec()
+                                .into_iter()
+                                .map(|local| {
+                                    let (local, _) = self.resolve_local(&local)?;
+                                    if !crate::pattern::runtime_pattern_contains_binding(
+                                        &pattern, local,
+                                    ) {
+                                        return Err(
+                                            RuntimePlanBuildError::InvalidGuardCopyBinding {
+                                                local,
+                                            },
+                                        );
+                                    }
+                                    Ok(local)
+                                })
+                                .collect::<Result<Vec<_>, RuntimePlanBuildError>>()?
+                                .into_boxed_slice();
+                            frames.push(FlowOpLowerFrame::FinishMatchGuard {
+                                pattern,
+                                candidate,
+                                condition,
+                                copy_locals,
+                                arm_ops: ops,
+                            });
+                            frames.push(FlowOpLowerFrame::List {
+                                seeds: guard.ops.into_iter(),
+                                lowered: Vec::new(),
+                            });
+                        } else {
+                            frames.push(FlowOpLowerFrame::FinishMatchArm {
+                                pattern,
+                                guard: None,
+                            });
+                            frames.push(FlowOpLowerFrame::List {
+                                seeds: ops.into_iter(),
+                                lowered: Vec::new(),
+                            });
+                        }
                     }
                     None => {
                         let Some(FlowOpLowerFrame::List {
@@ -3400,7 +3522,8 @@ impl RuntimePlanBodyConstruction<'_> {
                         });
                     }
                 },
-                FlowOpLowerFrame::FinishMatchArm { .. } => {
+                FlowOpLowerFrame::FinishMatchArm { .. }
+                | FlowOpLowerFrame::FinishMatchGuard { .. } => {
                     return Err(RuntimePlanBuildError::FlowLoweringInvariant {
                         context: "match arm completion ran before its child list",
                     });
@@ -4912,23 +5035,36 @@ impl RuntimePlanBodyConstruction<'_> {
                         continue;
                     };
                     let arm_scope = extend_scope(&scope, pattern_binding_locals(&arm.pattern))?;
-                    if let Some(guard) = &arm.guard {
-                        self.validate_expression_locals(guard, &arm_scope, used)?;
-                    }
                     work.push(FlowLocalValidationWork::MatchArms {
                         arms,
-                        scope,
+                        scope: scope.clone(),
                         scope_frames: scope_frames.clone(),
                     });
                     work.push(FlowLocalValidationWork::List(FlowLocalValidationFrame {
                         ops: &arm.ops,
                         next: 0,
-                        scope: arm_scope,
-                        scope_frames,
+                        scope: arm_scope.clone(),
+                        scope_frames: scope_frames.clone(),
+                        final_condition: None,
                     }));
+                    if let Some(guard) = &arm.guard {
+                        // A guard receives only its issued Copy leaves. Its
+                        // retained candidate is inaccessible to executable ops.
+                        let guard_scope = extend_scope(&scope, guard.copy_locals.iter().copied())?;
+                        work.push(FlowLocalValidationWork::List(FlowLocalValidationFrame {
+                            ops: &guard.ops,
+                            next: 0,
+                            scope: guard_scope,
+                            scope_frames,
+                            final_condition: guard.condition.as_ref(),
+                        }));
+                    }
                 }
                 FlowLocalValidationWork::List(mut frame) => {
                     let Some(op) = frame.ops.get(frame.next) else {
+                        if let Some(condition) = frame.final_condition {
+                            self.validate_expression_locals(condition, &frame.scope, used)?;
+                        }
                         continue;
                     };
                     frame.next += 1;
@@ -5542,6 +5678,11 @@ fn collect_pattern_binding_locals(
         RuntimePatternKind::Discard
         | RuntimePatternKind::Literal(_)
         | RuntimePatternKind::Entity(_) => {}
+        RuntimePatternKind::Or(alternatives) => {
+            if let Some(first) = alternatives.first() {
+                collect_pattern_binding_locals(first, locals);
+            }
+        }
         RuntimePatternKind::Tuple(items) => {
             for item in items {
                 collect_pattern_binding_locals(item, locals);

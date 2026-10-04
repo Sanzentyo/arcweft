@@ -781,3 +781,91 @@ fn immutable_project_function_aliases_use_the_checked_body_suspension() {
         crate::final_analysis::CheckedSuspensionRole::NonSuspending
     );
 }
+
+#[test]
+fn match_selector_inputs_exclude_results_and_keep_exact_arm_outputs() {
+    let world = fixture(
+        "view Main(value: (bool, String), label: String) { match value { (true, name) => Text(label), (false, name) => Text(name) } }",
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let project = world.project.analysis_view().unwrap();
+    let matched = report
+        .expressions()
+        .find_map(|(owner, expression)| expression.match_fact().map(|matched| (owner, matched)))
+        .unwrap();
+    let source = CheckedExecutionSource::SelectMatch(matched.0);
+    let context = report
+        .checked_execution_context(project, &world.symbols, source.clone(), None)
+        .unwrap();
+    let admission = context.checked_deterministic_program(source).unwrap();
+    let abi = admission.input_abi();
+    assert!(matches!(
+        abi.coordinate(),
+        CheckedExecutionCoordinate::MatchSelection(_)
+    ));
+    assert_eq!(
+        abi.inputs().len(),
+        1,
+        "only the selector parameter is free; the label is used only by an arm result"
+    );
+    assert_eq!(
+        abi.inputs()[0].binding().ty(),
+        &TypeKind::Tuple(vec![TypeKind::Bool, TypeKind::String])
+    );
+    assert_eq!(abi.match_selection().unwrap().outputs().len(), 2);
+    assert!(
+        abi.match_selection()
+            .unwrap()
+            .outputs()
+            .iter()
+            .all(|outputs| outputs.len() == 1 && outputs[0].ty() == &TypeKind::String)
+    );
+    assert_eq!(
+        abi.result().value_type(),
+        Some(&TypeKind::Tuple(vec![
+            TypeKind::U32,
+            TypeKind::Tuple(vec![TypeKind::String])
+        ]))
+    );
+    assert!(abi.expressions().contains(&matched.1.scrutinee()));
+    for arm in matched.1.arms() {
+        assert!(!abi.expressions().contains(&arm.value()));
+    }
+}
+
+#[test]
+fn retained_match_bodies_are_checked_before_nested_bindings() {
+    let source = "view Main(value: (bool, String), enabled: bool) { match value { (true, label) when enabled => { let label = label; Text(label) }, (true, _) => Text(\"fallback\"), (false, label) => match enabled { true => Text(label), false => Button(label) } } }";
+    let world = fixture(source, None);
+    let report =
+        analyze(&world).expect("body roots seed Match bindings before nested initializers");
+    assert_eq!(
+        report
+            .expressions()
+            .filter(|(_, fact)| fact.match_fact().is_some())
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn match_bindings_are_available_to_independent_thread_bodies() {
+    let world = fixture(
+        r#"
+flow main(value: (bool, String)) {
+    let handle = match value {
+        (true, label) => thread { let retained = label },
+        (false, _) => thread {}
+    }
+}
+"#,
+        None,
+    );
+    let report = analyze(&world).expect("Thread roots retain their lexical Match inputs");
+    assert!(
+        report
+            .locals()
+            .any(|(_, local)| local.ty() == &TypeKind::String)
+    );
+}

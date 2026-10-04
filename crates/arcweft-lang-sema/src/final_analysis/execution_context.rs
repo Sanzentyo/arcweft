@@ -20,6 +20,8 @@ use super::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedExecutionSource {
     EvaluateValue(ExprId),
+    /// Selects an exhaustive Match and exports only the chosen arm bindings.
+    SelectMatch(ExprId),
     /// Executes a binding and exports its owned values in canonical binding order.
     ExportBinding(arcweft_lang_hir::identity::StmtId),
     InvokeBody(CheckedExecutionBodyOwner),
@@ -49,6 +51,8 @@ pub enum CheckedExecutionContextError {
     ScopeMismatch { owner: Box<CheckedExecutionSource> },
     #[error("execution input evidence belongs to another callable authority")]
     ForeignAuthority,
+    #[error(transparent)]
+    MatchTranscript(#[from] Box<super::CheckedSemanticTranscriptError>),
     #[error("execution input evidence belongs to another closed instance")]
     InstanceMismatch,
 }
@@ -255,7 +259,8 @@ impl FinalSemanticAnalysis {
         source: &CheckedExecutionSource,
     ) -> Result<HirSemanticPathRoot, FinalSemanticAnalysisError> {
         match source {
-            CheckedExecutionSource::EvaluateValue(source) => self.execution_source_scope(*source),
+            CheckedExecutionSource::EvaluateValue(source)
+            | CheckedExecutionSource::SelectMatch(source) => self.execution_source_scope(*source),
             CheckedExecutionSource::ExportBinding(source) => {
                 let location = self
                     .hir_topology()

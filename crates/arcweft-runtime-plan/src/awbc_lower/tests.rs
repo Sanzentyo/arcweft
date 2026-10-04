@@ -225,10 +225,11 @@ fn build_while_let_plan(
         RuntimeExprSeed::new(
             bool_type,
             RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                binding,
+                binding.clone(),
                 RuntimeLocalReadMode::Copy,
             )),
         )
+        .with_guard_copy_locals([binding])
     });
     builder
         .push_flow_executable(flow_executable(&flow))

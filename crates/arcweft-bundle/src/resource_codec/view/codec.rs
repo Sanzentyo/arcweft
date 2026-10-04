@@ -454,8 +454,13 @@ impl ViewProgramResource {
             let mut visited_buttons = BTreeSet::new();
             for event in ScopedInstructions::new(&self.instructions, definition.body)? {
                 let instruction = match event? {
-                    ScopeEvent::Enter => {
-                        locals.push(BTreeMap::new());
+                    ScopeEvent::Enter { outputs } => {
+                        locals.push(
+                            outputs
+                                .iter()
+                                .map(|output| (output.coordinate, output.value_type))
+                                .collect(),
+                        );
                         continue;
                     }
                     ScopeEvent::Exit => {
@@ -503,6 +508,93 @@ impl ViewProgramResource {
                                     "view_call_argument_contract",
                                 ));
                             }
+                        }
+                    }
+                    ViewProgramInstruction::Match {
+                        program: selection, ..
+                    } => {
+                        use arcweft_core::awbc::schema::{
+                            AwbcRuntimeTypeShape as Shape, AwbcUnsignedIntKind,
+                        };
+                        let invalid = || SectionCodecError::NonCanonicalTable("view_match_outputs");
+                        let signature = self.validate_expression_program(
+                            program,
+                            definition,
+                            &selection.execution,
+                            &locals,
+                        )?;
+                        let Some(Shape::Tuple(result)) = signature
+                            .result
+                            .and_then(|ty| program.runtime_types.get(ty.index()))
+                            .map(|ty| ty.shape())
+                        else {
+                            return Err(invalid());
+                        };
+                        let [tag, payload] = result.as_slice() else {
+                            return Err(invalid());
+                        };
+                        if !matches!(
+                            program.runtime_types.get(tag.index()).map(|ty| ty.shape()),
+                            Some(Shape::UInt(AwbcUnsignedIntKind::U32))
+                        ) {
+                            return Err(invalid());
+                        }
+                        let alternatives = match program
+                            .runtime_types
+                            .get(payload.index())
+                            .map(|ty| ty.shape())
+                        {
+                            Some(Shape::Choice(alternatives)) => alternatives.as_slice(),
+                            _ => std::slice::from_ref(payload),
+                        };
+                        let mut payloads = BTreeSet::new();
+                        for ty in alternatives {
+                            let outputs =
+                                match program.runtime_types.get(ty.index()).map(|ty| ty.shape()) {
+                                    Some(Shape::Unit) => &[][..],
+                                    Some(Shape::Tuple(types)) if !types.is_empty() => {
+                                        types.as_slice()
+                                    }
+                                    Some(Shape::Never) if selection.arms.is_empty() => continue,
+                                    _ => return Err(invalid()),
+                                };
+                            payloads.insert(
+                                outputs
+                                    .iter()
+                                    .map(|ty| {
+                                        program
+                                            .runtime_types
+                                            .get(ty.index())
+                                            .map(|ty| ty.semantic_identity())
+                                            .ok_or_else(invalid)
+                                    })
+                                    .collect::<Result<Vec<_>, _>>()?,
+                            );
+                        }
+                        let mut ordinal = 0usize;
+                        let mut used_payloads = BTreeSet::new();
+                        for arm in &selection.arms {
+                            let types = arm
+                                .outputs
+                                .iter()
+                                .map(|output| output.value_type)
+                                .collect::<Vec<_>>();
+                            if !payloads.contains(&types) {
+                                return Err(invalid());
+                            }
+                            used_payloads.insert(types);
+                            for output in &arm.outputs {
+                                if output.coordinate.program != selection.execution.program
+                                    || usize::from(output.coordinate.output) != ordinal
+                                    || !declared.insert(output.coordinate)
+                                {
+                                    return Err(invalid());
+                                }
+                                ordinal += 1;
+                            }
+                        }
+                        if used_payloads != payloads {
+                            return Err(invalid());
                         }
                     }
                     ViewProgramInstruction::Branch { condition, .. } => {
@@ -870,6 +962,23 @@ impl ViewProgramResource {
             budget.program_instructions,
             "view_program_instructions",
         )?;
+        let mut cases = 0usize;
+        let mut outputs = 0usize;
+        for selection in self
+            .instructions
+            .iter()
+            .filter_map(|instruction| match instruction {
+                ViewProgramInstruction::Match { program, .. } => Some(program),
+                _ => None,
+            })
+        {
+            cases = cases.saturating_add(selection.arms.len());
+            outputs = selection.arms.iter().fold(outputs, |total, arm| {
+                total.saturating_add(arm.outputs.len())
+            });
+        }
+        check_budget(cases, budget.common.items, "view_match_cases")?;
+        check_budget(outputs, budget.common.items, "view_match_outputs")?;
         check_budget(
             self.instructions
                 .iter()
@@ -1002,6 +1111,7 @@ impl ViewProgramResource {
                 | ViewProgramInstruction::EndScope
                 | ViewProgramInstruction::CallView { .. }
                 | ViewProgramInstruction::Branch { .. }
+                | ViewProgramInstruction::Match { .. }
                 | ViewProgramInstruction::BindLocal { .. }
                 | ViewProgramInstruction::EmitText { .. }
                 | ViewProgramInstruction::EmitImage { .. }
@@ -1220,7 +1330,7 @@ impl ViewProgramResource {
             let mut depth = 0usize;
             for event in ScopedInstructions::new(&self.instructions, definition.body)? {
                 match event? {
-                    ScopeEvent::Enter
+                    ScopeEvent::Enter { .. }
                     | ScopeEvent::Instruction {
                         instruction: ViewProgramInstruction::BeginScope,
                         ..
@@ -1409,8 +1519,13 @@ impl ViewProgramResource {
             let mut target = None;
             for event in ScopedInstructions::new(&self.instructions, definition.body)? {
                 let (ordinal, instruction) = match event? {
-                    ScopeEvent::Enter => {
-                        locals.push(BTreeMap::new());
+                    ScopeEvent::Enter { outputs } => {
+                        locals.push(
+                            outputs
+                                .iter()
+                                .map(|output| (output.coordinate, output.value_type))
+                                .collect(),
+                        );
                         continue;
                     }
                     ScopeEvent::Exit => {
@@ -2019,6 +2134,7 @@ fn instruction_public_ids(instruction: &ViewProgramInstruction) -> Vec<String> {
         | ViewProgramInstruction::EndScope
         | ViewProgramInstruction::CloseElement
         | ViewProgramInstruction::Branch { .. }
+        | ViewProgramInstruction::Match { .. }
         | ViewProgramInstruction::RepeatKeyed { .. }
         | ViewProgramInstruction::Await { .. }
         | ViewProgramInstruction::BindLocal { .. }

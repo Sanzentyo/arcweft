@@ -708,6 +708,7 @@ fn visit_pattern_strings(pattern: &mut AwbcPattern, visitor: &mut dyn FnMut(&mut
         | AwbcPattern::Discard
         | AwbcPattern::Literal(_)
         | AwbcPattern::Entity(_)
+        | AwbcPattern::Or(_)
         | AwbcPattern::Tuple(_)
         | AwbcPattern::Record { .. }
         | AwbcPattern::Sequence { .. }
@@ -2616,6 +2617,7 @@ pub enum AwbcPattern {
     Literal(AwbcConstantId),
     Entity(RuntimeEntityReference),
     Tuple(Vec<AwbcPatternId>),
+    Or(Vec<AwbcPatternId>),
     Record {
         ty: Option<AwbcTypeId>,
         fields: Vec<AwbcRecordPatternField>,

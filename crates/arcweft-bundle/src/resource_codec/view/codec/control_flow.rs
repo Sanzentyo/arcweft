@@ -5,7 +5,9 @@ use crate::resource_codec::view::model::ViewInstructionSpan;
 use arcweft_view::{ViewBranchRanges, ViewInstructionRange};
 
 pub(super) enum ScopeEvent<'a> {
-    Enter,
+    Enter {
+        outputs: &'a [arcweft_view::ViewLocalOutput],
+    },
     Exit,
     Instruction {
         index: u32,
@@ -13,16 +15,16 @@ pub(super) enum ScopeEvent<'a> {
     },
 }
 
-enum Work {
+enum Work<'a> {
     Cursor(ViewInstructionRange),
-    Region(ViewInstructionRange),
+    Region(ViewInstructionRange, &'a [arcweft_view::ViewLocalOutput]),
     Exit,
     Finish,
 }
 
 pub(super) struct ScopedInstructions<'a> {
     instructions: &'a [ViewProgramInstruction],
-    work: Vec<Work>,
+    work: Vec<Work<'a>>,
     floors: Vec<usize>,
     explicit_depth: usize,
     failed: bool,
@@ -56,10 +58,10 @@ impl<'a> ScopedInstructions<'a> {
     fn advance(&mut self) -> Result<Option<ScopeEvent<'a>>, SectionCodecError> {
         while let Some(work) = self.work.pop() {
             match work {
-                Work::Region(range) => {
+                Work::Region(range, outputs) => {
                     self.floors.push(self.explicit_depth);
                     self.work.extend([Work::Exit, Work::Cursor(range)]);
-                    return Ok(Some(ScopeEvent::Enter));
+                    return Ok(Some(ScopeEvent::Enter { outputs }));
                 }
                 Work::Exit => {
                     if self.floors.pop() != Some(self.explicit_depth) {
@@ -93,13 +95,25 @@ impl<'a> ScopedInstructions<'a> {
                                 index, *then_span, *else_span, range.end,
                             )
                             .ok_or_else(invalid_span)?;
-                            children.push(ranges.then_range());
-                            children.extend(ranges.else_range());
+                            children.push((ranges.then_range(), &[][..]));
+                            children.extend(ranges.else_range().map(|range| (range, &[][..])));
+                            ranges.continuation()
+                        }
+                        ViewProgramInstruction::Match { program, .. } => {
+                            let ranges =
+                                program.ranges(index, range.end).ok_or_else(invalid_span)?;
+                            children.extend(
+                                ranges
+                                    .arms()
+                                    .iter()
+                                    .copied()
+                                    .zip(program.arms.iter().map(|arm| arm.outputs.as_ref())),
+                            );
                             ranges.continuation()
                         }
                         ViewProgramInstruction::RepeatKeyed { body_span, .. } => {
                             let body = subrange(start, 0, *body_span, range.end)?;
-                            children.push(body);
+                            children.push((body, &[][..]));
                             body.end
                         }
                         ViewProgramInstruction::Await {
@@ -114,18 +128,24 @@ impl<'a> ScopedInstructions<'a> {
                                     .into_iter()
                                     .flatten()
                             {
-                                children.push(subrange(
-                                    start,
-                                    branch.start_offset,
-                                    branch.body_span,
-                                    range.end,
-                                )?);
+                                children.push((
+                                    subrange(
+                                        start,
+                                        branch.start_offset,
+                                        branch.body_span,
+                                        range.end,
+                                    )?,
+                                    &[][..],
+                                ));
                             }
-                            children.sort_by_key(|range| (range.start, range.end));
-                            if children.windows(2).any(|pair| pair[0].end > pair[1].start) {
+                            children.sort_by_key(|(range, _)| (range.start, range.end));
+                            if children
+                                .windows(2)
+                                .any(|pair| pair[0].0.end > pair[1].0.start)
+                            {
                                 return Err(invalid_span());
                             }
-                            children.last().map_or(start, |range| range.end)
+                            children.last().map_or(start, |(range, _)| range.end)
                         }
                         _ => start,
                     };
@@ -145,8 +165,12 @@ impl<'a> ScopedInstructions<'a> {
                         continuation,
                         range.end,
                     )));
-                    self.work
-                        .extend(children.into_iter().rev().map(Work::Region));
+                    self.work.extend(
+                        children
+                            .into_iter()
+                            .rev()
+                            .map(|(range, outputs)| Work::Region(range, outputs)),
+                    );
                     return Ok(Some(ScopeEvent::Instruction { index, instruction }));
                 }
             }

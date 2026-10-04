@@ -1,6 +1,7 @@
 mod callable;
 mod format_attempt;
 mod function_call;
+pub(super) mod match_guard;
 
 use super::dialogue::{DialogueActivationFrame, DialogueLineTaskState, DialogueRuntimePhase};
 use super::{
@@ -472,15 +473,13 @@ impl Engine {
                 Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
             },
             FlowOp::Match { scrutinee, arms } => {
-                match self.evaluate_match_with_backend(&scrutinee, arms, pure_backend) {
-                    Ok(Some((bindings, ops))) => {
+                match self.evaluate_expr_with_backend(&scrutinee, pure_backend) {
+                    Ok(value) => {
                         self.advance_if_needed(next_op_index);
-                        self.push_scoped_ops_with_bindings(bindings, ops);
+                        if let Err(error) = self.select_match_candidate(value, arms) {
+                            self.fail_format_aware_eval(error, output, pure_backend);
+                        }
                     }
-                    Ok(None) => self.fail_eval(
-                        RuntimeEvalError::PatternMismatch(scrutinee.to_string()),
-                        output,
-                    ),
                     Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
             }
@@ -746,8 +745,10 @@ impl Engine {
                 self.advance_if_needed(next_op_index);
             }
             FlowOp::ExitScope => {
-                self.pop_scope_frame(output, pure_backend);
                 self.advance_if_needed(next_op_index);
+                if !self.complete_match_guard(output, pure_backend) {
+                    self.pop_scope_frame(output, pure_backend);
+                }
             }
             FlowOp::CompleteAwaitObserver => {
                 let Some(state) = self.fiber.await_observer.take() else {
@@ -1085,6 +1086,7 @@ impl Engine {
         self.fiber.control_stack.push(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::Scope {
                 cleanups: Vec::new(),
+                match_guard: None,
             },
         });
     }
@@ -1096,7 +1098,7 @@ impl Engine {
     ) {
         let cleanup = FlowScopeCleanup::new(key, effect);
         if let Some(FlowControlStackEntry {
-            kind: FlowControlStackEntryKind::Scope { cleanups },
+            kind: FlowControlStackEntryKind::Scope { cleanups, .. },
         }) = self
             .fiber
             .control_stack
@@ -1115,7 +1117,7 @@ impl Engine {
             .root_cleanups
             .retain(|cleanup| cleanup.key != key);
         for entry in &mut self.fiber.control_stack {
-            if let FlowControlStackEntryKind::Scope { cleanups } = &mut entry.kind {
+            if let FlowControlStackEntryKind::Scope { cleanups, .. } = &mut entry.kind {
                 cleanups.retain(|cleanup| cleanup.key != key);
             }
         }
@@ -1222,6 +1224,7 @@ impl Engine {
         self.fiber.control_stack.push(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::Scope {
                 cleanups: Vec::new(),
+                match_guard: None,
             },
         });
         match self.try_bind_pattern_owned(&pattern, item) {
@@ -1384,7 +1387,7 @@ impl Engine {
             return;
         }
         let Some(FlowControlStackEntry {
-            kind: FlowControlStackEntryKind::Scope { cleanups },
+            kind: FlowControlStackEntryKind::Scope { cleanups, .. },
         }) = self.fiber.control_stack.pop()
         else {
             return;

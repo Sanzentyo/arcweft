@@ -40,8 +40,8 @@ use arcweft_core::plan::{
     RuntimeChoiceOptionSeed, RuntimeDeferOwner, RuntimeDialogueContentPlanSeedId,
     RuntimeDropPolicySeed, RuntimeEffectFieldSeed, RuntimeEffectSet, RuntimeEntryKind,
     RuntimeEntrySpec, RuntimeEvaluatedEffectSeed, RuntimeExecutableBodySeed, RuntimeExprSeed,
-    RuntimeExprSeedKind, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
-    RuntimeFormatAttemptSeedId, RuntimeFunctionInputBindingSeed,
+    RuntimeExprSeedKind, RuntimeFlowMatchArmSeed, RuntimeFlowMatchGuardSeed, RuntimeFlowOpSeed,
+    RuntimeFlowSeed, RuntimeFormatAttemptSeedId, RuntimeFunctionInputBindingSeed,
     RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionInputSource,
     RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteBodySeed, RuntimeFunctionSiteDeclarationSeed,
     RuntimeFunctionSiteSeedId, RuntimeIteratorEvidenceSeed, RuntimeIteratorWitnessEvidenceSeed,
@@ -3682,6 +3682,51 @@ fn define_project_default_function_sites(
     }
 }
 
+fn exported_program_bindings(
+    context: &FinalLoweringContext<'_, '_>,
+    scope: RuntimeScopedExecutableSemanticFactView<'_>,
+    bindings: &[arcweft_lang_sema::final_analysis::CheckedExecutableCapture],
+    result: &crate::semantic_facts::RuntimeNormalizedType,
+) -> Result<RuntimeExprSeed, RuntimePlanLowerError> {
+    let fields = match result.shape() {
+        RuntimeTypeShape::Unit if bindings.is_empty() => {
+            return Ok(RuntimeExprSeed::new(
+                result.identity(),
+                RuntimeExprSeedKind::Value(RuntimeValue::Unit),
+            ));
+        }
+        RuntimeTypeShape::Tuple(types) if types.len() == bindings.len() && !types.is_empty() => {
+            types
+        }
+        _ => {
+            return Err(RuntimePlanLowerError::new(
+                "owned program outputs disagree with result ABI",
+            ));
+        }
+    };
+    let locals = context.executable_locals(scope.scope())?;
+    let values = bindings
+        .iter()
+        .zip(fields)
+        .map(|(binding, ty)| {
+            let local = locals
+                .get(&binding.local())
+                .ok_or_else(|| RuntimePlanLowerError::new("owned output has no admitted local"))?;
+            Ok(RuntimeExprSeed::new(
+                ty.identity(),
+                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                    local.clone(),
+                    RuntimeLocalReadMode::Move,
+                )),
+            ))
+        })
+        .collect::<Result<Vec<_>, RuntimePlanLowerError>>()?;
+    Ok(RuntimeExprSeed::new(
+        result.identity(),
+        RuntimeExprSeedKind::Tuple(values.into_boxed_slice()),
+    ))
+}
+
 fn define_pure_programs(
     context: &FinalLoweringContext<'_, '_>,
     definitions: &[ReservedPureProgramDefinition<'_>],
@@ -3696,7 +3741,8 @@ fn define_pure_programs(
         let body = (|| -> Result<RuntimeFunctionSiteBodySeed, RuntimePlanLowerError> {
             let module_id = match program.source() {
                 CheckedExecutionSource::ExportBinding(owner) => owner.module(),
-                CheckedExecutionSource::EvaluateValue(owner)
+                CheckedExecutionSource::SelectMatch(owner)
+                | CheckedExecutionSource::EvaluateValue(owner)
                 | CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(
                     owner,
                 )) => owner.module(),
@@ -3729,53 +3775,107 @@ fn define_pure_programs(
                 definition.body_kind == RuntimeFunctionSiteBodyKind::Expression;
             let ops = match program.source() {
                 CheckedExecutionSource::ExportBinding(statement) => {
-                    let fields = if abi.binding_outputs().is_empty() {
-                        Vec::new()
-                    } else {
-                        let RuntimeTypeShape::Tuple(types) = program.result().shape() else {
-                            return Err(RuntimePlanLowerError::new(
-                                "binding export has no tuple result contract",
-                            ));
-                        };
-                        if types.len() != abi.binding_outputs().len() {
-                            return Err(RuntimePlanLowerError::new(
-                                "binding export output arity disagrees with ABI",
-                            ));
-                        }
-                        let locals = context.executable_locals(definition.scope.scope())?;
-                        abi.binding_outputs()
-                            .iter()
-                            .zip(types)
-                            .map(|(binding, ty)| {
-                                let local = locals.get(&binding.local()).ok_or_else(|| {
-                                    RuntimePlanLowerError::new(
-                                        "binding output has no admitted local",
-                                    )
-                                })?;
-                                Ok(RuntimeExprSeed::new(
-                                    ty.identity(),
-                                    RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                                        local.clone(),
-                                        RuntimeLocalReadMode::Move,
-                                    )),
-                                ))
-                            })
-                            .collect::<Result<Vec<_>, RuntimePlanLowerError>>()?
-                    };
-                    let result = if fields.is_empty() {
-                        RuntimeExprSeedKind::Value(RuntimeValue::Unit)
-                    } else {
-                        RuntimeExprSeedKind::Tuple(fields.into_boxed_slice())
-                    };
+                    let result = exported_program_bindings(
+                        context,
+                        definition.scope,
+                        abi.binding_outputs(),
+                        program.result(),
+                    )?;
                     flow.lower_statement_ids_with_tail(
                         &[*statement],
                         RuntimeFlowTail::PreparedOps(
-                            vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
-                                program.result().identity(),
-                                result,
-                            ))]
-                            .into_boxed_slice(),
+                            vec![RuntimeFlowOpSeed::ReturnExpr(result)].into_boxed_slice(),
                         ),
+                    )?
+                }
+                CheckedExecutionSource::SelectMatch(owner) => {
+                    let expression = module
+                        .resolve_expr(*owner)
+                        .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
+                    let HirExprKind::Match(matched) = expression.kind() else {
+                        return Err(RuntimePlanLowerError::new("selector source is not a Match"));
+                    };
+                    let selection = abi.match_selection().ok_or_else(|| {
+                        RuntimePlanLowerError::new("selector has no issued Match output layout")
+                    })?;
+                    let RuntimeTypeShape::Tuple(result_fields) = program.result().shape() else {
+                        return Err(RuntimePlanLowerError::new("selector has no tuple result"));
+                    };
+                    let [tag, payload] = result_fields.as_ref() else {
+                        return Err(RuntimePlanLowerError::new(
+                            "selector has no tagged output contract",
+                        ));
+                    };
+                    if selection.outputs().len() != matched.arms().len() {
+                        return Err(RuntimePlanLowerError::new(
+                            "selector case inventory disagrees with ABI",
+                        ));
+                    }
+                    let payloads = match payload.shape() {
+                        RuntimeTypeShape::Choice(alternatives) => alternatives
+                            .iter()
+                            .map(|ty| (ty.identity(), ty))
+                            .collect::<BTreeMap<_, _>>(),
+                        _ => BTreeMap::from([(payload.identity(), payload)]),
+                    };
+                    let mut arms = Vec::new();
+                    for (index, arm) in matched.arms().iter().enumerate() {
+                        let payload_type = selection.payload_type(index).ok_or_else(|| {
+                            RuntimePlanLowerError::new("selector output case is absent")
+                        })?;
+                        let identity = arcweft_id::RuntimeSemanticTypeId::from_semantic_digest(
+                            *abi.environment()
+                                .semantic_type_identity(&payload_type)
+                                .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?
+                                .as_bytes(),
+                        );
+                        let payload_type = payloads.get(&identity).ok_or_else(|| {
+                            RuntimePlanLowerError::new(
+                                "selector output type is absent from its Choice",
+                            )
+                        })?;
+                        let value = exported_program_bindings(
+                            context,
+                            definition.scope,
+                            &selection.outputs()[index],
+                            payload_type,
+                        )?;
+                        let ordinal = u32::try_from(index).map_err(|_| {
+                            RuntimePlanLowerError::new("selector arm ordinal exceeds u32")
+                        })?;
+                        let values = vec![
+                            RuntimeExprSeed::new(
+                                tag.identity(),
+                                RuntimeExprSeedKind::Value(RuntimeValue::UInt(
+                                    arcweft_core::value::RuntimeUInt::U32(ordinal),
+                                )),
+                            ),
+                            value,
+                        ];
+                        arms.push(RuntimeFlowMatchArmSeed {
+                            pattern: flow
+                                .pattern_lowerer()
+                                .lower(arm.pattern())
+                                .map_err(RuntimePlanLowerError::new)?,
+                            guard: arm
+                                .guard()
+                                .map(|guard| {
+                                    flow.lower_match_guard(
+                                        guard,
+                                        matched.scrutinee(),
+                                        BTreeMap::new(),
+                                    )
+                                })
+                                .transpose()?,
+                            ops: vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                                program.result().identity(),
+                                RuntimeExprSeedKind::Tuple(values.into_boxed_slice()),
+                            ))],
+                        });
+                    }
+                    flow.lower_flow_value(
+                        matched.scrutinee(),
+                        RuntimeFlowValueContinuation::Match { arms },
                     )?
                 }
                 CheckedExecutionSource::EvaluateValue(owner) => {
@@ -5372,6 +5472,13 @@ struct FinalFlowLowerer<'a> {
 
 #[derive(Clone)]
 enum RuntimeFlowValueContinuation {
+    Match {
+        arms: Vec<RuntimeFlowMatchArmSeed>,
+    },
+    If {
+        then_ops: Vec<RuntimeFlowOpSeed>,
+        else_ops: Vec<RuntimeFlowOpSeed>,
+    },
     Specialize {
         owner: ExprId,
         outer: Box<Self>,
@@ -6284,18 +6391,18 @@ impl<'a> FinalFlowLowerer<'a> {
                 *choice,
                 RuntimeFlowValueContinuation::Ignore(RuntimeFlowTail::None),
             ),
-            HirStmtKind::If(branch) => Ok(vec![RuntimeFlowOpSeed::If {
-                condition: self
-                    .expr_lowerer()
-                    .lower(branch.condition())
-                    .map_err(RuntimePlanLowerError::new)?,
-                then_ops: self.lower_contextual_body(branch.then_body())?,
-                else_ops: branch
+            HirStmtKind::If(branch) => {
+                let then_ops = self.lower_contextual_body(branch.then_body())?;
+                let else_ops = branch
                     .else_branch()
                     .map(|branch| self.lower_else_branch(branch))
                     .transpose()?
-                    .unwrap_or_default(),
-            }]),
+                    .unwrap_or_default();
+                self.lower_flow_value(
+                    branch.condition(),
+                    RuntimeFlowValueContinuation::If { then_ops, else_ops },
+                )
+            }
             HirStmtKind::IfLet(branch) => Ok(vec![RuntimeFlowOpSeed::IfLet {
                 pattern: self
                     .pattern_lowerer()
@@ -6338,21 +6445,16 @@ impl<'a> FinalFlowLowerer<'a> {
                         guard: arm
                             .guard()
                             .map(|guard| {
-                                self.expr_lowerer()
-                                    .lower_guard(guard)
-                                    .map_err(RuntimePlanLowerError::new)
+                                self.lower_match_guard(guard, matched.scrutinee(), BTreeMap::new())
                             })
                             .transpose()?,
                         ops,
                     });
                 }
-                Ok(vec![RuntimeFlowOpSeed::Match {
-                    scrutinee: self
-                        .expr_lowerer()
-                        .lower(matched.scrutinee())
-                        .map_err(RuntimePlanLowerError::new)?,
-                    arms,
-                }])
+                self.lower_flow_value(
+                    matched.scrutinee(),
+                    RuntimeFlowValueContinuation::Match { arms },
+                )
             }
             HirStmtKind::While(while_stmt) => Ok(vec![RuntimeFlowOpSeed::While {
                 condition: self
@@ -6594,6 +6696,62 @@ impl<'a> FinalFlowLowerer<'a> {
             }
         }
         Ok(false)
+    }
+
+    fn lower_match_guard(
+        &mut self,
+        owner: ExprId,
+        scrutinee: ExprId,
+        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+    ) -> Result<RuntimeFlowMatchGuardSeed, RuntimePlanLowerError> {
+        let ty = self.expression_type(owner)?.clone();
+        let candidate = self
+            .control
+            .expression_values
+            .get(&scrutinee)
+            .cloned()
+            .ok_or_else(|| RuntimePlanLowerError::new("guard has no admitted candidate local"))?;
+        let copy_locals = self
+            .expr_lowerer()
+            .guard_copy_locals(owner)
+            .map_err(RuntimePlanLowerError::new)?
+            .into_boxed_slice();
+        let (ops, condition) = if matches!(ty.shape(), RuntimeTypeShape::Never) {
+            (
+                self.lower_flow_value_with_overrides(
+                    owner,
+                    RuntimeFlowValueContinuation::Ignore(RuntimeFlowTail::None),
+                    overrides,
+                )?,
+                None,
+            )
+        } else {
+            let result = self
+                .control
+                .guard_values
+                .get(&owner)
+                .cloned()
+                .ok_or_else(|| RuntimePlanLowerError::new("guard has no admitted result local"))?;
+            let ops = self.lower_flow_value_with_overrides(
+                owner,
+                RuntimeFlowValueContinuation::Bind {
+                    pattern: bind_seed(&ty, result.clone()),
+                    tail: RuntimeFlowTail::None,
+                },
+                overrides,
+            )?;
+            (
+                ops,
+                Some(local_seed(&ty, result, RuntimeLocalReadMode::Move)),
+            )
+        };
+        Ok(RuntimeFlowMatchGuardSeed {
+            candidate,
+            result: ty.identity(),
+            condition,
+            copy_locals,
+            ops,
+        })
     }
 
     fn lower_flow_value(
@@ -7791,6 +7949,19 @@ impl<'a> FinalFlowLowerer<'a> {
         continuation: RuntimeFlowValueContinuation,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         Ok(match continuation {
+            RuntimeFlowValueContinuation::Match { arms } => {
+                vec![RuntimeFlowOpSeed::Match {
+                    scrutinee: value,
+                    arms,
+                }]
+            }
+            RuntimeFlowValueContinuation::If { then_ops, else_ops } => {
+                vec![RuntimeFlowOpSeed::If {
+                    condition: value,
+                    then_ops,
+                    else_ops,
+                }]
+            }
             RuntimeFlowValueContinuation::Specialize { owner, outer } => {
                 let value = self
                     .expr_lowerer()

@@ -55,6 +55,7 @@ pub enum ViewInstruction {
     EmitCustom(ViewCustomSpec),
     CallView(ViewCall),
     Branch(ViewBranch),
+    Match(crate::ViewMatchProgram),
     RepeatKeyed(ViewRepeat),
     Await(ViewAwait),
     BeginScope,
@@ -726,6 +727,7 @@ fn validate_handlers(
                 }
             }
             ViewInstruction::Branch(_)
+            | ViewInstruction::Match(_)
             | ViewInstruction::RepeatKeyed(_)
             | ViewInstruction::Await(_)
             | ViewInstruction::BindLocal(_) => target = None,
@@ -790,6 +792,7 @@ impl ViewInstruction {
             Self::CallView(_) => Some(ViewPartInstructionKind::CallView),
             Self::CloseElement
             | Self::Branch(_)
+            | Self::Match(_)
             | Self::RepeatKeyed(_)
             | Self::Await(_)
             | Self::BindLocal(_)
@@ -810,6 +813,7 @@ impl ViewInstruction {
             Self::CallView(call) => call.part,
             Self::CloseElement
             | Self::Branch(_)
+            | Self::Match(_)
             | Self::RepeatKeyed(_)
             | Self::Await(_)
             | Self::BindLocal(_)
@@ -830,6 +834,7 @@ impl ViewInstruction {
             Self::CallView(call) => call.part = Some(part),
             Self::CloseElement
             | Self::Branch(_)
+            | Self::Match(_)
             | Self::RepeatKeyed(_)
             | Self::Await(_)
             | Self::BindLocal(_)

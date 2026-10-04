@@ -951,6 +951,7 @@ fn remap_program_references(
         | ViewProgramInstruction::EndScope
         | ViewProgramInstruction::CallView { .. }
         | ViewProgramInstruction::Branch { .. }
+        | ViewProgramInstruction::Match { .. }
         | ViewProgramInstruction::BindLocal { .. }
         | ViewProgramInstruction::EmitText { .. }
         | ViewProgramInstruction::EmitImage { .. }

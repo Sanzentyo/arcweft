@@ -103,6 +103,21 @@ View の `if` 式・statement、`else if` は通常の checked bool 式を条件
 Core signature の結果が bool であることを確認する。失敗した arm は部分的な frame
 を公開せず、cache hit／cold restore でも評価結果と operation cost を保つ。
 
+View の `match` は、Core が発行する選択 program に scrutinee と guard の
+canonical input を渡す。通常の checked pattern が arm を選び、結果は U32 の
+source-order ordinal と、その arm の所有する binding tuple（binding がなければ
+Unit）を運ぶ。payload 型は既存の構造的 Choice で閉じ、arm 数の二乗の出力を
+作らない。View は pattern を再解釈せず、選択された region にだけ binding を導入する。
+Bundle は program signature、各 arm の exact output 型、全体で一意な output ordinal、
+contiguous region と lexical scope を同じ authority で検証する。
+
+guard 内の関数呼び出しは通常の Core flow 命令と関数 frame で Bool を計算する。
+Never を返す guard の制御移動は enclosing owner に属し、条件の評価へ戻らない。
+候補の値は guard の間は型付き slot が所有し、使用する pattern local だけを
+checked Copy 証拠で投影する。false なら次の候補、true なら選択 arm へ値を移す。
+失敗・unwind では guard を再実行せず、通常の scope／cleanup 境界に従う。
+guard／arm の失敗は部分 frame を公開せず、cache と restore はこの意味論と予算を保つ。
+
 `Button` の label は String、enabled は bool であり、省略時の宣言値はそれぞれ
 空文字列と true。位置引数と名前付き引数は同じ typed role に束縛し、未知・重複・
 型不一致の引数を拒否する。supplied expression は authored order で評価し、

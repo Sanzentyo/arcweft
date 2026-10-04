@@ -18,6 +18,7 @@ pub(super) struct ControlLocals {
     pub(super) tries: BTreeMap<ExprId, TryLocalSeeds>,
     pub(super) pipes: BTreeMap<ExprId, RuntimeLocalSeedId>,
     pub(super) expression_values: BTreeMap<ExprId, RuntimeLocalSeedId>,
+    pub(super) guard_values: BTreeMap<ExprId, RuntimeLocalSeedId>,
     pub(super) expression_final_values: BTreeMap<ExprId, RuntimeLocalSeedId>,
     pub(super) scopes: BTreeMap<RuntimeScopeOwner, ScopeLocalSeeds>,
 }
@@ -28,6 +29,7 @@ enum ControlLocal {
     Pipe,
     ExpressionValue,
     ExpressionFinalValue,
+    GuardValue,
 }
 
 impl ControlLocals {
@@ -56,6 +58,12 @@ impl ControlLocals {
             seeds.push(declaration(expression_value_type));
             if expression_value_type.identity() != ty.identity() {
                 owners.push((owner, ControlLocal::ExpressionFinalValue));
+                seeds.push(declaration(ty));
+            }
+            if facts.is_pattern_guard(owner)
+                && !matches!(ty.shape(), crate::semantic_facts::RuntimeTypeShape::Never)
+            {
+                owners.push((owner, ControlLocal::GuardValue));
                 seeds.push(declaration(ty));
             }
             if facts.awaited(owner).is_some() {
@@ -137,6 +145,7 @@ impl ControlLocals {
                         .is_some()
                 }
                 ControlLocal::Pipe => result.pipes.insert(owner, local).is_some(),
+                ControlLocal::GuardValue => result.guard_values.insert(owner, local).is_some(),
                 ControlLocal::ExpressionValue => {
                     result.expression_values.insert(owner, local).is_some()
                 }

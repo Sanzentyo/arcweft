@@ -91,7 +91,7 @@ impl Engine {
     ) {
         while let Some(entry) = self.fiber.control_stack.pop() {
             match entry.kind {
-                FlowControlStackEntryKind::Scope { cleanups } => {
+                FlowControlStackEntryKind::Scope { cleanups, .. } => {
                     self.fiber.env.pop_scope();
                     self.emit_scope_cleanups(cleanups, output, pure_backend);
                 }

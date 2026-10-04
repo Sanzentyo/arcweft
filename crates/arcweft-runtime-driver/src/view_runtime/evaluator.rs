@@ -1467,6 +1467,81 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 )
             })?;
             match instruction {
+                ViewProgramInstruction::Match { program, .. } => {
+                    let failure = || {
+                        EvaluationFailure::new(
+                            BundleViewDiagnosticCode::InvalidValueProgram,
+                            Some(cursor),
+                            "Match selector result disagrees with its arm output contract",
+                        )
+                    };
+                    let ranges = program
+                        .ranges(
+                            u32::try_from(cursor).map_err(|_| failure())?,
+                            u32::try_from(end).map_err(|_| failure())?,
+                        )
+                        .ok_or_else(failure)?;
+                    let result = self.evaluate_expression_program(
+                        &key.handle,
+                        definition,
+                        mounted,
+                        cursor,
+                        &program.execution,
+                    )?;
+                    let RuntimeValue::Tuple(result) = result else {
+                        return Err(failure());
+                    };
+                    let [tag, value]: [RuntimeValue; 2] =
+                        result.try_into().map_err(|_| failure())?;
+                    let RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::U32(index)) = tag
+                    else {
+                        return Err(failure());
+                    };
+                    let index = usize::try_from(index).map_err(|_| failure())?;
+                    if index >= program.arms.len() {
+                        return Err(failure());
+                    }
+                    let outputs = &program.arms[index].outputs;
+                    let values = match value {
+                        RuntimeValue::Unit if outputs.is_empty() => Vec::new(),
+                        RuntimeValue::Tuple(values) if values.len() == outputs.len() => values,
+                        _ => return Err(failure()),
+                    };
+                    let ViewProgramRuntimeAuthority::Awbc(owner) = self.program_runtime else {
+                        return Err(failure());
+                    };
+                    for (output, value) in outputs.iter().zip(&values) {
+                        if !owner
+                            .semantic_type_id(output.value_type)
+                            .is_some_and(|ty| owner.value_matches_type(value, ty))
+                        {
+                            return Err(failure());
+                        }
+                    }
+                    let prior_depth = mounted.execution_locals.len();
+                    mounted.execution_locals.push(
+                        outputs
+                            .iter()
+                            .zip(values)
+                            .map(|(output, value)| (output.coordinate, value))
+                            .collect(),
+                    );
+                    let range = ranges.arms()[index];
+                    let result = self.execute_span(
+                        key,
+                        definition,
+                        mounted,
+                        structural_path,
+                        range.start as usize,
+                        range.end as usize,
+                        depth,
+                        builder,
+                        descendants,
+                    );
+                    mounted.execution_locals.truncate(prior_depth);
+                    result?;
+                    cursor = ranges.continuation() as usize;
+                }
                 ViewProgramInstruction::Branch {
                     condition: program,
                     then_span,

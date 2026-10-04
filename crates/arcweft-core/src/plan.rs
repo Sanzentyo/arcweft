@@ -48,7 +48,7 @@ pub use construction::{
     RuntimeDialogueResultTargetSeedError, RuntimeDialogueValueSiteSeed, RuntimeDropPolicySeed,
     RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed, RuntimeExecutableBodySeed,
     RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed,
-    RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
+    RuntimeFlowMatchArmSeed, RuntimeFlowMatchGuardSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
     RuntimeFormatAttemptDeclarationSeed, RuntimeFormatAttemptOperandSeed,
     RuntimeFormatAttemptSeedId, RuntimeFormatContentOperandSeed, RuntimeFunctionInputBindingSeed,
     RuntimeFunctionSiteBodySeed, RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
@@ -1512,7 +1512,16 @@ pub struct RuntimeHostCallTarget {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeMatchArm {
     pub pattern: RuntimePattern,
-    pub guard: Option<RuntimeExpr>,
+    pub guard: Option<RuntimeMatchGuard>,
+    pub ops: Vec<FlowOp>,
+}
+
+/// Shared flow guard: existing operations compute one final Bool condition.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeMatchGuard {
+    pub candidate: crate::runtime_id::RuntimeLocalDeclarationId,
+    pub condition: Option<RuntimeExpr>,
+    pub copy_locals: Box<[crate::runtime_id::RuntimeLocalDeclarationId]>,
     pub ops: Vec<FlowOp>,
 }
 
@@ -1522,8 +1531,6 @@ pub struct RuntimeAwaitPendingObserver {
     pub pattern: RuntimePattern,
     pub ops: Vec<FlowOp>,
 }
-
-pub(crate) type RuntimeMatchSelection = Option<(Vec<RuntimeLocalBinding>, Vec<FlowOp>)>;
 
 /// Runtime choice option visible to adapters and selectable from `RuntimeStepInput`.
 #[derive(Clone, Debug, PartialEq)]

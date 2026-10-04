@@ -821,6 +821,7 @@ pub enum RuntimePatternKind {
     Literal(RuntimeValue),
     Entity(RuntimeEntityReference),
     Tuple(Box<[RuntimePattern]>),
+    Or(Box<[RuntimePattern]>),
     Record {
         fields: Box<[RuntimeRecordPatternField]>,
         rest: RuntimePatternRest,
@@ -1592,6 +1593,14 @@ fn collect_copy_guard_bindings(
         }
     };
     match pattern.kind() {
+        RuntimePatternKind::Or(alternatives) => {
+            if let Some(selected) = alternatives
+                .iter()
+                .find(|pattern| pattern_matches_view(pattern, value))
+            {
+                collect_copy_guard_bindings(selected, value, required, bindings);
+            }
+        }
         RuntimePatternKind::Bind { binding, .. } | RuntimePatternKind::Typed { binding } => {
             add(binding, value, bindings);
         }
@@ -1683,6 +1692,10 @@ fn runtime_pattern_binding_ownership_view(
 ) -> Option<crate::value::ownership::RuntimeValueOwnership> {
     use crate::value::ownership::RuntimeValueOwnership;
     match pattern.kind() {
+        RuntimePatternKind::Or(alternatives) => alternatives
+            .iter()
+            .find(|pattern| pattern_matches_view(pattern, value))
+            .and_then(|selected| runtime_pattern_binding_ownership_view(selected, value, local)),
         RuntimePatternKind::Bind { binding, .. } | RuntimePatternKind::Typed { binding } => {
             (binding.local() == local).then(|| value.ownership())
         }
@@ -1774,6 +1787,9 @@ pub(crate) fn runtime_pattern_contains_binding(
     local: RuntimeLocalDeclarationId,
 ) -> bool {
     match pattern.kind() {
+        RuntimePatternKind::Or(alternatives) => alternatives
+            .first()
+            .is_some_and(|pattern| runtime_pattern_contains_binding(pattern, local)),
         RuntimePatternKind::Bind { binding, .. } | RuntimePatternKind::Typed { binding } => {
             binding.local() == local
         }
@@ -1825,6 +1841,14 @@ fn collect_pattern_handle_destinations(
     destinations: &mut Vec<RuntimeLocalDeclarationId>,
 ) -> Result<(), crate::value::ownership::RuntimeAffineLineHandleError> {
     match pattern.kind() {
+        RuntimePatternKind::Or(alternatives) => {
+            if let Some(selected) = alternatives
+                .iter()
+                .find(|pattern| pattern_matches_view(pattern, value))
+            {
+                collect_pattern_handle_destinations(selected, value, token, destinations)?;
+            }
+        }
         RuntimePatternKind::Bind { binding, .. } | RuntimePatternKind::Typed { binding } => {
             if value.contains_line_handle(token)? {
                 destinations.push(binding.local());
@@ -1963,6 +1987,9 @@ fn pattern_matches_borrowed(pattern: &RuntimePattern, value: &RuntimeValue) -> b
 
 fn pattern_matches_view(pattern: &RuntimePattern, value: RuntimeValueView<'_>) -> bool {
     match pattern.kind() {
+        RuntimePatternKind::Or(alternatives) => alternatives
+            .iter()
+            .any(|pattern| pattern_matches_view(pattern, value)),
         RuntimePatternKind::Bind { .. }
         | RuntimePatternKind::Typed { .. }
         | RuntimePatternKind::Discard => true,
@@ -2106,6 +2133,12 @@ fn check_owned_pattern_overlap_view(
     value: RuntimeValueView<'_>,
 ) -> Result<(), RuntimePatternMatchError> {
     match pattern.kind() {
+        RuntimePatternKind::Or(alternatives) => alternatives
+            .iter()
+            .find(|pattern| pattern_matches_view(pattern, value))
+            .map_or(Ok(()), |pattern| {
+                check_owned_pattern_overlap_view(pattern, value)
+            }),
         RuntimePatternKind::Whole { pattern: inner, .. } => {
             if pattern_binding_capacity(inner) != 0 && !value.ownership().permits_copy() {
                 return Err(RuntimePatternMatchError::AffineBindingOverlap);
@@ -2188,6 +2221,13 @@ fn collect_pattern_bindings_owned(
     bindings: &mut Vec<RuntimeLocalBinding>,
 ) {
     match pattern.kind() {
+        RuntimePatternKind::Or(alternatives) => {
+            let selected = alternatives
+                .iter()
+                .find(|pattern| pattern_matches_borrowed(pattern, &value))
+                .expect("preflight selected an Or alternative");
+            collect_pattern_bindings_owned(selected, value, bindings);
+        }
         RuntimePatternKind::Bind { binding, .. } | RuntimePatternKind::Typed { binding } => {
             bindings.push(RuntimeLocalBinding {
                 local: binding.local(),
@@ -2301,6 +2341,9 @@ fn collect_pattern_bindings_owned(
 
 pub(crate) fn pattern_binding_capacity(pattern: &RuntimePattern) -> usize {
     let direct = match pattern.kind() {
+        RuntimePatternKind::Or(alternatives) => {
+            alternatives.first().map_or(0, pattern_binding_capacity)
+        }
         RuntimePatternKind::Bind { .. } | RuntimePatternKind::Typed { .. } => 1,
         RuntimePatternKind::Discard
         | RuntimePatternKind::Literal(_)
@@ -2399,6 +2442,27 @@ fn validate_pattern_node(
         .get(pattern.ty())
         .ok_or(RuntimePatternMatchError::UnknownType { ty: pattern.ty() })?;
     match pattern.kind() {
+        RuntimePatternKind::Or(alternatives) => {
+            if alternatives.len() < 2 {
+                return Err(RuntimePatternMatchError::InvalidKind { ty: pattern.ty() });
+            }
+            let initial = locals.clone();
+            let mut shared = None;
+            for alternative in alternatives {
+                validate_child_type(pattern.ty(), alternative.ty())?;
+                let mut current = initial.clone();
+                validate_pattern_node(plan, alternative, path, &mut current)?;
+                if let Some(expected) = &shared {
+                    if expected != &current {
+                        return Err(RuntimePatternMatchError::InvalidKind { ty: pattern.ty() });
+                    }
+                } else {
+                    shared = Some(current);
+                }
+            }
+            *locals = shared.expect("at least two alternatives");
+            Ok(())
+        }
         RuntimePatternKind::Bind { binding, .. } | RuntimePatternKind::Typed { binding } => {
             validate_binding(plan, pattern.ty(), path, binding, locals)
         }
@@ -2725,6 +2789,14 @@ fn collect_pattern_bindings(
     bindings: &mut Vec<RuntimeLocalBinding>,
 ) -> Result<bool, RuntimePatternMatchError> {
     match pattern.kind() {
+        RuntimePatternKind::Or(alternatives) => {
+            for alternative in alternatives {
+                if pattern_matches_borrowed(alternative, value) {
+                    return collect_pattern_bindings(plan, alternative, value, bindings);
+                }
+            }
+            Ok(false)
+        }
         RuntimePatternKind::Bind { binding, .. } | RuntimePatternKind::Typed { binding } => {
             bindings.push(RuntimeLocalBinding {
                 local: binding.local(),

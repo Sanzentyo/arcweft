@@ -7,6 +7,7 @@ mod context_callback_execution;
 mod format_content_execution;
 mod instruction_call_execution;
 mod local_assignment;
+mod or_patterns;
 mod record_shapes;
 use super::fiber::{
     AwbcFiberStateSnapshot, FiberResumeTarget, FiberReturnContinuation, FiberScopeCleanup,

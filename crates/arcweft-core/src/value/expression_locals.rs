@@ -291,6 +291,11 @@ fn collect_pattern_bindings(pattern: &RuntimePattern, bound: &mut Vec<RuntimeLoc
         RuntimePatternKind::Discard
         | RuntimePatternKind::Literal(_)
         | RuntimePatternKind::Entity(_) => {}
+        RuntimePatternKind::Or(items) => {
+            if let Some(first) = items.first() {
+                collect_pattern_bindings(first, bound);
+            }
+        }
         RuntimePatternKind::Tuple(items) => {
             for item in items {
                 collect_pattern_bindings(item, bound);

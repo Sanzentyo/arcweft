@@ -6,8 +6,7 @@ use crate::observation::RuntimeObservationState;
 use crate::pattern::RuntimePattern;
 use crate::plan::{
     ChoiceRuntimeOption, EntryRuntimeId, FlowEvent, FlowOp, FlowRuntimeId, RuntimeEntryTarget,
-    RuntimeFlow, RuntimeFunctionInputSource, RuntimeFunctionSiteBody, RuntimeMatchArm,
-    RuntimeMatchSelection, RuntimePlan,
+    RuntimeFlow, RuntimeFunctionInputSource, RuntimeFunctionSiteBody, RuntimePlan,
 };
 use crate::pure::{RuntimeCallBackend, VmPureFunctionScratch, VmRuntimePureCallBackend};
 use crate::root::{
@@ -604,6 +603,7 @@ impl FlowScopeCleanup {
 pub(crate) enum FlowControlStackEntryKind {
     Scope {
         cleanups: Vec<FlowScopeCleanup>,
+        match_guard: Option<flow::match_guard::NativeMatchGuardContinuation>,
     },
     Loop {
         body: std::sync::Arc<[FlowOp]>,
@@ -3800,7 +3800,7 @@ impl Engine {
     ) {
         let frames = std::mem::take(&mut self.fiber.control_stack);
         for frame in frames.into_iter().rev() {
-            if let FlowControlStackEntryKind::Scope { cleanups } = frame.kind {
+            if let FlowControlStackEntryKind::Scope { cleanups, .. } = frame.kind {
                 self.emit_scope_cleanups(cleanups, output, pure_backend);
             }
         }

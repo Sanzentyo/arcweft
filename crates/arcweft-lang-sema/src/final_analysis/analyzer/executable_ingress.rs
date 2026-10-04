@@ -257,9 +257,27 @@ impl Analyzer<'_, '_, '_> {
             declaration.expressions(),
             &mut self.facts,
         )?;
-        self.complete_declaration_statements(declaration)?;
+        let expression_ancestors = {
+            let view = self
+                .topology
+                .declaration(&declaration.declaration)
+                .map_err(|_| FinalSemanticAnalysisError::InvalidCallableOwner)?;
+            declaration
+                .expressions
+                .iter()
+                .filter_map(|owner| {
+                    view.paths()
+                        .expression(*owner)
+                        .map(|path| path.steps().to_vec())
+                })
+                .collect::<BTreeSet<_>>()
+        };
+        // Complete declaration-owned statements first. Expression-owned
+        // statements require their parent's contextual transaction to finish.
+        self.complete_declaration_statements(declaration, &expression_ancestors, false)?;
         self.validate_declaration_body_result(&declaration.declaration)?;
-        self.complete_declaration_expression_roots(declaration)?;
+        self.complete_declaration_expression_roots(declaration, &expression_ancestors)?;
+        self.complete_declaration_statements(declaration, &expression_ancestors, true)?;
         super::statement_scrutinee::validate_choice_event_scrutinees(
             &self.modules,
             &self.types,
@@ -285,9 +303,31 @@ impl Analyzer<'_, '_, '_> {
         self.finalize_declaration_locals(declaration)
     }
 
+    fn has_expression_ancestor_in_body(
+        path: &[arcweft_lang_hir::project::HirSemanticPathStep],
+        expressions: &BTreeSet<Vec<arcweft_lang_hir::project::HirSemanticPathStep>>,
+    ) -> bool {
+        use arcweft_lang_hir::body_edges::HirBodyChildRole;
+        use arcweft_lang_hir::project::HirSemanticPathStep;
+        // Thread items are independently checked body roots. Their lexical
+        // container does not evaluate those expressions in its transaction.
+        let floor = path
+            .iter()
+            .rposition(|step| {
+                matches!(
+                    step,
+                    HirSemanticPathStep::Body(HirBodyChildRole::ThreadItem { .. })
+                )
+            })
+            .map_or(1, |index| index + 1);
+        (floor..path.len()).any(|length| expressions.contains(&path[..length]))
+    }
+
     fn complete_declaration_statements(
         &mut self,
         declaration: &PreparedExecutableDeclaration,
+        expression_ancestors: &BTreeSet<Vec<arcweft_lang_hir::project::HirSemanticPathStep>>,
+        expression_owned: bool,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let statements = {
             let module = self.module(declaration.module)?;
@@ -310,6 +350,20 @@ impl Analyzer<'_, '_, '_> {
                 .candidate_provenance()
                 .contains(SyntheticOwner::Stmt(owner))
             {
+                continue;
+            }
+            let nested_in_expression = {
+                let view = self
+                    .topology
+                    .declaration(&declaration.declaration)
+                    .map_err(|_| FinalSemanticAnalysisError::InvalidCallableOwner)?;
+                let path = view
+                    .paths()
+                    .statement(owner)
+                    .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+                Self::has_expression_ancestor_in_body(path.steps(), expression_ancestors)
+            };
+            if nested_in_expression != expression_owned {
                 continue;
             }
             self.control.check()?;
@@ -344,6 +398,7 @@ impl Analyzer<'_, '_, '_> {
     fn complete_declaration_expression_roots(
         &mut self,
         declaration: &PreparedExecutableDeclaration,
+        expression_ancestors: &BTreeSet<Vec<arcweft_lang_hir::project::HirSemanticPathStep>>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let mut contextual_arguments = BTreeSet::new();
         let module = self.module(declaration.module)?;
@@ -366,25 +421,20 @@ impl Analyzer<'_, '_, '_> {
                 contextual_arguments.extend(call.arguments().iter().map(HirCallArgument::value));
             }
         }
-        let expression_set = expressions.iter().copied().collect::<BTreeSet<_>>();
-        let children = expressions
-            .iter()
-            .map(|owner| {
-                self.module(owner.module())?
-                    .resolve_expr(*owner)
-                    .map(|expression| expression.kind().direct_expression_children())
-                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)
-            })
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .flatten()
-            .filter(|owner| expression_set.contains(owner))
-            .collect::<BTreeSet<_>>();
-        for owner in expressions
+        let paths = self
+            .topology
+            .declaration(&declaration.declaration)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidCallableOwner)?;
+        let roots = expressions
             .iter()
             .copied()
-            .filter(|owner| !children.contains(owner))
-        {
+            .filter(|owner| {
+                paths.paths().expression(*owner).is_some_and(|path| {
+                    !Self::has_expression_ancestor_in_body(path.steps(), expression_ancestors)
+                })
+            })
+            .collect::<Vec<_>>();
+        for owner in roots {
             self.check_expression_published(owner, None)?;
         }
         for owner in contextual_arguments {

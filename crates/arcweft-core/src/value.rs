@@ -1636,7 +1636,8 @@ impl RuntimeExpr {
     }
 
     #[must_use]
-    pub(crate) fn guard_copy_locals(&self) -> &[RuntimeLocalDeclarationId] {
+    /// Pattern-local Copy leaves issued for this guard transaction.
+    pub fn guard_copy_locals(&self) -> &[RuntimeLocalDeclarationId] {
         &self.guard_copy_locals
     }
 

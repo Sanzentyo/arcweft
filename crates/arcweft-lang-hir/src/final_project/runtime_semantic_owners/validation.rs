@@ -270,6 +270,11 @@ fn root_kind_matches(
             .modules()
             .find(|(_, module)| module.module_id() == owner.module())
             .is_some_and(|(_, module)| module.resolve_stmt(*owner).is_ok()),
+        (
+            HirRuntimeReachabilityRootKind::CheckedProgram,
+            HirRuntimeExecutableOwner::MatchSelection(owner),
+        ) => resolve_expression_kind(project, *owner)
+            .is_some_and(|kind| matches!(kind, crate::expr::HirExprKind::Match(_))),
         (HirRuntimeReachabilityRootKind::CheckedFlow, HirRuntimeExecutableOwner::Item(owner)) => {
             resolve_item_kind(project, *owner)
                 .is_some_and(|kind| matches!(kind, HirItemKind::Flow(_)))
