@@ -140,7 +140,9 @@ impl ViewTextResource {
                 .iter()
                 .any(|entry| entry.public_id == *frame),
             ViewTextSourceKind::Dialogue { parameter, .. } => valid_identifier(parameter),
-            ViewTextSourceKind::Literal { .. } | ViewTextSourceKind::Localized { .. } => true,
+            ViewTextSourceKind::Program { .. }
+            | ViewTextSourceKind::Literal { .. }
+            | ViewTextSourceKind::Localized { .. } => true,
         });
         let valid_display_frames = self.display_frames.iter().all(|entry| {
             usize::try_from(entry.stage_index)
@@ -212,7 +214,8 @@ impl ViewTextResource {
 
 fn text_source_kind_public_ids(kind: &ViewTextSourceKind) -> impl Iterator<Item = String> + '_ {
     match kind {
-        ViewTextSourceKind::Literal { .. }
+        ViewTextSourceKind::Program { .. }
+        | ViewTextSourceKind::Literal { .. }
         | ViewTextSourceKind::Projection { .. }
         | ViewTextSourceKind::Local { .. }
         | ViewTextSourceKind::Dialogue { .. } => Vec::new(),

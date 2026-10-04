@@ -14,10 +14,10 @@ use arcweft_bundle::resource_codec::view::{
 
 impl<B: super::RuntimeCallBackend> ViewEvaluator<'_, B> {
     pub(super) fn resolve_text(
-        &self,
+        &mut self,
         handle: &PresentationHandleId,
         definition: &ViewDefinitionResource,
-        mounted: &MountedView,
+        mounted: &mut MountedView,
         source_id: &str,
         instruction: usize,
     ) -> Result<BundleViewTextOutput, EvaluationFailure> {
@@ -68,14 +68,33 @@ impl<B: super::RuntimeCallBackend> ViewEvaluator<'_, B> {
     }
 
     fn resolve_text_value(
-        &self,
+        &mut self,
         handle: &PresentationHandleId,
         definition: &ViewDefinitionResource,
-        mounted: &MountedView,
+        mounted: &mut MountedView,
         source: &ViewTextSourceKind,
         instruction: usize,
     ) -> Result<BundleViewTextValue, EvaluationFailure> {
         match source {
+            ViewTextSourceKind::Program { program } => {
+                let value = self.evaluate_expression_program(
+                    handle,
+                    definition,
+                    mounted,
+                    instruction,
+                    program,
+                )?;
+                let arcweft_core::value::RuntimeValue::String(value) = value else {
+                    return Err(EvaluationFailure::new(
+                        BundleViewDiagnosticCode::UnsupportedTextValue,
+                        Some(instruction),
+                        "text expression returned a non-String value",
+                    ));
+                };
+                Ok(BundleViewTextValue::Plain {
+                    value: value.to_string(),
+                })
+            }
             ViewTextSourceKind::Literal { value } => Ok(BundleViewTextValue::Plain {
                 value: value.clone(),
             }),

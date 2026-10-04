@@ -12,8 +12,8 @@ use arcweft_lang_hir::{
 use arcweft_lang_sema::{
     env::TypeCheckEnv,
     final_analysis::{
-        CheckedGuardSemantic, CheckedMatchLimitKind, CheckedMatchLimits, CheckedMatchQueryError,
-        CheckedMatchWitnessKind, CheckedMatchWitnessView, CheckedPatternCoordinateStep,
+        CheckedGuardSemantic, CheckedMatchLimitKind, CheckedMatchLimits, CheckedMatchWitnessKind,
+        CheckedMatchWitnessView, CheckedPatternCoordinateStep, CheckedSemanticTranscriptError,
         CheckedUnreachableReason, FinalSemanticAnalysis, FinalSemanticAnalysisControl,
         FinalSemanticAnalysisError, FinalSemanticCatalogs, analyze_final_project,
     },
@@ -193,7 +193,7 @@ fn public_checked_match_query_rejects_stale_project_generation() {
     );
     assert!(matches!(
         result,
-        Err(CheckedMatchQueryError::Generation(
+        Err(CheckedSemanticTranscriptError::Generation(
             FinalSemanticAnalysisError::GenerationMismatch
                 | FinalSemanticAnalysisError::SymbolGenerationMismatch
         ))
@@ -212,7 +212,7 @@ fn public_checked_match_query_returns_typed_nonexhaustive_witness() {
     );
     assert!(matches!(
         result,
-        Err(CheckedMatchQueryError::NonExhaustive { witness })
+        Err(CheckedSemanticTranscriptError::NonExhaustive { witness })
             if witness.kind() == CheckedMatchWitnessKind::Bool && witness.boolean() == Some(false)
     ));
 }
@@ -229,7 +229,7 @@ fn public_checked_match_witness_exposes_nested_record_children() {
         match_owner(&fixture),
         CheckedMatchLimits::PRODUCTION,
     );
-    let Err(CheckedMatchQueryError::NonExhaustive { witness }) = result else {
+    let Err(CheckedSemanticTranscriptError::NonExhaustive { witness }) = result else {
         panic!("record domain must have a structured witness: {result:?}");
     };
     let CheckedMatchWitnessView::Record { owner, fields } = witness.view() else {

@@ -106,17 +106,20 @@ impl ViewDefinitionIndex {
 impl ViewProgramCatalog {
     pub(crate) fn try_from_validated(
         product: &ValidatedViewProduct,
+        text: Option<&arcweft_bundle::resource_codec::ViewTextResource>,
     ) -> Result<Option<Self>, ViewProgramCatalogError> {
-        if product.program().is_some_and(|program| {
-            !program.resource().handlers.is_empty()
-                || program.resource().definitions.iter().any(|definition| {
-                    definition.parameter_contract.is_some()
-                        || definition
-                            .parameters
-                            .iter()
-                            .any(|parameter| parameter.default_program.is_some())
-                })
-        }) {
+        if text.is_some_and(|text| text.requires_program_runtime())
+            || product.program().is_some_and(|program| {
+                !program.resource().handlers.is_empty()
+                    || program.resource().definitions.iter().any(|definition| {
+                        definition.parameter_contract.is_some()
+                            || definition
+                                .parameters
+                                .iter()
+                                .any(|parameter| parameter.default_program.is_some())
+                    })
+            })
+        {
             return Err(ViewProgramCatalogError::MissingProgramRuntime);
         }
         Self::build(product, BTreeMap::new())
@@ -125,10 +128,14 @@ impl ViewProgramCatalog {
     pub(crate) fn try_from_validated_with_awbc(
         product: &ValidatedViewProduct,
         awbc: &AwbcProgram,
+        text: Option<&arcweft_bundle::resource_codec::ViewTextResource>,
     ) -> Result<Option<Self>, ViewProgramCatalogError> {
+        if product.program().is_none() && text.is_some_and(|text| text.requires_program_runtime()) {
+            return Err(SectionCodecError::NonCanonicalTable("view_expression_text_owner").into());
+        }
         let handlers = match product.program() {
             Some(program) => {
-                program.resource().validate_awbc_programs(awbc)?;
+                program.resource().validate_awbc_programs(awbc, text)?;
                 program
                     .resource()
                     .handlers

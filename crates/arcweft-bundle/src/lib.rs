@@ -1361,10 +1361,20 @@ impl ArcweftBundle {
                 }),
         };
         dialogue_contract?;
+        if self.view_program.is_none()
+            && self
+                .view_text
+                .as_ref()
+                .is_some_and(|text| text.requires_program_runtime())
+        {
+            return Err(BundleCodecError::InvalidViewHandlerRuntime {
+                message: "text expression has no retained View program owner".to_owned(),
+            });
+        }
         if let Some(program) = &self.view_program {
             program.validate_style_contract(self.view_style.as_ref())?;
             program
-                .validate_awbc_programs(self.product_awbc.program())
+                .validate_awbc_programs(self.product_awbc.program(), self.view_text.as_ref())
                 .map_err(|error| BundleCodecError::InvalidViewHandlerRuntime {
                     message: error.to_string(),
                 })?;

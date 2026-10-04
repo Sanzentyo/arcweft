@@ -731,7 +731,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 initialized_parameters: BTreeSet::new(),
                 initialized_state: BTreeSet::new(),
                 runtime_parameters: BTreeMap::new(),
-                default_evaluations: BTreeMap::new(),
+                expression_evaluations: BTreeMap::new(),
                 handler_seals: BTreeMap::new(),
                 next_handler_seal_revision: 1,
             },
@@ -814,7 +814,9 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 && self.dialogue_inputs.contains_key(&key.handle)
             {
                 supplied_parameters.insert(parameter.ordinal);
-                mounted.default_evaluations.remove(&parameter.ordinal);
+                if let Some(default) = &parameter.default_program {
+                    mounted.expression_evaluations.remove(&default.program);
+                }
             }
             let supplied_fx =
                 call_arguments.and_then(|arguments| arguments.get(&parameter.ordinal));
@@ -836,7 +838,9 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
             };
             if let Some(value) = supplied_runtime {
                 supplied_parameters.insert(parameter.ordinal);
-                mounted.default_evaluations.remove(&parameter.ordinal);
+                if let Some(default) = &parameter.default_program {
+                    mounted.expression_evaluations.remove(&default.program);
+                }
                 mounted
                     .runtime_parameters
                     .insert(parameter.name.clone(), value.clone());
@@ -1008,21 +1012,21 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
         Ok(())
     }
 
-    fn evaluate_parameter_default(
+    fn evaluate_expression_program(
         &mut self,
-        key: &ViewOccurrenceKey,
+        handle: &PresentationHandleId,
         definition: &ViewDefinitionResource,
         mounted: &mut MountedView,
-        parameter: &arcweft_bundle::resource_codec::ViewParameterResource,
-        default: &arcweft_view::ViewParameterDefaultProgram,
-    ) -> Result<(), EvaluationFailure> {
+        instruction: usize,
+        expression: &arcweft_view::ViewExpressionProgram,
+    ) -> Result<RuntimeValue, EvaluationFailure> {
         let failure = |message: String| {
             EvaluationFailure::new(
                 BundleViewDiagnosticCode::InvalidValueProgram,
                 None,
                 format!(
-                    "View `{}` default `{}`: {message}",
-                    definition.public_id, parameter.name
+                    "View `{}` expression {}: {message}",
+                    definition.public_id, expression.program
                 ),
             )
         };
@@ -1030,22 +1034,20 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
             return Err(failure("no admitted Core program authority".to_owned()));
         };
         let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(program));
-        let mut inputs = Vec::with_capacity(default.inputs.len());
-        let mut snapshots = Vec::with_capacity(default.inputs.len());
-        for input in default.inputs.iter() {
+        let mut inputs = Vec::with_capacity(expression.inputs.len());
+        let mut snapshots = Vec::with_capacity(expression.inputs.len());
+        for input in expression.inputs.iter() {
             let source = definition
                 .parameters
                 .get(input.parameter().index())
-                .filter(|source| {
-                    source.ordinal < parameter.ordinal && source.semantic_type == input.value_type()
-                })
-                .ok_or_else(|| failure("stale preceding parameter input".to_owned()))?;
+                .filter(|source| source.semantic_type == input.value_type())
+                .ok_or_else(|| failure("stale parameter input".to_owned()))?;
             let value = if source.role == ViewParameterRole::Dialogue {
                 dialogue_view_runtime_value(
                     source.semantic_type,
                     self.dialogue_inputs
-                        .get(&key.handle)
-                        .ok_or_else(|| failure("missing preceding dialogue input".to_owned()))?,
+                        .get(handle)
+                        .ok_or_else(|| failure("missing dialogue input".to_owned()))?,
                 )
                 .map_err(failure)?
             } else {
@@ -1053,14 +1055,11 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                     .runtime_parameters
                     .get(&source.name)
                     .ok_or_else(|| {
-                        failure(format!(
-                            "preceding parameter `{}` is uninitialized",
-                            source.name
-                        ))
+                        failure(format!("parameter `{}` is uninitialized", source.name))
                     })?;
                 if !value.ownership().permits_copy() {
                     return Err(failure(format!(
-                        "preceding parameter `{}` requires its retained resource owner",
+                        "parameter `{}` requires its retained resource owner",
                         source.name
                     )));
                 }
@@ -1076,30 +1075,33 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
             EvaluationFailure::new(
                 BundleViewDiagnosticCode::EvaluationBudgetExceeded,
                 None,
-                "View default exhausted its shared frame value budget",
+                "View expression exhausted its shared frame value budget",
             )
         };
-        if let Some(cached) = mounted.default_evaluations.get(&parameter.ordinal)
+        if let Some(cached) = mounted.expression_evaluations.get(&expression.program)
             && std::sync::Arc::ptr_eq(&cached.owner, program)
-            && cached.program == default.program
+            && cached.program == expression.program
             && cached.inputs.as_ref() == snapshots.as_slice()
-            && mounted.runtime_parameters.contains_key(&parameter.name)
         {
             self.value_budget
-                .charge_operations(cached.operations, usize::from(parameter.ordinal))
+                .charge_operations(cached.operations, instruction)
                 .map_err(budget_failure)?;
-            return Ok(());
+            return cached
+                .result
+                .clone()
+                .into_runtime_value_for_program(&owner)
+                .map_err(|error| failure(error.to_string()));
         }
         let limit = self.value_budget.remaining();
         if limit == 0 {
             self.value_budget
-                .charge_operations(1, usize::from(parameter.ordinal))
+                .charge_operations(1, instruction)
                 .map_err(budget_failure)?;
         }
         let mut executor =
             arcweft_core::awbc::product_step::AwbcProductStepExecutor::for_program_invocation(
                 std::sync::Arc::clone(program),
-                default.program,
+                expression.program,
                 inputs,
                 arcweft_core::task::GenerationId::new(0),
                 u64::from(limit),
@@ -1119,13 +1121,13 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
         let operations = u32::try_from(output.stats.executed_ops)
             .map_err(|_| failure("evaluation operation count overflows".to_owned()))?;
         self.value_budget
-            .charge_operations(operations, usize::from(parameter.ordinal))
+            .charge_operations(operations, instruction)
             .map_err(budget_failure)?;
         if output.stop_reason == arcweft_core::step::RuntimeStepStopReason::BudgetExhausted {
             return Err(EvaluationFailure::new(
                 BundleViewDiagnosticCode::EvaluationBudgetExceeded,
                 None,
-                "View default exhausted its shared frame value budget",
+                "View expression exhausted its shared frame value budget",
             ));
         }
         if !output.output.diagnostics.is_empty()
@@ -1140,7 +1142,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
             || !output.output.root_commands.is_empty()
         {
             return Err(failure(format!(
-                "default did not complete purely: {:?}",
+                "expression did not complete purely: {:?}",
                 output.output
             )));
         }
@@ -1153,6 +1155,42 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 "result requires a retained resource execution owner".to_owned(),
             ));
         }
+        let result = AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner)
+            .map_err(|error| failure(error.to_string()))?;
+        mounted.expression_evaluations.insert(
+            expression.program,
+            super::MountedViewExpressionEvaluation {
+                owner: std::sync::Arc::clone(program),
+                program: expression.program,
+                inputs: snapshots.into_boxed_slice(),
+                result,
+                operations,
+            },
+        );
+        Ok(value)
+    }
+
+    fn evaluate_parameter_default(
+        &mut self,
+        key: &ViewOccurrenceKey,
+        definition: &ViewDefinitionResource,
+        mounted: &mut MountedView,
+        parameter: &arcweft_bundle::resource_codec::ViewParameterResource,
+        default: &arcweft_view::ViewExpressionProgram,
+    ) -> Result<(), EvaluationFailure> {
+        let value = self.evaluate_expression_program(
+            &key.handle,
+            definition,
+            mounted,
+            usize::from(parameter.ordinal),
+            default,
+        )?;
+        let ViewProgramRuntimeAuthority::Awbc(program) = self.program_runtime else {
+            unreachable!("expression evaluator requires Core authority")
+        };
+        let failure = |message| {
+            EvaluationFailure::new(BundleViewDiagnosticCode::InvalidValueProgram, None, message)
+        };
         let expected = program
             .runtime_types
             .iter()
@@ -1186,15 +1224,6 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
         mounted
             .runtime_parameters
             .insert(parameter.name.clone(), value);
-        mounted.default_evaluations.insert(
-            parameter.ordinal,
-            super::MountedViewDefaultEvaluation {
-                owner: std::sync::Arc::clone(program),
-                program: default.program,
-                inputs: snapshots.into_boxed_slice(),
-                operations,
-            },
-        );
         Ok(())
     }
 

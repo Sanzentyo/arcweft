@@ -179,6 +179,11 @@ pub(crate) enum ViewProjectLowerError {
         owner: ItemId,
         source: Box<arcweft_lang_sema::final_analysis::CheckedProgramAdmissionError>,
     },
+    #[error("View program {owner:?} has an invalid semantic transcript: {source}")]
+    InvalidProgramTranscript {
+        owner: ItemId,
+        source: Box<arcweft_lang_sema::final_analysis::CheckedSemanticTranscriptError>,
+    },
     #[error("View handler {owner:?} capture {capture:?} is not snapshot-retainable")]
     InvalidViewHandlerCaptureOwnership {
         owner: ItemId,
@@ -800,95 +805,31 @@ fn lower_view_parameter_defaults(
         {
             return Err(invalid());
         }
-        let source = arcweft_lang_sema::final_analysis::CheckedExecutionSource::EvaluateValue(
-            default.source(),
-        );
-        let context = analysis
-            .checked_execution_context(project, world.symbols(), source.clone(), None)
-            .map_err(|source| ViewProjectLowerError::InvalidProgramContext {
-                owner: view.owner,
-                source: Box::new(source),
-            })?;
-        let admission = Arc::new(context.checked_deterministic_program(source).map_err(
-            |source| ViewProjectLowerError::InvalidProgramAdmission {
-                owner: view.owner,
-                source: Box::new(source),
-            },
-        )?);
-        let abi = admission.input_abi();
-        if !abi.parameters().is_empty() {
-            return Err(invalid());
+        let binding = ViewExpressionLowerer {
+            project,
+            analysis,
+            world,
+            owner: view.owner,
+            view: &view.id,
+            parameters: &view.parameters,
+            output,
         }
-        let result = abi.result().value_type().ok_or_else(invalid)?;
-        let result_type = ViewHandlerValueTypeId::from_semantic_digest(
-            *abi.environment().semantic_type_identity(result)?.as_bytes(),
-        );
-        if analysis
-            .expression(default.source())
-            .and_then(|expression| expression.value_type())
-            .ok_or_else(invalid)?
-            .semantic_identity_digest()?
-            .as_bytes()
-            != default.result().as_bytes()
+        .lower(default.source())?;
+        if binding
+            .inputs
+            .iter()
+            .any(|input| input.parameter().index() >= ordinal)
+            || analysis
+                .expression(default.source())
+                .and_then(|expression| expression.value_type())
+                .ok_or_else(invalid)?
+                .semantic_identity_digest()?
+                .as_bytes()
+                != default.result().as_bytes()
         {
             return Err(invalid());
         }
-        let inputs = abi
-            .inputs()
-            .iter()
-            .filter(|input| {
-                matches!(
-                    input.role(),
-                    arcweft_lang_sema::final_analysis::CheckedExecutionInputRole::Free
-                )
-            })
-            .map(|input| {
-                let binding = view
-                    .parameters
-                    .get(&input.binding().local())
-                    .ok_or_else(invalid)?;
-                if binding.coordinate.index() >= ordinal
-                    || abi
-                        .environment()
-                        .semantic_type_identity(input.binding().ty())?
-                        .as_bytes()
-                        != binding.value_type.as_bytes()
-                {
-                    return Err(invalid());
-                }
-                Ok(arcweft_view::ViewParameterInput::new(
-                    binding.coordinate,
-                    binding.value_type,
-                ))
-            })
-            .collect::<Result<Vec<_>, ViewProjectLowerError>>()?
-            .into_boxed_slice();
-        let mut digest = blake3::Hasher::new();
-        digest.update(b"arcweft.view.parameter-default.v1\0");
-        digest.update(&(view.id.as_str().len() as u64).to_le_bytes());
-        digest.update(view.id.as_str().as_bytes());
-        digest.update(&parameter.ordinal.to_le_bytes());
-        digest.update(default.expression().as_bytes());
-        digest.update(default.expected().as_bytes());
-        digest.update(default.result().as_bytes());
-        let id = ViewHandlerProgramId::from_checked_digest(*digest.finalize().as_bytes());
-        if output
-            .runtime_programs
-            .iter()
-            .any(|program| program.id == id)
-        {
-            return Err(invalid());
-        }
-        parameter.default_program = Some(arcweft_view::ViewParameterDefaultProgram {
-            program: id,
-            inputs,
-            result_type,
-        });
-        output.runtime_programs.push(CheckedViewRuntimeProgram {
-            id,
-            result: result_type,
-            admission,
-        });
+        parameter.default_program = Some(binding);
     }
     Ok(parameters)
 }
@@ -952,6 +893,113 @@ fn lower_authored_view(
         state_schema_hash: view_schema_hash(&view.id, &view.parameters),
     });
     Ok(())
+}
+
+/// Projects ordinary checked expression programs into one retained View's input ABI.
+struct ViewExpressionLowerer<'a> {
+    project: arcweft_lang_hir::project::HirAnalysisProjectView<'a>,
+    analysis: &'a FinalSemanticAnalysis,
+    world: &'a RegisteredSemanticWorld,
+    owner: ItemId,
+    view: &'a ViewId,
+    parameters: &'a BTreeMap<LocalId, CheckedViewParameter>,
+    output: &'a mut AuthoredViewLowering,
+}
+
+impl ViewExpressionLowerer<'_> {
+    fn lower(
+        &mut self,
+        value: ExprId,
+    ) -> Result<arcweft_view::ViewExpressionProgram, ViewProjectLowerError> {
+        use arcweft_lang_sema::final_analysis::{
+            CheckedExecutionInputRole, CheckedExecutionSource, CheckedMatchLimits,
+        };
+        let invalid = || ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner };
+        let source = CheckedExecutionSource::EvaluateValue(value);
+        let context = self
+            .analysis
+            .checked_execution_context(self.project, self.world.symbols(), source.clone(), None)
+            .map_err(|source| ViewProjectLowerError::InvalidProgramContext {
+                owner: self.owner,
+                source: Box::new(source),
+            })?;
+        let admission = Arc::new(context.checked_deterministic_program(source).map_err(
+            |source| ViewProjectLowerError::InvalidProgramAdmission {
+                owner: self.owner,
+                source: Box::new(source),
+            },
+        )?);
+        let abi = admission.input_abi();
+        if !abi.parameters().is_empty() {
+            return Err(invalid());
+        }
+        let result = abi.result().value_type().ok_or_else(invalid)?;
+        let result_type = ViewHandlerValueTypeId::from_semantic_digest(
+            *abi.environment().semantic_type_identity(result)?.as_bytes(),
+        );
+        let inputs = abi
+            .inputs()
+            .iter()
+            .filter(|input| matches!(input.role(), CheckedExecutionInputRole::Free))
+            .map(|input| {
+                let binding = self
+                    .parameters
+                    .get(&input.binding().local())
+                    .ok_or_else(invalid)?;
+                if abi
+                    .environment()
+                    .semantic_type_identity(input.binding().ty())?
+                    .as_bytes()
+                    != binding.value_type.as_bytes()
+                {
+                    return Err(invalid());
+                }
+                Ok(arcweft_view::ViewParameterInput::new(
+                    binding.coordinate,
+                    binding.value_type,
+                ))
+            })
+            .collect::<Result<Vec<_>, ViewProjectLowerError>>()?
+            .into_boxed_slice();
+        let semantic = self
+            .analysis
+            .checked_expression_semantic_digest(
+                self.project,
+                self.world.symbols(),
+                value,
+                CheckedMatchLimits::PRODUCTION,
+            )
+            .map_err(|source| ViewProjectLowerError::InvalidProgramTranscript {
+                owner: self.owner,
+                source: Box::new(source),
+            })?;
+        let mut digest = blake3::Hasher::new();
+        digest.update(b"arcweft.view.expression.v1\0");
+        digest.update(&(self.view.as_str().len() as u64).to_le_bytes());
+        digest.update(self.view.as_str().as_bytes());
+        digest.update(semantic.as_bytes());
+        let id = ViewHandlerProgramId::from_checked_digest(*digest.finalize().as_bytes());
+        if self
+            .output
+            .runtime_programs
+            .iter()
+            .any(|program| program.id == id)
+        {
+            return Err(invalid());
+        }
+        self.output
+            .runtime_programs
+            .push(CheckedViewRuntimeProgram {
+                id,
+                result: result_type,
+                admission,
+            });
+        Ok(arcweft_view::ViewExpressionProgram {
+            program: id,
+            inputs,
+            result_type,
+        })
+    }
 }
 
 struct AuthoredViewBodyLowerer<'a> {
@@ -1506,7 +1554,7 @@ impl AuthoredViewBodyLowerer<'_> {
     }
 
     fn text_source_kind(
-        &self,
+        &mut self,
         value: ExprId,
         surface: ViewTextSurface,
     ) -> Result<ViewTextSourceKind, ViewProjectLowerError> {
@@ -1580,7 +1628,29 @@ impl AuthoredViewBodyLowerer<'_> {
                     projection,
                 }
             }
-            _ => return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner }),
+            _ => {
+                if surface != ViewTextSurface::Text
+                    || !matches!(
+                        self.analysis
+                            .expression(value)
+                            .and_then(|expression| expression.value_type()),
+                        Some(arcweft_lang_sema::types::TypeKind::String)
+                    )
+                {
+                    return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner });
+                }
+                let program = ViewExpressionLowerer {
+                    project: self.project,
+                    analysis: self.analysis,
+                    world: self.registered_world,
+                    owner,
+                    view: self.view,
+                    parameters: self.parameters,
+                    output: self.output,
+                }
+                .lower(value)?;
+                ViewTextSourceKind::Program { program }
+            }
         };
         Ok(source_kind)
     }

@@ -336,7 +336,7 @@ pub struct ViewParameterResource {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value_slot: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default_program: Option<arcweft_view::ViewParameterDefaultProgram>,
+    pub default_program: Option<arcweft_view::ViewExpressionProgram>,
 }
 
 /// Closed runtime role of one authored View parameter.
@@ -938,6 +938,10 @@ pub struct ViewTextSourceRecord {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ViewTextSourceKind {
+    /// An ordinary pure Core expression with checked retained inputs.
+    Program {
+        program: arcweft_view::ViewExpressionProgram,
+    },
     Literal {
         value: String,
     },
@@ -1115,13 +1119,21 @@ impl ViewInstructionSpan {
 }
 
 impl ViewTextResource {
+    /// Whether this text inventory requires an admitted Core executable owner.
+    pub fn requires_program_runtime(&self) -> bool {
+        self.sources
+            .iter()
+            .any(|source| matches!(source.kind, ViewTextSourceKind::Program { .. }))
+    }
+
     pub fn literal_text(&self, public_id: &str) -> Option<&str> {
         self.sources
             .iter()
             .find(|source| source.public_id == public_id)
             .and_then(|source| match &source.kind {
                 ViewTextSourceKind::Literal { value } => Some(value.as_str()),
-                ViewTextSourceKind::Projection { .. }
+                ViewTextSourceKind::Program { .. }
+                | ViewTextSourceKind::Projection { .. }
                 | ViewTextSourceKind::Local { .. }
                 | ViewTextSourceKind::Localized { .. }
                 | ViewTextSourceKind::RichTextDocument { .. }

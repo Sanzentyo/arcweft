@@ -901,7 +901,7 @@ view Main(first: Slot<i64 -> i64> = .Full(|input: i64| input + 1), value: Slot<i
         assert_eq!(ViewProgramResource::decode_canonical_section(&encoded).unwrap(), *resource);
         let mut forged = resource.clone();
         forged.definitions.iter_mut().find(|definition| definition.public_id.as_str() == "view.Main").unwrap().parameters.iter_mut().find_map(|parameter| parameter.default_program.as_mut()).unwrap().program = arcweft_id::runtime_program::RuntimePureProgramId::from_checked_digest([0xa9;32]);
-        assert!(forged.validate_awbc_programs(&awbc).is_err());
+        assert!(forged.validate_awbc_programs(&awbc, None).is_err());
         let awbc = Arc::new(awbc);
         let mut runtime = BundleViewRuntime::try_new_with_awbc(
             compiled.view_product().product().as_ref().clone(),
@@ -1884,4 +1884,336 @@ fn source_text<'a>(document: &'a SourceDocument, span: &arcweft_source::SourceSp
         .expect("span belongs to fixture");
     let range = span.range();
     &document.text()[range.start()..range.end()]
+}
+
+#[test]
+fn authored_text_expression_executes_and_refreshes_typed_parameter_inputs() {
+    use arcweft_bundle::resource_codec::view::{ViewTextResource, ViewTextSourceKind};
+    use arcweft_core::value::{RuntimeBinding, RuntimeValue};
+    use arcweft_runtime_driver::presentation_handles::{
+        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    };
+    use arcweft_runtime_driver::view_runtime::BundleViewTextValue;
+    for expression in [
+        "label",
+        "identity(label)",
+        "{ let inner = identity(label); inner }",
+        "match enabled { true => identity(label), false => label }",
+        "name.value",
+        "(|value: String| identity(value))(label)",
+    ] {
+        let source = format!(
+            r#"
+entry cli @entry.main {{ goto @flow.main }}
+flow main() -> String {{ return "done" }}
+fn identity(value: String) -> String {{ value }}
+struct Label {{ value: String }}
+view Main(label: String = "hello", enabled: bool = true,
+          name: Label = Label {{ value = label }},
+          callback: String -> String = |value: String| value) {{ Text({expression}) }}
+"#
+        );
+        let compiled =
+            project_view_fixture_with_entry(&source, "arcweft-test://view-text-expression")
+                .compile()
+                .unwrap_or_else(|error| panic!("{expression}: {error:?}"));
+        let awbc = AwbcLowerer::new(
+            &compiled.runtime_plan().plan,
+            &compiled.runtime_plan().dialogue_content_catalog,
+            "main.arcw",
+        )
+        .lower()
+        .unwrap()
+        .program;
+        let awbc =
+            Arc::new(arcweft_bundle::standard_view::install_dialogue_handler_awbc(awbc).unwrap());
+        let product = compiled.view_product().product().as_ref().clone();
+        let text = compiled.view_product().text().cloned().unwrap();
+        let resource = product.program().unwrap().resource();
+        resource.validate_awbc_programs(&awbc, Some(&text)).unwrap();
+        assert_eq!(
+            ViewTextResource::decode_canonical_section(&text.encode_canonical_section().unwrap())
+                .unwrap(),
+            text
+        );
+        assert!(BundleViewRuntime::try_new(product.clone(), Some(text.clone())).is_err());
+        let definition = resource
+            .definitions
+            .iter()
+            .find(|definition| definition.public_id.as_str() == "view.Main")
+            .unwrap();
+        let binding = text
+            .sources
+            .iter()
+            .find_map(|source| match &source.kind {
+                ViewTextSourceKind::Program { program } => Some(program),
+                _ => None,
+            })
+            .unwrap();
+        for forgery in 0..5 {
+            let mut forged = text.clone();
+            let expression = forged
+                .sources
+                .iter_mut()
+                .find_map(|source| match &mut source.kind {
+                    ViewTextSourceKind::Program { program } => Some(program),
+                    _ => None,
+                })
+                .unwrap();
+            match forgery {
+                0 => {
+                    expression.program =
+                        arcweft_id::runtime_program::RuntimePureProgramId::from_checked_digest(
+                            [0xaf; 32],
+                        )
+                }
+                1 => expression.result_type = definition.parameters[1].semantic_type,
+                2 => {
+                    expression.inputs[0] = arcweft_view::ViewParameterInput::new(
+                        arcweft_view::ViewParameterCoordinate::try_from_index(999).unwrap(),
+                        expression.inputs[0].value_type(),
+                    )
+                }
+                3 => {
+                    expression.inputs[0] = arcweft_view::ViewParameterInput::new(
+                        expression.inputs[0].parameter(),
+                        definition.parameters[1].semantic_type,
+                    )
+                }
+                _ => expression.inputs = vec![expression.inputs[0]; 2].into_boxed_slice(),
+            }
+            assert!(
+                resource
+                    .validate_awbc_programs(&awbc, Some(&forged))
+                    .is_err(),
+                "forgery {forgery}"
+            );
+            assert!(
+                BundleViewRuntime::try_new_with_awbc(
+                    product.clone(),
+                    Some(forged),
+                    Arc::clone(&awbc)
+                )
+                .is_err()
+            );
+        }
+        let mut orphan = text.clone();
+        let mut source = orphan
+            .sources
+            .iter()
+            .find(|source| matches!(source.kind, ViewTextSourceKind::Program { .. }))
+            .unwrap()
+            .clone();
+        source.public_id.push_str(".orphan");
+        orphan.sources.push(source);
+        assert!(
+            resource
+                .validate_awbc_programs(&awbc, Some(&orphan))
+                .is_err()
+        );
+        let empty =
+            ValidatedViewProduct::try_new(None, None, None, ViewProductValidationLimits::default())
+                .unwrap();
+        assert!(
+            BundleViewRuntime::try_new_with_awbc(empty, Some(text.clone()), Arc::clone(&awbc))
+                .is_err()
+        );
+        for forgery in 0..3 {
+            let mut forged = awbc.as_ref().clone();
+            let row = forged
+                .pure_programs
+                .iter()
+                .position(|row| row.program == binding.program)
+                .unwrap();
+            let function = forged.pure_programs[row].function;
+            match forgery {
+                0 => {
+                    let other = definition.parameters[1]
+                        .default_program
+                        .as_ref()
+                        .unwrap()
+                        .program;
+                    forged.pure_programs[row].function =
+                        forged.pure_program_binding(other).unwrap().function;
+                }
+                1 => forged.functions[function.index()].type_context = None,
+                _ => {
+                    let effects = arcweft_core::awbc::schema::AwbcEffectSetId(
+                        u32::try_from(forged.effect_sets.len()).unwrap(),
+                    );
+                    let name = arcweft_core::awbc::schema::AwbcStringId(
+                        u32::try_from(forged.strings.len()).unwrap(),
+                    );
+                    forged.strings.push("effect.external".to_owned());
+                    forged
+                        .effect_sets
+                        .push(arcweft_core::awbc::schema::AwbcEffectSet {
+                            effects: vec![name],
+                        });
+                    let signature = forged.functions[function.index()].signature;
+                    forged.signatures[signature.index()].effects = effects;
+                }
+            }
+            assert!(
+                resource
+                    .validate_awbc_programs(&forged, Some(&text))
+                    .is_err(),
+                "AWBC forgery {forgery}"
+            );
+        }
+        let mut runtime = BundleViewRuntime::try_new_with_awbc(
+            product.clone(),
+            Some(text.clone()),
+            Arc::clone(&awbc),
+        )
+        .unwrap();
+        let handle = PresentationHandleRecord::new(
+            PresentationHandleId::try_new("view.text.expression").unwrap(),
+            PresentationHandleKind::View,
+            "view.Main".to_owned(),
+            None,
+            PresentationResourceState::Mounted,
+            None,
+            0,
+        );
+        let handles = [handle];
+        for label in ["hello", "changed", "changed"] {
+            let bindings = [RuntimeBinding {
+                name: "label".to_owned(),
+                value: RuntimeValue::String(label.to_owned()),
+            }];
+            let output = runtime.evaluate(&handles, &bindings, false);
+            assert!(output.diagnostics.is_empty(), "{expression}: {output:?}");
+            assert_eq!(output.mounts.len(), 1);
+            assert!(
+                matches!(&output.mounts[0].text[0].value, BundleViewTextValue::Plain { value } if value == label)
+            );
+        }
+        let saved = runtime.snapshot().unwrap();
+        runtime.restore(&saved, &handles).unwrap();
+        let output = runtime.evaluate(&handles, &[], false);
+        assert!(output.diagnostics.is_empty(), "{expression}: {output:?}");
+        assert!(
+            matches!(&output.mounts[0].text[0].value, BundleViewTextValue::Plain { value } if value == "changed")
+        );
+        let native = Arc::new(compiled.runtime_plan().plan.clone());
+        let execute = |program, inputs| {
+            let mut engine = arcweft_core::engine::Engine::for_program_invocation(
+                Arc::clone(&native),
+                program,
+                inputs,
+            )
+            .unwrap();
+            for _ in 0..64 {
+                let output = engine.step(Default::default(), Default::default()).output;
+                assert!(output.diagnostics.is_empty(), "{output:?}");
+                if let Some((_, value)) = engine.take_program_result().unwrap() {
+                    return value;
+                }
+            }
+            panic!("native expression exceeded deterministic step limit");
+        };
+        let mut values: Vec<RuntimeValue> = Vec::new();
+        for parameter in &definition.parameters {
+            let default = parameter.default_program.as_ref().unwrap();
+            let inputs = default
+                .inputs
+                .iter()
+                .map(|input| values[input.parameter().index()].clone())
+                .collect();
+            values.push(execute(default.program, inputs));
+        }
+        let inputs = binding
+            .inputs
+            .iter()
+            .map(|input| values[input.parameter().index()].clone())
+            .collect();
+        assert_eq!(
+            execute(binding.program, inputs),
+            RuntimeValue::String("hello".to_owned())
+        );
+    }
+}
+
+#[test]
+fn authored_text_expression_cache_and_restore_preserve_budget_failure() {
+    use arcweft_core::value::{RuntimeBinding, RuntimeValue};
+    use arcweft_runtime_driver::presentation_handles::{
+        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    };
+    use arcweft_runtime_driver::view_runtime::BundleViewDiagnosticCode;
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+fn identity(value: String) -> String { value }
+view Main(label: String) { Text(identity(identity(identity(identity(identity(label)))))) }
+"#;
+    let compiled = project_view_fixture_with_entry(source, "arcweft-test://view-text-budget")
+        .compile()
+        .unwrap();
+    let awbc = AwbcLowerer::new(
+        &compiled.runtime_plan().plan,
+        &compiled.runtime_plan().dialogue_content_catalog,
+        "main.arcw",
+    )
+    .lower()
+    .unwrap()
+    .program;
+    let awbc =
+        Arc::new(arcweft_bundle::standard_view::install_dialogue_handler_awbc(awbc).unwrap());
+    let product = compiled.view_product().product().as_ref().clone();
+    let text = compiled.view_product().text().cloned();
+    let mut warm =
+        BundleViewRuntime::try_new_with_awbc(product.clone(), text.clone(), Arc::clone(&awbc))
+            .unwrap();
+    let mut cold = BundleViewRuntime::try_new_with_awbc(product, text, awbc).unwrap();
+    let handles = (0..3000)
+        .map(|index| {
+            PresentationHandleRecord::new(
+                PresentationHandleId::try_new(format!("view.text.budget.{index}")).unwrap(),
+                PresentationHandleKind::View,
+                "view.Main".to_owned(),
+                None,
+                PresentationResourceState::Mounted,
+                None,
+                0,
+            )
+        })
+        .collect::<Vec<_>>();
+    let bindings = [RuntimeBinding {
+        name: "label".to_owned(),
+        value: RuntimeValue::String("same".to_owned()),
+    }];
+    let first = warm.evaluate(&handles[..1000], &bindings, false);
+    assert!(first.diagnostics.is_empty(), "{first:?}");
+    let saved = warm.snapshot().unwrap();
+    cold.restore(&saved, &handles[..1000]).unwrap();
+    let warm_output = warm.evaluate(&handles, &bindings, false);
+    let cold_output = cold.evaluate(&handles, &bindings, false);
+    assert!(warm_output.diagnostics.iter().any(|diagnostic| diagnostic.code == BundleViewDiagnosticCode::EvaluationBudgetExceeded));
+    assert_eq!(warm_output, cold_output);
+    assert_eq!(warm.snapshot().unwrap(), cold.snapshot().unwrap());
+}
+
+#[test]
+fn authored_text_expression_rejects_unproven_dynamic_callback_suspension() {
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+view Main(label: String, callback: String -> String effects {}) { Text(callback(label)) }
+"#;
+    let error =
+        project_view_fixture_with_entry(source, "arcweft-test://view-text-unproven-callback")
+            .compile()
+            .expect_err("a dynamic callback has no non-suspending execution proof");
+    assert_eq!(
+        error.diagnostics()[0].stage(),
+        ProjectCompileStage::ViewLower
+    );
+    assert!(
+        error.diagnostics()[0]
+            .diagnostic()
+            .message()
+            .contains("may suspend")
+    );
 }

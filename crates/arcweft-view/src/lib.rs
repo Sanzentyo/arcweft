@@ -52,7 +52,8 @@ pub use handler_program::{
     ViewHandlerProgramId, ViewHandlerResult, ViewHandlerResultRole, ViewHandlerValueTypeId,
     ViewParameterCoordinate, ViewParameterInput,
 };
-mod parameter_default;
+mod expression_program;
+pub use expression_program::ViewExpressionProgram;
 pub use image::{
     ImageAlignment, ImageFit, ImagePlayback, ViewImagePresentationMetadata, ViewImageSource,
     ViewImageSourceTable, ViewResolvedImageFrame,
@@ -66,7 +67,6 @@ pub use motion::{
     ViewMotionSample, ViewReducedMotionPolicy, ViewStepPosition, ViewTimelineMillis,
     ViewTransition, ViewTransitionSpec,
 };
-pub use parameter_default::ViewParameterDefaultProgram;
 pub use part::{
     ViewEvaluationSiteId, ViewInstructionIndex, ViewPartExport, ViewPartId,
     ViewPartInstructionKind, ViewPartLocalName, ViewPartName, ViewPartStaticReachability,

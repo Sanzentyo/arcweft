@@ -165,8 +165,19 @@ impl BundleViewRuntime {
             .catalog
             .as_ref()
             .ok_or(ViewProgramReplacementError::ProgramIdentityMismatch)?;
-        let candidate_catalog = ViewProgramCatalog::try_from_validated(&candidate)?
-            .ok_or(ViewProgramReplacementError::ProgramIdentityMismatch)?;
+        let candidate_catalog = match &self.program_runtime {
+            super::ViewProgramRuntimeAuthority::CoreProgramFree => {
+                ViewProgramCatalog::try_from_validated(&candidate, self.text.as_ref())?
+            }
+            super::ViewProgramRuntimeAuthority::Awbc(awbc) => {
+                ViewProgramCatalog::try_from_validated_with_awbc(
+                    &candidate,
+                    awbc,
+                    self.text.as_ref(),
+                )?
+            }
+        }
+        .ok_or(ViewProgramReplacementError::ProgramIdentityMismatch)?;
         if current.program_id() != candidate_catalog.program_id() {
             return Err(ViewProgramReplacementError::ProgramIdentityMismatch);
         }

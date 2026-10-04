@@ -547,17 +547,21 @@ struct MountedView {
     initialized_parameters: BTreeSet<u16>,
     initialized_state: BTreeSet<u16>,
     runtime_parameters: BTreeMap<String, RuntimeValue>,
-    default_evaluations: BTreeMap<u16, MountedViewDefaultEvaluation>,
+    expression_evaluations: BTreeMap<
+        arcweft_id::runtime_program::RuntimePureProgramId,
+        MountedViewExpressionEvaluation,
+    >,
     handler_seals: BTreeMap<MountedViewHandlerKey, MountedViewHandlerSeal>,
     next_handler_seal_revision: u64,
 }
 
-/// Derived memo evidence. The parameter map owns the only live result value.
+/// Derived inert memo evidence; no executable resource value is duplicated.
 #[derive(Clone, Debug, PartialEq)]
-struct MountedViewDefaultEvaluation {
+struct MountedViewExpressionEvaluation {
     owner: Arc<AwbcProgram>,
     program: arcweft_id::runtime_program::RuntimePureProgramId,
     inputs: Box<[AwbcRuntimeValueSnapshot]>,
+    result: AwbcRuntimeValueSnapshot,
     operations: u32,
 }
 
@@ -748,7 +752,7 @@ impl BundleViewRuntime {
                 }
             }
         }
-        let catalog = ViewProgramCatalog::try_from_validated(&product)?;
+        let catalog = ViewProgramCatalog::try_from_validated(&product, text.as_ref())?;
         Self::finish_construction(
             product,
             text,
@@ -781,7 +785,8 @@ impl BundleViewRuntime {
                 }
             }
         }
-        let catalog = ViewProgramCatalog::try_from_validated_with_awbc(&product, &awbc)?;
+        let catalog =
+            ViewProgramCatalog::try_from_validated_with_awbc(&product, &awbc, text.as_ref())?;
         Self::finish_construction(
             product,
             text,
@@ -1388,7 +1393,7 @@ impl BundleViewRuntime {
                         initialized_parameters,
                         initialized_state,
                         runtime_parameters,
-                        default_evaluations: BTreeMap::new(),
+                        expression_evaluations: BTreeMap::new(),
                         handler_seals: BTreeMap::new(),
                         next_handler_seal_revision: saved.next_handler_seal_revision,
                     },

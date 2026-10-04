@@ -79,6 +79,16 @@ index へ変換しない。mount は通常の `RuntimeValue` を
 から作る。cache の有無や restore 前後によって成功・失敗が変わらないよう、
 cache hit も初回実行と同じ論理 operation cost を評価予算から消費する。
 
+`Text` の String 式も同じ `ViewExpressionProgram` と通常の Core pure program
+を使う。checked expression transcript から意味を含む program identity を導き、
+その式が読む View parameter と canonical input ABI を照合する。内部の local、
+純粋な呼び出し、Match は Core の通常の式意味論に従う。入力の変更は再評価し、
+cache は executable owner・program・ordered input snapshot に結び付ける。
+result も inert snapshot として保存し、restore 時は派生 cache を破棄する。
+String 以外の結果を文字列へ暗黙変換しない。Dialogue の型付き表示は専用の
+projection を保つ。affine な入力・結果は resource owner の接続が必要であり、
+copy として複製しない。
+
 ## Binding
 
 Binding は直接 state を破壊的に書き換えず、lens + event/command。

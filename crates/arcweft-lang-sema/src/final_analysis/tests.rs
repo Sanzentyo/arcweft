@@ -4717,7 +4717,7 @@ fn checked_match_transcript_rejects_non_exhaustive_and_enforces_limits() {
     );
     assert!(matches!(
         non_exhaustive,
-        Err(super::CheckedMatchQueryError::NonExhaustive { witness })
+        Err(super::CheckedSemanticTranscriptError::NonExhaustive { witness })
             if witness.boolean() == Some(false)
     ));
 
@@ -4729,7 +4729,7 @@ fn checked_match_transcript_rejects_non_exhaustive_and_enforces_limits() {
     );
     assert!(matches!(
         byte_limited,
-        Err(super::CheckedMatchQueryError::LimitExceeded {
+        Err(super::CheckedSemanticTranscriptError::LimitExceeded {
             kind: CheckedMatchLimitKind::TranscriptBytes,
             limit: 0,
             ..

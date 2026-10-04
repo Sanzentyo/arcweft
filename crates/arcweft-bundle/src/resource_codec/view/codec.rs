@@ -142,6 +142,65 @@ impl Default for ViewResourceBudget {
 }
 
 impl ViewProgramResource {
+    fn validate_expression_program<'a>(
+        &self,
+        program: &'a AwbcProgram,
+        definition: &super::model::ViewDefinitionResource,
+        expression: &arcweft_view::ViewExpressionProgram,
+    ) -> Result<&'a arcweft_core::awbc::schema::AwbcSignature, SectionCodecError> {
+        let invalid = || SectionCodecError::NonCanonicalTable("view_expression_program_binding");
+        let binding = program
+            .pure_program_binding(expression.program)
+            .ok_or_else(invalid)?;
+        let function = program
+            .functions
+            .get(binding.function.index())
+            .ok_or_else(invalid)?;
+        let signature = program
+            .signatures
+            .get(function.signature.index())
+            .ok_or_else(invalid)?;
+        let mut parameters = BTreeSet::new();
+        if function
+            .type_context
+            .and_then(|ty| program.runtime_types.get(ty.index()))
+            .map(|ty| ty.semantic_identity())
+            != binding.function_type
+            || binding.result_type != expression.result_type
+            || signature
+                .result
+                .and_then(|ty| program.runtime_types.get(ty.index()))
+                .map(|ty| ty.semantic_identity())
+                != Some(expression.result_type)
+            || binding.input_types.len() != expression.inputs.len()
+            || signature.params.len() != expression.inputs.len()
+            || expression
+                .inputs
+                .iter()
+                .zip(&binding.input_types)
+                .zip(&signature.params)
+                .any(|((input, ty), signature_type)| {
+                    !parameters.insert(input.parameter())
+                        || definition
+                            .parameters
+                            .get(input.parameter().index())
+                            .is_none_or(|parameter| parameter.semantic_type != input.value_type())
+                        || *ty != input.value_type()
+                        || program
+                            .runtime_types
+                            .get(signature_type.index())
+                            .is_none_or(|ty| ty.semantic_identity() != input.value_type())
+                })
+            || !program
+                .effect_sets
+                .get(signature.effects.index())
+                .is_some_and(|effects| effects.effects.is_empty())
+        {
+            return Err(invalid());
+        }
+        Ok(signature)
+    }
+
     pub fn encode_canonical_section(&self) -> Result<Vec<u8>, SectionCodecError> {
         self.encode_canonical_section_with_budget(&ViewResourceBudget::default())
     }
@@ -215,7 +274,11 @@ impl ViewProgramResource {
     /// indices remain derived execution data. Product bytecode body integrity
     /// is owned once by the canonical bundle content root/signature, while this
     /// join proves the local typed ABI and opaque result owner.
-    pub fn validate_awbc_programs(&self, program: &AwbcProgram) -> Result<(), SectionCodecError> {
+    pub fn validate_awbc_programs(
+        &self,
+        program: &AwbcProgram,
+        text: Option<&ViewTextResource>,
+    ) -> Result<(), SectionCodecError> {
         let bindings = program
             .pure_programs
             .iter()
@@ -294,49 +357,12 @@ impl ViewProgramResource {
                 let Some(default) = &parameter.default_program else {
                     continue;
                 };
-                let binding =
-                    bindings
-                        .get(&default.program)
-                        .ok_or(SectionCodecError::NonCanonicalTable(
-                            "view_default_program_binding",
-                        ))?;
-                let function = program.functions.get(binding.function.index()).ok_or(
-                    SectionCodecError::NonCanonicalTable("view_default_program_function"),
-                )?;
-                let signature = program.signatures.get(function.signature.index()).ok_or(
-                    SectionCodecError::NonCanonicalTable("view_default_program_signature"),
-                )?;
-                if function
-                    .type_context
-                    .and_then(|ty| program.runtime_types.get(ty.index()))
-                    .map(|ty| ty.semantic_identity())
-                    != binding.function_type
-                {
-                    return Err(SectionCodecError::NonCanonicalTable(
-                        "view_default_program_context",
-                    ));
-                }
-                let inputs = signature
-                    .params
+                let signature = self.validate_expression_program(program, definition, default)?;
+                let binding = bindings[&default.program];
+                if default
+                    .inputs
                     .iter()
-                    .map(|ty| {
-                        program
-                            .runtime_types
-                            .get(ty.index())
-                            .map(|ty| ty.semantic_identity())
-                    })
-                    .collect::<Option<Vec<_>>>();
-                let result = signature
-                    .result
-                    .and_then(|ty| program.runtime_types.get(ty.index()))
-                    .map(|ty| ty.semantic_identity());
-                if binding.input_types.len() != default.inputs.len()
-                    || binding
-                        .input_types
-                        .iter()
-                        .zip(default.inputs.iter())
-                        .any(|(ty, input)| *ty != input.value_type())
-                    || binding.result_type != default.result_type
+                    .any(|input| input.parameter().index() >= usize::from(parameter.ordinal))
                     || !match definition.parameter_contract {
                         Some(contract) => {
                             let source_contract = binding
@@ -377,17 +403,67 @@ impl ViewProgramResource {
                                 ))?,
                         ),
                     }
-                    || inputs.as_deref() != Some(binding.input_types.as_slice())
-                    || result != Some(binding.result_type)
-                    || !program
-                        .effect_sets
-                        .get(signature.effects.index())
-                        .is_some_and(|effects| effects.effects.is_empty())
                 {
                     return Err(SectionCodecError::NonCanonicalTable(
                         "view_default_program_signature",
                     ));
                 }
+            }
+        }
+        if let Some(text) = text {
+            let mut referenced = BTreeSet::new();
+            for definition in &self.definitions {
+                let instructions = self
+                    .instructions
+                    .get(
+                        definition.body.start_instruction as usize
+                            ..definition.body.end_instruction as usize,
+                    )
+                    .ok_or(SectionCodecError::NonCanonicalTable(
+                        "view_expression_owner_span",
+                    ))?;
+                for instruction in instructions {
+                    let ViewProgramInstruction::EmitText { text_source, .. } = instruction else {
+                        continue;
+                    };
+                    let source = text
+                        .sources
+                        .iter()
+                        .find(|source| source.public_id == *text_source)
+                        .ok_or(SectionCodecError::NonCanonicalTable(
+                            "view_expression_text_source",
+                        ))?;
+                    if let ViewTextSourceKind::Program {
+                        program: expression,
+                    } = &source.kind
+                    {
+                        let signature =
+                            self.validate_expression_program(program, definition, expression)?;
+                        if !signature
+                            .result
+                            .and_then(|ty| program.runtime_types.get(ty.index()))
+                            .is_some_and(|ty| {
+                                matches!(
+                                    ty.shape(),
+                                    arcweft_core::awbc::schema::AwbcRuntimeTypeShape::String
+                                )
+                            })
+                        {
+                            return Err(SectionCodecError::NonCanonicalTable(
+                                "view_expression_text_result",
+                            ));
+                        }
+                        referenced.insert(source.public_id.as_str());
+                    }
+                }
+            }
+            if text.sources.iter().any(|source| {
+                matches!(source.kind, ViewTextSourceKind::Program { .. })
+                    && !referenced.contains(source.public_id.as_str())
+            }) {
+                return Err(SectionCodecError::NonCanonicalTable(
+                    "view_expression_text_owner",
+                ));
             }
         }
         for handler in &self.handlers {

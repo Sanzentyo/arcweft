@@ -365,9 +365,9 @@ pub enum CheckedMatchWitnessView<'a> {
     },
 }
 
-/// Failure of the atomic, generation-checked Match query.
+/// Failure of an atomic, generation-checked semantic transcript query.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub enum CheckedMatchQueryError {
+pub enum CheckedSemanticTranscriptError {
     #[error(transparent)]
     Generation(#[from] super::FinalSemanticAnalysisError),
     #[error("expression is missing from the accepted HIR generation")]
@@ -396,7 +396,7 @@ pub enum CheckedMatchQueryError {
     Cancelled,
 }
 
-impl From<SemanticTranscriptError> for CheckedMatchQueryError {
+impl From<SemanticTranscriptError> for CheckedSemanticTranscriptError {
     fn from(error: SemanticTranscriptError) -> Self {
         match error {
             SemanticTranscriptError::Generation(error) => Self::Generation(*error),
@@ -736,6 +736,34 @@ pub(crate) fn checked_declaration_default_pattern_digest(
 }
 
 impl FinalSemanticAnalysis {
+    /// Commits the complete accepted expression subtree, including exhaustive
+    /// nested Match products, from this exact HIR generation.
+    pub fn checked_expression_semantic_digest(
+        &self,
+        project: HirAnalysisProjectView<'_>,
+        symbols: &ProjectSymbolTable,
+        expression: ExprId,
+        limits: CheckedMatchLimits,
+    ) -> Result<CheckedExpressionSemanticDigest, CheckedSemanticTranscriptError> {
+        static NOT_CANCELLED: std::sync::atomic::AtomicBool =
+            std::sync::atomic::AtomicBool::new(false);
+        self.validate_generation(project, symbols)?;
+        let module = project
+            .modules()
+            .find_map(|(_, module)| {
+                (module.module_id() == expression.module()).then_some(module.as_ref())
+            })
+            .ok_or(CheckedSemanticTranscriptError::MissingExpression)?;
+        SemanticTranscriptGraph::new(
+            self,
+            module,
+            limits,
+            FinalSemanticAnalysisControl::new(&NOT_CANCELLED),
+        )
+        .expression_digest(expression)
+        .map_err(CheckedSemanticTranscriptError::from)
+    }
+
     /// Returns one complete exhaustive Match product from this exact accepted
     /// HIR generation. A failed query publishes no partial semantic result.
     pub fn checked_match(
@@ -744,7 +772,7 @@ impl FinalSemanticAnalysis {
         symbols: &ProjectSymbolTable,
         expression: ExprId,
         limits: CheckedMatchLimits,
-    ) -> Result<CheckedMatch, CheckedMatchQueryError> {
+    ) -> Result<CheckedMatch, CheckedSemanticTranscriptError> {
         static NOT_CANCELLED: std::sync::atomic::AtomicBool =
             std::sync::atomic::AtomicBool::new(false);
         self.checked_match_with_control(
@@ -754,7 +782,7 @@ impl FinalSemanticAnalysis {
             limits,
             FinalSemanticAnalysisControl::new(&NOT_CANCELLED),
         )
-        .map_err(CheckedMatchQueryError::from)
+        .map_err(CheckedSemanticTranscriptError::from)
     }
 
     /// Constructs one checked Match while observing caller-owned cancellation.

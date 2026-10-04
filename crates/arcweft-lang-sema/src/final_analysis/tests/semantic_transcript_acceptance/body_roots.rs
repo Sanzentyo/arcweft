@@ -644,7 +644,7 @@ impl Number {
 
 #[test]
 fn nested_non_exhaustive_match_rejects_outer_product_without_poisoning_other_roots() {
-    use crate::final_analysis::{CheckedMatchLimits, CheckedMatchQueryError};
+    use crate::final_analysis::{CheckedMatchLimits, CheckedSemanticTranscriptError};
     let source = r#"
 fn good(flag: bool) -> i64 {
     match flag {
@@ -700,7 +700,7 @@ fn bad(outer: bool, inner: bool) -> i64 {
         for owner in &bad {
             assert!(matches!(
                 report.checked_match(project, &world.symbols, *owner, CheckedMatchLimits::PRODUCTION),
-                Err(CheckedMatchQueryError::NonExhaustive { witness }) if witness.boolean() == Some(false)
+                Err(CheckedSemanticTranscriptError::NonExhaustive { witness }) if witness.boolean() == Some(false)
             ));
         }
         let after = report
