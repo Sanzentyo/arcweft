@@ -164,11 +164,11 @@ fn resolve_candidate_path(
             .get(usize::try_from(instruction_index).ok()?)?;
         match (segment, instruction) {
             (
-                BundleViewInstancePathSegment::Repeat { .. },
-                ViewProgramInstruction::RepeatKeyed { body_span, .. },
-            ) => {
-                let start = instruction_index.checked_add(1)?;
-                allowed = ViewInstructionSpan::new(start, start.checked_add(*body_span)?);
+                BundleViewInstancePathSegment::Repeat { key, .. },
+                ViewProgramInstruction::RepeatKeyed { program, .. },
+            ) if key.value_type() == program.key.result_type => {
+                let range = program.body_range(instruction_index, allowed.end_instruction)?;
+                allowed = ViewInstructionSpan::new(range.start, range.end);
             }
             (
                 BundleViewInstancePathSegment::Call { authored_key, .. },

@@ -127,6 +127,68 @@ pub struct ViewBindingProgram {
     pub outputs: Box<[ViewLocalOutput]>,
 }
 
+impl ViewBindingProgram {
+    pub fn outputs_are_canonical(&self) -> bool {
+        self.outputs.iter().enumerate().all(|(index, output)| {
+            output.coordinate.program == self.execution.program
+                && usize::from(output.coordinate.output) == index
+        })
+    }
+}
+
+/// The source uses Core iteration and returns owned binding tuples. The key
+/// is evaluated in each item's binding scope before any retained body runs.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ViewRepeatProgram {
+    pub source: ViewBindingProgram,
+    pub key: ViewExpressionProgram,
+    pub body_span: u32,
+}
+
+impl ViewRepeatProgram {
+    pub fn body_range(
+        &self,
+        instruction: u32,
+        enclosing_end: u32,
+    ) -> Option<crate::ViewInstructionRange> {
+        if !self.source.outputs_are_canonical() {
+            return None;
+        }
+        let start = instruction.checked_add(1)?;
+        let end = start.checked_add(self.body_span)?;
+        (end <= enclosing_end).then(|| crate::ViewInstructionRange::new(start, end))
+    }
+}
+
+/// A typed, canonical key value digest; no VM register or instruction offset
+/// participates in the value identity.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ViewRepeatKey {
+    value_type: RuntimeSemanticTypeId,
+    digest: [u8; 32],
+}
+
+impl ViewRepeatKey {
+    /// The caller must validate and hash the value with its admitted Core type.
+    pub const fn from_checked_digest(value_type: RuntimeSemanticTypeId, digest: [u8; 32]) -> Self {
+        Self { value_type, digest }
+    }
+    pub const fn value_type(&self) -> RuntimeSemanticTypeId {
+        self.value_type
+    }
+    pub const fn digest(&self) -> &[u8; 32] {
+        &self.digest
+    }
+    pub fn identity_bytes(&self) -> [u8; 64] {
+        let mut bytes = [0; 64];
+        bytes[..32].copy_from_slice(self.value_type.as_bytes());
+        bytes[32..].copy_from_slice(&self.digest);
+        bytes
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ViewLocalOutput {

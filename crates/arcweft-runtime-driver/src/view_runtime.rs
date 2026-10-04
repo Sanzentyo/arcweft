@@ -86,7 +86,7 @@ pub enum BundleViewInstancePathSegment {
     },
     Repeat {
         instruction: u32,
-        key: i32,
+        key: arcweft_view::ViewRepeatKey,
     },
 }
 
@@ -672,7 +672,7 @@ impl BundleViewInstancePath {
 }
 
 impl BundleViewInstancePathSegment {
-    /// Appends this closed path segment's four-word little-endian Style identity.
+    /// Appends this closed path segment's little-endian Style identity.
     pub fn append_style_path_words(&self, output: &mut Vec<u64>) {
         match self {
             Self::Call {
@@ -684,12 +684,16 @@ impl BundleViewInstancePathSegment {
                 u64::from(authored_key.is_some()),
                 authored_key.unwrap_or(0),
             ]),
-            Self::Repeat { instruction, key } => output.extend([
-                1,
-                u64::from(*instruction),
-                u64::from(u32::from_le_bytes(key.to_le_bytes())),
-                0,
-            ]),
+            Self::Repeat { instruction, key } => {
+                output.extend([1, u64::from(*instruction)]);
+                output.extend(
+                    key.identity_bytes()
+                        .as_chunks::<8>()
+                        .0
+                        .iter()
+                        .map(|bytes| u64::from_le_bytes(*bytes)),
+                );
+            }
         }
     }
 }
@@ -1662,7 +1666,7 @@ fn deterministic_mount_seed(
             BundleViewInstancePathSegment::Repeat { instruction, key } => {
                 transcript.push(1);
                 transcript.extend_from_slice(&instruction.to_le_bytes());
-                transcript.extend_from_slice(&key.to_le_bytes());
+                transcript.extend_from_slice(&key.identity_bytes());
             }
         }
     }

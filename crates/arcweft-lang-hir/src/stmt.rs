@@ -285,7 +285,7 @@ fn thread_recovery_matches_kind(kind: &HirStmtKind, issue: HirThreadStmtRecovery
                     | HirStmtKind::WhileLet(_)
                     | HirStmtKind::For(_)
             ),
-            Child::Source | Child::Iterator | Child::NextValue => {
+            Child::Source | Child::Iterator | Child::NextValue | Child::Key => {
                 matches!(kind, HirStmtKind::For(_))
             }
             Child::SelectBinding { .. }
@@ -593,6 +593,7 @@ pub enum HirStmtEvaluationPlan<'stmt> {
         next_value: ExprId,
         pattern: PatternId,
         branch_locals: &'stmt [LocalId],
+        key: Option<ExprId>,
         body: &'stmt HirContextualStmtBody,
     },
     Select {
@@ -974,6 +975,7 @@ impl<'stmt> HirStmtEvaluationPlan<'stmt> {
                 next_value,
                 pattern,
                 branch_locals,
+                key,
                 body,
             } => {
                 for (role, expression) in [
@@ -993,6 +995,12 @@ impl<'stmt> HirStmtEvaluationPlan<'stmt> {
                     },
                     locals: branch_locals,
                 });
+                if let Some(expression) = key {
+                    visitor(HirStmtEvaluationStep::Expression {
+                        role: HirStatementChildRole::ForKey,
+                        expression: *expression,
+                    });
+                }
                 visit_contextual_steps(&mut visitor, HirStatementBodyRole::For, body)?;
             }
             Self::Select { plan, .. } => match plan {
@@ -1562,6 +1570,7 @@ impl HirStmtKind {
                 next_value: statement.next_value(),
                 pattern: statement.pattern(),
                 branch_locals: statement.locals(),
+                key: statement.key(),
                 body: statement.body(),
             },
             Self::Close { target } => Plan::Value {

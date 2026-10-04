@@ -1651,6 +1651,14 @@ impl FinalSemanticAnalysis {
             .region(super::CheckedExecutionOperation::Statement(owner))
     }
 
+    pub(super) fn iteration_execution_region(
+        &self,
+        owner: StmtId,
+    ) -> Option<super::execution_regions::CheckedExecutionRegion> {
+        self.expression_execution_regions
+            .region(super::CheckedExecutionOperation::Iteration(owner))
+    }
+
     pub(super) fn body_execution_region(
         &self,
         owner: &super::CheckedExecutionBodyOwner,

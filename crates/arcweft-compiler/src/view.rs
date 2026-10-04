@@ -1041,7 +1041,8 @@ impl ViewExpressionLowerer<'_> {
                     source: Box::new(source),
                 })?
                 .as_bytes(),
-            CheckedExecutionSource::ExportBinding(statement) => *self
+            CheckedExecutionSource::ExportBinding(statement)
+            | CheckedExecutionSource::ExportIteration(statement) => *self
                 .analysis
                 .checked_statement_semantic_digest(
                     self.project,
@@ -1292,12 +1293,104 @@ impl AuthoredViewBodyLowerer<'_> {
         Ok(())
     }
 
+    fn lower_repeat(
+        &mut self,
+        owner: arcweft_lang_hir::identity::StmtId,
+        iteration: &arcweft_lang_hir::stmt::HirForStmt,
+    ) -> Result<(), ViewProjectLowerError> {
+        let view_owner = self.owner;
+        let invalid = || ViewProjectLowerError::MissingCheckedViewProjection { owner: view_owner };
+        let key = iteration.key().ok_or_else(invalid)?;
+        let execution = ViewExpressionLowerer {
+            project: self.project,
+            analysis: self.analysis,
+            world: self.registered_world,
+            owner: self.owner,
+            view: self.view,
+            parameters: self.parameters,
+            locals: &self.locals,
+            output: self.output,
+        }
+        .lower_source(
+            arcweft_lang_sema::final_analysis::CheckedExecutionSource::ExportIteration(owner),
+        )?;
+        let admission = self.output.runtime_programs.last().ok_or_else(invalid)?;
+        let outer = self.locals.clone();
+        let mut outputs = Vec::new();
+        for (index, binding) in admission
+            .admission
+            .input_abi()
+            .binding_outputs()
+            .iter()
+            .enumerate()
+        {
+            let output = arcweft_view::ViewLocalOutput {
+                coordinate: arcweft_view::ViewLocalCoordinate {
+                    program: execution.program,
+                    output: u16::try_from(index).map_err(|_| invalid())?,
+                },
+                value_type: ViewHandlerValueTypeId::from_semantic_digest(
+                    *admission
+                        .admission
+                        .input_abi()
+                        .environment()
+                        .semantic_type_identity(binding.ty())?
+                        .as_bytes(),
+                ),
+            };
+            if self.locals.insert(binding.local(), output).is_some() {
+                return Err(invalid());
+            }
+            outputs.push(output);
+        }
+        let key = ViewExpressionLowerer {
+            project: self.project,
+            analysis: self.analysis,
+            world: self.registered_world,
+            owner: self.owner,
+            view: self.view,
+            parameters: self.parameters,
+            locals: &self.locals,
+            output: self.output,
+        }
+        .lower(key)?;
+        let index = self.output.instructions.len();
+        self.output
+            .instructions
+            .push(ViewProgramInstruction::RepeatKeyed {
+                program: arcweft_view::ViewRepeatProgram {
+                    source: arcweft_view::ViewBindingProgram {
+                        execution,
+                        outputs: outputs.into_boxed_slice(),
+                    },
+                    key,
+                    body_span: 0,
+                },
+                source: None,
+            });
+        let start = self.output.instructions.len();
+        self.lower_branch_body(AuthoredViewBranchBody::Statements(
+            iteration.body().ordinary_statements().ok_or_else(invalid)?,
+        ))?;
+        let span = u32::try_from(self.output.instructions.len() - start).map_err(|_| invalid())?;
+        self.locals = outer;
+        let ViewProgramInstruction::RepeatKeyed { program, .. } =
+            &mut self.output.instructions[index]
+        else {
+            return Err(invalid());
+        };
+        program.body_span = span;
+        Ok(())
+    }
     fn lower_statement(
         &mut self,
         statement: arcweft_lang_hir::identity::StmtId,
     ) -> Result<(), ViewProjectLowerError> {
         let invalid = || ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner };
         let row = self.module.resolve_stmt(statement).map_err(|_| invalid())?;
+        if let arcweft_lang_hir::stmt::HirStmtKind::For(iteration) = row.kind() {
+            return self.lower_repeat(statement, iteration);
+        }
         if let arcweft_lang_hir::stmt::HirStmtKind::Match(matched) = row.kind() {
             return self.lower_match(
                 statement.into(),

@@ -13,10 +13,9 @@ use arcweft_view::{
     SemanticSpecId, TextSourceId, ViewBranch, ViewCall, ViewCallArgument, ViewCustomSpec,
     ViewElementSpec, ViewEvaluationSiteId, ViewExecutionInput, ViewFxApplicationInstruction,
     ViewFxArgumentSource, ViewFxCallArgument, ViewHandlerProgramId, ViewHandlerResult, ViewId,
-    ViewImageSpec, ViewInstruction, ViewInstructionRange, ViewPartId, ViewPartStaticReachability,
-    ViewProgram, ViewProgramBuildError, ViewProgramBuilder, ViewProgramId, ViewRepeat,
-    ViewSemanticSpec, ViewStableKey, ViewTextSpec, ViewValueInventoryError,
-    ViewValueProgramInventory,
+    ViewImageSpec, ViewInstruction, ViewPartId, ViewPartStaticReachability, ViewProgram,
+    ViewProgramBuildError, ViewProgramBuilder, ViewProgramId, ViewRepeat, ViewSemanticSpec,
+    ViewStableKey, ViewTextSpec, ViewValueInventoryError, ViewValueProgramInventory,
 };
 use thiserror::Error;
 
@@ -571,21 +570,18 @@ fn map_instruction(
                 else_range: ranges.else_range(),
             })
         }
-        ViewProgramInstruction::RepeatKeyed {
-            source_program,
-            key_program,
-            body_span,
-            ..
-        } => {
-            let start = u32::try_from(local_index + 1)
-                .map_err(|_| ViewProgramCatalogError::InstructionIndexOverflow)?;
-            let end = start
-                .checked_add(*body_span)
+        ViewProgramInstruction::RepeatKeyed { program, .. } => {
+            let body = program
+                .body_range(
+                    u32::try_from(local_index)
+                        .map_err(|_| ViewProgramCatalogError::InstructionIndexOverflow)?,
+                    u32::MAX,
+                )
                 .ok_or(ViewProgramCatalogError::InstructionIndexOverflow)?;
             ViewInstruction::RepeatKeyed(ViewRepeat {
-                source: *source_program,
-                key: *key_program,
-                body: ViewInstructionRange::new(start, end),
+                source: program.source.clone(),
+                key: program.key.clone(),
+                body,
             })
         }
         ViewProgramInstruction::BeginScope => ViewInstruction::BeginScope,

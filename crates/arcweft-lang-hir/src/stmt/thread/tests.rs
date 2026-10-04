@@ -151,6 +151,7 @@ fn conditional_loop_and_for_payloads_retain_only_typed_children() {
         id(owner, 22),
         pattern,
         Box::new([local]),
+        None,
         thread_body(owner, 17),
     )
     .expect("same-module for payload");

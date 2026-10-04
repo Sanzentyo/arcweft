@@ -115,6 +115,7 @@ pub enum HirStatementChildRole {
     ForSource,
     ForIterator,
     ForNextValue,
+    ForKey,
     SelectOperand,
     SelectBinding {
         branch: u32,
@@ -490,6 +491,9 @@ impl HirStmtKind {
                     statement.pattern(),
                     HirStatementChildRole::Pattern,
                 );
+                if let Some(key) = statement.key() {
+                    push_expression(&mut edges, key, HirStatementChildRole::ForKey);
+                }
                 push_contextual_body(&mut edges, HirStatementBodyRole::For, statement.body())?;
             }
             Self::Select(HirSelectStmt::Operand(operand)) => {

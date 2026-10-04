@@ -220,6 +220,7 @@ pub(crate) struct PreparedExecutionEffectCatalog {
     bodies: BTreeMap<Arc<CheckedExecutionBodyOwner>, PreparedExecutionEffectRow>,
     expression_rows: BTreeMap<ExprId, PreparedExecutionEffectRow>,
     statement_rows: BTreeMap<StmtId, PreparedExecutionEffectRow>,
+    iteration_rows: BTreeMap<StmtId, PreparedExecutionEffectRow>,
     declarations: BTreeMap<CallableDeclarationKey, PreparedExecutionEffectRow>,
     items: BTreeMap<arcweft_lang_hir::identity::ItemId, PreparedExecutionEffectRow>,
     closures: BTreeMap<CallableDeclarationKey, Box<[PreparedClosureExecutionEffectRow]>>,
@@ -287,6 +288,27 @@ impl PreparedExecutionEffectCatalog {
         ),
     > + '_ {
         self.statement_rows.iter().map(|(&owner, row)| {
+            (
+                owner,
+                row.direct_suspension,
+                &row.expressions,
+                &row.children,
+                row.requires_flow,
+            )
+        })
+    }
+    pub(crate) fn iteration_execution_rows(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            StmtId,
+            bool,
+            &BTreeSet<ExprId>,
+            &BTreeSet<CheckedExecutionOperation>,
+            bool,
+        ),
+    > + '_ {
+        self.iteration_rows.iter().map(|(&owner, row)| {
             (
                 owner,
                 row.direct_suspension,
@@ -472,6 +494,7 @@ struct PreparedExecutionEffectSealer<'a> {
     statement_facts: BTreeMap<StmtId, &'a PreparedStatementPayload>,
     expression_rows: BTreeMap<ExprId, PreparedExecutionEffectRow>,
     statement_rows: BTreeMap<StmtId, PreparedExecutionEffectRow>,
+    iteration_rows: BTreeMap<StmtId, PreparedExecutionEffectRow>,
     active_expressions: BTreeSet<ExprId>,
     active_statements: BTreeSet<StmtId>,
     declarations: BTreeMap<CallableDeclarationKey, PreparedExecutionEffectRow>,
@@ -545,6 +568,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             expression_rows: BTreeMap::new(),
             bodies: BTreeMap::new(),
             statement_rows: BTreeMap::new(),
+            iteration_rows: BTreeMap::new(),
             active_expressions: BTreeSet::new(),
             active_statements: BTreeSet::new(),
             declarations: BTreeMap::new(),
@@ -698,6 +722,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             bodies: self.bodies,
             expression_rows: self.expression_rows,
             statement_rows: self.statement_rows,
+            iteration_rows: self.iteration_rows,
             declarations: self.declarations,
             items: self.items,
             closures: closures
@@ -974,6 +999,13 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
         );
         row.source = Some(CheckedExecutionOperation::Statement(owner));
         row.statements.insert(owner);
+        let mut iteration =
+            matches!(kind, HirStmtKind::For(_)).then(|| PreparedExecutionEffectRow {
+                source: Some(CheckedExecutionOperation::Iteration(owner)),
+                requires_flow: true,
+                statements: BTreeSet::from([owner]),
+                ..PreparedExecutionEffectRow::default()
+            });
         for edge in kind
             .try_child_edges()
             .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?
@@ -998,6 +1030,16 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                 | HirStatementChild::Type(_)
                 | HirStatementChild::Local(_) => continue,
             };
+            if let Some(iteration) = &mut iteration
+                && matches!(
+                    edge.role(),
+                    HirStatementChildRole::ForSource
+                        | HirStatementChildRole::ForIterator
+                        | HirStatementChildRole::ForNextValue
+                )
+            {
+                iteration.union_with(&child, self.control)?;
+            }
             if child.source == cleanup.map(CheckedExecutionOperation::Value) {
                 row.union_dependency(&child, self.control)?;
             } else {
@@ -1035,6 +1077,11 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             | PreparedStatementPayload::Iteration(_)
             | PreparedStatementPayload::EvaluatedEffect(_)
             | PreparedStatementPayload::SealedEvaluatedEffectReference(_) => {}
+        }
+        if let Some(iteration) = iteration
+            && self.iteration_rows.insert(owner, iteration).is_some()
+        {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
         if !self.active_statements.remove(&owner)
             || self.statement_rows.insert(owner, row.clone()).is_some()

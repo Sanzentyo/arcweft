@@ -962,30 +962,26 @@ fn scalar_await_record_is_rejected_at_instruction_and_section_ingress() {
 
 #[test]
 fn view_value_program_references_require_existing_programs_and_result_types() {
-    let mut missing = fixture_program();
-    missing
-        .instructions
-        .push(ViewProgramInstruction::RepeatKeyed {
-            source_program: ViewValueProgramId(99),
-            key_program: ViewValueProgramId(0),
-            body_span: 0,
+    let definition = FxDefinition::new(
+        FxId::try_new("game", "ui.effects.notice").unwrap(),
+        Vec::new(),
+        FxGraph::default(),
+    )
+    .unwrap();
+    for key_program in [ViewValueProgramId(99), ViewValueProgramId(1)] {
+        let mut invalid = fixture_program();
+        invalid.instructions.push(ViewProgramInstruction::ApplyFx {
+            fx: definition.id().clone(),
+            parameter_layout: definition.parameter_layout().digest(),
+            arguments: Vec::new(),
+            key_program: Some(key_program),
+            application_ordinal: 0,
             source: None,
         });
-    missing.definitions[0].body.end_instruction = missing.instructions.len().try_into().unwrap();
-    assert!(missing.encode_canonical_section().is_err());
-
-    let mut wrong_type = fixture_program();
-    wrong_type
-        .instructions
-        .push(ViewProgramInstruction::RepeatKeyed {
-            source_program: ViewValueProgramId(1),
-            key_program: ViewValueProgramId(0),
-            body_span: 0,
-            source: None,
-        });
-    wrong_type.definitions[0].body.end_instruction =
-        wrong_type.instructions.len().try_into().unwrap();
-    assert!(wrong_type.encode_canonical_section().is_err());
+        invalid.definitions[0].body.end_instruction =
+            invalid.instructions.len().try_into().unwrap();
+        assert!(invalid.encode_canonical_section().is_err());
+    }
 
     let mut malformed_input = fixture_program();
     malformed_input.value_inputs.push(
@@ -1601,10 +1597,10 @@ fn fixture_program() -> ViewProgramResource {
                 handler: ViewHandlerProgramId::from_checked_digest([7; 32]),
                 source: None,
             },
-            ViewProgramInstruction::RepeatKeyed {
-                source_program: ViewValueProgramId(0),
-                key_program: ViewValueProgramId(0),
-                body_span: 0,
+            ViewProgramInstruction::EmitCustom {
+                element: "Spacer".to_owned(),
+                styles: Vec::new(),
+                part: None,
                 source: None,
             },
             ViewProgramInstruction::CloseElement,
@@ -1866,4 +1862,12 @@ fn fixture_theme(accent: PresentationColor) -> ViewThemeResource {
         environment: PresentationEnvironmentOverrides::empty(),
         dark_mode_visual_golden_ids: vec!["golden.view.dialogue.dark".to_owned()],
     }
+}
+
+#[test]
+fn scalar_repeat_and_ordinal_input_have_no_compatibility_reader() {
+    let repeat = serde_json::json!({"repeat_keyed": {"source_program": 0, "key_program": 0, "body_span": 0, "source": null}});
+    assert!(serde_json::from_value::<ViewProgramInstruction>(repeat).is_err());
+    let input = serde_json::json!({"repeat_ordinal": {"view": "view.Main", "binding": "item"}});
+    assert!(serde_json::from_value::<ViewValueInputSource>(input).is_err());
 }

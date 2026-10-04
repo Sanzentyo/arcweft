@@ -338,8 +338,8 @@ pub struct ViewBranch {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewRepeat {
-    pub source: ViewValueProgramId,
-    pub key: ViewValueProgramId,
+    pub source: crate::ViewBindingProgram,
+    pub key: crate::ViewExpressionProgram,
     pub body: ViewInstructionRange,
 }
 

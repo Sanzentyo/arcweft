@@ -265,6 +265,17 @@ fn root_kind_matches(
     match (root.kind, &root.owner) {
         (
             HirRuntimeReachabilityRootKind::CheckedProgram,
+            HirRuntimeExecutableOwner::IterationBindings(owner),
+        ) => project
+            .modules()
+            .find(|(_, module)| module.module_id() == owner.module())
+            .is_some_and(|(_, module)| {
+                module
+                    .resolve_stmt(*owner)
+                    .is_ok_and(|row| matches!(row.kind(), crate::stmt::HirStmtKind::For(_)))
+            }),
+        (
+            HirRuntimeReachabilityRootKind::CheckedProgram,
             HirRuntimeExecutableOwner::Statement(owner),
         ) => project
             .modules()

@@ -382,9 +382,18 @@ impl<'a> CallableEffectGraph<'a> {
                 project_row(direct, expressions, children, requires_flow)?,
             );
         }
+        let mut iterations = BTreeMap::new();
+        for (owner, direct, expressions, children, requires_flow) in
+            execution.iteration_execution_rows()
+        {
+            iterations.insert(
+                owner,
+                project_row(direct, expressions, children, requires_flow)?,
+            );
+        }
         Ok(
             crate::final_analysis::execution_regions::PreparedExecutableSuspensionCatalog::new(
-                closed, statements, bodies,
+                closed, statements, bodies, iterations,
             ),
         )
     }

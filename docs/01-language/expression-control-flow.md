@@ -257,3 +257,13 @@ Range forms:
 
 `for` returns `Unit`. Use `loop` for value-producing loops.
 
+An optional `key = expression` follows the source and is evaluated after the
+item pattern binds, before that item's body. In retained View bodies the key is
+required and supplies stable item identity; see
+[View iteration](../03-presentation/view-reactive.md). Outside retained View
+execution it is evaluated through the ordinary statement execution owner.
+The source expression is evaluated once. A `key` identifier in the source or a
+nested argument does not introduce this clause; only a top-level `key =` after
+the complete source does. A block-valued key must be parenthesized to distinguish
+its braces from the loop body.
+

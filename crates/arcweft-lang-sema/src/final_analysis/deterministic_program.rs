@@ -37,6 +37,9 @@ impl CheckedDeterministicProgram {
             CheckedExecutionSource::SelectMatch(owner) => {
                 HirRuntimeExecutableOwner::MatchSelection(*owner)
             }
+            CheckedExecutionSource::ExportIteration(owner) => {
+                HirRuntimeExecutableOwner::IterationBindings(*owner)
+            }
             CheckedExecutionSource::EvaluateValue(owner) => {
                 HirRuntimeExecutableOwner::Value(*owner)
             }

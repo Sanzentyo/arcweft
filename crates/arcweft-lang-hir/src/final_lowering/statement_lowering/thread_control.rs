@@ -234,6 +234,18 @@ impl StagedHirModuleTransaction<'_> {
                     body_scope,
                     HirPatternBindingPolicy::PatternBinding,
                 )?;
+                let key = attached
+                    .key()
+                    .map(|key| {
+                        self.lower_required_statement_operand(owner, key, body_scope, |insertion| {
+                            HirStmtRecoveryOperandSlot::ForKey { insertion }
+                        })
+                    })
+                    .transpose()?;
+                let key_poisoned = key
+                    .map(|key| self.staged_expression_is_poisoned(key))
+                    .transpose()?
+                    .unwrap_or(false);
                 let (body, body_recovery) = match prepared {
                     Some(prepared) => {
                         let lowered = self
@@ -256,6 +268,7 @@ impl StagedHirModuleTransaction<'_> {
                     next_value,
                     pattern.owner,
                     pattern.locals,
+                    key,
                     body,
                 )
                 .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
@@ -271,6 +284,7 @@ impl StagedHirModuleTransaction<'_> {
                     .or_else(|| {
                         next_poisoned.then_some(thread_child(HirThreadStmtChildRole::NextValue))
                     })
+                    .or_else(|| key_poisoned.then_some(thread_child(HirThreadStmtChildRole::Key)))
                     .or(body_recovery);
                 Ok((HirStmtKind::For(statement), recovery))
             }

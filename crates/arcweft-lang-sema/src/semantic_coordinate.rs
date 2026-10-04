@@ -1917,6 +1917,7 @@ fn statement_role_tag(role: HirStatementChildRole) -> u8 {
         HirStatementChildRole::ForSource => 20,
         HirStatementChildRole::ForIterator => 21,
         HirStatementChildRole::ForNextValue => 22,
+        HirStatementChildRole::ForKey => 27,
         HirStatementChildRole::SelectOperand => 23,
         HirStatementChildRole::SelectBinding { .. } => 24,
         HirStatementChildRole::SelectSource { .. } => 25,
@@ -1970,6 +1971,7 @@ fn write_statement_role_payload(output: &mut Vec<u8>, role: HirStatementChildRol
         | HirStatementChildRole::ForSource
         | HirStatementChildRole::ForIterator
         | HirStatementChildRole::ForNextValue
+        | HirStatementChildRole::ForKey
         | HirStatementChildRole::SelectOperand => {}
     }
 }

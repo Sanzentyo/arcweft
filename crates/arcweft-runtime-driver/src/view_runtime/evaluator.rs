@@ -4,8 +4,7 @@ mod support;
 mod text;
 
 use support::{
-    branch_bounds, checked_span_end, control_flow_failure, derive_fx_instance, instruction_ordinal,
-    resolve_path,
+    branch_bounds, control_flow_failure, derive_fx_instance, instruction_ordinal, resolve_path,
 };
 
 use super::style_scope::{
@@ -775,8 +774,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                         .chain(path.iter().cloned())
                         .collect()
                 }
-                ViewValueInputSource::DefinitionParameter { .. }
-                | ViewValueInputSource::RepeatOrdinal { .. } => unreachable!(),
+                ViewValueInputSource::DefinitionParameter { .. } => unreachable!(),
             };
             let Some(value) = resolve_path(self.view_root_bindings, &path) else {
                 continue;
@@ -1591,73 +1589,109 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                     }
                     cursor = else_end;
                 }
-                ViewProgramInstruction::RepeatKeyed {
-                    source_program,
-                    key_program,
-                    body_span,
-                    ..
-                } => {
-                    let body_start = cursor.checked_add(1).ok_or_else(|| {
-                        control_flow_failure(cursor, "repeat body start overflow")
-                    })?;
-                    let body_end = checked_span_end(body_start, *body_span, end, cursor)?;
-                    let context = self.sample_context(mounted, instruction_ordinal(cursor)?)?;
-                    let count = evaluate_value(
-                        mounted,
-                        *source_program,
-                        self.inventory,
-                        context,
-                        &mut self.value_budget,
-                        Some(cursor),
-                    )?;
-                    let FxRuntimeValue::I32(count) = count else {
-                        return Err(EvaluationFailure::new(
-                            BundleViewDiagnosticCode::InvalidValueProgram,
-                            Some(cursor),
-                            "repeat source must return I32",
-                        ));
+                ViewProgramInstruction::RepeatKeyed { program, .. } => {
+                    let invalid = || {
+                        control_flow_failure(
+                            cursor,
+                            "repeat source or item output disagrees with its checked contract",
+                        )
                     };
-                    if !(0..=VIEW_REPEAT_LIMIT).contains(&count) {
+                    let range = program
+                        .body_range(instruction_ordinal(cursor)?, instruction_ordinal(end)?)
+                        .ok_or_else(invalid)?;
+                    let source = self.evaluate_expression_program(
+                        &key.handle,
+                        definition,
+                        mounted,
+                        cursor,
+                        &program.source.execution,
+                    )?;
+                    let RuntimeValue::Seq(sequence) = source else {
+                        return Err(invalid());
+                    };
+                    if sequence.len() > VIEW_REPEAT_LIMIT as usize {
                         return Err(EvaluationFailure::new(
                             BundleViewDiagnosticCode::RepeatLimitExceeded,
                             Some(cursor),
-                            format!("repeat count {count} is outside 0..={VIEW_REPEAT_LIMIT}"),
+                            format!(
+                                "repeat length {} exceeds {VIEW_REPEAT_LIMIT}",
+                                sequence.len()
+                            ),
                         ));
                     }
-                    let repeat_slots =
-                        self.repeat_slots(*key_program, definition.public_id.as_str())?;
+                    let ViewProgramRuntimeAuthority::Awbc(owner) = self.program_runtime else {
+                        return Err(invalid());
+                    };
                     let mut keys = BTreeSet::new();
-                    for ordinal in 0..count {
-                        for slot in &repeat_slots {
-                            mounted
-                                .state
-                                .set_state(*slot, FxRuntimeValue::I32(ordinal), self.inventory)
-                                .map_err(|error| EvaluationFailure::value(Some(cursor), &error))?;
-                            mounted.initialized_state.insert(*slot);
-                        }
-                        let context = self.sample_context(mounted, ordinal.cast_unsigned())?;
-                        let item_key = evaluate_value(
-                            mounted,
-                            *key_program,
-                            self.inventory,
-                            context,
-                            &mut self.value_budget,
-                            Some(cursor),
-                        )?;
-                        let FxRuntimeValue::I32(item_key) = item_key else {
-                            return Err(EvaluationFailure::new(
-                                BundleViewDiagnosticCode::InvalidValueProgram,
-                                Some(cursor),
-                                "repeat key must return I32",
-                            ));
+                    let mut items = Vec::new();
+                    for value in sequence.into_values() {
+                        let values = match value {
+                            RuntimeValue::Unit if program.source.outputs.is_empty() => Vec::new(),
+                            RuntimeValue::Tuple(values)
+                                if values.len() == program.source.outputs.len() =>
+                            {
+                                values
+                            }
+                            _ => return Err(invalid()),
                         };
+                        for (output, value) in program.source.outputs.iter().zip(&values) {
+                            if !owner
+                                .semantic_type_id(output.value_type)
+                                .is_some_and(|ty| owner.value_matches_type(value, ty))
+                            {
+                                return Err(invalid());
+                            }
+                        }
+                        let prior_depth = mounted.execution_locals.len();
+                        mounted.execution_locals.push(
+                            program
+                                .source
+                                .outputs
+                                .iter()
+                                .zip(values)
+                                .map(|(output, value)| (output.coordinate, value))
+                                .collect(),
+                        );
+                        let result = self.evaluate_expression_program(
+                            &key.handle,
+                            definition,
+                            mounted,
+                            cursor,
+                            &program.key,
+                        );
+                        let item = mounted.execution_locals.pop().ok_or_else(invalid)?;
+                        mounted.execution_locals.truncate(prior_depth);
+                        let value = result?;
+                        let ty = owner
+                            .semantic_type_id(program.key.result_type)
+                            .ok_or_else(invalid)?;
+                        let digest = owner
+                            .accepts_value(
+                                ty,
+                                &value,
+                                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                            )
+                            .map_err(|error| {
+                                EvaluationFailure::new(
+                                    BundleViewDiagnosticCode::InvalidValueProgram,
+                                    Some(cursor),
+                                    error.to_string(),
+                                )
+                            })?;
+                        let item_key = arcweft_view::ViewRepeatKey::from_checked_digest(
+                            program.key.result_type,
+                            *digest.as_bytes(),
+                        );
                         if !keys.insert(item_key) {
                             return Err(EvaluationFailure::new(
                                 BundleViewDiagnosticCode::DuplicateRepeatKey,
                                 Some(cursor),
-                                format!("repeat key {item_key} occurs more than once"),
+                                "repeat source contains a duplicate key",
                             ));
                         }
+                        items.push((item_key, item));
+                    }
+                    for (item_key, item) in items {
                         let repeated_path = structural_path
                             .with_segment(BundleViewInstancePathSegment::Repeat {
                                 instruction: instruction_ordinal(cursor)?,
@@ -1670,19 +1704,23 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                                     error.to_string(),
                                 )
                             })?;
-                        self.execute_span(
+                        let prior_depth = mounted.execution_locals.len();
+                        mounted.execution_locals.push(item);
+                        let result = self.execute_span(
                             key,
                             definition,
                             mounted,
                             &repeated_path,
-                            body_start,
-                            body_end,
+                            range.start as usize,
+                            range.end as usize,
                             depth,
                             builder,
                             descendants,
-                        )?;
+                        );
+                        mounted.execution_locals.truncate(prior_depth);
+                        result?;
                     }
-                    cursor = body_end;
+                    cursor = range.end as usize;
                 }
                 ViewProgramInstruction::CallView {
                     view,
@@ -2341,36 +2379,6 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
         }
         builder.events.push(route);
         Ok(())
-    }
-
-    fn repeat_slots(
-        &self,
-        key_program: ViewValueProgramId,
-        definition: &str,
-    ) -> Result<Vec<u16>, EvaluationFailure> {
-        let program = self.inventory.get(key_program).ok_or_else(|| {
-            EvaluationFailure::new(
-                BundleViewDiagnosticCode::InvalidValueProgram,
-                None,
-                format!("repeat references unknown value program {key_program:?}"),
-            )
-        })?;
-        Ok(program
-            .state_dependencies()
-            .iter()
-            .copied()
-            .filter(|slot| {
-                self.program.value_inputs.iter().any(|input| {
-                    input.namespace == ViewValueInputNamespace::State
-                        && input.slot == *slot
-                        && matches!(
-                            &input.source,
-                            ViewValueInputSource::RepeatOrdinal { view, .. }
-                                if view == definition
-                        )
-                })
-            })
-            .collect())
     }
 
     fn sample_context(

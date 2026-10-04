@@ -53,6 +53,8 @@ pub enum HirRuntimeExecutableOwner {
     Value(ExprId),
     /// Match selector expressions, patterns and arm bindings, excluding arm results.
     MatchSelection(super::HirMatchOwner),
+    /// For header, iterator witness and item bindings; the retained body is separate.
+    IterationBindings(StmtId),
     /// Executes a checked statement within its accepted lexical owner.
     Statement(StmtId),
     /// Invokes an explicit or implicit callable expression's body.
@@ -1292,6 +1294,11 @@ impl<'project> HirAnalysisProjectView<'project> {
         owner: &HirRuntimeExecutableOwner,
     ) -> Result<(StructuralOwners, Vec<ExprId>), HirRuntimeReachabilityError> {
         let roots = execution_roots(self, index.topology, owner)?;
+        let iteration_owner = if let HirRuntimeExecutableOwner::IterationBindings(owner) = owner {
+            Some(*owner)
+        } else {
+            None
+        };
         let mut expression_roots = roots.expressions.clone();
         // Statement roots enter the same selected expression traversal as
         // declaration/value roots. Follow statement containers only here;
@@ -1299,6 +1306,9 @@ impl<'project> HirAnalysisProjectView<'project> {
         let mut statements = roots.statements.clone();
         let mut visited = BTreeSet::new();
         while let Some(statement) = statements.pop() {
+            if iteration_owner == Some(statement) {
+                continue;
+            }
             if !visited.insert(statement) {
                 continue;
             }
@@ -1322,13 +1332,14 @@ impl<'project> HirAnalysisProjectView<'project> {
             HirRuntimeExecutableOwner::CallableBody(expression) => Some(*expression),
             HirRuntimeExecutableOwner::Value(_)
             | HirRuntimeExecutableOwner::MatchSelection(_)
+            | HirRuntimeExecutableOwner::IterationBindings(_)
             | HirRuntimeExecutableOwner::Statement(_)
             | HirRuntimeExecutableOwner::DeclarationBody { .. }
             | HirRuntimeExecutableOwner::Item(_)
             | HirRuntimeExecutableOwner::ImplMethod(_) => None,
         };
         index
-            .close(roots, active_closure)
+            .close(roots, active_closure, iteration_owner)
             .map(|owners| (owners, expression_roots))
     }
 }
@@ -1450,6 +1461,7 @@ impl<'projection> StructuralIndex<'projection> {
         &self,
         roots: HirRuntimeExecutionRoots,
         active_closure: Option<ExprId>,
+        iteration_owner: Option<StmtId>,
     ) -> Result<StructuralOwners, HirRuntimeReachabilityError> {
         let mut pending = VecDeque::new();
         pending.extend(roots.scopes.into_iter().map(PendingOwner::Scope));
@@ -1537,6 +1549,9 @@ impl<'projection> StructuralIndex<'projection> {
                 }
                 PendingOwner::Statement(owner) => {
                     if !owners.statements.insert(owner) {
+                        continue;
+                    }
+                    if iteration_owner == Some(owner) {
                         continue;
                     }
                     let children = self.statement_edges.get(&owner).ok_or(
@@ -1658,6 +1673,34 @@ fn execution_roots(
             })?;
             Ok(HirRuntimeExecutionRoots {
                 statements: vec![*statement],
+                ..HirRuntimeExecutionRoots::default()
+            })
+        }
+        HirRuntimeExecutableOwner::IterationBindings(owner) => {
+            let module = project
+                .modules()
+                .find(|(_, module)| module.module_id() == owner.module())
+                .map(|(_, module)| module)
+                .ok_or_else(|| HirRuntimeReachabilityError::UnknownRoot {
+                    owner: HirRuntimeExecutableOwner::IterationBindings(*owner),
+                })?;
+            let statement = module.resolve_stmt(*owner).map_err(|_| {
+                HirRuntimeReachabilityError::UnresolvedStatement { statement: *owner }
+            })?;
+            let crate::stmt::HirStmtKind::For(iteration) = statement.kind() else {
+                return Err(HirRuntimeReachabilityError::UnknownRoot {
+                    owner: HirRuntimeExecutableOwner::IterationBindings(*owner),
+                });
+            };
+            Ok(HirRuntimeExecutionRoots {
+                statements: vec![*owner],
+                expressions: vec![
+                    iteration.source(),
+                    iteration.iterator(),
+                    iteration.next_value(),
+                ],
+                patterns: vec![iteration.pattern()],
+                locals: iteration.locals().to_vec(),
                 ..HirRuntimeExecutionRoots::default()
             })
         }

@@ -493,6 +493,7 @@ struct ReservedPureProgramDefinition<'facts> {
     parameter_inputs: Box<[RuntimeLocalSeedId]>,
     site: RuntimeFunctionSiteSeedId,
     body_kind: RuntimeFunctionSiteBodyKind,
+    iteration_output: Option<RuntimeLocalSeedId>,
 }
 
 #[derive(Clone)]
@@ -3303,12 +3304,32 @@ fn reserve_pure_programs<'facts>(
             errors.push(RuntimePlanLowerError::new(error.to_string()));
             continue;
         }
+        let iteration_output = if matches!(
+            program.source(),
+            arcweft_lang_sema::final_analysis::CheckedExecutionSource::ExportIteration(_)
+        ) {
+            match builder.admit_type_batch(
+                [],
+                [RuntimeLocalDeclarationSeed::new(
+                    program.result().identity(),
+                )],
+            ) {
+                Ok(admitted) => admitted.local_ids().first().cloned(),
+                Err(error) => {
+                    errors.push(RuntimePlanLowerError::new(error.to_string()));
+                    continue;
+                }
+            }
+        } else {
+            None
+        };
         definitions.push(ReservedPureProgramDefinition {
             program,
             scope,
             parameter_inputs: parameter_inputs.into_boxed_slice(),
             site,
             body_kind,
+            iteration_output,
         });
     }
     definitions
@@ -3740,7 +3761,8 @@ fn define_pure_programs(
         let abi = program.admission().input_abi();
         let body = (|| -> Result<RuntimeFunctionSiteBodySeed, RuntimePlanLowerError> {
             let module_id = match program.source() {
-                CheckedExecutionSource::ExportBinding(owner) => owner.module(),
+                CheckedExecutionSource::ExportBinding(owner)
+                | CheckedExecutionSource::ExportIteration(owner) => owner.module(),
                 CheckedExecutionSource::SelectMatch(owner) => owner.module(),
                 CheckedExecutionSource::EvaluateValue(owner)
                 | CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(
@@ -3774,6 +3796,68 @@ fn define_pure_programs(
             let expression_compatible =
                 definition.body_kind == RuntimeFunctionSiteBodyKind::Expression;
             let ops = match program.source() {
+                CheckedExecutionSource::ExportIteration(statement) => {
+                    let row = module
+                        .resolve_stmt(*statement)
+                        .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
+                    let HirStmtKind::For(iteration) = row.kind() else {
+                        return Err(RuntimePlanLowerError::new(
+                            "iteration program has no For owner",
+                        ));
+                    };
+                    let RuntimeTypeShape::Sequence { item, .. } = program.result().shape() else {
+                        return Err(RuntimePlanLowerError::new(
+                            "iteration program has no sequence result",
+                        ));
+                    };
+                    let output = definition.iteration_output.as_ref().ok_or_else(|| {
+                        RuntimePlanLowerError::new("iteration result local was not admitted")
+                    })?;
+                    let value = exported_program_bindings(
+                        context,
+                        definition.scope,
+                        abi.binding_outputs(),
+                        item,
+                    )?;
+                    let unit =
+                        arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
+                    let append = RuntimeFlowOpSeed::Let {
+                        pattern: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
+                        expr: RuntimeExprSeed::new(
+                            unit,
+                            RuntimeExprSeedKind::SequencePush {
+                                place: arcweft_core::plan::RuntimeMutablePlaceSeed::Local(
+                                    output.clone(),
+                                ),
+                                value: Box::new(value),
+                            },
+                        ),
+                    };
+                    let continuation =
+                        flow.lower_iteration_continuation(*statement, iteration, vec![append])?;
+                    let mut ops = vec![RuntimeFlowOpSeed::Let {
+                        pattern: RuntimePatternSeed::new(
+                            program.result().identity(),
+                            RuntimePatternSeedKind::Bind {
+                                mutable: true,
+                                local: output.clone(),
+                            },
+                        ),
+                        expr: RuntimeExprSeed::new(
+                            program.result().identity(),
+                            RuntimeExprSeedKind::BracketSeq(Box::new([])),
+                        ),
+                    }];
+                    ops.extend(flow.lower_flow_value(iteration.source(), continuation)?);
+                    ops.push(RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                        program.result().identity(),
+                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                            output.clone(),
+                            RuntimeLocalReadMode::Move,
+                        )),
+                    )));
+                    ops
+                }
                 CheckedExecutionSource::ExportBinding(statement) => {
                     let result = exported_program_bindings(
                         context,
@@ -5469,6 +5553,11 @@ struct FinalFlowLowerer<'a> {
 
 #[derive(Clone)]
 enum RuntimeFlowValueContinuation {
+    For {
+        pattern: RuntimePatternSeed,
+        evidence: RuntimeIteratorEvidenceSeed,
+        body: Vec<RuntimeFlowOpSeed>,
+    },
     Match {
         arms: Vec<RuntimeFlowMatchArmSeed>,
     },
@@ -6479,69 +6568,27 @@ impl<'a> FinalFlowLowerer<'a> {
                     .transpose()?,
                 body: self.lower_contextual_body(while_stmt.body())?,
             }]),
-            HirStmtKind::For(for_stmt) => Ok(vec![RuntimeFlowOpSeed::For {
-                pattern: self
-                    .pattern_lowerer()
-                    .lower(for_stmt.pattern())
-                    .map_err(RuntimePlanLowerError::new)?,
-                source: self
-                    .expr_lowerer()
-                    .lower(for_stmt.source())
-                    .map_err(RuntimePlanLowerError::new)?,
-                evidence: match self.iteration(id).cloned().ok_or_else(|| {
-                    RuntimePlanLowerError::new(format!(
-                        "checked iteration evidence is missing for For statement {id:?}"
-                    ))
-                })? {
-                    RuntimeIteratorFact::Builtin(evidence) => {
-                        RuntimeIteratorEvidenceSeed::Builtin(RuntimeBuiltinIteratorEvidenceSeed {
-                            family: evidence.family(),
-                            item: evidence.item().identity(),
-                            iterator: evidence.iterator().identity(),
-                            next_value: evidence.next_value().identity(),
-                            step: evidence.step().identity(),
-                        })
-                    }
-                    RuntimeIteratorFact::Witness(witness) => {
-                        let source_type = self
-                            .semantic_facts
-                            .expression_type(for_stmt.source())
-                            .ok_or_else(|| {
-                                RuntimePlanLowerError::new(format!(
-                                    "For statement {id:?} has no checked source type"
-                                ))
-                            })?;
-                        let executable = match witness.executable() {
-                            RuntimeIteratorWitnessExecutableFact::TraitCalls {
-                                into_iter,
-                                next,
-                            } => RuntimeIteratorWitnessExecutableSeed::TraitCalls {
-                                into_iter: self.trait_method(
-                                    into_iter,
-                                    id,
-                                    source_type.identity(),
-                                )?,
-                                next: self.trait_method(next, id, witness.iterator().identity())?,
-                            },
-                            RuntimeIteratorWitnessExecutableFact::IdentityIntoIterator { next } => {
-                                RuntimeIteratorWitnessExecutableSeed::IdentityIntoIterator {
-                                    next: self.trait_method(
-                                        next,
-                                        id,
-                                        witness.iterator().identity(),
-                                    )?,
-                                }
-                            }
-                        };
-                        RuntimeIteratorEvidenceSeed::Witness(RuntimeIteratorWitnessEvidenceSeed {
-                            item: witness.item().identity(),
-                            iterator: witness.iterator().identity(),
-                            executable,
-                        })
-                    }
-                },
-                body: self.lower_contextual_body(for_stmt.body())?,
-            }]),
+            HirStmtKind::For(for_stmt) => {
+                let body = self.lower_contextual_body(for_stmt.body())?;
+                let body = if let Some(key) = for_stmt.key() {
+                    let mut key_ops = self.lower_flow_value(
+                        key,
+                        RuntimeFlowValueContinuation::Bind {
+                            pattern: RuntimePatternSeed::new(
+                                self.expression_type(key)?.identity(),
+                                RuntimePatternSeedKind::Discard,
+                            ),
+                            tail: RuntimeFlowTail::None,
+                        },
+                    )?;
+                    key_ops.extend(body);
+                    key_ops
+                } else {
+                    body
+                };
+                let continuation = self.lower_iteration_continuation(id, for_stmt, body)?;
+                self.lower_flow_value(for_stmt.source(), continuation)
+            }
             HirStmtKind::Scope(scope) => {
                 self.lower_scope_statement(id, scope.body(), RuntimeFlowTail::None)
             }
@@ -6566,6 +6613,68 @@ impl<'a> FinalFlowLowerer<'a> {
                 "final-HIR statement {id:?} family {unsupported:?} has no checked core projection"
             ))),
         }
+    }
+
+    fn lower_iteration_continuation(
+        &self,
+        id: StmtId,
+        for_stmt: &arcweft_lang_hir::stmt::HirForStmt,
+        body: Vec<RuntimeFlowOpSeed>,
+    ) -> Result<RuntimeFlowValueContinuation, RuntimePlanLowerError> {
+        Ok(RuntimeFlowValueContinuation::For {
+            pattern: self
+                .pattern_lowerer()
+                .lower(for_stmt.pattern())
+                .map_err(RuntimePlanLowerError::new)?,
+            evidence: match self.iteration(id).cloned().ok_or_else(|| {
+                RuntimePlanLowerError::new(format!(
+                    "checked iteration evidence is missing for For statement {id:?}"
+                ))
+            })? {
+                RuntimeIteratorFact::Builtin(evidence) => {
+                    RuntimeIteratorEvidenceSeed::Builtin(RuntimeBuiltinIteratorEvidenceSeed {
+                        family: evidence.family(),
+                        item: evidence.item().identity(),
+                        iterator: evidence.iterator().identity(),
+                        next_value: evidence.next_value().identity(),
+                        step: evidence.step().identity(),
+                    })
+                }
+                RuntimeIteratorFact::Witness(witness) => {
+                    let source_type = self
+                        .semantic_facts
+                        .expression_type(for_stmt.source())
+                        .ok_or_else(|| {
+                            RuntimePlanLowerError::new(format!(
+                                "For statement {id:?} has no checked source type"
+                            ))
+                        })?;
+                    let executable = match witness.executable() {
+                        RuntimeIteratorWitnessExecutableFact::TraitCalls { into_iter, next } => {
+                            RuntimeIteratorWitnessExecutableSeed::TraitCalls {
+                                into_iter: self.trait_method(
+                                    into_iter,
+                                    id,
+                                    source_type.identity(),
+                                )?,
+                                next: self.trait_method(next, id, witness.iterator().identity())?,
+                            }
+                        }
+                        RuntimeIteratorWitnessExecutableFact::IdentityIntoIterator { next } => {
+                            RuntimeIteratorWitnessExecutableSeed::IdentityIntoIterator {
+                                next: self.trait_method(next, id, witness.iterator().identity())?,
+                            }
+                        }
+                    };
+                    RuntimeIteratorEvidenceSeed::Witness(RuntimeIteratorWitnessEvidenceSeed {
+                        item: witness.item().identity(),
+                        iterator: witness.iterator().identity(),
+                        executable,
+                    })
+                }
+            },
+            body,
+        })
     }
 
     fn lower_defer_registration(
@@ -7946,6 +8055,16 @@ impl<'a> FinalFlowLowerer<'a> {
         continuation: RuntimeFlowValueContinuation,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         Ok(match continuation {
+            RuntimeFlowValueContinuation::For {
+                pattern,
+                evidence,
+                body,
+            } => vec![RuntimeFlowOpSeed::For {
+                pattern,
+                source: value,
+                evidence,
+                body,
+            }],
             RuntimeFlowValueContinuation::Match { arms } => {
                 vec![RuntimeFlowOpSeed::Match {
                     scrutinee: value,

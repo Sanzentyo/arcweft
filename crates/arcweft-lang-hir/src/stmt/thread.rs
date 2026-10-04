@@ -502,6 +502,7 @@ pub struct HirForStmt {
     next_value: ExprId,
     pattern: PatternId,
     locals: Box<[LocalId]>,
+    key: Option<ExprId>,
     body: HirContextualStmtBody,
 }
 
@@ -512,6 +513,7 @@ impl HirForStmt {
         next_value: ExprId,
         pattern: PatternId,
         locals: Box<[LocalId]>,
+        key: Option<ExprId>,
         body: HirContextualStmtBody,
     ) -> Result<Self, HirThreadStmtInvariantError> {
         let value = Self {
@@ -520,6 +522,7 @@ impl HirForStmt {
             next_value,
             pattern,
             locals,
+            key,
             body,
         };
         value.validate_module(value.body.scope().module())?;
@@ -547,6 +550,10 @@ impl HirForStmt {
         &self.locals
     }
 
+    pub const fn key(&self) -> Option<ExprId> {
+        self.key
+    }
+
     pub const fn body(&self) -> &HirContextualStmtBody {
         &self.body
     }
@@ -564,6 +571,7 @@ impl HirForStmt {
         }
         validate_module(expected, self.pattern.module())?;
         validate_locals(expected, &self.locals)?;
+        validate_optional_expr(expected, self.key)?;
         self.body.validate_module(expected)
     }
 }
@@ -865,6 +873,7 @@ pub enum HirThreadStmtChildRole {
     Source,
     Iterator,
     NextValue,
+    Key,
     SelectBinding { branch: u32 },
     SelectSource { branch: u32 },
     SelectPattern { branch: u32 },

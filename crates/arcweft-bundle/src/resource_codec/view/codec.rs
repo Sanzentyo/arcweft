@@ -467,6 +467,10 @@ impl ViewProgramResource {
                         locals.pop();
                         continue;
                     }
+                    ScopeEvent::Program(expression) => {
+                        self.validate_expression_program(program, definition, expression, &locals)?;
+                        continue;
+                    }
                     ScopeEvent::Instruction { instruction, .. } => instruction,
                 };
                 let mut sources = Vec::new();
@@ -615,6 +619,38 @@ impl ViewProgramResource {
                             ));
                         }
                     }
+                    ViewProgramInstruction::RepeatKeyed {
+                        program: repeat, ..
+                    } => {
+                        let signature = self.validate_expression_program(
+                            program,
+                            definition,
+                            &repeat.source.execution,
+                            &locals,
+                        )?;
+                        let shape = signature
+                            .result
+                            .and_then(|ty| program.runtime_types.get(ty.index()))
+                            .map(|ty| ty.shape())
+                            .ok_or(SectionCodecError::NonCanonicalTable("view_repeat_result"))?;
+                        let arcweft_core::awbc::schema::AwbcRuntimeTypeShape::Sequence {
+                            kind: arcweft_core::plan::RuntimePlanSequenceKind::Vec,
+                            item,
+                        } = shape
+                        else {
+                            return Err(SectionCodecError::NonCanonicalTable("view_repeat_result"));
+                        };
+                        let item = program
+                            .runtime_types
+                            .get(item.index())
+                            .ok_or(SectionCodecError::NonCanonicalTable("view_repeat_result"))?;
+                        self.validate_owned_outputs(
+                            program,
+                            &repeat.source,
+                            item.shape(),
+                            &mut declared,
+                        )?;
+                    }
                     ViewProgramInstruction::BindLocal {
                         program: binding, ..
                     } => {
@@ -629,38 +665,8 @@ impl ViewProgramResource {
                             .and_then(|ty| program.runtime_types.get(ty.index()))
                             .map(|ty| ty.shape())
                             .ok_or(SectionCodecError::NonCanonicalTable("view_binding_result"))?;
-                        let output_types: &[arcweft_core::awbc::schema::AwbcTypeId] = match shape {
-                            arcweft_core::awbc::schema::AwbcRuntimeTypeShape::Unit
-                                if binding.outputs.is_empty() =>
-                            {
-                                &[]
-                            }
-                            arcweft_core::awbc::schema::AwbcRuntimeTypeShape::Tuple(types)
-                                if types.len() == binding.outputs.len() && !types.is_empty() =>
-                            {
-                                types
-                            }
-                            _ => {
-                                return Err(SectionCodecError::NonCanonicalTable(
-                                    "view_binding_result",
-                                ));
-                            }
-                        };
-                        for (ordinal, (output, ty)) in
-                            binding.outputs.iter().zip(output_types).enumerate()
-                        {
-                            if output.coordinate.program != binding.execution.program
-                                || usize::from(output.coordinate.output) != ordinal
-                                || !declared.insert(output.coordinate)
-                                || program
-                                    .runtime_types
-                                    .get(ty.index())
-                                    .is_none_or(|ty| ty.semantic_identity() != output.value_type)
-                            {
-                                return Err(SectionCodecError::NonCanonicalTable(
-                                    "view_binding_outputs",
-                                ));
-                            }
+                        self.validate_owned_outputs(program, binding, shape, &mut declared)?;
+                        for output in binding.outputs.iter() {
                             locals
                                 .last_mut()
                                 .expect("root scope remains")
@@ -1076,20 +1082,44 @@ impl ViewProgramResource {
         Ok(())
     }
 
+    fn validate_owned_outputs(
+        &self,
+        program: &arcweft_core::awbc::schema::AwbcProgram,
+        binding: &arcweft_view::ViewBindingProgram,
+        shape: &arcweft_core::awbc::schema::AwbcRuntimeTypeShape,
+        declared: &mut BTreeSet<arcweft_view::ViewLocalCoordinate>,
+    ) -> Result<(), SectionCodecError> {
+        use arcweft_core::awbc::schema::AwbcRuntimeTypeShape;
+        let types: &[arcweft_core::awbc::schema::AwbcTypeId] = match shape {
+            AwbcRuntimeTypeShape::Unit if binding.outputs.is_empty() => &[],
+            AwbcRuntimeTypeShape::Tuple(types)
+                if types.len() == binding.outputs.len() && !types.is_empty() =>
+            {
+                types
+            }
+            _ => return Err(SectionCodecError::NonCanonicalTable("view_binding_result")),
+        };
+        if !binding.outputs_are_canonical() {
+            return Err(SectionCodecError::NonCanonicalTable("view_binding_outputs"));
+        }
+        for (output, ty) in binding.outputs.iter().zip(types) {
+            if !declared.insert(output.coordinate)
+                || program
+                    .runtime_types
+                    .get(ty.index())
+                    .is_none_or(|ty| ty.semantic_identity() != output.value_type)
+            {
+                return Err(SectionCodecError::NonCanonicalTable("view_binding_outputs"));
+            }
+        }
+        Ok(())
+    }
     fn validate_value_programs(&self) -> Result<(), SectionCodecError> {
         let inventory = ViewValueProgramInventory::from_programs(self.value_programs.clone())
             .map_err(|_| SectionCodecError::NonCanonicalTable("view_value_program_inventory"))?;
         self.validate_value_inputs(&inventory)?;
         for instruction in &self.instructions {
             match instruction {
-                ViewProgramInstruction::RepeatKeyed {
-                    source_program,
-                    key_program,
-                    ..
-                } => {
-                    validate_program(&inventory, *source_program, Some(FxRuntimeType::I32))?;
-                    validate_program(&inventory, *key_program, Some(FxRuntimeType::I32))?;
-                }
                 ViewProgramInstruction::ApplyFx {
                     arguments,
                     key_program,
@@ -1108,6 +1138,7 @@ impl ViewProgramResource {
                 | ViewProgramInstruction::EndScope
                 | ViewProgramInstruction::CallView { .. }
                 | ViewProgramInstruction::Branch { .. }
+                | ViewProgramInstruction::RepeatKeyed { .. }
                 | ViewProgramInstruction::Match { .. }
                 | ViewProgramInstruction::BindLocal { .. }
                 | ViewProgramInstruction::EmitText { .. }
@@ -1142,7 +1173,6 @@ impl ViewProgramResource {
                     ViewValueInputNamespace::State,
                     ViewValueInputSource::Projection { .. }
                         | ViewValueInputSource::LifetimeProjection { .. }
-                        | ViewValueInputSource::RepeatOrdinal { .. }
                 )
             );
             let source_matches_definition = match &input.source {
@@ -1156,8 +1186,7 @@ impl ViewProgramResource {
                             && parameter.value_slot == Some(input.slot)
                     }),
                 ViewValueInputSource::Projection { .. }
-                | ViewValueInputSource::LifetimeProjection { .. }
-                | ViewValueInputSource::RepeatOrdinal { .. } => true,
+                | ViewValueInputSource::LifetimeProjection { .. } => true,
             };
             if !slots.insert(input.slot)
                 || types.get(usize::from(input.slot)).copied() != Some(input.value_type)
@@ -1216,6 +1245,34 @@ impl ViewProgramResource {
                 ..definition.body.end_instruction as usize]
             {
                 match instruction {
+                    ViewProgramInstruction::RepeatKeyed { program, .. } => {
+                        check_budget(
+                            program.source.outputs.len(),
+                            budget.common.items,
+                            "view_repeat_outputs",
+                        )?;
+                        check_budget(
+                            program.source.execution.inputs.len(),
+                            budget.common.items,
+                            "view_repeat_inputs",
+                        )?;
+                        check_budget(
+                            program.key.inputs.len(),
+                            budget.common.items,
+                            "view_repeat_key_inputs",
+                        )?;
+                        if !program.source.outputs_are_canonical()
+                            || program
+                                .source
+                                .outputs
+                                .iter()
+                                .any(|output| !outputs.insert(output.coordinate))
+                        {
+                            return Err(SectionCodecError::NonCanonicalTable(
+                                "view_repeat_outputs",
+                            ));
+                        }
+                    }
                     ViewProgramInstruction::BindLocal { program, .. } => {
                         check_budget(
                             program.outputs.len(),
@@ -1344,7 +1401,7 @@ impl ViewProgramResource {
                             .checked_sub(1)
                             .ok_or(SectionCodecError::NonCanonicalTable("view_local_scope"))?;
                     }
-                    ScopeEvent::Instruction { .. } => {}
+                    ScopeEvent::Instruction { .. } | ScopeEvent::Program(_) => {}
                 }
             }
         }
@@ -1529,6 +1586,7 @@ impl ViewProgramResource {
                         locals.pop();
                         continue;
                     }
+                    ScopeEvent::Program(_) => continue,
                     ScopeEvent::Instruction { index, instruction } => (index, instruction),
                 };
                 match instruction {
@@ -2090,9 +2148,6 @@ fn valid_value_input_source(source: &ViewValueInputSource) -> bool {
             valid_identifier(scope)
                 && !path.is_empty()
                 && path.iter().all(|segment| valid_identifier(segment))
-        }
-        ViewValueInputSource::RepeatOrdinal { view, binding } => {
-            !view.is_empty() && valid_identifier(binding)
         }
     }
 }

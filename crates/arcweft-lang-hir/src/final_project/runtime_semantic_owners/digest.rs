@@ -119,6 +119,10 @@ fn digest_executable(hasher: &mut Sha256, owner: &HirRuntimeExecutableOwner) {
                 }
             }
         }
+        HirRuntimeExecutableOwner::IterationBindings(owner) => {
+            hasher.update([7]);
+            hasher.update(owner.raw().cache_fingerprint_input());
+        }
         HirRuntimeExecutableOwner::Statement(owner) => {
             hasher.update([5]);
             hasher.update(owner.raw().cache_fingerprint_input());

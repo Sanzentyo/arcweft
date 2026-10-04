@@ -699,8 +699,9 @@ fn hot_reload_removed_nested_call_retires_only_the_child_mount() {
 
 #[test]
 fn hot_reload_definition_removal_retires_repeat_nested_mounts_atomically() {
-    let initial = validated_product(replacement_repeat_graph_program());
-    let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None).unwrap();
+    let (repeat, awbc) = repeat_fixture_awbc(&[0, 1], None);
+    let initial = validated_product(replacement_repeat_graph_program(repeat));
+    let mut runtime = AcceptedBundleViewRuntime::try_new_with_awbc(initial, None, awbc).unwrap();
     let mounted = handle("handle.repeat-reload", "view.RepeatRoot");
     let initial_frame = runtime.evaluate(std::slice::from_ref(&mounted), &[], false);
     assert!(initial_frame.diagnostics.is_empty(), "{initial_frame:#?}");
@@ -945,8 +946,9 @@ fn replacement_graph_program(
     }
 }
 
-fn replacement_repeat_graph_program() -> ViewProgramResource {
-    let state_types = vec![FxRuntimeType::I32];
+fn replacement_repeat_graph_program(
+    repeat: arcweft_view::ViewRepeatProgram,
+) -> ViewProgramResource {
     ViewProgramResource {
         program_id: program_id("view.program.repeat-replacement"),
         definitions: vec![
@@ -967,47 +969,9 @@ fn replacement_repeat_graph_program() -> ViewProgramResource {
                 state_schema_hash: 2,
             },
         ],
-        value_programs: vec![
-            value_program(
-                0,
-                Vec::new(),
-                state_types.clone(),
-                FxRuntimeType::I32,
-                vec![
-                    ValueInstruction::Constant {
-                        value: FxRuntimeValue::I32(2),
-                    },
-                    ValueInstruction::Return,
-                ],
-            ),
-            value_program(
-                1,
-                Vec::new(),
-                state_types,
-                FxRuntimeType::I32,
-                vec![
-                    ValueInstruction::LoadState {
-                        slot: 0,
-                        ty: FxRuntimeType::I32,
-                    },
-                    ValueInstruction::Return,
-                ],
-            ),
-        ],
-        value_inputs: vec![ViewValueInputResource {
-            namespace: ViewValueInputNamespace::State,
-            slot: 0,
-            value_type: FxRuntimeType::I32,
-            source: ViewValueInputSource::RepeatOrdinal {
-                view: "view.RepeatRoot".to_owned(),
-                binding: "item".to_owned(),
-            },
-        }],
         instructions: vec![
             ViewProgramInstruction::RepeatKeyed {
-                source_program: ViewValueProgramId(0),
-                key_program: ViewValueProgramId(1),
-                body_span: 1,
+                program: repeat,
                 source: None,
             },
             ViewProgramInstruction::CallView {
@@ -2029,30 +1993,7 @@ fn view_save_round_trips_stable_nested_owners_and_allocator_stays_fresh() {
 
 #[test]
 fn duplicate_repeat_keys_fail_structurally_instead_of_reusing_one_child() {
-    let source = value_program(
-        0,
-        Vec::new(),
-        Vec::new(),
-        FxRuntimeType::I32,
-        vec![
-            ValueInstruction::Constant {
-                value: FxRuntimeValue::I32(2),
-            },
-            ValueInstruction::Return,
-        ],
-    );
-    let duplicate_key = value_program(
-        1,
-        Vec::new(),
-        Vec::new(),
-        FxRuntimeType::I32,
-        vec![
-            ValueInstruction::Constant {
-                value: FxRuntimeValue::I32(7),
-            },
-            ValueInstruction::Return,
-        ],
-    );
+    let (repeat, awbc) = repeat_fixture_awbc(&[0, 1], Some(7));
     let program = ViewProgramResource {
         program_id: program_id("view.program.repeat"),
         definitions: vec![ViewDefinitionResource {
@@ -2063,12 +2004,9 @@ fn duplicate_repeat_keys_fail_structurally_instead_of_reusing_one_child() {
             parameter_contract: None,
             state_schema_hash: 31,
         }],
-        value_programs: vec![source, duplicate_key],
         instructions: vec![
             ViewProgramInstruction::RepeatKeyed {
-                source_program: ViewValueProgramId(0),
-                key_program: ViewValueProgramId(1),
-                body_span: 1,
+                program: repeat,
                 source: None,
             },
             ViewProgramInstruction::EmitText {
@@ -2094,7 +2032,9 @@ fn duplicate_repeat_keys_fail_structurally_instead_of_reusing_one_child() {
             value: "item".to_owned(),
         },
     )]);
-    let mut runtime = BundleViewRuntime::try_new(Some(program), Some(text), None).unwrap();
+    let mut runtime =
+        AcceptedBundleViewRuntime::try_new_with_awbc(validated_product(program), Some(text), awbc)
+            .unwrap();
     let frame = runtime.evaluate(&[handle("handle.repeat", "view.Repeat")], &[], false);
     assert!(frame.mounts.is_empty());
     assert_eq!(
@@ -2105,31 +2045,7 @@ fn duplicate_repeat_keys_fail_structurally_instead_of_reusing_one_child() {
 
 #[test]
 fn repeat_style_inventory_retains_one_collision_free_path_per_executed_item() {
-    let source = value_program(
-        0,
-        Vec::new(),
-        vec![FxRuntimeType::I32],
-        FxRuntimeType::I32,
-        vec![
-            ValueInstruction::Constant {
-                value: FxRuntimeValue::I32(2),
-            },
-            ValueInstruction::Return,
-        ],
-    );
-    let key = value_program(
-        1,
-        Vec::new(),
-        vec![FxRuntimeType::I32],
-        FxRuntimeType::I32,
-        vec![
-            ValueInstruction::LoadState {
-                slot: 0,
-                ty: FxRuntimeType::I32,
-            },
-            ValueInstruction::Return,
-        ],
-    );
+    let (repeat, awbc) = repeat_fixture_awbc(&[0, 1], None);
     let sheet = ViewStyleSheetId::try_new("style.repeat.inventory").unwrap();
     let program = ViewProgramResource {
         program_id: program_id("view.program.repeat-style-inventory"),
@@ -2141,21 +2057,9 @@ fn repeat_style_inventory_retains_one_collision_free_path_per_executed_item() {
             parameter_contract: None,
             state_schema_hash: 32,
         }],
-        value_programs: vec![source, key],
-        value_inputs: vec![ViewValueInputResource {
-            namespace: ViewValueInputNamespace::State,
-            slot: 0,
-            value_type: FxRuntimeType::I32,
-            source: ViewValueInputSource::RepeatOrdinal {
-                view: "view.RepeatStyle".to_owned(),
-                binding: "item".to_owned(),
-            },
-        }],
         instructions: vec![
             ViewProgramInstruction::RepeatKeyed {
-                source_program: ViewValueProgramId(0),
-                key_program: ViewValueProgramId(1),
-                body_span: 1,
+                program: repeat,
                 source: None,
             },
             ViewProgramInstruction::EmitCustom {
@@ -2167,7 +2071,12 @@ fn repeat_style_inventory_retains_one_collision_free_path_per_executed_item() {
         ],
         ..ViewProgramResource::default()
     };
-    let mut runtime = BundleViewRuntime::try_new(Some(program), None, None).unwrap();
+    let mut runtime = AcceptedBundleViewRuntime::try_new_with_awbc(
+        validated_product(program),
+        None,
+        Arc::clone(&awbc),
+    )
+    .unwrap();
 
     let frame = runtime.evaluate(
         &[handle("handle.repeat-style", "view.RepeatStyle")],
@@ -2185,27 +2094,31 @@ fn repeat_style_inventory_retains_one_collision_free_path_per_executed_item() {
         nodes[0].path.segments(),
         [BundleViewInstancePathSegment::Repeat {
             instruction: 0,
-            key: 0
-        }]
+            key
+        }] if *key == repeat_i32_key(&awbc, 0)
     ));
     assert!(matches!(
         nodes[1].path.segments(),
         [BundleViewInstancePathSegment::Repeat {
             instruction: 0,
-            key: 1
-        }]
+            key
+        }] if *key == repeat_i32_key(&awbc, 1)
     ));
 }
 
 #[test]
 fn style_path_words_are_little_endian_injective_and_feed_the_single_node_key() {
+    let typed_key = arcweft_view::ViewRepeatKey::from_checked_digest(
+        arcweft_id::RuntimeSemanticTypeId::from_bytes([0x12; 32]),
+        [0x34; 32],
+    );
     let path: BundleViewInstancePath = serde_json::from_value(serde_json::json!([
         {
             "kind": "call",
             "instruction": 16_909_060,
             "authored_key": 18_446_744_073_709_551_615_u64
         },
-        { "kind": "repeat", "instruction": 9, "key": -2 }
+        { "kind": "repeat", "instruction": 9, "key": typed_key }
     ]))
     .unwrap();
     assert_eq!(
@@ -2217,8 +2130,14 @@ fn style_path_words_are_little_endian_injective_and_feed_the_single_node_key() {
             u64::MAX,
             1,
             9,
-            u64::from(u32::from_le_bytes((-2_i32).to_le_bytes())),
-            0,
+            0x1212121212121212,
+            0x1212121212121212,
+            0x1212121212121212,
+            0x1212121212121212,
+            0x3434343434343434,
+            0x3434343434343434,
+            0x3434343434343434,
+            0x3434343434343434,
         ]
     );
 
@@ -2229,7 +2148,7 @@ fn style_path_words_are_little_endian_injective_and_feed_the_single_node_key() {
     let key = id.style_node_key(ViewMountId::from_raw(7));
     assert_eq!(key.mount(), ViewMountId::from_raw(7));
     assert_eq!(key.instruction(), 11);
-    assert_eq!(key.path().len(), 8);
+    assert_eq!(key.path().len(), 14);
 
     assert_eq!(
         BundleViewStyleNodeKind::Element {
@@ -3041,4 +2960,212 @@ fn pure_fixture_awbc(
         result_type: ty,
     };
     (expression, Arc::new(program))
+}
+
+fn repeat_i32_key(
+    awbc: &arcweft_core::awbc::schema::AwbcProgram,
+    value: i32,
+) -> arcweft_view::ViewRepeatKey {
+    let ty = arcweft_core::awbc::schema::AwbcTypeId(2);
+    let digest = awbc
+        .accepts_value(
+            ty,
+            &RuntimeValue::Int(RuntimeInt::I32(value)),
+            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
+    arcweft_view::ViewRepeatKey::from_checked_digest(
+        awbc.runtime_types[ty.index()].semantic_identity(),
+        *digest.as_bytes(),
+    )
+}
+
+fn repeat_fixture_awbc(
+    items: &[i32],
+    constant_key: Option<i32>,
+) -> (
+    arcweft_view::ViewRepeatProgram,
+    Arc<arcweft_core::awbc::schema::AwbcProgram>,
+) {
+    use arcweft_core::awbc::schema::*;
+    use arcweft_view::{
+        ViewBindingProgram, ViewExecutionInput, ViewExecutionInputSource, ViewExpressionProgram,
+        ViewLocalCoordinate, ViewLocalOutput, ViewRepeatProgram,
+    };
+    let mut program = AwbcProgram::default();
+    let scalar = arcweft_core::pattern::RuntimeCheckedType::Signed(
+        arcweft_core::value::RuntimeSignedIntWidth::I32,
+    );
+    let tuple = arcweft_core::pattern::RuntimeCheckedType::Tuple(vec![scalar.clone()]);
+    let scalar_id = scalar.semantic_identity_digest();
+    let tuple_id = tuple.semantic_identity_digest();
+    let sequence_id = arcweft_core::pattern::RuntimeCheckedType::Sequence(Box::new(tuple))
+        .semantic_identity_digest();
+    program.runtime_types.extend([
+        AwbcRuntimeType::new(scalar_id, AwbcRuntimeTypeShape::Int(AwbcSignedIntKind::I32)),
+        AwbcRuntimeType::new(tuple_id, AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(2)])),
+        AwbcRuntimeType::new(
+            sequence_id,
+            AwbcRuntimeTypeShape::Sequence {
+                kind: arcweft_core::plan::RuntimePlanSequenceKind::Vec,
+                item: AwbcTypeId(3),
+            },
+        ),
+    ]);
+    let source_id =
+        arcweft_id::runtime_program::RuntimePureProgramId::from_checked_digest([0xc1; 32]);
+    let key_id = arcweft_id::runtime_program::RuntimePureProgramId::from_checked_digest([0xc2; 32]);
+    let mut tuples = Vec::new();
+    let mut slots = Vec::new();
+    for item in items {
+        let scalar_register = AwbcRegisterId(u32::try_from(slots.len()).unwrap());
+        let tuple_register = AwbcRegisterId(scalar_register.0 + 1);
+        let constant = AwbcConstantId(u32::try_from(program.constants.len()).unwrap());
+        program.constants.push(AwbcConstant::Int {
+            kind: AwbcSignedIntKind::I32,
+            bits: i128::from(*item).to_le_bytes(),
+        });
+        program.instructions.extend([
+            AwbcInstruction::LoadConst {
+                dst: scalar_register,
+                constant,
+            },
+            AwbcInstruction::MakeTuple {
+                dst: tuple_register,
+                items: vec![scalar_register],
+            },
+        ]);
+        for ty in [AwbcTypeId(2), AwbcTypeId(3)] {
+            slots.push(AwbcFrameSlot {
+                name: None,
+                ty,
+                role: AwbcFrameSlotRole::Temporary,
+                scope_depth: 0,
+            });
+        }
+        tuples.push(tuple_register);
+    }
+    let result = AwbcRegisterId(u32::try_from(slots.len()).unwrap());
+    slots.push(AwbcFrameSlot {
+        name: None,
+        ty: AwbcTypeId(4),
+        role: AwbcFrameSlotRole::Temporary,
+        scope_depth: 0,
+    });
+    program.instructions.push(AwbcInstruction::MakeSequence {
+        dst: result,
+        items: tuples,
+    });
+    let source_end = u32::try_from(program.instructions.len()).unwrap();
+    for (ordinal, id, inputs, result_type, result_identity) in [
+        (0, source_id, Vec::new(), AwbcTypeId(4), sequence_id),
+        (1, key_id, vec![AwbcTypeId(2)], AwbcTypeId(2), scalar_id),
+    ] {
+        let start = u32::try_from(program.instructions.len()).unwrap();
+        if ordinal == 1 {
+            if let Some(value) = constant_key {
+                let constant = AwbcConstantId(u32::try_from(program.constants.len()).unwrap());
+                program.constants.push(AwbcConstant::Int {
+                    kind: AwbcSignedIntKind::I32,
+                    bits: i128::from(value).to_le_bytes(),
+                });
+                program.instructions.push(AwbcInstruction::LoadConst {
+                    dst: AwbcRegisterId(0),
+                    constant,
+                });
+            }
+        }
+        program.signatures.push(AwbcSignature {
+            params: inputs.clone(),
+            result: Some(result_type),
+            effects: AwbcEffectSetId(0),
+        });
+        program.frame_layouts.push(AwbcFrameLayout {
+            scopes: Vec::new(),
+            slots: if ordinal == 0 {
+                slots.clone()
+            } else {
+                vec![AwbcFrameSlot {
+                    name: None,
+                    ty: AwbcTypeId(2),
+                    role: AwbcFrameSlotRole::Parameter,
+                    scope_depth: 0,
+                }]
+            },
+            max_scope_depth: 0,
+        });
+        program.blocks.push(AwbcBlock {
+            owner: AwbcFunctionId(ordinal),
+            instructions: if ordinal == 0 {
+                AwbcTableRange::new(0, source_end)
+            } else {
+                AwbcTableRange::new(
+                    start,
+                    u32::try_from(program.instructions.len()).unwrap() - start,
+                )
+            },
+            terminator: AwbcTerminator::Return {
+                value: Some(if ordinal == 0 {
+                    result
+                } else {
+                    AwbcRegisterId(0)
+                }),
+            },
+            safe_point: AwbcSafePointKind::CallableBoundary,
+            source_map: None,
+        });
+        program.functions.push(AwbcFunction {
+            public_id: None,
+            kind: AwbcFunctionKind::Ordinary,
+            signature: AwbcSignatureId(ordinal),
+            type_context: None,
+            input_ownership: vec![AwbcFunctionInputOwnership::default(); inputs.len()],
+            frame_layout: AwbcFrameLayoutId(ordinal),
+            blocks: AwbcTableRange::new(ordinal, 1),
+            entry_block: AwbcBlockId(ordinal),
+            flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
+        });
+        program.pure_programs.push(AwbcPureProgramBinding {
+            program: id,
+            function: AwbcFunctionId(ordinal),
+            function_type: None,
+            input_types: if ordinal == 0 {
+                Vec::new()
+            } else {
+                vec![scalar_id]
+            },
+            result_type: result_identity,
+        });
+    }
+    let coordinate = ViewLocalCoordinate {
+        program: source_id,
+        output: 0,
+    };
+    (
+        ViewRepeatProgram {
+            source: ViewBindingProgram {
+                execution: ViewExpressionProgram {
+                    program: source_id,
+                    inputs: Box::new([]),
+                    result_type: sequence_id,
+                },
+                outputs: vec![ViewLocalOutput {
+                    coordinate,
+                    value_type: scalar_id,
+                }]
+                .into_boxed_slice(),
+            },
+            key: ViewExpressionProgram {
+                program: key_id,
+                inputs: vec![ViewExecutionInput {
+                    source: ViewExecutionInputSource::Local(coordinate),
+                    value_type: scalar_id,
+                }]
+                .into_boxed_slice(),
+                result_type: scalar_id,
+            },
+            body_span: 1,
+        },
+        Arc::new(program),
+    )
 }

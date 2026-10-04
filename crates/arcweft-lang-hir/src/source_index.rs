@@ -413,6 +413,7 @@ pub(crate) enum HirStmtRecoveryOperandSlot {
     WhileLetScrutinee { insertion: usize },
     WhileLetGuard { insertion: usize },
     ForSource { insertion: usize },
+    ForKey { insertion: usize },
     SelectOperand { insertion: usize },
     SelectBranchSource { insertion: usize, branch: u32 },
     MatchScrutinee { insertion: usize },
@@ -443,6 +444,7 @@ impl HirStmtRecoveryOperandSlot {
             | Self::WhileLetScrutinee { insertion }
             | Self::WhileLetGuard { insertion }
             | Self::ForSource { insertion }
+            | Self::ForKey { insertion }
             | Self::SelectOperand { insertion }
             | Self::SelectBranchSource { insertion, .. }
             | Self::MatchScrutinee { insertion }
@@ -456,7 +458,8 @@ impl HirStmtRecoveryOperandSlot {
             Self::AssignmentValue { .. }
             | Self::LifetimeSetValue { .. }
             | Self::SignalValue { .. }
-            | Self::WhileLetGuard { .. } => Some(1),
+            | Self::WhileLetGuard { .. }
+            | Self::ForKey { .. } => Some(1),
             Self::SelectBranchSource { branch, .. } => Some(branch),
             Self::MatchArmGuard { arm, .. } => arm.checked_add(1),
             Self::LetInitializer { .. }
@@ -506,7 +509,8 @@ impl HirStmtRecoveryOperandSlot {
             | Self::SelectOperand { .. }
             | Self::SelectBranchSource { .. }
             | Self::TriggerExpression { .. }
-            | Self::UnsafeAuditReason { .. } => HirExprSourceRole::Operand,
+            | Self::UnsafeAuditReason { .. }
+            | Self::ForKey { .. } => HirExprSourceRole::Operand,
         }
     }
 }

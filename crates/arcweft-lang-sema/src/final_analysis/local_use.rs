@@ -2572,6 +2572,7 @@ impl<'a> LocalUseChecker<'a> {
                 iterator,
                 next_value,
                 branch_locals,
+                key,
                 body,
                 ..
             } => {
@@ -2593,6 +2594,9 @@ impl<'a> LocalUseChecker<'a> {
                         .exit,
                 );
                 self.bind(branch_locals, state);
+                if let Some(key) = key {
+                    self.expression(key, state)?;
+                }
                 self.contextual_body(body, state)?;
                 self.end_loop(state)?;
             }

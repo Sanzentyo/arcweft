@@ -4157,3 +4157,379 @@ view Main() { Text("prefix"); match spin() {} }
         cold.evaluate(std::slice::from_ref(&handle), &[], false)
     );
 }
+
+#[test]
+fn authored_keyed_iteration_reaches_the_retained_program() {
+    use arcweft_core::value::{RuntimeBinding, RuntimeValue};
+    use arcweft_runtime_driver::presentation_handles::{
+        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    };
+    use arcweft_runtime_driver::view_runtime::BundleViewTextValue;
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+fn items(reverse: bool) -> Vec<(i32, String)> {
+    if reverse { [(2, "second"), (1, "first")] } else { [(1, "first"), (2, "second")] }
+}
+
+fn item_key(id: i32) -> String { if id == 1 { "one" } else { "two" } }
+view Main(reverse: bool) {
+    {
+        for (id, label) in items(reverse) key = item_key(id) { Text(label) }
+        Text("tail")
+    }
+}
+"#;
+    let compiled =
+        project_view_fixture_with_entry(source, "arcweft-test://compiler-keyed-iteration")
+            .compile()
+            .expect("checked keyed iteration View");
+    let product = compiled.view_product().product().as_ref().clone();
+    let text = compiled.view_product().text().unwrap().clone();
+    let resource = product.program().unwrap().resource();
+    assert_eq!(
+        ViewProgramResource::decode_canonical_section(
+            &resource.encode_canonical_section().unwrap()
+        )
+        .unwrap(),
+        *resource
+    );
+    let repeat = resource
+        .instructions
+        .iter()
+        .find_map(|instruction| match instruction {
+            ViewProgramInstruction::RepeatKeyed { program, .. } => Some(program),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(repeat.source.outputs.len(), 2);
+    let awbc = Arc::new(
+        arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+            AwbcLowerer::new(
+                &compiled.runtime_plan().plan,
+                &compiled.runtime_plan().dialogue_content_catalog,
+                "main.arcw",
+            )
+            .lower()
+            .unwrap()
+            .program,
+        )
+        .unwrap(),
+    );
+    resource.validate_awbc_programs(&awbc, Some(&text)).unwrap();
+    for forgery in 0..5 {
+        let mut candidate = resource.clone();
+        let program = candidate
+            .instructions
+            .iter_mut()
+            .find_map(|instruction| match instruction {
+                ViewProgramInstruction::RepeatKeyed { program, .. } => Some(program),
+                _ => None,
+            })
+            .unwrap();
+        match forgery {
+            0 => program.source.execution.result_type = program.key.result_type,
+            1 => program.source.outputs[0].value_type = program.key.result_type,
+            2 => program.source.outputs[0].coordinate.output = 1,
+            3 => {
+                program.key.inputs[0].source = arcweft_view::ViewExecutionInputSource::Local(
+                    program.source.outputs[1].coordinate,
+                )
+            }
+            4 => program.body_span = u32::MAX,
+            _ => unreachable!(),
+        }
+        assert!(
+            candidate
+                .validate_awbc_programs(&awbc, Some(&text))
+                .is_err(),
+            "forgery {forgery}"
+        );
+    }
+
+    let native_plan = Arc::new(compiled.runtime_plan().plan.clone());
+    let handle = PresentationHandleRecord::new(
+        PresentationHandleId::try_new("view.keyed.items").unwrap(),
+        PresentationHandleKind::View,
+        "view.Main".to_owned(),
+        None,
+        PresentationResourceState::Mounted,
+        None,
+        0,
+    );
+    let mut runtime = BundleViewRuntime::try_new_with_awbc(
+        product.clone(),
+        Some(text.clone()),
+        Arc::clone(&awbc),
+    )
+    .unwrap();
+    let mut stable_paths = BTreeMap::new();
+    for reverse in [false, true, false] {
+        let inputs = [RuntimeBinding {
+            name: "reverse".to_owned(),
+            value: RuntimeValue::Bool(reverse),
+        }];
+        let core_inputs = [RuntimeValue::Bool(reverse)];
+        let mut native = arcweft_core::pure::VmRuntimePureCallBackend::default();
+        let values = arcweft_core::pure::evaluate_pure_program_with_backend(
+            &native_plan,
+            repeat.source.execution.program,
+            &core_inputs,
+            &mut native,
+        )
+        .unwrap();
+        let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
+        assert_eq!(
+            values,
+            arcweft_core::awbc::product_step::evaluate_pure_program_with_backend(
+                &awbc,
+                repeat.source.execution.program,
+                &core_inputs,
+                &mut backend
+            )
+            .unwrap()
+        );
+        let frame = runtime.evaluate(std::slice::from_ref(&handle), &inputs, false);
+        assert!(frame.diagnostics.is_empty(), "{frame:#?}");
+        assert_eq!(frame.mounts.len(), 1);
+        let expected = if reverse {
+            ["second", "first", "tail"]
+        } else {
+            ["first", "second", "tail"]
+        };
+        let rendered = frame.mounts[0]
+            .text
+            .iter()
+            .map(|text| match &text.value {
+                BundleViewTextValue::Plain { value } => value.as_str(),
+                _ => panic!("plain text"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(rendered, expected);
+        let item_nodes = frame.mounts[0]
+            .style_nodes
+            .iter()
+            .filter(|node| {
+                matches!(
+                    node.kind,
+                    arcweft_runtime_driver::view_runtime::BundleViewStyleNodeKind::Text { .. }
+                ) && !node.path.segments().is_empty()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(item_nodes.len(), 2);
+        for (label, node) in rendered.iter().take(2).zip(item_nodes) {
+            let words = node.path.style_path_words();
+            if let Some(before) = stable_paths.get(*label) {
+                assert_eq!(before, &words);
+            }
+            stable_paths.insert((*label).to_owned(), words);
+        }
+        assert_eq!(stable_paths.len(), 2);
+        let saved = runtime.snapshot().unwrap();
+        let mut cold = BundleViewRuntime::try_new_with_awbc(
+            product.clone(),
+            Some(text.clone()),
+            Arc::clone(&awbc),
+        )
+        .unwrap();
+        cold.restore(&saved, std::slice::from_ref(&handle)).unwrap();
+        assert_eq!(
+            frame,
+            cold.evaluate(std::slice::from_ref(&handle), &inputs, false)
+        );
+    }
+}
+
+#[test]
+fn keyed_iteration_failure_and_empty_source_are_cache_and_restore_transparent() {
+    use arcweft_core::value::{RuntimeBinding, RuntimeInt, RuntimeValue};
+    use arcweft_runtime_driver::presentation_handles::{
+        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    };
+    use arcweft_runtime_driver::view_runtime::BundleViewDiagnosticCode;
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+fn items(denominator: i32, empty: bool) -> Vec<i32> {
+    if empty { [] } else { [1 / denominator, 2 / denominator] }
+}
+fn item_key(id: i32, duplicate: bool, denominator: i32) -> i32 {
+    if duplicate { 7 } else { id / denominator }
+}
+view Main(duplicate: bool, source_den: i32, key_den: i32, empty: bool) {
+    Text("prefix")
+    { for id in items(source_den, empty) key = item_key(id, duplicate, key_den) { Text("item") } }
+    Text("tail")
+}
+"#;
+    let compiled = project_view_fixture_with_entry(source, "arcweft-test://view-keyed-failure")
+        .compile()
+        .unwrap();
+    let product = compiled.view_product().product().as_ref().clone();
+    let text = compiled.view_product().text().cloned();
+    let awbc = Arc::new(
+        arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+            AwbcLowerer::new(
+                &compiled.runtime_plan().plan,
+                &compiled.runtime_plan().dialogue_content_catalog,
+                "main.arcw",
+            )
+            .lower()
+            .unwrap()
+            .program,
+        )
+        .unwrap(),
+    );
+    let handle = PresentationHandleRecord::new(
+        PresentationHandleId::try_new("view.keyed.failure").unwrap(),
+        PresentationHandleKind::View,
+        "view.Main".to_owned(),
+        None,
+        PresentationResourceState::Mounted,
+        None,
+        0,
+    );
+    let handles = std::slice::from_ref(&handle);
+    let mut runtime =
+        BundleViewRuntime::try_new_with_awbc(product.clone(), text.clone(), Arc::clone(&awbc))
+            .unwrap();
+    for (duplicate, source_den, key_den, empty, expected_error) in [
+        (false, 1, 1, false, None),
+        (
+            true,
+            1,
+            1,
+            false,
+            Some(BundleViewDiagnosticCode::DuplicateRepeatKey),
+        ),
+        (
+            false,
+            1,
+            0,
+            false,
+            Some(BundleViewDiagnosticCode::InvalidValueProgram),
+        ),
+        (
+            false,
+            0,
+            1,
+            false,
+            Some(BundleViewDiagnosticCode::InvalidValueProgram),
+        ),
+        (false, 0, 0, true, None),
+        (false, 1, 1, false, None),
+    ] {
+        let inputs = [
+            RuntimeBinding {
+                name: "duplicate".to_owned(),
+                value: RuntimeValue::Bool(duplicate),
+            },
+            RuntimeBinding {
+                name: "source_den".to_owned(),
+                value: RuntimeValue::Int(RuntimeInt::I32(source_den)),
+            },
+            RuntimeBinding {
+                name: "key_den".to_owned(),
+                value: RuntimeValue::Int(RuntimeInt::I32(key_den)),
+            },
+            RuntimeBinding {
+                name: "empty".to_owned(),
+                value: RuntimeValue::Bool(empty),
+            },
+        ];
+        let frame = runtime.evaluate(handles, &inputs, false);
+        if let Some(code) = expected_error {
+            assert!(
+                frame.mounts.is_empty(),
+                "no prefix or repeated body is published: {frame:#?}"
+            );
+            assert_eq!(frame.diagnostics.len(), 1, "{frame:#?}");
+            assert_eq!(frame.diagnostics[0].code, code);
+        } else {
+            assert!(frame.diagnostics.is_empty(), "{frame:#?}");
+            assert_eq!(frame.mounts.len(), 1);
+            assert_eq!(frame.mounts[0].text.len(), if empty { 2 } else { 4 });
+        }
+        assert_eq!(frame, runtime.evaluate(handles, &inputs, false));
+        let saved = runtime.snapshot().unwrap();
+        let mut cold =
+            BundleViewRuntime::try_new_with_awbc(product.clone(), text.clone(), Arc::clone(&awbc))
+                .unwrap();
+        cold.restore(&saved, handles).unwrap();
+        assert_eq!(frame, cold.evaluate(handles, &inputs, false));
+    }
+}
+
+#[test]
+fn keyed_iteration_uses_checked_ranges_discard_patterns_and_nested_scopes() {
+    use arcweft_runtime_driver::presentation_handles::{
+        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    };
+    for (ordinal, body, expected_texts) in [
+        (0, "{ for id in 0..2 key = id { Text(\"item\") } }", 2),
+        (1, "{ for _ in [1] key = 7 { Text(\"item\") } }", 1),
+        (
+            2,
+            "{ for (id, _) in [(1, \"a\"), (2, \"b\")] key = (id, \"key\") { Text(\"item\") } }",
+            2,
+        ),
+        (
+            3,
+            "{ for outer in [1, 2] key = outer { for inner in [1, 2] key = (outer, inner) { Text(\"item\") } } }",
+            4,
+        ),
+        (
+            4,
+            "{ let values = [1, 2]; for id in values key = id { Text(\"item\") } }",
+            2,
+        ),
+    ] {
+        let source = format!(
+            "entry cli @entry.main {{ goto @flow.main }}\nflow main() -> String {{ return \"done\" }}\nview Main() {{ {body} }}"
+        );
+        let compiled = project_view_fixture_with_entry(
+            &source,
+            &format!("arcweft-test://view-iteration-family-{ordinal}"),
+        )
+        .compile()
+        .unwrap();
+        let product = compiled.view_product().product().as_ref().clone();
+        let text = compiled.view_product().text().cloned();
+        let awbc = Arc::new(
+            arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+                AwbcLowerer::new(
+                    &compiled.runtime_plan().plan,
+                    &compiled.runtime_plan().dialogue_content_catalog,
+                    "main.arcw",
+                )
+                .lower()
+                .unwrap()
+                .program,
+            )
+            .unwrap(),
+        );
+        let handle = PresentationHandleRecord::new(
+            PresentationHandleId::try_new(format!("view.iteration.family.{ordinal}")).unwrap(),
+            PresentationHandleKind::View,
+            "view.Main".to_owned(),
+            None,
+            PresentationResourceState::Mounted,
+            None,
+            0,
+        );
+        let mut runtime =
+            BundleViewRuntime::try_new_with_awbc(product.clone(), text.clone(), Arc::clone(&awbc))
+                .unwrap();
+        let frame = runtime.evaluate(std::slice::from_ref(&handle), &[], false);
+        assert!(frame.diagnostics.is_empty(), "case {ordinal}: {frame:#?}");
+        assert_eq!(frame.mounts.len(), 1);
+        assert_eq!(frame.mounts[0].text.len(), expected_texts);
+        let saved = runtime.snapshot().unwrap();
+        let mut cold = BundleViewRuntime::try_new_with_awbc(product, text, awbc).unwrap();
+        cold.restore(&saved, std::slice::from_ref(&handle)).unwrap();
+        assert_eq!(
+            frame,
+            cold.evaluate(std::slice::from_ref(&handle), &[], false)
+        );
+    }
+}

@@ -652,7 +652,7 @@ Guard     := 'when' Expr
 LoopExpr  := 'loop' BlockExpr
 WhileStmt := 'while' Expr StatementBlock
 WhileLet  := 'while' 'let' Pattern '=' Expr Guard? StatementBlock
-ForStmt   := 'for' Pattern 'in' Expr StatementBlock
+ForStmt   := 'for' Pattern 'in' Expr ('key' '=' Expr)? StatementBlock
 ```
 
 `loop` may be value-producing through `break expr`. `while` and `for` return `Unit`.

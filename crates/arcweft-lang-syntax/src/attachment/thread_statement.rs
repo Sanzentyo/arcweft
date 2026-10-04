@@ -297,6 +297,7 @@ pub struct AttachedForStatement {
     pattern: AttachedPatternNode,
     in_keyword: AstNode<ForInKind>,
     source: RequiredStatementExpressionNode,
+    key: Option<RequiredStatementExpressionNode>,
     body: AttachedForBody,
 }
 
@@ -317,6 +318,10 @@ impl AttachedForStatement {
         &self.source
     }
 
+    pub const fn key(&self) -> Option<&RequiredStatementExpressionNode> {
+        self.key.as_ref()
+    }
+
     pub const fn body(&self) -> &AttachedForBody {
         &self.body
     }
@@ -327,6 +332,10 @@ impl AttachedForStatement {
             PatternSyntaxState::Recovered(_)
         ) || self.in_keyword.range().is_empty()
             || matches!(self.source, RequiredStatementExpressionNode::Missing(_))
+            || self
+                .key
+                .as_ref()
+                .is_some_and(|key| matches!(key, RequiredStatementExpressionNode::Missing(_)))
             || self.body.has_recovery()
     }
 }
@@ -505,6 +514,7 @@ impl AstNode<ForStatementKind> {
                 SyntaxRole::Pattern,
                 SyntaxRole::Token,
                 SyntaxRole::Scrutinee,
+                SyntaxRole::Key,
                 SyntaxRole::Body,
             ],
         )?;
@@ -515,6 +525,11 @@ impl AstNode<ForStatementKind> {
                 .semantic()?,
             in_keyword: self.required_exact_child::<ForInKind>(SyntaxRole::Token)?,
             source: required_statement_expression(self, SyntaxRole::Scrutinee)?,
+            key: self
+                .syntax()
+                .optional_unique_child(SyntaxRole::Key)?
+                .map(|_| required_statement_expression(self, SyntaxRole::Key))
+                .transpose()?,
             body: required_for_body(self)?,
         })
     }

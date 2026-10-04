@@ -34,25 +34,6 @@ pub(super) fn branch_bounds(
     ))
 }
 
-pub(super) fn checked_span_end(
-    start: usize,
-    span: u32,
-    enclosing_end: usize,
-    instruction: usize,
-) -> Result<usize, EvaluationFailure> {
-    let end = start
-        .checked_add(span as usize)
-        .ok_or_else(|| control_flow_failure(instruction, "control-flow span overflow"))?;
-    if end > enclosing_end {
-        Err(control_flow_failure(
-            instruction,
-            "control-flow span escapes its definition or enclosing branch",
-        ))
-    } else {
-        Ok(end)
-    }
-}
-
 pub(super) fn control_flow_failure(instruction: usize, message: &str) -> EvaluationFailure {
     EvaluationFailure::new(
         BundleViewDiagnosticCode::InvalidControlFlow,

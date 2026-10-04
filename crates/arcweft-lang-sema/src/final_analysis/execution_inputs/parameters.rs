@@ -62,6 +62,7 @@ impl super::super::CheckedClosedExecutionContext<'_> {
         match source {
             CheckedExecutionSource::EvaluateValue(_)
             | CheckedExecutionSource::SelectMatch(_)
+            | CheckedExecutionSource::ExportIteration(_)
             | CheckedExecutionSource::ExportBinding(_) => {}
             CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
                 declaration,

@@ -476,6 +476,20 @@ fn for_evidence(
         body_scope,
         &mut generations,
     )?;
+    let key_poisoned = match (attached.key(), statement.key()) {
+        (Some(key), Some(owner_key)) => required_expression_matches(
+            parsed,
+            slots,
+            arenas,
+            owner,
+            owner_key,
+            key,
+            body_scope,
+            |insertion| HirStmtRecoveryOperandSlot::ForKey { insertion },
+        )?,
+        (None, None) => false,
+        _ => return None,
+    };
     let body_recovery = match (context, statement.body()) {
         (HirStatementContext::Thread, HirContextualStmtBody::Thread(_)) => {
             let attached_body = attached.body().thread_flow_body().ok()?;
@@ -521,12 +535,20 @@ fn for_evidence(
     {
         expected_synthetics.push(expected);
     }
+    if let (Some(key), Some(owner_key)) = (attached.key(), statement.key()) {
+        if let Some(expected) = missing_operand_key(key, owner_key, |insertion| {
+            HirStmtRecoveryOperandSlot::ForKey { insertion }
+        }) {
+            expected_synthetics.push(expected);
+        }
+    }
     exact_statement_synthetic_expressions(slots, arenas, owner, &expected_synthetics)?;
     let recovery = pattern_poisoned
         .then_some(thread_child(HirThreadStmtChildRole::Pattern))
         .or_else(|| source_poisoned.then_some(thread_child(HirThreadStmtChildRole::Source)))
         .or_else(|| iterator_poisoned.then_some(thread_child(HirThreadStmtChildRole::Iterator)))
         .or_else(|| next_poisoned.then_some(thread_child(HirThreadStmtChildRole::NextValue)))
+        .or_else(|| key_poisoned.then_some(thread_child(HirThreadStmtChildRole::Key)))
         .or(body_recovery);
     Some(empty_statement(recovery))
 }

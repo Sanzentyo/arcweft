@@ -259,6 +259,18 @@ decoding. The temporal owner has `NotStarted`, `Pending(Progress)`,
 run under the same frame operation/value budget. Unknown state, invalid pattern
 ownership, or branch span mismatch is a typed diagnostic rather than a no-op.
 
+Keyed iteration uses `for PATTERN in SOURCE key = KEY { BODY }`. `SOURCE`
+runs once through the ordinary checked Core iterator and pattern owner. Its
+retained source program returns `Vec<Unit>` for a discard pattern or a vector
+of tuples containing every item binding in checked order. `KEY` is an ordinary
+checked expression in that item's lexical scope. Each key consists of its exact
+semantic type and canonical value digest. All keys are evaluated and checked for
+duplicates before any repeated body is published. Reordering unique keys keeps
+the corresponding item occurrence path stable. A failing source, key, or body
+uses the same frame failure boundary, cache semantics, and cold restore contract.
+The bundle contains no scalar count/key programs or synthetic ordinal state slot
+for this operation; those former records are rejected during decoding.
+
 評価結果は mount-scoped target/image、typed text source、Fx application を保持
 する。plain text 以外の localized/RichText/display-frame source を文字列へ黙って
 潰さない。実際の scene resource は typed node occurrence に束縛され、同じ

@@ -40,6 +40,8 @@ pub enum CheckedExecutionOperation {
     Body(Arc<CheckedExecutionBodyOwner>),
     Place(ExprId),
     Statement(StmtId),
+    /// Source/iterator/item execution of a For; its retained body is separate.
+    Iteration(StmtId),
 }
 
 impl From<HirBodyChild> for CheckedExecutionOperation {
@@ -56,6 +58,7 @@ pub(crate) struct PreparedExecutableSuspensionCatalog {
     expressions: BTreeMap<ExprId, PreparedExecutableSuspensionRow>,
     bodies: BTreeMap<Arc<CheckedExecutionBodyOwner>, PreparedExecutableSuspensionRow>,
     statements: BTreeMap<StmtId, PreparedExecutableSuspensionRow>,
+    iterations: BTreeMap<StmtId, PreparedExecutableSuspensionRow>,
 }
 
 impl PreparedExecutableSuspensionCatalog {
@@ -63,16 +66,21 @@ impl PreparedExecutableSuspensionCatalog {
         expressions: BTreeMap<ExprId, PreparedExecutableSuspensionRow>,
         statements: BTreeMap<StmtId, PreparedExecutableSuspensionRow>,
         bodies: BTreeMap<Arc<CheckedExecutionBodyOwner>, PreparedExecutableSuspensionRow>,
+        iterations: BTreeMap<StmtId, PreparedExecutableSuspensionRow>,
     ) -> Self {
         Self {
             expressions,
             bodies,
             statements,
+            iterations,
         }
     }
 
     pub(crate) fn is_empty(&self) -> bool {
-        self.expressions.is_empty() && self.statements.is_empty() && self.bodies.is_empty()
+        self.expressions.is_empty()
+            && self.statements.is_empty()
+            && self.bodies.is_empty()
+            && self.iterations.is_empty()
     }
 
     pub(super) fn publish(
@@ -84,6 +92,20 @@ impl PreparedExecutableSuspensionCatalog {
     ) -> Result<CheckedExecutionCatalog, FinalSemanticAnalysisError> {
         if !self.expressions.keys().eq(expressions.keys())
             || !self.statements.keys().eq(statements.keys())
+        {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        if !self
+            .iterations
+            .keys()
+            .copied()
+            .eq(statements.iter().filter_map(|(&owner, statement)| {
+                matches!(
+                    statement.payload(),
+                    super::CheckedStatementPayload::Iteration(_)
+                )
+                .then_some(owner)
+            }))
         {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
@@ -162,6 +184,7 @@ impl PreparedExecutableSuspensionCatalog {
             .expressions
             .values()
             .chain(self.bodies.values())
+            .chain(self.iterations.values())
             .map(PreparedExecutableSuspensionRow::children)
             .chain(
                 self.statements
@@ -178,6 +201,9 @@ impl PreparedExecutableSuspensionCatalog {
                         .and_then(CheckedExpression::mutable_place)
                         .is_none(),
                     CheckedExecutionOperation::Statement(owner) => !statements.contains_key(owner),
+                    CheckedExecutionOperation::Iteration(owner) => {
+                        !self.iterations.contains_key(owner)
+                    }
                 })
             {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
@@ -200,12 +226,19 @@ impl PreparedExecutableSuspensionCatalog {
                     .copied()
                     .map(CheckedExecutionOperation::Statement),
             )
+            .chain(
+                self.iterations
+                    .keys()
+                    .copied()
+                    .map(CheckedExecutionOperation::Iteration),
+            )
             .map(|owner| (owner, 0usize))
             .collect::<BTreeMap<_, _>>();
         for edges in self
             .expressions
             .values()
             .chain(self.bodies.values())
+            .chain(self.iterations.values())
             .map(PreparedExecutableSuspensionRow::children)
             .chain(
                 self.statements
@@ -234,6 +267,7 @@ impl PreparedExecutableSuspensionCatalog {
                 CheckedExecutionOperation::Body(ref owner) => self.bodies[owner].children(),
                 CheckedExecutionOperation::Place(_) => &[],
                 CheckedExecutionOperation::Statement(owner) => self.statements[&owner].children(),
+                CheckedExecutionOperation::Iteration(owner) => self.iterations[&owner].children(),
             };
             for child in children {
                 let count = incoming
@@ -252,6 +286,7 @@ impl PreparedExecutableSuspensionCatalog {
             expressions: self.expressions,
             bodies: self.bodies,
             statements: self.statements,
+            iterations: self.iterations,
         })
     }
 }
@@ -261,6 +296,7 @@ pub(super) struct CheckedExecutionCatalog {
     expressions: BTreeMap<ExprId, PreparedExecutableSuspensionRow>,
     bodies: BTreeMap<Arc<CheckedExecutionBodyOwner>, PreparedExecutableSuspensionRow>,
     statements: BTreeMap<StmtId, PreparedExecutableSuspensionRow>,
+    iterations: BTreeMap<StmtId, PreparedExecutableSuspensionRow>,
 }
 
 impl CheckedExecutionCatalog {
@@ -285,7 +321,7 @@ impl CheckedExecutionCatalog {
                 CheckedExecutionOperation::Body(owner) => {
                     effects.union_with(&self.body_effects(owner, expressions, statements)?);
                 }
-                CheckedExecutionOperation::Place(_) => {}
+                CheckedExecutionOperation::Place(_) | CheckedExecutionOperation::Iteration(_) => {}
             }
         }
         Some(effects)
@@ -310,6 +346,7 @@ impl CheckedExecutionCatalog {
                 CheckedExecutionOperation::Value(owner) => self.expressions.get(owner)?,
                 CheckedExecutionOperation::Body(owner) => self.bodies.get(owner)?,
                 CheckedExecutionOperation::Statement(owner) => self.statements.get(owner)?,
+                CheckedExecutionOperation::Iteration(owner) => self.iterations.get(owner)?,
                 CheckedExecutionOperation::Place(_) => return None,
             };
             if row.suspension() == super::CheckedSuspensionRole::MaySuspend {
@@ -341,6 +378,10 @@ impl CheckedExecutionCatalog {
                 CheckedExecutionOperation::Statement(owner) => {
                     statements.insert(owner);
                     pending.extend(self.statements.get(&owner)?.children().iter().cloned());
+                }
+                CheckedExecutionOperation::Iteration(owner) => {
+                    statements.insert(owner);
+                    pending.extend(self.iterations.get(&owner)?.children().iter().cloned());
                 }
             }
         }
@@ -473,9 +514,14 @@ mod tests {
             })
             .collect::<BTreeMap<_, _>>();
         assert!(
-            PreparedExecutableSuspensionCatalog::new(rows.clone(), BTreeMap::new(), bodies.clone())
-                .publish(&expressions, &statements, report.hir_topology(), &selected)
-                .is_ok()
+            PreparedExecutableSuspensionCatalog::new(
+                rows.clone(),
+                BTreeMap::new(),
+                bodies.clone(),
+                BTreeMap::new()
+            )
+            .publish(&expressions, &statements, report.hir_topology(), &selected)
+            .is_ok()
         );
         // A missing independent declaration body must fail even when every
         // expression owner/edge remains valid and no eager node references it.
@@ -483,7 +529,8 @@ mod tests {
             PreparedExecutableSuspensionCatalog::new(
                 rows.clone(),
                 BTreeMap::new(),
-                BTreeMap::new()
+                BTreeMap::new(),
+                BTreeMap::new(),
             )
             .publish(&expressions, &statements, report.hir_topology(), &selected),
             Err(FinalSemanticAnalysisError::WrongPayloadFamily)
@@ -500,8 +547,18 @@ mod tests {
                 CheckedExecutableControlRole::ExpressionCompatible,
             );
             assert!(matches!(
-                PreparedExecutableSuspensionCatalog::new(rejected, BTreeMap::new(), bodies.clone())
-                    .publish(&expressions, &statements, report.hir_topology(), &selected),
+                PreparedExecutableSuspensionCatalog::new(
+                    rejected,
+                    BTreeMap::new(),
+                    bodies.clone(),
+                    BTreeMap::new()
+                )
+                .publish(
+                    &expressions,
+                    &statements,
+                    report.hir_topology(),
+                    &selected
+                ),
                 Err(FinalSemanticAnalysisError::WrongPayloadFamily)
             ));
         }

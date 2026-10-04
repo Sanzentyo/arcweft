@@ -41,6 +41,7 @@ use super::{
 pub enum CheckedExecutionCoordinate {
     Value(CheckedSemanticPath),
     Binding(CheckedSemanticPath),
+    Iteration(CheckedSemanticPath),
     MatchSelection(CheckedSemanticPath),
     CallableBody(CheckedSemanticPath),
     DeclarationBody(StableCheckedBodyCoordinate),
@@ -51,6 +52,7 @@ impl CheckedExecutionCoordinate {
         match self {
             Self::Value(path)
             | Self::Binding(path)
+            | Self::Iteration(path)
             | Self::MatchSelection(path)
             | Self::CallableBody(path) => path,
             Self::DeclarationBody(body) => body.path(),
@@ -478,7 +480,8 @@ impl super::CheckedClosedExecutionContext<'_> {
                     effects,
                 )
             }
-            CheckedExecutionSource::ExportBinding(owner) => {
+            CheckedExecutionSource::ExportBinding(owner)
+            | CheckedExecutionSource::ExportIteration(owner) => {
                 let module = self
                     .project()
                     .modules()
@@ -494,14 +497,23 @@ impl super::CheckedClosedExecutionContext<'_> {
                         success_locals,
                         ..
                     } => success_locals,
+                    arcweft_lang_hir::stmt::HirStmtEvaluationPlan::For {
+                        branch_locals, ..
+                    } if matches!(source, CheckedExecutionSource::ExportIteration(_)) => {
+                        branch_locals
+                    }
                     _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into()),
                 };
                 let checked = analysis
                     .statement(*owner)
                     .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
-                let execution = analysis
-                    .statement_execution_region(*owner)
-                    .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+                let iteration = matches!(source, CheckedExecutionSource::ExportIteration(_));
+                let execution = if iteration {
+                    analysis.iteration_execution_region(*owner)
+                } else {
+                    analysis.statement_execution_region(*owner)
+                }
+                .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
                 let coordinate = coordinates
                     .statement(*owner)
                     .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
@@ -518,7 +530,7 @@ impl super::CheckedClosedExecutionContext<'_> {
                         self.instantiate_type(binding.ty())?,
                     ));
                 }
-                let result = if binding_outputs.is_empty() {
+                let payload = if binding_outputs.is_empty() {
                     TypeKind::Unit
                 } else {
                     TypeKind::Tuple(
@@ -528,12 +540,42 @@ impl super::CheckedClosedExecutionContext<'_> {
                             .collect(),
                     )
                 };
+                let (result, coordinate, effects) = if iteration {
+                    let arcweft_lang_hir::stmt::HirStmtKind::For(iteration) = statement.kind()
+                    else {
+                        return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into());
+                    };
+                    let mut effects = EffectSet::new();
+                    for expression in [
+                        iteration.source(),
+                        iteration.iterator(),
+                        iteration.next_value(),
+                    ] {
+                        effects.union_with(
+                            analysis
+                                .expression(expression)
+                                .ok_or(FinalSemanticAnalysisError::InvalidOwner)?
+                                .effects(),
+                        );
+                    }
+                    (
+                        TypeKind::Vec(Box::new(payload)),
+                        CheckedExecutionCoordinate::Iteration(path.clone()),
+                        effects,
+                    )
+                } else {
+                    (
+                        payload,
+                        CheckedExecutionCoordinate::Binding(path.clone()),
+                        checked.effects().clone(),
+                    )
+                };
                 (
                     execution,
-                    CheckedExecutionCoordinate::Binding(path.clone()),
+                    coordinate,
                     path,
                     crate::callable::CallableResultSchema::Value(result),
-                    checked.effects().clone(),
+                    effects,
                 )
             }
             CheckedExecutionSource::InvokeBody(owner) => {

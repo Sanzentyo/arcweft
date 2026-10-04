@@ -9,6 +9,7 @@ pub(super) enum ScopeEvent<'a> {
         outputs: &'a [arcweft_view::ViewLocalOutput],
     },
     Exit,
+    Program(&'a arcweft_view::ViewExpressionProgram),
     Instruction {
         index: u32,
         instruction: &'a ViewProgramInstruction,
@@ -17,7 +18,12 @@ pub(super) enum ScopeEvent<'a> {
 
 enum Work<'a> {
     Cursor(ViewInstructionRange),
-    Region(ViewInstructionRange, &'a [arcweft_view::ViewLocalOutput]),
+    Region(
+        ViewInstructionRange,
+        &'a [arcweft_view::ViewLocalOutput],
+        Option<&'a arcweft_view::ViewExpressionProgram>,
+    ),
+    Program(&'a arcweft_view::ViewExpressionProgram),
     Exit,
     Finish,
 }
@@ -58,9 +64,13 @@ impl<'a> ScopedInstructions<'a> {
     fn advance(&mut self) -> Result<Option<ScopeEvent<'a>>, SectionCodecError> {
         while let Some(work) = self.work.pop() {
             match work {
-                Work::Region(range, outputs) => {
+                Work::Program(program) => return Ok(Some(ScopeEvent::Program(program))),
+                Work::Region(range, outputs, key) => {
                     self.floors.push(self.explicit_depth);
                     self.work.extend([Work::Exit, Work::Cursor(range)]);
+                    if let Some(key) = key {
+                        self.work.push(Work::Program(key));
+                    }
                     return Ok(Some(ScopeEvent::Enter { outputs }));
                 }
                 Work::Exit => {
@@ -95,8 +105,9 @@ impl<'a> ScopedInstructions<'a> {
                                 index, *then_span, *else_span, range.end,
                             )
                             .ok_or_else(invalid_span)?;
-                            children.push((ranges.then_range(), &[][..]));
-                            children.extend(ranges.else_range().map(|range| (range, &[][..])));
+                            children.push((ranges.then_range(), &[][..], None));
+                            children
+                                .extend(ranges.else_range().map(|range| (range, &[][..], None)));
                             ranges.continuation()
                         }
                         ViewProgramInstruction::Match { program, .. } => {
@@ -107,13 +118,20 @@ impl<'a> ScopedInstructions<'a> {
                                     .arms()
                                     .iter()
                                     .copied()
-                                    .zip(program.arms.iter().map(|arm| arm.outputs.as_ref())),
+                                    .zip(program.arms.iter().map(|arm| arm.outputs.as_ref()))
+                                    .map(|(range, outputs)| (range, outputs, None)),
                             );
                             ranges.continuation()
                         }
-                        ViewProgramInstruction::RepeatKeyed { body_span, .. } => {
-                            let body = subrange(start, 0, *body_span, range.end)?;
-                            children.push((body, &[][..]));
+                        ViewProgramInstruction::RepeatKeyed { program, .. } => {
+                            let body = program
+                                .body_range(index, range.end)
+                                .ok_or_else(invalid_span)?;
+                            children.push((
+                                body,
+                                program.source.outputs.as_ref(),
+                                Some(&program.key),
+                            ));
                             body.end
                         }
                         _ => start,
@@ -138,7 +156,7 @@ impl<'a> ScopedInstructions<'a> {
                         children
                             .into_iter()
                             .rev()
-                            .map(|(range, outputs)| Work::Region(range, outputs)),
+                            .map(|(range, outputs, key)| Work::Region(range, outputs, key)),
                     );
                     return Ok(Some(ScopeEvent::Instruction { index, instruction }));
                 }
@@ -162,20 +180,6 @@ impl<'a> Iterator for ScopedInstructions<'a> {
             }
         }
     }
-}
-
-fn subrange(
-    start: u32,
-    offset: u32,
-    span: u32,
-    enclosing_end: u32,
-) -> Result<ViewInstructionRange, SectionCodecError> {
-    let start = start.checked_add(offset).ok_or_else(invalid_span)?;
-    let end = start
-        .checked_add(span)
-        .filter(|end| *end <= enclosing_end)
-        .ok_or_else(invalid_span)?;
-    Ok(ViewInstructionRange::new(start, end))
 }
 
 fn invalid_span() -> SectionCodecError {

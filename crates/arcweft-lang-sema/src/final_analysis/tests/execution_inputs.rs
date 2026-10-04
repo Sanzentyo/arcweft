@@ -988,3 +988,65 @@ fn empty_loop_requires_flow_without_a_nested_transfer() {
         crate::final_analysis::CheckedExecutableControlRole::FlowRequired
     );
 }
+
+#[test]
+fn retained_iteration_header_exports_bindings_without_key_or_body_execution() {
+    let world = fixture(
+        r#"fn items(reverse: bool) -> Vec<(i32, String)> { if reverse { [(2, "second"), (1, "first")] } else { [(1, "first"), (2, "second")] } }
+fn item_key(id: i32) -> String { if id == 1 { "one" } else { "two" } }
+view Main(reverse: bool) { {
+        for (id, label) in items(reverse) key = item_key(id) { Text(label) }
+        Text("tail")
+    } }"#,
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let project = world.project.analysis_view().unwrap();
+    let module = project
+        .module(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
+        .unwrap();
+    let (owner, iteration) = module
+        .statements()
+        .find_map(|(owner, row)| match row.kind() {
+            arcweft_lang_hir::stmt::HirStmtKind::For(iteration) => Some((owner, iteration)),
+            _ => None,
+        })
+        .unwrap();
+    let key = iteration.key().unwrap();
+    assert_eq!(
+        report.expression(key).unwrap().value_type(),
+        Some(&TypeKind::String)
+    );
+    let source = CheckedExecutionSource::ExportIteration(owner);
+    let context = report
+        .checked_execution_context(project, &world.symbols, source.clone(), None)
+        .unwrap();
+    let program = context.checked_deterministic_program(source).unwrap();
+    let abi = program.input_abi();
+    assert_eq!(abi.statements(), [owner]);
+    assert!(
+        abi.operations()
+            .contains(&CheckedExecutionOperation::Iteration(owner))
+    );
+    assert!(!abi.contains_expression(key));
+    assert_eq!(
+        abi.binding_outputs()
+            .iter()
+            .map(|binding| binding.local())
+            .collect::<Vec<_>>(),
+        iteration.locals()
+    );
+    assert_eq!(
+        abi.result().value_type(),
+        Some(&TypeKind::Vec(Box::new(TypeKind::Tuple(vec![
+            TypeKind::I32,
+            TypeKind::String
+        ]))))
+    );
+    assert!(abi.effects().is_empty());
+    assert_eq!(abi.inputs().len(), 1);
+    assert_eq!(
+        abi.control(),
+        crate::final_analysis::CheckedExecutableControlRole::FlowRequired
+    );
+}

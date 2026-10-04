@@ -400,3 +400,62 @@ fn assert_unclosed_nested_body(body: &AttachedRequiredNestedThreadFlowBody, head
     ));
     assert!(nested.has_recovery());
 }
+
+#[test]
+fn for_key_is_a_typed_optional_expression_without_consuming_the_source() {
+    for (source, expected_source, expected_key, recovered) in [
+        (
+            "fn root() { for item in values key = item { use_item(item) } }",
+            "values",
+            Some("item"),
+            false,
+        ),
+        (
+            "fn root() { for item in key { use_item(item) } }",
+            "key",
+            None,
+            false,
+        ),
+        (
+            "fn root() { for item in collection.key = values { use_item(item) } }",
+            "collection.key = values",
+            None,
+            false,
+        ),
+        (
+            "fn root() { for item in source(key = values) key = (item, 1) { use_item(item) } }",
+            "source(key = values)",
+            Some("(item, 1)"),
+            false,
+        ),
+        (
+            "fn root() { for item in values key = { use_item(item) } }",
+            "values",
+            Some(""),
+            true,
+        ),
+    ] {
+        let snapshot = attach(source);
+        let statement = snapshot
+            .nodes()
+            .find(|node| node.kind() == crate::grammar::SyntaxKind::ForStatement)
+            .unwrap()
+            .cast::<ForStatementKind>()
+            .unwrap()
+            .semantics()
+            .unwrap();
+        let RequiredStatementExpressionNode::Expression(value) = statement.source() else {
+            panic!("source");
+        };
+        assert_eq!(value.source_text(), expected_source);
+        match (statement.key(), expected_key) {
+            (Some(RequiredStatementExpressionNode::Expression(value)), Some(key)) => {
+                assert_eq!(value.source_text(), key)
+            }
+            (Some(RequiredStatementExpressionNode::Missing(_)), Some("")) => {}
+            (None, None) => {}
+            _ => panic!("key relation"),
+        }
+        assert_eq!(statement.has_recovery(), recovered);
+    }
+}

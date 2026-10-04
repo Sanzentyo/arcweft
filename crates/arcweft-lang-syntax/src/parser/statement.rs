@@ -2265,7 +2265,32 @@ fn emit_for_head(parser: &mut DocumentParser<'_, '_>, end: usize) {
     ) {
         parser.bump_trivia();
     }
-    emit_expression(parser, end, SyntaxRole::Scrutinee);
+    let source_start = parser.cursor();
+    let mut search = source_start;
+    let key = loop {
+        let Some(index) = top_level_operator(parser, search, end, "key") else {
+            break None;
+        };
+        let preceding = trimmed_end(parser, source_start, index)
+            .checked_sub(1)
+            .and_then(|index| token_text(parser, index));
+        if index > source_start
+            && !matches!(preceding, Some("." | "::"))
+            && next_significant_text(parser, index + 1, end) == Some("=")
+        {
+            break Some(index);
+        }
+        search = index + 1;
+    };
+    emit_expression(parser, key.unwrap_or(end), SyntaxRole::Scrutinee);
+    if let Some(key) = key {
+        bump_until(parser, key);
+        parser.bump();
+        parser.bump_trivia();
+        parser.bump();
+        parser.bump_trivia();
+        emit_expression(parser, end, SyntaxRole::Key);
+    }
 }
 
 fn emit_match_block(

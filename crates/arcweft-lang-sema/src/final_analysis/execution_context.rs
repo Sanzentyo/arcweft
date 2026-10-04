@@ -24,6 +24,8 @@ pub enum CheckedExecutionSource {
     SelectMatch(arcweft_lang_hir::project::HirMatchOwner),
     /// Executes a binding and exports its owned values in canonical binding order.
     ExportBinding(arcweft_lang_hir::identity::StmtId),
+    /// Executes one checked iteration source and exports source-ordered item bindings.
+    ExportIteration(arcweft_lang_hir::identity::StmtId),
     InvokeBody(CheckedExecutionBodyOwner),
 }
 
@@ -265,7 +267,8 @@ impl FinalSemanticAnalysis {
             CheckedExecutionSource::SelectMatch(source) => {
                 self.execution_source_scope((*source).into())
             }
-            CheckedExecutionSource::ExportBinding(source) => {
+            CheckedExecutionSource::ExportBinding(source)
+            | CheckedExecutionSource::ExportIteration(source) => {
                 self.execution_source_scope((*source).into())
             }
             CheckedExecutionSource::InvokeBody(owner) => {

@@ -505,6 +505,7 @@ fn evaluation_plan_matrix_covers_all_thirty_one_statement_families() {
         third_expr,
         first_pattern,
         Box::new([first_local]),
+        None,
         ordinary_body(body_scope, Box::new([first_statement])),
     )
     .expect("for payload");
@@ -1142,6 +1143,7 @@ fn evaluation_plan_matrix_covers_all_thirty_one_statement_families() {
                     source,
                     iterator,
                     next_value,
+                    key,
                     pattern,
                     branch_locals,
                     body,
@@ -1151,6 +1153,7 @@ fn evaluation_plan_matrix_covers_all_thirty_one_statement_families() {
                     (source, iterator, next_value),
                     (first_expr, second_expr, third_expr)
                 );
+                assert_eq!(key, None);
                 assert_eq!(pattern, first_pattern);
                 assert_eq!(branch_locals, [first_local]);
                 assert_eq!(body.scope(), body_scope);

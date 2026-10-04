@@ -120,9 +120,7 @@ pub enum ViewProgramInstruction {
         source: Option<SourceRangeRef>,
     },
     RepeatKeyed {
-        source_program: ViewValueProgramId,
-        key_program: ViewValueProgramId,
-        body_span: u32,
+        program: arcweft_view::ViewRepeatProgram,
         source: Option<SourceRangeRef>,
     },
     BeginScope,
@@ -384,10 +382,6 @@ pub enum ViewValueInputSource {
     LifetimeProjection {
         scope: String,
         path: Vec<String>,
-    },
-    RepeatOrdinal {
-        view: String,
-        binding: String,
     },
 }
 
