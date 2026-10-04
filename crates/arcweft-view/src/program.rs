@@ -326,7 +326,7 @@ pub struct ViewCall {
 pub struct ViewCallArgument {
     pub ordinal: u16,
     pub name: Option<String>,
-    pub value: ViewValueProgramId,
+    pub value: crate::ViewExpressionProgram,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

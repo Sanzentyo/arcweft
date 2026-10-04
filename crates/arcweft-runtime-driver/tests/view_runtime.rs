@@ -1594,7 +1594,11 @@ fn style_scope_rejects_inline_patch_on_non_rendered_definition_root() {
     reason = "the complete typed IR fixture is kept beside all three frame assertions"
 )]
 fn branch_reacts_per_mount_and_missing_input_never_uses_placeholder() {
-    let (condition, awbc) = branch_fixture_awbc();
+    let (condition, awbc) = pure_fixture_awbc(
+        arcweft_core::pattern::RuntimeCheckedType::Bool,
+        arcweft_core::awbc::schema::AwbcRuntimeTypeShape::Bool,
+        None,
+    );
     let branch_style = ViewStyleSheetId::try_new("style.branch.inventory").unwrap();
     let program = ViewProgramResource {
         program_id: program_id("view.program.branch"),
@@ -1746,18 +1750,17 @@ fn branch_reacts_per_mount_and_missing_input_never_uses_placeholder() {
     reason = "the parent/child IR fixture and exact restore assertions describe one persistence scenario"
 )]
 fn view_save_round_trips_stable_nested_owners_and_allocator_stays_fresh() {
-    let common_parameters = vec![FxRuntimeType::I32];
-    let constant = value_program(
-        0,
-        common_parameters.clone(),
-        Vec::new(),
-        FxRuntimeType::I32,
-        vec![
-            ValueInstruction::Constant {
-                value: FxRuntimeValue::I32(5),
-            },
-            ValueInstruction::Return,
-        ],
+    let (argument, awbc) = pure_fixture_awbc(
+        arcweft_core::pattern::RuntimeCheckedType::Signed(
+            arcweft_core::value::RuntimeSignedIntWidth::I32,
+        ),
+        arcweft_core::awbc::schema::AwbcRuntimeTypeShape::Int(
+            arcweft_core::awbc::schema::AwbcSignedIntKind::I32,
+        ),
+        Some(arcweft_core::awbc::schema::AwbcConstant::Int {
+            kind: arcweft_core::awbc::schema::AwbcSignedIntKind::I32,
+            bits: 5i128.to_le_bytes(),
+        }),
     );
     let program = ViewProgramResource {
         program_id: program_id("view.program.nested-runtime"),
@@ -1782,24 +1785,14 @@ fn view_save_round_trips_stable_nested_owners_and_allocator_stays_fresh() {
                         arcweft_core::value::RuntimeSignedIntWidth::I32,
                     )
                     .semantic_identity_digest(),
-                    value_type: Some(FxRuntimeType::I32),
-                    value_slot: Some(0),
+                    value_type: None,
+                    value_slot: None,
                     default_program: None,
                 }],
                 parameter_contract: None,
                 state_schema_hash: 22,
             },
         ],
-        value_programs: vec![constant],
-        value_inputs: vec![ViewValueInputResource {
-            namespace: ViewValueInputNamespace::Parameter,
-            slot: 0,
-            value_type: FxRuntimeType::I32,
-            source: ViewValueInputSource::DefinitionParameter {
-                view: definition_ref("view.Child"),
-                parameter: ViewParameterCoordinate::try_from_index(0).unwrap(),
-            },
-        }],
         instructions: vec![
             ViewProgramInstruction::EmitText {
                 text_source: "text.parent.before".to_owned(),
@@ -1813,7 +1806,7 @@ fn view_save_round_trips_stable_nested_owners_and_allocator_stays_fresh() {
                 arguments: vec![ViewCallArgumentBindingRef {
                     ordinal: 0,
                     name: Some("count".to_owned()),
-                    value_program: ViewValueProgramId(0),
+                    value: argument,
                 }],
                 styles: Vec::new(),
                 part: None,
@@ -1881,8 +1874,18 @@ fn view_save_round_trips_stable_nested_owners_and_allocator_stays_fresh() {
         ),
     ]);
     let first_handle = handle("handle.first", "view.Parent");
-    let mut runtime =
-        BundleViewRuntime::try_new(Some(program.clone()), Some(text.clone()), None).unwrap();
+    let mut runtime = AcceptedBundleViewRuntime::try_new_with_awbc(
+        ValidatedViewProduct::try_new(
+            None,
+            Some(program.clone()),
+            None,
+            ViewProductValidationLimits::default(),
+        )
+        .unwrap(),
+        Some(text.clone()),
+        Arc::clone(&awbc),
+    )
+    .unwrap();
     runtime.advance_millis(1_250).unwrap();
     let first = runtime.evaluate(std::slice::from_ref(&first_handle), &[], false);
     assert!(first.diagnostics.is_empty());
@@ -1936,8 +1939,18 @@ fn view_save_round_trips_stable_nested_owners_and_allocator_stays_fresh() {
     assert!(!persisted.contains("\"definition\""));
     assert!(!persisted.contains("\"rust\""));
 
-    let mut restored =
-        BundleViewRuntime::try_new(Some(program.clone()), Some(text.clone()), None).unwrap();
+    let mut restored = AcceptedBundleViewRuntime::try_new_with_awbc(
+        ValidatedViewProduct::try_new(
+            None,
+            Some(program.clone()),
+            None,
+            ViewProductValidationLimits::default(),
+        )
+        .unwrap(),
+        Some(text.clone()),
+        Arc::clone(&awbc),
+    )
+    .unwrap();
     restored
         .restore(&snapshot, std::slice::from_ref(&first_handle))
         .unwrap();
@@ -2932,20 +2945,27 @@ fn logical_time_updates_context_cache_and_reduce_motion_freezes_it() {
     }
 }
 
-fn branch_fixture_awbc() -> (
+fn pure_fixture_awbc(
+    value_type: arcweft_core::pattern::RuntimeCheckedType,
+    shape: arcweft_core::awbc::schema::AwbcRuntimeTypeShape,
+    constant: Option<arcweft_core::awbc::schema::AwbcConstant>,
+) -> (
     arcweft_view::ViewExpressionProgram,
     Arc<arcweft_core::awbc::schema::AwbcProgram>,
 ) {
     use arcweft_core::awbc::schema::*;
     let id = arcweft_id::runtime_program::RuntimePureProgramId::from_checked_digest([0xbc; 32]);
-    let ty = arcweft_core::pattern::RuntimeCheckedType::Bool.semantic_identity_digest();
+    let ty = value_type.semantic_identity_digest();
+    let has_parameter = constant.is_none();
     let mut program = AwbcProgram::default();
     let bool_type = AwbcTypeId(u32::try_from(program.runtime_types.len()).unwrap());
-    program
-        .runtime_types
-        .push(AwbcRuntimeType::new(ty, AwbcRuntimeTypeShape::Bool));
+    program.runtime_types.push(AwbcRuntimeType::new(ty, shape));
     program.signatures.push(AwbcSignature {
-        params: vec![bool_type],
+        params: if has_parameter {
+            vec![bool_type]
+        } else {
+            Vec::new()
+        },
         result: Some(bool_type),
         effects: AwbcEffectSetId(0),
     });
@@ -2954,14 +2974,25 @@ fn branch_fixture_awbc() -> (
         slots: vec![AwbcFrameSlot {
             name: None,
             ty: bool_type,
-            role: AwbcFrameSlotRole::Parameter,
+            role: if has_parameter {
+                AwbcFrameSlotRole::Parameter
+            } else {
+                AwbcFrameSlotRole::Temporary
+            },
             scope_depth: 0,
         }],
         max_scope_depth: 0,
     });
+    if let Some(constant) = constant {
+        program.constants.push(constant);
+        program.instructions.push(AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(0),
+            constant: AwbcConstantId(0),
+        });
+    }
     program.blocks.push(AwbcBlock {
         owner: AwbcFunctionId(0),
-        instructions: AwbcTableRange::new(0, 0),
+        instructions: AwbcTableRange::new(0, u32::try_from(program.instructions.len()).unwrap()),
         terminator: AwbcTerminator::Return {
             value: Some(AwbcRegisterId(0)),
         },
@@ -2973,7 +3004,11 @@ fn branch_fixture_awbc() -> (
         kind: AwbcFunctionKind::Ordinary,
         signature: AwbcSignatureId(0),
         type_context: None,
-        input_ownership: vec![AwbcFunctionInputOwnership::default()],
+        input_ownership: if has_parameter {
+            vec![AwbcFunctionInputOwnership::default()]
+        } else {
+            Vec::new()
+        },
         frame_layout: AwbcFrameLayoutId(0),
         blocks: AwbcTableRange::new(0, 1),
         entry_block: AwbcBlockId(0),
@@ -2983,19 +3018,23 @@ fn branch_fixture_awbc() -> (
         program: id,
         function: AwbcFunctionId(0),
         function_type: None,
-        input_types: vec![ty],
+        input_types: if has_parameter { vec![ty] } else { Vec::new() },
         result_type: ty,
     });
     let expression = arcweft_view::ViewExpressionProgram {
         program: id,
-        inputs: vec![
-            arcweft_view::ViewParameterInput::new(
-                ViewParameterCoordinate::try_from_index(0).unwrap(),
-                ty,
-            )
-            .into(),
-        ]
-        .into_boxed_slice(),
+        inputs: if has_parameter {
+            vec![
+                arcweft_view::ViewParameterInput::new(
+                    ViewParameterCoordinate::try_from_index(0).unwrap(),
+                    ty,
+                )
+                .into(),
+            ]
+            .into_boxed_slice()
+        } else {
+            Box::new([])
+        },
         result_type: ty,
     };
     (expression, Arc::new(program))

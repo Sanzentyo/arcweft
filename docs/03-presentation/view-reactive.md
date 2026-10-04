@@ -140,7 +140,13 @@ View 宣言を、次の閉じた定義 record として保持する。
 - mount-state schema hash
 
 `CallView` は対象 definition ID と、parameter ordinal/name に結び付いた
-`ViewValueProgramId` を保持する。必須引数の欠落、未知の引数、型不一致、重複
+`ViewExpressionProgram` を authored order で保持する。引数は caller の parameter／
+派生 local を入力として通常の Core pure program で評価し、その一般値を子 View の
+parameter owner へ渡す。codec は引数を parameter ordinal 順へ並べ替えない。
+省略した引数は子 View の宣言 default を、その子の入力環境で評価する。子 View の準備・
+実行に失敗した場合は親の部分的な frame を公開しない。成功した root 評価だけが
+未訪問の子 occurrence を retire し、失敗からの復帰で到達中の mount identity を保つ。
+必須引数の欠落、未知の引数、型不一致、重複
 binding、未知の View は bundle 作成または decode 時の structured failure であり、
 no-op へは落とさない。空の View body は長さ 0 の正規 span として有効である。
 同名 parameter でも View definition が異なれば別 slot であり、型を共有・推測

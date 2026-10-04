@@ -3233,3 +3233,185 @@ view Main(active: bool, label: String = "yes", divisor: i64 = 0i64) {
         cold.evaluate(std::slice::from_ref(&handle), &inputs(true), false)
     );
 }
+
+#[test]
+fn authored_nested_views_pass_core_values_locals_aliases_and_defaults() {
+    use arcweft_core::value::{RuntimeBinding, RuntimeValue};
+    use arcweft_runtime_driver::presentation_handles::{
+        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    };
+    use arcweft_runtime_driver::view_runtime::BundleViewTextValue;
+    for body in [
+        "Child(label, Row { label: label }, divisor)",
+        "Child(payload = Row { label: label }, label = label, divisor = divisor)",
+        "{ let inner = label; let saved = Child; saved(payload = Row { label: inner }, label = inner, divisor = divisor) }",
+        "{ let saved = Child; { saved }(label, Row { label: label }, divisor) }",
+    ] {
+        let source = format!(
+            "entry cli @entry.main {{ goto @flow.main }}\nflow main() -> String {{ return \"done\" }}\nstruct Row {{ label: String }}\nfn fallback(label: String, divisor: i64) -> String {{ let checked = 1i64 / divisor; label }}\nview Child(label: String, payload: Row, divisor: i64 = 1i64, suffix: String = fallback(label, divisor)) {{ Text(label); Text(payload.label); Text(suffix) }}\nview Main(label: String = \"seed\", divisor: i64 = 1i64) {{ {body} }}"
+        );
+        let compiled = project_view_fixture_with_entry(&source, "arcweft-test://view-nested-core")
+            .compile()
+            .expect("nested View uses the accepted call");
+        let product = compiled.view_product().product().as_ref().clone();
+        let text = compiled.view_product().text().unwrap().clone();
+        let resource = product.program().unwrap().resource();
+        assert_eq!(
+            ViewProgramResource::decode_canonical_section(
+                &resource.encode_canonical_section().unwrap()
+            )
+            .unwrap(),
+            *resource
+        );
+        let awbc = Arc::new(
+            arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+                AwbcLowerer::new(
+                    &compiled.runtime_plan().plan,
+                    &compiled.runtime_plan().dialogue_content_catalog,
+                    "main.arcw",
+                )
+                .lower()
+                .unwrap()
+                .program,
+            )
+            .unwrap(),
+        );
+        resource.validate_awbc_programs(&awbc, Some(&text)).unwrap();
+        let call = resource
+            .instructions
+            .iter()
+            .find_map(|instruction| match instruction {
+                ViewProgramInstruction::CallView { arguments, .. } => Some(arguments),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(
+            call.iter()
+                .map(|argument| argument.ordinal)
+                .collect::<Vec<_>>(),
+            if body.contains("payload =") {
+                vec![1, 0, 2]
+            } else {
+                vec![0, 1, 2]
+            }
+        );
+        for forgery in 0..6 {
+            let mut forged = resource.clone();
+            let ViewProgramInstruction::CallView {
+                arguments, view, ..
+            } = forged
+                .instructions
+                .iter_mut()
+                .find(|instruction| matches!(instruction, ViewProgramInstruction::CallView { .. }))
+                .unwrap()
+            else {
+                panic!("nested call")
+            };
+            if forgery == 5 {
+                forged.definitions.push(forged.definitions[0].clone());
+            } else {
+                match forgery {
+                    0 => {
+                        arguments[0].value.program =
+                            arcweft_id::runtime_program::RuntimePureProgramId::from_checked_digest(
+                                [0xf9; 32],
+                            )
+                    }
+                    1 => arguments[0].ordinal = u16::MAX,
+                    2 => arguments[0].name = Some("unknown".to_owned()),
+                    3 => {
+                        arguments.remove(0);
+                    }
+                    _ => {
+                        *view = arcweft_bundle::resource_codec::view::ViewDefinitionRef::new(
+                            arcweft_view::ViewId::try_new("view.Missing").unwrap(),
+                        )
+                    }
+                }
+            }
+            assert!(
+                forged.validate_awbc_programs(&awbc, Some(&text)).is_err(),
+                "forgery {forgery}"
+            );
+        }
+        let handle = PresentationHandleRecord::new(
+            PresentationHandleId::try_new("view.nested.core").unwrap(),
+            PresentationHandleKind::View,
+            "view.Main".to_owned(),
+            None,
+            PresentationResourceState::Mounted,
+            None,
+            0,
+        );
+        let mut runtime = BundleViewRuntime::try_new_with_awbc(
+            product.clone(),
+            Some(text.clone()),
+            Arc::clone(&awbc),
+        )
+        .unwrap();
+        for label in ["first", "changed", "first"] {
+            let inputs = [
+                RuntimeBinding {
+                    name: "label".to_owned(),
+                    value: RuntimeValue::String(label.to_owned()),
+                },
+                RuntimeBinding {
+                    name: "divisor".to_owned(),
+                    value: RuntimeValue::Int(arcweft_core::value::RuntimeInt::i64(1)),
+                },
+            ];
+            let frame = runtime.evaluate(std::slice::from_ref(&handle), &inputs, false);
+            assert!(frame.diagnostics.is_empty(), "{frame:?}");
+            assert_eq!(frame.mounts.len(), 2);
+            assert_eq!(frame.mounts[1].view.as_str(), "view.Child");
+            assert_eq!(
+                frame.mounts[1]
+                    .text
+                    .iter()
+                    .map(|output| match &output.value {
+                        BundleViewTextValue::Plain { value } => value.as_str(),
+                        _ => panic!("plain text"),
+                    })
+                    .collect::<Vec<_>>(),
+                vec![label, label, label]
+            );
+            let saved = runtime.snapshot().unwrap();
+            let mut cold = BundleViewRuntime::try_new_with_awbc(
+                product.clone(),
+                Some(text.clone()),
+                Arc::clone(&awbc),
+            )
+            .unwrap();
+            cold.restore(&saved, std::slice::from_ref(&handle)).unwrap();
+            assert_eq!(
+                frame,
+                cold.evaluate(std::slice::from_ref(&handle), &inputs, false)
+            );
+            let failed_inputs = [
+                inputs[0].clone(),
+                RuntimeBinding {
+                    name: "divisor".to_owned(),
+                    value: RuntimeValue::Int(arcweft_core::value::RuntimeInt::i64(0)),
+                },
+            ];
+            let failure = runtime.evaluate(std::slice::from_ref(&handle), &failed_inputs, false);
+            assert!(
+                failure.mounts.is_empty(),
+                "child default failure must retire the whole parent output: {failure:?}"
+            );
+            assert!(!failure.diagnostics.is_empty());
+            assert_eq!(
+                failure,
+                cold.evaluate(std::slice::from_ref(&handle), &failed_inputs, false)
+            );
+            assert_eq!(
+                frame,
+                runtime.evaluate(std::slice::from_ref(&handle), &inputs, false)
+            );
+            assert_eq!(
+                frame,
+                cold.evaluate(std::slice::from_ref(&handle), &inputs, false)
+            );
+        }
+    }
+}

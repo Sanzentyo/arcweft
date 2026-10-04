@@ -920,11 +920,6 @@ fn remap_program_references(
     offset: u32,
 ) -> Result<(), ViewResourceMergeError> {
     match instruction {
-        ViewProgramInstruction::CallView { arguments, .. } => {
-            for argument in arguments {
-                remap_program(&mut argument.value_program, offset)?;
-            }
-        }
         ViewProgramInstruction::RepeatKeyed {
             source_program,
             key_program,
@@ -954,6 +949,7 @@ fn remap_program_references(
         | ViewProgramInstruction::CloseElement
         | ViewProgramInstruction::BeginScope
         | ViewProgramInstruction::EndScope
+        | ViewProgramInstruction::CallView { .. }
         | ViewProgramInstruction::Branch { .. }
         | ViewProgramInstruction::BindLocal { .. }
         | ViewProgramInstruction::EmitText { .. }

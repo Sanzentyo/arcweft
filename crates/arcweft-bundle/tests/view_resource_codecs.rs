@@ -558,11 +558,24 @@ fn view_fx_bindings_are_canonical_bounded_and_unique() {
 }
 
 #[test]
-fn nested_view_calls_are_ordinal_canonical_required_and_typed() {
+fn nested_view_calls_preserve_authored_order_and_require_typed_bindings() {
     let binding = |ordinal, name: &str, value_program| ViewCallArgumentBindingRef {
         ordinal,
         name: Some(name.to_owned()),
-        value_program: ViewValueProgramId(value_program),
+        value: arcweft_view::ViewExpressionProgram {
+            program: arcweft_id::runtime_program::RuntimePureProgramId::from_checked_digest(
+                [value_program; 32],
+            ),
+            inputs: Box::new([]),
+            result_type: if value_program == 0 {
+                arcweft_core::pattern::RuntimeCheckedType::Signed(
+                    arcweft_core::value::RuntimeSignedIntWidth::I32,
+                )
+                .semantic_identity_digest()
+            } else {
+                arcweft_core::pattern::RuntimeCheckedType::F32.semantic_identity_digest()
+            },
+        },
     };
     let value_program = |id, value: FxRuntimeValue| {
         ViewValueProgram::validate(
@@ -659,7 +672,7 @@ fn nested_view_calls_are_ordinal_canonical_required_and_typed() {
 
     let authored_reverse = program(vec![binding(1, "opacity", 1), binding(0, "count", 0)]);
     let authored_forward = program(vec![binding(0, "count", 0), binding(1, "opacity", 1)]);
-    assert_eq!(
+    assert_ne!(
         authored_reverse.encode_canonical_section().unwrap(),
         authored_forward.encode_canonical_section().unwrap()
     );

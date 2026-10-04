@@ -277,7 +277,7 @@ pub struct ViewCallArgumentBindingRef {
     pub ordinal: u16,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    pub value_program: ViewValueProgramId,
+    pub value: arcweft_view::ViewExpressionProgram,
 }
 
 /// One independently mountable Arcweft View definition in the program.

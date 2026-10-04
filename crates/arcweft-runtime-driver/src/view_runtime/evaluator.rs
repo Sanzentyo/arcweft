@@ -16,7 +16,7 @@ use super::style_scope::{
 use super::catalog::{ViewDefinitionIndex, ViewProgramCatalog};
 use super::owner::{AcceptedViewProgramGeneration, ResolvedMountedViewOwner};
 use super::part::ViewPartRuntimeCatalog;
-use super::value::{fx_placeholder, fx_to_runtime, runtime_to_fx};
+use super::value::{fx_placeholder, runtime_to_fx};
 use super::{
     BundleViewDiagnostic, BundleViewDiagnosticCode, BundleViewEventBinding, BundleViewFrame,
     BundleViewFxApplication, BundleViewFxArgument, BundleViewInstancePath,
@@ -563,13 +563,16 @@ impl BundleViewRuntime {
                 }
             }
             if handle.is_render_visible() {
-                evaluated_handles.insert(handle.id.clone());
-                output.extend(evaluator.evaluate_occurrence(
+                let root_output = evaluator.evaluate_occurrence(
                     key,
                     definition_index,
                     0,
                     ViewStyleScopeStack::default(),
-                ));
+                );
+                if !root_output.is_empty() {
+                    evaluated_handles.insert(handle.id.clone());
+                }
+                output.extend(root_output);
             }
         }
 
@@ -623,7 +626,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
         &mut self,
         key: &ViewOccurrenceKey,
         definition_index: ViewDefinitionIndex,
-        call_arguments: Option<&BTreeMap<u16, FxRuntimeValue>>,
+        call_arguments: Option<BTreeMap<u16, RuntimeValue>>,
     ) -> Result<(), EvaluationFailure> {
         let definition = self.definition(definition_index).clone();
         let definition_view = definition.public_id.view_id().clone();
@@ -808,7 +811,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
         key: &ViewOccurrenceKey,
         definition: &ViewDefinitionResource,
         mounted: &mut MountedView,
-        call_arguments: Option<&BTreeMap<u16, FxRuntimeValue>>,
+        mut call_arguments: Option<BTreeMap<u16, RuntimeValue>>,
     ) -> Result<(), EvaluationFailure> {
         let mut supplied_parameters = BTreeSet::new();
         for parameter in &definition.parameters {
@@ -820,48 +823,18 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                     mounted.expression_evaluations.remove(&default.program);
                 }
             }
-            let supplied_fx =
-                call_arguments.and_then(|arguments| arguments.get(&parameter.ordinal));
-            let supplied_runtime = match supplied_fx.copied() {
-                Some(value) => Some(fx_to_runtime(value).map_err(|error| {
-                    EvaluationFailure::new(
-                        BundleViewDiagnosticCode::InputType,
-                        None,
-                        format!(
-                            "View `{}` parameter `{}` cannot cross into runtime state: {error}",
-                            definition.public_id, parameter.name
-                        ),
-                    )
-                })?),
-                None if call_arguments.is_none() => {
-                    self.view_root_bindings.get(&parameter.name).cloned()
-                }
-                None => None,
+            let supplied_runtime = match call_arguments.as_mut() {
+                Some(arguments) => arguments.remove(&parameter.ordinal),
+                None => self.view_root_bindings.get(&parameter.name).cloned(),
             };
             if let Some(value) = supplied_runtime {
                 supplied_parameters.insert(parameter.ordinal);
                 if let Some(default) = &parameter.default_program {
                     mounted.expression_evaluations.remove(&default.program);
                 }
-                mounted
-                    .runtime_parameters
-                    .insert(parameter.name.clone(), value.clone());
                 if let (Some(value_type), Some(slot)) = (parameter.value_type, parameter.value_slot)
                 {
-                    let converted = supplied_fx.copied().map_or_else(
-                        || runtime_to_fx(&value, value_type),
-                        |value| {
-                            if value.value_type() == value_type {
-                                Ok(value)
-                            } else {
-                                Err(super::BundleViewValueConversionError::Type {
-                                    expected: value_type,
-                                    actual: "Fx argument with another type",
-                                })
-                            }
-                        },
-                    )
-                    .map_err(|error| {
+                    let converted = runtime_to_fx(&value, value_type).map_err(|error| {
                         EvaluationFailure::new(
                             BundleViewDiagnosticCode::InputType,
                             None,
@@ -877,6 +850,9 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                         .map_err(|error| EvaluationFailure::value(None, &error))?;
                     mounted.initialized_parameters.insert(slot);
                 }
+                mounted
+                    .runtime_parameters
+                    .insert(parameter.name.clone(), value);
             }
         }
 
@@ -1722,14 +1698,12 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                     };
                     let mut evaluated_arguments = BTreeMap::new();
                     for argument in arguments {
-                        let context = self.sample_context(mounted, instruction_ordinal(cursor)?)?;
-                        let value = evaluate_value(
+                        let value = self.evaluate_expression_program(
+                            &key.handle,
+                            definition,
                             mounted,
-                            argument.value_program,
-                            self.inventory,
-                            context,
-                            &mut self.value_budget,
-                            Some(cursor),
+                            cursor,
+                            &argument.value,
                         )?;
                         if evaluated_arguments
                             .insert(argument.ordinal, value)
@@ -1764,7 +1738,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                     match self.prepare_occurrence(
                         &child_key,
                         child_index,
-                        Some(&evaluated_arguments),
+                        Some(evaluated_arguments),
                     ) {
                         Ok(()) => {
                             self.visited.insert(child_key.clone());
@@ -1774,6 +1748,12 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                                 depth + 1,
                                 child_style_scopes,
                             );
+                            if child_output.is_empty() {
+                                return Err(control_flow_failure(
+                                    cursor,
+                                    "nested View evaluation failed",
+                                ));
+                            }
                             if let Some(child) = child_output.first() {
                                 builder
                                     .paint
@@ -1782,7 +1762,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                             descendants.extend(child_output);
                         }
                         Err(error) => {
-                            self.record_failure(&child_key, &child_view, None, error);
+                            return Err(error);
                         }
                     }
                     cursor += 1;

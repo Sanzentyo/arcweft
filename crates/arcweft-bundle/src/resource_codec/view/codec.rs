@@ -290,6 +290,7 @@ impl ViewProgramResource {
         program: &AwbcProgram,
         text: Option<&ViewTextResource>,
     ) -> Result<(), SectionCodecError> {
+        let definitions = self.validate_application_bindings()?;
         let bindings = program
             .pure_programs
             .iter()
@@ -452,6 +453,38 @@ impl ViewProgramResource {
                             return Err(SectionCodecError::NonCanonicalTable("view_local_scope"));
                         }
                         locals.pop();
+                    }
+                    ViewProgramInstruction::CallView {
+                        view, arguments, ..
+                    } => {
+                        let target = definitions
+                            .get(view.as_str())
+                            .ok_or(SectionCodecError::NonCanonicalTable("view_call_definition"))?;
+                        let mut result_types = Vec::new();
+                        for argument in arguments {
+                            let signature = self.validate_expression_program(
+                                program,
+                                definition,
+                                &argument.value,
+                                &locals,
+                            )?;
+                            let result =
+                                signature
+                                    .result
+                                    .ok_or(SectionCodecError::NonCanonicalTable(
+                                        "view_call_argument_type",
+                                    ))?;
+                            result_types.push((usize::from(argument.ordinal), result));
+                        }
+                        if let Some(contract) = target.parameter_contract {
+                            if !program.semantic_type_id(contract).is_some_and(|contract| {
+                                program.parameter_contract_accepts_types(contract, result_types)
+                            }) {
+                                return Err(SectionCodecError::NonCanonicalTable(
+                                    "view_call_argument_contract",
+                                ));
+                            }
+                        }
                     }
                     ViewProgramInstruction::Branch { condition, .. } => {
                         let signature = self
@@ -719,9 +752,6 @@ impl ViewProgramResource {
             .sort_by(|left, right| left.public_id.cmp(&right.public_id));
         for instruction in &mut self.instructions {
             match instruction {
-                ViewProgramInstruction::CallView { arguments, .. } => {
-                    arguments.sort_by_key(|argument| argument.ordinal);
-                }
                 ViewProgramInstruction::ApplyFx { arguments, .. } => {
                     arguments.sort_by_key(|argument| argument.parameter);
                 }
@@ -771,7 +801,7 @@ impl ViewProgramResource {
         self.validate_surfaces()?;
         self.validate_text_blocks()?;
         self.validate_focus_targets()?;
-        self.validate_fx_applications()?;
+        self.validate_application_bindings()?;
         self.validate_source_refs()
     }
 
@@ -924,22 +954,6 @@ impl ViewProgramResource {
         self.validate_value_inputs(&inventory)?;
         for instruction in &self.instructions {
             match instruction {
-                ViewProgramInstruction::CallView {
-                    view, arguments, ..
-                } => {
-                    let target = self
-                        .definitions
-                        .iter()
-                        .find(|definition| definition.public_id == *view);
-                    for argument in arguments {
-                        let expected = target
-                            .and_then(|definition| {
-                                definition.parameters.get(usize::from(argument.ordinal))
-                            })
-                            .and_then(|parameter| parameter.value_type);
-                        validate_program(&inventory, argument.value_program, expected)?;
-                    }
-                }
                 ViewProgramInstruction::RepeatKeyed {
                     source_program,
                     key_program,
@@ -967,6 +981,7 @@ impl ViewProgramResource {
                 | ViewProgramInstruction::CloseElement
                 | ViewProgramInstruction::BeginScope
                 | ViewProgramInstruction::EndScope
+                | ViewProgramInstruction::CallView { .. }
                 | ViewProgramInstruction::Branch { .. }
                 | ViewProgramInstruction::BindLocal { .. }
                 | ViewProgramInstruction::EmitText { .. }
@@ -1487,25 +1502,25 @@ impl ViewProgramResource {
         Ok(())
     }
 
-    fn validate_fx_applications(&self) -> Result<(), SectionCodecError> {
+    fn validate_application_bindings(
+        &self,
+    ) -> Result<BTreeMap<&str, &super::model::ViewDefinitionResource>, SectionCodecError> {
         let definitions = self
             .definitions
             .iter()
-            .map(|definition| definition.public_id.as_str())
-            .collect::<BTreeSet<_>>();
+            .map(|definition| (definition.public_id.as_str(), definition))
+            .collect::<BTreeMap<_, _>>();
+        if definitions.len() != self.definitions.len() {
+            return Err(SectionCodecError::NonCanonicalTable("view_call_definition"));
+        }
         for instruction in &self.instructions {
             if let ViewProgramInstruction::CallView {
                 view, arguments, ..
             } = instruction
             {
-                if !definitions.contains(view.as_str()) {
-                    return Err(SectionCodecError::NonCanonicalTable("view_call_definition"));
-                }
-                let target = self
-                    .definitions
-                    .iter()
-                    .find(|definition| definition.public_id == *view)
-                    .expect("definition membership checked above");
+                let target = definitions
+                    .get(view.as_str())
+                    .ok_or(SectionCodecError::NonCanonicalTable("view_call_definition"))?;
                 let mut ordinals = BTreeSet::new();
                 let mut names = BTreeSet::new();
                 for argument in arguments {
@@ -1517,6 +1532,14 @@ impl ViewProgramResource {
                             .is_some_and(|name| !names.insert(name) || !valid_identifier(name))
                     {
                         return Err(SectionCodecError::NonCanonicalTable("view_call_arguments"));
+                    }
+                    if target.parameter_contract.is_none()
+                        && argument.value.result_type
+                            != target.parameters[usize::from(argument.ordinal)].semantic_type
+                    {
+                        return Err(SectionCodecError::NonCanonicalTable(
+                            "view_call_argument_type",
+                        ));
                     }
                     if let Some(name) = argument.name.as_deref()
                         && target.parameters[usize::from(argument.ordinal)].name != name
@@ -1546,7 +1569,7 @@ impl ViewProgramResource {
                 }
             }
         }
-        Ok(())
+        Ok(definitions)
     }
 
     fn validate_source_refs(&self) -> Result<(), SectionCodecError> {

@@ -120,7 +120,7 @@ impl ViewProgramCatalog {
                         instruction,
                         ViewProgramInstruction::BindLocal { .. }
                             | ViewProgramInstruction::Branch { .. }
-                    )
+                    ) || matches!(instruction, ViewProgramInstruction::CallView { arguments, .. } if !arguments.is_empty())
                 }) || !program.resource().handlers.is_empty()
                     || program.resource().definitions.iter().any(|definition| {
                         definition.parameter_contract.is_some()
@@ -542,7 +542,7 @@ fn map_instruction(
                 .map(|argument| ViewCallArgument {
                     ordinal: argument.ordinal,
                     name: argument.name.clone(),
-                    value: argument.value_program,
+                    value: argument.value.clone(),
                 })
                 .collect(),
             styles: styles.clone(),

@@ -430,6 +430,24 @@ struct GlobalViewValueInput {
     value_type: FxRuntimeType,
 }
 
+fn checked_nested_view_declaration(
+    analysis: &FinalSemanticAnalysis,
+    expression: ExprId,
+) -> Option<&arcweft_lang_hir::symbol::CallableDeclarationKey> {
+    let candidate = analysis
+        .call(expression)?
+        .selected_application()?
+        .core()
+        .candidates()
+        .selected();
+    let arcweft_lang_sema::callable::CallableCandidateId::Project(declaration) = candidate.id()
+    else {
+        return None;
+    };
+    (declaration.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::View)
+        .then_some(declaration)
+}
+
 fn collect_view_fx_inputs(
     owner: ItemId,
     root: ExprId,
@@ -468,6 +486,9 @@ fn collect_view_fx_inputs(
                     }
                 }
             }
+        }
+        if checked_nested_view_declaration(analysis, expression).is_some() {
+            return Ok(());
         }
         if !matches!(
             checked.resolution(),
@@ -1192,7 +1213,16 @@ impl AuthoredViewBodyLowerer<'_> {
         }
 
         match row.kind().evaluation_plan() {
-            arcweft_lang_hir::stmt::HirStmtEvaluationPlan::Binding { .. } => {
+            arcweft_lang_hir::stmt::HirStmtEvaluationPlan::Binding { input, locals, .. } => {
+                if !locals.is_empty()
+                    && locals.iter().all(|local| {
+                        self.analysis.local(*local).is_some_and(|local| {
+                            matches!(local.ty(), TypeKind::CompileTimeCallable(_))
+                        })
+                    })
+                {
+                    return self.lower_value(input);
+                }
                 let execution = ViewExpressionLowerer {
                     project: self.project,
                     analysis: self.analysis,
@@ -1289,9 +1319,15 @@ impl AuthoredViewBodyLowerer<'_> {
         if matches!(expression.kind(), arcweft_lang_hir::expr::HirExprKind::Unit) {
             return Ok(());
         }
+        if matches!(checked.value_type(), Some(TypeKind::CompileTimeCallable(_))) {
+            return Ok(());
+        }
         let arcweft_lang_hir::expr::HirExprKind::Call(call) = expression.kind() else {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         };
+        if checked_nested_view_declaration(self.analysis, value).is_some() {
+            return self.lower_nested_view(value, call);
+        }
         let CheckedExpressionResolution::ViewCall(kind) = checked.resolution() else {
             return match checked.resolution() {
                 CheckedExpressionResolution::ViewFxApplication(application) => {
@@ -1412,6 +1448,117 @@ impl AuthoredViewBodyLowerer<'_> {
                 self.lower_text(argument, surface)?;
             }
         }
+        Ok(())
+    }
+
+    fn lower_nested_view(
+        &mut self,
+        value: ExprId,
+        call: &arcweft_lang_hir::expr::HirCallInvocation,
+    ) -> Result<(), ViewProjectLowerError> {
+        use arcweft_lang_sema::callable::{
+            CheckedCallArgumentPassing, CheckedCallOperandDestination,
+        };
+        let owner = self.owner;
+        let invalid = || ViewProjectLowerError::MissingCheckedViewProjection { owner };
+        let declaration =
+            checked_nested_view_declaration(self.analysis, value).ok_or_else(invalid)?;
+        let symbol = self
+            .registered_world
+            .symbols()
+            .callable(declaration)
+            .ok_or_else(invalid)?;
+        let target_module = self
+            .project
+            .module(declaration.module())
+            .ok_or_else(invalid)?;
+        if target_module.snapshot_id() != symbol.source_snapshot() {
+            return Err(invalid());
+        }
+        let target = target_module
+            .resolve_item(symbol.source_item())
+            .map_err(|_| invalid())?;
+        let HirItemKind::View(target) = target.kind() else {
+            return Err(invalid());
+        };
+        let view = ViewId::try_from(
+            target
+                .header()
+                .public_id()
+                .resolved()
+                .ok_or_else(invalid)?
+                .clone(),
+        )
+        .map_err(|_| invalid())?;
+        let application = self
+            .analysis
+            .call(value)
+            .and_then(|facts| facts.selected_application())
+            .ok_or_else(invalid)?;
+        if application.core().application_site().raw() != CheckedCallSite::HirCall(value) {
+            return Err(invalid());
+        }
+        if let arcweft_lang_hir::expr::HirCallCallee::Value { value } = call.callee() {
+            self.lower_value(*value)?;
+        }
+        let mut arguments = Vec::new();
+        for argument in application.core().execution().arguments() {
+            let [slot] = argument.slots() else {
+                return Err(invalid());
+            };
+            let CheckedCallOperandDestination::Parameter(coordinate) = slot.destination() else {
+                return Err(invalid());
+            };
+            if coordinate.group().get() != 0
+                || argument.passing() == CheckedCallArgumentPassing::Spread
+            {
+                return Err(invalid());
+            }
+            let CheckedCallArgumentSlotSource::Expression(source) = slot.source().raw() else {
+                return Err(invalid());
+            };
+            let name = if argument.passing() == CheckedCallArgumentPassing::Named {
+                let parameter = application
+                    .core()
+                    .candidates()
+                    .selected()
+                    .schema()
+                    .group(coordinate.group())
+                    .and_then(|group| group.parameter(coordinate.parameter()))
+                    .ok_or_else(invalid)?;
+                Some(parameter.name().ok_or_else(invalid)?.as_str().to_owned())
+            } else {
+                None
+            };
+            let value = ViewExpressionLowerer {
+                project: self.project,
+                analysis: self.analysis,
+                world: self.registered_world,
+                owner: self.owner,
+                view: self.view,
+                parameters: self.parameters,
+                locals: &self.locals,
+                output: self.output,
+            }
+            .lower(source)?;
+            arguments.push(
+                arcweft_bundle::resource_codec::view::ViewCallArgumentBindingRef {
+                    ordinal: u16::try_from(coordinate.parameter().get()).map_err(|_| invalid())?,
+                    name,
+                    value,
+                },
+            );
+        }
+        self.output
+            .instructions
+            .push(ViewProgramInstruction::CallView {
+                view: ViewDefinitionRef::new(view),
+                arguments,
+                styles: Vec::new(),
+                part: None,
+                key: None,
+                source: None,
+            });
         Ok(())
     }
 

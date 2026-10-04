@@ -171,9 +171,6 @@ fn referenced_value_programs(body: &[ViewProgramInstruction]) -> BTreeSet<ViewVa
     let mut programs = BTreeSet::new();
     for instruction in body {
         match instruction {
-            ViewProgramInstruction::CallView { arguments, .. } => {
-                programs.extend(arguments.iter().map(|argument| argument.value_program));
-            }
             ViewProgramInstruction::RepeatKeyed {
                 source_program,
                 key_program,
@@ -199,6 +196,7 @@ fn referenced_value_programs(body: &[ViewProgramInstruction]) -> BTreeSet<ViewVa
             | ViewProgramInstruction::CloseElement
             | ViewProgramInstruction::BeginScope
             | ViewProgramInstruction::EndScope
+            | ViewProgramInstruction::CallView { .. }
             | ViewProgramInstruction::Branch { .. }
             | ViewProgramInstruction::BindLocal { .. }
             | ViewProgramInstruction::EmitText { .. }

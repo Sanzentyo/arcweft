@@ -1,4 +1,4 @@
-use arcweft_core::value::{RuntimeRecordAdmissionError, RuntimeUInt, RuntimeValue};
+use arcweft_core::value::{RuntimeUInt, RuntimeValue};
 use arcweft_presentation::fx::{
     Angle, FiniteF32, FxColor, FxRuntimeType, FxRuntimeValue, FxVec2, Length, Opacity, Seconds,
     Transform2D,
@@ -9,8 +9,6 @@ use thiserror::Error;
 /// Strict failure to cross from general runtime values into the closed View/Fx scalar domain.
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum BundleViewValueConversionError {
-    #[error("runtime record admission failed: {0}")]
-    RecordAdmission(#[from] RuntimeRecordAdmissionError),
     #[error("runtime value has type {actual}, expected {expected:?}")]
     Type {
         expected: FxRuntimeType,
@@ -232,82 +230,6 @@ pub(super) fn runtime_scalar_text(value: &RuntimeValue) -> Option<String> {
     }
 }
 
-pub(super) fn fx_to_runtime(
-    value: FxRuntimeValue,
-) -> Result<RuntimeValue, BundleViewValueConversionError> {
-    Ok(match value {
-        FxRuntimeValue::Bool(value) => RuntimeValue::Bool(value),
-        FxRuntimeValue::I32(value) => {
-            RuntimeValue::Int(arcweft_core::value::RuntimeInt::i32(value))
-        }
-        FxRuntimeValue::U32(value) => RuntimeValue::UInt(RuntimeUInt::U32(value)),
-        FxRuntimeValue::F32(value) => RuntimeValue::F32(value.get()),
-        FxRuntimeValue::Length(value) => {
-            RuntimeValue::try_record(vec![("px".to_owned(), RuntimeValue::F32(value.pixels()))])?
-        }
-        FxRuntimeValue::Angle(value) => {
-            RuntimeValue::try_record(vec![("rad".to_owned(), RuntimeValue::F32(value.radians()))])?
-        }
-        FxRuntimeValue::Seconds(value) => RuntimeValue::Duration(
-            arcweft_core::time::LogicalDuration::from_nanos(seconds_to_nanos(value.seconds())?),
-        ),
-        FxRuntimeValue::Color(value) => RuntimeValue::try_record(vec![
-            runtime_field("red", value.red().value().get()),
-            runtime_field("green", value.green().value().get()),
-            runtime_field("blue", value.blue().value().get()),
-            runtime_field("alpha", value.alpha().value().get()),
-        ])?,
-        FxRuntimeValue::Vec2(value) => RuntimeValue::try_record(vec![
-            runtime_field("x", value.x.get()),
-            runtime_field("y", value.y.get()),
-        ])?,
-        FxRuntimeValue::Transform2D(value) => RuntimeValue::try_record(vec![
-            runtime_record_field("translate_x", "px", value.translate_x.pixels())?,
-            runtime_record_field("translate_y", "px", value.translate_y.pixels())?,
-            runtime_field("scale_x", value.scale_x.get()),
-            runtime_field("scale_y", value.scale_y.get()),
-            runtime_record_field("skew_x", "rad", value.skew_x.radians())?,
-            runtime_record_field("skew_y", "rad", value.skew_y.radians())?,
-            runtime_record_field("rotation", "rad", value.rotation.radians())?,
-            runtime_record_field("origin_x", "px", value.origin_x.pixels())?,
-            runtime_record_field("origin_y", "px", value.origin_y.pixels())?,
-            runtime_field("opacity", value.opacity.get()),
-        ])?,
-    })
-}
-
-#[expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "range and sign are checked before the explicit seconds-to-logical-nanoseconds boundary"
-)]
-fn seconds_to_nanos(seconds: f32) -> Result<u64, BundleViewValueConversionError> {
-    const MAX_LOGICAL_SECONDS: f64 = 18_446_744_073.709_553;
-    if seconds < 0.0 || f64::from(seconds) > MAX_LOGICAL_SECONDS {
-        return Err(BundleViewValueConversionError::InvalidNumber {
-            field: "seconds",
-            message: "seconds do not fit the non-negative u64 nanosecond domain".to_owned(),
-        });
-    }
-    let nanos = f64::from(seconds) * 1_000_000_000.0;
-    Ok(nanos as u64)
-}
-
-fn runtime_field(name: &str, value: f32) -> (String, RuntimeValue) {
-    (name.to_owned(), RuntimeValue::F32(value))
-}
-
-fn runtime_record_field(
-    name: &str,
-    unit: &str,
-    value: f32,
-) -> Result<(String, RuntimeValue), RuntimeRecordAdmissionError> {
-    Ok((
-        name.to_owned(),
-        RuntimeValue::try_record(vec![runtime_field(unit, value)])?,
-    ))
-}
-
 fn exact_record<'a>(
     value: &'a RuntimeValue,
     expected_type: FxRuntimeType,
@@ -459,12 +381,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn u32_runtime_arguments_round_trip_at_boundaries() {
+    fn u32_runtime_values_project_at_boundaries() {
         for value in [0_u32, u32::MAX] {
             let runtime = RuntimeValue::UInt(RuntimeUInt::U32(value));
             let fx = runtime_to_fx(&runtime, FxRuntimeType::U32).expect("U32 runtime argument");
             assert_eq!(fx, FxRuntimeValue::U32(value));
-            assert_eq!(fx_to_runtime(fx).expect("U32 runtime projection"), runtime);
         }
     }
 
