@@ -1196,8 +1196,8 @@ impl AuthoredViewBodyLowerer<'_> {
 
     fn lower_match(
         &mut self,
-        owner: ExprId,
-        matched: &arcweft_lang_hir::expr::HirMatchExpr,
+        owner: arcweft_lang_hir::project::HirMatchOwner,
+        matched: arcweft_lang_hir::project::HirMatchView<'_>,
     ) -> Result<(), ViewProjectLowerError> {
         let view_owner = self.owner;
         let invalid = || ViewProjectLowerError::MissingCheckedViewProjection { owner: view_owner };
@@ -1242,7 +1242,7 @@ impl AuthoredViewBodyLowerer<'_> {
         let outer = self.locals.clone();
         let mut ordinal = 0usize;
         let mut arms = Vec::new();
-        for (arm, bindings) in matched.arms().iter().zip(selection.outputs()) {
+        for (arm, bindings) in matched.arms().zip(selection.outputs()) {
             self.locals = outer.clone();
             let mut outputs = Vec::new();
             for binding in bindings.iter() {
@@ -1266,7 +1266,17 @@ impl AuthoredViewBodyLowerer<'_> {
                 outputs.push(output);
             }
             let start = self.output.instructions.len();
-            self.lower_branch_body(AuthoredViewBranchBody::Value(arm.value()))?;
+            let body = match arm.body() {
+                arcweft_lang_hir::project::HirMatchArmBodyView::Value(value) => {
+                    AuthoredViewBranchBody::Value(value)
+                }
+                arcweft_lang_hir::project::HirMatchArmBodyView::Body(body) => {
+                    AuthoredViewBranchBody::Statements(
+                        body.ordinary_statements().ok_or_else(invalid)?,
+                    )
+                }
+            };
+            self.lower_branch_body(body)?;
             arms.push(arcweft_view::ViewMatchArm {
                 body_span: u32::try_from(self.output.instructions.len() - start)
                     .map_err(|_| invalid())?,
@@ -1288,6 +1298,12 @@ impl AuthoredViewBodyLowerer<'_> {
     ) -> Result<(), ViewProjectLowerError> {
         let invalid = || ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner };
         let row = self.module.resolve_stmt(statement).map_err(|_| invalid())?;
+        if let arcweft_lang_hir::stmt::HirStmtKind::Match(matched) = row.kind() {
+            return self.lower_match(
+                statement.into(),
+                arcweft_lang_hir::project::HirMatchView::Statement(matched),
+            );
+        }
         if let arcweft_lang_hir::stmt::HirStmtKind::If(branch) = row.kind() {
             let then_body = AuthoredViewBranchBody::Statements(
                 branch
@@ -1392,7 +1408,10 @@ impl AuthoredViewBodyLowerer<'_> {
             .expression(value)
             .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
         if let arcweft_lang_hir::expr::HirExprKind::Match(matched) = expression.kind() {
-            return self.lower_match(value, matched);
+            return self.lower_match(
+                value.into(),
+                arcweft_lang_hir::project::HirMatchView::Expression(matched),
+            );
         }
         if let arcweft_lang_hir::expr::HirExprKind::If(branch) = expression.kind() {
             return self.lower_conditional(

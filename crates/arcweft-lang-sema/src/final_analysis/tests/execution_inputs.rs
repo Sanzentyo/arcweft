@@ -794,7 +794,7 @@ fn match_selector_inputs_exclude_results_and_keep_exact_arm_outputs() {
         .expressions()
         .find_map(|(owner, expression)| expression.match_fact().map(|matched| (owner, matched)))
         .unwrap();
-    let source = CheckedExecutionSource::SelectMatch(matched.0);
+    let source = CheckedExecutionSource::SelectMatch(matched.0.into());
     let context = report
         .checked_execution_context(project, &world.symbols, source.clone(), None)
         .unwrap();
@@ -859,6 +859,7 @@ flow main(value: (bool, String)) {
         (false, _) => thread {}
     }
 }
+
 "#,
         None,
     );
@@ -867,5 +868,123 @@ flow main(value: (bool, String)) {
         report
             .locals()
             .any(|(_, local)| local.ty() == &TypeKind::String)
+    );
+}
+
+#[test]
+fn authored_view_statement_match_retains_its_statement_owner() {
+    let world = fixture(
+        r#"
+view Main(value: (bool, String)) {
+    { match value {
+        (true, label) => Text(label),
+        (false, label) => Button(label)
+    }; }
+}
+"#,
+        None,
+    );
+    let report = analyze(&world).expect("authored View statement Match checks");
+    let project = world.project.analysis_view().unwrap();
+    let module = project
+        .module(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
+        .unwrap();
+    let matches = module
+        .statements()
+        .filter(|(_, row)| matches!(row.kind(), arcweft_lang_hir::stmt::HirStmtKind::Match(_)))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        matches.len(),
+        1,
+        "semicolon Match retains a statement owner"
+    );
+    assert!(report.statement(matches[0].0).is_some());
+    let source = CheckedExecutionSource::SelectMatch(matches[0].0.into());
+    let context = report
+        .checked_execution_context(project, &world.symbols, source.clone(), None)
+        .unwrap();
+    let admission = context.checked_deterministic_program(source).unwrap();
+    let abi = admission.input_abi();
+    assert_eq!(abi.inputs().len(), 1);
+    assert_eq!(abi.match_selection().unwrap().outputs().len(), 2);
+    assert!(
+        abi.match_selection()
+            .unwrap()
+            .outputs()
+            .iter()
+            .all(|outputs| outputs.len() == 1 && outputs[0].ty() == &TypeKind::String)
+    );
+    let product = report
+        .checked_match(
+            project,
+            &world.symbols,
+            matches[0].0,
+            super::super::CheckedMatchLimits::PRODUCTION,
+        )
+        .unwrap();
+    assert!(product.coverage().exhaustive());
+    assert_eq!(product.arms().len(), 2);
+}
+
+#[test]
+fn statement_match_transcript_commits_owned_arm_bodies() {
+    use crate::final_analysis::{CheckedMatchArmResult, CheckedMatchLimits};
+    let digest = |number: i64| {
+        let source = format!(
+            "flow main(value: bool) {{ match value {{ true => {{ let result = {number}i64 }}, false => {{ let result = 0i64 }} }} }}"
+        );
+        let world = fixture(&source, None);
+        let report = analyze(&world).unwrap();
+        let project = world.project.analysis_view().unwrap();
+        let module = project
+            .module(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
+            .unwrap();
+        let owner = module
+            .statements()
+            .find_map(|(owner, row)| {
+                matches!(row.kind(), arcweft_lang_hir::stmt::HirStmtKind::Match(_)).then_some(owner)
+            })
+            .unwrap();
+        let product = report
+            .checked_match(
+                project,
+                &world.symbols,
+                owner,
+                CheckedMatchLimits::PRODUCTION,
+            )
+            .unwrap();
+        assert!(product.coverage().exhaustive());
+        assert!(
+            product
+                .arms()
+                .iter()
+                .all(|arm| matches!(arm.result(), CheckedMatchArmResult::Body(_)))
+        );
+        product.semantic_digest()
+    };
+    assert_ne!(
+        digest(1),
+        digest(2),
+        "body-only edits change the complete Match meaning"
+    );
+}
+
+#[test]
+fn empty_loop_requires_flow_without_a_nested_transfer() {
+    let world = fixture("fn root() -> Never { loop {} }", None);
+    let report = analyze(&world).unwrap();
+    let source = declaration_body(&report, "root");
+    let context = report
+        .checked_execution_context(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            source.clone(),
+            None,
+        )
+        .unwrap();
+    let program = context.checked_deterministic_program(source).unwrap();
+    assert_eq!(
+        program.input_abi().control(),
+        crate::final_analysis::CheckedExecutableControlRole::FlowRequired
     );
 }

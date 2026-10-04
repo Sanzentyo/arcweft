@@ -251,11 +251,12 @@ pub use report::{
 pub(crate) use semantic_shapes::AcceptedSemanticShapeCatalog;
 pub(crate) use semantic_transcript::write_len;
 pub use semantic_transcript::{
-    CheckedGuardSemantic, CheckedMatch, CheckedMatchArm, CheckedMatchBinding,
-    CheckedMatchSequencePartition, CheckedMatchVariantFieldList, CheckedMatchVariantFieldRef,
-    CheckedMatchVariantPayloadView, CheckedMatchWitness, CheckedMatchWitnessKind,
-    CheckedMatchWitnessList, CheckedMatchWitnessRef, CheckedMatchWitnessView,
-    CheckedSemanticTranscriptError, CheckedStatementSemanticDigest, MatchSemanticTranscript,
+    CheckedBodySemanticDigest, CheckedGuardSemantic, CheckedMatch, CheckedMatchArm,
+    CheckedMatchArmResult, CheckedMatchBinding, CheckedMatchSequencePartition,
+    CheckedMatchVariantFieldList, CheckedMatchVariantFieldRef, CheckedMatchVariantPayloadView,
+    CheckedMatchWitness, CheckedMatchWitnessKind, CheckedMatchWitnessList, CheckedMatchWitnessRef,
+    CheckedMatchWitnessView, CheckedSemanticTranscriptError, CheckedStatementSemanticDigest,
+    MatchSemanticTranscript,
 };
 pub(crate) use transcript_writer::{
     CheckedTranscriptByteBudget, TranscriptHasher, TranscriptWriteError,

@@ -3184,14 +3184,17 @@ impl CheckedMatchSemanticDigest {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct CheckedMatchRef {
     snapshot: HirSnapshotId,
-    expression: ExprId,
+    owner: arcweft_lang_hir::project::HirMatchOwner,
 }
 
 impl CheckedMatchRef {
-    pub(crate) const fn new(snapshot: HirSnapshotId, expression: ExprId) -> Self {
+    pub(crate) fn new(
+        snapshot: HirSnapshotId,
+        owner: impl Into<arcweft_lang_hir::project::HirMatchOwner>,
+    ) -> Self {
         Self {
             snapshot,
-            expression,
+            owner: owner.into(),
         }
     }
 }

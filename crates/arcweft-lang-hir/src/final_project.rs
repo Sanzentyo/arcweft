@@ -22,7 +22,13 @@ use crate::symbol::{
 mod capture_selection;
 #[path = "final_project/dialogue_lines.rs"]
 mod dialogue_lines;
+#[path = "final_project/match_owner.rs"]
+mod match_owner;
 pub use capture_selection::{HirCaptureSelectionError, HirSelectedCapture};
+pub use match_owner::{
+    HirMatchArmBodyView, HirMatchArmView, HirMatchArms, HirMatchOwner, HirMatchOwnerError,
+    HirMatchView,
+};
 #[path = "final_project/runtime_semantic_owners.rs"]
 mod runtime_semantic_owners;
 #[path = "final_project/selected_expressions.rs"]

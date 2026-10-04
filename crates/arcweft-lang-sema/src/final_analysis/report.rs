@@ -1634,17 +1634,11 @@ impl FinalSemanticAnalysis {
 
     pub(super) fn match_selection_execution_region(
         &self,
-        owner: ExprId,
+        matched: arcweft_lang_hir::project::HirMatchView<'_>,
     ) -> Option<super::execution_regions::CheckedExecutionRegion> {
-        let matched = self.expression(owner)?.match_fact()?;
         self.expression_execution_regions.region_roots(
             std::iter::once(matched.scrutinee())
-                .chain(
-                    matched
-                        .arms()
-                        .iter()
-                        .filter_map(super::CheckedMatchArmFact::guard),
-                )
+                .chain(matched.arms().filter_map(|arm| arm.guard()))
                 .map(super::CheckedExecutionOperation::Value),
         )
     }

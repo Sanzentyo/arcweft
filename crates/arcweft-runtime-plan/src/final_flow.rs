@@ -3741,8 +3741,8 @@ fn define_pure_programs(
         let body = (|| -> Result<RuntimeFunctionSiteBodySeed, RuntimePlanLowerError> {
             let module_id = match program.source() {
                 CheckedExecutionSource::ExportBinding(owner) => owner.module(),
-                CheckedExecutionSource::SelectMatch(owner)
-                | CheckedExecutionSource::EvaluateValue(owner)
+                CheckedExecutionSource::SelectMatch(owner) => owner.module(),
+                CheckedExecutionSource::EvaluateValue(owner)
                 | CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(
                     owner,
                 )) => owner.module(),
@@ -3789,12 +3789,9 @@ fn define_pure_programs(
                     )?
                 }
                 CheckedExecutionSource::SelectMatch(owner) => {
-                    let expression = module
-                        .resolve_expr(*owner)
+                    let matched = owner
+                        .resolve(module)
                         .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
-                    let HirExprKind::Match(matched) = expression.kind() else {
-                        return Err(RuntimePlanLowerError::new("selector source is not a Match"));
-                    };
                     let selection = abi.match_selection().ok_or_else(|| {
                         RuntimePlanLowerError::new("selector has no issued Match output layout")
                     })?;
@@ -3819,7 +3816,7 @@ fn define_pure_programs(
                         _ => BTreeMap::from([(payload.identity(), payload)]),
                     };
                     let mut arms = Vec::new();
-                    for (index, arm) in matched.arms().iter().enumerate() {
+                    for (index, arm) in matched.arms().enumerate() {
                         let payload_type = selection.payload_type(index).ok_or_else(|| {
                             RuntimePlanLowerError::new("selector output case is absent")
                         })?;

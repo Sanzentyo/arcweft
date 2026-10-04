@@ -108,7 +108,16 @@ fn digest_executable(hasher: &mut Sha256, owner: &HirRuntimeExecutableOwner) {
     match owner {
         HirRuntimeExecutableOwner::MatchSelection(owner) => {
             hasher.update([6]);
-            hasher.update(owner.raw().cache_fingerprint_input());
+            match owner {
+                super::super::HirMatchOwner::Expression(owner) => {
+                    hasher.update([0]);
+                    hasher.update(owner.raw().cache_fingerprint_input());
+                }
+                super::super::HirMatchOwner::Statement(owner) => {
+                    hasher.update([1]);
+                    hasher.update(owner.raw().cache_fingerprint_input());
+                }
+            }
         }
         HirRuntimeExecutableOwner::Statement(owner) => {
             hasher.update([5]);

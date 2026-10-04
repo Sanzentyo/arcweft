@@ -755,7 +755,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             expressions: BTreeSet::from([owner]),
             statements: BTreeSet::new(),
             direct_suspension: matches!(kind, HirExprKind::Await(_)),
-            requires_flow: false,
+            requires_flow: matches!(kind, HirExprKind::Loop(_)),
         };
         if let Some(call_effects) = self
             .call_effects
@@ -776,6 +776,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
         if latent_callable {
             row.effects = EffectRow::closed(EffectSet::new());
             row.direct_suspension = false;
+            row.requires_flow = false;
         }
         let direct_field_place = fact
             .field_root(|child| {

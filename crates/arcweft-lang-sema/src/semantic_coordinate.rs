@@ -631,7 +631,8 @@ impl CheckedSemanticPath {
         }
         matches!(
             self.steps.get(match_owner.steps.len()),
-            Some(CheckedSemanticPathStep::MatchPattern { arm: accepted }) if *accepted == arm
+            Some(CheckedSemanticPathStep::MatchPattern { arm: accepted }
+                | CheckedSemanticPathStep::Statement(HirStatementChildRole::MatchPattern { arm: accepted })) if *accepted == arm
         )
     }
 

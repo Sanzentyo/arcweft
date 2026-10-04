@@ -21,7 +21,7 @@ use super::{
 pub enum CheckedExecutionSource {
     EvaluateValue(ExprId),
     /// Selects an exhaustive Match and exports only the chosen arm bindings.
-    SelectMatch(ExprId),
+    SelectMatch(arcweft_lang_hir::project::HirMatchOwner),
     /// Executes a binding and exports its owned values in canonical binding order.
     ExportBinding(arcweft_lang_hir::identity::StmtId),
     InvokeBody(CheckedExecutionBodyOwner),
@@ -259,18 +259,14 @@ impl FinalSemanticAnalysis {
         source: &CheckedExecutionSource,
     ) -> Result<HirSemanticPathRoot, FinalSemanticAnalysisError> {
         match source {
-            CheckedExecutionSource::EvaluateValue(source)
-            | CheckedExecutionSource::SelectMatch(source) => self.execution_source_scope(*source),
+            CheckedExecutionSource::EvaluateValue(source) => {
+                self.execution_source_scope((*source).into())
+            }
+            CheckedExecutionSource::SelectMatch(source) => {
+                self.execution_source_scope((*source).into())
+            }
             CheckedExecutionSource::ExportBinding(source) => {
-                let location = self
-                    .hir_topology()
-                    .semantic_path((*source).into())
-                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
-                    .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
-                self.accepted_root_catalog()
-                    .root_for_hir(location.root())
-                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-                Ok(location.root().clone())
+                self.execution_source_scope((*source).into())
             }
             CheckedExecutionSource::InvokeBody(owner) => {
                 if !self.has_execution_body(owner) {
@@ -278,7 +274,7 @@ impl FinalSemanticAnalysis {
                 }
                 match owner {
                     CheckedExecutionBodyOwner::CallableValue(source) => {
-                        self.execution_source_scope(*source)
+                        self.execution_source_scope((*source).into())
                     }
                     CheckedExecutionBodyOwner::Declaration { declaration, .. } => {
                         let scope = HirSemanticPathRoot::Declaration(declaration.clone());
@@ -293,11 +289,11 @@ impl FinalSemanticAnalysis {
     }
     fn execution_source_scope(
         &self,
-        source: ExprId,
+        source: arcweft_lang_hir::project::HirSemanticPathOwnerId,
     ) -> Result<HirSemanticPathRoot, FinalSemanticAnalysisError> {
         let location = self
             .hir_topology()
-            .semantic_path(source.into())
+            .semantic_path(source)
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
             .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
         self.accepted_root_catalog()

@@ -36,7 +36,7 @@ use arcweft_lang_hir::{
     body_edges::{HirBodyChild, HirBodyProjection},
     expr::{
         HirCallInvocation, HirCallTypeApplication, HirCallTypeApplicationTerminator,
-        HirCallTypeArgument, HirChoiceCompactAction, HirChoiceItem, HirExprKind, HirMatchExpr,
+        HirCallTypeArgument, HirChoiceCompactAction, HirChoiceItem, HirExprKind,
     },
     identity::{ExprId, PatternId},
     leaf::{HirLiteral, HirNumericSequenceRecovery},
@@ -488,7 +488,7 @@ impl CheckedStatementSemanticDigest {
 
 /// Version-one semantic identity of one checked body container.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct CheckedBodySemanticDigest([u8; 32]);
+pub struct CheckedBodySemanticDigest([u8; 32]);
 
 impl CheckedBodySemanticDigest {
     const fn from_bytes(bytes: [u8; 32]) -> Self {
@@ -545,13 +545,35 @@ impl CheckedGuardSemantic {
     }
 }
 
+/// The complete result region of an arm, retaining its expression/body role.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CheckedMatchArmResult {
+    Expression(CheckedExpressionSemanticDigest),
+    Body(CheckedBodySemanticDigest),
+}
+
+impl CheckedMatchArmResult {
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        match self {
+            Self::Expression(value) => value.as_bytes(),
+            Self::Body(value) => value.as_bytes(),
+        }
+    }
+    const fn tag(self) -> u8 {
+        match self {
+            Self::Expression(_) => 0,
+            Self::Body(_) => 1,
+        }
+    }
+}
+
 /// One source-ordered checked Match arm.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedMatchArm {
     coordinate: StableMatchArmCoordinate,
     pattern: CheckedPatternSemanticDigest,
     guard: CheckedGuardSemantic,
-    result: CheckedExpressionSemanticDigest,
+    result: CheckedMatchArmResult,
     bindings: Box<[CheckedMatchBinding]>,
 }
 
@@ -568,7 +590,7 @@ impl CheckedMatchArm {
         self.guard
     }
 
-    pub const fn result(&self) -> CheckedExpressionSemanticDigest {
+    pub const fn result(&self) -> CheckedMatchArmResult {
         self.result
     }
 
@@ -658,7 +680,7 @@ impl CheckedMatch {
 pub(super) fn build_checked_match_transaction(
     analysis: &FinalSemanticAnalysis,
     project: HirAnalysisProjectView<'_>,
-    owner: ExprId,
+    owner: arcweft_lang_hir::project::HirMatchOwner,
     limits: CheckedMatchLimits,
     control: FinalSemanticAnalysisControl<'_>,
 ) -> Result<CheckedMatch, SemanticTranscriptError> {
@@ -667,11 +689,21 @@ pub(super) fn build_checked_match_transaction(
         .find_map(|(_, module)| (module.module_id() == owner.module()).then_some(module.as_ref()))
         .ok_or(SemanticTranscriptError::MissingExpression)?;
     let mut builder = SemanticTranscriptGraph::new(analysis, module, limits, control);
-    builder.expression_digest(owner)?;
-    let mut product = builder
-        .match_products
-        .remove(&owner)
-        .ok_or(SemanticTranscriptError::MissingMatchFact)?;
+    let mut product = match owner {
+        arcweft_lang_hir::project::HirMatchOwner::Expression(expression) => {
+            builder.expression_digest(expression)?;
+            builder
+                .match_products
+                .remove(&expression)
+                .ok_or(SemanticTranscriptError::MissingMatchFact)?
+        }
+        arcweft_lang_hir::project::HirMatchOwner::Statement(_) => {
+            let authored = owner
+                .resolve(module)
+                .map_err(|_| SemanticTranscriptError::NotMatch)?;
+            builder.build(owner, authored)?
+        }
+    };
     product
         .coverage
         .finish_transaction_work(builder.budget.work());
@@ -797,7 +829,7 @@ impl FinalSemanticAnalysis {
         &self,
         project: HirAnalysisProjectView<'_>,
         symbols: &ProjectSymbolTable,
-        expression: ExprId,
+        expression: impl Into<arcweft_lang_hir::project::HirMatchOwner>,
         limits: CheckedMatchLimits,
     ) -> Result<CheckedMatch, CheckedSemanticTranscriptError> {
         static NOT_CANCELLED: std::sync::atomic::AtomicBool =
@@ -819,32 +851,32 @@ impl FinalSemanticAnalysis {
         &self,
         project: HirAnalysisProjectView<'_>,
         symbols: &ProjectSymbolTable,
-        expression: ExprId,
+        expression: impl Into<arcweft_lang_hir::project::HirMatchOwner>,
         limits: CheckedMatchLimits,
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<CheckedMatch, SemanticTranscriptError> {
         control.check()?;
         self.validate_generation(project, symbols)?;
+        let expression = expression.into();
         let module = project
             .modules()
             .find_map(|(_, module)| {
                 (module.module_id() == expression.module()).then_some(module.as_ref())
             })
             .ok_or(SemanticTranscriptError::MissingExpression)?;
-        let owner = module
-            .resolve_expr(expression)
-            .map_err(|_| SemanticTranscriptError::MissingExpression)?;
-        let HirExprKind::Match(authored) = owner.kind() else {
-            return Err(SemanticTranscriptError::NotMatch);
-        };
-        let checked = self
-            .expression(expression)
-            .ok_or(SemanticTranscriptError::MissingExpression)?;
-        let fact = checked
-            .match_fact()
-            .ok_or(SemanticTranscriptError::MissingMatchFact)?;
-        if fact.scrutinee() != authored.scrutinee() || fact.arms().len() != authored.arms().len() {
-            return Err(SemanticTranscriptError::MissingMatchFact);
+        let authored = expression
+            .resolve(module)
+            .map_err(|_| SemanticTranscriptError::NotMatch)?;
+        if let arcweft_lang_hir::project::HirMatchOwner::Expression(owner) = expression {
+            let fact = self
+                .expression(owner)
+                .and_then(|checked| checked.match_fact())
+                .ok_or(SemanticTranscriptError::MissingMatchFact)?;
+            if fact.scrutinee() != authored.scrutinee()
+                || fact.arms().len() != authored.arms().len()
+            {
+                return Err(SemanticTranscriptError::MissingMatchFact);
+            }
         }
         let product = build_checked_match_transaction(self, project, expression, limits, control)?;
         if product.lookup != CheckedMatchRef::new(module.snapshot_id(), expression) {
@@ -910,8 +942,8 @@ impl<'analysis, 'control> SemanticTranscriptGraph<'analysis, 'control> {
     }
     fn build(
         &mut self,
-        owner: ExprId,
-        authored: &HirMatchExpr,
+        owner: arcweft_lang_hir::project::HirMatchOwner,
+        authored: arcweft_lang_hir::project::HirMatchView<'_>,
     ) -> Result<CheckedMatch, SemanticTranscriptError> {
         let scrutinee = self.expression_digest(authored.scrutinee())?;
         self.control.check()?;
@@ -929,14 +961,29 @@ impl<'analysis, 'control> SemanticTranscriptGraph<'analysis, 'control> {
             })?
             .clone();
         let scrutinee_type = scrutinee_ty.semantic_identity_digest()?;
-        let checked_owner = self
-            .analysis
-            .expression(owner)
-            .ok_or(SemanticTranscriptError::MissingExpression)?;
-        let fact = checked_owner
-            .match_fact()
-            .ok_or(SemanticTranscriptError::MissingMatchFact)?;
-        let match_path = self.checked_path(owner)?;
+        let fact = match owner {
+            arcweft_lang_hir::project::HirMatchOwner::Expression(expression) => Some(
+                self.analysis
+                    .expression(expression)
+                    .ok_or(SemanticTranscriptError::MissingExpression)?
+                    .match_fact()
+                    .ok_or(SemanticTranscriptError::MissingMatchFact)?,
+            ),
+            arcweft_lang_hir::project::HirMatchOwner::Statement(statement) => {
+                self.analysis
+                    .statement(statement)
+                    .ok_or(SemanticTranscriptError::MissingIdentity)?;
+                None
+            }
+        };
+        let match_path = match owner {
+            arcweft_lang_hir::project::HirMatchOwner::Expression(expression) => {
+                self.checked_path(expression)?
+            }
+            arcweft_lang_hir::project::HirMatchOwner::Statement(statement) => {
+                self.coordinates.statement(statement)?.path().clone()
+            }
+        };
         let arm_count = u64::try_from(authored.arms().len()).map_err(|_| {
             CheckedMatchBuildError::ArithmeticOverflow {
                 kind: CheckedMatchLimitKind::Arms,
@@ -955,7 +1002,11 @@ impl<'analysis, 'control> SemanticTranscriptGraph<'analysis, 'control> {
             .map_err(|_| CheckedMatchBuildError::ArithmeticOverflow {
                 kind: CheckedMatchLimitKind::Arms,
             })?;
-        for (ordinal, (arm, checked)) in authored.arms().iter().zip(fact.arms()).enumerate() {
+        for (ordinal, arm) in authored.arms().enumerate() {
+            let checked = fact.and_then(|fact| fact.arms().get(ordinal));
+            if fact.is_some() && checked.is_none() {
+                return Err(SemanticTranscriptError::MissingMatchFact);
+            }
             let ordinal = u32::try_from(ordinal).map_err(|_| SemanticTranscriptError::WorkLimit)?;
             let arm_coordinate = StableMatchArmCoordinate::new(match_path.clone(), ordinal);
             let pattern = self.pattern_digest(
@@ -969,7 +1020,10 @@ impl<'analysis, 'control> SemanticTranscriptGraph<'analysis, 'control> {
                 &StablePatternCoordinate::new([]),
                 &mut bindings,
             )?;
-            let guard = match (arm.guard(), checked.guard()) {
+            let guard = match (
+                arm.guard(),
+                checked.map_or(arm.guard(), |checked| checked.guard()),
+            ) {
                 (None, None) => CheckedGuardSemantic::Absent,
                 (Some(authored), Some(checked)) if authored == checked => {
                     let digest = self.expression_digest(authored)?;
@@ -988,14 +1042,46 @@ impl<'analysis, 'control> SemanticTranscriptGraph<'analysis, 'control> {
                 }
                 _ => return Err(SemanticTranscriptError::MissingMatchFact),
             };
-            if arm.value() != checked.value() {
-                return Err(SemanticTranscriptError::MissingMatchFact);
-            }
+            let result = match arm.body() {
+                arcweft_lang_hir::project::HirMatchArmBodyView::Value(value) => {
+                    if checked.is_some_and(|checked| checked.value() != value) {
+                        return Err(SemanticTranscriptError::MissingMatchFact);
+                    }
+                    CheckedMatchArmResult::Expression(self.expression_digest(value)?)
+                }
+                arcweft_lang_hir::project::HirMatchArmBodyView::Body(_) => {
+                    let arcweft_lang_hir::project::HirMatchOwner::Statement(statement) = owner
+                    else {
+                        return Err(SemanticTranscriptError::MissingChildEdges);
+                    };
+                    let source = self
+                        .module
+                        .resolve_stmt(statement)
+                        .map_err(|_| SemanticTranscriptError::MissingIdentity)?;
+                    let role =
+                        arcweft_lang_hir::stmt::HirStatementBodyRole::MatchArm { arm: ordinal };
+                    let projections = source
+                        .kind()
+                        .body_projections()
+                        .map_err(|_| SemanticTranscriptError::RecoveredOwner)?;
+                    let body = projections
+                        .iter()
+                        .find(|body| *body.role() == role)
+                        .ok_or(SemanticTranscriptError::MissingChildEdges)?;
+                    let (_, digest) = self.body_digest_at(
+                        HirSemanticBodyOwner::statement_body(statement, role),
+                        body.projection(),
+                        None,
+                        0,
+                    )?;
+                    CheckedMatchArmResult::Body(digest)
+                }
+            };
             arms.push(CheckedMatchArm {
                 coordinate: arm_coordinate.clone(),
                 pattern,
                 guard,
-                result: self.expression_digest(arm.value())?,
+                result,
                 bindings: bindings.into_boxed_slice(),
             });
             coverage_arms.push(CoverageArmInput {
@@ -2219,6 +2305,7 @@ fn match_digest(
                 transcript_update!(hasher, &[0]);
             }
         }
+        transcript_update!(hasher, &[arm.result.tag()]);
         transcript_update!(hasher, arm.result.as_bytes());
     }
     transcript_update!(hasher, &[u8::from(coverage.exhaustive())]);
@@ -4098,7 +4185,10 @@ impl SemanticTranscriptGraph<'_, '_> {
             _ => None,
         };
         if let HirExprKind::Match(authored) = hir.kind() {
-            let product = self.build(owner, authored)?;
+            let product = self.build(
+                owner.into(),
+                arcweft_lang_hir::project::HirMatchView::Expression(authored),
+            )?;
             if self.match_products.insert(owner, product).is_some() {
                 return Err(SemanticTranscriptError::MissingMatchFact);
             }

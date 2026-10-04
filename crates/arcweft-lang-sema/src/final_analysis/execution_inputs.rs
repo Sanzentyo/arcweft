@@ -395,15 +395,11 @@ impl super::CheckedClosedExecutionContext<'_> {
                     .find(|(_, module)| module.module_id() == owner.module())
                     .map(|(_, module)| module)
                     .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
-                let expression = module
-                    .resolve_expr(*owner)
-                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-                let arcweft_lang_hir::expr::HirExprKind::Match(authored) = expression.kind() else {
-                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into());
-                };
+                let authored = owner
+                    .resolve(module)
+                    .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
                 let outputs = authored
                     .arms()
-                    .iter()
                     .zip(product.arms())
                     .map(|(arm, checked)| {
                         let bindings = arm
@@ -456,11 +452,11 @@ impl super::CheckedClosedExecutionContext<'_> {
                     .unwrap_or(TypeKind::Never);
                 let result = TypeKind::Tuple(vec![TypeKind::U32, payload]);
                 let execution = analysis
-                    .match_selection_execution_region(*owner)
+                    .match_selection_execution_region(authored)
                     .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
                 let mut effects = EffectSet::new();
                 for value in std::iter::once(authored.scrutinee())
-                    .chain(authored.arms().iter().filter_map(|arm| arm.guard()))
+                    .chain(authored.arms().filter_map(|arm| arm.guard()))
                 {
                     effects.union_with(
                         analysis

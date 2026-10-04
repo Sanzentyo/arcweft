@@ -52,7 +52,7 @@ pub enum HirRuntimeExecutableOwner {
     /// Evaluates an expression value; a callable's latent body is a separate owner.
     Value(ExprId),
     /// Match selector expressions, patterns and arm bindings, excluding arm results.
-    MatchSelection(ExprId),
+    MatchSelection(super::HirMatchOwner),
     /// Executes a checked statement within its accepted lexical owner.
     Statement(StmtId),
     /// Invokes an explicit or implicit callable expression's body.
@@ -1667,23 +1667,22 @@ fn execution_roots(
                 .find_map(|(_, module)| {
                     (module.module_id() == owner.module()).then_some(module.as_ref())
                 })
-                .ok_or(HirRuntimeReachabilityError::UnresolvedExpression { expression: *owner })?;
-            let expression = module.resolve_expr(*owner).map_err(|_| {
-                HirRuntimeReachabilityError::UnresolvedExpression { expression: *owner }
-            })?;
-            let HirExprKind::Match(matched) = expression.kind() else {
-                return Err(HirRuntimeReachabilityError::UnknownRoot {
+                .ok_or_else(|| HirRuntimeReachabilityError::UnknownRoot {
                     owner: HirRuntimeExecutableOwner::MatchSelection(*owner),
-                });
-            };
+                })?;
+            let matched =
+                owner
+                    .resolve(module)
+                    .map_err(|_| HirRuntimeReachabilityError::UnknownRoot {
+                        owner: HirRuntimeExecutableOwner::MatchSelection(*owner),
+                    })?;
             Ok(HirRuntimeExecutionRoots {
                 expressions: std::iter::once(matched.scrutinee())
-                    .chain(matched.arms().iter().filter_map(|arm| arm.guard()))
+                    .chain(matched.arms().filter_map(|arm| arm.guard()))
                     .collect(),
-                patterns: matched.arms().iter().map(|arm| arm.pattern()).collect(),
+                patterns: matched.arms().map(|arm| arm.pattern()).collect(),
                 locals: matched
                     .arms()
-                    .iter()
                     .flat_map(|arm| arm.locals().iter().copied())
                     .collect(),
                 ..HirRuntimeExecutionRoots::default()

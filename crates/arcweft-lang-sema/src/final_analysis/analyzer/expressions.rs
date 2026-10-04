@@ -2308,8 +2308,12 @@ impl Analyzer<'_, '_, '_> {
                         })
                     })
                     .collect::<Result<Vec<_>, _>>()?;
-                let ty = common_type(value_types, expectation.complete_type())
-                    .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+                let ty = if value_types.is_empty() {
+                    TypeKind::Never
+                } else {
+                    common_type(value_types, expectation.complete_type())
+                        .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?
+                };
                 Ok(
                     structural_expression(ty, CheckedTypeSelection::Inferred).with_match_fact(
                         crate::final_analysis::CheckedMatchFact::new(

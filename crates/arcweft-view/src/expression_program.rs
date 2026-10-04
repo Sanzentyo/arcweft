@@ -87,10 +87,13 @@ impl ViewMatchProgram {
     }
 
     pub fn ranges(&self, instruction: u32, enclosing_end: u32) -> Option<ViewMatchRanges> {
-        if self.arms.is_empty() || !self.outputs_are_canonical() {
+        if !self.outputs_are_canonical() {
             return None;
         }
         let mut start = instruction.checked_add(1)?;
+        if start > enclosing_end {
+            return None;
+        }
         let mut arms = Vec::with_capacity(self.arms.len());
         for arm in &self.arms {
             let end = start.checked_add(arm.body_span)?;
