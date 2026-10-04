@@ -181,7 +181,7 @@ fn compiler_lowers_checked_on_click_to_typed_bundle_handler_without_fx_conflatio
         ViewHandlerResultRole::DialogueAction
     ));
     assert_eq!(specification.captures.len(), 1);
-    assert_eq!(specification.captures[0].parameter().value(), 0);
+    assert_eq!(specification.captures[0].parameter().unwrap().value(), 0);
     let binding = compiled
         .runtime_plan()
         .plan
@@ -632,7 +632,7 @@ fn handler_capture_abi_uses_canonical_inputs_instead_of_first_use_order() {
     let coordinates = specification
         .captures
         .iter()
-        .map(|capture| capture.parameter().value())
+        .map(|capture| capture.parameter().unwrap().value())
         .collect::<Vec<_>>();
     assert_eq!(
         coordinates,
@@ -3414,4 +3414,197 @@ fn authored_nested_views_pass_core_values_locals_aliases_and_defaults() {
             );
         }
     }
+}
+
+#[test]
+fn handler_local_captures_use_core_inputs_and_revoke_changed_or_restored_routes() {
+    use arcweft_core::value::{RuntimeBinding, RuntimeValue};
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+fn echo(value: String) -> String { value }
+view Main(dialogue: DialogueView, label: String) {
+    {
+        let current = dialogue;
+        let (first, second) = (label, "suffix");
+        let transform = echo;
+        Button(first).on_click { let observed = transform(second); let observed = first; current.primary_action }
+    }
+}
+"#;
+    let compiled = project_view_fixture_with_entry(source, "arcweft-test://view-local-handler")
+        .compile()
+        .expect("locals can be retained as typed handler captures");
+    let product = compiled.view_product().product().as_ref().clone();
+    let text = compiled.view_product().text().unwrap().clone();
+    let resource = product.program().unwrap().resource();
+    let handler = resource.handlers.first().unwrap();
+    assert_eq!(handler.captures.len(), 4);
+    assert!(handler.captures.iter().all(|input| matches!(
+        input.source,
+        arcweft_view::ViewExecutionInputSource::Local(_)
+    )));
+    assert_eq!(
+        ViewProgramResource::decode_canonical_section(
+            &resource.encode_canonical_section().unwrap()
+        )
+        .unwrap(),
+        *resource
+    );
+    let awbc = Arc::new(
+        arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+            AwbcLowerer::new(
+                &compiled.runtime_plan().plan,
+                &compiled.runtime_plan().dialogue_content_catalog,
+                "main.arcw",
+            )
+            .lower()
+            .unwrap()
+            .program,
+        )
+        .unwrap(),
+    );
+    resource.validate_awbc_programs(&awbc, Some(&text)).unwrap();
+    for forgery in 0..4 {
+        let mut forged = resource.clone();
+        match forgery {
+            0 => forged.handlers[0].captures[0].source =
+                arcweft_view::ViewExecutionInputSource::Local(arcweft_view::ViewLocalCoordinate {
+                    program: arcweft_id::runtime_program::RuntimePureProgramId::from_checked_digest(
+                        [0xf3; 32],
+                    ),
+                    output: 0,
+                }),
+            1 => {
+                let duplicate = forged.handlers[0].captures[0];
+                forged.handlers[0].captures.push(duplicate);
+            }
+            2 => {
+                forged.handlers[0].captures[0].value_type =
+                    arcweft_core::pattern::RuntimeCheckedType::Bool.semantic_identity_digest()
+            }
+            _ => {
+                let index = forged
+                    .instructions
+                    .iter()
+                    .position(|instruction| {
+                        matches!(instruction, ViewProgramInstruction::BindHandler { .. })
+                    })
+                    .unwrap();
+                let instruction = forged.instructions.remove(index);
+                forged.instructions.push(instruction);
+            }
+        }
+        assert!(
+            forged.encode_canonical_section().is_err(),
+            "forgery {forgery}"
+        );
+        assert!(
+            forged.validate_awbc_programs(&awbc, Some(&text)).is_err(),
+            "forgery {forgery}"
+        );
+    }
+    let view = ViewId::try_new("view.Main").unwrap();
+    let display = minimal_dialogue_frame(view.clone());
+    let advance = DialogueAdvanceTarget::new(
+        DialoguePresentationId::new(11),
+        DialogueEntryId::new(12),
+        DialogueInstanceId::new(13),
+        DialogueStageIndex::new(0),
+        DialogueRevision::new(1),
+    );
+    let dialogue = DialogueViewInput {
+        handle: PresentationHandleId::try_new("dialogue.local.handler").unwrap(),
+        view: &view,
+        frame: &display,
+        state: DialogueViewState {
+            occurrence: DialogueViewOccurrence {
+                presentation: DialoguePresentationId::new(11),
+                entry: DialogueEntryId::new(12),
+                instance: DialogueInstanceId::new(13),
+            },
+            stage: DialogueViewStage {
+                index: DialogueStageIndex::new(0),
+                page: DialoguePageIndex::new(0),
+                stage_count: 1,
+                page_count: 1,
+            },
+            reveal: DialogueViewReveal::complete(),
+            primary_action: DialogueViewPrimaryAction {
+                target: Some(advance),
+            },
+        },
+    };
+    let invocation = |binding: &arcweft_runtime_driver::view_runtime::BundleViewEventBinding| {
+        ViewHandlerInvocation::from_input(
+            &InputEvent::activate(InputEpoch(1), binding.target().clone()),
+            binding.event(),
+            binding.route(),
+        )
+        .unwrap()
+    };
+    let mut runtime = BundleViewRuntime::try_new_with_awbc(
+        product.clone(),
+        Some(text.clone()),
+        Arc::clone(&awbc),
+    )
+    .unwrap();
+    let first_input = [RuntimeBinding {
+        name: "label".to_owned(),
+        value: RuntimeValue::String("first".to_owned()),
+    }];
+    let first =
+        runtime.evaluate_with_dialogue(&[], std::slice::from_ref(&dialogue), &first_input, false);
+    assert!(first.diagnostics.is_empty(), "{first:?}");
+    let old = invocation(&first.mounts[0].events[0]);
+    let expected =
+        Some(arcweft_runtime_driver::dialogue::BundlePresentationInput::advance_dialogue(advance));
+    assert_eq!(runtime.dispatch_invocation(&old).unwrap(), expected);
+    assert_eq!(
+        first,
+        runtime.evaluate_with_dialogue(&[], std::slice::from_ref(&dialogue), &first_input, false)
+    );
+    let second_input = [RuntimeBinding {
+        name: "label".to_owned(),
+        value: RuntimeValue::String("changed".to_owned()),
+    }];
+    let changed =
+        runtime.evaluate_with_dialogue(&[], std::slice::from_ref(&dialogue), &second_input, false);
+    assert!(changed.diagnostics.is_empty(), "{changed:?}");
+    assert_ne!(
+        first.mounts[0].events[0].route(),
+        changed.mounts[0].events[0].route()
+    );
+    assert!(runtime.dispatch_invocation(&old).is_err());
+    let current = invocation(&changed.mounts[0].events[0]);
+    assert_eq!(runtime.dispatch_invocation(&current).unwrap(), expected);
+    let saved = runtime.snapshot().unwrap();
+    let mut cold = BundleViewRuntime::try_new_with_awbc(product, Some(text), awbc).unwrap();
+    let live_owner = arcweft_runtime_driver::presentation_handles::PresentationHandleRecord::new(
+        dialogue.handle.clone(),
+        arcweft_runtime_driver::presentation_handles::PresentationHandleKind::View,
+        view.as_str().to_owned(),
+        None,
+        arcweft_runtime_driver::presentation_handles::PresentationResourceState::Mounted,
+        None,
+        0,
+    );
+    cold.restore(&saved, std::slice::from_ref(&live_owner))
+        .unwrap();
+    let restored =
+        cold.evaluate_with_dialogue(&[], std::slice::from_ref(&dialogue), &second_input, false);
+    assert!(restored.diagnostics.is_empty(), "{restored:?}");
+    assert_eq!(
+        changed.mounts[0].action_buttons,
+        restored.mounts[0].action_buttons
+    );
+    assert!(
+        cold.dispatch_invocation(&current).is_err(),
+        "restore must not revive a pre-restore route"
+    );
+    assert_eq!(
+        cold.dispatch_invocation(&invocation(&restored.mounts[0].events[0]))
+            .unwrap(),
+        expected
+    );
 }

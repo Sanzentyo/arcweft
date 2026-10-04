@@ -65,8 +65,8 @@ use arcweft_source::{
 };
 use arcweft_view::{
     ViewHandlerProgramId, ViewHandlerResult, ViewHandlerValueTypeId, ViewId,
-    ViewParameterCoordinate, ViewParameterInput, ViewProgramId, ViewValueProgram,
-    ViewValueProgramId, style::ViewStyleSheetId,
+    ViewParameterCoordinate, ViewProgramId, ViewValueProgram, ViewValueProgramId,
+    style::ViewStyleSheetId,
 };
 use thiserror::Error;
 
@@ -112,11 +112,11 @@ pub(crate) struct CheckedViewRuntimeProgram {
     admission: Arc<arcweft_lang_sema::final_analysis::CheckedDeterministicProgram>,
 }
 
-/// Join between one checked closure capture and its View parameter coordinate.
+/// Join between a checked closure capture and its retained execution input.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedViewHandlerCapture {
     local: LocalId,
-    schema: ViewParameterInput,
+    schema: arcweft_view::ViewExecutionInput,
 }
 
 /// Final-HIR inputs for one atomic View-product publication.
@@ -185,10 +185,13 @@ pub(crate) enum ViewProjectLowerError {
         owner: ItemId,
         source: Box<arcweft_lang_sema::final_analysis::CheckedSemanticTranscriptError>,
     },
-    #[error("View handler {owner:?} capture {capture:?} is not snapshot-retainable")]
+    #[error(
+        "View handler {owner:?} capture {capture:?} of {value_type:?} is not snapshot-retainable: {source}"
+    )]
     InvalidViewHandlerCaptureOwnership {
         owner: ItemId,
         capture: CaptureId,
+        value_type: Box<TypeKind>,
         #[source]
         source: CheckedOwnershipError,
     },
@@ -1949,32 +1952,53 @@ impl AuthoredViewBodyLowerer<'_> {
                         owner: self.owner,
                     });
                 }
-                let parameter = self.parameters.get(&capture.local()).ok_or(
-                    ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner },
-                )?;
                 let capture_fact = self.analysis.capture(capture_id).ok_or(
                     ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner },
                 )?;
-                if capture_fact.ty().semantic_identity_digest()?.as_bytes()
-                    != parameter.value_type.as_bytes()
-                {
-                    return Err(ViewProjectLowerError::MissingCheckedViewProjection {
-                        owner: self.owner,
-                    });
-                }
-                self.registered_world
-                    .checked_ownership(
-                        self.analysis,
-                        capture_fact.ty(),
-                        CheckedOwnershipLimits::PRODUCTION,
-                    )
-                    .map_err(|source| {
-                        ViewProjectLowerError::InvalidViewHandlerCaptureOwnership {
+                let value_type = ViewHandlerValueTypeId::from_semantic_digest(
+                    *capture_fact.ty().semantic_identity_digest()?.as_bytes(),
+                );
+                let source = if let Some(parameter) = self.parameters.get(&capture.local()) {
+                    if parameter.value_type != value_type {
+                        return Err(ViewProjectLowerError::MissingCheckedViewProjection {
                             owner: self.owner,
-                            capture: capture_id,
-                            source,
-                        }
-                    })?;
+                        });
+                    }
+                    arcweft_view::ViewExecutionInputSource::Parameter(parameter.coordinate)
+                } else {
+                    let local = self.locals.get(&capture.local()).ok_or(
+                        ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner },
+                    )?;
+                    if local.value_type != value_type {
+                        return Err(ViewProjectLowerError::MissingCheckedViewProjection {
+                            owner: self.owner,
+                        });
+                    }
+                    arcweft_view::ViewExecutionInputSource::Local(local.coordinate)
+                };
+                let certified_copy = admission
+                    .input_abi()
+                    .inputs()
+                    .iter()
+                    .find(|input| input.binding().local() == capture.local())
+                    .and_then(|input| input.copy_evidence())
+                    .is_some_and(|evidence| evidence.ty().as_bytes() == value_type.as_bytes());
+                if !certified_copy {
+                    self.registered_world
+                        .checked_ownership(
+                            self.analysis,
+                            capture_fact.ty(),
+                            CheckedOwnershipLimits::PRODUCTION,
+                        )
+                        .map_err(|source| {
+                            ViewProjectLowerError::InvalidViewHandlerCaptureOwnership {
+                                owner: self.owner,
+                                capture: capture_id,
+                                value_type: Box::new(capture_fact.ty().clone()),
+                                source,
+                            }
+                        })?;
+                }
                 let hir_capture = self.module.resolve_capture(capture_id).map_err(|_| {
                     ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner }
                 })?;
@@ -1986,7 +2010,7 @@ impl AuthoredViewBodyLowerer<'_> {
                 }
                 Ok(CheckedViewHandlerCapture {
                     local: capture.local(),
-                    schema: ViewParameterInput::new(parameter.coordinate, parameter.value_type),
+                    schema: arcweft_view::ViewExecutionInput { source, value_type },
                 })
             })
             .collect::<Result<Vec<_>, _>>()?

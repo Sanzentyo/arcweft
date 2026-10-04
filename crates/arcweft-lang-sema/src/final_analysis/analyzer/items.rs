@@ -733,6 +733,8 @@ impl Analyzer<'_, '_, '_> {
             &staged.bodies,
             prepared_calls,
             &prepared_effects,
+            self.facts.expressions(),
+            &staged.builder,
             self.control,
         )?;
         graph.reject_recursive_contracts(self.control)?;

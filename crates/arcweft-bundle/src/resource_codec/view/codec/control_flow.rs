@@ -7,7 +7,10 @@ use arcweft_view::{ViewBranchRanges, ViewInstructionRange};
 pub(super) enum ScopeEvent<'a> {
     Enter,
     Exit,
-    Instruction(&'a ViewProgramInstruction),
+    Instruction {
+        index: u32,
+        instruction: &'a ViewProgramInstruction,
+    },
 }
 
 enum Work {
@@ -144,7 +147,7 @@ impl<'a> ScopedInstructions<'a> {
                     )));
                     self.work
                         .extend(children.into_iter().rev().map(Work::Region));
-                    return Ok(Some(ScopeEvent::Instruction(instruction)));
+                    return Ok(Some(ScopeEvent::Instruction { index, instruction }));
                 }
             }
         }

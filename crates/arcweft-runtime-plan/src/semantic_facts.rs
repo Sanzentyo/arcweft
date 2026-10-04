@@ -7367,11 +7367,14 @@ impl RuntimePlanSemanticFacts {
                 )
             })
             .collect::<Vec<_>>();
-        for semantics in project_function_instances
-            .values()
-            .map(RuntimeProjectFunctionInstanceFact::semantics)
-            .chain(root_closures.values().map(|closure| closure.semantics()))
-        {
+        for (_, semantics) in instance_semantic_roots(
+            project_function_instances.values(),
+            root_closures.values(),
+            input.trait_methods.iter(),
+            pure_program_semantics
+                .iter()
+                .map(|(program, semantics)| (*program, semantics)),
+        ) {
             let mut specializations = Vec::new();
             semantics.visit_specializations(&mut |owner, spec, ty| {
                 specializations.push((owner, spec, ty))

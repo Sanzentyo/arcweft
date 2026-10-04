@@ -9,7 +9,7 @@
 use crate::style::{ViewPhysicalFlow, ViewStyleApplicationTarget};
 use crate::{
     CustomElementId, HandlerId, ImageId, SemanticSpecId, TextSourceId, ViewEvaluationSiteId,
-    ViewHandlerProgramId, ViewHandlerResult, ViewId, ViewInstructionIndex, ViewParameterInput,
+    ViewExecutionInput, ViewHandlerProgramId, ViewHandlerResult, ViewId, ViewInstructionIndex,
     ViewPartExport, ViewPartId, ViewPartInstructionKind, ViewPartLocalName, ViewPartName,
     ViewPartStaticReachability, ViewProgramBuildError, ViewProgramId, ViewStaticPart,
     ViewValueProgramId, ViewValueProgramInventory,
@@ -446,7 +446,7 @@ pub struct ViewSemanticSpec {
 pub struct BindHandler {
     pub handler: HandlerId,
     pub program: ViewHandlerProgramId,
-    pub captures: Box<[ViewParameterInput]>,
+    pub captures: Box<[ViewExecutionInput]>,
     pub result: ViewHandlerResult,
 }
 
@@ -662,10 +662,11 @@ fn validate_next_handler(
             next: handler.program,
         });
     }
+    let mut inputs = BTreeSet::new();
     if handler
         .captures
-        .windows(2)
-        .any(|pair| pair[0].parameter() >= pair[1].parameter())
+        .iter()
+        .any(|input| !inputs.insert(input.source))
     {
         return Err(ViewProgramBuildError::NonCanonicalHandlerCaptures {
             handler: handler.handler,

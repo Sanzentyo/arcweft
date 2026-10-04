@@ -391,7 +391,8 @@ fn dialogue_parameter_rejects_a_forged_semantic_identity() {
     program.handlers[0].captures[0] = arcweft_view::ViewParameterInput::new(
         arcweft_view::ViewParameterCoordinate::try_from_index(0).unwrap(),
         forged,
-    );
+    )
+    .into();
 
     let error = program
         .validate_awbc_programs(&awbc, Some(&arcweft_bundle::standard_view::dialogue_text()))

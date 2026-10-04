@@ -175,11 +175,14 @@ pub fn dialogue_program() -> ViewProgramResource {
         ],
         handlers: vec![crate::resource_codec::view::ViewHandlerRef {
             program: dialogue_primary_action_program_id(),
-            captures: vec![ViewParameterInput::new(
-                ViewParameterCoordinate::try_from_index(0)
-                    .expect("the standard dialogue parameter coordinate is representable"),
-                RuntimeDialogueOpaqueRole::View.semantic_identity(),
-            )],
+            captures: vec![
+                ViewParameterInput::new(
+                    ViewParameterCoordinate::try_from_index(0)
+                        .expect("the standard dialogue parameter coordinate is representable"),
+                    RuntimeDialogueOpaqueRole::View.semantic_identity(),
+                )
+                .into(),
+            ],
             result: ViewHandlerResult::new(
                 ViewHandlerResultRole::DialogueAction,
                 RuntimeDialogueOpaqueRole::Action.semantic_identity(),

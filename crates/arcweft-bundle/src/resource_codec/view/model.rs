@@ -14,8 +14,8 @@ pub use arcweft_view::ViewProgramId;
 pub use arcweft_view::program::{EventKind, ViewElementKind};
 use arcweft_view::program::{ViewElementTextInputKind, ViewVirtualAxis};
 use arcweft_view::{
-    ViewHandlerProgramId, ViewHandlerResult, ViewHandlerValueTypeId, ViewParameterCoordinate,
-    ViewParameterInput, ViewPartLocalName, ViewValueProgram, ViewValueProgramId,
+    ViewExecutionInput, ViewHandlerProgramId, ViewHandlerResult, ViewHandlerValueTypeId,
+    ViewParameterCoordinate, ViewPartLocalName, ViewValueProgram, ViewValueProgramId,
 };
 use core::fmt;
 use serde::{Deserialize, Serialize};
@@ -410,7 +410,7 @@ pub struct ViewInstructionSpan {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ViewHandlerRef {
     pub program: ViewHandlerProgramId,
-    pub captures: Vec<ViewParameterInput>,
+    pub captures: Vec<ViewExecutionInput>,
     pub result: ViewHandlerResult,
 }
 

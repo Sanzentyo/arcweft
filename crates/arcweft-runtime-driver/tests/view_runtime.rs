@@ -368,10 +368,13 @@ fn authored_click_handler_enters_the_catalog_as_control_activation() {
     ];
     program.handlers = vec![arcweft_bundle::resource_codec::view::ViewHandlerRef {
         program: handler,
-        captures: vec![arcweft_view::ViewParameterInput::new(
-            arcweft_view::ViewParameterCoordinate::try_from_index(0).unwrap(),
-            arcweft_core::value::RuntimeDialogueOpaqueRole::View.semantic_identity(),
-        )],
+        captures: vec![
+            arcweft_view::ViewParameterInput::new(
+                arcweft_view::ViewParameterCoordinate::try_from_index(0).unwrap(),
+                arcweft_core::value::RuntimeDialogueOpaqueRole::View.semantic_identity(),
+            )
+            .into(),
+        ],
         result: ViewHandlerResult::new(
             ViewHandlerResultRole::DialogueAction,
             arcweft_core::value::RuntimeDialogueOpaqueRole::Action.semantic_identity(),

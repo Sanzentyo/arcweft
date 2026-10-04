@@ -493,9 +493,9 @@ impl PreparedResolvedCallable {
         ) || self.definition.identity.requires_value_callee()
     }
 
-    /// Exact closure expression behind a base-group function value. Other
-    /// value callees remain dynamic for suspension analysis.
-    pub(crate) fn exact_closure_producer(&self) -> Option<arcweft_lang_hir::identity::ExprId> {
+    /// Exact expression producer behind a base-group function value.
+    /// Its accepted resolution supplies execution evidence without changing value dispatch.
+    pub(crate) fn exact_value_producer(&self) -> Option<arcweft_lang_hir::identity::ExprId> {
         match (&self.state, &self.definition.identity) {
             (
                 PreparedResolvedCallableState::Base,

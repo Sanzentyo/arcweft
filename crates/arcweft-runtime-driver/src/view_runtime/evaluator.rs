@@ -990,6 +990,85 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
         Ok(())
     }
 
+    fn resolve_execution_input(
+        &self,
+        handle: &PresentationHandleId,
+        definition: &ViewDefinitionResource,
+        mounted: &MountedView,
+        instruction: usize,
+        input: arcweft_view::ViewExecutionInput,
+        diagnostic: BundleViewDiagnosticCode,
+    ) -> Result<RuntimeValue, EvaluationFailure> {
+        let failure =
+            |message: String| EvaluationFailure::new(diagnostic, Some(instruction), message);
+        let ViewProgramRuntimeAuthority::Awbc(program) = self.program_runtime else {
+            return Err(failure(
+                "execution input has no accepted Core authority".to_owned(),
+            ));
+        };
+        let value = match input.source {
+            arcweft_view::ViewExecutionInputSource::Parameter(parameter) => {
+                let source = definition
+                    .parameters
+                    .get(parameter.index())
+                    .filter(|source| source.semantic_type == input.value_type())
+                    .ok_or_else(|| failure("stale parameter input".to_owned()))?;
+                if source.role == ViewParameterRole::Dialogue {
+                    dialogue_view_runtime_value(
+                        source.semantic_type,
+                        self.dialogue_inputs
+                            .get(handle)
+                            .ok_or_else(|| failure("missing dialogue input".to_owned()))?,
+                    )
+                    .map_err(failure)?
+                } else {
+                    let value = mounted
+                        .runtime_parameters
+                        .get(&source.name)
+                        .ok_or_else(|| {
+                            EvaluationFailure::new(
+                                BundleViewDiagnosticCode::MissingInput,
+                                Some(instruction),
+                                format!("parameter '{}' is uninitialized", source.name),
+                            )
+                        })?;
+                    if !value.ownership().permits_copy() {
+                        return Err(failure(
+                            "input requires its retained resource owner".to_owned(),
+                        ));
+                    }
+                    value.clone()
+                }
+            }
+            arcweft_view::ViewExecutionInputSource::Local(coordinate) => {
+                let value = mounted
+                    .execution_locals
+                    .iter()
+                    .rev()
+                    .find_map(|scope| scope.get(&coordinate))
+                    .ok_or_else(|| {
+                        failure("local input is outside its initialized lexical scope".to_owned())
+                    })?;
+                if !value.ownership().permits_copy() {
+                    return Err(failure(
+                        "input requires its retained resource owner".to_owned(),
+                    ));
+                }
+                let ty = program
+                    .semantic_type_id(input.value_type())
+                    .ok_or_else(|| failure("local type is missing".to_owned()))?;
+                if !program.value_matches_type(value, ty) {
+                    return Err(failure(
+                        "local input type disagrees with its ABI".to_owned(),
+                    ));
+                }
+                value.clone()
+            }
+        };
+
+        Ok(value)
+    }
+
     fn evaluate_expression_program(
         &mut self,
         handle: &PresentationHandleId,
@@ -1015,68 +1094,14 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
         let mut inputs = Vec::with_capacity(expression.inputs.len());
         let mut snapshots = Vec::with_capacity(expression.inputs.len());
         for input in expression.inputs.iter() {
-            let value = match input.source {
-                arcweft_view::ViewExecutionInputSource::Parameter(parameter) => {
-                    let source = definition
-                        .parameters
-                        .get(parameter.index())
-                        .filter(|source| source.semantic_type == input.value_type())
-                        .ok_or_else(|| failure("stale parameter input".to_owned()))?;
-                    if source.role == ViewParameterRole::Dialogue {
-                        dialogue_view_runtime_value(
-                            source.semantic_type,
-                            self.dialogue_inputs
-                                .get(handle)
-                                .ok_or_else(|| failure("missing dialogue input".to_owned()))?,
-                        )
-                        .map_err(failure)?
-                    } else {
-                        let value =
-                            mounted
-                                .runtime_parameters
-                                .get(&source.name)
-                                .ok_or_else(|| {
-                                    EvaluationFailure::new(
-                                        BundleViewDiagnosticCode::MissingInput,
-                                        Some(instruction),
-                                        format!("parameter '{}' is uninitialized", source.name),
-                                    )
-                                })?;
-                        if !value.ownership().permits_copy() {
-                            return Err(failure(
-                                "input requires its retained resource owner".to_owned(),
-                            ));
-                        }
-                        value.clone()
-                    }
-                }
-                arcweft_view::ViewExecutionInputSource::Local(coordinate) => {
-                    let value = mounted
-                        .execution_locals
-                        .iter()
-                        .rev()
-                        .find_map(|scope| scope.get(&coordinate))
-                        .ok_or_else(|| {
-                            failure(
-                                "local input is outside its initialized lexical scope".to_owned(),
-                            )
-                        })?;
-                    if !value.ownership().permits_copy() {
-                        return Err(failure(
-                            "input requires its retained resource owner".to_owned(),
-                        ));
-                    }
-                    let ty = program
-                        .semantic_type_id(input.value_type())
-                        .ok_or_else(|| failure("local type is missing".to_owned()))?;
-                    if !program.value_matches_type(value, ty) {
-                        return Err(failure(
-                            "local input type disagrees with its ABI".to_owned(),
-                        ));
-                    }
-                    value.clone()
-                }
-            };
+            let value = self.resolve_execution_input(
+                handle,
+                definition,
+                mounted,
+                instruction,
+                *input,
+                BundleViewDiagnosticCode::InvalidValueProgram,
+            )?;
             snapshots.push(
                 AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner)
                     .map_err(|error| failure(error.to_string()))?,
@@ -2205,43 +2230,21 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
             ));
         }
 
+        let program_owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(awbc));
         let mut capture_snapshots = Vec::with_capacity(accepted.captures().len());
         for capture in accepted.captures() {
-            let parameter = definition
-                .parameters
-                .get(capture.parameter().index())
-                .filter(|parameter| {
-                    usize::from(parameter.ordinal) == capture.parameter().index()
-                        && parameter.semantic_type == capture.value_type()
-                })
-                .ok_or_else(|| {
-                    failure("View handler capture coordinate or type is stale".to_owned())
-                })?;
-            let snapshot =
-                match parameter.role {
-                    ViewParameterRole::Dialogue => {
-                        let input = self.dialogue_inputs.get(&key.handle).ok_or_else(|| {
-                            failure("View handler dialogue capture has no typed input".to_owned())
-                        })?;
-                        let value = dialogue_view_runtime_value(parameter.semantic_type, input)
-                            .map_err(failure)?;
-                        AwbcRuntimeValueSnapshot::from_runtime_value(&value)
-                            .map_err(|error| failure(error.to_string()))?
-                    }
-                    ViewParameterRole::Value => {
-                        let value = mounted.runtime_parameters.get(&parameter.name).ok_or_else(
-                            || {
-                                failure(format!(
-                                    "View handler capture `{}` has no runtime parameter snapshot",
-                                    parameter.name
-                                ))
-                            },
-                        )?;
-                        AwbcRuntimeValueSnapshot::from_runtime_value(value)
-                            .map_err(|error| failure(error.to_string()))?
-                    }
-                };
-            capture_snapshots.push(snapshot);
+            let value = self.resolve_execution_input(
+                &key.handle,
+                definition,
+                mounted,
+                instruction,
+                *capture,
+                BundleViewDiagnosticCode::InvalidHandler,
+            )?;
+            capture_snapshots.push(
+                AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &program_owner)
+                    .map_err(|error| failure(error.to_string()))?,
+            );
         }
         let (path, target_instruction, authored_target) = builder
             .last_node

@@ -11,11 +11,11 @@ use arcweft_id::PublicId;
 use arcweft_view::{
     AcceptedViewProgramRevision, BindEvent, BindHandler, CustomElementId, HandlerId, ImageId,
     SemanticSpecId, TextSourceId, ViewAwait, ViewAwaitBranch, ViewBranch, ViewCall,
-    ViewCallArgument, ViewCustomSpec, ViewElementSpec, ViewEvaluationSiteId,
+    ViewCallArgument, ViewCustomSpec, ViewElementSpec, ViewEvaluationSiteId, ViewExecutionInput,
     ViewFxApplicationInstruction, ViewFxArgumentSource, ViewFxCallArgument, ViewHandlerProgramId,
-    ViewHandlerResult, ViewId, ViewImageSpec, ViewInstruction, ViewInstructionRange,
-    ViewParameterInput, ViewPartId, ViewPartStaticReachability, ViewProgram, ViewProgramBuildError,
-    ViewProgramBuilder, ViewProgramId, ViewRepeat, ViewSemanticSpec, ViewStableKey, ViewTextSpec,
+    ViewHandlerResult, ViewId, ViewImageSpec, ViewInstruction, ViewInstructionRange, ViewPartId,
+    ViewPartStaticReachability, ViewProgram, ViewProgramBuildError, ViewProgramBuilder,
+    ViewProgramId, ViewRepeat, ViewSemanticSpec, ViewStableKey, ViewTextSpec,
     ViewValueInventoryError, ViewValueProgramInventory,
 };
 use thiserror::Error;
@@ -62,7 +62,7 @@ pub struct ViewProgramCatalog {
 pub(super) struct AcceptedViewHandlerRuntime {
     program: ViewHandlerProgramId,
     function: AwbcFunctionId,
-    captures: Box<[ViewParameterInput]>,
+    captures: Box<[ViewExecutionInput]>,
     result: ViewHandlerResult,
 }
 
@@ -340,7 +340,7 @@ impl AcceptedViewHandlerRuntime {
         self.function
     }
 
-    pub(super) const fn captures(&self) -> &[ViewParameterInput] {
+    pub(super) const fn captures(&self) -> &[ViewExecutionInput] {
         &self.captures
     }
 

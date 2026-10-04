@@ -437,5 +437,17 @@ view ChoiceList(state: GameState) {
 ```
 
 入力処理は `.on_click { ... }` など対象 View node の modifier に置く。
+handler の capture は expression と同じ Parameter／派生 Local の型付き入力を使う。
+順序は Core が発行する canonical input ABI に従い、producer ID の順に並べ替えない。
+Local は binding programme と output ordinal で識別し、初期化された lexical scope
+内でのみ capture できる。immutable initializer の完全な Copy 証拠を保持し、関数型
+だけから複製可能性を仮定しない。実際の frame ingress でも unrestricted carrier
+条件を検証する。確定した関数 producer の中断条件は、その checked body から
+引き継ぎ、不明な callback は中断しないという証拠なしに実行しない。
+
+seal は programme 所属を検証した入力 snapshot を保持し、frame の派生 local が
+scope を出ても値を失わない。入力 snapshot が変われば新しい seal／route revision
+を発行し、以前の route を無効にする。save は派生 seal を保持せず、restore 後の
+再評価は新しい route を発行する。restore 前の外部 invocation を復活させない。
 View 全体の invariant は compiler/test が retained tree と action inventory を
 直接検査し、global callback を挟まない。

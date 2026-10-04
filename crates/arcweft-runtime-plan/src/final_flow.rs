@@ -3173,8 +3173,16 @@ fn reserve_pure_programs<'facts>(
                             local: local.clone(),
                         },
                     ),
-                    ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
-                    unrestricted_bindings: if input.copy_requirement().is_some() {
+                    ownership: if input.copy_requirement().is_some()
+                        || input.copy_evidence().is_some()
+                    {
+                        RuntimeFunctionInputOwnershipRequirement::Unrestricted
+                    } else {
+                        RuntimeFunctionInputOwnershipRequirement::Owned
+                    },
+                    unrestricted_bindings: if input.copy_requirement().is_some()
+                        || input.copy_evidence().is_some()
+                    {
                         Box::new([local.clone()])
                     } else {
                         Box::new([])

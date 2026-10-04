@@ -86,6 +86,8 @@ impl<'a> CallableEffectGraph<'a> {
         bodies: &[StagedCallableBody],
         prepared_calls: &'a AnalyzerPreparedCallGraph,
         execution: &PreparedExecutionEffectCatalog,
+        expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
+        catalog: &crate::callable::CheckedCallableCatalogBuilder,
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<Self, FinalSemanticAnalysisError> {
         let owners = bodies
@@ -111,6 +113,25 @@ impl<'a> CallableEffectGraph<'a> {
                 } => owner,
             };
             let selected = application.selected();
+            let producer = selected.exact_value_producer();
+            let known_target = if let Some(super::CheckedExpressionResolution::Value(
+                super::CheckedValueResolution::ProjectCallable(callable),
+            )) = producer
+                .and_then(|producer| expressions.get(&producer))
+                .and_then(super::PreparedExpressionFact::checked_resolution)
+            {
+                Some(
+                    catalog
+                        .pending_by_candidate(&crate::callable::CallableCandidateId::Project(
+                            callable.declaration().clone(),
+                        ))
+                        .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?
+                        .id()
+                        .clone(),
+                )
+            } else {
+                selected.checked().cloned()
+            };
             let suspension = if selected
                 .next_group_for(application.completed_group())
                 .is_some()
@@ -118,11 +139,11 @@ impl<'a> CallableEffectGraph<'a> {
                 // Partial application creates a continuation value. It does
                 // not enter the callee frame at this application boundary.
                 IndexedCallableSuspension::NonSuspending
-            } else if let Some(target) = selected.checked()
+            } else if let Some(target) = known_target.as_ref()
                 && body_ids.contains(target)
             {
                 IndexedCallableSuspension::Project(target.clone())
-            } else if let Some(producer) = selected.exact_closure_producer()
+            } else if let Some(producer) = producer
                 && let Some(closure) = execution.closure(producer)
             {
                 closure_execution

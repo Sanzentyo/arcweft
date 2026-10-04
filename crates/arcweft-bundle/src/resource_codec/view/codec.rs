@@ -144,6 +144,37 @@ impl Default for ViewResourceBudget {
 }
 
 impl ViewProgramResource {
+    fn validate_execution_inputs(
+        &self,
+        definition: &super::model::ViewDefinitionResource,
+        inputs: &[arcweft_view::ViewExecutionInput],
+        locals: &[BTreeMap<arcweft_view::ViewLocalCoordinate, arcweft_id::RuntimeSemanticTypeId>],
+    ) -> Result<(), SectionCodecError> {
+        let mut sources = BTreeSet::new();
+        if inputs.iter().any(|input| {
+            !sources.insert(input.source)
+                || match input.source {
+                    arcweft_view::ViewExecutionInputSource::Parameter(coordinate) => definition
+                        .parameters
+                        .get(coordinate.index())
+                        .is_none_or(|parameter| {
+                            usize::from(parameter.ordinal) != coordinate.index()
+                                || parameter.semantic_type != input.value_type()
+                        }),
+                    arcweft_view::ViewExecutionInputSource::Local(coordinate) => locals
+                        .iter()
+                        .rev()
+                        .find_map(|scope| scope.get(&coordinate))
+                        .is_none_or(|value_type| *value_type != input.value_type()),
+                }
+        }) {
+            return Err(SectionCodecError::NonCanonicalTable(
+                "view_expression_program_binding",
+            ));
+        }
+        Ok(())
+    }
+
     fn validate_expression_program<'a>(
         &self,
         program: &'a AwbcProgram,
@@ -163,7 +194,7 @@ impl ViewProgramResource {
             .signatures
             .get(function.signature.index())
             .ok_or_else(invalid)?;
-        let mut parameters = BTreeSet::new();
+        self.validate_execution_inputs(definition, &expression.inputs, locals)?;
         if function
             .type_context
             .and_then(|ty| program.runtime_types.get(ty.index()))
@@ -183,20 +214,7 @@ impl ViewProgramResource {
                 .zip(&binding.input_types)
                 .zip(&signature.params)
                 .any(|((input, ty), signature_type)| {
-                    !parameters.insert(input.source)
-                        || match input.source {
-                            arcweft_view::ViewExecutionInputSource::Parameter(parameter) => {
-                                definition.parameters.get(parameter.index()).is_none_or(
-                                    |parameter| parameter.semantic_type != input.value_type(),
-                                )
-                            }
-                            arcweft_view::ViewExecutionInputSource::Local(local) => locals
-                                .iter()
-                                .rev()
-                                .find_map(|scope| scope.get(&local))
-                                .is_none_or(|ty| *ty != input.value_type()),
-                        }
-                        || *ty != input.value_type()
+                    *ty != input.value_type()
                         || program
                             .runtime_types
                             .get(signature_type.index())
@@ -291,6 +309,7 @@ impl ViewProgramResource {
         text: Option<&ViewTextResource>,
     ) -> Result<(), SectionCodecError> {
         let definitions = self.validate_application_bindings()?;
+        self.validate_handlers()?;
         let bindings = program
             .pure_programs
             .iter()
@@ -443,7 +462,7 @@ impl ViewProgramResource {
                         locals.pop();
                         continue;
                     }
-                    ScopeEvent::Instruction(instruction) => instruction,
+                    ScopeEvent::Instruction { instruction, .. } => instruction,
                 };
                 let mut sources = Vec::new();
                 match instruction {
@@ -1202,17 +1221,23 @@ impl ViewProgramResource {
             for event in ScopedInstructions::new(&self.instructions, definition.body)? {
                 match event? {
                     ScopeEvent::Enter
-                    | ScopeEvent::Instruction(ViewProgramInstruction::BeginScope) => {
+                    | ScopeEvent::Instruction {
+                        instruction: ViewProgramInstruction::BeginScope,
+                        ..
+                    } => {
                         depth += 1;
                         check_budget(depth, budget.common.depth, "view_local_scope_depth")?;
                     }
                     ScopeEvent::Exit
-                    | ScopeEvent::Instruction(ViewProgramInstruction::EndScope) => {
+                    | ScopeEvent::Instruction {
+                        instruction: ViewProgramInstruction::EndScope,
+                        ..
+                    } => {
                         depth = depth
                             .checked_sub(1)
                             .ok_or(SectionCodecError::NonCanonicalTable("view_local_scope"))?;
                     }
-                    ScopeEvent::Instruction(_) => {}
+                    ScopeEvent::Instruction { .. } => {}
                 }
             }
         }
@@ -1368,13 +1393,7 @@ impl ViewProgramResource {
     }
 
     fn validate_handlers(&self) -> Result<(), SectionCodecError> {
-        if self
-            .handlers
-            .windows(2)
-            .any(|pair| pair[0].program >= pair[1].program)
-        {
-            return Err(SectionCodecError::NonCanonicalTable("view_handlers"));
-        }
+        let invalid = || SectionCodecError::NonCanonicalTable("view_handler_bindings");
         let handlers = self
             .handlers
             .iter()
@@ -1383,73 +1402,63 @@ impl ViewProgramResource {
         if handlers.len() != self.handlers.len() {
             return Err(SectionCodecError::NonCanonicalTable("view_handlers"));
         }
-        for handler in &self.handlers {
-            if handler
-                .captures
-                .windows(2)
-                .any(|pair| pair[0].parameter() >= pair[1].parameter())
-            {
-                return Err(SectionCodecError::NonCanonicalTable(
-                    "view_handler_captures",
-                ));
-            }
-        }
         let mut referenced = BTreeSet::new();
-        let mut target = None;
         let mut event_targets = BTreeSet::new();
-        for (ordinal, instruction) in self.instructions.iter().enumerate() {
-            match instruction {
-                ViewProgramInstruction::OpenElement { .. }
-                | ViewProgramInstruction::EmitText { .. }
-                | ViewProgramInstruction::EmitImage { .. }
-                | ViewProgramInstruction::EmitCustom { .. }
-                | ViewProgramInstruction::CallView { .. } => target = Some(ordinal),
-                ViewProgramInstruction::BindHandler { event, handler, .. } => {
-                    let Some(specification) = handlers.get(handler) else {
-                        return Err(SectionCodecError::NonCanonicalTable(
-                            "view_handler_bindings",
-                        ));
-                    };
-                    let mut owners = self.definitions.iter().filter(|definition| {
-                        usize::try_from(definition.body.start_instruction).is_ok_and(|start| {
-                            usize::try_from(definition.body.end_instruction)
-                                .is_ok_and(|end| start <= ordinal && ordinal < end)
-                        })
-                    });
-                    let Some(owner) = owners.next() else {
-                        return Err(SectionCodecError::NonCanonicalTable(
-                            "view_handler_definition",
-                        ));
-                    };
-                    if owners.next().is_some()
-                        || specification.captures.iter().any(|capture| {
-                            owner
-                                .parameters
-                                .get(capture.parameter().index())
-                                .is_none_or(|parameter| {
-                                    usize::from(parameter.ordinal) != capture.parameter().index()
-                                        || parameter.semantic_type != capture.value_type()
-                                })
-                        })
-                        || !referenced.insert(*handler)
-                        || !target.is_some_and(|node| event_targets.insert((node, *event)))
-                    {
-                        return Err(SectionCodecError::NonCanonicalTable(
-                            "view_handler_bindings",
-                        ));
+        for definition in &self.definitions {
+            let mut locals = vec![BTreeMap::new()];
+            let mut target = None;
+            for event in ScopedInstructions::new(&self.instructions, definition.body)? {
+                let (ordinal, instruction) = match event? {
+                    ScopeEvent::Enter => {
+                        locals.push(BTreeMap::new());
+                        continue;
                     }
+                    ScopeEvent::Exit => {
+                        locals.pop();
+                        continue;
+                    }
+                    ScopeEvent::Instruction { index, instruction } => (index, instruction),
+                };
+                match instruction {
+                    ViewProgramInstruction::BeginScope => locals.push(BTreeMap::new()),
+                    ViewProgramInstruction::EndScope => {
+                        locals.pop();
+                    }
+                    ViewProgramInstruction::BindLocal { program, .. } => {
+                        let scope = locals.last_mut().ok_or_else(invalid)?;
+                        for output in &program.outputs {
+                            scope.insert(output.coordinate, output.value_type);
+                        }
+                        target = None;
+                    }
+                    ViewProgramInstruction::OpenElement { .. }
+                    | ViewProgramInstruction::EmitText { .. }
+                    | ViewProgramInstruction::EmitImage { .. }
+                    | ViewProgramInstruction::EmitCustom { .. }
+                    | ViewProgramInstruction::CallView { .. } => target = Some(ordinal),
+                    ViewProgramInstruction::BindHandler { event, handler, .. } => {
+                        let specification = handlers.get(handler).ok_or_else(invalid)?;
+                        self.validate_execution_inputs(
+                            definition,
+                            &specification.captures,
+                            &locals,
+                        )
+                        .map_err(|_| invalid())?;
+                        if !referenced.insert(*handler)
+                            || !target.is_some_and(|node| event_targets.insert((node, *event)))
+                        {
+                            return Err(invalid());
+                        }
+                    }
+                    ViewProgramInstruction::Branch { .. }
+                    | ViewProgramInstruction::RepeatKeyed { .. }
+                    | ViewProgramInstruction::Await { .. } => target = None,
+                    _ => {}
                 }
-                ViewProgramInstruction::Branch { .. }
-                | ViewProgramInstruction::RepeatKeyed { .. }
-                | ViewProgramInstruction::Await { .. }
-                | ViewProgramInstruction::BindLocal { .. } => target = None,
-                _ => {}
             }
         }
         if referenced.len() != handlers.len() {
-            return Err(SectionCodecError::NonCanonicalTable(
-                "view_handler_bindings",
-            ));
+            return Err(invalid());
         }
         Ok(())
     }
