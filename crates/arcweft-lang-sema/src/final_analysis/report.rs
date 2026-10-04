@@ -623,7 +623,7 @@ impl FinalAnalysisExecutionProjection<'_> {
                     )) if matches!(hir.kind(), arcweft_lang_hir::expr::HirExprKind::Path(_))
                         && expression
                             .mutable_place()
-                            .is_some_and(|place| place.nominal_field().is_some()) =>
+                            .is_some_and(|place| !place.fields().is_empty()) =>
                     {
                         CheckedExecutableRuntimeExpressionFactFamily::Value
                     }

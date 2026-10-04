@@ -1416,22 +1416,7 @@ fn write_statement_payload(
         CheckedStatementPayload::Structural => {}
         CheckedStatementPayload::Assignment(assignment) => {
             let place = assignment.place();
-            let field_place = place
-                .nominal_field()
-                .ok_or(SemanticTranscriptError::MissingIdentity)?;
-            transcript_update!(
-                hasher,
-                &coordinates.binding(place.local_id())?.canonical_bytes()?
-            );
-            write_nominal(hasher, field_place.nominal(), analysis)?;
-            write_field_selection(hasher, field_place.field())?;
-            transcript_update!(
-                hasher,
-                field_place
-                    .field_type()
-                    .semantic_identity_digest()?
-                    .as_bytes()
-            );
+            write_place(hasher, place, coordinates, analysis)?;
             transcript_update!(
                 hasher,
                 assignment
@@ -3043,28 +3028,33 @@ fn write_mutable_place_payload(
 ) -> Result<(), SemanticTranscriptError> {
     let Some(place) = checked
         .mutable_place()
-        .filter(|place| place.nominal_field().is_some())
+        .filter(|place| !place.fields().is_empty())
     else {
         transcript_update!(hasher, &[0]);
         return Ok(());
     };
-    let field_place = place
-        .nominal_field()
-        .ok_or(SemanticTranscriptError::MissingIdentity)?;
     transcript_update!(hasher, &[1]);
+    write_place(hasher, &place, coordinates, analysis)
+}
+
+fn write_place(
+    hasher: &mut MatchTranscriptHasher<'_>,
+    place: &super::CheckedPlace,
+    coordinates: &SemanticCoordinateIndex<'_, '_>,
+    analysis: &FinalSemanticAnalysis,
+) -> Result<(), SemanticTranscriptError> {
     write_bytes(
         hasher,
         &coordinates.binding(place.local_id())?.canonical_bytes()?,
     )?;
-    write_nominal(hasher, field_place.nominal(), analysis)?;
-    write_field_selection(hasher, field_place.field())?;
-    transcript_update!(
-        hasher,
-        field_place
-            .field_type()
-            .semantic_identity_digest()?
-            .as_bytes()
-    );
+    write_len(hasher, place.fields().len())?;
+    for field in place.fields() {
+        let definition = analysis
+            .project_nominal_semantic(field.owner_type())
+            .ok_or(SemanticTranscriptError::MissingIdentity)?;
+        write_nominal(hasher, definition.nominal(), analysis)?;
+        write_field_selection(hasher, field)?;
+    }
     Ok(())
 }
 

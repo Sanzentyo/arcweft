@@ -54,15 +54,15 @@ use crate::types::{SemanticTypeDigest, TypeInstantiationError, TypeKind, Variant
 
 use super::{
     CheckedExpressionResolution, CheckedImplicitCallableIdentity, CheckedLocalUseSite,
-    CheckedPipeBindingIdentity, CheckedRecordValueSource, CheckedSelectResolution,
+    CheckedPipeBindingIdentity, CheckedPlace, CheckedRecordValueSource, CheckedSelectResolution,
     CheckedValueResolution, FinalSemanticAnalysis,
 };
 
 mod access;
 mod flow;
 pub use access::{
-    CheckedDisplacedField, CheckedLocalAccess, CheckedLocalPlace, CheckedLocalPlaceAccess,
-    CheckedLocalPlaceMode, CheckedPlaceDisplacement, CheckedPlaceInitialization,
+    CheckedDisplacedField, CheckedLocalAccess, CheckedLocalPlaceAccess, CheckedLocalPlaceMode,
+    CheckedPlaceDisplacement, CheckedPlaceInitialization,
 };
 use flow::{Availability, Event, NodeId, OwnershipFlow, Violation};
 
@@ -188,8 +188,8 @@ impl CheckedLocalValueTransfer {
     pub const fn mode(&self) -> CheckedLocalReadMode {
         self.mode
     }
-    pub fn place(&self) -> CheckedLocalPlace {
-        CheckedLocalPlace::new(self.local, self.fields.clone())
+    pub fn place(&self) -> CheckedPlace {
+        CheckedPlace::new(self.local, self.fields.clone())
     }
     pub fn fields(&self) -> &[super::CheckedFieldSelection] {
         &self.fields
@@ -710,7 +710,7 @@ struct LocalUseChecker<'a> {
     scheduled_callback_roots: &'a BTreeSet<ExprId>,
     in_place_receivers: &'a BTreeSet<ExprId>,
     borrowed_receivers: &'a BTreeSet<ExprId>,
-    active_receiver_loans: Vec<(CheckedLocalPlace, ExprId)>,
+    active_receiver_loans: Vec<(CheckedPlace, ExprId)>,
     callback_local_uses: Vec<BTreeSet<LocalId>>,
     instance: Option<CheckedLocalUseInstantiation<'a>>,
     flow: OwnershipFlow,
@@ -1097,21 +1097,18 @@ impl<'a> LocalUseChecker<'a> {
     fn access_place(
         &mut self,
         expression: ExprId,
-        place: super::CheckedMutablePlace,
+        place: super::CheckedPlace,
         mode: CheckedLocalPlaceMode,
         state: &mut Availability,
     ) -> Result<(), CheckedLocalUseError> {
         let site = CheckedLocalUseSite::Place(expression);
         let local = place.local_id();
         if state.reachable
-            && let Some((_, receiver)) =
-                self.active_receiver_loans
-                    .iter()
-                    .rev()
-                    .find(|(loan, receiver)| {
-                        loan.overlaps(&CheckedLocalPlace::from_mutable(&place))
-                            && *receiver != expression
-                    })
+            && let Some((_, receiver)) = self
+                .active_receiver_loans
+                .iter()
+                .rev()
+                .find(|(loan, receiver)| loan.overlaps(&place) && *receiver != expression)
         {
             return Err(CheckedLocalUseError::BorrowedReceiverInvalidation {
                 receiver: *receiver,
@@ -1891,7 +1888,7 @@ impl<'a> LocalUseChecker<'a> {
         state: &mut Availability,
     ) -> Result<(), CheckedLocalUseError> {
         if let Some(place) =
-            CheckedLocalPlace::from_field(owner, |owner| self.analysis.expression(owner))
+            CheckedPlace::from_field(owner, |owner| self.analysis.expression(owner))
         {
             let checked = self
                 .analysis
@@ -2212,7 +2209,7 @@ impl<'a> LocalUseChecker<'a> {
                     .analysis
                     .expression(owner)
                     .and_then(super::CheckedExpression::mutable_place)
-                    .filter(|place| place.nominal_field().is_some())
+                    .filter(|place| !place.fields().is_empty())
                     .is_some()
                 {
                     let inputs = self
@@ -2282,8 +2279,7 @@ impl<'a> LocalUseChecker<'a> {
                             .ok_or(CheckedLocalUseError::InvalidTopology)?;
                         let place = checked
                             .mutable_place()
-                            .map(|place| CheckedLocalPlace::from_mutable(&place))
-                            .unwrap_or_else(|| CheckedLocalPlace::new(local, Box::new([])));
+                            .unwrap_or_else(|| CheckedPlace::new(local, Box::new([])));
                         self.active_receiver_loans.push((place, receiver));
                     }
                     for child in children {

@@ -558,17 +558,20 @@ pub(super) fn validate_expressions(
             }
         }
         if let Some(place) = fact.mutable_place()
-            && let Some(field_place) = place.nominal_field()
+            && let Some(field_place) = place.fields().last()
         {
             let CheckedExpressionResolution::Select(CheckedSelectResolution::Field(selection)) =
                 fact.resolution()
             else {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             };
-            if selection.selection() != field_place.field()
-                || locals.get(&place.local_id()).map(CheckedBinding::ty)
-                    != Some(&field_place.nominal().ty())
-                || fact_type != Some(field_place.field_type())
+            if super::CheckedPlace::from_field(owner, |child| expressions.get(&child)).as_ref()
+                != Some(&place)
+                || selection.selection() != field_place
+                || locals
+                    .get(&place.local_id())
+                    .zip(fact_type)
+                    .is_none_or(|(root, value)| !place.matches_types(root.ty(), value))
             {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
@@ -1601,9 +1604,10 @@ fn validate_field_selection(
                 .mutable_place()
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
             let field_place = place
-                .nominal_field()
+                .fields()
+                .last()
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-            if field_place.field() != selection {
+            if field_place != selection {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
             let source = required_expression_source(module, owner, HirExprSourceRole::Whole)?;
@@ -1613,7 +1617,15 @@ fn validate_field_selection(
             ) {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
-            field_place.nominal().ty()
+            return (matches!(
+                selection.field(),
+                crate::record_field::CheckedRecordFieldSemanticId::Project(_)
+            ) && selection
+                .runtime_field()
+                .is_some_and(|field| field.zero_based() == selection.declaration_ordinal())
+                && ty.semantic_identity_digest()? == selection.field_type())
+            .then_some(())
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
         _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
     };
@@ -2392,20 +2404,13 @@ pub(super) fn validate_statements(
         match fact.payload() {
             CheckedStatementPayload::Assignment(assignment) => {
                 let place = assignment.place();
-                let valid = match place.nominal_field() {
-                    Some(field_place) => {
-                        locals.get(&place.local_id()).map(CheckedBinding::ty)
-                            == Some(&field_place.nominal().ty())
-                            && field_place.field_type() == assignment.value_type()
-                    }
-                    None => {
-                        locals.get(&place.local_id()).map(CheckedBinding::ty)
-                            == Some(assignment.value_type())
-                            && resolve_module(modules, place.local_id().module())?
-                                .resolve_local(place.local_id())
-                                .is_ok_and(|local| local.is_mutable_binding())
-                    }
-                };
+                let valid = locals
+                    .get(&place.local_id())
+                    .is_some_and(|root| place.matches_types(root.ty(), assignment.value_type()))
+                    && (!place.fields().is_empty()
+                        || resolve_module(modules, place.local_id().module())?
+                            .resolve_local(place.local_id())
+                            .is_ok_and(|local| local.is_mutable_binding()));
                 if !valid {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }

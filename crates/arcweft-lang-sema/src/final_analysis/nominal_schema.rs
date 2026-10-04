@@ -1860,10 +1860,10 @@ fn seal_prepared_expression(
                 ),
             );
             let checked = if let Some(base) = mutable_base {
-                let place = crate::final_analysis::CheckedMutablePlace::try_nominal_field(
-                    base, nominal, selection, field_type,
-                )
-                .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
+                let place = crate::final_analysis::CheckedPlace::new(
+                    base,
+                    vec![selection].into_boxed_slice(),
+                );
                 checked
                     .with_mutable_place(place)
                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?

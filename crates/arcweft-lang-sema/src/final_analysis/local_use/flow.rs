@@ -26,9 +26,10 @@ impl From<&CheckedLocalAccess> for MovePath {
                 .collect(),
             CheckedLocalAccess::PlaceAccess(access) => access
                 .place()
-                .nominal_field()
-                .map(|field| vec![field.field().field()].into_boxed_slice())
-                .unwrap_or_default(),
+                .fields()
+                .iter()
+                .map(|field| field.field())
+                .collect(),
         };
         Self {
             root: access.local(),

@@ -235,7 +235,7 @@ impl CheckedCaptureExpression {
 
     pub(super) fn from_place(
         owner: ExprId,
-        place: &super::CheckedMutablePlace,
+        place: &super::CheckedPlace,
         ty: &TypeKind,
     ) -> Result<Self, FinalSemanticAnalysisError> {
         Ok(Self {

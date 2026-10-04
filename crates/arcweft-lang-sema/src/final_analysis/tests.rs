@@ -1703,7 +1703,7 @@ flow done() -> String { return "done" }
 }
 
 #[test]
-fn assignment_semantics_admit_only_one_direct_local_nominal_field() {
+fn assignment_and_read_share_the_selected_local_field_place() {
     let fixture = fixture(
         concat!(
             "struct Point { x: i64, active: bool }\n",
@@ -1725,19 +1725,30 @@ fn assignment_semantics_admit_only_one_direct_local_nominal_field() {
 
     let field_place = assignment
         .place()
-        .nominal_field()
+        .fields()
+        .last()
         .expect("assignment retains a nominal field place");
-    assert_eq!(field_place.field().declaration_ordinal(), 1);
-    assert_eq!(field_place.field_type(), &TypeKind::Bool);
+    assert_eq!(field_place.declaration_ordinal(), 1);
+    assert_eq!(
+        field_place.field_type(),
+        TypeKind::Bool.semantic_identity_digest().unwrap()
+    );
     assert_eq!(assignment.value_type(), &TypeKind::Bool);
-    assert_eq!(field_place.nominal().declaration().name().as_str(), "Point");
+    assert!(report.expressions().any(|(owner, _)| {
+        report
+            .checked_local_uses()
+            .value_transfer_at(crate::final_analysis::CheckedLocalUseSite::Expression(
+                owner,
+            ))
+            .is_some_and(|transfer| transfer.place() == *assignment.place())
+    }));
     assert!(matches!(
         report
             .local(assignment.place().local())
             .expect("assignment base is one accepted local")
             .ty(),
         TypeKind::ProjectNominal(nominal)
-            if nominal.declaration() == field_place.nominal().declaration()
+            if nominal.declaration().name().as_str() == "Point"
     ));
 }
 

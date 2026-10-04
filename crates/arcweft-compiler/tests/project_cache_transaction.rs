@@ -972,10 +972,11 @@ fn unreachable_assignment_retains_checked_place_but_publishes_no_runtime_fact() 
     assert_eq!(
         checked
             .place()
-            .nominal_field()
+            .fields()
+            .first()
             .expect("assignment has a nominal field place")
             .field_type(),
-        &TypeKind::Bool
+        TypeKind::Bool.semantic_identity_digest().unwrap()
     );
     assert_eq!(checked.value_type(), &TypeKind::Bool);
 }

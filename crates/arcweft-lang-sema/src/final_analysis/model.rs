@@ -2434,7 +2434,7 @@ struct CheckedExpressionData {
     result: CheckedExpressionResult,
     effects: EffectSet,
     resolution: CheckedExpressionResolution,
-    mutable_place: Option<CheckedMutablePlace>,
+    mutable_place: Option<CheckedPlace>,
     execution: Option<CheckedExpressionExecutionPlan>,
     evaluated_effect: Option<Box<CheckedEvaluatedEffect>>,
     match_fact: Option<CheckedMatchFact>,
@@ -2617,10 +2617,10 @@ impl CheckedExpression {
     /// Returns the checked writable place represented by this expression.
     /// Direct local values derive their place from the local resolution;
     /// direct project-field selections retain the place sealed with the field.
-    pub fn mutable_place(&self) -> Option<CheckedMutablePlace> {
+    pub fn mutable_place(&self) -> Option<CheckedPlace> {
         match self.resolution() {
             CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) => {
-                Some(CheckedMutablePlace::from_local(*local))
+                Some(CheckedPlace::from_local(*local))
             }
             _ => self.data.mutable_place.clone(),
         }
@@ -2656,14 +2656,16 @@ impl CheckedExpression {
 
     /// Attaches one sealed direct nominal-field place to its checked select.
     #[must_use]
-    pub(crate) fn with_mutable_place(mut self, place: CheckedMutablePlace) -> Option<Self> {
+    pub(crate) fn with_mutable_place(mut self, place: CheckedPlace) -> Option<Self> {
         let CheckedExpressionResolution::Select(CheckedSelectResolution::Field(access)) =
             self.resolution()
         else {
             return None;
         };
-        let field = place.nominal_field()?;
-        if field.field() != access.selection() || self.value_type() != Some(field.field_type()) {
+        let field = place.fields().last()?;
+        if field != access.selection()
+            || self.value_type()?.semantic_identity_digest().ok()? != field.field_type()
+        {
             return None;
         }
         self.data.mutable_place = Some(place);
@@ -2776,15 +2778,6 @@ impl CheckedExpression {
             visitor(ty)?;
         }
         self.data.resolution.visit_types(visitor)?;
-        if let Some(field) = self
-            .data
-            .mutable_place
-            .as_ref()
-            .and_then(CheckedMutablePlace::nominal_field)
-        {
-            visitor(field.field_type())?;
-            field.nominal().visit_types(visitor)?;
-        }
         Ok(())
     }
 }
@@ -2847,13 +2840,16 @@ pub use evaluated_effect::{
     CheckedEvaluatedEffectOperation, CheckedEvaluatedEffectReference, CheckedExplicitDropPolicy,
 };
 
+#[path = "model/place.rs"]
+mod place;
+pub use place::CheckedPlace;
+
 #[path = "model/statement.rs"]
 mod statement;
 pub use statement::{
     CheckedAssertionDisposition, CheckedAssignment, CheckedDefer, CheckedIncludeFlowTarget,
-    CheckedIteration, CheckedIteratorFamily, CheckedMutablePlace, CheckedNominalFieldPlace,
-    CheckedScopeIdentity, CheckedSelectBranchHead, CheckedSelectStatement,
-    CheckedSelectStatementView, CheckedStatement, CheckedStatementPayload,
+    CheckedIteration, CheckedIteratorFamily, CheckedScopeIdentity, CheckedSelectBranchHead,
+    CheckedSelectStatement, CheckedSelectStatementView, CheckedStatement, CheckedStatementPayload,
     CheckedSuspensionStatement, CheckedTraitConformance, CheckedTraitIdentity, CheckedTrigger,
     CheckedTriggerView, CheckedUnsafeAudit,
 };

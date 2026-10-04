@@ -40,7 +40,7 @@ fn expression_input_abi_distinguishes_place_mutation_from_value_evaluation() {
         access.mode(),
         crate::final_analysis::CheckedLocalPlaceMode::Mutate
     );
-    assert!(access.place().nominal_field().is_some());
+    assert!(!access.place().fields().is_empty());
     assert!(usage.access().value_transfer().is_none());
     assert!(usage.latent_requirement().is_none());
     assert!(
@@ -92,7 +92,7 @@ fn expression_input_abi_records_replacement_without_reading_the_previous_value()
         access.mode(),
         crate::final_analysis::CheckedLocalPlaceMode::Assign
     );
-    assert!(access.place().nominal_field().is_none());
+    assert!(access.place().fields().is_empty());
     assert!(usage.access().value_transfer().is_none());
 }
 

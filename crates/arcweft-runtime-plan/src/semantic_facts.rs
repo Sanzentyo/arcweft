@@ -3574,17 +3574,16 @@ pub enum RuntimeResolvedMutablePlace {
 }
 
 impl RuntimeResolvedMutablePlace {
-    pub fn matches_checked(
-        self,
-        place: &arcweft_lang_sema::final_analysis::CheckedMutablePlace,
-    ) -> bool {
+    pub fn matches_checked(self, place: &arcweft_lang_sema::final_analysis::CheckedPlace) -> bool {
         match self {
-            Self::Local(local) => place.local_id() == local && place.nominal_field().is_none(),
+            Self::Local(local) => place.local_id() == local && place.fields().is_empty(),
             Self::NominalField { base, field } => {
                 place.local_id() == base
+                    && place.fields().len() == 1
                     && place
-                        .nominal_field()
-                        .and_then(|place| place.field().runtime_field())
+                        .fields()
+                        .first()
+                        .and_then(|place| place.runtime_field())
                         == Some(field)
             }
         }

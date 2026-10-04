@@ -202,12 +202,13 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
             (HirStmtKind::Assign { .. }, CheckedStatementPayload::Assignment(assignment)) => {
                 let field_place = assignment
                     .place()
-                    .nominal_field()
+                    .fields()
+                    .last()
                     .expect("Match assignment selects its checked nominal field");
                 assignments.push(CheckedAssignmentCorpusFact {
-                    field_identity: *field_place.field().field().as_bytes(),
-                    field_ordinal: field_place.field().declaration_ordinal(),
-                    field_type: field_place.field_type().clone(),
+                    field_identity: *field_place.field().as_bytes(),
+                    field_ordinal: field_place.declaration_ordinal(),
+                    field_type: assignment.value_type().clone(),
                     value_type: assignment.value_type().clone(),
                 });
             }
@@ -1652,4 +1653,17 @@ fn checked_match_statement_corpus_excludes_unrelated_declaration_statements() {
         !observation.shapes.contains(&StatementShapeFamily::Return),
         "an unrelated checked Return must not enter the Match corpus",
     );
+}
+
+#[test]
+fn checked_match_whole_local_assignment_transcript_retains_target_identity() {
+    let source = |target: &str| {
+        format!(
+            "fn choose(flag: bool) -> i64 {{\nlet mut left = 0i64\nlet mut right = 0i64\nmatch flag {{\ntrue => {{ {target} = 1i64\n42i64 }}\nfalse => 0i64\n}}\n}}\n"
+        )
+    };
+    let left = source_match_digest(&source("left"));
+    let right = source_match_digest(&source("right"));
+    assert_ne!(left, right);
+    assert_eq!(left, source_match_digest(&source("left")));
 }

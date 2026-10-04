@@ -4,7 +4,7 @@ use super::CheckedFieldSelection;
 
 /// Exact value source of a field access. A direct binding path reads at the
 /// field expression; an expression receiver is evaluated at its own child.
-/// Writability is independently owned by `CheckedMutablePlace`.
+/// Writability is independently owned by `CheckedPlace`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CheckedFieldReceiver {
     Binding(LocalId),
