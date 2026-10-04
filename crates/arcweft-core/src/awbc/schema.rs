@@ -1602,10 +1602,26 @@ pub struct AwbcBlock {
 }
 
 /// Register-backed mutable place accepted by sequence mutation instructions.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum AwbcMutablePlace {
     Local(AwbcRegisterId),
-    NominalField { base: AwbcRegisterId, field: u32 },
+    Fields {
+        base: AwbcRegisterId,
+        fields: Box<[crate::value::RuntimeRecordFieldId]>,
+    },
+}
+impl AwbcMutablePlace {
+    pub const fn base(&self) -> AwbcRegisterId {
+        match self {
+            Self::Local(base) | Self::Fields { base, .. } => *base,
+        }
+    }
+    pub fn fields(&self) -> &[crate::value::RuntimeRecordFieldId] {
+        match self {
+            Self::Local(_) => &[],
+            Self::Fields { fields, .. } => fields,
+        }
+    }
 }
 
 /// Top-level execution class of one AWBC opcode.

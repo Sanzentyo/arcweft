@@ -3525,42 +3525,59 @@ impl Analyzer<'_, '_, '_> {
         .map(Some)
     }
 
-    pub(super) fn prepare_direct_project_field_path_receiver(
+    pub(super) fn prepare_project_field_path_receiver(
         &self,
         module: &HirModule,
         owner: ExprId,
         scope: ScopeId,
         path: &arcweft_lang_hir::leaf::HirPath,
     ) -> Result<Option<PreparedExpressionFact>, AnalyzerExpressionError> {
-        if path.root() != HirPathRoot::ImplicitCrate || path.segments().len() != 2 {
+        if path.root() != HirPathRoot::ImplicitCrate || path.segments().len() < 2 {
             return Ok(None);
         }
-        let Some((base_path, HirPathSegment::Identifier(field_name))) =
-            path.split_terminal_segment()
-        else {
-            return Ok(None);
-        };
-        if base_path.segments().len() != 1 {
-            return Ok(None);
+        let mut root_path = path.clone();
+        let mut names = Vec::new();
+        while root_path.segments().len() > 1 {
+            let Some((root, HirPathSegment::Identifier(name))) = root_path.split_terminal_segment()
+            else {
+                return Ok(None);
+            };
+            names.push(name);
+            root_path = root;
         }
         let Some(CheckedValueResolution::Local(base)) = self
-            .resolve_path_value(module, owner, scope, &base_path)
+            .resolve_path_value(module, owner, scope, &root_path)
             .map_err(AnalyzerExpressionError::fatal)?
         else {
             return Ok(None);
         };
-        let Some(target_type @ TypeKind::ProjectNominal(_)) = self.facts.locals().get(&base) else {
+        let Some(mut ty) = self.facts.locals().get(&base).cloned() else {
             return Ok(None);
         };
-        self.prepare_project_nominal_field_expression(
-            owner,
-            target_type,
-            Some(base),
-            crate::final_analysis::CheckedFieldReceiver::Binding(base),
-            EffectSet::new(),
-            &field_name,
-        )
-        .map(Some)
+        let mut selected: Option<super::super::prepared::PreparedProjectFieldExpression> = None;
+        for name in names.into_iter().rev() {
+            if !matches!(ty, TypeKind::ProjectNominal(_)) {
+                return Ok(None);
+            }
+            let PreparedExpressionFact::ProjectField(field) = self
+                .prepare_project_nominal_field_expression(
+                    owner,
+                    &ty,
+                    Some(base),
+                    crate::final_analysis::CheckedFieldReceiver::Binding(base),
+                    EffectSet::new(),
+                    &name,
+                )?
+            else {
+                return Ok(None);
+            };
+            ty = field.field_type().clone();
+            selected = Some(match selected {
+                Some(prefix) => field.prepend(prefix.into_fields()),
+                None => *field,
+            });
+        }
+        Ok(selected.map(PreparedExpressionFact::from))
     }
 
     pub(super) fn path_has_local_prefix(
@@ -3689,7 +3706,10 @@ impl Analyzer<'_, '_, '_> {
                         Some(CheckedExpressionResolution::Value(
                             CheckedValueResolution::Local(local),
                         )) => Some(*local),
-                        _ => None,
+                        _ => match &target {
+                            PreparedExpressionFact::ProjectField(field) => field.mutable_base(),
+                            _ => None,
+                        },
                     };
                     return self.prepare_project_nominal_field_expression(
                         owner,

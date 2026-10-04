@@ -1462,20 +1462,26 @@ impl RuntimeFormatContentOperand {
     }
 }
 
-/// Writable Vec receiver admitted as a local or one direct nominal field.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Writable place admitted as a local or a complete stored record field path.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeMutablePlace {
     Local(RuntimeLocalDeclarationId),
-    NominalField {
+    Fields {
         base: RuntimeLocalDeclarationId,
-        field: RuntimeRecordFieldId,
+        fields: Box<[RuntimeRecordFieldId]>,
     },
 }
 
 impl RuntimeMutablePlace {
-    pub const fn local(self) -> RuntimeLocalDeclarationId {
+    pub fn fields(&self) -> &[RuntimeRecordFieldId] {
         match self {
-            Self::Local(local) | Self::NominalField { base: local, .. } => local,
+            Self::Local(_) => &[],
+            Self::Fields { fields, .. } => fields,
+        }
+    }
+    pub const fn local(&self) -> RuntimeLocalDeclarationId {
+        match self {
+            Self::Local(local) | Self::Fields { base: local, .. } => *local,
         }
     }
 }
@@ -1976,24 +1982,36 @@ impl fmt::Display for RuntimeExpr {
                 RuntimeMutablePlace::Local(local) => {
                     write!(f, "vec_pop_front/local#{local}")
                 }
-                RuntimeMutablePlace::NominalField { base, field } => {
-                    write!(f, "vec_pop_front/local#{base}.field#{}", field.zero_based())
+                RuntimeMutablePlace::Fields { base, fields } => {
+                    write!(f, "vec_pop_front/local#{base}")?;
+                    for field in fields {
+                        write!(f, ".field#{}", field.zero_based())?;
+                    }
+                    Ok(())
                 }
             },
             RuntimeExprKind::SequencePush { place, .. } => match place {
                 RuntimeMutablePlace::Local(local) => {
                     write!(f, "vec_push/local#{local}")
                 }
-                RuntimeMutablePlace::NominalField { base, field } => {
-                    write!(f, "vec_push/local#{base}.field#{}", field.zero_based())
+                RuntimeMutablePlace::Fields { base, fields } => {
+                    write!(f, "vec_push/local#{base}")?;
+                    for field in fields {
+                        write!(f, ".field#{}", field.zero_based())?;
+                    }
+                    Ok(())
                 }
             },
             RuntimeExprKind::SequencePopBack { place } => match place {
                 RuntimeMutablePlace::Local(local) => {
                     write!(f, "vec_pop_back/local#{local}")
                 }
-                RuntimeMutablePlace::NominalField { base, field } => {
-                    write!(f, "vec_pop_back/local#{base}.field#{}", field.zero_based())
+                RuntimeMutablePlace::Fields { base, fields } => {
+                    write!(f, "vec_pop_back/local#{base}")?;
+                    for field in fields {
+                        write!(f, ".field#{}", field.zero_based())?;
+                    }
+                    Ok(())
                 }
             },
             RuntimeExprKind::EntityRef(target) => write!(f, "@{}", target.runtime_label()),

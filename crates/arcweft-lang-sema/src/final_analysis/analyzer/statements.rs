@@ -16,7 +16,6 @@ use super::{
     HirStmtKind, HirTypeKind, ItemId, ModuleSegment, PatternId, PreparedAssignmentStatement,
     PreparedExpressionFact, PreparedStatementPayload, ProjectSymbolTable, ScopeId, SourceSpan,
     TypeId, TypeKind, TypeSourceEvidence,
-    calls::checked_project_nominal,
     expression_types::builtin_iteration,
     items::{SourceCallableShell, checked_catalog_error},
 };
@@ -459,61 +458,13 @@ impl Analyzer<'_, '_, '_> {
                 target_type.clone(),
             ));
         }
-        let HirExprKind::Select(select) = target_expression.kind() else {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-        };
-        let base_expression = module
-            .resolve_expr(select.target())
-            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-        if !matches!(base_expression.kind(), HirExprKind::Path(_)) {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-        }
-        let base = self.facts.expressions().get(&select.target()).ok_or(
-            FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                owner: select.target(),
-            },
-        )?;
-        let Some(CheckedExpressionResolution::Value(CheckedValueResolution::Local(local))) =
-            base.checked_resolution()
-        else {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-        };
-        let target_fact = self
-            .facts
-            .expressions()
-            .get(&target)
-            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: target })?;
         let PreparedExpressionFact::ProjectField(prepared_field) = target_fact else {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         };
-        let base_type =
-            base.value_type()
-                .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                    owner: select.target(),
-                })?;
-        let target_type = target_fact
-            .value_type()
-            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: target })?;
-        if base_type
-            != self
-                .facts
-                .locals()
-                .get(local)
-                .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: *local })?
-        {
+        if prepared_field.mutable_base().is_none() {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
-        let TypeKind::ProjectNominal(base_nominal) = base_type else {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-        };
-        let declaration = self
-            .symbols
-            .nominal(base_nominal.declaration())
-            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        let nominal = checked_project_nominal(declaration, base_type)?;
-        if prepared_field.nominal() != &nominal || prepared_field.field_type() != target_type {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-        }
+        let target_type = prepared_field.field_type();
         let value_fact = self
             .facts
             .expressions()

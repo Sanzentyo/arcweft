@@ -2837,9 +2837,9 @@ fn selected_scheduled_callback_roots(
     Ok(sites)
 }
 
-/// Selected capacity operations lower their receiver as a direct mutable
+/// Selected capacity operations lower their receiver as a mutable
 /// place, not as a value operand. The compiler uses the same checked
-/// `capacity_operation` and receiver source to form `RuntimeResolvedMutablePlace`.
+/// `capacity_operation` and receiver source to form `RuntimeResolvedPlace`.
 fn selected_in_place_receivers(
     analysis: &FinalSemanticAnalysis,
     owners: impl Iterator<Item = ExprId>,
@@ -2870,10 +2870,9 @@ fn selected_in_place_receivers(
             return Err(CheckedLocalUseError::InvalidTopology);
         };
         // A selected capacity family does not itself prove that the authored
-        // receiver denotes a writable place. Nested/computed receiver paths
-        // are diagnosed by the place-lowering owner; they must still undergo
-        // ordinary expression traversal here rather than becoming a final
-        // analysis topology failure.
+        // receiver denotes a writable place. Complete stored paths use the
+        // sealed address; computed receivers without one retain ordinary
+        // expression traversal and are diagnosed by the place-lowering owner.
         if analysis
             .expression(receiver)
             .and_then(super::CheckedExpression::mutable_place)

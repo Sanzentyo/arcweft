@@ -906,9 +906,9 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
             u32_ty,
             RuntimeExprSeedKind::Assign {
                 place: crate::plan::RuntimeAssignmentSeed {
-                    place: crate::plan::RuntimeMutablePlaceSeed::NominalField {
+                    place: crate::plan::RuntimeMutablePlaceSeed::Fields {
                         base: local.clone(),
-                        field,
+                        fields: vec![field].into_boxed_slice(),
                     },
                     displacement: crate::value::RuntimePlaceDisplacement::Reachable {
                         initialization: crate::value::RuntimePlaceInitialization::Initialized,
@@ -1587,9 +1587,12 @@ fn native_nominal_field_pop_front_drains_a_vec_and_handles_an_empty_field() {
             RuntimeExprSeed::new(
                 option_type,
                 RuntimeExprSeedKind::SequencePopFront {
-                    place: crate::plan::RuntimeMutablePlaceSeed::NominalField {
+                    place: crate::plan::RuntimeMutablePlaceSeed::Fields {
                         base: record.clone(),
-                        field: RuntimeRecordFieldSeedId::from_zero_based(field.zero_based()),
+                        fields: vec![RuntimeRecordFieldSeedId::from_zero_based(
+                            field.zero_based(),
+                        )]
+                        .into_boxed_slice(),
                     },
                 },
             )

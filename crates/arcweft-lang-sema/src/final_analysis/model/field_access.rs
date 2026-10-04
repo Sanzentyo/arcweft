@@ -25,29 +25,74 @@ impl CheckedFieldReceiver {
     }
 }
 
-/// One field expression's accepted schema selection and evaluation source.
+/// A local field path owns one complete place; a computed field selects from
+/// its evaluated receiver. The terminal selection is never stored twice.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedFieldAccess {
-    selection: CheckedFieldSelection,
-    receiver: CheckedFieldReceiver,
+    source: CheckedFieldAccessSource,
 }
-
-impl CheckedFieldAccess {
-    pub(crate) const fn new(
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum CheckedFieldAccessSource {
+    Binding(super::CheckedPlace),
+    Expression {
         selection: CheckedFieldSelection,
-        receiver: CheckedFieldReceiver,
-    ) -> Self {
-        Self {
-            selection,
-            receiver,
+        receiver: ExprId,
+    },
+}
+impl CheckedFieldAccess {
+    pub(crate) fn new(selection: CheckedFieldSelection, receiver: CheckedFieldReceiver) -> Self {
+        match receiver {
+            CheckedFieldReceiver::Binding(local) => Self {
+                source: CheckedFieldAccessSource::Binding(super::CheckedPlace::new(
+                    local,
+                    vec![selection].into_boxed_slice(),
+                )),
+            },
+            CheckedFieldReceiver::Expression(receiver) => Self {
+                source: CheckedFieldAccessSource::Expression {
+                    selection,
+                    receiver,
+                },
+            },
         }
     }
-
-    pub const fn selection(&self) -> &CheckedFieldSelection {
-        &self.selection
+    pub(crate) fn try_binding(place: super::CheckedPlace) -> Option<Self> {
+        (!place.fields().is_empty()
+            && place
+                .fields()
+                .iter()
+                .all(|field| field.runtime_field().is_some())
+            && place
+                .fields()
+                .windows(2)
+                .all(|pair| pair[0].field_type() == pair[1].owner_type()))
+        .then_some(Self {
+            source: CheckedFieldAccessSource::Binding(place),
+        })
     }
-
+    pub fn selection(&self) -> &CheckedFieldSelection {
+        match &self.source {
+            CheckedFieldAccessSource::Binding(place) => place
+                .fields()
+                .last()
+                .expect("binding field paths are nonempty"),
+            CheckedFieldAccessSource::Expression { selection, .. } => selection,
+        }
+    }
+    pub fn binding_place(&self) -> Option<&super::CheckedPlace> {
+        match &self.source {
+            CheckedFieldAccessSource::Binding(place) => Some(place),
+            _ => None,
+        }
+    }
     pub const fn receiver(&self) -> CheckedFieldReceiver {
-        self.receiver
+        match &self.source {
+            CheckedFieldAccessSource::Binding(place) => {
+                CheckedFieldReceiver::Binding(place.local())
+            }
+            CheckedFieldAccessSource::Expression { receiver, .. } => {
+                CheckedFieldReceiver::Expression(*receiver)
+            }
+        }
     }
 }

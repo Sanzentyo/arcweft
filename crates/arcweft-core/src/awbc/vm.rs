@@ -1088,58 +1088,15 @@ fn execute_instruction(
         AwbcInstruction::SequencePopFront { dst, place } => {
             let base = match place {
                 AwbcMutablePlace::Local(sequence) => *sequence,
-                AwbcMutablePlace::NominalField { base, .. } => *base,
+                AwbcMutablePlace::Fields { base, .. } => *base,
             };
             if dst == &base {
                 return Err(VmError::Runtime(
                     "Vec.pop_front destination aliases its receiver".to_owned(),
                 ));
             }
-            let popped = {
-                let frame = fiber.active_frame_mut()?;
-                let Some(value) = frame
-                    .registers
-                    .get_mut(base.index())
-                    .and_then(crate::value::RuntimePlaceStorage::as_mut)
-                else {
-                    return Err(FiberStateError::RegisterOutOfBounds {
-                        register: base.0,
-                        layout: frame.layout.0,
-                    }
-                    .into());
-                };
-                match (place, value) {
-                    (AwbcMutablePlace::Local(_), RuntimeValue::Seq(sequence)) => {
-                        sequence.pop_front()
-                    }
-                    (
-                        AwbcMutablePlace::NominalField { field, .. },
-                        RuntimeValue::NominalRecord(record),
-                    ) => {
-                        let field =
-                            RuntimeRecordFieldId::try_from_zero_based_ordinal(*field as usize)
-                                .map_err(|_| {
-                                    VmError::Runtime(
-                                        "Vec.pop_front has an invalid nominal field identity"
-                                            .to_owned(),
-                                    )
-                                })?;
-                        record
-                            .pop_sequence_front_field(field)
-                            .map_err(|error| VmError::Runtime(error.to_string()))?
-                    }
-                    (AwbcMutablePlace::Local(_), _) => {
-                        return Err(VmError::Runtime(
-                            "Vec.pop_front expected a sequence value".to_owned(),
-                        ));
-                    }
-                    (AwbcMutablePlace::NominalField { .. }, _) => {
-                        return Err(VmError::Runtime(
-                            "Vec.pop_front expected a nominal record receiver".to_owned(),
-                        ));
-                    }
-                }
-            };
+            let popped = mutable_vec_sequence(fiber.active_frame_mut()?, place, "Vec.pop_front")?
+                .pop_front();
             let result = popped.map_or_else(RuntimeValue::option_none, RuntimeValue::option_some);
             fiber.active_frame_mut()?.set_register(*dst, result)?;
         }
@@ -1149,7 +1106,7 @@ fn execute_instruction(
             mutable_vec_sequence(frame, place, "Vec.push")?.push_vector_item(value);
         }
         AwbcInstruction::VecPop { dst, place } => {
-            let base = mutable_place_base(place);
+            let base = place.base();
             if dst == &base {
                 return Err(VmError::Runtime(
                     "Vec.pop destination aliases its receiver".to_owned(),
@@ -1402,40 +1359,9 @@ fn execute_instruction(
             displacement,
         } => {
             let base = match place {
-                AwbcMutablePlace::Local(base) | AwbcMutablePlace::NominalField { base, .. } => {
-                    *base
-                }
+                AwbcMutablePlace::Local(base) | AwbcMutablePlace::Fields { base, .. } => *base,
             };
-            match place {
-                AwbcMutablePlace::Local(_) => {
-                    let frame = fiber.active_frame()?;
-                    if base.index() >= frame.registers.len() {
-                        return Err(FiberStateError::RegisterOutOfBounds {
-                            register: base.0,
-                            layout: frame.layout.0,
-                        }
-                        .into());
-                    }
-                }
-                AwbcMutablePlace::NominalField { field, .. } => {
-                    let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(*field as usize)
-                        .map_err(|error| VmError::Runtime(error.to_string()))?;
-                    let slot = fiber
-                        .active_frame()?
-                        .registers
-                        .get(base.index())
-                        .ok_or(FiberStateError::InvalidFrame)?;
-                    slot.values_at(&[field])
-                        .ok_or(FiberStateError::InvalidFrame)?;
-                }
-            }
-            let path = match place {
-                AwbcMutablePlace::Local(_) => Vec::new(),
-                AwbcMutablePlace::NominalField { field, .. } => vec![
-                    RuntimeRecordFieldId::try_from_zero_based_ordinal(*field as usize)
-                        .map_err(|error| VmError::Runtime(error.to_string()))?,
-                ],
-            };
+            let path = place.fields();
             let slot = fiber
                 .active_frame()?
                 .registers
@@ -1461,9 +1387,9 @@ fn execute_instruction(
                         layout: frame.layout.0,
                     })?
                     .replace(value),
-                AwbcMutablePlace::NominalField {
+                AwbcMutablePlace::Fields {
                     base: target,
-                    field,
+                    fields,
                 } => {
                     let Some(target_value) = frame.registers.get_mut(target.index()) else {
                         return Err(FiberStateError::RegisterOutOfBounds {
@@ -1472,9 +1398,7 @@ fn execute_instruction(
                         }
                         .into());
                     };
-                    let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(*field as usize)
-                        .map_err(|error| VmError::Runtime(error.to_string()))?;
-                    target_value.assign_field(&[field], value).map_err(|_| {
+                    target_value.assign_field(fields, value).map_err(|_| {
                         VmError::Runtime("field assignment requires an existing aggregate".into())
                     })?
                 }
@@ -3769,26 +3693,13 @@ fn require_runtime_type(
     }
 }
 
-fn mutable_place_base(place: &AwbcMutablePlace) -> AwbcRegisterId {
-    match place {
-        AwbcMutablePlace::Local(register) => *register,
-        AwbcMutablePlace::NominalField { base, .. } => *base,
-    }
-}
-
 fn mutable_vec_sequence<'a>(
     frame: &'a mut FiberFrame,
     place: &AwbcMutablePlace,
     operation: &str,
 ) -> Result<&'a mut RuntimeSeq, VmError> {
-    let base = mutable_place_base(place);
-    let path = match place {
-        AwbcMutablePlace::Local(_) => Vec::new(),
-        AwbcMutablePlace::NominalField { field, .. } => vec![
-            RuntimeRecordFieldId::try_from_zero_based_ordinal(*field as usize)
-                .map_err(|error| VmError::Runtime(error.to_string()))?,
-        ],
-    };
+    let base = place.base();
+    let path = place.fields();
     let Some(receiver) = frame
         .registers
         .get_mut(base.index())

@@ -50,7 +50,7 @@ impl RuntimeResolvedValue {
         match self {
             Self::ProjectCallable { callable, .. } => callable.append_normalized_types(roots),
             Self::Local(_)
-            | Self::NominalField { .. }
+            | Self::Place(_)
             | Self::ProjectItem(_)
             | Self::DialogueLine(_)
             | Self::Intrinsic(_)

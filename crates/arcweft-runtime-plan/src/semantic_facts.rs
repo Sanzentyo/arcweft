@@ -375,7 +375,6 @@ pub enum RuntimeUnsupportedTypeShape {
     Bound,
     Range,
     Iterator,
-    Need,
     Stream,
     Parser,
     ThreadHandle,
@@ -863,7 +862,10 @@ impl RuntimeNormalizedType {
         &self,
         path: &RuntimeTypeProjectionPath,
     ) -> Result<RuntimeCheckedType, RuntimeCheckedTypeProjectionError> {
-        if matches!(self.shape(), RuntimeTypeShape::Function { .. }) {
+        if matches!(
+            self.shape(),
+            RuntimeTypeShape::Function { .. } | RuntimeTypeShape::Need(_)
+        ) {
             return Ok(RuntimeCheckedType::ExecutableRef(self.identity()));
         }
         if let Some(checked) = self.checked_leaf_type() {
@@ -1118,7 +1120,6 @@ fn unsupported_runtime_shape(shape: &RuntimeTypeShape) -> Option<RuntimeUnsuppor
         RuntimeTypeShape::BoundType(_) => Some(RuntimeUnsupportedTypeShape::Bound),
         RuntimeTypeShape::Range(_) => Some(RuntimeUnsupportedTypeShape::Range),
         RuntimeTypeShape::Iterator(_) => Some(RuntimeUnsupportedTypeShape::Iterator),
-        RuntimeTypeShape::Need(_) => Some(RuntimeUnsupportedTypeShape::Need),
         RuntimeTypeShape::Stream { .. } => Some(RuntimeUnsupportedTypeShape::Stream),
         RuntimeTypeShape::Parser { .. } => Some(RuntimeUnsupportedTypeShape::Parser),
         RuntimeTypeShape::ThreadHandle(_) => Some(RuntimeUnsupportedTypeShape::ThreadHandle),
@@ -1566,30 +1567,8 @@ impl RuntimeResolvedNominal {
 /// normalized operand types without reinterpreting HIR place syntax.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeAssignmentFact {
-    place: RuntimeAssignmentPlace,
+    place: RuntimeResolvedPlace,
     value_type: RuntimeNormalizedType,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum RuntimeAssignmentPlace {
-    Local(LocalId),
-    NominalField {
-        base: LocalId,
-        nominal: RuntimeResolvedNominal,
-        field: RuntimeRecordFieldId,
-    },
-}
-
-impl RuntimeAssignmentPlace {
-    pub const fn projection(&self) -> RuntimeResolvedMutablePlace {
-        match self {
-            Self::Local(local) => RuntimeResolvedMutablePlace::Local(*local),
-            Self::NominalField { base, field, .. } => RuntimeResolvedMutablePlace::NominalField {
-                base: *base,
-                field: *field,
-            },
-        }
-    }
 }
 
 /// One source-ordered Pending observer projected from checked semantics.
@@ -2009,11 +1988,11 @@ pub enum RuntimeIteratorWitnessExecutableFact {
 }
 
 impl RuntimeAssignmentFact {
-    pub const fn new(place: RuntimeAssignmentPlace, value_type: RuntimeNormalizedType) -> Self {
+    pub const fn new(place: RuntimeResolvedPlace, value_type: RuntimeNormalizedType) -> Self {
         Self { place, value_type }
     }
 
-    pub const fn place(&self) -> &RuntimeAssignmentPlace {
+    pub const fn place(&self) -> &RuntimeResolvedPlace {
         &self.place
     }
 
@@ -2474,11 +2453,7 @@ impl RuntimeProjectItem {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeResolvedValue {
     Local(LocalId),
-    NominalField {
-        base: LocalId,
-        owner: RuntimeSemanticTypeId,
-        field: RuntimeRecordFieldId,
-    },
+    Place(RuntimeResolvedPlace),
     ProjectCallable {
         callable: RuntimeProjectCallable,
         target: RuntimeProjectCallableValueTarget,
@@ -3547,44 +3522,126 @@ impl RuntimeResolvedNeedProducer {
 }
 
 /// Checked mutation owned by one final call fact.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeResolvedCallMutation {
     VecPopFront {
         source: ExprId,
-        place: RuntimeResolvedMutablePlace,
+        place: RuntimeResolvedPlace,
     },
     VecPop {
         source: ExprId,
-        place: RuntimeResolvedMutablePlace,
+        place: RuntimeResolvedPlace,
     },
     VecPush {
         source: ExprId,
-        place: RuntimeResolvedMutablePlace,
+        place: RuntimeResolvedPlace,
     },
 }
 
-/// Exact checked receiver place for an operation that consumes a Vec.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RuntimeResolvedMutablePlace {
-    Local(LocalId),
-    NominalField {
-        base: LocalId,
-        field: RuntimeRecordFieldId,
-    },
-}
-
-impl RuntimeResolvedMutablePlace {
-    pub fn matches_checked(self, place: &arcweft_lang_sema::final_analysis::CheckedPlace) -> bool {
+impl RuntimeResolvedCallMutation {
+    pub const fn source(&self) -> ExprId {
         match self {
-            Self::Local(local) => place.local_id() == local && place.fields().is_empty(),
-            Self::NominalField { base, field } => {
-                place.local_id() == base
-                    && place.fields().len() == 1
-                    && place
-                        .fields()
-                        .first()
-                        .and_then(|place| place.runtime_field())
-                        == Some(field)
+            Self::VecPopFront { source, .. }
+            | Self::VecPop { source, .. }
+            | Self::VecPush { source, .. } => *source,
+        }
+    }
+}
+
+/// Complete checked local-rooted address shared by reads and writes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeResolvedPlace {
+    Local(LocalId),
+    Fields {
+        base: LocalId,
+        fields: Box<[RuntimeRecordFieldId]>,
+    },
+}
+
+impl RuntimeResolvedPlace {
+    fn accepts_types(&self, root: &RuntimeNormalizedType, value: &RuntimeNormalizedType) -> bool {
+        let Self::Fields { fields, .. } = self else {
+            return root == value;
+        };
+        if fields.is_empty() {
+            return false;
+        }
+        let RuntimeTypeShape::Nominal { nominal, .. } = root.shape() else {
+            return false;
+        };
+        let graph = nominal.source_graph();
+        let mut identity = nominal.identity();
+        for (ordinal, field) in fields.iter().enumerate() {
+            let Some(definition) = graph.definition(identity) else {
+                return false;
+            };
+            let arcweft_core::entry::RuntimeNominalSchemaBody::Record {
+                fields: declared, ..
+            } = definition.body()
+            else {
+                return false;
+            };
+            let Some(selected) = declared
+                .get(field.zero_based() as usize)
+                .filter(|selected| selected.field() == *field)
+            else {
+                return false;
+            };
+            if ordinal + 1 == fields.len() {
+                return normalized_type_matches_schema(value, selected.schema(), graph);
+            }
+            let RuntimeTypeSchema::NominalRef(next) = selected.schema() else {
+                return false;
+            };
+            identity = next.semantic_identity();
+        }
+        false
+    }
+
+    pub fn try_from_checked(
+        place: &arcweft_lang_sema::final_analysis::CheckedPlace,
+    ) -> Option<Self> {
+        if place.fields().is_empty() {
+            return Some(Self::Local(place.local()));
+        }
+        Some(Self::Fields {
+            base: place.local(),
+            fields: place
+                .fields()
+                .iter()
+                .map(|field| field.runtime_field())
+                .collect::<Option<Box<[_]>>>()?,
+        })
+    }
+    pub const fn local(&self) -> LocalId {
+        match self {
+            Self::Local(local) | Self::Fields { base: local, .. } => *local,
+        }
+    }
+    pub fn matches_access(
+        &self,
+        access: &arcweft_lang_sema::final_analysis::CheckedLocalAccess,
+    ) -> bool {
+        match access {
+            arcweft_lang_sema::final_analysis::CheckedLocalAccess::ValueTransfer(transfer) => {
+                self.matches_checked(&transfer.place())
+            }
+            arcweft_lang_sema::final_analysis::CheckedLocalAccess::PlaceAccess(access) => {
+                self.matches_checked(access.place())
+            }
+        }
+    }
+    pub fn matches_checked(&self, place: &arcweft_lang_sema::final_analysis::CheckedPlace) -> bool {
+        match self {
+            Self::Local(local) => place.local_id() == *local && place.fields().is_empty(),
+            Self::Fields { base, fields } => {
+                place.local_id() == *base
+                    && !fields.is_empty()
+                    && fields.len() == place.fields().len()
+                    && fields
+                        .iter()
+                        .zip(place.fields())
+                        .all(|(field, selected)| selected.runtime_field().as_ref() == Some(field))
             }
         }
     }
@@ -3920,15 +3977,15 @@ impl RuntimeResolvedCall {
         mut self,
         mutation: RuntimeResolvedCallMutation,
     ) -> Result<Self, RuntimeResolvedCallError> {
-        let (source, dispatch, operand_count) = match mutation {
+        let (source, dispatch, operand_count) = match &mutation {
             RuntimeResolvedCallMutation::VecPopFront { source, .. } => {
-                (source, RuntimeResolvedStaticCallTarget::VecPopFront, 1)
+                (*source, RuntimeResolvedStaticCallTarget::VecPopFront, 1)
             }
             RuntimeResolvedCallMutation::VecPop { source, .. } => {
-                (source, RuntimeResolvedStaticCallTarget::VecPop, 1)
+                (*source, RuntimeResolvedStaticCallTarget::VecPop, 1)
             }
             RuntimeResolvedCallMutation::VecPush { source, .. } => {
-                (source, RuntimeResolvedStaticCallTarget::VecPush, 2)
+                (*source, RuntimeResolvedStaticCallTarget::VecPush, 2)
             }
         };
         let valid_shape = self.operands.len() == operand_count
@@ -4015,8 +4072,8 @@ impl RuntimeResolvedCall {
         self.need_producer.as_ref()
     }
 
-    pub const fn mutation(&self) -> Option<RuntimeResolvedCallMutation> {
-        self.mutation
+    pub const fn mutation(&self) -> Option<&RuntimeResolvedCallMutation> {
+        self.mutation.as_ref()
     }
 
     pub const fn result(&self) -> RuntimeCallResultShape {
@@ -7199,15 +7256,27 @@ impl RuntimePlanSemanticFacts {
                 },
             )?;
             validate_resolved_value(&modules, runtime_owners, value)?;
-            if let RuntimeResolvedValue::NominalField { base, owner, .. } = value
-                && local_declarations
-                    .get(base)
-                    .is_none_or(|base_type| base_type.ty.identity() != *owner)
-            {
-                return Err(RuntimeSemanticFactsError::WrongExpressionFamily {
-                    expression: *expression,
-                    expected: RuntimeSemanticFactFamily::Value,
-                });
+            if let RuntimeResolvedValue::Place(place) = value {
+                let sites = [
+                    arcweft_lang_sema::final_analysis::CheckedLocalUseSite::Expression(*expression),
+                    arcweft_lang_sema::final_analysis::CheckedLocalUseSite::Place(*expression),
+                ];
+                let rows = sites
+                    .into_iter()
+                    .filter_map(|site| local_uses.get(&site).copied())
+                    .collect::<Vec<_>>();
+                if rows.is_empty()
+                    || rows.iter().any(|access| !place.matches_access(access))
+                    || local_declarations
+                        .get(&place.local())
+                        .zip(expression_types.get(expression))
+                        .is_none_or(|(root, value)| !place.accepts_types(&root.ty, value))
+                {
+                    return Err(RuntimeSemanticFactsError::WrongExpressionFamily {
+                        expression: *expression,
+                        expected: RuntimeSemanticFactFamily::Value,
+                    });
+                }
             }
             if matches!(value, RuntimeResolvedValue::ProjectItem(_))
                 && !matches!(
@@ -8271,7 +8340,20 @@ impl RuntimePlanSemanticFacts {
                 |local| local_declarations.get(local).map(|fact| &fact.ty),
                 &expression_types,
                 &values,
-                &selects,
+                local_uses
+                    .get(
+                        &arcweft_lang_sema::final_analysis::CheckedLocalUseSite::Place(
+                            match resolve_stmt(&modules, *statement)? {
+                                HirStmtKind::Assign { target, .. } => *target,
+                                _ => {
+                                    return Err(RuntimeSemanticFactsError::InvalidAssignmentFact {
+                                        statement: *statement,
+                                    });
+                                }
+                            },
+                        ),
+                    )
+                    .and_then(|access| access.place_access()),
                 *statement,
                 assignment,
             )?;
@@ -10258,11 +10340,12 @@ fn validate_resolved_value(
                 .map_err(|_| RuntimeSemanticFactsError::UnresolvedLocal { local: *local })?;
             require_runtime_local_reference(runtime_owners, *local)
         }
-        RuntimeResolvedValue::NominalField { base, .. } => {
+        RuntimeResolvedValue::Place(place) => {
+            let base = place.local();
             module_for(modules, base.module())?
-                .resolve_local(*base)
-                .map_err(|_| RuntimeSemanticFactsError::UnresolvedLocal { local: *base })?;
-            require_runtime_local_reference(runtime_owners, *base)
+                .resolve_local(base)
+                .map_err(|_| RuntimeSemanticFactsError::UnresolvedLocal { local: base })?;
+            require_runtime_local_reference(runtime_owners, base)
         }
         RuntimeResolvedValue::ProjectCallable { callable, target } => {
             validate_callable(modules, callable)?;
@@ -10330,7 +10413,7 @@ fn validate_assignment<'types>(
     local_type: impl Fn(&LocalId) -> Option<&'types RuntimeNormalizedType>,
     expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
     values: &BTreeMap<ExprId, RuntimeResolvedValue>,
-    selects: &BTreeMap<ExprId, RuntimeResolvedSelect>,
+    access: Option<&arcweft_lang_sema::final_analysis::CheckedLocalPlaceAccess>,
     statement: StmtId,
     assignment: &RuntimeAssignmentFact,
 ) -> Result<(), RuntimeSemanticFactsError> {
@@ -10339,43 +10422,28 @@ fn validate_assignment<'types>(
     };
     if expression_types.get(target) != Some(assignment.value_type())
         || expression_types.get(value) != Some(assignment.value_type())
+        || access.is_none_or(|access| {
+            access.mode() != arcweft_lang_sema::final_analysis::CheckedLocalPlaceMode::Assign
+                || !assignment.place().matches_checked(access.place())
+        })
+        || local_type(&assignment.place().local()).is_none_or(|root| {
+            !assignment
+                .place()
+                .accepts_types(root, assignment.value_type())
+        })
     {
         return Err(RuntimeSemanticFactsError::InvalidAssignmentFact { statement });
     }
-    match assignment.place() {
-        RuntimeAssignmentPlace::Local(local) => {
-            if !matches!(resolve_expr(modules, *target)?, HirExprKind::Path(_))
-                || values.get(target) != Some(&RuntimeResolvedValue::Local(*local))
-                || local_type(local) != Some(assignment.value_type())
-                || !modules.get(&local.module()).is_some_and(|module| {
-                    module
-                        .resolve_local(*local)
-                        .is_ok_and(|local| local.is_mutable_binding())
-                })
-            {
-                return Err(RuntimeSemanticFactsError::InvalidAssignmentFact { statement });
-            }
-        }
-        RuntimeAssignmentPlace::NominalField {
-            base,
-            nominal,
-            field,
-        } => {
-            let HirExprKind::Select(select) = resolve_expr(modules, *target)? else {
-                return Err(RuntimeSemanticFactsError::InvalidAssignmentFact { statement });
-            };
-            if !matches!(
-                resolve_expr(modules, select.target())?,
-                HirExprKind::Path(_)
-            ) || values.get(&select.target()) != Some(&RuntimeResolvedValue::Local(*base))
-                || !matches!(selects.get(target), Some(RuntimeResolvedSelect::Field { owner, field: actual })
-                    if *owner == nominal.identity() && actual == field)
-                || local_type(base).and_then(|local| local.checked_type().ok())
-                    != Some(nominal.checked_type())
-            {
-                return Err(RuntimeSemanticFactsError::InvalidAssignmentFact { statement });
-            }
-            validate_nominal(modules, nominal)?;
+    if let RuntimeResolvedPlace::Local(local) = assignment.place() {
+        if values.get(target) != Some(&RuntimeResolvedValue::Local(*local))
+            || local_type(local) != Some(assignment.value_type())
+            || !modules.get(&local.module()).is_some_and(|module| {
+                module
+                    .resolve_local(*local)
+                    .is_ok_and(|local| local.is_mutable_binding())
+            })
+        {
+            return Err(RuntimeSemanticFactsError::InvalidAssignmentFact { statement });
         }
     }
     validate_normalized_type(modules, assignment.value_type())?;
@@ -11260,7 +11328,7 @@ fn validate_call(
         };
         let receiver_matches = call.operands().first().is_some_and(|receiver| {
             *receiver.origin() == RuntimeResolvedCallOperandOrigin::Receiver
-                && receiver.source() == RuntimeResolvedCallOperandSource::Expression(source)
+                && receiver.source() == RuntimeResolvedCallOperandSource::Expression(*source)
                 && matches!(
                     receiver.ty().shape(),
                     RuntimeTypeShape::Sequence {
@@ -12182,17 +12250,6 @@ fn validate_project_function_semantic_catalog(
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
-    let selects = semantics
-        .expressions()
-        .iter()
-        .filter_map(|row| match row.payload() {
-            RuntimeProjectFunctionExpressionPayload::Select(select) => {
-                Some((row.owner(), select.clone()))
-            }
-            _ => None,
-        })
-        .collect::<BTreeMap<_, _>>();
-
     for projection in semantics.type_projection() {
         if let Some(ty) = projection.ty() {
             validate_normalized_type(modules, ty)?;
@@ -12260,11 +12317,30 @@ fn validate_project_function_semantic_catalog(
                     return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
                 }
                 let selected_local = match value {
-                    RuntimeResolvedValue::Local(local)
-                    | RuntimeResolvedValue::NominalField { base: local, .. }
-                        if exact.is_none() =>
-                    {
-                        Some(*local)
+                    RuntimeResolvedValue::Local(local) if exact.is_none() => Some(*local),
+                    RuntimeResolvedValue::Place(place) if exact.is_none() => {
+                        let sites = [
+                            arcweft_lang_sema::final_analysis::CheckedLocalUseSite::Expression(
+                                row.owner(),
+                            ),
+                            arcweft_lang_sema::final_analysis::CheckedLocalUseSite::Place(
+                                row.owner(),
+                            ),
+                        ];
+                        let rows = sites
+                            .into_iter()
+                            .filter_map(|site| semantics.local_uses().access_at(site))
+                            .collect::<Vec<_>>();
+                        if rows.is_empty()
+                            || rows.iter().any(|access| !place.matches_access(access))
+                            || local_types
+                                .get(&place.local())
+                                .zip(expression_types.get(&row.owner()))
+                                .is_none_or(|(root, value)| !place.accepts_types(root, value))
+                        {
+                            return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                        }
+                        Some(place.local())
                     }
                     _ => None,
                 };
@@ -12576,7 +12652,16 @@ fn validate_project_function_semantic_catalog(
                     |local| local_types.get(local),
                     &expression_types,
                     &values,
-                    &selects,
+                    semantics.local_uses().place_access_at(
+                        match resolve_stmt(modules, row.owner())? {
+                            HirStmtKind::Assign { target, .. } => *target,
+                            _ => {
+                                return Err(RuntimeSemanticFactsError::InvalidAssignmentFact {
+                                    statement: row.owner(),
+                                });
+                            }
+                        },
+                    ),
                     row.owner(),
                     fact,
                 )?;

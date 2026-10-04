@@ -1782,94 +1782,110 @@ fn seal_prepared_expression(
             if sealed_record.is_some() {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
-            let (
-                shell,
-                nominal,
-                mutable_base,
-                receiver,
-                declaration_ordinal,
-                field_type,
-                diagnostic_name,
-            ) = prepared.into_parts();
-            let field_type_digest = field_type.semantic_identity_digest()?;
-            let semantic_field = project_nominals
-                .get(nominal.identity())
-                .filter(|definition| definition.nominal() == &nominal)
-                .and_then(|definition| definition.fields())
-                .and_then(|fields| fields.get(usize::try_from(declaration_ordinal).ok()?))
-                .filter(|field| {
-                    field.declaration_ordinal() == declaration_ordinal
-                        && field.ty() == &field_type
-                        && field.semantic_id()
-                            == AcceptedRecordFieldSemanticId::issue(
-                                nominal.identity(),
-                                declaration_ordinal,
-                                field_type_digest,
-                            )
-                })
-                .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
-            let runtime_field = RuntimeRecordFieldId::try_from_zero_based_ordinal(
-                usize::try_from(semantic_field.declaration_ordinal())
-                    .map_err(|_| FinalSemanticAnalysisError::InvalidNominalOwner)?,
-            )
-            .map_err(|_| FinalSemanticAnalysisError::InvalidNominalOwner)?;
-            let generics = crate::types::StableGenericReferenceUseCollector::collect_in_scope(
-                &nominal.ty(),
-                &crate::types::GenericScope::default(),
-            )
-            .map_err(NominalSchemaProjectionError::from)?;
-            if generics.types().is_empty() && generics.consts().is_empty() {
-                let projected = context
-                    .get_cached(&nominal)?
-                    .record_field(declaration_ordinal)
-                    .filter(|projected| {
-                        projected.field_type() == field_type_digest
-                            && projected.runtime_field() == runtime_field
+            let (shell, receiver, fields) = prepared.into_parts();
+            let mut selections = Vec::with_capacity(fields.len());
+            let last_type = fields
+                .last()
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?
+                .field_type
+                .clone();
+            for field in fields {
+                let super::prepared::PreparedProjectFieldSelection {
+                    nominal,
+                    declaration_ordinal,
+                    field_type,
+                    diagnostic_name,
+                } = field;
+                let field_type_digest = field_type.semantic_identity_digest()?;
+                let semantic_field = project_nominals
+                    .get(nominal.identity())
+                    .filter(|definition| definition.nominal() == &nominal)
+                    .and_then(|definition| definition.fields())
+                    .and_then(|fields| fields.get(usize::try_from(declaration_ordinal).ok()?))
+                    .filter(|field| {
+                        field.declaration_ordinal() == declaration_ordinal
+                            && field.ty() == &field_type
+                            && field.semantic_id()
+                                == AcceptedRecordFieldSemanticId::issue(
+                                    nominal.identity(),
+                                    declaration_ordinal,
+                                    field_type_digest,
+                                )
                     })
                     .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
-                debug_assert_eq!(projected.runtime_field(), runtime_field);
-            }
-            let semantic_id =
-                CheckedRecordFieldSemanticId::Project(AcceptedRecordFieldSemanticId::issue(
+                let runtime_field = RuntimeRecordFieldId::try_from_zero_based_ordinal(
+                    usize::try_from(semantic_field.declaration_ordinal())
+                        .map_err(|_| FinalSemanticAnalysisError::InvalidNominalOwner)?,
+                )
+                .map_err(|_| FinalSemanticAnalysisError::InvalidNominalOwner)?;
+                let generics = crate::types::StableGenericReferenceUseCollector::collect_in_scope(
+                    &nominal.ty(),
+                    &crate::types::GenericScope::default(),
+                )
+                .map_err(NominalSchemaProjectionError::from)?;
+                if generics.types().is_empty() && generics.consts().is_empty() {
+                    let projected = context
+                        .get_cached(&nominal)?
+                        .record_field(declaration_ordinal)
+                        .filter(|projected| {
+                            projected.field_type() == field_type_digest
+                                && projected.runtime_field() == runtime_field
+                        })
+                        .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
+                    debug_assert_eq!(projected.runtime_field(), runtime_field);
+                }
+                let semantic_id =
+                    CheckedRecordFieldSemanticId::Project(AcceptedRecordFieldSemanticId::issue(
+                        nominal.identity(),
+                        declaration_ordinal,
+                        field_type_digest,
+                    ));
+                let selection = crate::final_analysis::CheckedFieldSelection::try_new(
                     nominal.identity(),
+                    semantic_id,
                     declaration_ordinal,
+                    Some(runtime_field),
                     field_type_digest,
-                ));
+                    diagnostic_name,
+                )
+                .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
+                selections.push(selection);
+            }
             let (value, effects) = shell
                 .into_value_parts()
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-            if value.source_type() != &field_type {
+            if value.source_type() != &last_type {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
-            let selection = crate::final_analysis::CheckedFieldSelection::try_new(
-                nominal.identity(),
-                semantic_id,
-                declaration_ordinal,
-                Some(runtime_field),
-                field_type_digest,
-                diagnostic_name,
-            )
-            .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
+            let access = match receiver {
+                crate::final_analysis::CheckedFieldReceiver::Binding(base) => {
+                    crate::final_analysis::CheckedFieldAccess::try_binding(
+                        crate::final_analysis::CheckedPlace::new(
+                            base,
+                            selections.into_boxed_slice(),
+                        ),
+                    )
+                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?
+                }
+                crate::final_analysis::CheckedFieldReceiver::Expression(_)
+                    if selections.len() == 1 =>
+                {
+                    crate::final_analysis::CheckedFieldAccess::new(
+                        selections
+                            .pop()
+                            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
+                        receiver,
+                    )
+                }
+                _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
+            };
             let checked = CheckedExpression::typed_value(
                 value,
                 effects,
                 CheckedExpressionResolution::Select(
-                    crate::final_analysis::CheckedSelectResolution::Field(
-                        crate::final_analysis::CheckedFieldAccess::new(selection.clone(), receiver),
-                    ),
+                    crate::final_analysis::CheckedSelectResolution::Field(access),
                 ),
             );
-            let checked = if let Some(base) = mutable_base {
-                let place = crate::final_analysis::CheckedPlace::new(
-                    base,
-                    vec![selection].into_boxed_slice(),
-                );
-                checked
-                    .with_mutable_place(place)
-                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?
-            } else {
-                checked
-            };
             Ok((checked.into(), None))
         }
         PreparedExpressionFact::ProjectRecord(prepared) => {

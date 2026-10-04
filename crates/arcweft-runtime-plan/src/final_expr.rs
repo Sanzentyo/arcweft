@@ -45,9 +45,9 @@ use crate::semantic_facts::{
     RuntimeReductionConstructor, RuntimeResolvedAttachedContent, RuntimeResolvedCall,
     RuntimeResolvedCallDispatch, RuntimeResolvedCallMutation, RuntimeResolvedCallOperand,
     RuntimeResolvedCallOperandBinding, RuntimeResolvedCallOperandOrigin,
-    RuntimeResolvedCallOperandProjection, RuntimeResolvedCallOperandSource,
-    RuntimeResolvedMutablePlace, RuntimeResolvedSelect, RuntimeResolvedStaticCallTarget,
-    RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeScopeContinuation, RuntimeScopeOwner,
+    RuntimeResolvedCallOperandProjection, RuntimeResolvedCallOperandSource, RuntimeResolvedPlace,
+    RuntimeResolvedSelect, RuntimeResolvedStaticCallTarget, RuntimeResolvedValue,
+    RuntimeResolvedVariant, RuntimeScopeContinuation, RuntimeScopeOwner,
     RuntimeScopedExecutableSemanticFactView, RuntimeStandardMapCall,
     RuntimeStandardMapFamily as SemanticStandardMapFamily, RuntimeTraitMethodInstanceKey,
     RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeShape,
@@ -1719,11 +1719,8 @@ impl<'hir> FinalExprLowerer<'hir> {
                 "assignment {statement:?} has the wrong source family"
             ));
         };
-        let place = assignment.place().projection();
-        let mode = match place {
-            RuntimeResolvedMutablePlace::Local(_) => CheckedLocalPlaceMode::Assign,
-            RuntimeResolvedMutablePlace::NominalField { .. } => CheckedLocalPlaceMode::Assign,
-        };
+        let place = assignment.place();
+        let mode = CheckedLocalPlaceMode::Assign;
         let place = self.checked_place_seed(*target, place, mode)?;
         let access = self
             .semantic_facts
@@ -1792,7 +1789,7 @@ impl<'hir> FinalExprLowerer<'hir> {
     fn checked_place_seed(
         &self,
         source: ExprId,
-        place: RuntimeResolvedMutablePlace,
+        place: &RuntimeResolvedPlace,
         mode: CheckedLocalPlaceMode,
     ) -> Result<RuntimeMutablePlaceSeed, String> {
         let access = self
@@ -1805,15 +1802,16 @@ impl<'hir> FinalExprLowerer<'hir> {
             ));
         }
         match place {
-            RuntimeResolvedMutablePlace::Local(local) => {
-                Ok(RuntimeMutablePlaceSeed::Local(self.local(local)?))
+            RuntimeResolvedPlace::Local(local) => {
+                Ok(RuntimeMutablePlaceSeed::Local(self.local(*local)?))
             }
-            RuntimeResolvedMutablePlace::NominalField { base, field } => {
-                Ok(RuntimeMutablePlaceSeed::NominalField {
-                    base: self.local(base)?,
-                    field: RuntimeRecordFieldSeedId::from_zero_based(field.zero_based()),
-                })
-            }
+            RuntimeResolvedPlace::Fields { base, fields } => Ok(RuntimeMutablePlaceSeed::Fields {
+                base: self.local(*base)?,
+                fields: fields
+                    .iter()
+                    .map(|field| RuntimeRecordFieldSeedId::from_zero_based(field.zero_based()))
+                    .collect(),
+            }),
         }
     }
 
@@ -1825,17 +1823,9 @@ impl<'hir> FinalExprLowerer<'hir> {
             RuntimeResolvedValue::Local(local) => Ok(RuntimeExprSeedKind::Local(
                 self.checked_local_read(CheckedLocalUseSite::Expression(id), *local)?,
             )),
-            RuntimeResolvedValue::NominalField { base, owner, field } => {
-                Ok(RuntimeExprSeedKind::Field {
-                    target: Box::new(
-                        self.lower_local_capture(CheckedLocalUseSite::Expression(id), *base)?,
-                    ),
-                    field: RuntimeFieldProjectionSeed::Nominal {
-                        owner: *owner,
-                        field: RuntimeRecordFieldSeedId::from_zero_based(field.zero_based()),
-                    },
-                })
-            }
+            RuntimeResolvedValue::Place(place) => Ok(RuntimeExprSeedKind::Local(
+                self.checked_local_read(CheckedLocalUseSite::Expression(id), place.local())?,
+            )),
             RuntimeResolvedValue::Constant(value) => Ok(RuntimeExprSeedKind::Value(value.clone())),
             RuntimeResolvedValue::ProjectItem(item) => Ok(RuntimeExprSeedKind::EntityRef(
                 project_entity_reference(item),
@@ -1982,7 +1972,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                 | RuntimeResolvedCallMutation::VecPop { source, place }
                 | RuntimeResolvedCallMutation::VecPush { source, place } => (source, place),
             };
-            let place = self.checked_place_seed(source, place, CheckedLocalPlaceMode::Mutate)?;
+            let place = self.checked_place_seed(*source, place, CheckedLocalPlaceMode::Mutate)?;
             return match mutation {
                 RuntimeResolvedCallMutation::VecPopFront { .. } => {
                     Ok(RuntimeExprSeedKind::SequencePopFront { place })

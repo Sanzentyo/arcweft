@@ -1775,14 +1775,6 @@ fn assignment_semantics_reject_non_direct_or_non_nominal_places_and_type_mismatc
 
     let semantic_cases = [
         (
-            "nested-field",
-            concat!(
-                "struct Point { x: i64 }\n",
-                "struct Wrapper { point: Point }\n",
-                "fn invalid(wrapper: Wrapper) { wrapper.point.x = 1i64 }\n",
-            ),
-        ),
-        (
             "entity-field",
             concat!(
                 "fn controller() -> Result<Unit, AgentError> effects {} { Ok(()) }\n",

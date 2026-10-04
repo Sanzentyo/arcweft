@@ -956,9 +956,9 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
         };
         match place {
             RuntimeMutablePlace::Local(local) => AwbcMutablePlace::Local(local_register(*local)),
-            RuntimeMutablePlace::NominalField { base, field } => AwbcMutablePlace::NominalField {
+            RuntimeMutablePlace::Fields { base, fields } => AwbcMutablePlace::Fields {
                 base: local_register(*base),
-                field: field.zero_based(),
+                fields: fields.clone(),
             },
         }
     }

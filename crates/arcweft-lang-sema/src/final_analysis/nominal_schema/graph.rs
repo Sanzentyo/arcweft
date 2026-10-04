@@ -220,28 +220,30 @@ impl<'a> NominalGraphProjection<'a> {
         self.budget.edge()?;
         let semantic = self.semantic_identity(ty)?;
         let record = self.record(nominal)?;
-        match record.semantics() {
-            AcceptedNominalSemantics::Opaque(carrier) => {
-                if carrier.value_class() != RuntimeOpaqueValueClass::Plain {
-                    return Err(Error::NonRetainableOpaque {
-                        declaration: Box::new(record.id().clone()),
-                    });
+        if let Some(carrier) = record.runtime_carrier() {
+            if carrier.value_class() != RuntimeOpaqueValueClass::Plain {
+                if self.project_budget.is_some() {
+                    return Ok(Schema::ExecutableRef(semantic.into()));
                 }
-                let owner = RuntimeOpaqueTypeOwner::exact_with(
-                    carrier.producer().clone(),
-                    semantic.into(),
-                    carrier.value_class(),
-                    carrier.persistence(),
-                );
-                let arguments = self.sequence(nominal.arguments(), depth + 1)?;
-                return Ok(Schema::ExactOpaque { owner, arguments });
-            }
-            AcceptedNominalSemantics::RustAdt => {}
-            _ => {
-                return Err(Error::NotRustAdt {
+                return Err(Error::NonRetainableOpaque {
                     declaration: Box::new(record.id().clone()),
                 });
             }
+            let owner = RuntimeOpaqueTypeOwner::exact_with(
+                carrier.producer().clone(),
+                semantic.into(),
+                carrier.value_class(),
+                carrier.persistence(),
+            );
+            return Ok(Schema::ExactOpaque {
+                owner,
+                arguments: self.sequence(nominal.arguments(), depth + 1)?,
+            });
+        }
+        if !matches!(record.semantics(), AcceptedNominalSemantics::RustAdt) {
+            return Err(Error::NotRustAdt {
+                declaration: Box::new(record.id().clone()),
+            });
         }
         if let Some(VisitState::Visiting(identity) | VisitState::Complete(identity)) =
             self.states.get(&semantic)
@@ -555,6 +557,9 @@ impl<'a> NominalGraphProjection<'a> {
             TypeKind::Tuple(items) => Schema::Tuple(self.sequence(items, depth + 1)?),
             TypeKind::Choice(items) => Schema::Choice(self.sequence(items, depth + 1)?),
             TypeKind::Function { .. } => Schema::ExecutableRef(self.semantic_identity(ty)?.into()),
+            TypeKind::Need(_) if self.project_budget.is_some() => {
+                Schema::ExecutableRef(self.semantic_identity(ty)?.into())
+            }
             TypeKind::AcceptedNominal(nominal) => self.nominal(ty, nominal, depth)?,
             TypeKind::ProjectNominal(nominal) => self.project_nominal(ty, nominal, depth)?,
             TypeKind::GenericParam(parameter) => {

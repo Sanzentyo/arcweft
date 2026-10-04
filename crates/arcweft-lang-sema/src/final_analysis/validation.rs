@@ -536,25 +536,34 @@ pub(super) fn validate_expressions(
         if let CheckedExpressionResolution::Select(CheckedSelectResolution::Field(access)) =
             fact.resolution()
         {
-            let receiver_type = match (access.receiver(), expression.kind()) {
-                (super::CheckedFieldReceiver::Binding(local), HirExprKind::Path(_))
-                    if fact
-                        .mutable_place()
-                        .is_some_and(|place| place.local_id() == local) =>
+            if let Some(place) = access.binding_place() {
+                if !matches!(expression.kind(), HirExprKind::Path(_))
+                    || locals
+                        .get(&place.local())
+                        .zip(fact_type)
+                        .is_none_or(|(root, value)| !place.matches_types(root.ty(), value))
                 {
-                    locals.get(&local).map(CheckedBinding::ty)
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
-                (
+            } else {
+                let (
                     super::CheckedFieldReceiver::Expression(receiver),
                     HirExprKind::Select(select),
-                ) if receiver == select.target() => expressions
-                    .get(&receiver)
-                    .and_then(CheckedExpression::value_type),
-                _ => None,
-            }
-            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-            if receiver_type.semantic_identity_digest()? != access.selection().owner_type() {
-                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                ) = (access.receiver(), expression.kind())
+                else {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                };
+                if receiver != select.target()
+                    || expressions
+                        .get(&receiver)
+                        .and_then(CheckedExpression::value_type)
+                        .is_none_or(|ty| {
+                            ty.semantic_identity_digest().ok()
+                                != Some(access.selection().owner_type())
+                        })
+                {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
             }
         }
         if let Some(place) = fact.mutable_place()
@@ -1583,19 +1592,20 @@ fn validate_field_selection(
                 .as_resolved()
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
             if path.root() != arcweft_lang_hir::leaf::HirPathRoot::ImplicitCrate
-                || path.segments().len() != 2
+                || path.segments().len() < 2
             {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
-            let Some((base_path, arcweft_lang_hir::leaf::HirPathSegment::Identifier(field_name))) =
-                path.split_terminal_segment()
-            else {
-                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-            };
-            if base_path.segments().len() != 1
-                || field_name.as_str() != selection.diagnostic_name().as_str()
-            {
-                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            let mut base_path = path.clone();
+            let mut names = Vec::new();
+            while base_path.segments().len() > 1 {
+                let Some((base, arcweft_lang_hir::leaf::HirPathSegment::Identifier(name))) =
+                    base_path.split_terminal_segment()
+                else {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                };
+                names.push(name);
+                base_path = base;
             }
             let checked = expressions
                 .get(&owner)
@@ -1607,7 +1617,14 @@ fn validate_field_selection(
                 .fields()
                 .last()
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-            if field_place != selection {
+            if field_place != selection
+                || names.len() != place.fields().len()
+                || !names
+                    .iter()
+                    .rev()
+                    .zip(place.fields())
+                    .all(|(name, field)| name.as_str() == field.diagnostic_name().as_str())
+            {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
             let source = required_expression_source(module, owner, HirExprSourceRole::Whole)?;

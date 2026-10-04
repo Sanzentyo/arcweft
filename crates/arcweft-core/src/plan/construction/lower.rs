@@ -1839,15 +1839,26 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
                 let (local, sequence_type) = self.resolve_local(&local)?;
                 (RuntimeMutablePlace::Local(local), sequence_type)
             }
-            RuntimeMutablePlaceSeed::NominalField { base, field } => {
-                let (base, record_type) = self.resolve_local(&base)?;
-                if self.nominal_record_domains.get(record_type).is_none() {
-                    return invalid_projection(context, record_type);
+            RuntimeMutablePlaceSeed::Fields { base, fields } => {
+                let (base, mut ty) = self.resolve_local(&base)?;
+                if fields.is_empty() {
+                    return invalid_projection(context, ty);
                 }
-                let (field, sequence_type) = self.resolve_record_field(record_type, field)?;
+                let mut path = Vec::with_capacity(fields.len());
+                for field in fields {
+                    if self.nominal_record_domains.get(ty).is_none() {
+                        return invalid_projection(context, ty);
+                    }
+                    let (field, child) = self.resolve_record_field(ty, field)?;
+                    path.push(field);
+                    ty = child;
+                }
                 (
-                    RuntimeMutablePlace::NominalField { base, field },
-                    sequence_type,
+                    RuntimeMutablePlace::Fields {
+                        base,
+                        fields: path.into_boxed_slice(),
+                    },
+                    ty,
                 )
             }
         };
@@ -2944,7 +2955,7 @@ impl RuntimePlanBodyConstruction<'_> {
             RuntimeExprKind::SequencePopFront { place } => {
                 let base = match place {
                     RuntimeMutablePlace::Local(local) => *local,
-                    RuntimeMutablePlace::NominalField { base, .. } => *base,
+                    RuntimeMutablePlace::Fields { base, .. } => *base,
                 };
                 require_local_in_scope(base, scope)?;
                 used.insert(base);
@@ -2953,7 +2964,7 @@ impl RuntimePlanBodyConstruction<'_> {
             RuntimeExprKind::SequencePush { place, value } => {
                 let base = match place {
                     RuntimeMutablePlace::Local(local) => *local,
-                    RuntimeMutablePlace::NominalField { base, .. } => *base,
+                    RuntimeMutablePlace::Fields { base, .. } => *base,
                 };
                 require_local_in_scope(base, scope)?;
                 used.insert(base);
@@ -2962,7 +2973,7 @@ impl RuntimePlanBodyConstruction<'_> {
             RuntimeExprKind::SequencePopBack { place } => {
                 let base = match place {
                     RuntimeMutablePlace::Local(local) => *local,
-                    RuntimeMutablePlace::NominalField { base, .. } => *base,
+                    RuntimeMutablePlace::Fields { base, .. } => *base,
                 };
                 require_local_in_scope(base, scope)?;
                 used.insert(base);

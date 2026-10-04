@@ -116,17 +116,17 @@ impl Engine {
             RuntimeExprKind::Agent(agent) => self.evaluate_agent_expr(agent, pure_backend),
             RuntimeExprKind::Local(read) => self.fiber.env.read(read),
             RuntimeExprKind::SequencePopFront { place } => {
-                self.fiber.env.pop_sequence_front(*place).map(|value| {
+                self.fiber.env.pop_sequence_front(place).map(|value| {
                     value.map_or_else(RuntimeValue::option_none, RuntimeValue::option_some)
                 })
             }
             RuntimeExprKind::SequencePush { place, value } => {
                 let value = self.evaluate_expr_with_backend(value, pure_backend)?;
-                self.fiber.env.push_vector_item(*place, value)?;
+                self.fiber.env.push_vector_item(place, value)?;
                 Ok(RuntimeValue::Unit)
             }
             RuntimeExprKind::SequencePopBack { place } => {
-                self.fiber.env.pop_vector_item(*place).map(|value| {
+                self.fiber.env.pop_vector_item(place).map(|value| {
                     value.map_or_else(RuntimeValue::option_none, RuntimeValue::option_some)
                 })
             }

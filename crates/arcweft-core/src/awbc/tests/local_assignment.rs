@@ -124,9 +124,13 @@ fn partial_record_program() -> AwbcProgram {
             mode: AwbcPlaceReadMode::Copy,
         },
         AwbcInstruction::Assign {
-            place: AwbcMutablePlace::NominalField {
+            place: AwbcMutablePlace::Fields {
                 base: AwbcRegisterId(0),
-                field: 0,
+                fields: vec![
+                    crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal((0) as usize)
+                        .unwrap(),
+                ]
+                .into_boxed_slice(),
             },
             value: AwbcRegisterId(3),
             displacement: crate::value::RuntimePlaceDisplacement::Reachable {
@@ -284,16 +288,24 @@ fn mutable_record_field_remains_usable_after_moving_its_sibling() {
             constant: AwbcConstantId(0),
         },
         AwbcInstruction::VecPush {
-            place: AwbcMutablePlace::NominalField {
+            place: AwbcMutablePlace::Fields {
                 base: AwbcRegisterId(0),
-                field: 0,
+                fields: vec![
+                    crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal((0) as usize)
+                        .unwrap(),
+                ]
+                .into_boxed_slice(),
             },
             value: AwbcRegisterId(2),
         },
         AwbcInstruction::Assign {
-            place: AwbcMutablePlace::NominalField {
+            place: AwbcMutablePlace::Fields {
                 base: AwbcRegisterId(0),
-                field: 1,
+                fields: vec![
+                    crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal((1) as usize)
+                        .unwrap(),
+                ]
+                .into_boxed_slice(),
             },
             value: AwbcRegisterId(3),
             displacement: crate::value::RuntimePlaceDisplacement::Reachable {

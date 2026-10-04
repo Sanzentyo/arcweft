@@ -387,14 +387,14 @@ impl RuntimeEnv {
     /// Vec locals and parameters.
     pub(crate) fn pop_sequence_front(
         &mut self,
-        place: RuntimeMutablePlace,
+        place: &RuntimeMutablePlace,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
         Ok(self.sequence_mut(place)?.pop_front())
     }
 
     pub(crate) fn push_vector_item(
         &mut self,
-        place: RuntimeMutablePlace,
+        place: &RuntimeMutablePlace,
         value: RuntimeValue,
     ) -> Result<(), RuntimeEvalError> {
         self.sequence_mut(place)?.push_vector_item(value);
@@ -403,26 +403,20 @@ impl RuntimeEnv {
 
     pub(crate) fn pop_vector_item(
         &mut self,
-        place: RuntimeMutablePlace,
+        place: &RuntimeMutablePlace,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
         Ok(self.sequence_mut(place)?.pop_vector_item())
     }
 
     fn sequence_mut(
         &mut self,
-        place: RuntimeMutablePlace,
+        place: &RuntimeMutablePlace,
     ) -> Result<&mut super::RuntimeSeq, RuntimeEvalError> {
-        let local = match place {
-            RuntimeMutablePlace::Local(local) => local,
-            RuntimeMutablePlace::NominalField { base, .. } => base,
-        };
+        let local = place.local();
         let binding = self
             .slot_mut(local)
             .ok_or(RuntimeEvalError::UnknownLocal(local))?;
-        let path = match place {
-            RuntimeMutablePlace::Local(_) => Vec::new(),
-            RuntimeMutablePlace::NominalField { field, .. } => vec![field],
-        };
+        let path = place.fields();
         let value = binding
             .value
             .field_mut(&path)
@@ -451,26 +445,23 @@ impl RuntimeEnv {
             let slot = self
                 .slot(place.local())
                 .ok_or(RuntimeEvalError::UnknownLocal(place.local()))?;
-            let path = match place {
-                RuntimeMutablePlace::Local(_) => Vec::new(),
-                RuntimeMutablePlace::NominalField { field, .. } => vec![field],
-            };
+            let path = place.fields();
             if !slot
                 .value
                 .matches_displacement(&path, assignment.displacement())
             {
                 return Err(RuntimeEvalError::UninitializedLocal(place.local()));
             }
-            match place {
-                RuntimeMutablePlace::Local(_) => Ok(slot.value.values().collect::<Vec<_>>()),
-                RuntimeMutablePlace::NominalField { field, .. } => slot
-                    .value
-                    .values_at(&[field])
-                    .ok_or_else(|| RuntimeEvalError::InvalidFieldAssignment {
-                        field: field.zero_based().to_string(),
-                        value: "uninitialized record place".into(),
-                    }),
-            }
+            slot.value
+                .values_at(path)
+                .ok_or_else(|| RuntimeEvalError::InvalidFieldAssignment {
+                    field: path
+                        .iter()
+                        .map(|field| field.zero_based().to_string())
+                        .collect::<Vec<_>>()
+                        .join("."),
+                    value: "uninitialized record place".into(),
+                })
         })();
         let handles = inspected.and_then(|displaced| {
             displaced
@@ -500,15 +491,15 @@ impl RuntimeEnv {
         }
         let displaced = match place {
             RuntimeMutablePlace::Local(local) => self
-                .slot_mut(local)
+                .slot_mut(*local)
                 .expect("inspected local remains in the exclusive environment")
                 .value
                 .replace(value),
-            RuntimeMutablePlace::NominalField { base, field } => self
-                .slot_mut(base)
+            RuntimeMutablePlace::Fields { base, fields } => self
+                .slot_mut(*base)
                 .expect("inspected field owner remains declared")
                 .value
-                .assign_field(&[field], value)
+                .assign_field(fields, value)
                 .expect("inspected field retains its defining-order coordinate"),
         };
         Ok(displaced)
@@ -1100,9 +1091,9 @@ mod tests {
         assert!(
             restored
                 .assign_runtime_place(
-                    RuntimeMutablePlace::NominalField {
+                    RuntimeMutablePlace::Fields {
                         base: source,
-                        field
+                        fields: vec![field].into_boxed_slice()
                     },
                     RuntimeValue::Need(crate::task::NeedId("need.second".into()))
                 )
@@ -1264,7 +1255,10 @@ mod tests {
 
         assert_eq!(
             env.assign_runtime_place(
-                RuntimeMutablePlace::NominalField { base: local, field },
+                RuntimeMutablePlace::Fields {
+                    base: local,
+                    fields: vec![field].into_boxed_slice()
+                },
                 RuntimeValue::String("new".to_owned())
             ),
             Ok(vec![RuntimeValue::String("old".to_owned())])
@@ -1298,7 +1292,7 @@ mod tests {
         );
 
         assert_eq!(
-            env.pop_sequence_front(RuntimeMutablePlace::Local(local)),
+            env.pop_sequence_front(&RuntimeMutablePlace::Local(local)),
             Ok(Some(RuntimeValue::String("first".to_owned())))
         );
         assert_eq!(
@@ -1316,11 +1310,11 @@ mod tests {
             ])))
         );
         assert_eq!(
-            env.pop_sequence_front(RuntimeMutablePlace::Local(local)),
+            env.pop_sequence_front(&RuntimeMutablePlace::Local(local)),
             Ok(Some(RuntimeValue::String("outer".to_owned())))
         );
         assert_eq!(
-            env.pop_sequence_front(RuntimeMutablePlace::Local(local)),
+            env.pop_sequence_front(&RuntimeMutablePlace::Local(local)),
             Ok(None)
         );
     }
@@ -1343,9 +1337,12 @@ mod tests {
             )),
         );
 
-        let place = RuntimeMutablePlace::NominalField { base: local, field };
+        let place = RuntimeMutablePlace::Fields {
+            base: local,
+            fields: vec![field].into_boxed_slice(),
+        };
         assert_eq!(
-            env.pop_sequence_front(place),
+            env.pop_sequence_front(&place),
             Ok(Some(RuntimeValue::String("first".to_owned())))
         );
         let Some(RuntimeValue::NominalRecord(record)) = env.get(local) else {
@@ -1377,12 +1374,15 @@ mod tests {
                 vec![RuntimeValue::Seq(RuntimeSeq::dense_i32(vec![2]))],
             )),
         );
-        let place = RuntimeMutablePlace::NominalField { base: local, field };
-        assert_eq!(env.push_vector_item(place, RuntimeValue::i32(3)), Ok(()));
-        assert_eq!(env.pop_vector_item(place), Ok(Some(RuntimeValue::i32(3))));
+        let place = RuntimeMutablePlace::Fields {
+            base: local,
+            fields: vec![field].into_boxed_slice(),
+        };
+        assert_eq!(env.push_vector_item(&place, RuntimeValue::i32(3)), Ok(()));
+        assert_eq!(env.pop_vector_item(&place), Ok(Some(RuntimeValue::i32(3))));
         env.pop_scope();
         let place = RuntimeMutablePlace::Local(local);
-        assert_eq!(env.pop_vector_item(place), Ok(Some(RuntimeValue::i32(1))));
-        assert_eq!(env.pop_vector_item(place), Ok(None));
+        assert_eq!(env.pop_vector_item(&place), Ok(Some(RuntimeValue::i32(1))));
+        assert_eq!(env.pop_vector_item(&place), Ok(None));
     }
 }

@@ -640,20 +640,23 @@ impl PreparedVariantExpression {
     }
 }
 
-/// One project-field selection awaiting a cached runtime-field coordinate.
+/// Source-selected field schemas waiting for final nominal/field admission.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PreparedProjectFieldSelection {
+    pub(super) nominal: CheckedProjectNominal,
+    pub(super) declaration_ordinal: u32,
+    pub(super) field_type: TypeKind,
+    pub(super) diagnostic_name: HirName,
+}
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedProjectFieldExpression {
     shell: PreparedExpressionShell,
-    nominal: CheckedProjectNominal,
     mutable_base: Option<LocalId>,
     receiver: super::CheckedFieldReceiver,
-    declaration_ordinal: u32,
-    field_type: TypeKind,
-    diagnostic_name: HirName,
+    fields: Vec<PreparedProjectFieldSelection>,
 }
-
 impl PreparedProjectFieldExpression {
-    pub(crate) const fn new(
+    pub(crate) fn new(
         shell: PreparedExpressionShell,
         nominal: CheckedProjectNominal,
         mutable_base: Option<LocalId>,
@@ -664,48 +667,59 @@ impl PreparedProjectFieldExpression {
     ) -> Self {
         Self {
             shell,
-            nominal,
             mutable_base,
             receiver,
-            declaration_ordinal,
-            field_type,
-            diagnostic_name,
+            fields: vec![PreparedProjectFieldSelection {
+                nominal,
+                declaration_ordinal,
+                field_type,
+                diagnostic_name,
+            }],
         }
     }
-
     pub(crate) const fn shell(&self) -> &PreparedExpressionShell {
         &self.shell
     }
-    pub(crate) const fn nominal(&self) -> &CheckedProjectNominal {
-        &self.nominal
+    pub(crate) const fn mutable_base(&self) -> Option<LocalId> {
+        self.mutable_base
     }
     pub(crate) const fn receiver(&self) -> super::CheckedFieldReceiver {
         self.receiver
     }
-    pub(crate) const fn field_type(&self) -> &TypeKind {
-        &self.field_type
+    pub(crate) fn field_type(&self) -> &TypeKind {
+        &self
+            .fields
+            .last()
+            .expect("prepared field path is nonempty")
+            .field_type
     }
-
+    pub(crate) fn into_fields(self) -> Vec<PreparedProjectFieldSelection> {
+        self.fields
+    }
+    pub(crate) fn prepend(mut self, mut fields: Vec<PreparedProjectFieldSelection>) -> Self {
+        fields.append(&mut self.fields);
+        self.fields = fields;
+        self
+    }
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.shell.visit_types(visitor)?;
+        for field in &self.fields {
+            field.nominal.visit_types(visitor)?;
+            visitor(&field.field_type)?;
+        }
+        Ok(())
+    }
     pub(crate) fn into_parts(
         self,
     ) -> (
         PreparedExpressionShell,
-        CheckedProjectNominal,
-        Option<LocalId>,
         super::CheckedFieldReceiver,
-        u32,
-        TypeKind,
-        HirName,
+        Vec<PreparedProjectFieldSelection>,
     ) {
-        (
-            self.shell,
-            self.nominal,
-            self.mutable_base,
-            self.receiver,
-            self.declaration_ordinal,
-            self.field_type,
-            self.diagnostic_name,
-        )
+        (self.shell, self.receiver, self.fields)
     }
 }
 
@@ -1342,11 +1356,7 @@ impl PreparedExpressionFact {
                 }
                 value.owner().visit_types(visitor)
             }
-            Self::ProjectField(value) => {
-                value.shell().visit_types(visitor)?;
-                value.nominal().visit_types(visitor)?;
-                visitor(value.field_type())
-            }
+            Self::ProjectField(value) => value.visit_types(visitor),
             Self::ProjectRecord(value) => {
                 if let Some(ty) = value.shell().value_type() {
                     visitor(ty)?;

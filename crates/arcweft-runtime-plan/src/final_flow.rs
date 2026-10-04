@@ -5982,6 +5982,10 @@ impl<'a> FinalFlowLowerer<'a> {
         &self,
         expression: ExprId,
     ) -> Result<Vec<ExprId>, RuntimePlanLowerError> {
+        let place_receiver = self
+            .call(expression)
+            .and_then(RuntimeResolvedCall::mutation)
+            .map(crate::semantic_facts::RuntimeResolvedCallMutation::source);
         let evaluated_call_target = if let Some(call) = self.call(expression) {
             let hir = self
                 .module
@@ -6037,14 +6041,18 @@ impl<'a> FinalFlowLowerer<'a> {
                     "evaluated call selector {selector:?} is absent from its checked expression graph"
                 )));
             }
-            evaluated.push(target);
+            // A selected mutable receiver is an address. Its operand must
+            // never be composed as a value before evaluating the RHS.
+            if Some(target) != place_receiver {
+                evaluated.push(target);
+            }
             Ok(selector)
         }).transpose()?;
         evaluated.extend(
             children
                 .iter()
                 .copied()
-                .filter(|child| Some(*child) != selector),
+                .filter(|child| Some(*child) != selector && Some(*child) != place_receiver),
         );
         Ok(evaluated)
     }
@@ -8122,7 +8130,14 @@ impl<'a> FinalFlowLowerer<'a> {
                 ops.extend(self.apply_value_continuation(result, *outer)?);
                 ops
             }
-            RuntimeFlowValueContinuation::Ignore(tail) => self.lower_flow_tail(tail)?,
+            RuntimeFlowValueContinuation::Ignore(tail) => {
+                let mut ops = vec![RuntimeFlowOpSeed::Let {
+                    pattern: RuntimePatternSeed::new(value.ty(), RuntimePatternSeedKind::Discard),
+                    expr: value,
+                }];
+                ops.extend(self.lower_flow_tail(tail)?);
+                ops
+            }
             RuntimeFlowValueContinuation::Try { owner, outer } => {
                 return self.lower_try_continuation(owner, value, *outer);
             }

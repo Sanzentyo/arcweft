@@ -78,8 +78,8 @@ impl RuntimeAssignment {
             displacement,
         }
     }
-    pub const fn place(&self) -> RuntimeMutablePlace {
-        self.place
+    pub const fn place(&self) -> &RuntimeMutablePlace {
+        &self.place
     }
     pub const fn displacement(&self) -> &RuntimePlaceDisplacement<RuntimeRecordFieldId> {
         &self.displacement

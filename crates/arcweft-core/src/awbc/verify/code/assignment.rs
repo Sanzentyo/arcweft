@@ -44,22 +44,10 @@ pub(super) fn verify_displacement(
     else {
         return invalid_type(&at, "reachable assignment cleanup contour");
     };
-    let (base, target) = match place {
-        AwbcMutablePlace::Local(base) => (*base, Vec::new()),
-        AwbcMutablePlace::NominalField { base, field } => (
-            *base,
-            vec![
-                RuntimeRecordFieldId::try_from_zero_based_ordinal(*field as usize).map_err(
-                    |_| AwbcVerifyError::InvalidInvariant {
-                        at: at.clone(),
-                        message: "invalid assigned field".into(),
-                    },
-                )?,
-            ],
-        ),
-    };
+    let base = place.base();
+    let target = place.fields();
     let mut target_ty = register_type(verifier, function, block, base)?;
-    for field in &target {
+    for field in target {
         target_ty = record_child_type(verifier.program, target_ty, *field, &at)?;
     }
     let actual = initialization_at(state, base, &target);

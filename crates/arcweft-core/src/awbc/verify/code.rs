@@ -784,45 +784,23 @@ fn vec_place_item_type(
     at: &str,
 ) -> Result<(AwbcRegisterId, AwbcTypeId), AwbcVerifyError> {
     let program = verifier.program;
-    let (base, item) = match place {
-        AwbcMutablePlace::Local(sequence) => {
-            let sequence_ty = read_register(verifier, function, block, *sequence, state)?;
-            let Some(AwbcRuntimeTypeShape::Sequence {
-                kind: RuntimePlanSequenceKind::Vec,
-                item,
-            }) = runtime_shape(program, sequence_ty)
-            else {
-                return invalid_type(at, "Vec local receiver");
-            };
-            (*sequence, *item)
-        }
-        AwbcMutablePlace::NominalField { base, field } => {
-            let field_id =
-                crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(*field as usize)
-                    .map_err(|_| AwbcVerifyError::InvalidInvariant {
-                        at: at.into(),
-                        message: "invalid Vec field coordinate".into(),
-                    })?;
-            let record_ty = read_aggregate_root(verifier, function, block, *base, state)?;
-            read_place_type(verifier, function, block, *base, &[field_id], state)?;
-            let Some(AwbcRuntimeTypeShape::NominalRecord { fields, .. }) =
-                runtime_shape(program, record_ty)
-            else {
-                return invalid_type(at, "nominal record field receiver");
-            };
-            let Some(field_layout) = fields.get(*field as usize) else {
-                return invalid_type(at, "existing nominal Vec field");
-            };
-            let Some(AwbcRuntimeTypeShape::Sequence {
-                kind: RuntimePlanSequenceKind::Vec,
-                item,
-            }) = runtime_shape(program, field_layout.ty)
-            else {
-                return invalid_type(at, "nominal record field of Vec type");
-            };
-            (*base, *item)
-        }
+    let (base, sequence_ty) = mutable_place_type(
+        verifier,
+        function,
+        block,
+        place,
+        state,
+        MutablePlaceAccess::Read,
+        at,
+    )?;
+    let Some(AwbcRuntimeTypeShape::Sequence {
+        kind: RuntimePlanSequenceKind::Vec,
+        item,
+    }) = runtime_shape(program, sequence_ty)
+    else {
+        return invalid_type(at, "Vec receiver place");
     };
+    let item = *item;
     let receiver_role = function_layout(verifier, function)
         .slots
         .get(base.index())
@@ -1528,26 +1506,15 @@ fn apply_instruction(
         }
         AwbcInstruction::Assign { place, value, .. } => {
             let value_ty = read_register(verifier, function, block, *value, state)?;
-            let expected = match place {
-                AwbcMutablePlace::Local(target) => {
-                    register_type(verifier, function, block, *target)?
-                }
-                AwbcMutablePlace::NominalField { base, field } => {
-                    let target_ty = read_aggregate_root(verifier, function, block, *base, state)?;
-                    let Some(AwbcRuntimeTypeShape::NominalRecord { fields, .. }) =
-                        runtime_shape(program, target_ty)
-                    else {
-                        return invalid_type(&at, "nominal assignment target");
-                    };
-                    fields
-                        .get(*field as usize)
-                        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
-                            at: at.clone(),
-                            message: "assigned field does not exist".to_owned(),
-                        })?
-                        .ty
-                }
-            };
+            let (_, expected) = mutable_place_type(
+                verifier,
+                function,
+                block,
+                place,
+                state,
+                MutablePlaceAccess::Replace,
+                &at,
+            )?;
             require_compatible(program, expected, value_ty, "place assignment")?;
         }
         AwbcInstruction::CallTraitMethod {
@@ -2300,62 +2267,43 @@ fn apply_instruction_copy_and_move_effects(
         }
         AwbcInstruction::VecPush { place, value } => {
             consumed.push(*value);
-            let base = mutable_place_base(place);
+            let base = place.base();
             mutated.push(base);
             if base == *value {
                 return invalid_type(at, "Vec push value distinct from mutable receiver");
             }
             let item_proof = state.copy_proofs[value.index()].clone();
-            mutated_proof = Some(match place {
-                AwbcMutablePlace::Local(_) => {
-                    append_sequence_proof(state.copy_proofs[base.index()].clone(), item_proof)
-                }
-                AwbcMutablePlace::NominalField { field, .. } => update_record_proof_field(
-                    &state.copy_proofs[base.index()],
-                    *field as usize,
-                    match runtime_shape(program, register_type(verifier, function, block, base)?) {
-                        Some(AwbcRuntimeTypeShape::NominalRecord { fields, .. }) => fields.len(),
-                        _ => 0,
-                    },
-                    |field_proof| append_sequence_proof(field_proof, item_proof.clone()),
-                ),
-            });
+            mutated_proof = Some(update_record_proof_path(
+                &state.copy_proofs[base.index()],
+                program,
+                register_type(verifier, function, block, base)?,
+                place.fields(),
+                at,
+                |proof| append_sequence_proof(proof, item_proof),
+            )?);
         }
         AwbcInstruction::SequencePopFront { dst, place }
         | AwbcInstruction::VecPop { dst, place } => {
-            let base = mutable_place_base(place);
+            let base = place.base();
             outputs.push(*dst);
             let base_ty = register_type(verifier, function, block, base)?;
-            let item_ty = match place {
-                AwbcMutablePlace::Local(_) => match runtime_shape(program, base_ty) {
-                    Some(AwbcRuntimeTypeShape::Sequence { item, .. }) => *item,
-                    _ => register_type(verifier, function, block, *dst)?,
-                },
-                AwbcMutablePlace::NominalField { field, .. } => {
-                    match runtime_shape(program, base_ty) {
-                        Some(AwbcRuntimeTypeShape::NominalRecord { fields, .. }) => fields
-                            .get(*field as usize)
-                            .and_then(|field| match runtime_shape(program, field.ty) {
-                                Some(AwbcRuntimeTypeShape::Sequence { item, .. }) => Some(*item),
-                                _ => None,
-                            })
-                            .unwrap_or(register_type(verifier, function, block, *dst)?),
-                        _ => register_type(verifier, function, block, *dst)?,
-                    }
-                }
+            let mut sequence_ty = base_ty;
+            for field in place.fields() {
+                sequence_ty = record_child_type(program, sequence_ty, *field, at)?;
+            }
+            let Some(AwbcRuntimeTypeShape::Sequence { item, .. }) =
+                runtime_shape(program, sequence_ty)
+            else {
+                return invalid_type(at, "sequence place type");
             };
-            let sequence_proof = match place {
-                AwbcMutablePlace::Local(_) => state.copy_proofs[base.index()].clone(),
-                AwbcMutablePlace::NominalField { field, .. } => {
-                    match &state.copy_proofs[base.index()] {
-                        CopyProof::Record(fields) => fields
-                            .get(*field as usize)
-                            .cloned()
-                            .unwrap_or(CopyProof::Affine),
-                        _ => CopyProof::Affine,
-                    }
-                }
-            };
+            let item_ty = *item;
+            let sequence_proof = place
+                .fields()
+                .iter()
+                .try_fold(state.copy_proofs[base.index()].clone(), |proof, field| {
+                    proof.element(field.zero_based() as usize)
+                })
+                .unwrap_or(CopyProof::Affine);
             let item_proof = sequence_element_proof(&sequence_proof, program, item_ty);
             let option_ty = register_type(verifier, function, block, *dst)?;
             output_proof = Some(if item_proof.permits_copy() {
@@ -2364,18 +2312,14 @@ fn apply_instruction_copy_and_move_effects(
                 base_copy_proof(program, option_ty)
             });
             let popped_proof = pop_sequence_proof(sequence_proof);
-            mutated_proof = Some(match place {
-                AwbcMutablePlace::Local(_) => popped_proof,
-                AwbcMutablePlace::NominalField { field, .. } => update_record_proof_field(
-                    &state.copy_proofs[base.index()],
-                    *field as usize,
-                    match runtime_shape(program, base_ty) {
-                        Some(AwbcRuntimeTypeShape::NominalRecord { fields, .. }) => fields.len(),
-                        _ => 0,
-                    },
-                    |_| popped_proof,
-                ),
-            });
+            mutated_proof = Some(update_record_proof_path(
+                &state.copy_proofs[base.index()],
+                program,
+                base_ty,
+                place.fields(),
+                at,
+                |_| popped_proof,
+            )?);
             mutated.push(base);
         }
         AwbcInstruction::MakeRecord { dst, fields, .. } => {
@@ -2641,32 +2585,22 @@ fn apply_instruction_copy_and_move_effects(
                     outputs.push(*target);
                     output_proof = Some(value_proof);
                 }
-                AwbcMutablePlace::NominalField {
+                AwbcMutablePlace::Fields {
                     base: target,
-                    field,
+                    fields,
                 } => {
-                    let field = crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(
-                        *field as usize,
-                    )
-                    .map_err(|_| AwbcVerifyError::InvalidInvariant {
-                        at: at.into(),
-                        message: "invalid assigned field".into(),
-                    })?;
                     state.moved_fields.retain(|(register, path), _| {
-                        *register != *target || !path.starts_with(&[field])
+                        *register != *target || !path.starts_with(fields)
                     });
                     mutated.push(*target);
-                    let record_ty = register_type(verifier, function, block, *target)?;
-                    let field_count = match runtime_shape(program, record_ty) {
-                        Some(AwbcRuntimeTypeShape::NominalRecord { fields, .. }) => fields.len(),
-                        _ => 0,
-                    };
-                    mutated_proof = Some(update_record_proof_field(
+                    mutated_proof = Some(update_record_proof_path(
                         &state.copy_proofs[target.index()],
-                        field.zero_based() as usize,
-                        field_count,
+                        program,
+                        register_type(verifier, function, block, *target)?,
+                        fields,
+                        at,
                         |_| value_proof,
-                    ));
+                    )?);
                 }
             }
         }
@@ -2775,31 +2709,95 @@ fn pop_sequence_proof(sequence: CopyProof) -> CopyProof {
     }
 }
 
-fn update_record_proof_field(
+fn update_record_proof_path(
     proof: &CopyProof,
-    field: usize,
-    field_count: usize,
+    program: &AwbcProgram,
+    mut ty: AwbcTypeId,
+    path: &[crate::value::RuntimeRecordFieldId],
+    at: &str,
     update: impl FnOnce(CopyProof) -> CopyProof,
-) -> CopyProof {
-    match proof {
-        CopyProof::Copyable if field < field_count => {
-            let mut fields = vec![CopyProof::Copyable; field_count];
-            fields[field] = update(CopyProof::Copyable);
-            CopyProof::Record(fields).compact()
+) -> Result<CopyProof, AwbcVerifyError> {
+    let mut proof = proof.clone();
+    let mut parents = Vec::with_capacity(path.len());
+    for field in path {
+        let index = field.zero_based() as usize;
+        let Some(AwbcRuntimeTypeShape::NominalRecord { fields, .. }) = runtime_shape(program, ty)
+        else {
+            return invalid_type(at, "mutable record proof path");
+        };
+        let mut values = match proof {
+            CopyProof::Copyable => vec![CopyProof::Copyable; fields.len()],
+            CopyProof::Record(values) => values,
+            _ => return Ok(CopyProof::Affine),
+        };
+        if index >= values.len() {
+            return invalid_type(at, "existing mutable proof field");
         }
-        CopyProof::Record(values) if field < values.len() => {
-            let mut values = values.clone();
-            values[field] = update(values[field].clone());
-            CopyProof::Record(values).compact()
-        }
-        _ => CopyProof::Affine,
+        proof = std::mem::replace(&mut values[index], CopyProof::Affine);
+        parents.push((values, index));
+        ty = record_child_type(program, ty, *field, at)?;
     }
+    proof = update(proof);
+    for (mut values, index) in parents.into_iter().rev() {
+        values[index] = proof;
+        proof = CopyProof::Record(values).compact();
+    }
+    Ok(proof)
 }
 
-fn mutable_place_base(place: &AwbcMutablePlace) -> AwbcRegisterId {
-    match place {
-        AwbcMutablePlace::Local(base) | AwbcMutablePlace::NominalField { base, .. } => *base,
+#[derive(Clone, Copy)]
+enum MutablePlaceAccess {
+    Read,
+    Replace,
+}
+
+fn mutable_place_type(
+    verifier: &Verifier<'_, '_>,
+    function: usize,
+    block: usize,
+    place: &AwbcMutablePlace,
+    state: &FlowState,
+    access: MutablePlaceAccess,
+    at: &str,
+) -> Result<(AwbcRegisterId, AwbcTypeId), AwbcVerifyError> {
+    let base = place.base();
+    let fields = place.fields();
+    if matches!(place, AwbcMutablePlace::Local(_)) {
+        let ty = match access {
+            MutablePlaceAccess::Read => read_register(verifier, function, block, base, state)?,
+            MutablePlaceAccess::Replace => register_type(verifier, function, block, base)?,
+        };
+        return Ok((base, ty));
     }
+    if fields.is_empty() {
+        return invalid_type(at, "nonempty projected mutable place");
+    }
+    let mut ty = read_aggregate_root(verifier, function, block, base, state)?;
+    if state.moved_fields.keys().any(|(root, moved)| {
+        *root == base
+            && match access {
+                MutablePlaceAccess::Read => fields.starts_with(moved) || moved.starts_with(fields),
+                MutablePlaceAccess::Replace => {
+                    fields.starts_with(moved) && fields.len() > moved.len()
+                }
+            }
+    }) {
+        return Err(AwbcVerifyError::UninitializedRegister {
+            function,
+            block,
+            register: base.0,
+        });
+    }
+    for field in fields {
+        if !matches!(
+            runtime_shape(verifier.program, ty),
+            Some(AwbcRuntimeTypeShape::NominalRecord { .. })
+        ) {
+            return invalid_type(at, "nominal stored record place");
+        }
+        ty = record_child_type(verifier.program, ty, *field, at)?;
+    }
+    Ok((base, ty))
 }
 
 impl RuntimeAgentTypeContext for AwbcProgram {

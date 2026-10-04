@@ -37,10 +37,10 @@ impl Wire for AwbcMutablePlace {
                 writer.write_u8(0);
                 register.write_wire(writer)?;
             }
-            Self::NominalField { base, field } => {
+            Self::Fields { base, fields } => {
                 writer.write_u8(1);
                 base.write_wire(writer)?;
-                field.write_wire(writer)?;
+                writer.write_table(fields)?;
             }
         }
         Ok(())
@@ -50,9 +50,9 @@ impl Wire for AwbcMutablePlace {
         let offset = reader.offset();
         match reader.read_u8()? {
             0 => Ok(Self::Local(AwbcRegisterId::read_wire(reader)?)),
-            1 => Ok(Self::NominalField {
+            1 => Ok(Self::Fields {
                 base: AwbcRegisterId::read_wire(reader)?,
-                field: u32::read_wire(reader)?,
+                fields: Vec::<RuntimeRecordFieldId>::read_wire(reader)?.into_boxed_slice(),
             }),
             tag => Err(AwbcCodecError::UnknownTag {
                 kind: "mutable place",

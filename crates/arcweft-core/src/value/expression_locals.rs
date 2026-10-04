@@ -84,14 +84,12 @@ impl RuntimeExpr {
             }
             RuntimeExprKind::SequencePopFront { place } => match place {
                 RuntimeMutablePlace::Local(local) => push_free_local(*local, bound, locals),
-                RuntimeMutablePlace::NominalField { base, .. } => {
-                    push_free_local(*base, bound, locals)
-                }
+                RuntimeMutablePlace::Fields { base, .. } => push_free_local(*base, bound, locals),
             },
             RuntimeExprKind::SequencePush { place, value } => {
                 match place {
                     RuntimeMutablePlace::Local(local) => push_free_local(*local, bound, locals),
-                    RuntimeMutablePlace::NominalField { base, .. } => {
+                    RuntimeMutablePlace::Fields { base, .. } => {
                         push_free_local(*base, bound, locals)
                     }
                 }
@@ -99,9 +97,7 @@ impl RuntimeExpr {
             }
             RuntimeExprKind::SequencePopBack { place } => match place {
                 RuntimeMutablePlace::Local(local) => push_free_local(*local, bound, locals),
-                RuntimeMutablePlace::NominalField { base, .. } => {
-                    push_free_local(*base, bound, locals)
-                }
+                RuntimeMutablePlace::Fields { base, .. } => push_free_local(*base, bound, locals),
             },
             RuntimeExprKind::Let {
                 binding,

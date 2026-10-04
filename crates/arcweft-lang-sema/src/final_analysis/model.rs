@@ -2622,6 +2622,11 @@ impl CheckedExpression {
             CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) => {
                 Some(CheckedPlace::from_local(*local))
             }
+            CheckedExpressionResolution::Select(CheckedSelectResolution::Field(access))
+                if access.binding_place().is_some() =>
+            {
+                access.binding_place().cloned()
+            }
             _ => self.data.mutable_place.clone(),
         }
     }
@@ -2667,6 +2672,9 @@ impl CheckedExpression {
             || self.value_type()?.semantic_identity_digest().ok()? != field.field_type()
         {
             return None;
+        }
+        if let Some(binding) = access.binding_place() {
+            return (*binding == place).then_some(self);
         }
         self.data.mutable_place = Some(place);
         Some(self)

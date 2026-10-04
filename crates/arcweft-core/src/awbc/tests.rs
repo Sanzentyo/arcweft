@@ -697,23 +697,35 @@ fn nominal_field_sequence_pop_front_program() -> AwbcProgram {
         },
         AwbcInstruction::SequencePopFront {
             dst: AwbcRegisterId(4),
-            place: AwbcMutablePlace::NominalField {
+            place: AwbcMutablePlace::Fields {
                 base: AwbcRegisterId(3),
-                field: 0,
+                fields: vec![
+                    crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal((0) as usize)
+                        .unwrap(),
+                ]
+                .into_boxed_slice(),
             },
         },
         AwbcInstruction::SequencePopFront {
             dst: AwbcRegisterId(5),
-            place: AwbcMutablePlace::NominalField {
+            place: AwbcMutablePlace::Fields {
                 base: AwbcRegisterId(3),
-                field: 0,
+                fields: vec![
+                    crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal((0) as usize)
+                        .unwrap(),
+                ]
+                .into_boxed_slice(),
             },
         },
         AwbcInstruction::SequencePopFront {
             dst: AwbcRegisterId(6),
-            place: AwbcMutablePlace::NominalField {
+            place: AwbcMutablePlace::Fields {
                 base: AwbcRegisterId(3),
-                field: 0,
+                fields: vec![
+                    crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal((0) as usize)
+                        .unwrap(),
+                ]
+                .into_boxed_slice(),
             },
         },
     ];
@@ -766,9 +778,12 @@ fn sequence_vec_push_pop_program() -> AwbcProgram {
 
 fn nominal_field_vec_push_pop_program() -> AwbcProgram {
     let mut program = nominal_field_sequence_pop_front_program();
-    let place = AwbcMutablePlace::NominalField {
+    let place = AwbcMutablePlace::Fields {
         base: AwbcRegisterId(3),
-        field: 0,
+        fields: vec![
+            crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal((0) as usize).unwrap(),
+        ]
+        .into_boxed_slice(),
     };
     program.instructions = vec![
         AwbcInstruction::LoadConst {
@@ -789,24 +804,24 @@ fn nominal_field_vec_push_pop_program() -> AwbcProgram {
             fields: vec![AwbcRegisterId(2)],
         },
         AwbcInstruction::VecPush {
-            place,
+            place: place.clone(),
             value: AwbcRegisterId(0),
         },
         AwbcInstruction::VecPop {
             dst: AwbcRegisterId(4),
-            place,
+            place: place.clone(),
         },
         AwbcInstruction::LoadConst {
             dst: AwbcRegisterId(1),
             constant: AwbcConstantId(1),
         },
         AwbcInstruction::VecPush {
-            place,
+            place: place.clone(),
             value: AwbcRegisterId(1),
         },
         AwbcInstruction::VecPop {
             dst: AwbcRegisterId(5),
-            place,
+            place: place.clone(),
         },
     ];
     program.blocks[0].instructions = AwbcTableRange::new(0, 9);
@@ -917,11 +932,11 @@ fn vec_push_and_pop_roundtrip_verify_and_mutate_nominal_field_places() {
 
     let mut missing_field = program.clone();
     if let AwbcInstruction::VecPush {
-        place: AwbcMutablePlace::NominalField { field, .. },
+        place: AwbcMutablePlace::Fields { fields, .. },
         ..
     } = &mut missing_field.instructions[4]
     {
-        *field = 1;
+        fields[0] = crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(1).unwrap();
     } else {
         panic!("first Vec.push instruction targets a nominal field");
     }
@@ -1299,11 +1314,11 @@ fn nominal_field_sequence_pop_front_roundtrips_verifies_mutates_and_survives_res
 
     let mut missing_field = program.clone();
     if let AwbcInstruction::SequencePopFront {
-        place: AwbcMutablePlace::NominalField { field, .. },
+        place: AwbcMutablePlace::Fields { fields, .. },
         ..
     } = &mut missing_field.instructions[4]
     {
-        *field = 1;
+        fields[0] = crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(1).unwrap();
     } else {
         panic!("first mutation targets a nominal field");
     }

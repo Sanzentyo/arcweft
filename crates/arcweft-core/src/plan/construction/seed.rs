@@ -1938,9 +1938,9 @@ impl RuntimeRecordFieldSeedId {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeMutablePlaceSeed {
     Local(RuntimeLocalSeedId),
-    NominalField {
+    Fields {
         base: RuntimeLocalSeedId,
-        field: RuntimeRecordFieldSeedId,
+        fields: Box<[RuntimeRecordFieldSeedId]>,
     },
 }
 
@@ -1960,7 +1960,7 @@ impl RuntimeAssignmentSeed {
 impl RuntimeMutablePlaceSeed {
     pub const fn local(&self) -> &RuntimeLocalSeedId {
         match self {
-            Self::Local(local) | Self::NominalField { base: local, .. } => local,
+            Self::Local(local) | Self::Fields { base: local, .. } => local,
         }
     }
 }
@@ -2601,14 +2601,14 @@ impl RuntimeExprSeed {
             RuntimeExprSeedKind::Local(read) => push_free_local(read.local(), bound, locals),
             RuntimeExprSeedKind::SequencePopFront { place } => match place {
                 RuntimeMutablePlaceSeed::Local(local) => push_free_local(local, bound, locals),
-                RuntimeMutablePlaceSeed::NominalField { base, .. } => {
+                RuntimeMutablePlaceSeed::Fields { base, .. } => {
                     push_free_local(base, bound, locals)
                 }
             },
             RuntimeExprSeedKind::SequencePush { place, value } => {
                 match place {
                     RuntimeMutablePlaceSeed::Local(local) => push_free_local(local, bound, locals),
-                    RuntimeMutablePlaceSeed::NominalField { base, .. } => {
+                    RuntimeMutablePlaceSeed::Fields { base, .. } => {
                         push_free_local(base, bound, locals)
                     }
                 }
@@ -2616,7 +2616,7 @@ impl RuntimeExprSeed {
             }
             RuntimeExprSeedKind::SequencePopBack { place } => match place {
                 RuntimeMutablePlaceSeed::Local(local) => push_free_local(local, bound, locals),
-                RuntimeMutablePlaceSeed::NominalField { base, .. } => {
+                RuntimeMutablePlaceSeed::Fields { base, .. } => {
                     push_free_local(base, bound, locals)
                 }
             },

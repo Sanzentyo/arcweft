@@ -29,10 +29,15 @@ impl CheckedPlace {
             expression(current).map(crate::final_analysis::CheckedExpression::resolution)
         {
             field.selection().runtime_field()?;
-            fields.push(field.selection().clone());
             match field.receiver() {
-                CheckedFieldReceiver::Binding(_) => break,
-                CheckedFieldReceiver::Expression(receiver) => current = receiver,
+                CheckedFieldReceiver::Binding(_) => {
+                    fields.extend(field.binding_place()?.fields().iter().rev().cloned());
+                    break;
+                }
+                CheckedFieldReceiver::Expression(receiver) => {
+                    fields.push(field.selection().clone());
+                    current = receiver;
+                }
             }
         }
         fields.reverse();

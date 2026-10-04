@@ -53,24 +53,23 @@ use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use super::{
-    RuntimeAgentTypeShape, RuntimeAssignmentFact, RuntimeAssignmentPlace,
-    RuntimeBuiltinIteratorFact, RuntimeCallResultShape, RuntimeCallableAttachedContentAbi,
-    RuntimeCheckedTypeProjectionError, RuntimeDeferFact, RuntimeDropFadeFact,
-    RuntimeDropPolicyFact, RuntimeEvaluatedEffect, RuntimeEvaluatedEffectFact,
-    RuntimeEvaluatedEffectOperandFact, RuntimeIteratorFact, RuntimeIteratorWitnessExecutableFact,
-    RuntimeIteratorWitnessFact, RuntimeNormalizedVariantCase, RuntimePlanSemanticFactInput,
-    RuntimePlanSemanticFacts, RuntimePositionedAttachedContent, RuntimeProjectCallable,
-    RuntimeRecordTypeField, RuntimeRegisteredValueId, RuntimeResolvedAttachedContent,
-    RuntimeResolvedCall, RuntimeResolvedCallDispatch, RuntimeResolvedCallError,
-    RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
+    RuntimeAgentTypeShape, RuntimeAssignmentFact, RuntimeBuiltinIteratorFact,
+    RuntimeCallResultShape, RuntimeCallableAttachedContentAbi, RuntimeCheckedTypeProjectionError,
+    RuntimeDeferFact, RuntimeDropFadeFact, RuntimeDropPolicyFact, RuntimeEvaluatedEffect,
+    RuntimeEvaluatedEffectFact, RuntimeEvaluatedEffectOperandFact, RuntimeIteratorFact,
+    RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact, RuntimeNormalizedVariantCase,
+    RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts, RuntimePositionedAttachedContent,
+    RuntimeProjectCallable, RuntimeRecordTypeField, RuntimeRegisteredValueId,
+    RuntimeResolvedAttachedContent, RuntimeResolvedCall, RuntimeResolvedCallDispatch,
+    RuntimeResolvedCallError, RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
     RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
-    RuntimeResolvedCallOperandSource, RuntimeResolvedNominal, RuntimeResolvedSelect,
-    RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeResolvedVariant,
-    RuntimeResolvedVariantError, RuntimeSemanticFactFamily, RuntimeSemanticFactsError,
-    RuntimeSemanticOwnerSet, RuntimeSemanticTypeId, RuntimeSequenceKind, RuntimeTraitIdentity,
-    RuntimeTraitMethodFact, RuntimeTraitMethodInstanceKey, RuntimeTriggerAdmissionKind,
-    RuntimeTypeProjectionStep, RuntimeTypeShape, RuntimeUnsupportedTypeShape,
-    validate_iterator_witness_method_edges,
+    RuntimeResolvedCallOperandSource, RuntimeResolvedNominal, RuntimeResolvedPlace,
+    RuntimeResolvedSelect, RuntimeResolvedStaticCallTarget, RuntimeResolvedValue,
+    RuntimeResolvedVariant, RuntimeResolvedVariantError, RuntimeSemanticFactFamily,
+    RuntimeSemanticFactsError, RuntimeSemanticOwnerSet, RuntimeSemanticTypeId, RuntimeSequenceKind,
+    RuntimeTraitIdentity, RuntimeTraitMethodFact, RuntimeTraitMethodInstanceKey,
+    RuntimeTriggerAdmissionKind, RuntimeTypeProjectionStep, RuntimeTypeShape,
+    RuntimeUnsupportedTypeShape, validate_iterator_witness_method_edges,
 };
 
 #[test]
@@ -759,6 +758,7 @@ fn assignment_fact_fixture(
             "    point.active = true\n",
             "    return point.active\n",
             "}\n",
+            "fn __runtime_plan_test_probe() -> Unit { () }\n",
         ),
     );
     let executable = project.analysis_view().expect("assignment fixture");
@@ -814,10 +814,9 @@ fn assignment_fact_fixture(
     let runtime_field = RuntimeRecordFieldId::try_from_zero_based_ordinal(1)
         .expect("assignment fixture field coordinate");
     let fact = RuntimeAssignmentFact::new(
-        RuntimeAssignmentPlace::NominalField {
+        RuntimeResolvedPlace::Fields {
             base: local,
-            nominal: resolved.clone(),
-            field: runtime_field,
+            fields: vec![runtime_field].into_boxed_slice(),
         },
         field_type.clone(),
     );
@@ -844,6 +843,39 @@ fn assignment_fact_fixture(
             field: runtime_field,
         },
     );
+    let document = Arc::clone(module.provenance().document());
+    let world = ProjectSymbolWorldId::try_new(
+        project.package().clone(),
+        document.identity().id().clone(),
+        "runtime-plan-semantic-facts-test",
+    )
+    .unwrap();
+    let registrations = arcweft_lang_sema::registration::ProjectRegistrationFacts::try_new(
+        world,
+        vec![document],
+        vec![],
+        vec![],
+        vec![],
+    )
+    .unwrap();
+    let registered = arcweft_lang_sema::registration::CharacterRegistrar::register(
+        arcweft_lang_sema::registration::CharacterRegistrationRequest::new(
+            Arc::new(arcweft_lang_sema::env::TypeCheckEnv::standard()),
+            project.view(),
+            &registrations,
+            None,
+        ),
+    )
+    .unwrap();
+    let cancelled = std::sync::atomic::AtomicBool::new(false);
+    let analysis = arcweft_lang_sema::final_analysis::analyze_final_project(
+        project.analysis_view().unwrap(),
+        registered.symbols(),
+        arcweft_lang_sema::final_analysis::FinalSemanticCatalogs::production(&registered),
+        arcweft_lang_sema::final_analysis::FinalSemanticAnalysisControl::new(&cancelled),
+    )
+    .unwrap();
+    input.attach_checked_local_uses(Arc::clone(analysis.checked_local_uses()));
     (project, input, statement, extra_statement, fact)
 }
 
@@ -1020,9 +1052,13 @@ fn assignment_facts_are_complete_unique_and_bound_to_assignment_statements() {
         .expect("assignment accessor returns the sole fact");
     assert_eq!(accepted, &fact);
     assert!(
-        matches!(accepted.place(), RuntimeAssignmentPlace::NominalField { field, .. } if field.zero_based() == 1)
+        matches!(accepted.place(), RuntimeResolvedPlace::Fields { fields, .. } if fields.len() == 1 && fields[0].zero_based() == 1)
     );
-    let RuntimeAssignmentPlace::NominalField { nominal, .. } = accepted.place() else {
+    let RuntimeTypeShape::Nominal { nominal, .. } = facts
+        .local_type(accepted.place().local())
+        .expect("assignment local")
+        .shape()
+    else {
         panic!("nominal fixture")
     };
     let proof = facts
@@ -1804,17 +1840,17 @@ fn every_direct_operational_shape_selects_its_closed_plan_family() {
     let cases = vec![
         (
             RuntimeTypeShape::Range(boxed_unit_type()),
-            RuntimeUnsupportedTypeShape::Range,
+            Some(RuntimeUnsupportedTypeShape::Range),
             RuntimeOperationalType::Range,
         ),
         (
             RuntimeTypeShape::Iterator(boxed_unit_type()),
-            RuntimeUnsupportedTypeShape::Iterator,
+            Some(RuntimeUnsupportedTypeShape::Iterator),
             RuntimeOperationalType::Iterator,
         ),
         (
             RuntimeTypeShape::Need(boxed_unit_type()),
-            RuntimeUnsupportedTypeShape::Need,
+            None,
             RuntimeOperationalType::Need,
         ),
         (
@@ -1822,22 +1858,22 @@ fn every_direct_operational_shape_selects_its_closed_plan_family() {
                 item: boxed_unit_type(),
                 error: boxed_unit_type(),
             },
-            RuntimeUnsupportedTypeShape::Stream,
+            Some(RuntimeUnsupportedTypeShape::Stream),
             RuntimeOperationalType::Stream,
         ),
         (
             RuntimeTypeShape::ThreadHandle(boxed_unit_type()),
-            RuntimeUnsupportedTypeShape::ThreadHandle,
+            Some(RuntimeUnsupportedTypeShape::ThreadHandle),
             RuntimeOperationalType::ThreadHandle,
         ),
         (
             RuntimeTypeShape::Shared(boxed_unit_type()),
-            RuntimeUnsupportedTypeShape::Shared,
+            Some(RuntimeUnsupportedTypeShape::Shared),
             RuntimeOperationalType::Shared,
         ),
         (
             RuntimeTypeShape::Reference(boxed_unit_type()),
-            RuntimeUnsupportedTypeShape::Reference,
+            Some(RuntimeUnsupportedTypeShape::Reference),
             RuntimeOperationalType::Reference,
         ),
         (
@@ -1846,7 +1882,7 @@ fn every_direct_operational_shape_selects_its_closed_plan_family() {
                 parameters: vec![unit_type()].into_boxed_slice(),
                 result: boxed_unit_type(),
             },
-            RuntimeUnsupportedTypeShape::Function,
+            None,
             RuntimeOperationalType::Function,
         ),
     ];
@@ -1855,7 +1891,7 @@ fn every_direct_operational_shape_selects_its_closed_plan_family() {
         let marker = 0x30_u8 + u8::try_from(index).expect("bounded operational fixture");
         let identity = RuntimeSemanticTypeId::from_bytes([marker; 32]);
         let normalized = super::RuntimeNormalizedType::new(identity, shape);
-        if operational == RuntimeOperationalType::Function {
+        if unsupported.is_none() {
             let checked = normalized.checked_type().unwrap();
             assert_eq!(checked, RuntimeCheckedType::ExecutableRef(identity));
             assert_eq!(checked.semantic_identity_digest(), identity);
@@ -1866,7 +1902,7 @@ fn every_direct_operational_shape_selects_its_closed_plan_family() {
                 Err(RuntimeCheckedTypeProjectionError::UnsupportedRuntimeShape {
                     semantic_identity: identity,
                     path: super::RuntimeTypeProjectionPath::root(),
-                    shape: unsupported,
+                    shape: unsupported.expect("unsupported operational shape"),
                 })
             );
         }

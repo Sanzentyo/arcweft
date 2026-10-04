@@ -4213,7 +4213,7 @@ impl Analyzer<'_, '_, '_> {
                                 }
                                 None => {
                                     if let Some(receiver_fact) = self
-                                        .prepare_direct_project_field_path_receiver(
+                                        .prepare_project_field_path_receiver(
                                             module,
                                             *value_receiver,
                                             expression.scope(),

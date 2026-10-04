@@ -15,6 +15,12 @@ pub enum CheckedLocalUseAuthority {
 }
 
 impl CheckedLocalUseAuthority {
+    pub fn access_at(&self, site: CheckedLocalUseSite) -> Option<&super::CheckedLocalAccess> {
+        match self {
+            Self::Global(catalog) => catalog.access_at(site),
+            Self::Instance(catalog) => catalog.access_at(site),
+        }
+    }
     pub fn place_access_at(
         &self,
         source: ExprId,

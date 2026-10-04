@@ -1221,28 +1221,18 @@ flow main() -> i64 {
 );
 
 #[test]
-fn vec_pop_front_rejects_nested_and_indexed_nominal_fields() {
-    for source in [
-        r#"
-struct Queue { items: Vec<i64> }
-struct Boxed { queue: Queue }
-flow main() -> i64 {
-    let boxed = Boxed { queue = Queue { items = [1i64] } }
-    let popped = boxed.queue.items.pop_front()
-    return 42i64
-}
-"#,
-        r#"
+fn vec_pop_front_rejects_indexed_nominal_fields() {
+    for source in [r#"
 struct Queue { items: Vec<i64> }
 flow main() -> i64 {
     let queues = [Queue { items = [1i64] }]
     let popped = queues[0i64].items.pop_front()
     return 42i64
 }
-"#,
-    ] {
+"#]
+    {
         let error = compile_source(source)
-            .expect_err("computed and nested field paths are not writable receiver places");
+            .expect_err("indexed field paths are not writable receiver places");
         assert!(
             !error.project().diagnostics().is_empty(),
             "unsupported receiver reports a source-backed compile diagnostic: {error:?}"
@@ -1299,13 +1289,13 @@ flow main() -> i64 {
         .find(|instruction| matches!(instruction, AwbcInstruction::Assign { .. }))
         .expect("assignment instruction");
     let AwbcInstruction::Assign {
-        place: arcweft_core::awbc::schema::AwbcMutablePlace::NominalField { field, .. },
+        place: arcweft_core::awbc::schema::AwbcMutablePlace::Fields { fields, .. },
         ..
     } = write
     else {
         unreachable!()
     };
-    *field = 1;
+    fields[0] = arcweft_core::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(1).unwrap();
     assert!(matches!(
         wrong_write.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
         Err(AwbcVerifyError::InvalidInvariant { .. })
@@ -1318,7 +1308,7 @@ flow main() -> i64 {
         .find(|instruction| matches!(instruction, AwbcInstruction::Assign { .. }))
         .expect("assignment instruction");
     let AwbcInstruction::Assign {
-        place: arcweft_core::awbc::schema::AwbcMutablePlace::NominalField { base: target, .. },
+        place: arcweft_core::awbc::schema::AwbcMutablePlace::Fields { base: target, .. },
         value,
         ..
     } = write
@@ -1346,4 +1336,209 @@ flow main() -> i64 {
         wrong_read.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
         Err(AwbcVerifyError::InvalidInvariant { .. })
     ));
+}
+
+#[test]
+fn nested_record_places_share_assignment_and_sequence_mutation_in_both_backends() {
+    const SOURCE: &str = r#"
+entry cli @entry.main { goto @flow.main }
+struct Leaf { items: Vec<i64>, total: i64 }
+struct Node { leaf: Leaf, sibling: i64 }
+struct Root { node: Node }
+flow main() -> i64 {
+    let mut root = Root { node = Node { leaf = Leaf { items = [2i64], total = 0i64 }, sibling = 99i64 } }
+    root.node.leaf.total = 40i64
+    root.node.leaf.items.push(7i64)
+    let first = root.node.leaf.items.pop_front()
+    match first {
+        .Some(value) => return root.node.leaf.total + value
+        .None => return 0i64
+    }
+}
+"#;
+    assert_native_return(SOURCE, "42");
+    assert_awbc_return(SOURCE, RuntimeValue::i64(42));
+}
+
+callable_case!(
+    nested_affine_field_reinitializes_while_siblings_remain_available,
+    r#"
+struct Leaf { items: Vec<Content>, total: i64 }
+struct Root { leaf: Leaf }
+flow main() -> i64 {
+    let root = Root { leaf = Leaf { items = Vec<Content>::with_capacity(0usize), total = 40i64 } }
+    let moved = root.leaf.items
+    let sibling = root.leaf.total
+    root.leaf.items = Vec<Content>::with_capacity(0usize)
+    let current = root.leaf.items
+    return sibling + 2i64
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    nested_mutation_loan_allows_a_disjoint_affine_sibling_move,
+    r#"
+struct Left { items: Vec<i64> }
+struct Right { items: Vec<Content> }
+struct Root { left: Left, right: Right }
+flow main() -> i64 {
+    let root = Root { left = Left { items = [35i64] }, right = Right { items = Vec<Content>::with_capacity(0usize) } }
+    root.left.items.push({ let moved = root.right.items; 7i64 })
+    match root.left.items.pop() {
+        .Some(value) => return value + 35i64
+        .None => return 0i64
+    }
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    nested_generic_assignment_closes_every_field_schema_in_both_backends,
+    r#"
+struct Leaf<T> { value: T }
+struct Root<T> { leaf: Leaf<T> }
+fn replace<T>(root: Root<T>, value: T) -> Root<T> { root.leaf.value = value; root }
+flow main() -> i64 {
+    let root = replace(Root { leaf = Leaf { value = 1i64 } }, 42i64)
+    return root.leaf.value
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+#[test]
+fn nested_places_reject_moved_ancestors_and_overlapping_mutation_loans() {
+    for (source, expected_message) in [
+        (
+            r#"struct Leaf { items: Vec<Content>, total: i64 }
+struct Root { leaf: Leaf }
+fn invalid(root: Root) -> i64 { let moved = root.leaf; root.leaf.total = 42i64; 0i64 }
+flow main() -> i64 { return 0i64 }
+"#,
+            "unavailable",
+        ),
+        (
+            r#"struct Leaf { items: Vec<Content> }
+struct Root { leaf: Leaf }
+fn invalid(root: Root, value: Content) { root.leaf.items.push({ let moved = root.leaf; value }) }
+flow main() -> i64 { return 0i64 }
+"#,
+            "borrowed receiver",
+        ),
+    ] {
+        let error =
+            compile_source(source).expect_err("invalid ancestor availability or overlapping loan");
+        assert!(
+            error
+                .project()
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic
+                    .diagnostic()
+                    .code()
+                    .is_some_and(|code| code.as_str() == "sema.final_analysis")
+                    && diagnostic.diagnostic().message().contains(expected_message)),
+            "{error:?}"
+        );
+    }
+}
+
+callable_case!(
+    nested_need_field_reinitialization_preserves_static_ownership,
+    r#"
+struct Leaf { items: Vec<Need<i64>>, total: i64 }
+struct Root { leaf: Leaf }
+flow main() -> i64 {
+    let root = Root { leaf = Leaf { items = Vec<Need<i64>>::with_capacity(0usize), total = 42i64 } }
+    let moved = root.leaf.items
+    root.leaf.items = Vec<Need<i64>>::with_capacity(0usize)
+    let current = root.leaf.items
+    return root.leaf.total
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+#[test]
+fn nested_awbc_places_reject_empty_paths_invalid_prefixes_and_wrong_leaf_types() {
+    use arcweft_core::awbc::codec::AwbcDecodeBudget;
+    use arcweft_core::awbc::schema::{AwbcInstruction, AwbcMutablePlace, AwbcProgram};
+    use arcweft_core::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError};
+    use arcweft_core::value::RuntimeRecordFieldId;
+
+    let compiled = compile_source(r#"
+entry cli @entry.main { goto @flow.main }
+struct Leaf { items: Vec<i64>, total: i64 }
+struct Node { leaf: Leaf, sibling: i64 }
+struct Root { node: Node }
+flow main() -> i64 {
+    let root = Root { node = Node { leaf = Leaf { items = [1i64], total = 0i64 }, sibling = 99i64 } }
+    root.node.leaf.total = 42i64
+    return root.node.leaf.total
+}
+"#).expect("nested assignment compiles");
+    let report = AwbcLowerer::new(
+        &compiled.plan,
+        &compiled.dialogue_content,
+        "nested_place.arcw",
+    )
+    .lower()
+    .expect("nested program verifies");
+    let bytes = report
+        .program
+        .encode_canonical()
+        .expect("complete path encodes");
+    let program = AwbcProgram::decode_canonical(&bytes, AwbcDecodeBudget::default())
+        .expect("complete path decodes");
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("decoded complete path verifies");
+    for (fields, type_mismatch) in [
+        (Vec::new(), false),
+        (vec![0, 1, 1], false),
+        (vec![0, 0, 0], true),
+    ] {
+        let mut forged = program.clone();
+        let instruction = forged
+            .instructions
+            .iter_mut()
+            .find(|instruction| matches!(instruction, AwbcInstruction::Assign { .. }))
+            .expect("nested assignment");
+        let AwbcInstruction::Assign {
+            place: AwbcMutablePlace::Fields { fields: path, .. },
+            ..
+        } = instruction
+        else {
+            unreachable!()
+        };
+        assert_eq!(path.len(), 3);
+        *path = fields
+            .into_iter()
+            .map(|ordinal| {
+                RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)
+                    .expect("representable typed coordinate")
+            })
+            .collect();
+        let error = forged
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .expect_err("invalid complete path rejects before execution");
+        if type_mismatch {
+            assert!(
+                matches!(error, AwbcVerifyError::TypeMismatch { .. }),
+                "{error:?}"
+            );
+        } else {
+            assert!(
+                matches!(error, AwbcVerifyError::InvalidInvariant { .. }),
+                "{error:?}"
+            );
+        }
+    }
 }

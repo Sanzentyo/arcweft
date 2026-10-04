@@ -79,6 +79,13 @@ and passes those owners to cleanup exactly once. A receiver reservation overlaps
 its ancestors and descendants, while disjoint sibling places remain independent.
 Opaque producer values retain their indivisible storage contract.
 
+Stored record paths retain every schema-selected field coordinate, including
+closed generic fields. The same complete path identifies reads, replacement,
+in-place mutation, and receiver loans in native execution and AWBC. A mutable
+receiver remains an address while its arguments execute; it is not read or moved
+as an ordinary value. An expression whose result is discarded still executes
+once, including mutations and cleanup.
+
 Native declaration slots and AWBC registers retain partial record storage
 separately from complete values. Rollback and AWBC snapshots preserve the record
 header, defining field order and child initialization states. No missing child is

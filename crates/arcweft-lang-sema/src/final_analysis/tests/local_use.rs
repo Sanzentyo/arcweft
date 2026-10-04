@@ -1519,7 +1519,7 @@ fn speak(pair: (VoiceHandle, i32)) {
 }
 
 #[test]
-fn unsupported_capacity_receivers_keep_source_diagnostic_authority() {
+fn capacity_receiver_admission_preserves_complete_places_and_computed_diagnostics() {
     for (index, source) in [
         r#"
 struct Queue { items: Vec<i64> }
@@ -1543,17 +1543,25 @@ flow main() -> i64 {
     .enumerate()
     {
         let fixture = fixture(source, None);
-        let actual = analyze(&fixture).err();
-        assert!(
-            matches!(
-                (index, actual.as_ref()),
-                (
-                    0,
-                    Some(FinalSemanticAnalysisError::UnknownCallTarget { .. })
-                ) | (1, None)
-            ),
-            "unsupported receiver {index} must not poison final local-use topology: {actual:?}"
-        );
+        let report = analyze(&fixture).expect("receiver analysis keeps valid local-use topology");
+        if index == 0 {
+            let access = report
+                .checked_local_uses()
+                .rows()
+                .filter_map(|(_, access)| access.place_access())
+                .find(|access| {
+                    access.mode() == crate::final_analysis::CheckedLocalPlaceMode::Mutate
+                })
+                .expect("stored receiver has a sealed mutation address");
+            let fields = access.place().fields();
+            assert_eq!(fields.len(), 2);
+            assert!(
+                fields
+                    .iter()
+                    .all(|field| field.runtime_field().unwrap().zero_based() == 0)
+            );
+            assert_eq!(fields[0].field_type(), fields[1].owner_type());
+        }
     }
 }
 

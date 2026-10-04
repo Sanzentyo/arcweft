@@ -17,7 +17,7 @@ pub(super) fn seal(
     statements: &BTreeMap<StmtId, super::PreparedStatementPayload>,
     dialogue_lines: &arcweft_lang_hir::project::AcceptedDialogueLineInventory,
 ) -> Result<BTreeMap<ExprId, PreparedExpressionFact>, FinalSemanticAnalysisError> {
-    let expressions = expressions
+    let mut expressions = expressions
         .into_iter()
         .map(|(owner, fact)| {
             fact.into_complete()
@@ -25,6 +25,34 @@ pub(super) fn seal(
                 .map_err(|_| FinalSemanticAnalysisError::UnsealedPreparedC2Owner)
         })
         .collect::<Result<BTreeMap<_, _>, _>>()?;
+    // All field receivers are sealed before publishing local-rooted paths.
+    // Dense expression IDs do not imply a dependency ordering.
+    let places = expressions
+        .iter()
+        .filter(|(_, checked)| {
+            matches!(
+                checked.resolution(),
+                super::CheckedExpressionResolution::Select(super::CheckedSelectResolution::Field(
+                    _
+                ))
+            )
+        })
+        .filter_map(|(owner, _)| {
+            super::CheckedPlace::from_field(*owner, |child| expressions.get(&child))
+                .map(|place| (*owner, place))
+        })
+        .collect::<Vec<_>>();
+    for (owner, place) in places {
+        let checked = expressions
+            .remove(&owner)
+            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+        expressions.insert(
+            owner,
+            checked
+                .with_mutable_place(place)
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
+        );
+    }
     let mut roles = BTreeMap::<ExprId, BTreeSet<super::CheckedEvaluatedEffectRole>>::new();
     let mut statement_roots =
         BTreeMap::<ExprId, (StmtId, super::CheckedEvaluatedEffectReference)>::new();

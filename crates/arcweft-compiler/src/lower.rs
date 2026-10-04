@@ -193,25 +193,24 @@ use arcweft_runtime_plan::{
     assertion_identity::RuntimeAssertionMode,
     semantic_facts::{
         RuntimeAcceptedDeclarationSemanticId, RuntimeAgentTypeShape, RuntimeAssertionAdmission,
-        RuntimeAssignmentFact, RuntimeAssignmentPlace, RuntimeAwaitFact,
-        RuntimeAwaitPendingObserverFact, RuntimeBuiltinIteratorFact,
-        RuntimeCallParameterCoordinate, RuntimeCallResultShape, RuntimeCallableAttachedContentAbi,
-        RuntimeCallableAttachedContentDefault, RuntimeCallableValueSpecialization,
-        RuntimeCheckedCapture, RuntimeCheckedTypeProjectionError, RuntimeChoiceFact,
-        RuntimeChoiceGotoFact, RuntimeClosureCaptureFact, RuntimeClosureInstanceFact,
-        RuntimeClosureInstanceKey, RuntimeClosureLexicalOwner, RuntimeClosureParameterFact,
-        RuntimeContentFragmentFact, RuntimeDeferFact, RuntimeDialogueApplication,
-        RuntimeDialogueEffectOperationFact, RuntimeDialogueEffectProgramFact,
-        RuntimeDialogueEffectTrigger, RuntimeDialogueMarkFact, RuntimeDialogueMarkKey,
-        RuntimeDialogueValueExpression, RuntimeDropFadeFact, RuntimeDropPolicyFact,
-        RuntimeEffectFieldFact, RuntimeEvaluatedEffect, RuntimeEvaluatedEffectFact,
-        RuntimeEvaluatedEffectOperandFact, RuntimeExecutableCaptureFact,
-        RuntimeExecutableSemanticScope, RuntimeFormatExecutableScope, RuntimeFormatTemplateFact,
-        RuntimeFormatTemplateKey, RuntimeImplicitCallableFact, RuntimeIteratorFact,
-        RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact, RuntimeLineCallable,
-        RuntimeLogLevel, RuntimeMapKind, RuntimeNominalRecordFactError, RuntimeNormalizedType,
-        RuntimeNormalizedVariantCase, RuntimePipeFact, RuntimePlanSemanticFactInput,
-        RuntimePlanSemanticFacts, RuntimePositionedAttachedContent,
+        RuntimeAssignmentFact, RuntimeAwaitFact, RuntimeAwaitPendingObserverFact,
+        RuntimeBuiltinIteratorFact, RuntimeCallParameterCoordinate, RuntimeCallResultShape,
+        RuntimeCallableAttachedContentAbi, RuntimeCallableAttachedContentDefault,
+        RuntimeCallableValueSpecialization, RuntimeCheckedCapture,
+        RuntimeCheckedTypeProjectionError, RuntimeChoiceFact, RuntimeChoiceGotoFact,
+        RuntimeClosureCaptureFact, RuntimeClosureInstanceFact, RuntimeClosureInstanceKey,
+        RuntimeClosureLexicalOwner, RuntimeClosureParameterFact, RuntimeContentFragmentFact,
+        RuntimeDeferFact, RuntimeDialogueApplication, RuntimeDialogueEffectOperationFact,
+        RuntimeDialogueEffectProgramFact, RuntimeDialogueEffectTrigger, RuntimeDialogueMarkFact,
+        RuntimeDialogueMarkKey, RuntimeDialogueValueExpression, RuntimeDropFadeFact,
+        RuntimeDropPolicyFact, RuntimeEffectFieldFact, RuntimeEvaluatedEffect,
+        RuntimeEvaluatedEffectFact, RuntimeEvaluatedEffectOperandFact,
+        RuntimeExecutableCaptureFact, RuntimeExecutableSemanticScope, RuntimeFormatExecutableScope,
+        RuntimeFormatTemplateFact, RuntimeFormatTemplateKey, RuntimeImplicitCallableFact,
+        RuntimeIteratorFact, RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact,
+        RuntimeLineCallable, RuntimeLogLevel, RuntimeMapKind, RuntimeNominalRecordFactError,
+        RuntimeNormalizedType, RuntimeNormalizedVariantCase, RuntimePipeFact,
+        RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts, RuntimePositionedAttachedContent,
         RuntimeProjectAttachedDefaultCapture, RuntimeProjectAttachedDefaultFunctionFact,
         RuntimeProjectCallable, RuntimeProjectCallableValueTarget, RuntimeProjectContinuationAbi,
         RuntimeProjectFunctionBody, RuntimeProjectFunctionCallInput,
@@ -233,8 +232,8 @@ use arcweft_runtime_plan::{
         RuntimeResolvedCallMutation, RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
         RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
         RuntimeResolvedCallOperandSource, RuntimeResolvedFormatCall, RuntimeResolvedHostCall,
-        RuntimeResolvedMutablePlace, RuntimeResolvedNeedProducer, RuntimeResolvedNominal,
-        RuntimeResolvedNominalRecord, RuntimeResolvedSelect, RuntimeResolvedSpreadContainer,
+        RuntimeResolvedNeedProducer, RuntimeResolvedNominal, RuntimeResolvedNominalRecord,
+        RuntimeResolvedPlace, RuntimeResolvedSelect, RuntimeResolvedSpreadContainer,
         RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeResolvedVariant,
         RuntimeSemanticFactsError, RuntimeSemanticTypeId, RuntimeSequenceKind,
         RuntimeStandardMapCall, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
@@ -1196,23 +1195,7 @@ fn project_runtime_semantic_fact_inventories(
                                 .to_owned(),
                         }
                     })?;
-                    let field_place = place.fields().first().ok_or_else(|| {
-                        RuntimeSemanticProjectionError::Call {
-                            owner,
-                            reason: "nominal field path has no direct nominal-field place"
-                                .to_owned(),
-                        }
-                    })?;
-                    input.push_value(
-                        owner,
-                        runtime_nominal_field_value(
-                            owner,
-                            place.local_id(),
-                            field_place,
-                            analysis,
-                            None,
-                        )?,
-                    );
+                    input.push_value(owner, runtime_place_value(owner, &place)?);
                 } else if let Some(select) = runtime_select(owner, select, world, analysis)? {
                     input.push_select(owner, select);
                 }
@@ -1768,38 +1751,13 @@ fn runtime_assignment_under(
     analysis: &FinalSemanticAnalysis,
     instance: Option<ProjectInstanceTypes<'_>>,
 ) -> Result<RuntimeAssignmentFact, RuntimeSemanticProjectionError> {
-    let place = assignment.place();
-    if place.fields().len() > 1 {
-        return Err(RuntimeSemanticProjectionError::Type {
-            reason: "nested assignment place is not yet represented by the runtime plan".into(),
-        });
-    }
-    let Some(field_place) = place.fields().first() else {
-        return Ok(RuntimeAssignmentFact::new(
-            RuntimeAssignmentPlace::Local(place.local_id()),
-            runtime_type_under(assignment.value_type(), instance, symbols, world, analysis)?,
-        ));
-    };
-    let field = field_place
-        .project_runtime_field(analysis)
-        .map_err(
-            |source| RuntimeSemanticProjectionError::AssignmentFieldProjection { owner, source },
-        )?
-        .ok_or_else(
-            || RuntimeSemanticProjectionError::AssignmentFieldProjection {
-                owner,
-                source: NominalSchemaProjectionError::InvalidProjectFieldRelation {
-                    owner: field_place.owner_type(),
-                    ordinal: field_place.declaration_ordinal(),
-                },
-            },
-        )?;
+    let place = RuntimeResolvedPlace::try_from_checked(assignment.place()).ok_or_else(|| {
+        RuntimeSemanticProjectionError::Type {
+            reason: format!("assignment {owner:?} has no executable stored-field path"),
+        }
+    })?;
     Ok(RuntimeAssignmentFact::new(
-        RuntimeAssignmentPlace::NominalField {
-            base: place.local_id(),
-            nominal: runtime_nominal_under(field.owner().checked(), analysis, instance)?,
-            field: field.field().runtime_field(),
-        },
+        place,
         runtime_type_under(assignment.value_type(), instance, symbols, world, analysis)?,
     ))
 }
@@ -5594,36 +5552,17 @@ fn runtime_value_resolution(
     }))
 }
 
-fn runtime_nominal_field_value(
+fn runtime_place_value(
     owner: ExprId,
-    base: LocalId,
-    field_place: &arcweft_lang_sema::final_analysis::CheckedFieldSelection,
-    analysis: &FinalSemanticAnalysis,
-    instance: Option<ProjectInstanceTypes<'_>>,
+    place: &arcweft_lang_sema::final_analysis::CheckedPlace,
 ) -> Result<RuntimeResolvedValue, RuntimeSemanticProjectionError> {
-    let projected = field_place
-        .project_runtime_field(analysis)
-        .map_err(|source| RuntimeSemanticProjectionError::Call {
-            owner,
-            reason: source.to_string(),
-        })?
+    let place = RuntimeResolvedPlace::try_from_checked(place)
+        .filter(|place| matches!(place, RuntimeResolvedPlace::Fields { .. }))
         .ok_or_else(|| RuntimeSemanticProjectionError::Call {
             owner,
-            reason: "field is not an executable project record".into(),
+            reason: "field path has no executable stored-field authority".into(),
         })?;
-    let field =
-        field_place
-            .runtime_field()
-            .ok_or_else(|| RuntimeSemanticProjectionError::Call {
-                owner,
-                reason: "checked nominal field has no runtime field identity".to_owned(),
-            })?;
-    let nominal = runtime_nominal_under(projected.owner().checked(), analysis, instance)?;
-    Ok(RuntimeResolvedValue::NominalField {
-        base,
-        owner: nominal.identity(),
-        field,
-    })
+    Ok(RuntimeResolvedValue::Place(place))
 }
 
 fn runtime_project_item(
@@ -5829,17 +5768,6 @@ fn runtime_nominal(
         projected.layout(),
         Arc::clone(projected.graph()),
     ))
-}
-
-fn runtime_nominal_under(
-    nominal: &CheckedProjectNominal,
-    analysis: &FinalSemanticAnalysis,
-    instance: Option<ProjectInstanceTypes<'_>>,
-) -> Result<RuntimeResolvedNominal, RuntimeSemanticProjectionError> {
-    let closed = instance
-        .map(|solution| solution.instantiate_project_nominal(nominal))
-        .transpose()?;
-    runtime_nominal(closed.as_ref().unwrap_or(nominal), analysis)
 }
 
 fn runtime_nominal_record(
@@ -6543,25 +6471,14 @@ fn runtime_call(
                         });
                     }
                     if is_vec_pop_front || is_vec_push || is_vec_pop {
-                        if place.fields().len() > 1 {
-                            return Err(RuntimeSemanticProjectionError::Call { owner, reason: "nested mutable receiver is not yet represented by the runtime plan".into() });
-                        }
-                        let place = match place.fields().first() {
-                            Some(field) => {
-                                let runtime_field = field.runtime_field().ok_or_else(|| {
-                                    RuntimeSemanticProjectionError::Call {
-                                        owner,
-                                        reason: "Vec.pop_front field has no runtime field identity"
-                                            .to_owned(),
-                                    }
-                                })?;
-                                RuntimeResolvedMutablePlace::NominalField {
-                                    base: place.local_id(),
-                                    field: runtime_field,
+                        let place =
+                            RuntimeResolvedPlace::try_from_checked(&place).ok_or_else(|| {
+                                RuntimeSemanticProjectionError::Call {
+                                    owner,
+                                    reason: "mutable receiver has no executable stored-field path"
+                                        .into(),
                                 }
-                            }
-                            None => RuntimeResolvedMutablePlace::Local(place.local_id()),
-                        };
+                            })?;
                         mutation = Some(if is_vec_pop_front {
                             RuntimeResolvedCallMutation::VecPopFront {
                                 source: receiver,
@@ -7833,19 +7750,7 @@ fn runtime_executable_semantic_facts<'abi>(
                         let place = checked.mutable_place().ok_or_else(|| {
                             error(owner, "instance nominal field path has no checked place")
                         })?;
-                        let field_place = place.fields().first().ok_or_else(|| {
-                            error(
-                                owner,
-                                "instance nominal field path has no field-place proof",
-                            )
-                        })?;
-                        runtime_nominal_field_value(
-                            owner,
-                            place.local_id(),
-                            field_place,
-                            analysis,
-                            lexical.types(),
-                        )?
+                        runtime_place_value(owner, &place)?
                     }
                     _ => {
                         return Err(error(
