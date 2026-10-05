@@ -948,7 +948,10 @@ fn save_need_producer_registry(
                 Ok(AwbcNeedProducerLaunchSaveSnapshot {
                     invocation: launch.invocation,
                     producer_site: launch.plan.site(),
-                    plan_digest: launch.plan.semantic_digest(),
+                    plan_digest: launch
+                        .plan
+                        .semantic_digest()
+                        .map_err(|error| error.to_string())?,
                     arguments: launch
                         .arguments
                         .iter()
@@ -1013,7 +1016,10 @@ fn save_live_need_producer_registry(
                 Ok(AwbcNeedProducerLaunchSaveSnapshot {
                     invocation: launch.invocation(),
                     producer_site: launch.plan().site(),
-                    plan_digest: launch.plan().semantic_digest(),
+                    plan_digest: launch
+                        .plan()
+                        .semantic_digest()
+                        .map_err(|error| error.to_string())?,
                     arguments: launch
                         .arguments()
                         .iter()
@@ -2875,7 +2881,11 @@ impl AwbcProductStepExecutor {
             let projected = restore_need_producer_plan(
                 &self.program,
                 launch.plan.site(),
-                launch.plan.semantic_digest(),
+                launch.plan.semantic_digest().map_err(|error| {
+                    AwbcProductStepBuildError::RestoreSnapshot {
+                        message: error.to_string(),
+                    }
+                })?,
             )
             .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
             if projected != launch.plan {

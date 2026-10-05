@@ -5433,7 +5433,9 @@ fn need_producer_program(restart: AwbcTaskRestartPolicy) -> AwbcProgram {
             kind: AwbcTaskPlanKind::NeedProducer {
                 contract,
                 site,
-                semantic_digest: producer_plan.semantic_digest(),
+                semantic_digest: producer_plan
+                    .semantic_digest()
+                    .expect("valid producer plan"),
                 restart,
             },
         }],

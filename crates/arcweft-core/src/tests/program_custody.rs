@@ -368,7 +368,7 @@ pub(crate) fn awbc_handle_program(
         kind: AwbcTaskPlanKind::NeedProducer {
             contract: crate::task::NeedProducerContractDigest::from_bytes([7; 32]),
             site: need_plan.site(),
-            semantic_digest: need_plan.semantic_digest(),
+            semantic_digest: need_plan.semantic_digest().expect("valid producer plan"),
             restart: AwbcTaskRestartPolicy::Restartable,
         },
     });

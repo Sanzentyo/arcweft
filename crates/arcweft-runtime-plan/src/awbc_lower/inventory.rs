@@ -1838,7 +1838,16 @@ impl AwbcInventory {
             kind: AwbcTaskPlanKind::NeedProducer {
                 contract: plan.contract(),
                 site: plan.site(),
-                semantic_digest: plan.semantic_digest(),
+                semantic_digest: match plan.semantic_digest() {
+                    Ok(digest) => digest,
+                    Err(error) => {
+                        self.diagnostic(AwbcLowerDiagnostic::error(
+                            "need_producer.identity",
+                            error.to_string(),
+                        ));
+                        return None;
+                    }
+                },
                 restart: match plan.restart() {
                     HostRestartPolicy::MustBeQuiescent => AwbcTaskRestartPolicy::MustBeQuiescent,
                     HostRestartPolicy::Restartable => AwbcTaskRestartPolicy::Restartable,

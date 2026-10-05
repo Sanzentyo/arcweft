@@ -259,7 +259,7 @@ pub enum NeedProducerPlanError {
 }
 
 /// Complete static selected contract for one host-backed Need producer.
-/// Construction computes its semantic digest from typed fields, so native and
+/// Its semantic digest is recomputed from typed fields, so native and
 /// AWBC consumers cannot supply a competing digest or include their local
 /// instruction/plan index in identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -274,7 +274,6 @@ pub struct NeedProducerTaskPlan {
     class: TaskClass,
     priority: TaskPriority,
     cancel_scope: CancelScopeId,
-    semantic_digest: TaskPlanSemanticDigest,
 }
 
 impl NeedProducerTaskPlan {
@@ -324,17 +323,6 @@ impl NeedProducerTaskPlan {
         if argument_types.len() != expected_argument_count {
             return Err(NeedProducerPlanError::ArgumentTypeCountMismatch);
         }
-        let semantic_digest = need_producer_task_plan_digest(
-            contract,
-            &request,
-            &argument_types,
-            payload_type,
-            policy,
-            restart,
-            &class,
-            priority,
-            &cancel_scope,
-        )?;
         Ok(Self {
             contract,
             site,
@@ -346,7 +334,6 @@ impl NeedProducerTaskPlan {
             class,
             priority,
             cancel_scope,
-            semantic_digest,
         })
     }
 
@@ -401,11 +388,6 @@ impl NeedProducerTaskPlan {
     }
 
     #[must_use]
-    pub const fn semantic_digest(&self) -> TaskPlanSemanticDigest {
-        self.semantic_digest
-    }
-
-    #[must_use]
     pub fn argument_name(&self, index: usize) -> Option<Option<&str>> {
         match &self.request {
             NeedProducerRequestProjection::AssetLoad { argument_name, .. } => {
@@ -436,7 +418,7 @@ impl NeedProducerTaskPlan {
         Ok(NeedProducerSpec::new(
             NeedProducerFamily::SelectedCallable,
             self.contract,
-            self.semantic_digest,
+            self.semantic_digest()?,
             self.site,
             RuntimeTypeSemanticDigest::from_bytes(*self.payload_type.as_bytes()),
             digest,
@@ -593,103 +575,96 @@ pub enum NeedProducerRequestError {
     ExpectedEntityReference,
 }
 
-#[allow(clippy::too_many_arguments)]
-fn need_producer_task_plan_digest(
-    contract: NeedProducerContractDigest,
-    request: &NeedProducerRequestProjection,
-    argument_types: &[RuntimeSemanticTypeId],
-    payload_type: RuntimeSemanticTypeId,
-    policy: TaskPolicy,
-    restart: HostRestartPolicy,
-    class: &TaskClass,
-    priority: TaskPriority,
-    cancel_scope: &CancelScopeId,
-) -> Result<TaskPlanSemanticDigest, NeedProducerPlanError> {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(b"arcweft.need.producer-task-plan.v1\0");
-    hasher.update(contract.as_bytes());
-    match request {
-        NeedProducerRequestProjection::AssetLoad {
-            kind,
-            argument_name,
-        } => {
-            hasher.update(&[
-                0,
-                match kind {
-                    AssetLoadKind::Image => 0,
-                    AssetLoadKind::Voice => 1,
-                },
-            ]);
-            write_digest_string(&mut hasher, argument_name);
-        }
-        NeedProducerRequestProjection::ExternCapability {
-            capability,
-            operation,
-            contract,
-            argument_names,
-        } => {
-            hasher.update(&[1]);
-            write_digest_string(&mut hasher, &capability.0);
-            write_digest_string(&mut hasher, operation);
-            hasher.update(contract.as_bytes());
-            hasher.update(
-                &u32::try_from(argument_names.len())
-                    .map_err(|_| NeedProducerPlanError::ArgumentBindingCountOverflow)?
-                    .to_le_bytes(),
-            );
-            for name in argument_names.iter() {
-                match name {
-                    Some(name) => {
-                        hasher.update(&[1]);
-                        write_digest_string(&mut hasher, name);
-                    }
-                    None => {
-                        hasher.update(&[0]);
+impl NeedProducerTaskPlan {
+    /// Recomputes the selected producer plan transcript from its owning fields.
+    /// This does not accept or read a stored self-digest. Count conversion remains
+    /// checked at the encoder boundary even for constructor-validated plans.
+    pub fn semantic_digest(&self) -> Result<TaskPlanSemanticDigest, NeedProducerPlanError> {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"arcweft.need.producer-task-plan.v1\0");
+        hasher.update(self.contract.as_bytes());
+        match &self.request {
+            NeedProducerRequestProjection::AssetLoad {
+                kind,
+                argument_name,
+            } => {
+                hasher.update(&[
+                    0,
+                    match kind {
+                        AssetLoadKind::Image => 0,
+                        AssetLoadKind::Voice => 1,
+                    },
+                ]);
+                write_digest_string(&mut hasher, argument_name);
+            }
+            NeedProducerRequestProjection::ExternCapability {
+                capability,
+                operation,
+                contract,
+                argument_names,
+            } => {
+                hasher.update(&[1]);
+                write_digest_string(&mut hasher, &capability.0);
+                write_digest_string(&mut hasher, operation);
+                hasher.update(contract.as_bytes());
+                hasher.update(
+                    &u32::try_from(argument_names.len())
+                        .map_err(|_| NeedProducerPlanError::ArgumentBindingCountOverflow)?
+                        .to_le_bytes(),
+                );
+                for name in argument_names.iter() {
+                    match name {
+                        Some(name) => {
+                            hasher.update(&[1]);
+                            write_digest_string(&mut hasher, name);
+                        }
+                        None => {
+                            hasher.update(&[0]);
+                        }
                     }
                 }
             }
         }
+        hasher.update(
+            &u32::try_from(self.argument_types.len())
+                .map_err(|_| NeedProducerPlanError::ArgumentBindingCountOverflow)?
+                .to_le_bytes(),
+        );
+        for argument_type in &self.argument_types {
+            hasher.update(argument_type.as_bytes());
+        }
+        hasher.update(self.payload_type.as_bytes());
+        hasher.update(&[self.policy.semantic_tag()]);
+        hasher.update(&[match self.restart {
+            HostRestartPolicy::MustBeQuiescent => 0,
+            HostRestartPolicy::Restartable => 1,
+        }]);
+        hasher.update(&[self.class.semantic_tag()]);
+        hasher.update(&self.priority.0.to_le_bytes());
+        write_digest_string(&mut hasher, &self.cancel_scope.0);
+        Ok(TaskPlanSemanticDigest::from_bytes(
+            *hasher.finalize().as_bytes(),
+        ))
     }
-    hasher.update(
-        &u32::try_from(argument_types.len())
-            .map_err(|_| NeedProducerPlanError::ArgumentBindingCountOverflow)?
-            .to_le_bytes(),
-    );
-    for argument_type in argument_types {
-        hasher.update(argument_type.as_bytes());
-    }
-    hasher.update(payload_type.as_bytes());
-    hasher.update(&[match policy {
-        TaskPolicy::JoinSameKey => 0,
-        TaskPolicy::AlwaysStart => 1,
-    }]);
-    hasher.update(&[match restart {
-        HostRestartPolicy::MustBeQuiescent => 0,
-        HostRestartPolicy::Restartable => 1,
-    }]);
-    hasher.update(&[task_class_semantic_tag(class)]);
-    hasher.update(&priority.0.to_le_bytes());
-    write_digest_string(&mut hasher, &cancel_scope.0);
-    Ok(TaskPlanSemanticDigest::from_bytes(
-        *hasher.finalize().as_bytes(),
-    ))
 }
 
-fn task_class_semantic_tag(class: &TaskClass) -> u8 {
-    match class {
-        TaskClass::LocalView => 0,
-        TaskClass::Io => 1,
-        TaskClass::Cpu => 2,
-        TaskClass::GpuPrepare => 3,
-        TaskClass::ShaderCompile => 4,
-        TaskClass::WasmCall => 5,
-        TaskClass::AssetDecode => 6,
-        TaskClass::AudioDecode => 7,
-        TaskClass::AudioRender => 8,
-        TaskClass::TtsSynthesis => 9,
-        TaskClass::BgmPrecompose => 10,
-        TaskClass::Lsp => 11,
-        TaskClass::Background => 12,
+impl TaskClass {
+    pub(crate) const fn semantic_tag(&self) -> u8 {
+        match self {
+            Self::LocalView => 0,
+            Self::Io => 1,
+            Self::Cpu => 2,
+            Self::GpuPrepare => 3,
+            Self::ShaderCompile => 4,
+            Self::WasmCall => 5,
+            Self::AssetDecode => 6,
+            Self::AudioDecode => 7,
+            Self::AudioRender => 8,
+            Self::TtsSynthesis => 9,
+            Self::BgmPrecompose => 10,
+            Self::Lsp => 11,
+            Self::Background => 12,
+        }
     }
 }
 
@@ -2752,7 +2727,12 @@ mod identity_tests {
             HostRestartPolicy::Restartable,
             TaskClass::AssetDecode,
         );
-        assert_eq!(base.semantic_digest(), another_site.semantic_digest());
+        assert_eq!(
+            base.semantic_digest().expect("valid base plan"),
+            another_site
+                .semantic_digest()
+                .expect("valid alternate site plan")
+        );
         assert_ne!(
             base.producer_spec(&[])
                 .expect("producer spec")
@@ -2771,7 +2751,12 @@ mod identity_tests {
             HostRestartPolicy::Restartable,
             TaskClass::AssetDecode,
         );
-        assert_ne!(base.semantic_digest(), changed_policy.semantic_digest());
+        assert_ne!(
+            base.semantic_digest().expect("valid base plan"),
+            changed_policy
+                .semantic_digest()
+                .expect("valid alternate policy plan")
+        );
     }
 
     #[test]

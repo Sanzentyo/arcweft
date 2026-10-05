@@ -2864,7 +2864,7 @@ impl AwbcTaskPlan {
             crate::task::CancelScopeId(string(self.cancel_scope)?),
         )
         .map_err(|error| format!("invalid Need producer plan: {error}"))?;
-        if plan.semantic_digest() != *semantic_digest {
+        if plan.semantic_digest().map_err(|error| error.to_string())? != *semantic_digest {
             return Err("Need producer semantic digest does not match its typed row".to_owned());
         }
         Ok(plan)
