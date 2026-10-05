@@ -272,6 +272,8 @@ pub enum NeedProducerPlanError {
     ArgumentBindingCountOverflow,
     #[error("Need producer argument type count differs from its selected request signature")]
     ArgumentTypeCountMismatch,
+    #[error("Need producer request string length exceeds the version-one semantic transcript")]
+    RequestStringLengthOverflow,
 }
 
 /// Complete static selected contract for one host-backed Need producer.
@@ -615,21 +617,19 @@ impl NeedProducerTaskPlan {
     /// This does not accept or read a stored self-digest. Count conversion remains
     /// checked at the encoder boundary even for constructor-validated plans.
     pub fn semantic_digest(&self) -> Result<TaskPlanSemanticDigest, NeedProducerPlanError> {
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(b"arcweft.need.producer-task-plan.v1\0");
+        let mut encoder =
+            super::semantic::TaskSemanticEncoder::new(b"arcweft.need.producer-task-plan.v1\0");
         match &self.request {
             NeedProducerRequestProjection::AssetLoad {
                 kind,
                 argument_name,
             } => {
-                hasher.update(&[
-                    0,
-                    match kind {
-                        AssetLoadKind::Image => 0,
-                        AssetLoadKind::Voice => 1,
-                    },
-                ]);
-                write_digest_string(&mut hasher, argument_name);
+                encoder.tag(0);
+                encoder.tag(match kind {
+                    AssetLoadKind::Image => 0,
+                    AssetLoadKind::Voice => 1,
+                });
+                encoder.string(argument_name);
             }
             NeedProducerRequestProjection::ExternCapability {
                 capability,
@@ -637,42 +637,40 @@ impl NeedProducerTaskPlan {
                 argument_names,
                 ..
             } => {
-                hasher.update(&[1]);
-                write_digest_string(&mut hasher, &capability.0);
-                write_digest_string(&mut hasher, operation);
-                hasher.update(
-                    &u32::try_from(argument_names.len())
-                        .map_err(|_| NeedProducerPlanError::ArgumentBindingCountOverflow)?
-                        .to_le_bytes(),
-                );
+                encoder.tag(1);
+                encoder.string(&capability.0);
+                encoder.string(operation);
+                encoder.count(argument_names.len());
                 for name in argument_names.iter() {
                     match name {
                         Some(name) => {
-                            hasher.update(&[1]);
-                            write_digest_string(&mut hasher, name);
+                            encoder.tag(1);
+                            encoder.string(name);
                         }
                         None => {
-                            hasher.update(&[0]);
+                            encoder.tag(0);
                         }
                     }
                 }
             }
         }
-        hasher.update(
-            &u32::try_from(self.argument_types.len())
-                .map_err(|_| NeedProducerPlanError::ArgumentBindingCountOverflow)?
-                .to_le_bytes(),
-        );
+        encoder.count(self.argument_types.len());
         for argument_type in &self.argument_types {
-            hasher.update(argument_type.as_bytes());
+            encoder.digest(argument_type.as_bytes());
         }
-        hasher.update(&[match self.restart {
+        encoder.tag(match self.restart {
             HostRestartPolicy::MustBeQuiescent => 0,
             HostRestartPolicy::Restartable => 1,
-        }]);
-        Ok(TaskPlanSemanticDigest::from_bytes(
-            *hasher.finalize().as_bytes(),
-        ))
+        });
+        let digest = encoder.finish().map_err(|error| match error {
+            super::semantic::TaskSemanticEncodingError::CountOverflow => {
+                NeedProducerPlanError::ArgumentBindingCountOverflow
+            }
+            super::semantic::TaskSemanticEncodingError::StringLengthOverflow => {
+                NeedProducerPlanError::RequestStringLengthOverflow
+            }
+        })?;
+        Ok(TaskPlanSemanticDigest::from_bytes(*digest.as_bytes()))
     }
 }
 
@@ -694,11 +692,6 @@ impl TaskClass {
             Self::Background => 12,
         }
     }
-}
-
-fn write_digest_string(hasher: &mut blake3::Hasher, value: &str) {
-    hasher.update(&(u64::try_from(value.len()).unwrap_or(u64::MAX)).to_le_bytes());
-    hasher.update(value.as_bytes());
 }
 
 fn need_producer_arguments_digest(
@@ -2774,6 +2767,117 @@ mod identity_tests {
         assert_ne!(
             base.instance_key().expect("base key").as_bytes(),
             changed.instance_key().expect("changed key").as_bytes()
+        );
+    }
+
+    #[test]
+    fn producer_request_transcript_has_exact_version_one_byte_grammar() {
+        let plan = producer_plan(
+            1,
+            2,
+            TaskPolicy::JoinSameKey,
+            HostRestartPolicy::Restartable,
+            TaskClass::AssetDecode,
+        );
+        let mut transcript = b"arcweft.need.producer-task-plan.v1\0".to_vec();
+        transcript.push(1);
+        transcript.extend_from_slice(&5_u32.to_le_bytes());
+        transcript.extend_from_slice(b"asset");
+        transcript.extend_from_slice(&5_u32.to_le_bytes());
+        transcript.extend_from_slice(b"image");
+        transcript.extend_from_slice(&0_u32.to_le_bytes());
+        transcript.extend_from_slice(&0_u32.to_le_bytes());
+        transcript.push(1);
+        assert_eq!(
+            plan.semantic_digest().unwrap().as_bytes(),
+            blake3::hash(&transcript).as_bytes()
+        );
+    }
+
+    #[test]
+    fn producer_request_transcript_commits_ordered_optional_names_and_types() {
+        let mut plan = producer_plan(
+            1,
+            2,
+            TaskPolicy::JoinSameKey,
+            HostRestartPolicy::Restartable,
+            TaskClass::AssetDecode,
+        );
+        if let NeedProducerRequestProjection::ExternCapability { argument_names, .. } =
+            &mut plan.request
+        {
+            *argument_names = vec![Some("é".to_owned()), None].into_boxed_slice();
+        } else {
+            panic!("fixture is an external producer");
+        }
+        plan.argument_types = vec![
+            RuntimeSemanticTypeId::from_bytes([7; 32]),
+            RuntimeSemanticTypeId::from_bytes([8; 32]),
+        ]
+        .into_boxed_slice();
+        let mut transcript = b"arcweft.need.producer-task-plan.v1\0".to_vec();
+        transcript.push(1);
+        transcript.extend_from_slice(&5_u32.to_le_bytes());
+        transcript.extend_from_slice(b"asset");
+        transcript.extend_from_slice(&5_u32.to_le_bytes());
+        transcript.extend_from_slice(b"image");
+        transcript.extend_from_slice(&2_u32.to_le_bytes());
+        transcript.push(1);
+        transcript.extend_from_slice(&2_u32.to_le_bytes());
+        transcript.extend_from_slice("é".as_bytes());
+        transcript.push(0);
+        transcript.extend_from_slice(&2_u32.to_le_bytes());
+        transcript.extend_from_slice(&[7; 32]);
+        transcript.extend_from_slice(&[8; 32]);
+        transcript.push(1);
+        assert_eq!(
+            plan.semantic_digest().unwrap().as_bytes(),
+            blake3::hash(&transcript).as_bytes()
+        );
+        let before = plan.semantic_digest().unwrap();
+        plan.argument_types.reverse();
+        assert_ne!(before, plan.semantic_digest().unwrap());
+        plan.argument_types.reverse();
+        if let NeedProducerRequestProjection::ExternCapability { argument_names, .. } =
+            &mut plan.request
+        {
+            argument_names.reverse();
+        }
+        assert_ne!(before, plan.semantic_digest().unwrap());
+    }
+
+    #[test]
+    fn asset_request_transcript_uses_the_same_checked_string_grammar() {
+        let mut plan = producer_plan(
+            1,
+            2,
+            TaskPolicy::JoinSameKey,
+            HostRestartPolicy::MustBeQuiescent,
+            TaskClass::AssetDecode,
+        );
+        plan.request = NeedProducerRequestProjection::AssetLoad {
+            kind: AssetLoadKind::Voice,
+            argument_name: "clip".to_owned(),
+        };
+        plan.argument_types = vec![RuntimeSemanticTypeId::from_bytes([7; 32])].into_boxed_slice();
+        let mut transcript = b"arcweft.need.producer-task-plan.v1\0".to_vec();
+        transcript.extend_from_slice(&[0, 1]);
+        transcript.extend_from_slice(&4_u32.to_le_bytes());
+        transcript.extend_from_slice(b"clip");
+        transcript.extend_from_slice(&1_u32.to_le_bytes());
+        transcript.extend_from_slice(&[7; 32]);
+        transcript.push(0);
+        assert_eq!(
+            plan.semantic_digest().unwrap().as_bytes(),
+            blake3::hash(&transcript).as_bytes()
+        );
+        plan.request = NeedProducerRequestProjection::AssetLoad {
+            kind: AssetLoadKind::Image,
+            argument_name: "clip".to_owned(),
+        };
+        assert_ne!(
+            plan.semantic_digest().unwrap().as_bytes(),
+            blake3::hash(&transcript).as_bytes()
         );
     }
 
