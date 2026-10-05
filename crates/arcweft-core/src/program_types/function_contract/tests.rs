@@ -475,6 +475,7 @@ fn failed_value_choice_does_not_leak_callback_effect_constraints() {
         .unwrap();
     let site = builder
         .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            role: crate::plan::RuntimeFunctionSemanticRole::Closure,
             function_type: None,
             inputs: Box::new([]),
             result: id(1),

@@ -12,6 +12,32 @@ use crate::runtime_id::RuntimePlanTypeId;
 use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLocalDeclarationId};
 use crate::value::RuntimeExpr;
 
+/// Semantic purpose of an accepted function definition, independent of its
+/// expression or control-transfer execution body.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeFunctionSemanticRole {
+    Ordinary,
+    Closure,
+    Dialogue,
+    Effect,
+    Line,
+    Stream,
+}
+
+impl RuntimeFunctionSemanticRole {
+    #[must_use]
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Ordinary => 0,
+            Self::Closure => 1,
+            Self::Dialogue => 2,
+            Self::Effect => 3,
+            Self::Line => 4,
+            Self::Stream => 5,
+        }
+    }
+}
+
 /// The body family reserved by a function-site construction handle.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeFunctionSiteBodyKind {
@@ -138,6 +164,7 @@ impl RuntimeFunctionSiteBody {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeFunctionSite {
+    role: RuntimeFunctionSemanticRole,
     function_type: Option<RuntimePlanTypeId>,
     inputs: Box<[RuntimeFunctionInputBinding]>,
     result: RuntimePlanTypeId,
@@ -145,6 +172,11 @@ pub struct RuntimeFunctionSite {
 }
 
 impl RuntimeFunctionSite {
+    #[must_use]
+    pub const fn role(&self) -> RuntimeFunctionSemanticRole {
+        self.role
+    }
+
     #[must_use]
     pub const fn function_type(&self) -> Option<RuntimePlanTypeId> {
         self.function_type
@@ -227,6 +259,7 @@ impl RuntimeFunctionSiteTableBuilder {
 
     pub(crate) fn push(
         &mut self,
+        role: RuntimeFunctionSemanticRole,
         function_type: Option<RuntimePlanTypeId>,
         inputs: Box<[RuntimeFunctionInputBinding]>,
         result: RuntimePlanTypeId,
@@ -240,6 +273,7 @@ impl RuntimeFunctionSiteTableBuilder {
             .and_then(NonZeroU32::new)
             .ok_or(RuntimeFunctionSiteError::IdentityExhausted)?;
         self.sites.push(RuntimeFunctionSite {
+            role,
             function_type,
             inputs,
             result,

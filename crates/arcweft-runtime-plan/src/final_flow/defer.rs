@@ -95,6 +95,7 @@ pub(super) fn reserve_global_defer_sites(
                 .collect::<Result<Vec<_>, RuntimePlanLowerError>>()?;
             Ok((
                 RuntimeFunctionSiteDeclarationSeed {
+                    role: arcweft_core::plan::RuntimeFunctionSemanticRole::Effect,
                     function_type: None,
                     inputs: inputs.into_boxed_slice(),
                     result: result.identity(),

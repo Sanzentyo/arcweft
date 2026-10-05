@@ -19,6 +19,7 @@ pub(super) fn lower(
             continue;
         }
         let site = match builder.push_function_site_seed(
+            arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
             [],
             RuntimeExprSeed::new(
                 program.result_type(),

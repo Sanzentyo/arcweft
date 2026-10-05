@@ -796,6 +796,7 @@ mod tests {
         for function_type in [Some(header), None] {
             let site = builder
                 .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+                    role: crate::plan::RuntimeFunctionSemanticRole::Closure,
                     function_type,
                     inputs: Box::new([]),
                     result: unit,

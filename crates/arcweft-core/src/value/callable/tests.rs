@@ -49,6 +49,7 @@ fn captured_identity_plan() -> RuntimePlan {
         .unwrap();
     let site = builder
         .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            role: crate::plan::RuntimeFunctionSemanticRole::Closure,
             function_type: None,
             inputs: Box::new([
                 RuntimeFunctionInputBindingSeed {
@@ -220,6 +221,7 @@ fn checked_partial_application_seals_retained_parameter_coordinates() {
         .unwrap();
     let target = builder
         .push_function_site_seed(
+            crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             [integer, boolean]
                 .into_iter()
                 .enumerate()
@@ -254,6 +256,7 @@ fn checked_partial_application_seals_retained_parameter_coordinates() {
         .unwrap();
     builder
         .push_function_site_seed(
+            crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             [],
             RuntimeExprSeed::new(
                 partial_type,
@@ -355,6 +358,7 @@ fn rest_partial_plan(
         .unwrap();
     let site = builder
         .push_function_site_seed(
+            crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             [sequence, boolean, boolean]
                 .into_iter()
                 .enumerate()
@@ -564,6 +568,7 @@ fn defaulted_attached_plan_builder(flatten_attached_into_arrow: bool) -> Runtime
     let input = admission.local_ids()[0].clone();
     let default = builder
         .push_function_site_seed(
+            crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             [],
             RuntimeExprSeed::new(
                 boolean,
@@ -573,6 +578,7 @@ fn defaulted_attached_plan_builder(flatten_attached_into_arrow: bool) -> Runtime
         .unwrap();
     let target = builder
         .push_function_site_seed(
+            crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             [RuntimeFunctionInputBindingSeed {
                 ownership: Default::default(),
                 unrestricted_bindings: Box::new([]),

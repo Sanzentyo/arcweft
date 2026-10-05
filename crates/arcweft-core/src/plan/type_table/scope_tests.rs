@@ -121,6 +121,7 @@ fn executable_slots_reject_scoped_descendants_but_accept_closed_schemes() {
         .unwrap();
     assert!(matches!(
         builder.reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            role: crate::plan::RuntimeFunctionSemanticRole::Closure,
             function_type: None,
             inputs: Box::new([]),
             result: identity(1),
@@ -247,6 +248,7 @@ fn quantified_function_frame_retains_its_header_through_pattern_and_body_admissi
     let local = admission.local_ids()[0].clone();
     let site = builder
         .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            role: crate::plan::RuntimeFunctionSemanticRole::Closure,
             function_type: Some(identity(2)),
             inputs: Box::new([RuntimeFunctionInputBindingSeed {
                 source: RuntimeFunctionInputSource::Parameter { position: 0 },

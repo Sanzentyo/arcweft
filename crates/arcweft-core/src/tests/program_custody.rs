@@ -203,6 +203,7 @@ fn identity_program_plan(
         .collect::<Vec<_>>();
     let site = builder
         .push_function_site_seed(
+            crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             inputs,
             RuntimeExprSeed::new(
                 ty,

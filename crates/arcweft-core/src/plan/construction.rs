@@ -625,6 +625,7 @@ pub enum RuntimePlanBuildError {
 
 #[derive(Debug)]
 struct ReservedFunctionSite {
+    role: super::RuntimeFunctionSemanticRole,
     function_type: Option<RuntimePlanTypeId>,
     inputs: Box<[RuntimeFunctionInputBinding]>,
     result: RuntimePlanTypeId,
@@ -893,11 +894,13 @@ impl RuntimePlanBuilder {
 
     pub fn push_function_site_seed(
         &mut self,
+        role: super::RuntimeFunctionSemanticRole,
         inputs: impl IntoIterator<Item = RuntimeFunctionInputBindingSeed>,
         body: RuntimeExprSeed,
     ) -> Result<RuntimeFunctionSiteSeedId, RuntimePlanBuildError> {
         let result = body.ty();
         let site = self.reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            role,
             function_type: None,
             inputs: inputs.into_iter().collect(),
             result,
@@ -1001,6 +1004,7 @@ impl RuntimePlanBuilder {
             .ok_or(RuntimeFunctionSiteError::IdentityExhausted)?;
         let site = crate::runtime_id::RuntimeFunctionSiteId::from_accepted_ordinal(ordinal);
         self.function_sites.push(ReservedFunctionSite {
+            role: seed.role,
             function_type,
             inputs: inputs.into_boxed_slice(),
             result,
@@ -2559,7 +2563,13 @@ impl RuntimePlanBuilder {
             let Some(body) = site.body else {
                 unreachable!("incomplete function sites returned before materialization")
             };
-            function_site_builder.push(site.function_type, site.inputs, site.result, body)?;
+            function_site_builder.push(
+                site.role,
+                site.function_type,
+                site.inputs,
+                site.result,
+                body,
+            )?;
         }
         let pure_helpers = self
             .pure_helpers
@@ -3368,6 +3378,42 @@ mod tests {
     }
 
     #[test]
+    fn function_semantic_role_survives_materialization_independently_of_body_kind() {
+        use crate::plan::RuntimeFunctionSemanticRole;
+        let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    unit,
+                    RuntimePlanTypeProjection::Unit,
+                )],
+                [],
+            )
+            .unwrap();
+        for role in [
+            RuntimeFunctionSemanticRole::Ordinary,
+            RuntimeFunctionSemanticRole::Closure,
+        ] {
+            builder
+                .push_function_site_seed(
+                    role,
+                    [],
+                    RuntimeExprSeed::new(unit, RuntimeExprSeedKind::Value(RuntimeValue::Unit)),
+                )
+                .unwrap();
+        }
+        let plan = builder.finish().unwrap();
+        let sites = plan.function_sites().iter().collect::<Vec<_>>();
+        assert_eq!(sites[0].role(), RuntimeFunctionSemanticRole::Ordinary);
+        assert_eq!(sites[1].role(), RuntimeFunctionSemanticRole::Closure);
+        assert_eq!(sites[0].body(), sites[1].body());
+        assert_ne!(sites[0], sites[1]);
+        assert_eq!(sites[0].role().semantic_tag(), 0);
+        assert_eq!(sites[1].role().semantic_tag(), 1);
+    }
+
+    #[test]
     fn conflicting_batch_does_not_commit_local_rows() {
         let mut builder = RuntimePlanBuilder::new();
         builder
@@ -3433,6 +3479,7 @@ mod tests {
 
         assert_eq!(
             second.push_function_site_seed(
+                crate::plan::RuntimeFunctionSemanticRole::Ordinary,
                 [RuntimeFunctionInputBindingSeed {
                     ownership: Default::default(),
                     unrestricted_bindings: Box::new([]),

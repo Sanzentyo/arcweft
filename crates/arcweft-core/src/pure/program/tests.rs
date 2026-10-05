@@ -24,6 +24,7 @@ fn fixture() -> (Arc<RuntimePlan>, RuntimePureProgramId, RuntimeCallTarget) {
     let target = RuntimeCallTarget::callable(RuntimeCallableId::from_checked_digest([44; 32]));
     let site = builder
         .push_function_site_seed(
+            crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             [],
             RuntimeExprSeed::new(
                 semantic,
@@ -167,6 +168,7 @@ fn borrowed_program_inputs_reject_nested_affine_values_before_execution() {
         });
     let site = builder
         .push_function_site_seed(
+            crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             inputs,
             RuntimeExprSeed::new(
                 boolean,
@@ -307,6 +309,7 @@ fn pure_character_dialogue_uses_the_exact_plan_and_ordered_source_row() {
     let character = CharacterId::try_new("character.alice").unwrap();
     let site = builder
         .push_function_site_seed(
+            crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             [],
             RuntimeExprSeed::new(
                 result_type,

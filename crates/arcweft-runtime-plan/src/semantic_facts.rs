@@ -4998,6 +4998,31 @@ pub struct RuntimePureProgramFact {
 }
 
 impl RuntimePureProgramFact {
+    /// Retains the accepted lexical body role even when lowering promotes an
+    /// expression body to control-transfer execution.
+    pub fn semantic_role(&self) -> arcweft_core::plan::RuntimeFunctionSemanticRole {
+        use arcweft_core::plan::RuntimeFunctionSemanticRole;
+        use arcweft_lang_sema::final_analysis::{
+            CheckedExecutionBodyOwner, CheckedExecutionSource,
+        };
+        match self.admission.input_abi().source() {
+            CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(_))
+            | CheckedExecutionSource::ExportMutation(CheckedExecutionBodyOwner::CallableValue(_)) => {
+                RuntimeFunctionSemanticRole::Closure
+            }
+            CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
+                ..
+            })
+            | CheckedExecutionSource::ExportMutation(CheckedExecutionBodyOwner::Declaration {
+                ..
+            })
+            | CheckedExecutionSource::EvaluateValue(_)
+            | CheckedExecutionSource::SelectMatch(_)
+            | CheckedExecutionSource::ExportBinding(_)
+            | CheckedExecutionSource::ExportIteration(_) => RuntimeFunctionSemanticRole::Ordinary,
+        }
+    }
+
     pub fn try_new(
         program: RuntimePureProgramId,
         admission: Arc<arcweft_lang_sema::final_analysis::CheckedDeterministicProgram>,

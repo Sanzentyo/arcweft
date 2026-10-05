@@ -110,6 +110,7 @@ fn plan() -> RuntimePlan {
     {
         let site = builder
             .push_function_site_seed(
+                crate::plan::RuntimeFunctionSemanticRole::Ordinary,
                 [
                     RuntimeFunctionInputBindingSeed {
                         ownership: Default::default(),

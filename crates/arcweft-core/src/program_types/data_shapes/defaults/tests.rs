@@ -50,6 +50,7 @@ fn programs() -> (RuntimePlan, AwbcProgram) {
         .unwrap();
     let site = builder
         .push_function_site_seed(
+            crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             [],
             RuntimeExprSeed::new(
                 semantic(2),

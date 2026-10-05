@@ -2477,6 +2477,7 @@ fn reserve_implicit_function_sites<'facts>(
                 }
             };
         let declaration = captures.map(|captures| RuntimeFunctionSiteDeclarationSeed {
+            role: arcweft_core::plan::RuntimeFunctionSemanticRole::Closure,
             function_type: None,
             inputs: captures
                 .into_iter()
@@ -2711,6 +2712,7 @@ fn reserve_closure_sites<'facts>(
         };
         let declaration = captures.and_then(|captures| {
             parameters.map(|parameters| RuntimeFunctionSiteDeclarationSeed {
+                role: arcweft_core::plan::RuntimeFunctionSemanticRole::Closure,
                 function_type: None,
                 inputs: captures
                     .into_iter()
@@ -2971,6 +2973,7 @@ fn reserve_project_function_sites<'facts>(
             continue;
         }
         let declaration = RuntimeFunctionSiteDeclarationSeed {
+            role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
             function_type: None,
             inputs: inputs.into_boxed_slice(),
             result: result.identity(),
@@ -3083,6 +3086,7 @@ fn reserve_project_default_function_sites<'facts>(
             });
         let declaration = inputs.and_then(|inputs| {
             effects.map(|effects| RuntimeFunctionSiteDeclarationSeed {
+                role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
                 function_type: None,
                 inputs: inputs.into_boxed_slice(),
                 result: default.result().identity(),
@@ -3284,6 +3288,7 @@ fn reserve_pure_programs<'facts>(
             });
         }
         let declaration = inputs.map(|inputs| RuntimeFunctionSiteDeclarationSeed {
+            role: program.semantic_role(),
             function_type: Some(program.function_type().identity()),
             inputs: inputs.into_boxed_slice(),
             result: program.result().identity(),
@@ -4633,6 +4638,7 @@ fn reserve_dialogue_effect_sites<'facts>(
                     effects
                         .clone()
                         .map(|effects| RuntimeFunctionSiteDeclarationSeed {
+                            role: arcweft_core::plan::RuntimeFunctionSemanticRole::Effect,
                             function_type: None,
                             inputs: captures.into_boxed_slice(),
                             result: result.identity(),
@@ -4920,6 +4926,7 @@ fn lower_dialogue_application<'facts>(
             ),
         }];
         let declaration = RuntimeFunctionSiteDeclarationSeed {
+            role: arcweft_core::plan::RuntimeFunctionSemanticRole::Dialogue,
             function_type: None,
             inputs: capture_inputs.into(),
             result: expression_type,
