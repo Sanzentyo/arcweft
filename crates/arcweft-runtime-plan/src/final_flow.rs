@@ -3575,6 +3575,7 @@ fn define_project_function_sites(
                     RuntimeFlowTail::Value {
                         expression: instance.body().tail(),
                         continuation: Box::new(RuntimeFlowValueContinuation::Return),
+                        overrides: BTreeMap::new(),
                     },
                 ) {
                     Ok(ops) => ops,
@@ -5738,6 +5739,12 @@ enum RuntimeFlowTail {
     Value {
         expression: ExprId,
         continuation: Box<RuntimeFlowValueContinuation>,
+        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+    },
+    SourceValue {
+        expression: ExprId,
+        continuation: Box<RuntimeFlowValueContinuation>,
+        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
     },
     ContinueValue {
         value: RuntimeExprSeed,
@@ -5746,7 +5753,8 @@ enum RuntimeFlowTail {
 }
 
 /// Deferred continuation work keeps long source-order tails off the native
-/// Rust call stack. Jobs are drained depth-first while the owning lexical
+/// Rust call stack, including expression operands and their value continuations.
+/// Jobs are drained depth-first while the owning lexical
 /// scope/carrier frames are still active, then their result trees are spliced
 /// into the exact continuation holes that scheduled them.
 #[derive(Default)]
@@ -6283,14 +6291,11 @@ impl<'a> FinalFlowLowerer<'a> {
         items: &[HirThreadFlowItem],
         tail: RuntimeFlowTail,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
-        let prior_worklist_depth = self.flow_tail_worklists.len();
-        self.flow_tail_worklists.push(FlowTailWorklist::default());
-        let items: Arc<[HirThreadFlowItem]> = Arc::from(items);
-        let result = self
-            .lower_thread_items_with_tail_inline(items, 0, tail)
-            .and_then(|ops| self.resolve_flow_tail_worklist(ops));
-        self.flow_tail_worklists.truncate(prior_worklist_depth);
-        result
+        self.lower_owned_flow_tail(RuntimeFlowTail::ThreadItems {
+            items: Arc::from(items),
+            next: 0,
+            tail: Box::new(tail),
+        })
     }
 
     fn lower_thread_items_with_tail_inline(
@@ -6685,10 +6690,15 @@ impl<'a> FinalFlowLowerer<'a> {
                 for arm in matched.arms() {
                     let ops = match arm.body() {
                         HirStmtMatchArmBody::Body(body) => self.lower_contextual_body(body)?,
-                        HirStmtMatchArmBody::Expression(expression) => self.lower_flow_value(
-                            *expression,
-                            RuntimeFlowValueContinuation::Ignore(RuntimeFlowTail::None),
-                        )?,
+                        HirStmtMatchArmBody::Expression(expression) => {
+                            self.lower_owned_flow_tail(RuntimeFlowTail::Value {
+                                expression: *expression,
+                                continuation: Box::new(RuntimeFlowValueContinuation::Ignore(
+                                    RuntimeFlowTail::None,
+                                )),
+                                overrides: BTreeMap::new(),
+                            })?
+                        }
                     };
                     arms.push(RuntimeFlowMatchArmSeed {
                         pattern: self
@@ -6738,16 +6748,17 @@ impl<'a> FinalFlowLowerer<'a> {
             HirStmtKind::For(for_stmt) => {
                 let body = self.lower_contextual_body(for_stmt.body())?;
                 let body = if let Some(key) = for_stmt.key() {
-                    let mut key_ops = self.lower_flow_value(
-                        key,
-                        RuntimeFlowValueContinuation::Bind {
+                    let mut key_ops = self.lower_owned_flow_tail(RuntimeFlowTail::Value {
+                        expression: key,
+                        continuation: Box::new(RuntimeFlowValueContinuation::Bind {
                             pattern: RuntimePatternSeed::new(
                                 self.expression_type(key)?.identity(),
                                 RuntimePatternSeedKind::Discard,
                             ),
                             tail: RuntimeFlowTail::None,
-                        },
-                    )?;
+                        }),
+                        overrides: BTreeMap::new(),
+                    })?;
                     key_ops.extend(body);
                     key_ops
                 } else {
@@ -6991,11 +7002,13 @@ impl<'a> FinalFlowLowerer<'a> {
             .into_boxed_slice();
         let (ops, condition) = if matches!(ty.shape(), RuntimeTypeShape::Never) {
             (
-                self.lower_flow_value_with_overrides(
-                    owner,
-                    RuntimeFlowValueContinuation::Ignore(RuntimeFlowTail::None),
+                self.lower_owned_flow_tail(RuntimeFlowTail::Value {
+                    expression: owner,
+                    continuation: Box::new(RuntimeFlowValueContinuation::Ignore(
+                        RuntimeFlowTail::None,
+                    )),
                     overrides,
-                )?,
+                })?,
                 None,
             )
         } else {
@@ -7005,14 +7018,14 @@ impl<'a> FinalFlowLowerer<'a> {
                 .get(&owner)
                 .cloned()
                 .ok_or_else(|| RuntimePlanLowerError::new("guard has no admitted result local"))?;
-            let ops = self.lower_flow_value_with_overrides(
-                owner,
-                RuntimeFlowValueContinuation::Bind {
+            let ops = self.lower_owned_flow_tail(RuntimeFlowTail::Value {
+                expression: owner,
+                continuation: Box::new(RuntimeFlowValueContinuation::Bind {
                     pattern: bind_seed(&ty, result.clone()),
                     tail: RuntimeFlowTail::None,
-                },
+                }),
                 overrides,
-            )?;
+            })?;
             (
                 ops,
                 Some(local_seed(&ty, result, RuntimeLocalReadMode::Move)),
@@ -7036,6 +7049,19 @@ impl<'a> FinalFlowLowerer<'a> {
     }
 
     fn lower_flow_value_with_overrides(
+        &mut self,
+        expression: ExprId,
+        continuation: RuntimeFlowValueContinuation,
+        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        self.lower_flow_tail(RuntimeFlowTail::Value {
+            expression,
+            continuation: Box::new(continuation),
+            overrides,
+        })
+    }
+
+    fn lower_flow_value_with_overrides_inline(
         &mut self,
         expression: ExprId,
         continuation: RuntimeFlowValueContinuation,
@@ -7098,6 +7124,19 @@ impl<'a> FinalFlowLowerer<'a> {
     }
 
     fn lower_flow_value_source_with_overrides(
+        &mut self,
+        expression: ExprId,
+        continuation: RuntimeFlowValueContinuation,
+        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        self.lower_flow_tail(RuntimeFlowTail::SourceValue {
+            expression,
+            continuation: Box::new(continuation),
+            overrides,
+        })
+    }
+
+    fn lower_flow_value_source_with_overrides_inline(
         &mut self,
         expression: ExprId,
         continuation: RuntimeFlowValueContinuation,
@@ -8111,6 +8150,7 @@ impl<'a> FinalFlowLowerer<'a> {
             RuntimeFlowTail::Value {
                 expression: tail,
                 continuation: Box::new(continuation),
+                overrides: BTreeMap::new(),
             },
         )
     }
@@ -8136,6 +8176,7 @@ impl<'a> FinalFlowLowerer<'a> {
                 owner: expression,
                 outer: Box::new(continuation),
             }),
+            overrides: BTreeMap::new(),
         };
         let lowered = self.lower_statement_ids_with_tail(block.statements(), tail);
         self.carrier_continuations.remove(&expression);
@@ -8217,6 +8258,17 @@ impl<'a> FinalFlowLowerer<'a> {
     }
 
     fn apply_value_continuation(
+        &mut self,
+        value: RuntimeExprSeed,
+        continuation: RuntimeFlowValueContinuation,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        self.lower_flow_tail(RuntimeFlowTail::ContinueValue {
+            value,
+            continuation: Box::new(continuation),
+        })
+    }
+
+    fn apply_value_continuation_inline(
         &mut self,
         value: RuntimeExprSeed,
         continuation: RuntimeFlowValueContinuation,
@@ -8560,6 +8612,21 @@ impl<'a> FinalFlowLowerer<'a> {
         }
     }
 
+    // A completed fragment may be embedded in another continuation. Resolve
+    // its jobs here so its construction holes never escape to the parent's tree.
+    fn lower_owned_flow_tail(
+        &mut self,
+        tail: RuntimeFlowTail,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let prior_worklist_depth = self.flow_tail_worklists.len();
+        self.flow_tail_worklists.push(FlowTailWorklist::default());
+        let result = self
+            .lower_flow_tail_inline(tail)
+            .and_then(|ops| self.resolve_flow_tail_worklist(ops));
+        self.flow_tail_worklists.truncate(prior_worklist_depth);
+        result
+    }
+
     fn lower_flow_tail(
         &mut self,
         tail: RuntimeFlowTail,
@@ -8568,7 +8635,7 @@ impl<'a> FinalFlowLowerer<'a> {
             return Ok(Vec::new());
         }
         let Some(worklist) = self.flow_tail_worklists.last_mut() else {
-            return self.lower_flow_tail_inline(tail);
+            return self.lower_owned_flow_tail(tail);
         };
         let id = worklist.next_id;
         worklist.next_id = id
@@ -8604,11 +8671,21 @@ impl<'a> FinalFlowLowerer<'a> {
             RuntimeFlowTail::Value {
                 expression,
                 continuation,
-            } => self.lower_flow_value(expression, *continuation),
+                overrides,
+            } => self.lower_flow_value_with_overrides_inline(expression, *continuation, overrides),
+            RuntimeFlowTail::SourceValue {
+                expression,
+                continuation,
+                overrides,
+            } => self.lower_flow_value_source_with_overrides_inline(
+                expression,
+                *continuation,
+                overrides,
+            ),
             RuntimeFlowTail::ContinueValue {
                 value,
                 continuation,
-            } => self.apply_value_continuation(value, *continuation),
+            } => self.apply_value_continuation_inline(value, *continuation),
         }
     }
 
@@ -9032,14 +9109,11 @@ impl<'a> FinalFlowLowerer<'a> {
         statements: &[StmtId],
         tail: RuntimeFlowTail,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
-        let prior_worklist_depth = self.flow_tail_worklists.len();
-        self.flow_tail_worklists.push(FlowTailWorklist::default());
-        let statements: Arc<[StmtId]> = Arc::from(statements);
-        let result = self
-            .lower_statement_ids_with_tail_inline(statements, 0, tail)
-            .and_then(|ops| self.resolve_flow_tail_worklist(ops));
-        self.flow_tail_worklists.truncate(prior_worklist_depth);
-        result
+        self.lower_owned_flow_tail(RuntimeFlowTail::StatementsWithTail {
+            statements: Arc::from(statements),
+            next: 0,
+            tail: Box::new(tail),
+        })
     }
 
     fn lower_statement_ids_with_tail_inline(

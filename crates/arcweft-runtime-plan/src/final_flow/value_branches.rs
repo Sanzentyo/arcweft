@@ -14,7 +14,7 @@ use arcweft_lang_hir::identity::ExprId;
 
 use crate::errors::RuntimePlanLowerError;
 
-use super::{FinalFlowLowerer, RuntimeFlowValueContinuation};
+use super::{FinalFlowLowerer, RuntimeFlowTail, RuntimeFlowValueContinuation};
 
 impl FinalFlowLowerer<'_> {
     pub(super) fn lower_value_branch(
@@ -126,19 +126,25 @@ impl FinalFlowLowerer<'_> {
                         ));
                     }
                 };
-                let skipped = self.apply_value_continuation(
-                    RuntimeExprSeed::new(
+                let skipped = RuntimeFlowTail::ContinueValue {
+                    value: RuntimeExprSeed::new(
                         selector.ty(),
                         RuntimeExprSeedKind::Value(RuntimeValue::Bool(skipped)),
                     ),
-                    continuation.clone(),
-                )?;
-                let evaluated =
-                    self.lower_flow_value_with_overrides(binary.right(), continuation, overrides)?;
-                let (then_ops, else_ops) = match binary.operator() {
+                    continuation: Box::new(continuation.clone()),
+                };
+                let evaluated = RuntimeFlowTail::Value {
+                    expression: binary.right(),
+                    continuation: Box::new(continuation),
+                    overrides,
+                };
+                let (then_tail, else_tail) = match binary.operator() {
                     HirBinaryOp::Or => (skipped, evaluated),
                     _ => (evaluated, skipped),
                 };
+                // Register jobs in the same order as their owned branch holes.
+                let then_ops = self.lower_flow_tail(then_tail)?;
+                let else_ops = self.lower_flow_tail(else_tail)?;
                 RuntimeFlowOpSeed::If {
                     condition: selector,
                     then_ops,
