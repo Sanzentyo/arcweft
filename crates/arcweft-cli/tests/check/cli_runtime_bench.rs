@@ -116,11 +116,10 @@ character alice {
 }
 
 flow opening {
-    @<character.alice>()[待って。[mark .release][p]]
+    alice()[待って。[mark @.release][p]]
     with:
         init:
-            'line.flag <- true
-        at(0.25s): 'line.flag |> drop_optional
+            log.info("ready")
 }
 "#,
     );
@@ -269,19 +268,19 @@ effects { state.write('flow) }
 }
 
 #[test]
-fn check_rejects_unlowered_line_plan_item() {
+fn check_rejects_malformed_line_plan_init() {
     let path = temp_arcw(
-        "unsupported-line-plan",
-        r"
+        "malformed-line-plan-init",
+        r#"
 pub character alice {
 }
 
-flow unsupported {
-    @<character.alice>()[待って。[p]]
+flow malformed {
+    alice()[待って。[p]]
     with:
-        @bad raw item
+        init: log.info("ready")
 }
-",
+"#,
     );
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -292,11 +291,12 @@ flow unsupported {
 
     assert!(
         !output.status.success(),
-        "unsupported line plan item must fail"
+        "malformed line plan init must fail"
     );
+    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("raw expression"),
-        "stderr should explain the unsupported line-plan item"
+        stderr.contains("syntax.dialogue.line_plan_init_invalid_indent"),
+        "stderr should identify the malformed line-plan init: {stderr}"
     );
 }
 
@@ -318,9 +318,10 @@ flow bad {
         .expect("arcw check runs");
 
     assert!(!output.status.success(), "invalid source must fail");
+    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("error:"),
-        "stderr should contain diagnostics"
+        stderr.contains("syntax.expression.missing_postfix_bracket_close"),
+        "stderr should identify the missing closing bracket: {stderr}"
     );
 }
 

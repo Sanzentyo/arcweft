@@ -2222,10 +2222,11 @@ pub(super) fn compile_command(options: &CompileOptions) -> Result<(), ExitCode> 
         print_json(&report)?;
     } else {
         println!(
-            "ok: {} (emit={}, {} flow(s), {} warning(s), {} obligation(s))",
+            "ok: {} (emit={}, {} flow(s), {} line task group(s), {} warning(s), {} obligation(s))",
             options.input.display(),
             report.emit,
             report.flows,
+            report.line_task_groups,
             report.syntax_warnings,
             report.obligations,
         );
