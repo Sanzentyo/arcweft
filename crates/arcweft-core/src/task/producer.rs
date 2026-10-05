@@ -15,6 +15,17 @@ pub struct TaskLaunchOrdinal(u64);
 impl TaskLaunchOrdinal {
     pub const JOIN: Self = Self(0);
 
+    pub(crate) const fn try_for_policy(
+        policy: TaskPolicy,
+        value: u64,
+    ) -> Result<Self, TaskIdentityError> {
+        match (policy, value) {
+            (TaskPolicy::JoinSameKey, 0) | (TaskPolicy::AlwaysStart, 1..) => Ok(Self(value)),
+            (TaskPolicy::JoinSameKey, _) => Err(TaskIdentityError::NonZeroJoinOrdinal),
+            (TaskPolicy::AlwaysStart, 0) => Err(TaskIdentityError::ZeroAlwaysStartOrdinal),
+        }
+    }
+
     #[must_use]
     pub const fn get(self) -> u64 {
         self.0
@@ -121,13 +132,6 @@ pub struct NeedProducerSpec {
     arguments: RuntimeValueDigest,
 }
 
-/// First-error identity failures shared by the standalone Cut 4 substrate.
-#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
-pub enum TaskIdentityError {
-    #[error("a fixed runtime identity may not be all zero")]
-    ZeroFixedIdentity,
-}
-
 impl NeedProducerSpec {
     #[must_use]
     pub const fn new(
@@ -158,11 +162,7 @@ impl NeedProducerSpec {
         hasher.update(self.producer_site.as_bytes());
         hasher.update(self.payload_type.as_bytes());
         hasher.update(self.arguments.as_bytes());
-        let bytes = *hasher.finalize().as_bytes();
-        if bytes == [0; 32] {
-            return Err(TaskIdentityError::ZeroFixedIdentity);
-        }
-        Ok(NeedProducerInstanceKey(bytes))
+        NeedProducerInstanceKey::try_from_bytes(*hasher.finalize().as_bytes())
     }
 
     pub const fn family(&self) -> NeedProducerFamily {
@@ -192,14 +192,31 @@ impl NeedProducerSpec {
 
 /// Fixed identity of a complete producer spec.  It has no public raw-byte
 /// constructor; only `NeedProducerSpec::instance_key` can issue it.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[repr(transparent)]
 pub struct NeedProducerInstanceKey([u8; 32]);
 
 impl NeedProducerInstanceKey {
+    pub(crate) fn try_from_bytes(bytes: [u8; 32]) -> Result<Self, TaskIdentityError> {
+        if bytes == [0; 32] {
+            Err(TaskIdentityError::Zero {
+                kind: TaskIdentityKind::NeedProducerInstance,
+            })
+        } else {
+            Ok(Self(bytes))
+        }
+    }
+
     #[must_use]
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for NeedProducerInstanceKey {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let bytes = <[u8; 32]>::deserialize(deserializer)?;
+        Self::try_from_bytes(bytes).map_err(serde::de::Error::custom)
     }
 }
 

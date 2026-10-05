@@ -41,6 +41,11 @@ impl GenerationId {
 mod producer;
 pub use producer::*;
 
+// Private final identity preparation. Publish only with the atomic task/Need
+// carrier, journal, host and persistence migration; no String conversion exists.
+mod identity;
+pub use identity::{TaskIdentityError, TaskIdentityKind};
+
 #[cfg(test)]
 mod identity_tests {
     use super::*;
@@ -807,6 +812,23 @@ pub enum TaskClass {
 pub enum TaskPolicy {
     JoinSameKey,
     AlwaysStart,
+}
+
+impl TaskPolicy {
+    pub(crate) const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::JoinSameKey => 0,
+            Self::AlwaysStart => 1,
+        }
+    }
+
+    pub(crate) const fn from_semantic_tag(value: u8) -> Result<Self, TaskIdentityError> {
+        match value {
+            0 => Ok(Self::JoinSameKey),
+            1 => Ok(Self::AlwaysStart),
+            other => Err(TaskIdentityError::UnknownPolicy(other)),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
