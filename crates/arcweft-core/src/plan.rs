@@ -89,6 +89,7 @@ pub use dialogue_content::{
     RuntimeDialogueValueSite,
 };
 pub use executable_body::{RuntimeEffectSet, RuntimeEffectSetError, RuntimeExecutableBody};
+pub use flow_ops::{RuntimeFlowBodyRole, RuntimeFlowOwnedBodies};
 pub use format_attempt::{
     RuntimeFormatAttempt, RuntimeFormatAttemptOperand, RuntimeFormatAttemptTable,
 };
