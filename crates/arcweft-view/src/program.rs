@@ -652,6 +652,7 @@ fn validate_next_handler(
         .captures
         .iter()
         .any(|input| !inputs.insert(input.source))
+        || !handler.result.writes_are_canonical(&handler.captures)
     {
         return Err(ViewProgramBuildError::NonCanonicalHandlerCaptures {
             handler: handler.handler,

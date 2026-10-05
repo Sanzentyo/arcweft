@@ -1859,7 +1859,7 @@ mod tests {
             ViewHandlerRef {
                 program: submit,
                 captures: Vec::new(),
-                result,
+                result: result.clone(),
             },
             ViewHandlerRef {
                 program: change,

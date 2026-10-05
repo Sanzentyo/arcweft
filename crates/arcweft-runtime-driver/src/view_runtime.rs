@@ -8,6 +8,7 @@
 mod axis_seed;
 mod catalog;
 mod evaluator;
+mod handler;
 mod owner;
 #[cfg(test)]
 mod owner_tests;
@@ -40,9 +41,9 @@ use arcweft_presentation::fx::{
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_text_model::{LineDisplayFrame, RichTextDocument};
 use arcweft_view::{
-    EventKind, ViewHandlerInvocation, ViewHandlerProgramId, ViewHandlerRouteId, ViewId,
-    ViewMountAllocationError, ViewMountAllocator, ViewMountId, ViewMountSnapshot, ViewMountState,
-    ViewPartName, ViewProgramId, ViewRegistry, ViewRegistryError, ViewRegistryId, ViewStyleProgram,
+    EventKind, ViewHandlerProgramId, ViewHandlerRouteId, ViewId, ViewMountAllocationError,
+    ViewMountAllocator, ViewMountId, ViewMountSnapshot, ViewMountState, ViewPartName,
+    ViewProgramId, ViewRegistry, ViewRegistryError, ViewRegistryId, ViewStyleProgram,
     ViewValueEvaluationError, ViewValueInventoryError, ViewValueProgramInventory,
 };
 use serde::{Deserialize, Serialize};
@@ -339,7 +340,7 @@ impl BundleViewEventBinding {
 }
 
 /// Fail-closed event-token routing error.
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[derive(Clone, Debug, Error, PartialEq)]
 pub enum BundleViewEventDispatchError {
     #[error("View event binding is not active in the latest successful frame")]
     UnknownBinding,
@@ -347,6 +348,26 @@ pub enum BundleViewEventDispatchError {
     InvocationMismatch,
     #[error("sealed DialogueAction token is invalid: {message}")]
     InvalidDialogueAction { message: String },
+    #[error("View handler execution failed: {source}")]
+    ProgramExecution {
+        source: Box<arcweft_core::awbc::vm::VmError>,
+    },
+    #[error("View handler state input {input} violates type {expected:?}")]
+    InvalidStateInput {
+        input: usize,
+        expected: arcweft_id::RuntimeSemanticTypeId,
+    },
+    #[error("View handler result violates type {expected:?}")]
+    InvalidStateResult {
+        expected: arcweft_id::RuntimeSemanticTypeId,
+    },
+    #[error("View handler state field {field:?} at {path:?} is no longer live")]
+    MissingStateField {
+        path: BundleViewInstancePath,
+        field: arcweft_view::ViewStateFieldId,
+    },
+    #[error("View handler seal revision cursor is exhausted")]
+    HandlerRevisionExhausted,
 }
 
 /// Public owner and part identity projected from an accepted exported-part boundary.
@@ -564,7 +585,7 @@ struct MountedView {
         BundleViewStateFieldSnapshot,
     >,
     /// Frame-derived lexical values; cleared before publication and never persisted.
-    execution_locals: Vec<BTreeMap<arcweft_view::ViewLocalCoordinate, RuntimeValue>>,
+    execution_locals: Vec<BTreeMap<arcweft_view::ViewLocalCoordinate, MountedViewExecutionLocal>>,
     expression_evaluations: BTreeMap<
         arcweft_id::runtime_program::RuntimePureProgramId,
         MountedViewExpressionEvaluation,
@@ -592,9 +613,36 @@ struct MountedViewHandlerKey {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+struct MountedViewExecutionLocal {
+    value: RuntimeValue,
+    retained: Option<(BundleViewInstancePath, arcweft_view::ViewStateFieldId)>,
+}
+
+impl MountedViewExecutionLocal {
+    fn derived(value: RuntimeValue) -> Self {
+        Self {
+            value,
+            retained: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct MountedViewHandlerInput {
+    snapshot: AwbcRuntimeValueSnapshot,
+    retained: Option<(BundleViewInstancePath, arcweft_view::ViewStateFieldId)>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum MountedViewHandlerPublication {
+    DialogueAction(RuntimeDialogueActionToken),
+    StateTransition,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 struct MountedViewHandlerSeal {
-    captures: Box<[AwbcRuntimeValueSnapshot]>,
-    token: RuntimeDialogueActionToken,
+    captures: Box<[MountedViewHandlerInput]>,
+    publication: MountedViewHandlerPublication,
     revision: u64,
 }
 
@@ -632,7 +680,9 @@ pub struct BundleViewRuntime {
 struct PublishedViewEventToken {
     event: EventKind,
     target: InteractionTarget,
-    token: RuntimeDialogueActionToken,
+    owner: ViewOccurrenceKey,
+    seal: MountedViewHandlerKey,
+    revision: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -859,22 +909,6 @@ impl BundleViewRuntime {
     #[must_use]
     pub const fn registry(&self) -> &ViewRegistry {
         &self.registry
-    }
-
-    /// Dispatches one latest-frame event from its sealed DialogueAction token.
-    /// The associated pure helper is never re-entered at this boundary.
-    pub fn dispatch_invocation(
-        &self,
-        invocation: &ViewHandlerInvocation,
-    ) -> Result<Option<BundlePresentationInput>, BundleViewEventDispatchError> {
-        let published = self
-            .event_tokens
-            .get(&invocation.route())
-            .ok_or(BundleViewEventDispatchError::UnknownBinding)?;
-        if published.event != invocation.event() || &published.target != invocation.target() {
-            return Err(BundleViewEventDispatchError::InvocationMismatch);
-        }
-        published.token.presentation_input()
     }
 
     /// Projects a live registry entry into stable public owner evidence.

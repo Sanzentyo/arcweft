@@ -2798,6 +2798,16 @@ impl Analyzer<'_, '_, '_> {
                         .cloned()
                         .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?
                 } else {
+                    if body.value_type().is_none()
+                        && self
+                            .has_unselected_call_diagnostic(context, closure.body())
+                            .map_err(AnalyzerExpressionError::fact)?
+                    {
+                        // The body's retained rejection is a candidate mismatch,
+                        // not a missing checker fact. Its enclosing callback
+                        // application owns the rejected contextual contract.
+                        return Err(AnalyzerExpressionError::rejected(owner));
+                    }
                     body.value_type().cloned().ok_or_else(|| {
                         AnalyzerExpressionError::fatal(
                             FinalSemanticAnalysisError::ExpressionTypeUnavailable {

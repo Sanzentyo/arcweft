@@ -1050,3 +1050,108 @@ view Main(reverse: bool) { {
         crate::final_analysis::CheckedExecutableControlRole::FlowRequired
     );
 }
+
+#[test]
+fn mutation_body_exports_checked_free_roots_without_admitting_value_extraction_writes() {
+    use crate::final_analysis::CheckedProgramAdmissionError;
+    let world = fixture(
+        r#"fn root() -> i64 {
+            let mut caption: String = "first"
+            let handler = || { caption = "second"; () }
+            42i64
+        }"#,
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let (owner, _) = report
+        .expressions()
+        .find(|(_, checked)| {
+            matches!(
+                checked.resolution(),
+                CheckedExpressionResolution::Closure(_)
+            )
+        })
+        .unwrap();
+    let source =
+        CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(owner));
+    let context = report
+        .checked_execution_context(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            source.clone(),
+            None,
+        )
+        .unwrap();
+    assert!(matches!(
+        context.checked_deterministic_program(source),
+        Err(CheckedProgramAdmissionError::ExternalPlace { .. })
+    ));
+    let admission = context
+        .checked_deterministic_program(CheckedExecutionSource::ExportMutation(
+            CheckedExecutionBodyOwner::CallableValue(owner),
+        ))
+        .unwrap();
+    let abi = admission.input_abi();
+    assert!(matches!(
+        abi.coordinate(),
+        CheckedExecutionCoordinate::MutationBody(_)
+    ));
+    assert_eq!(abi.inputs().len(), 1);
+    assert_eq!(abi.binding_outputs().len(), 1);
+    assert_eq!(abi.inputs()[0].binding(), &abi.binding_outputs()[0]);
+    assert!(
+        abi.inputs()[0]
+            .uses()
+            .iter()
+            .any(|usage| usage.access().place_access().is_some())
+    );
+    assert_eq!(
+        abi.result().value_type(),
+        Some(&TypeKind::Tuple(vec![TypeKind::Unit, TypeKind::String]))
+    );
+    assert!(abi.effects().is_empty());
+}
+
+#[test]
+fn mutation_body_does_not_export_writes_from_independent_cleanup_frame() {
+    use crate::final_analysis::CheckedProgramAdmissionError;
+    let world = fixture(
+        r#"fn root() -> i64 {
+            let mut caption: String = "first"
+            let handler = || { { defer { let copied = caption; caption = "cleanup"; () }; caption = "body"; () } };
+            42i64
+        }"#,
+        None,
+    );
+    let (_, lowered) = world.project.view().modules().next().unwrap();
+    assert_eq!(
+        lowered.status(),
+        arcweft_lang_hir::module::HirModuleStatus::Clean,
+        "cleanup fixture must lower cleanly: {:?}",
+        lowered.diagnostics()
+    );
+    let report = analyze(&world).unwrap();
+    let (owner, _) = report
+        .expressions()
+        .find(|(_, checked)| {
+            matches!(
+                checked.resolution(),
+                CheckedExpressionResolution::Closure(_)
+            )
+        })
+        .unwrap();
+    let source =
+        CheckedExecutionSource::ExportMutation(CheckedExecutionBodyOwner::CallableValue(owner));
+    let context = report
+        .checked_execution_context(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            source.clone(),
+            None,
+        )
+        .unwrap();
+    assert!(matches!(
+        context.checked_deterministic_program(source),
+        Err(CheckedProgramAdmissionError::ExternalPlace { .. })
+    ));
+}

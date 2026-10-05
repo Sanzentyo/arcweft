@@ -43,10 +43,15 @@ impl CheckedDeterministicProgram {
             CheckedExecutionSource::EvaluateValue(owner) => {
                 HirRuntimeExecutableOwner::Value(*owner)
             }
-            CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(owner)) => {
-                HirRuntimeExecutableOwner::CallableBody(*owner)
-            }
+            CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(owner))
+            | CheckedExecutionSource::ExportMutation(CheckedExecutionBodyOwner::CallableValue(
+                owner,
+            )) => HirRuntimeExecutableOwner::CallableBody(*owner),
             CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
+                declaration,
+                role,
+            })
+            | CheckedExecutionSource::ExportMutation(CheckedExecutionBodyOwner::Declaration {
                 declaration,
                 role,
             }) => HirRuntimeExecutableOwner::DeclarationBody {
@@ -106,13 +111,30 @@ impl CheckedClosedExecutionContext<'_> {
             .filter(|input| input.role() == &CheckedExecutionInputRole::Free)
             .map(|input| input.binding().local())
             .collect::<BTreeSet<_>>();
+        let exported_places =
+            if matches!(inputs.source(), CheckedExecutionSource::ExportMutation(_)) {
+                inputs
+                    .binding_outputs()
+                    .iter()
+                    .map(|output| output.local())
+                    .collect()
+            } else {
+                BTreeSet::new()
+            };
         let mut cleanup = Vec::new();
-        self.validate_program_frame(&external_places, &inputs, &mut cleanup)?;
+        self.validate_program_frame(&external_places, &exported_places, &inputs, &mut cleanup)?;
         let mut visited = BTreeSet::new();
         while let Some(owner) = cleanup.pop() {
             if visited.insert(owner) {
                 let body = self.checked_execution_input_abi(owner)?;
-                self.validate_program_frame(&external_places, &body, &mut cleanup)?;
+                self.validate_program_frame(
+                    &external_places,
+                    // Cleanup owns a separate captured frame and has no
+                    // returned publication ABI for its caller's bindings.
+                    &BTreeSet::new(),
+                    &body,
+                    &mut cleanup,
+                )?;
             }
         }
         Ok(CheckedDeterministicProgram { inputs })
@@ -125,6 +147,7 @@ impl CheckedClosedExecutionContext<'_> {
     fn validate_program_frame(
         &self,
         external_places: &BTreeSet<LocalId>,
+        exported_places: &BTreeSet<LocalId>,
         inputs: &CheckedExecutionInputAbi,
         cleanup: &mut Vec<ExprId>,
     ) -> Result<(), CheckedProgramAdmissionError> {
@@ -134,6 +157,9 @@ impl CheckedClosedExecutionContext<'_> {
             }
             for usage in input.uses() {
                 if let Some(access) = usage.access().place_access() {
+                    if exported_places.contains(&access.place().local_id()) {
+                        continue;
+                    }
                     return Err(CheckedProgramAdmissionError::ExternalPlace {
                         local: access.place().local_id(),
                         mode: access.mode(),
@@ -170,9 +196,10 @@ impl CheckedClosedExecutionContext<'_> {
             }
         }
         let invoked_callable = match inputs.source() {
-            CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(owner)) => {
-                Some(*owner)
-            }
+            CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(owner))
+            | CheckedExecutionSource::ExportMutation(CheckedExecutionBodyOwner::CallableValue(
+                owner,
+            )) => Some(*owner),
             _ => None,
         };
         for expression in inputs.expressions().iter().copied().chain(invoked_callable) {
@@ -215,7 +242,10 @@ impl CheckedExecutionInputAbi {
     fn admits_callable(&self, boundary: &CheckedCallableBoundary) -> bool {
         match (self.source(), boundary) {
             (
-                CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(owner)),
+                CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(owner))
+                | CheckedExecutionSource::ExportMutation(CheckedExecutionBodyOwner::CallableValue(
+                    owner,
+                )),
                 CheckedCallableBoundary::FunctionSite(site),
             ) => {
                 *owner == site.site().lookup_owner()
@@ -223,6 +253,10 @@ impl CheckedExecutionInputAbi {
             }
             (
                 CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
+                    declaration,
+                    ..
+                })
+                | CheckedExecutionSource::ExportMutation(CheckedExecutionBodyOwner::Declaration {
                     declaration,
                     ..
                 }),

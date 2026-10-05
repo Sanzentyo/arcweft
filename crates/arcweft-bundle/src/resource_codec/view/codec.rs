@@ -143,12 +143,41 @@ impl Default for ViewResourceBudget {
     }
 }
 
+/// Exact lexical declaration used by expression and handler admission. State
+/// identity belongs to the binding lifetime, rather than a parallel target map.
+#[derive(Clone, Copy)]
+struct ScopedViewLocalDeclaration {
+    value_type: arcweft_id::RuntimeSemanticTypeId,
+    retained_field: Option<arcweft_view::ViewStateFieldId>,
+}
+
+impl ScopedViewLocalDeclaration {
+    const fn derived(value_type: arcweft_id::RuntimeSemanticTypeId) -> Self {
+        Self {
+            value_type,
+            retained_field: None,
+        }
+    }
+
+    fn from_binding(binding: &arcweft_view::ViewBindingProgram, index: usize) -> Option<Self> {
+        let output = binding.outputs.get(index)?;
+        let retained_field = match &binding.lifetime {
+            arcweft_view::ViewBindingLifetime::Derived => None,
+            arcweft_view::ViewBindingLifetime::Retained { fields } => Some(*fields.get(index)?),
+        };
+        Some(Self {
+            value_type: output.value_type,
+            retained_field,
+        })
+    }
+}
+
 impl ViewProgramResource {
     fn validate_execution_inputs(
         &self,
         definition: &super::model::ViewDefinitionResource,
         inputs: &[arcweft_view::ViewExecutionInput],
-        locals: &[BTreeMap<arcweft_view::ViewLocalCoordinate, arcweft_id::RuntimeSemanticTypeId>],
+        locals: &[BTreeMap<arcweft_view::ViewLocalCoordinate, ScopedViewLocalDeclaration>],
     ) -> Result<(), SectionCodecError> {
         let mut sources = BTreeSet::new();
         if inputs.iter().any(|input| {
@@ -165,7 +194,7 @@ impl ViewProgramResource {
                         .iter()
                         .rev()
                         .find_map(|scope| scope.get(&coordinate))
-                        .is_none_or(|value_type| *value_type != input.value_type()),
+                        .is_none_or(|local| local.value_type != input.value_type()),
                 }
         }) {
             return Err(SectionCodecError::NonCanonicalTable(
@@ -180,7 +209,7 @@ impl ViewProgramResource {
         program: &'a AwbcProgram,
         definition: &super::model::ViewDefinitionResource,
         expression: &arcweft_view::ViewExpressionProgram,
-        locals: &[BTreeMap<arcweft_view::ViewLocalCoordinate, arcweft_id::RuntimeSemanticTypeId>],
+        locals: &[BTreeMap<arcweft_view::ViewLocalCoordinate, ScopedViewLocalDeclaration>],
     ) -> Result<&'a arcweft_core::awbc::schema::AwbcSignature, SectionCodecError> {
         let invalid = || SectionCodecError::NonCanonicalTable("view_expression_program_binding");
         let binding = program
@@ -458,7 +487,12 @@ impl ViewProgramResource {
                         locals.push(
                             outputs
                                 .iter()
-                                .map(|output| (output.coordinate, output.value_type))
+                                .map(|output| {
+                                    (
+                                        output.coordinate,
+                                        ScopedViewLocalDeclaration::derived(output.value_type),
+                                    )
+                                })
                                 .collect(),
                         );
                         continue;
@@ -666,11 +700,15 @@ impl ViewProgramResource {
                             .map(|ty| ty.shape())
                             .ok_or(SectionCodecError::NonCanonicalTable("view_binding_result"))?;
                         self.validate_owned_outputs(program, binding, shape, &mut declared)?;
-                        for output in binding.outputs.iter() {
-                            locals
-                                .last_mut()
-                                .expect("root scope remains")
-                                .insert(output.coordinate, output.value_type);
+                        for (index, output) in binding.outputs.iter().enumerate() {
+                            locals.last_mut().expect("root scope remains").insert(
+                                output.coordinate,
+                                ScopedViewLocalDeclaration::from_binding(binding, index).ok_or(
+                                    SectionCodecError::NonCanonicalTable(
+                                        "view_binding_state_output",
+                                    ),
+                                )?,
+                            );
                         }
                     }
                     ViewProgramInstruction::EmitText { text_source, .. } if text.is_some() => {
@@ -787,6 +825,11 @@ impl ViewProgramResource {
             ));
         }
         for handler in &self.handlers {
+            if !handler.result.writes_are_canonical(&handler.captures) {
+                return Err(SectionCodecError::NonCanonicalTable(
+                    "view_handler_state_writes",
+                ));
+            }
             let binding =
                 bindings
                     .get(&handler.program)
@@ -843,6 +886,42 @@ impl ViewProgramResource {
                     .is_some_and(|owner| {
                         RuntimeDialogueOpaqueRole::Action.accepts_exact_owner(&owner)
                     }),
+                arcweft_view::ViewHandlerResultRole::StateTransition { value, writes } => {
+                    let arcweft_core::awbc::schema::AwbcRuntimeTypeShape::Tuple(fields) =
+                        result_type.shape()
+                    else {
+                        return Err(SectionCodecError::NonCanonicalTable(
+                            "view_handler_transition_result",
+                        ));
+                    };
+                    fields.len() == writes.len() + 1
+                        && fields
+                            .first()
+                            .and_then(|ty| program.runtime_types.get(ty.index()))
+                            .is_some_and(|ty| match value {
+                                arcweft_view::ViewHandlerTransitionValueRole::Unit => matches!(
+                                    ty.shape(),
+                                    arcweft_core::awbc::schema::AwbcRuntimeTypeShape::Unit
+                                ),
+                                arcweft_view::ViewHandlerTransitionValueRole::DialogueAction => ty
+                                    .try_opaque_owner(&program.strings)
+                                    .ok()
+                                    .flatten()
+                                    .is_some_and(|owner| {
+                                        RuntimeDialogueOpaqueRole::Action
+                                            .accepts_exact_owner(&owner)
+                                    }),
+                            })
+                        && writes.iter().zip(fields.iter().skip(1)).all(|(write, ty)| {
+                            handler
+                                .captures
+                                .get(write.input())
+                                .zip(program.runtime_types.get(ty.index()))
+                                .is_some_and(|(capture, ty)| {
+                                    capture.value_type() == ty.semantic_identity()
+                                })
+                        })
+                }
             };
             if !accepted_result {
                 return Err(SectionCodecError::NonCanonicalTable(
@@ -1589,7 +1668,12 @@ impl ViewProgramResource {
                         locals.push(
                             outputs
                                 .iter()
-                                .map(|output| (output.coordinate, output.value_type))
+                                .map(|output| {
+                                    (
+                                        output.coordinate,
+                                        ScopedViewLocalDeclaration::derived(output.value_type),
+                                    )
+                                })
                                 .collect(),
                         );
                         continue;
@@ -1608,8 +1692,12 @@ impl ViewProgramResource {
                     }
                     ViewProgramInstruction::BindLocal { program, .. } => {
                         let scope = locals.last_mut().ok_or_else(invalid)?;
-                        for output in &program.outputs {
-                            scope.insert(output.coordinate, output.value_type);
+                        for (index, output) in program.outputs.iter().enumerate() {
+                            scope.insert(
+                                output.coordinate,
+                                ScopedViewLocalDeclaration::from_binding(program, index)
+                                    .ok_or_else(invalid)?,
+                            );
                         }
                         target = None;
                     }
@@ -1626,6 +1714,36 @@ impl ViewProgramResource {
                             &locals,
                         )
                         .map_err(|_| invalid())?;
+                        if !specification
+                            .result
+                            .writes_are_canonical(&specification.captures)
+                        {
+                            return Err(invalid());
+                        }
+                        if let arcweft_view::ViewHandlerResultRole::StateTransition {
+                            writes, ..
+                        } = specification.result.role()
+                        {
+                            for write in writes {
+                                let capture = specification
+                                    .captures
+                                    .get(write.input())
+                                    .ok_or_else(invalid)?;
+                                let arcweft_view::ViewExecutionInputSource::Local(coordinate) =
+                                    capture.source
+                                else {
+                                    return Err(invalid());
+                                };
+                                if locals
+                                    .iter()
+                                    .rev()
+                                    .find_map(|scope| scope.get(&coordinate))
+                                    .is_none_or(|local| local.retained_field != Some(write.field()))
+                                {
+                                    return Err(invalid());
+                                }
+                            }
+                        }
                         if !referenced.insert(*handler)
                             || !target.is_some_and(|node| event_targets.insert((node, *event)))
                         {

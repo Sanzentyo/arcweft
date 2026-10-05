@@ -910,6 +910,21 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             let [slot] = argument.slots() else {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             };
+            let Some(TypeKind::Function {
+                return_type,
+                params,
+                ..
+            }) = slot.expected()
+            else {
+                return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+            };
+            if !params.is_empty()
+                || crate::callable::ViewModifierId::OnActivate
+                    .handler_value_role(return_type)
+                    .is_none()
+            {
+                return Err(FinalSemanticAnalysisError::CallResolutionFailed { owner: *owner });
+            }
             let handler = slot.source().owner();
             let Some(checked_handler) = self
                 .facts

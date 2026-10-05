@@ -808,7 +808,7 @@ fn standard_dialogue_runtime_roles_have_exact_accepted_nominal_identities() {
 }
 
 #[test]
-fn standard_on_click_handler_returns_the_exact_accepted_dialogue_action() {
+fn standard_on_click_handler_authenticates_language_owned_result_inference() {
     let environment = TypeCheckEnv::standard();
     let action = environment
         .environment_record("DialogueView")
@@ -827,7 +827,14 @@ fn standard_on_click_handler_returns_the_exact_accepted_dialogue_action() {
     assert!(matches!(
         handler,
         TypeKind::Function { params, return_type, .. }
-            if params.is_empty() && return_type.as_ref() == action
+            if params.is_empty() && return_type.as_ref() == &TypeKind::generic_parameter(
+                crate::types::GenericTypeParameterId::new(
+                    crate::types::GenericParameterOwnerId::LanguageIntrinsic(
+                        crate::types::LanguageIntrinsicGenericOwner::ViewHandlerResult,
+                    ),
+                    0,
+                )
+            )
     ));
     assert!(matches!(action, TypeKind::AcceptedNominal(_)));
 }

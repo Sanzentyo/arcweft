@@ -161,7 +161,7 @@ impl ViewProgramCatalog {
                                 program: handler.program,
                                 function: binding.function,
                                 captures: handler.captures.clone().into_boxed_slice(),
-                                result: handler.result,
+                                result: handler.result.clone(),
                             },
                         )
                     })
@@ -404,8 +404,8 @@ impl AcceptedViewHandlerRuntime {
         &self.captures
     }
 
-    pub(super) const fn result(&self) -> ViewHandlerResult {
-        self.result
+    pub(super) const fn result(&self) -> &ViewHandlerResult {
+        &self.result
     }
 }
 
@@ -488,7 +488,7 @@ fn build_definition(
             handler: HandlerId(*dense),
             program: *program,
             captures: specification.captures.clone().into_boxed_slice(),
-            result: specification.result,
+            result: specification.result.clone(),
         })?;
     }
     authored_parts.sort_by(|left, right| left.0.cmp(&right.0));

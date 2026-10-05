@@ -1813,7 +1813,12 @@ impl TypeCheckEnv {
             .callable_schema(
                 EffectRow::closed(crate::effects::EffectSet::new()),
                 role.validator(),
-                CallableGenericParameterIssuer::empty(),
+                match role {
+                    StandardEnvironmentMethodRole::ViewModifier(modifier) => {
+                        modifier.generic_issuer()
+                    }
+                    _ => CallableGenericParameterIssuer::empty(),
+                },
                 &PRODUCTION_CALLABLE_LIMITS,
             )
             .expect("standard method signature is a valid checked callable schema");
@@ -1847,7 +1852,7 @@ impl TypeCheckEnv {
             .callable_schema(
                 EffectRow::closed(crate::effects::EffectSet::new()),
                 StandardEnvironmentMethodRole::ViewModifier(modifier).validator(),
-                CallableGenericParameterIssuer::empty(),
+                modifier.generic_issuer(),
                 &PRODUCTION_CALLABLE_LIMITS,
             )
             .expect("standard View modifier signature remains valid after type canonicalization");

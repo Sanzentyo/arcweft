@@ -653,12 +653,32 @@ impl BundleSession {
             .push(BundlePresentationInput::complete_dialogue_reveal(target));
     }
 
-    /// Queues the typed presentation action sealed for one routed View invocation.
+    fn make_pure_backend(
+        &self,
+        format_context: RuntimeFormatContext,
+    ) -> VmRuntimePureCallBackend<dialogue_backend::GenerationDialogueBackend> {
+        let schemas = self
+            .runtime_images
+            .images()
+            .filter_map(|image| image.runtime().character_dialogue_schema.clone())
+            .collect::<Vec<_>>();
+        let mut backend = VmRuntimePureCallBackend::default()
+            .with_external_calls(dialogue_backend::GenerationDialogueBackend::new(schemas));
+        backend.set_format_context(format_context);
+        backend
+    }
+
+    /// Executes a routed View transition and queues any resulting presentation action.
     pub fn queue_view_handler_invocation(
         &mut self,
         invocation: &ViewHandlerInvocation,
     ) -> Result<(), BundleViewEventDispatchError> {
-        if let Some(input) = self.view_runtime.dispatch_invocation(invocation)? {
+        let mut backend =
+            self.make_pure_backend(RuntimeFormatContext::new(self.active_locale.clone()));
+        if let Some(input) = self
+            .view_runtime
+            .dispatch_invocation_with_backend(invocation, &mut backend)?
+        {
             self.pending_presentation_inputs.push(input);
         }
         Ok(())
@@ -746,15 +766,8 @@ impl BundleSession {
             text_control_write_backs,
             diagnostics: input_diagnostics,
         } = self.prepare_step_input(clock, input);
-        let schemas = self
-            .runtime_images
-            .images()
-            .filter_map(|image| image.runtime().character_dialogue_schema.clone())
-            .collect::<Vec<_>>();
-        let mut pure_backend = VmRuntimePureCallBackend::default()
-            .with_external_calls(dialogue_backend::GenerationDialogueBackend::new(schemas));
         let format_context = RuntimeFormatContext::new(self.active_locale.clone());
-        pure_backend.set_format_context(format_context.clone());
+        let mut pure_backend = self.make_pure_backend(format_context.clone());
         self.executor.set_format_context(format_context);
         let result = self.executor.step_with_pure_backend(
             runtime,

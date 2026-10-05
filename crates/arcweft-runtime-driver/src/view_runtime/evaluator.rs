@@ -20,7 +20,8 @@ use super::{
     BundleViewDiagnostic, BundleViewDiagnosticCode, BundleViewEventBinding, BundleViewFrame,
     BundleViewFxApplication, BundleViewFxArgument, BundleViewInstancePath,
     BundleViewInstancePathSegment, BundleViewMountOutput, BundleViewPaintItem, BundleViewRuntime,
-    BundleViewTextOutput, MountedView, MountedViewHandlerKey, MountedViewHandlerSeal,
+    BundleViewTextOutput, MountedView, MountedViewExecutionLocal, MountedViewHandlerInput,
+    MountedViewHandlerKey, MountedViewHandlerPublication, MountedViewHandlerSeal,
     PublishedViewEventToken, RuntimeDialogueActionToken, ViewOccurrenceKey,
     ViewProgramRuntimeAuthority, deterministic_mount_seed, mount_scoped_interaction_target,
 };
@@ -1075,6 +1076,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                     .ok_or_else(|| {
                         failure("local input is outside its initialized lexical scope".to_owned())
                     })?;
+                let value = &value.value;
                 if !value.ownership().permits_copy() {
                     return Err(failure(
                         "input requires its retained resource owner".to_owned(),
@@ -1550,7 +1552,9 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                         outputs
                             .iter()
                             .zip(values)
-                            .map(|(output, value)| (output.coordinate, value))
+                            .map(|(output, value)| {
+                                (output.coordinate, MountedViewExecutionLocal::derived(value))
+                            })
                             .collect(),
                     );
                     let range = ranges.arms()[index];
@@ -1678,7 +1682,9 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                                 .outputs
                                 .iter()
                                 .zip(values)
-                                .map(|(output, value)| (output.coordinate, value))
+                                .map(|(output, value)| {
+                                    (output.coordinate, MountedViewExecutionLocal::derived(value))
+                                })
                                 .collect(),
                         );
                         let result = self.evaluate_expression_program(
@@ -1975,8 +1981,16 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                             "binding has no lexical scope",
                         )
                     })?;
-                    for (output, value) in binding.outputs.iter().zip(values) {
-                        if scope.insert(output.coordinate, value).is_some() {
+                    for (index, (output, value)) in binding.outputs.iter().zip(values).enumerate() {
+                        let retained =
+                            fields.map(|fields| (structural_path.clone(), fields[index]));
+                        if scope
+                            .insert(
+                                output.coordinate,
+                                MountedViewExecutionLocal { value, retained },
+                            )
+                            .is_some()
+                        {
                             return Err(EvaluationFailure::new(
                                 BundleViewDiagnosticCode::InvalidControlFlow,
                                 Some(cursor),
@@ -2379,10 +2393,23 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 *capture,
                 BundleViewDiagnosticCode::InvalidHandler,
             )?;
-            capture_snapshots.push(
-                AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &program_owner)
-                    .map_err(|error| failure(error.to_string()))?,
-            );
+            let retained = match capture.source {
+                arcweft_view::ViewExecutionInputSource::Parameter(_) => None,
+                arcweft_view::ViewExecutionInputSource::Local(coordinate) => mounted
+                    .execution_locals
+                    .iter()
+                    .rev()
+                    .find_map(|scope| scope.get(&coordinate))
+                    .and_then(|local| local.retained.clone()),
+            };
+            capture_snapshots.push(MountedViewHandlerInput {
+                snapshot: AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                    &value,
+                    &program_owner,
+                )
+                .map_err(|error| failure(error.to_string()))?,
+                retained,
+            });
         }
         let (path, target_instruction, authored_target) = builder
             .last_node
@@ -2411,44 +2438,67 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
             event,
             program: program_id,
         };
-        let (token, revision) = match mounted.handler_seals.get(&seal_key) {
-            Some(seal) if seal.captures.as_ref() == capture_snapshots.as_slice() => {
-                (seal.token.clone(), seal.revision)
-            }
+        let revision = match mounted.handler_seals.get(&seal_key) {
+            Some(seal) if seal.captures.as_ref() == capture_snapshots.as_slice() => seal.revision,
             _ => {
                 let revision = mounted.next_handler_seal_revision;
                 mounted.next_handler_seal_revision = revision
                     .checked_add(1)
                     .ok_or_else(|| failure("View handler seal revision is exhausted".to_owned()))?;
-                let program_owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(awbc));
-                let arguments = capture_snapshots
-                    .iter()
-                    .cloned()
-                    .map(|snapshot| snapshot.into_runtime_value_for_program(&program_owner))
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|error| failure(error.to_string()))?;
-                let value = evaluate_pure_program_with_backend(
-                    awbc,
-                    program_id,
-                    &arguments,
-                    self.pure_backend,
-                )
-                .map_err(|error| failure(error.to_string()))?;
-                let token = RuntimeDialogueActionToken::try_from_runtime_value(value)
-                    .map_err(|error| failure(error.to_string()))?;
+                let publication = match accepted.result().role() {
+                    arcweft_view::ViewHandlerResultRole::DialogueAction => {
+                        let program_owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(awbc));
+                        let arguments = capture_snapshots
+                            .iter()
+                            .map(|input| {
+                                input
+                                    .snapshot
+                                    .clone()
+                                    .into_runtime_value_for_program(&program_owner)
+                            })
+                            .collect::<Result<Vec<_>, _>>()
+                            .map_err(|error| failure(error.to_string()))?;
+                        let value = evaluate_pure_program_with_backend(
+                            awbc,
+                            program_id,
+                            &arguments,
+                            self.pure_backend,
+                        )
+                        .map_err(|error| failure(error.to_string()))?;
+                        MountedViewHandlerPublication::DialogueAction(
+                            RuntimeDialogueActionToken::try_from_runtime_value(value)
+                                .map_err(|error| failure(error.to_string()))?,
+                        )
+                    }
+                    arcweft_view::ViewHandlerResultRole::StateTransition { writes, .. } => {
+                        if writes.iter().any(|write| {
+                            capture_snapshots.get(write.input()).is_none_or(|input| {
+                                input
+                                    .retained
+                                    .as_ref()
+                                    .is_none_or(|(_, field)| *field != write.field())
+                            })
+                        }) {
+                            return Err(failure(
+                                "View state write is outside its retained capture owner".to_owned(),
+                            ));
+                        }
+                        MountedViewHandlerPublication::StateTransition
+                    }
+                };
                 mounted.handler_seals.insert(
                     seal_key.clone(),
                     MountedViewHandlerSeal {
                         captures: capture_snapshots.into_boxed_slice(),
-                        token: token.clone(),
+                        publication,
                         revision,
                     },
                 );
-                (token, revision)
+                revision
             }
         };
         let route_id = derive_handler_route_id(builder.mount, &seal_key, &target, revision);
-        builder.handler_seals.insert(seal_key);
+        builder.handler_seals.insert(seal_key.clone());
         let route = BundleViewEventBinding {
             route: route_id,
             target: target.clone(),
@@ -2465,7 +2515,9 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 PublishedViewEventToken {
                     event,
                     target,
-                    token,
+                    owner: key.clone(),
+                    seal: seal_key,
+                    revision,
                 },
             )
             .is_some()

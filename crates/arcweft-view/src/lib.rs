@@ -49,8 +49,9 @@ pub use handler::{
     ViewHandlerInvocation, ViewHandlerRoute, ViewHandlerRouteId, ViewHandlerRouteTable,
 };
 pub use handler_program::{
-    ViewHandlerProgramId, ViewHandlerResult, ViewHandlerResultRole, ViewHandlerValueTypeId,
-    ViewParameterCoordinate, ViewParameterInput,
+    ViewHandlerProgramId, ViewHandlerResult, ViewHandlerResultRole, ViewHandlerStateWrite,
+    ViewHandlerTransitionValueRole, ViewHandlerValueTypeId, ViewParameterCoordinate,
+    ViewParameterInput,
 };
 mod element_argument;
 mod expression_program;

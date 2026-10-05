@@ -677,7 +677,7 @@ fn lower_authored_views(
                         .iter()
                         .map(|capture| capture.schema)
                         .collect(),
-                    result: handler.result,
+                    result: handler.result.clone(),
                 },
             )
             .collect(),
@@ -1068,7 +1068,9 @@ impl ViewExpressionLowerer<'_> {
                 .checked_match()
                 .semantic_digest()
                 .as_bytes(),
-            CheckedExecutionSource::InvokeBody(_) => return Err(invalid()),
+            CheckedExecutionSource::InvokeBody(_) | CheckedExecutionSource::ExportMutation(_) => {
+                return Err(invalid());
+            }
         };
         let mut digest = blake3::Hasher::new();
         digest.update(b"arcweft.view.expression.v1\0");
@@ -2088,29 +2090,12 @@ impl AuthoredViewBodyLowerer<'_> {
         let event = modifier
             .event()
             .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
-        let handler_result_role = modifier
-            .handler_result_role()
-            .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
         let [group] = application.core().candidates().selected().schema().groups() else {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         };
-        let [parameter] = group.parameters() else {
+        let [_parameter] = group.parameters() else {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         };
-        let Some(
-            expected_handler @ TypeKind::Function {
-                params,
-                return_type: handler_result_type,
-                effects,
-                ..
-            },
-        ) = parameter.declared_type()
-        else {
-            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
-        };
-        if !params.is_empty() || !effects.is_empty() {
-            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
-        }
         let arcweft_lang_hir::expr::HirCallCallee::Value { value: callee } = call.callee() else {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         };
@@ -2139,6 +2124,23 @@ impl AuthoredViewBodyLowerer<'_> {
         let [slot] = argument.slots() else {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         };
+        let Some(
+            expected_handler @ TypeKind::Function {
+                params,
+                return_type: handler_result_type,
+                effects,
+                ..
+            },
+        ) = slot.expected()
+        else {
+            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
+        };
+        if !params.is_empty() || !effects.is_empty() {
+            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
+        }
+        let handler_value_role = modifier
+            .handler_value_role(handler_result_type)
+            .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
         let handler_source = slot.source().owner();
         if call.arguments().len() != 1 || call.arguments()[0].value() != handler_source {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
@@ -2182,6 +2184,29 @@ impl AuthoredViewBodyLowerer<'_> {
                 owner: self.owner,
                 source: Box::new(source),
             })?;
+        let input_abi = context
+            .checked_execution_input_abi(source.clone())
+            .map_err(|source| ViewProjectLowerError::InvalidProgramContext {
+                owner: self.owner,
+                source: Box::new(source),
+            })?;
+        let transition = handler_value_role == arcweft_view::ViewHandlerTransitionValueRole::Unit
+            || input_abi.inputs().iter().any(|input| {
+                input.role() == &arcweft_lang_sema::final_analysis::CheckedExecutionInputRole::Free
+                    && input
+                        .uses()
+                        .iter()
+                        .any(|usage| usage.access().place_access().is_some())
+            });
+        let source = if transition {
+            arcweft_lang_sema::final_analysis::CheckedExecutionSource::ExportMutation(
+                arcweft_lang_sema::final_analysis::CheckedExecutionBodyOwner::CallableValue(
+                    handler_source,
+                ),
+            )
+        } else {
+            source
+        };
         let admission = Arc::new(context.checked_deterministic_program(source).map_err(
             |source| ViewProjectLowerError::InvalidProgramAdmission {
                 owner: self.owner,
@@ -2193,7 +2218,13 @@ impl AuthoredViewBodyLowerer<'_> {
             .iter()
             .map(|capture| {
                 let capture_id = capture.capture();
-                if capture.mode() != CaptureAccess::Read {
+                if capture.mode() != CaptureAccess::Read
+                    && !admission
+                        .input_abi()
+                        .binding_outputs()
+                        .iter()
+                        .any(|output| output.local() == capture.local())
+                {
                     return Err(ViewProjectLowerError::MissingCheckedViewProjection {
                         owner: self.owner,
                     });
@@ -2286,7 +2317,7 @@ impl AuthoredViewBodyLowerer<'_> {
             .collect::<Result<Vec<_>, _>>()?
             .into_boxed_slice();
         let program_id = modifier
-            .handler_program_id(application)
+            .handler_program_id(application, &admission)
             .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
         if self
             .output
@@ -2296,10 +2327,51 @@ impl AuthoredViewBodyLowerer<'_> {
         {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         }
+        let handler_result_role = if transition {
+            let writes = admission
+                .input_abi()
+                .binding_outputs()
+                .iter()
+                .map(|output| {
+                    let input = captures
+                        .iter()
+                        .position(|capture| capture.local == output.local())
+                        .ok_or(ViewProjectLowerError::MissingCheckedViewProjection {
+                            owner: self.owner,
+                        })?;
+                    let field = self
+                        .analysis
+                        .retained_state_field_identity(self.module, output.local())
+                        .map_err(|source| ViewProjectLowerError::InvalidProgramContext {
+                            owner: self.owner,
+                            source: Box::new(source.into()),
+                        })?;
+                    arcweft_view::ViewHandlerStateWrite::try_new(
+                        input,
+                        arcweft_view::ViewStateFieldId(field),
+                    )
+                    .ok_or(
+                        ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner },
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .into_boxed_slice();
+            arcweft_view::ViewHandlerResultRole::StateTransition {
+                value: handler_value_role,
+                writes,
+            }
+        } else {
+            arcweft_view::ViewHandlerResultRole::DialogueAction
+        };
+        let publication_type = admission
+            .input_abi()
+            .result()
+            .value_type()
+            .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
         let result = ViewHandlerResult::new(
             handler_result_role,
             ViewHandlerValueTypeId::from_semantic_digest(
-                *handler_result_type.semantic_identity_digest()?.as_bytes(),
+                *publication_type.semantic_identity_digest()?.as_bytes(),
             ),
         );
         self.output

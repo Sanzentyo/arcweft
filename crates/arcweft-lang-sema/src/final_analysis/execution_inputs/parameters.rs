@@ -67,6 +67,10 @@ impl super::super::CheckedClosedExecutionContext<'_> {
             CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
                 declaration,
                 ..
+            })
+            | CheckedExecutionSource::ExportMutation(CheckedExecutionBodyOwner::Declaration {
+                declaration,
+                ..
             }) => {
                 let declaration_view = analysis
                     .hir_topology()
@@ -164,7 +168,10 @@ impl super::super::CheckedClosedExecutionContext<'_> {
                     });
                 }
             }
-            CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(owner)) => {
+            CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(owner))
+            | CheckedExecutionSource::ExportMutation(CheckedExecutionBodyOwner::CallableValue(
+                owner,
+            )) => {
                 let expression = analysis
                     .expression(*owner)
                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;

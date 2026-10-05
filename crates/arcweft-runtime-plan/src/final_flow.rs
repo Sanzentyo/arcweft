@@ -3170,7 +3170,12 @@ fn reserve_pure_programs<'facts>(
                     pattern: RuntimePatternSeed::new(
                         ty.identity(),
                         RuntimePatternSeedKind::Bind {
-                            mutable: false,
+                            mutable: program
+                                .admission()
+                                .input_abi()
+                                .binding_outputs()
+                                .iter()
+                                .any(|output| output.local() == input.binding().local()),
                             local: local.clone(),
                         },
                     ),
@@ -3767,11 +3772,17 @@ fn define_pure_programs(
                 CheckedExecutionSource::EvaluateValue(owner)
                 | CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(
                     owner,
-                )) => owner.module(),
+                ))
+                | CheckedExecutionSource::ExportMutation(
+                    CheckedExecutionBodyOwner::CallableValue(owner),
+                ) => owner.module(),
                 CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
                     declaration,
                     ..
-                }) => abi
+                })
+                | CheckedExecutionSource::ExportMutation(
+                    CheckedExecutionBodyOwner::Declaration { declaration, .. },
+                ) => abi
                     .hir_topology()
                     .declaration(declaration)
                     .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?
@@ -3795,6 +3806,14 @@ fn define_pure_programs(
             );
             let expression_compatible =
                 definition.body_kind == RuntimeFunctionSiteBodyKind::Expression;
+            if matches!(program.source(), CheckedExecutionSource::ExportMutation(_)) {
+                flow.mutation_return = Some(RuntimeMutationReturn::try_new(
+                    context,
+                    definition.scope,
+                    abi.binding_outputs(),
+                    program.result(),
+                )?);
+            }
             let ops = match program.source() {
                 CheckedExecutionSource::ExportIteration(statement) => {
                     let row = module
@@ -3970,7 +3989,10 @@ fn define_pure_programs(
                 }
                 CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(
                     owner,
-                )) => {
+                ))
+                | CheckedExecutionSource::ExportMutation(
+                    CheckedExecutionBodyOwner::CallableValue(owner),
+                ) => {
                     let expression = module
                         .resolve_expr(*owner)
                         .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
@@ -4033,7 +4055,10 @@ fn define_pure_programs(
                 CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
                     declaration,
                     role,
-                }) => {
+                })
+                | CheckedExecutionSource::ExportMutation(
+                    CheckedExecutionBodyOwner::Declaration { declaration, role },
+                ) => {
                     let declaration = abi
                         .hir_topology()
                         .declaration(declaration)
@@ -4066,12 +4091,29 @@ fn define_pure_programs(
                         };
                         flow.lower_flow_value(expression, RuntimeFlowValueContinuation::Return)?
                     } else {
-                        let mut ops = if matches!(program.result().shape(), RuntimeTypeShape::Unit)
-                        {
-                            vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
-                                program.result().identity(),
-                                RuntimeExprSeedKind::Value(RuntimeValue::Unit),
-                            ))]
+                        let value_result = if matches!(
+                            program.source(),
+                            CheckedExecutionSource::ExportMutation(_)
+                        ) {
+                            let RuntimeTypeShape::Tuple(fields) = program.result().shape() else {
+                                return Err(RuntimePlanLowerError::new(
+                                    "mutation declaration has no result tuple",
+                                ));
+                            };
+                            fields.first().ok_or_else(|| {
+                                RuntimePlanLowerError::new("mutation declaration has no body value")
+                            })?
+                        } else {
+                            program.result()
+                        };
+                        let mut ops = if matches!(value_result.shape(), RuntimeTypeShape::Unit) {
+                            flow.apply_value_continuation(
+                                RuntimeExprSeed::new(
+                                    value_result.identity(),
+                                    RuntimeExprSeedKind::Value(RuntimeValue::Unit),
+                                ),
+                                RuntimeFlowValueContinuation::Return,
+                            )?
                         } else {
                             Vec::new()
                         };
@@ -5505,8 +5547,70 @@ impl RuntimeAssertionOwner {
     }
 }
 
+/// Frame-owned projection of the accepted mutation output ABI. Every root
+/// return publishes the body value first, then transfers each initialized
+/// updated binding. No caller place is retained by the executable frame.
+struct RuntimeMutationReturn {
+    result: RuntimeSemanticTypeId,
+    outputs: Box<[RuntimeExprSeed]>,
+}
+
+impl RuntimeMutationReturn {
+    fn try_new(
+        context: &FinalLoweringContext<'_, '_>,
+        scope: RuntimeScopedExecutableSemanticFactView<'_>,
+        bindings: &[arcweft_lang_sema::final_analysis::CheckedExecutableCapture],
+        result: &crate::semantic_facts::RuntimeNormalizedType,
+    ) -> Result<Self, RuntimePlanLowerError> {
+        let RuntimeTypeShape::Tuple(fields) = result.shape() else {
+            return Err(RuntimePlanLowerError::new(
+                "mutation result has no output tuple",
+            ));
+        };
+        if fields.len() != bindings.len() + 1 {
+            return Err(RuntimePlanLowerError::new(
+                "mutation output arity differs from its ABI",
+            ));
+        }
+        let locals = context.executable_locals(scope.scope())?;
+        let outputs = bindings
+            .iter()
+            .zip(fields.iter().skip(1))
+            .map(|(binding, ty)| {
+                let local = locals.get(&binding.local()).ok_or_else(|| {
+                    RuntimePlanLowerError::new("mutation output has no admitted local")
+                })?;
+                Ok(RuntimeExprSeed::new(
+                    ty.identity(),
+                    RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                        local.clone(),
+                        RuntimeLocalReadMode::Move,
+                    )),
+                ))
+            })
+            .collect::<Result<Vec<_>, RuntimePlanLowerError>>()?
+            .into_boxed_slice();
+        Ok(Self {
+            result: result.identity(),
+            outputs,
+        })
+    }
+
+    fn publish(&self, value: RuntimeExprSeed) -> RuntimeExprSeed {
+        RuntimeExprSeed::new(
+            self.result,
+            RuntimeExprSeedKind::Tuple(
+                std::iter::once(value)
+                    .chain(self.outputs.iter().cloned())
+                    .collect(),
+            ),
+        )
+    }
+}
+
 struct FinalFlowLowerer<'a> {
     expression_overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+    mutation_return: Option<RuntimeMutationReturn>,
     implicit_body_root: Option<ExprId>,
     module: &'a HirModule,
     facts: &'a RuntimePlanSemanticFacts,
@@ -5829,6 +5933,7 @@ impl<'a> FinalFlowLowerer<'a> {
         Self {
             module,
             expression_overrides: BTreeMap::new(),
+            mutation_return: None,
             implicit_body_root: None,
             facts: context.facts,
             semantic_facts: RuntimeScopedExecutableSemanticFactView::global(context.facts),
@@ -6421,11 +6526,11 @@ impl<'a> FinalFlowLowerer<'a> {
                     }
                     Ok(vec![host])
                 } else {
-                    Ok(vec![RuntimeFlowOpSeed::ReturnExpr(
-                        self.expr_lowerer()
-                            .lower(*value)
-                            .map_err(RuntimePlanLowerError::new)?,
-                    )])
+                    let value = self
+                        .expr_lowerer()
+                        .lower(*value)
+                        .map_err(RuntimePlanLowerError::new)?;
+                    self.apply_value_continuation(value, RuntimeFlowValueContinuation::Return)
                 }
             }
             HirStmtKind::Goto { target } => {
@@ -8106,7 +8211,12 @@ impl<'a> FinalFlowLowerer<'a> {
                     .lower_flow_assignment_value(statement, value)
                     .map_err(RuntimePlanLowerError::new)?,
             ],
-            RuntimeFlowValueContinuation::Return => vec![RuntimeFlowOpSeed::ReturnExpr(value)],
+            RuntimeFlowValueContinuation::Return => {
+                vec![RuntimeFlowOpSeed::ReturnExpr(match &self.mutation_return {
+                    Some(publication) => publication.publish(value),
+                    None => value,
+                })]
+            }
             RuntimeFlowValueContinuation::ScopeSuccess { owner } => {
                 return self.complete_scope_success(owner, value);
             }

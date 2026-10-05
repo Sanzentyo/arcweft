@@ -45,10 +45,11 @@ pub enum LanguageIntrinsicGenericOwner {
     DataShape,
     DataEncode,
     DataDecode,
+    ViewHandlerResult,
 }
 
 impl LanguageIntrinsicGenericOwner {
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 25] = [
         Self::OptionConstructor,
         Self::ResultConstructor,
         Self::StandardMap(StandardMapFamily::Vec),
@@ -73,6 +74,7 @@ impl LanguageIntrinsicGenericOwner {
         Self::DataShape,
         Self::DataEncode,
         Self::DataDecode,
+        Self::ViewHandlerResult,
     ];
 
     /// Canonical version-1 semantic tag owned by this closed family.
@@ -94,6 +96,7 @@ impl LanguageIntrinsicGenericOwner {
             Self::DataShape => 20,
             Self::DataEncode => 21,
             Self::DataDecode => 22,
+            Self::ViewHandlerResult => 24,
         }
     }
 
@@ -112,7 +115,8 @@ impl LanguageIntrinsicGenericOwner {
             | Self::MetricWrite
             | Self::DataShape
             | Self::DataEncode
-            | Self::DataDecode => (1, 0),
+            | Self::DataDecode
+            | Self::ViewHandlerResult => (1, 0),
             Self::ResultConstructor => (2, 0),
             Self::StandardMap(family) => family.generic_arity(),
         }
@@ -136,6 +140,7 @@ impl LanguageIntrinsicGenericOwner {
             Self::DataShape => "language.data-shape",
             Self::DataEncode => "language.data-encode",
             Self::DataDecode => "language.data-decode",
+            Self::ViewHandlerResult => "language.view-handler-result",
         }
     }
 }

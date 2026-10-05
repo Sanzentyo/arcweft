@@ -9937,18 +9937,13 @@ fn registered_on_click_selects_the_typed_modifier_and_exact_handler_contract() {
             let [argument] = call.arguments() else {
                 return None;
             };
-            let [group] = selected.core().candidates().selected().schema().groups() else {
+            let [argument_input] = selected.core().execution().arguments() else {
                 return None;
             };
-            let [parameter] = group.parameters() else {
+            let [slot] = argument_input.slots() else {
                 return None;
             };
-            Some((
-                owner,
-                *callee,
-                argument.value(),
-                parameter.declared_type()?.clone(),
-            ))
+            Some((owner, *callee, argument.value(), slot.expected()?.clone()))
         })
         .expect("typed on_click application");
 

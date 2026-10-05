@@ -44,6 +44,7 @@ pub enum CheckedExecutionCoordinate {
     Iteration(CheckedSemanticPath),
     MatchSelection(CheckedSemanticPath),
     CallableBody(CheckedSemanticPath),
+    MutationBody(CheckedSemanticPath),
     DeclarationBody(StableCheckedBodyCoordinate),
 }
 
@@ -54,7 +55,8 @@ impl CheckedExecutionCoordinate {
             | Self::Binding(path)
             | Self::Iteration(path)
             | Self::MatchSelection(path)
-            | Self::CallableBody(path) => path,
+            | Self::CallableBody(path)
+            | Self::MutationBody(path) => path,
             Self::DeclarationBody(body) => body.path(),
         }
     }
@@ -578,7 +580,8 @@ impl super::CheckedClosedExecutionContext<'_> {
                     effects,
                 )
             }
-            CheckedExecutionSource::InvokeBody(owner) => {
+            CheckedExecutionSource::InvokeBody(owner)
+            | CheckedExecutionSource::ExportMutation(owner) => {
                 let execution = analysis
                     .body_execution_region(owner)
                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
@@ -629,7 +632,11 @@ impl super::CheckedClosedExecutionContext<'_> {
                             _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into()),
                         };
                         (
-                            CheckedExecutionCoordinate::CallableBody(path),
+                            if matches!(source, CheckedExecutionSource::ExportMutation(_)) {
+                                CheckedExecutionCoordinate::MutationBody(path)
+                            } else {
+                                CheckedExecutionCoordinate::CallableBody(path)
+                            },
                             scope,
                             crate::callable::CallableResultSchema::Value(result),
                         )
@@ -832,6 +839,32 @@ impl super::CheckedClosedExecutionContext<'_> {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into());
         }
         inputs.sort_by(|left, right| left.binding.origin().cmp(right.binding.origin()));
+        let result = if matches!(source, CheckedExecutionSource::ExportMutation(_)) {
+            // Export each mutated free root once, in canonical ingress order.
+            // Full checked field paths remain owned by the individual use rows.
+            binding_outputs.extend(
+                inputs
+                    .iter()
+                    .filter(|input| {
+                        input.role() == &CheckedExecutionInputRole::Free
+                            && input
+                                .uses()
+                                .iter()
+                                .any(|usage| usage.access().place_access().is_some())
+                    })
+                    .map(|input| input.binding().clone()),
+            );
+            let crate::callable::CallableResultSchema::Value(value) = result else {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into());
+            };
+            crate::callable::CallableResultSchema::Value(TypeKind::Tuple(
+                std::iter::once(value)
+                    .chain(binding_outputs.iter().map(|binding| binding.ty().clone()))
+                    .collect(),
+            ))
+        } else {
+            result
+        };
         let mut synthetic_owners = execution
             .expressions()
             .iter()
@@ -845,8 +878,10 @@ impl super::CheckedClosedExecutionContext<'_> {
                 )
             })
             .collect::<std::collections::BTreeSet<_>>();
-        if let CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(owner)) =
-            &source
+        if let CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(owner))
+        | CheckedExecutionSource::ExportMutation(CheckedExecutionBodyOwner::CallableValue(
+            owner,
+        )) = &source
         {
             synthetic_owners.insert(*owner);
         }

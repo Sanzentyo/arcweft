@@ -364,6 +364,77 @@ fn compiler_lowers_checked_on_click_to_typed_bundle_handler_without_fx_conflatio
 }
 
 #[test]
+fn retained_state_handler_publishes_update_only_on_routed_event() {
+    use arcweft_core::value::RuntimeValue;
+    use arcweft_runtime_driver::presentation_handles::{
+        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    };
+    use arcweft_runtime_driver::view_runtime::BundleViewTextValue;
+
+    let compiled = project_view_fixture_with_entry(
+        r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+view Main() {
+    local state mut caption: String = "first"
+    Text(caption)
+    Button("change").on_click(|| { caption = "second"; () })
+}
+"#,
+        "arcweft-test://retained-state-command",
+    )
+    .compile()
+    .expect("typed state command handler");
+    let product = compiled.view_product().product().as_ref().clone();
+    let text = compiled.view_product().text().cloned();
+    let awbc = Arc::new(
+        arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+            AwbcLowerer::new(
+                &compiled.runtime_plan().plan,
+                &compiled.runtime_plan().dialogue_content_catalog,
+                "main.arcw",
+            )
+            .lower()
+            .unwrap()
+            .program,
+        )
+        .unwrap(),
+    );
+    let handle = PresentationHandleRecord::new(
+        PresentationHandleId::try_new("view.command.first").unwrap(),
+        PresentationHandleKind::View,
+        "view.Main".to_owned(),
+        None,
+        PresentationResourceState::Mounted,
+        None,
+        0,
+    );
+    let mut runtime = BundleViewRuntime::try_new_with_awbc(product, text, awbc).unwrap();
+    let frame = runtime.evaluate(std::slice::from_ref(&handle), &[], false);
+    assert!(frame.diagnostics.is_empty(), "{frame:#?}");
+    assert!(
+        matches!(&frame.mounts[0].text[0].value, BundleViewTextValue::Plain { value } if value == "first")
+    );
+    let binding = &frame.mounts[0].events[0];
+    let invocation = ViewHandlerInvocation::from_input(
+        &InputEvent::activate(InputEpoch(1), binding.target().clone()),
+        binding.event(),
+        binding.route(),
+    )
+    .unwrap();
+    assert_eq!(runtime.dispatch_invocation(&invocation).unwrap(), None);
+    let updated = runtime.evaluate(std::slice::from_ref(&handle), &[], false);
+    assert!(updated.diagnostics.is_empty(), "{updated:#?}");
+    assert!(
+        matches!(&updated.mounts[0].text[0].value, BundleViewTextValue::Plain { value } if value == "second")
+    );
+    let snapshot = runtime.snapshot().unwrap();
+    assert!(
+        matches!(&snapshot.mounts[0].local_state[0].value, RuntimeValue::String(value) if value == "second")
+    );
+}
+
+#[test]
 fn compiler_lowers_view_fx_closed_and_reactive_bindings_from_checked_authority() {
     let fixture = project_view_fixture(
         r#"
@@ -5178,4 +5249,430 @@ view Main(items: Vec<String>, initial: String, show: bool) {
         cold.restore(&saved, handles).unwrap();
         assert_eq!(cold.evaluate(handles, &inputs, false), frame);
     }
+}
+
+fn retained_transition_runtime(compiled: &CompiledProject) -> BundleViewRuntime {
+    let product = compiled.view_product().product().as_ref().clone();
+    let text = compiled.view_product().text().cloned();
+    let program = arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+        AwbcLowerer::new(
+            &compiled.runtime_plan().plan,
+            &compiled.runtime_plan().dialogue_content_catalog,
+            "main.arcw",
+        )
+        .lower()
+        .unwrap()
+        .program,
+    )
+    .unwrap();
+    let bytes = program.encode_canonical().unwrap();
+    let program = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+        &bytes,
+        arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+    )
+    .unwrap();
+    BundleViewRuntime::try_new_with_awbc(product, text, Arc::new(program)).unwrap()
+}
+
+fn retained_transition_handle(
+    id: &str,
+) -> arcweft_runtime_driver::presentation_handles::PresentationHandleRecord {
+    use arcweft_runtime_driver::presentation_handles::{
+        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    };
+    PresentationHandleRecord::new(
+        PresentationHandleId::try_new(id).unwrap(),
+        PresentationHandleKind::View,
+        "view.Main".to_owned(),
+        None,
+        PresentationResourceState::Mounted,
+        None,
+        0,
+    )
+}
+
+fn retained_transition_invocation(
+    binding: &arcweft_runtime_driver::view_runtime::BundleViewEventBinding,
+) -> ViewHandlerInvocation {
+    ViewHandlerInvocation::from_input(
+        &InputEvent::activate(InputEpoch(1), binding.target().clone()),
+        binding.event(),
+        binding.route(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn retained_transition_failure_leaves_every_cell_and_route_unchanged() {
+    use arcweft_core::pure::{RuntimePureCallBackend, VmRuntimePureCallBackend};
+    use arcweft_runtime_driver::view_runtime::BundleViewEventDispatchError;
+    let compiled = project_view_fixture_with_entry(
+        r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+view Main() {
+    local state mut count: i64 = 3i64
+    local state mut caption: String = "first"
+    Text(caption)
+    Button("fail").on_click(|| {
+        caption = "changed"
+        let divisor = count - count
+        count = 1i64 / divisor
+        ()
+    })
+}
+"#,
+        "arcweft-test://retained-transition-failure",
+    )
+    .compile()
+    .unwrap();
+    let mut runtime = retained_transition_runtime(&compiled);
+    let handle = retained_transition_handle("view.transition.failure");
+    let frame = runtime.evaluate(std::slice::from_ref(&handle), &[], false);
+    assert!(frame.diagnostics.is_empty(), "{frame:#?}");
+    let invocation = retained_transition_invocation(&frame.mounts[0].events[0]);
+    let before = runtime.snapshot().unwrap();
+    let mut backend = VmRuntimePureCallBackend::default();
+    assert!(matches!(
+        runtime.dispatch_invocation_with_backend(&invocation, &mut backend),
+        Err(BundleViewEventDispatchError::ProgramExecution { .. })
+    ));
+    assert_eq!(backend.stats().awbc_pure_program_calls, 1);
+    assert_eq!(runtime.snapshot().unwrap(), before);
+    assert!(matches!(
+        runtime.dispatch_invocation(&invocation),
+        Err(BundleViewEventDispatchError::ProgramExecution { .. })
+    ));
+    assert_eq!(runtime.snapshot().unwrap(), before);
+}
+
+#[test]
+fn retained_transition_refreshes_unchanged_routes_and_keeps_other_mounts_independent() {
+    use arcweft_core::value::RuntimeValue;
+    use arcweft_runtime_driver::view_runtime::BundleViewEventDispatchError;
+    let compiled = project_view_fixture_with_entry(
+        r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+view Main() {
+    local state mut count: i64 = 0i64
+    Button("increment").on_click(|| { count = count + 1i64; () })
+    Button("noop").on_click(|| ())
+}
+"#,
+        "arcweft-test://retained-transition-isolation",
+    )
+    .compile()
+    .unwrap();
+    let mut runtime = retained_transition_runtime(&compiled);
+    let handles = [
+        retained_transition_handle("view.transition.first"),
+        retained_transition_handle("view.transition.other"),
+    ];
+    let frame = runtime.evaluate(&handles, &[], false);
+    assert!(frame.diagnostics.is_empty(), "{frame:#?}");
+    let first = retained_transition_invocation(&frame.mounts[0].events[0]);
+    let noop = retained_transition_invocation(&frame.mounts[0].events[1]);
+    let other = retained_transition_invocation(&frame.mounts[1].events[0]);
+    runtime.dispatch_invocation(&first).unwrap();
+    let snapshot = runtime.snapshot().unwrap();
+    assert_eq!(
+        snapshot.mounts[0].local_state[0].value,
+        RuntimeValue::i64(1)
+    );
+    assert_eq!(
+        snapshot.mounts[1].local_state[0].value,
+        RuntimeValue::i64(0)
+    );
+    assert!(matches!(
+        runtime.dispatch_invocation(&noop),
+        Err(BundleViewEventDispatchError::UnknownBinding)
+    ));
+    let refreshed = runtime.evaluate(&handles, &[], false);
+    assert!(refreshed.diagnostics.is_empty(), "{refreshed:#?}");
+    assert_ne!(
+        frame.mounts[0].events[1].route(),
+        refreshed.mounts[0].events[1].route()
+    );
+    assert!(matches!(
+        runtime.dispatch_invocation(&noop),
+        Err(BundleViewEventDispatchError::UnknownBinding)
+    ));
+    runtime.dispatch_invocation(&other).unwrap();
+    let snapshot = runtime.snapshot().unwrap();
+    assert_eq!(
+        snapshot.mounts[0].local_state[0].value,
+        RuntimeValue::i64(1)
+    );
+    assert_eq!(
+        snapshot.mounts[1].local_state[0].value,
+        RuntimeValue::i64(1)
+    );
+}
+
+#[test]
+fn retained_keyed_transition_updates_one_cell_and_restores_without_replaying_handler() {
+    use arcweft_core::value::RuntimeValue;
+    let compiled = project_view_fixture_with_entry(
+        r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+view Main() {
+    for row in [1i64, 2i64] key = row {
+        local state mut count: i64 = row
+        Button("increment").on_click(|| { count = count + 1i64; () })
+    }
+}
+"#,
+        "arcweft-test://retained-transition-keyed",
+    )
+    .compile()
+    .unwrap();
+    let mut runtime = retained_transition_runtime(&compiled);
+    let handle = retained_transition_handle("view.transition.keyed");
+    let frame = runtime.evaluate(std::slice::from_ref(&handle), &[], false);
+    assert!(frame.diagnostics.is_empty(), "{frame:#?}");
+    assert_eq!(frame.mounts[0].events.len(), 2);
+    let before = runtime.snapshot().unwrap();
+    let first = before.mounts[0]
+        .local_state
+        .iter()
+        .find(|cell| cell.value == RuntimeValue::i64(1))
+        .unwrap();
+    runtime
+        .dispatch_invocation(&retained_transition_invocation(&frame.mounts[0].events[0]))
+        .unwrap();
+    let after = runtime.snapshot().unwrap();
+    assert_eq!(after.mounts[0].local_state.len(), 2);
+    assert_eq!(
+        after.mounts[0]
+            .local_state
+            .iter()
+            .find(|cell| cell.field == first.field && cell.path == first.path)
+            .unwrap()
+            .value,
+        RuntimeValue::i64(2)
+    );
+    assert!(
+        after.mounts[0]
+            .local_state
+            .iter()
+            .all(|cell| cell.value == RuntimeValue::i64(2))
+    );
+    let mut cold = retained_transition_runtime(&compiled);
+    cold.restore(&after, std::slice::from_ref(&handle)).unwrap();
+    let restored = cold.evaluate(std::slice::from_ref(&handle), &[], false);
+    assert!(restored.diagnostics.is_empty(), "{restored:#?}");
+    assert!(
+        cold.snapshot().unwrap().mounts[0]
+            .local_state
+            .iter()
+            .all(|cell| cell.value == RuntimeValue::i64(2))
+    );
+    assert!(
+        cold.dispatch_invocation(&retained_transition_invocation(&frame.mounts[0].events[0]))
+            .is_err()
+    );
+    cold.dispatch_invocation(&retained_transition_invocation(
+        &restored.mounts[0].events[0],
+    ))
+    .unwrap();
+    assert_eq!(
+        cold.snapshot().unwrap().mounts[0]
+            .local_state
+            .iter()
+            .filter(|cell| cell.value == RuntimeValue::i64(3))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn forged_state_write_cannot_retarget_another_same_typed_retained_field() {
+    let compiled = project_view_fixture_with_entry(
+        r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+view Main() {
+    local state mut first: i64 = 0i64
+    local state mut second: i64 = 99i64
+    Button("first").on_click(|| { first = 1i64; () })
+}
+"#,
+        "arcweft-test://retained-transition-forged-field",
+    )
+    .compile()
+    .unwrap();
+    let mut program = compiled
+        .view_product()
+        .product()
+        .program()
+        .unwrap()
+        .resource()
+        .clone();
+    assert!(program.encode_canonical_section().is_ok());
+    let fields = program
+        .instructions
+        .iter()
+        .filter_map(|instruction| match instruction {
+            ViewProgramInstruction::BindLocal { program, .. } => match &program.lifetime {
+                arcweft_view::ViewBindingLifetime::Retained { fields } => Some(fields.as_ref()),
+                arcweft_view::ViewBindingLifetime::Derived => None,
+            },
+            _ => None,
+        })
+        .flatten()
+        .copied()
+        .collect::<Vec<_>>();
+    assert_eq!(fields.len(), 2);
+    let handler = program
+        .handlers
+        .iter_mut()
+        .find(|handler| {
+            matches!(
+                handler.result.role(),
+                ViewHandlerResultRole::StateTransition { .. }
+            )
+        })
+        .unwrap();
+    let ViewHandlerResultRole::StateTransition { value, writes } = handler.result.role() else {
+        unreachable!()
+    };
+    let input = writes[0].input();
+    let other = fields
+        .into_iter()
+        .find(|field| *field != writes[0].field())
+        .unwrap();
+    let role = ViewHandlerResultRole::StateTransition {
+        value: *value,
+        writes: vec![arcweft_view::ViewHandlerStateWrite::try_new(input, other).unwrap()]
+            .into_boxed_slice(),
+    };
+    handler.result = arcweft_view::ViewHandlerResult::new(role, handler.result.value_type());
+    assert!(matches!(
+        program.encode_canonical_section(),
+        Err(
+            arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
+                "view_handler_bindings"
+            )
+        )
+    ));
+}
+
+#[test]
+fn retained_nested_transition_early_return_matches_native_and_decoded_awbc() {
+    use arcweft_core::{task::RuntimeProgramOwner, value::AwbcRuntimeValueSnapshot};
+    use arcweft_runtime_driver::view_runtime::BundleViewTextValue;
+    let compiled = project_view_fixture_with_entry(
+        r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+struct Leaf { count: i64, caption: String }
+struct Root { leaf: Leaf }
+view Main() {
+    local state mut root: Root = Root { leaf = Leaf { count = 0i64, caption = "first" } }
+    Text(root.leaf.caption)
+    Button("change").on_click(|| {
+        root.leaf.count = 40i64
+        if root.leaf.count == 40i64 {
+            root.leaf.caption = "changed"
+            return ()
+        }
+        root.leaf.count = 0i64
+        ()
+    })
+}
+"#,
+        "arcweft-test://retained-transition-native-early-return",
+    )
+    .compile()
+    .unwrap();
+    let mut runtime = retained_transition_runtime(&compiled);
+    let handle = retained_transition_handle("view.transition.native");
+    let frame = runtime.evaluate(std::slice::from_ref(&handle), &[], false);
+    assert!(frame.diagnostics.is_empty(), "{frame:#?}");
+    let initial = runtime.snapshot().unwrap().mounts[0].local_state[0]
+        .value
+        .clone();
+    let program = compiled
+        .view_product()
+        .product()
+        .program()
+        .unwrap()
+        .resource()
+        .handlers[0]
+        .program;
+    let lowered = arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+        AwbcLowerer::new(
+            &compiled.runtime_plan().plan,
+            &compiled.runtime_plan().dialogue_content_catalog,
+            "main.arcw",
+        )
+        .lower()
+        .unwrap()
+        .program,
+    )
+    .unwrap();
+    let awbc = Arc::new(
+        arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+            &lowered.encode_canonical().unwrap(),
+            arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+        )
+        .unwrap(),
+    );
+    let awbc_owner = RuntimeProgramOwner::Awbc(Arc::clone(&awbc));
+    let image =
+        AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&initial, &awbc_owner).unwrap();
+    let plan = Arc::new(compiled.runtime_plan().plan.clone());
+    let native_owner = RuntimeProgramOwner::Plan(Arc::clone(&plan));
+    let native_input = image.into_runtime_value_for_program(&native_owner).unwrap();
+    let mut engine =
+        arcweft_core::engine::Engine::for_program_invocation(plan, program, vec![native_input])
+            .unwrap();
+    let mut native_result = None;
+    for _ in 0..64 {
+        let output = engine.step(Default::default(), Default::default()).output;
+        assert!(output.diagnostics.is_empty(), "{output:?}");
+        if let Some((returned, value)) = engine.take_program_result().unwrap() {
+            assert_eq!(returned, program);
+            native_result = Some(value);
+            break;
+        }
+    }
+    let native_result = native_result.expect("native transition must terminate");
+    let decoded_result = arcweft_core::awbc::product_step::evaluate_pure_program_with_backend(
+        &awbc,
+        program,
+        &[initial],
+        &mut arcweft_core::pure::VmRuntimePureCallBackend::default(),
+    )
+    .unwrap();
+    let arcweft_core::value::RuntimeValue::Tuple(outputs) = &decoded_result else {
+        panic!("transition must return its publication tuple");
+    };
+    let arcweft_core::value::RuntimeValue::NominalRecord(root) = &outputs[1] else {
+        panic!("updated Root must retain its nominal owner");
+    };
+    let arcweft_core::value::RuntimeValue::NominalRecord(leaf) = &root.fields()[0] else {
+        panic!("updated Leaf must retain its nominal owner");
+    };
+    assert_eq!(
+        leaf.fields()[0],
+        arcweft_core::value::RuntimeValue::i64(40),
+        "the write after early return must not execute"
+    );
+    assert_eq!(
+        AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&native_result, &native_owner)
+            .unwrap(),
+        AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&decoded_result, &awbc_owner)
+            .unwrap(),
+    );
+    runtime
+        .dispatch_invocation(&retained_transition_invocation(&frame.mounts[0].events[0]))
+        .unwrap();
+    let updated = runtime.evaluate(std::slice::from_ref(&handle), &[], false);
+    assert!(updated.diagnostics.is_empty(), "{updated:#?}");
+    assert!(
+        matches!(&updated.mounts[0].text[0].value, BundleViewTextValue::Plain { value } if value == "changed")
+    );
 }

@@ -5037,7 +5037,7 @@ impl RuntimePureProgramFact {
             }
             _ => true,
         };
-        let body_kind = if !matches!(abi.source(), arcweft_lang_sema::final_analysis::CheckedExecutionSource::ExportBinding(_) | arcweft_lang_sema::final_analysis::CheckedExecutionSource::ExportIteration(_) | arcweft_lang_sema::final_analysis::CheckedExecutionSource::SelectMatch(_)) && expression_body && abi.control() == arcweft_lang_sema::final_analysis::CheckedExecutableControlRole::ExpressionCompatible {
+        let body_kind = if !matches!(abi.source(), arcweft_lang_sema::final_analysis::CheckedExecutionSource::ExportBinding(_) | arcweft_lang_sema::final_analysis::CheckedExecutionSource::ExportIteration(_) | arcweft_lang_sema::final_analysis::CheckedExecutionSource::SelectMatch(_) | arcweft_lang_sema::final_analysis::CheckedExecutionSource::ExportMutation(_)) && expression_body && abi.control() == arcweft_lang_sema::final_analysis::CheckedExecutableControlRole::ExpressionCompatible {
             arcweft_core::plan::RuntimeFunctionSiteBodyKind::Expression
         } else { arcweft_core::plan::RuntimeFunctionSiteBodyKind::Executable };
         let free_inputs = abi

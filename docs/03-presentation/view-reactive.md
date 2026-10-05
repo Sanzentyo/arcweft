@@ -510,3 +510,31 @@ scope を出ても値を失わない。入力 snapshot が変われば新しい 
 再評価は新しい route を発行する。restore 前の外部 invocation を復活させない。
 View 全体の invariant は compiler/test が retained tree と action inventory を
 直接検査し、global callback を挟まない。
+
+Handler の結果は Unit または言語所有の DialogueAction とし、選択済み call slot の
+解決済み型と effect 証拠で検証する。retained state を変更する callback は、通常の
+値抽出とは異なる owned mutation body として同じ checked execution ABI へ接続する。
+ABI は canonical capture 順に変更対象 root を一度だけ列挙し、結果を
+`(callback の値, 更新済み root...)` として返す。ネストした field の変更も、この
+root と完全な型付き place path に属する。通常の値抽出は外部 place の変更を認めない。
+cleanup は独立した capture frame を所有するため、callback の出力 ABI を理由に
+cleanup から caller の root へ書き戻すことはできない。
+
+state writer は input ordinal と retained field identity を持つ。compiler と bundle
+検証は lexical binding の型・lifetime・field を一緒に認証し、同じ型の別 field への
+付け替えも拒否する。handler programme の opaque identity は選択済み application と
+認証済み body coordinate／実行 intent に属し、実行 code の整合性は bundle content
+root が所有する。
+
+state callback は frame 準備時には実行しない。seal は retained input の owning mount／
+keyed occurrence／field address と immutable input snapshot を保持する。入力 event の
+dispatch は公開済み route と seal revision を検証し、retained cell の現在値を読み、
+検証済み programme を実行する。全ての出力の型・所有・書き戻し先と新 revision の範囲を
+検証してから、cell と lease をまとめて公開する。失敗時は cell と route を変更しない。
+書き込み成功後は同じ presentation handle の古い route を失効させ、再評価が新しい
+route を公開する。別 handle の state と route は独立する。restore は保存済み cell を
+復元し、callback を再実行せず、restore 前の route を受理しない。
+
+この unrestricted handler ingress は完全な Copy 証拠を要求する。affine Need を複製したり、
+この snapshot 経路へ通したりしない。affine cell、subscription、binding lens の custody は
+それぞれの型付き owner／transfer 契約で扱う。

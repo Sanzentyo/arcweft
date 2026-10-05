@@ -27,6 +27,9 @@ pub enum CheckedExecutionSource {
     /// Executes one checked iteration source and exports source-ordered item bindings.
     ExportIteration(arcweft_lang_hir::identity::StmtId),
     InvokeBody(CheckedExecutionBodyOwner),
+    /// Invokes an owned frame and exports its result plus updated free bindings.
+    /// This intent never writes the caller's places directly.
+    ExportMutation(CheckedExecutionBodyOwner),
 }
 
 impl From<ExprId> for CheckedExecutionSource {
@@ -271,7 +274,8 @@ impl FinalSemanticAnalysis {
             | CheckedExecutionSource::ExportIteration(source) => {
                 self.execution_source_scope((*source).into())
             }
-            CheckedExecutionSource::InvokeBody(owner) => {
+            CheckedExecutionSource::InvokeBody(owner)
+            | CheckedExecutionSource::ExportMutation(owner) => {
                 if !self.has_execution_body(owner) {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
