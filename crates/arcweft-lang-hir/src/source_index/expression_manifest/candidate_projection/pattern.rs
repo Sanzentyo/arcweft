@@ -373,7 +373,10 @@ impl CandidateValidationCursor<'_, '_> {
                 )?
             }
             (
-                PatternSyntaxKind::TypedBinding(source_binding),
+                PatternSyntaxKind::TypedBinding {
+                    binding: source_binding,
+                    mutable,
+                },
                 HirPatternKind::TypedBinding {
                     binding: actual_binding,
                     ty: actual_type,
@@ -387,9 +390,9 @@ impl CandidateValidationCursor<'_, '_> {
                         source,
                         source_binding,
                         actual_binding,
-                        PatternBindingSiteKind::TypedBinding,
+                        PatternBindingSiteKind::TypedBinding { mutable: *mutable },
                         Some(*actual_type),
-                        false,
+                        *mutable,
                         validation,
                     )?
             }
@@ -642,7 +645,7 @@ fn local_source_site(
     let component = match kind {
         PatternBindingSiteKind::Binding
         | PatternBindingSiteKind::MutableBinding
-        | PatternBindingSiteKind::TypedBinding => PatternComponentRole::Name,
+        | PatternBindingSiteKind::TypedBinding { .. } => PatternComponentRole::Name,
         PatternBindingSiteKind::WholeBinding => PatternComponentRole::WholeBindingName,
         PatternBindingSiteKind::RecordShorthand { field } => PatternComponentRole::PatternField {
             field,

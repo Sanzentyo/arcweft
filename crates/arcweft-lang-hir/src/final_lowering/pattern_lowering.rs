@@ -438,9 +438,9 @@ impl StagedHirModuleTransaction<'_> {
                     context,
                 )?,
             }),
-            PatternSyntaxKind::TypedBinding(binding) => {
-                self.project_typed_binding(owner, attached, binding, &children, scope, context)
-            }
+            PatternSyntaxKind::TypedBinding { binding, mutable } => self.project_typed_binding(
+                owner, attached, binding, *mutable, &children, scope, context,
+            ),
             PatternSyntaxKind::Error => Ok(HirPatternKind::Error(HirPatternError::new(
                 HirGenericPatternIssue::UnclassifiedSyntax,
             ))),
@@ -734,6 +734,7 @@ impl StagedHirModuleTransaction<'_> {
         owner: PatternId,
         attached: &PatternInput<'_>,
         binding: &PatternBindingSyntax,
+        mutable: bool,
         children: &AttachedChildren<'_>,
         scope: ScopeId,
         context: &mut PatternLoweringContext<'_>,
@@ -747,7 +748,7 @@ impl StagedHirModuleTransaction<'_> {
                 binding,
                 scope,
                 Some(ty),
-                false,
+                mutable,
                 context,
             )?,
             ty,

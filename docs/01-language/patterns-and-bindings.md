@@ -23,6 +23,11 @@ mut x                // mutable local binding, advanced use
 .Err(err)             // Result error
 ```
 
+A typed binding may also be mutable: `let mut value: Type = initializer`.
+The `mut` keyword, binding name, and annotation keep separate source evidence;
+the annotation preserves the same declaration's mutability. Or-pattern
+alternatives must agree on binding mutability as well as binding names.
+
 ## Tuple patterns
 
 ```arcw

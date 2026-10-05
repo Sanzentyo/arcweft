@@ -281,7 +281,10 @@ fn pattern_kind_matches(
             PatternBindingSiteKind::WholeBinding,
         ),
         (
-            PatternSyntaxKind::TypedBinding(source),
+            PatternSyntaxKind::TypedBinding {
+                binding: source,
+                mutable,
+            },
             HirPatternKind::TypedBinding {
                 binding: actual, ..
             },
@@ -289,7 +292,7 @@ fn pattern_kind_matches(
             attached,
             source,
             actual,
-            PatternBindingSiteKind::TypedBinding,
+            PatternBindingSiteKind::TypedBinding { mutable: *mutable },
         ),
         (PatternSyntaxKind::Error, HirPatternKind::Error(actual)) => {
             actual.issue() == HirGenericPatternIssue::UnclassifiedSyntax

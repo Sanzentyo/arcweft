@@ -5888,3 +5888,119 @@ Ready for explicit stage/full cached diff review and non-forced main commit/push
 Delivered full stored-field source a8a4e7a3c8bd1cf66bfe1b0cdf4dd2f7e66b0b4e, parent8a8f0713c5a14a25616b13268a0f5de69c2565f6. Exact43 staged paths/full cached source diff and note were reviewed; cached diff-check passed; final41 Rust hashes match. Non-forced main push succeeded, exact remote main readback equalsa8a4e7a3c8bd1cf66bfe1b0cdf4dd2f7e66b0b4e, and checkout was observed clean. The4902 unique reused+rerun nextest acceptance, full/scoped checks/Clippy/fmt and structural0-blocking receipt cover these exact source bytes. Historical disk exhaustion, rejected recursive cache cleanup, binaries reuse failures, and stale/invalid fixture failures are retained distinctly with actual repairs. This receipt is prose-only and reuses those valid checks.
 
 Current continuation cursor Supersedes all earlier live WIP handles: no source-sensitive handles remain. Stored paths, compiler projection, native/AWBC codec/verifier/execution and static overlap/reinitialization are delivered. Continue the same full convergence goal from this source with retained state write authority and lens/event-command routing. Current BundleViewRuntime::dispatch_invocation consumes sealed mount-time DialogueAction tokens and does not execute state-writing handlers; ordinary frame expression extraction still disallows external place writes. Build a typed command/state transition boundary with the actual owning mount/field identities rather than globally weakening deterministic expression extraction, cloning affine cells, reconstructing source, or adding parallel state authority. Then complete aggregate/affine Need custody/subscriptions and original task-plan/nominal/scheduler/final acceptance. Need empty-sequence proofs are only storage/availability evidence. Full goal ACTIVE/INCOMPLETE, native public persistence excluded, one-shot Astra consumed; never repeat it after compaction. Existing main only; future explicitly selected Sol uses gpt-6.1-sol. Commit validated coherent cuts frequently.
+
+### 2026-10-05 mutable typed binding prerequisite and pending state command
+
+Supersedes the current live cursor: inspected main b17067665df09e666082161df49b4dcda51308ad with15 unstaged paths,14 Rust and1 maintained language chapter. All prior source-sensitive handles are terminal. The event-state acceptance regression exposed a shared parser defect: `mut caption: String` produced a recovered typed binding instead of a mutable local. Syntax TypedBinding now owns binding and mutable evidence, exact MutKeyword/name/type source roles; shared binding sites, HIR lowering/source projection/payload and candidate validation preserve that authority. Immutable typed bindings remain immutable; Or alternatives compare actual mutability. No alternate checker, fabricated local, Cargo/feature/version change or new Astra consultation.
+
+Focused nextest28/28 passes (Syntax20,Hir8), including exact success/recovery/source spans and attached-family publication. Actual `let mut values: Vec<Content>` move then whole-local reinitialization executes correctly in both native and decoded AWBC,2/2 passes. The broader3-test invocation is FAILED: the future state command still fails on_click callable type resolution after recovered owners become empty. These subset passes are not final prerequisite acceptance. Logs and locked default/all-feature25-package transitive normal/build/dev closure plus target-all invert are retained in TEMP arcweft-1005-typed-mut-*. Full consumer/check/lint/structure validation remains pending.
+
+The exact own-added future state regression is preserved below and in TEMP arcweft-1005-state-command-pending-regression.rs. It is temporarily absent from the executable prerequisite cut because the Unit state-writing handler contract is not implemented; the prerequisite suite has no ad-hoc test exclusions. Restore it immediately after delivering the validated shared typed-binding cut, then implement typed event/state command admission, execution and owning-mount atomic publication. Its failed result is not state update completion. Full original convergence goal stays ACTIVE/INCOMPLETE; Rust move parity permits reinitialization, unavailable reads/borrows reject, shadowing creates a distinct identity. Astra one-shot remains consumed; do not repeat after compaction. Commit validated coherent cuts frequently on existing main.
+
+```rust
+#[test]
+fn retained_state_handler_publishes_update_only_on_routed_event() {
+    use arcweft_core::value::RuntimeValue;
+    use arcweft_runtime_driver::presentation_handles::{
+        PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    };
+    use arcweft_runtime_driver::view_runtime::BundleViewTextValue;
+
+    let compiled = project_view_fixture_with_entry(
+        r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+view Main() {
+    local state mut caption: String = "first"
+    Text(caption)
+    Button("change").on_click(|| { caption = "second"; () })
+}
+"#,
+        "arcweft-test://retained-state-command",
+    )
+    .compile()
+    .unwrap_or_else(|error| {
+        if let Some(lease) = error.compilation_lease() {
+            for unit in lease.tooling_lease().modules() {
+                let module = unit.hir();
+                eprintln!(
+                    "recovered: {:?}",
+                    module.recovered_owners().collect::<Vec<_>>()
+                );
+                for (id, expression) in module.expressions() {
+                    if expression.is_poisoned() {
+                        eprintln!("expression {id:?}: {:?}", expression.kind());
+                    }
+                }
+                for (id, statement) in module.statements() {
+                    if statement.is_poisoned() {
+                        eprintln!("statement {id:?}: {:?}", statement.kind());
+                    }
+                }
+                for (id, pattern) in module.patterns() {
+                    if pattern.is_poisoned() {
+                        eprintln!("pattern {id:?}: {:?}", pattern.kind());
+                    }
+                }
+            }
+        }
+        panic!("typed state command handler: {error:?}")
+    });
+    let product = compiled.view_product().product().as_ref().clone();
+    let text = compiled.view_product().text().cloned();
+    let awbc = Arc::new(
+        arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+            AwbcLowerer::new(
+                &compiled.runtime_plan().plan,
+                &compiled.runtime_plan().dialogue_content_catalog,
+                "main.arcw",
+            )
+            .lower()
+            .unwrap()
+            .program,
+        )
+        .unwrap(),
+    );
+    let handle = PresentationHandleRecord::new(
+        PresentationHandleId::try_new("view.command.first").unwrap(),
+        PresentationHandleKind::View,
+        "view.Main".to_owned(),
+        None,
+        PresentationResourceState::Mounted,
+        None,
+        0,
+    );
+    let mut runtime = BundleViewRuntime::try_new_with_awbc(product, text, awbc).unwrap();
+    let frame = runtime.evaluate(std::slice::from_ref(&handle), &[], false);
+    assert!(frame.diagnostics.is_empty(), "{frame:#?}");
+    assert!(
+        matches!(&frame.mounts[0].text[0].value, BundleViewTextValue::Plain { value } if value == "first")
+    );
+    let binding = &frame.mounts[0].events[0];
+    let invocation = ViewHandlerInvocation::from_input(
+        &InputEvent::activate(InputEpoch(1), binding.target().clone()),
+        binding.event(),
+        binding.route(),
+    )
+    .unwrap();
+    assert_eq!(runtime.dispatch_invocation(&invocation).unwrap(), None);
+    let updated = runtime.evaluate(std::slice::from_ref(&handle), &[], false);
+    assert!(updated.diagnostics.is_empty(), "{updated:#?}");
+    assert!(
+        matches!(&updated.mounts[0].text[0].value, BundleViewTextValue::Plain { value } if value == "second")
+    );
+    let snapshot = runtime.snapshot().unwrap();
+    assert!(
+        matches!(&snapshot.mounts[0].local_state[0].value, RuntimeValue::String(value) if value == "second")
+    );
+}
+
+```
+
+Final prerequisite13 Rust paths are frozen in TEMP arcweft-1005-typed-mut-final-frozen-rust.json; no source edits while handles live. Actual nextest lists50594/90609 are terminal0 (6m26s/8m40s builds). Complete24 non-CLI executable packages select4514 tests,8 configured skips; exact CLI surface selects195,0 skips. All25 default/all-feature reverse-closure packages reconcile with no missing consumers, and both new typed affine execution tests plus Syntax source/recovery proofs are selected. Final full run17411,CLI14506 and workspace check/Clippy/fmt95105 are live; do not restart or edit Rust after compaction. Structure passes2709files/97packages/0blocking. Previous D-drive capacity was22.2GB; official cargo clean dry-run and validated exact generated target path, with no source-sensitive builds live, then package-owned Core dev cleanup removed35976files/81.5GiB and restored104.7GB free. No filesystem-recursive deletion, source change, profile/job/feature alteration or binaries-metadata reuse.
+
+Ownership review measures13 changed Rust files at exact current bytes/physical LOC against b170 base (TEMP final-owner-measurements.json), largest growth75 LOC. The existing parser1290LOC owns grammar/recovery/source evidence, HIR pattern lower1306LOC owns staged pattern/local publication, and pattern source projection1353LOC owns authenticating that publication. Their state, cross-layer direction and scope remain cohesive; typed mutability replaces the incomplete existing variant rather than adding another authority/traversal or widening visibility for splitting. Tests follow these same owners. No dependency/features/API-direction change; shared Syntax shape changes trigger this actual public-boundary scanner and broad check/consumer validation. Full goal remains incomplete. Await actual results, repair failures, reconcile frozen hashes, review exactly13 Rust plus maintained language chapter and this note, commit/non-force push main, then restore pending state-command regression and continue implementation.
+
+Final acceptance: full17411 terminal0,4514/4514 passes (5 slow),8 configured skips,381.081s; exact CLI14506 terminal0,195/195 passes,0 skips,28.987s. Thus4709 unique tests pass in all25 actual transitive consumer packages; the earlier28/2 focused receipts overlap and are not added. Workspace95105 terminal0: all-target/all-feature locked check10m04s,Clippy1m52s under configured warning policy,fmt-check pass. Clippy reports the added mutable argument at the existing staged typed-pattern helper as8/7; no warning suppression or claim of warning-free validation. Structural scanner2709files/97packages/0blocking passes. Final13 Rust hashes reconcile with zero changes. Default/all-feature resolved normal/build/dev closures are identical25, Cargo/features/targets unchanged; the changed grammar/source/HIR mutability paths are feature-independent. All-feature consumer execution includes optional CLI/native proofs, target-all graph inspection is not claimed execution on other platforms. All source-sensitive handles are terminal.
+
+The actual prior3-test invocation failed because state command support is unfinished, not because typed mutability acceptance failed; its exact future regression is retained above and will be restored for that producer/consumer migration. The current coherent prerequisite has15 changed paths:13 Rust, maintained patterns contract and this durable note. Current main and exact origin main remain b17067665df09e666082161df49b4dcda51308ad. Ready for explicit stage/full cached diff review, commit/non-forced push and exact readback. Whole-local move/reinitialization parity is demonstrated in both execution backends, while original ownership/borrow rejection tests remain in full consumer acceptance. Full original convergence goal remains active/incomplete; continue typed retained-state command/lens/event, aggregate/affine Need/subscription and original task-plan/nominal/scheduler/final requirements. Astra remains consumed.

@@ -1118,6 +1118,14 @@ fn emit_typed_binding_pattern(
         transaction,
         path,
     );
+    let mutable = parser.at("mut");
+    if mutable {
+        if let Some(token) = parser.current() {
+            transaction.component(path, PatternComponentRole::MutKeyword, token.range());
+        }
+        parser.bump();
+        parser.bump_trivia();
+    }
     transaction.component(
         path,
         PatternComponentRole::Name,
@@ -1147,7 +1155,7 @@ fn emit_typed_binding_pattern(
     }
     transaction.type_child(path, &projection);
     PatternSyntaxNode::new(
-        PatternSyntaxKind::TypedBinding(binding),
+        PatternSyntaxKind::TypedBinding { binding, mutable },
         PatternSyntaxState::from_issues(issues),
     )
 }

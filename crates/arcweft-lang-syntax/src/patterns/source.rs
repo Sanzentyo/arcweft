@@ -445,7 +445,7 @@ fn collect_expected_paths(
         | PatternSyntaxKind::Literal(_)
         | PatternSyntaxKind::EntityReference(_)
         | PatternSyntaxKind::Discard
-        | PatternSyntaxKind::TypedBinding(_)
+        | PatternSyntaxKind::TypedBinding { .. }
         | PatternSyntaxKind::Error => {}
     }
     Ok(())
@@ -602,7 +602,10 @@ fn collect_expected_components(
                 output,
             )?;
         }
-        PatternSyntaxKind::TypedBinding(_) => {
+        PatternSyntaxKind::TypedBinding { mutable, .. } => {
+            if *mutable {
+                insert(output, path, PatternComponentRole::MutKeyword);
+            }
             insert(output, path, PatternComponentRole::Name);
             insert(output, path, PatternComponentRole::TypedBindingColon);
             insert(output, path, PatternComponentRole::TypedBindingType);
@@ -929,7 +932,7 @@ fn validate_type_children(
         };
         if !matches!(
             value_at_path(value, child.owner()).map(PatternSyntaxNode::kind),
-            Some(PatternSyntaxKind::TypedBinding(_))
+            Some(PatternSyntaxKind::TypedBinding { .. })
         ) || child.authored.value_at(&child.path).is_none()
             || !contains_text_range(*owner, child.authored.root_source().whole())
         {
@@ -958,7 +961,7 @@ fn collect_typed_binding_paths(
     path: &PatternNodePath,
     output: &mut BTreeSet<PatternNodePath>,
 ) -> Result<(), PatternSourceMapError> {
-    if matches!(value.kind(), PatternSyntaxKind::TypedBinding(_)) {
+    if matches!(value.kind(), PatternSyntaxKind::TypedBinding { .. }) {
         output.insert(path.clone());
     }
     let mut paths = Vec::new();
@@ -966,7 +969,7 @@ fn collect_typed_binding_paths(
     for child in paths.into_iter().skip(1) {
         if matches!(
             value_at_path(value, &child).map(PatternSyntaxNode::kind),
-            Some(PatternSyntaxKind::TypedBinding(_))
+            Some(PatternSyntaxKind::TypedBinding { .. })
         ) {
             output.insert(child);
         }

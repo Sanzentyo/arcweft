@@ -554,7 +554,10 @@ fn assert_exact_family_payload(
             assert_discard_child(module, attached, PatternNodeStep::Element(1), *right, scope);
         }
         (PatternSyntaxFamily::TypedBinding, HirPatternKind::TypedBinding { binding, ty }) => {
-            assert_bound_local_payload(module, owner, scope, binding, "typed", false, Some(*ty));
+            let PatternSyntaxKind::TypedBinding { mutable, .. } = attached.value().kind() else {
+                panic!("typed binding source")
+            };
+            assert_bound_local_payload(module, owner, scope, binding, "typed", *mutable, Some(*ty));
             let attached_type = attached
                 .children()
                 .expect("TypedBinding attached children")
@@ -769,6 +772,16 @@ fn all_thirteen_attached_pattern_families_publish_typed_source_and_diagnostics()
             family: PatternSyntaxFamily::TypedBinding,
             poisoned: false,
             representative: Some((SyntaxRole::TypedBindingType, HirRole::TypedBindingType)),
+            absent_optional: None,
+            ordinal_one_over: None,
+            inapplicable: HirRole::Recovery,
+        },
+        FamilyCase {
+            name: "mutable-typed-binding",
+            source: "mut typed: Value",
+            family: PatternSyntaxFamily::TypedBinding,
+            poisoned: false,
+            representative: Some((SyntaxRole::MutKeyword, HirRole::MutKeyword)),
             absent_optional: None,
             ordinal_one_over: None,
             inapplicable: HirRole::Recovery,

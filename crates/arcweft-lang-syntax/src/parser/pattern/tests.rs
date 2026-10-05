@@ -14,6 +14,81 @@ use crate::patterns::{
 };
 
 #[test]
+fn typed_binding_preserves_mutability_and_exact_keyword_name_type_sources() {
+    for (source, mutable, name_range) in [
+        ("typed: Value", false, SourceRange::new(0, 5)),
+        ("mut typed: Value", true, SourceRange::new(4, 9)),
+    ] {
+        let events = pattern_events(source);
+        let projection = projection(&events, SyntaxKind::TypedBindingPattern);
+        let value = projection.authored().value_at(projection.path()).unwrap();
+        assert!(value.state().is_valid());
+        let PatternSyntaxKind::TypedBinding {
+            binding,
+            mutable: actual,
+        } = value.kind()
+        else {
+            panic!("typed binding")
+        };
+        assert_eq!(*actual, mutable);
+        assert_eq!(binding.name().unwrap().as_str(), "typed");
+        assert_eq!(
+            projection.authored().binding_sites()[0].kind().is_mutable(),
+            mutable
+        );
+        let sources = projection.authored().source();
+        assert_eq!(
+            sources.component_at(projection.path(), PatternComponentRole::Name),
+            Some(&name_range)
+        );
+        assert_eq!(
+            sources.component_at(projection.path(), PatternComponentRole::MutKeyword),
+            mutable.then_some(&SourceRange::new(0, 3))
+        );
+        assert!(
+            sources
+                .component_at(projection.path(), PatternComponentRole::TypedBindingType)
+                .is_some()
+        );
+    }
+}
+
+#[test]
+fn mutable_typed_binding_recovery_and_or_mutability_remain_exact() {
+    for source in ["mut: Value", "mut typed extra: Value"] {
+        let events = pattern_events(source);
+        let projection = projection(&events, SyntaxKind::TypedBindingPattern);
+        let value = projection.authored().value_at(projection.path()).unwrap();
+        assert!(!value.state().is_valid());
+        assert!(
+            projection.authored().binding_sites()[0]
+                .binding()
+                .name()
+                .is_none()
+        );
+        assert_eq!(
+            projection
+                .authored()
+                .source()
+                .component_at(projection.path(), PatternComponentRole::MutKeyword),
+            Some(&SourceRange::new(0, 3))
+        );
+    }
+    let events = pattern_events("mut typed: Value | typed: Value");
+    let projection = projection(&events, SyntaxKind::OrPattern);
+    assert!(
+        projection
+            .authored()
+            .value_at(projection.path())
+            .unwrap()
+            .state()
+            .issues()
+            .iter()
+            .any(|issue| matches!(issue, PatternRecoveryIssue::OrBindings(_)))
+    );
+}
+
+#[test]
 fn pattern_trailing_input_retains_recovery_for_every_completed_family() {
     for (prefix, kind) in [
         ("[value]", SyntaxKind::SequencePattern),

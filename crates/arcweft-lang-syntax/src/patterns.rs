@@ -311,7 +311,10 @@ pub enum PatternSyntaxKind {
         pattern: Box<PatternSyntaxNode>,
     },
     Or(Box<[PatternSyntaxNode]>),
-    TypedBinding(PatternBindingSyntax),
+    TypedBinding {
+        binding: PatternBindingSyntax,
+        mutable: bool,
+    },
     Error,
 }
 
@@ -637,7 +640,7 @@ impl PatternSyntaxNode {
             PatternSyntaxKind::BracketSequence(_) => PatternSyntaxFamily::BracketSequence,
             PatternSyntaxKind::WholeBinding { .. } => PatternSyntaxFamily::WholeBinding,
             PatternSyntaxKind::Or(_) => PatternSyntaxFamily::Or,
-            PatternSyntaxKind::TypedBinding(_) => PatternSyntaxFamily::TypedBinding,
+            PatternSyntaxKind::TypedBinding { .. } => PatternSyntaxFamily::TypedBinding,
             PatternSyntaxKind::Error => PatternSyntaxFamily::Error,
         }
     }
@@ -680,7 +683,7 @@ impl PatternSyntaxNode {
             | PatternSyntaxKind::Literal(_)
             | PatternSyntaxKind::EntityReference(_)
             | PatternSyntaxKind::Discard
-            | PatternSyntaxKind::TypedBinding(_)
+            | PatternSyntaxKind::TypedBinding { .. }
             | PatternSyntaxKind::Error => Vec::new(),
         }
     }

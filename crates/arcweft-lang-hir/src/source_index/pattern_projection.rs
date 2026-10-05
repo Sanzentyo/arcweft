@@ -7,10 +7,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use arcweft_lang_syntax::attachment::{AttachedPatternChild, AttachedPatternNode};
 use arcweft_lang_syntax::incremental::ParsedSource;
 use arcweft_lang_syntax::patterns::{
-    PatternBindingSiteKind, PatternComponentRole, PatternFieldPart, PatternLiteralPart,
-    PatternNodeStep, PatternRecordFieldSyntax, PatternRestPart, PatternSyntaxFamily,
-    PatternSyntaxKind, PatternSyntaxNode, PatternTypeChildRelation, VariantPatternHeadPart,
-    VariantPatternPayloadPart,
+    PatternComponentRole, PatternFieldPart, PatternLiteralPart, PatternNodeStep,
+    PatternRecordFieldSyntax, PatternRestPart, PatternSyntaxFamily, PatternSyntaxKind,
+    PatternSyntaxNode, PatternTypeChildRelation, VariantPatternHeadPart, VariantPatternPayloadPart,
 };
 
 use super::{
@@ -354,7 +353,7 @@ pub(super) fn binding_locals_match(
                 HirPatternKind::TypedBinding { ty, .. } => Some(*ty),
                 _ => None,
             });
-        let mutable = matches!(site.kind(), PatternBindingSiteKind::MutableBinding);
+        let mutable = site.kind().is_mutable();
         let poisoned = !first_in_pattern
             || context_poisoned
             || validation.policy.forbids_mutable() && mutable
@@ -379,7 +378,7 @@ fn source_pattern_is_irrefutable(pattern: &PatternSyntaxNode) -> bool {
         PatternSyntaxKind::Binding(_)
         | PatternSyntaxKind::MutableBinding(_)
         | PatternSyntaxKind::Discard
-        | PatternSyntaxKind::TypedBinding(_) => true,
+        | PatternSyntaxKind::TypedBinding { .. } => true,
         PatternSyntaxKind::Tuple(elements) => elements.iter().all(source_pattern_is_irrefutable),
         PatternSyntaxKind::Record(record) => record.fields().iter().all(|field| match field {
             PatternRecordFieldSyntax::Explicit { pattern, .. } => {
@@ -974,6 +973,7 @@ pub(super) fn pattern_requirements(
             add_pattern_requirement(&mut requirements, Role::NestedPattern, Required);
         }
         HirPatternKind::TypedBinding { .. } => {
+            add_pattern_requirement(&mut requirements, Role::MutKeyword, Optional);
             add_pattern_requirement(&mut requirements, Role::Name, Required);
             add_pattern_requirement(&mut requirements, Role::TypedBindingColon, Required);
             add_pattern_requirement(&mut requirements, Role::TypedBindingType, Required);
@@ -1138,6 +1138,7 @@ impl HirPatternKind {
                 matches!(
                     role,
                     HirPatternSourceRole::Name
+                        | HirPatternSourceRole::MutKeyword
                         | HirPatternSourceRole::TypedBindingColon
                         | HirPatternSourceRole::TypedBindingType
                 ),

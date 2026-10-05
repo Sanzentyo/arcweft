@@ -15,10 +15,19 @@ pub enum PatternBindingSiteKind {
     Binding,
     MutableBinding,
     WholeBinding,
-    TypedBinding,
+    TypedBinding { mutable: bool },
     RecordShorthand { field: u32 },
     RecordRest { field: u32 },
     SequenceRest,
+}
+
+impl PatternBindingSiteKind {
+    pub const fn is_mutable(self) -> bool {
+        matches!(
+            self,
+            Self::MutableBinding | Self::TypedBinding { mutable: true }
+        )
+    }
 }
 
 /// One typed binding site in deterministic authored preorder.
@@ -85,7 +94,7 @@ pub(crate) fn mark_or_binding_mismatches(
         | PatternSyntaxKind::Literal(_)
         | PatternSyntaxKind::EntityReference(_)
         | PatternSyntaxKind::Discard
-        | PatternSyntaxKind::TypedBinding(_)
+        | PatternSyntaxKind::TypedBinding { .. }
         | PatternSyntaxKind::Error => {}
     }
 
@@ -154,9 +163,7 @@ fn canonical_binding_positions(
 }
 
 fn same_binding_position(left: &PatternBindingSite, right: &PatternBindingSite) -> bool {
-    left.binding == right.binding
-        && matches!(left.kind, PatternBindingSiteKind::MutableBinding)
-            == matches!(right.kind, PatternBindingSiteKind::MutableBinding)
+    left.binding == right.binding && left.kind.is_mutable() == right.kind.is_mutable()
 }
 
 pub(crate) fn collect_binding_sites(
@@ -233,12 +240,12 @@ pub(crate) fn collect_binding_sites(
                 next_ordinal,
             )?;
         }
-        PatternSyntaxKind::TypedBinding(binding) => {
+        PatternSyntaxKind::TypedBinding { binding, mutable } => {
             push_binding(
                 output,
                 next_ordinal,
                 path,
-                PatternBindingSiteKind::TypedBinding,
+                PatternBindingSiteKind::TypedBinding { mutable: *mutable },
                 binding,
             )?;
         }

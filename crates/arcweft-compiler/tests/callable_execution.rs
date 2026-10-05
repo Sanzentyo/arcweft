@@ -1542,3 +1542,18 @@ flow main() -> i64 {
         }
     }
 }
+
+callable_case!(
+    typed_mutable_affine_binding_reinitializes_after_move,
+    r#"
+flow main() -> i64 {
+    let mut values: Vec<Content> = Vec<Content>::with_capacity(0usize)
+    let moved = values
+    values = Vec<Content>::with_capacity(0usize)
+    let current = values
+    return 42i64
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);

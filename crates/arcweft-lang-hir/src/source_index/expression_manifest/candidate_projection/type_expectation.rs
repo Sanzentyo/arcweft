@@ -414,7 +414,7 @@ impl CandidateTypeExpectationCursor<'_> {
             PatternSyntaxKind::WholeBinding { .. } => {
                 walk_child(self, PatternNodeStep::NestedPattern)?;
             }
-            PatternSyntaxKind::TypedBinding(_) => {
+            PatternSyntaxKind::TypedBinding { .. } => {
                 self.walk_type(typed_binding?)?;
             }
             PatternSyntaxKind::Binding(_)

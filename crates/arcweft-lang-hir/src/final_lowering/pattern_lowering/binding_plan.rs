@@ -140,7 +140,7 @@ fn syntax_pattern_is_irrefutable(pattern: &PatternSyntaxNode) -> bool {
         PatternSyntaxKind::Binding(_)
         | PatternSyntaxKind::MutableBinding(_)
         | PatternSyntaxKind::Discard
-        | PatternSyntaxKind::TypedBinding(_) => true,
+        | PatternSyntaxKind::TypedBinding { .. } => true,
         PatternSyntaxKind::Tuple(elements) => elements.iter().all(syntax_pattern_is_irrefutable),
         PatternSyntaxKind::Record(record) => record.fields().iter().all(|field| match field {
             PatternRecordFieldSyntax::Explicit { pattern, .. } => {
@@ -211,14 +211,18 @@ fn layout(
 ) -> Result<BindingLayout, HirLowerFailure> {
     let children = pattern_children(attached, reverse_child_insertion)?;
     let result = match attached.value().kind() {
-        PatternSyntaxKind::Binding(binding) | PatternSyntaxKind::TypedBinding(binding) => {
-            BindingLayout::one(
-                BindingSite::new(attached.path(), BindingSiteRole::Node),
-                binding,
-                false,
-                false,
-            )
-        }
+        PatternSyntaxKind::Binding(binding) => BindingLayout::one(
+            BindingSite::new(attached.path(), BindingSiteRole::Node),
+            binding,
+            false,
+            false,
+        ),
+        PatternSyntaxKind::TypedBinding { binding, mutable } => BindingLayout::one(
+            BindingSite::new(attached.path(), BindingSiteRole::Node),
+            binding,
+            *mutable,
+            false,
+        ),
         PatternSyntaxKind::MutableBinding(binding) => BindingLayout::one(
             BindingSite::new(attached.path(), BindingSiteRole::Node),
             binding,
