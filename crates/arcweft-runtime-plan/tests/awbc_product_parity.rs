@@ -549,7 +549,7 @@ fn owned_program_root_retains_affine_inputs_and_result_across_save_restore() {
     };
     let retained = reusable_bool_need();
 
-    let boolean = type_id(41);
+    let boolean = arcweft_core::pattern::RuntimeCheckedType::Bool.semantic_identity_digest();
     let need = type_id(42);
     let id = RuntimePureProgramId::from_checked_digest([43; 32]);
     let mut builder = RuntimePlanBuilder::new();
