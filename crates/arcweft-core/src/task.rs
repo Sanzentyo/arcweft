@@ -45,6 +45,8 @@ pub use producer::*;
 // carrier, journal, host and persistence migration; no String conversion exists.
 mod identity;
 pub use identity::{TaskIdentityError, TaskIdentityKind};
+mod need_handle;
+mod specification;
 
 #[cfg(test)]
 mod identity_tests {

@@ -2,9 +2,10 @@
 //! task/Need carrier cut. These owners contain the version-one transcripts;
 //! neither legacy String identifiers nor compatibility readers enter them.
 
+use super::specification::NeedProducerInstance;
 use super::{
-    GenerationId, NeedProducerContractDigest, NeedProducerInstanceKey, NeedProducerSpec,
-    TaskLaunchOrdinal, TaskPolicy,
+    GenerationId, NeedProducerContractDigest, NeedProducerInstanceKey, TaskLaunchOrdinal,
+    TaskPolicy,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
@@ -131,11 +132,11 @@ pub(super) enum TaskCorrelationError {
 impl TaskCorrelation {
     pub(super) fn try_for(
         generation: GenerationId,
-        spec: &NeedProducerSpec,
+        spec: &NeedProducerInstance,
         policy: TaskPolicy,
         ordinal: TaskLaunchOrdinal,
     ) -> Result<Self, TaskIdentityError> {
-        let producer = spec.instance_key()?;
+        let producer = spec.key();
         let need = NeedId::try_for(producer, policy, ordinal)?;
         let task_key = TaskKey::try_for(generation, producer, policy)?;
         let task_id = TaskId::try_for(task_key, ordinal)?;
@@ -153,7 +154,7 @@ impl TaskCorrelation {
     pub(super) fn validate(
         &self,
         generation: GenerationId,
-        spec: &NeedProducerSpec,
+        spec: &NeedProducerInstance,
         policy: TaskPolicy,
         ordinal: TaskLaunchOrdinal,
     ) -> Result<(), TaskCorrelationError> {

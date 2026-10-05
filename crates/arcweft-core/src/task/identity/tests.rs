@@ -218,7 +218,7 @@ fn fixed_task_identity_wire_rejects_zero_and_wrong_shape() {
 
 #[test]
 fn fixed_task_identity_correlation_revalidates_every_field() {
-    let spec = producer_spec(1);
+    let spec = NeedProducerInstance::try_from(&producer_spec(1)).unwrap();
     let generation = GenerationId::new(0);
     let policy = TaskPolicy::AlwaysStart;
     let ordinal = TaskLaunchOrdinal::try_for_policy(policy, 1).unwrap();
@@ -268,7 +268,12 @@ fn fixed_task_identity_correlation_revalidates_every_field() {
         );
     }
     assert_eq!(
-        accepted.validate(generation, &producer_spec(2), policy, ordinal),
+        accepted.validate(
+            generation,
+            &NeedProducerInstance::try_from(&producer_spec(2)).unwrap(),
+            policy,
+            ordinal
+        ),
         Err(TaskCorrelationError::Mismatch)
     );
     assert_eq!(
