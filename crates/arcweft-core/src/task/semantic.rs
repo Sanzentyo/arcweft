@@ -4,18 +4,18 @@
 //! poisons the transcript, so later writes cannot publish a partial digest.
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum TaskSemanticEncodingError {
+pub(crate) enum TaskSemanticEncodingError {
     CountOverflow,
     StringLengthOverflow,
 }
 
-pub(super) struct TaskSemanticEncoder {
+pub(crate) struct TaskSemanticEncoder {
     hasher: blake3::Hasher,
     error: Option<TaskSemanticEncodingError>,
 }
 
 impl TaskSemanticEncoder {
-    pub(super) fn new(domain: &'static [u8]) -> Self {
+    pub(crate) fn new(domain: &'static [u8]) -> Self {
         let mut hasher = blake3::Hasher::new();
         hasher.update(domain);
         Self {
@@ -24,19 +24,19 @@ impl TaskSemanticEncoder {
         }
     }
 
-    pub(super) fn tag(&mut self, tag: u8) {
+    pub(crate) fn tag(&mut self, tag: u8) {
         self.write(&[tag]);
     }
 
-    pub(super) fn digest(&mut self, digest: &[u8; 32]) {
+    pub(crate) fn digest(&mut self, digest: &[u8; 32]) {
         self.write(digest);
     }
 
-    pub(super) fn count(&mut self, count: usize) {
+    pub(crate) fn count(&mut self, count: usize) {
         self.length(count, TaskSemanticEncodingError::CountOverflow);
     }
 
-    pub(super) fn string(&mut self, value: &str) {
+    pub(crate) fn string(&mut self, value: &str) {
         self.length(value.len(), TaskSemanticEncodingError::StringLengthOverflow);
         self.write(value.as_bytes());
     }
@@ -57,7 +57,7 @@ impl TaskSemanticEncoder {
         }
     }
 
-    pub(super) fn finish(self) -> Result<blake3::Hash, TaskSemanticEncodingError> {
+    pub(crate) fn finish(self) -> Result<blake3::Hash, TaskSemanticEncodingError> {
         match self.error {
             Some(error) => Err(error),
             None => Ok(self.hasher.finalize()),

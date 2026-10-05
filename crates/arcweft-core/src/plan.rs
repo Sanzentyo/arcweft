@@ -1,6 +1,7 @@
 mod callable_specialization;
 mod callable_states;
 mod construction;
+mod control_effect;
 mod dialogue_content;
 pub mod entry_inventory;
 mod executable_body;
@@ -67,6 +68,15 @@ pub use construction::{
     RuntimeRecordPatternFieldSeed, RuntimeScheduledCaptureSeed, RuntimeStreamMatchArmSeed,
     RuntimeStreamOpSeed, RuntimeStreamPlanSeed, RuntimeTraitMethodDeclarationSeed,
     RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
+};
+pub use construction::{RuntimeControlEffectContractSeed, RuntimeControlEffectContractSeedId};
+pub use control_effect::{
+    ControlEffectContractDigest, RuntimeControlEffectCancellation, RuntimeControlEffectCardinality,
+    RuntimeControlEffectContract, RuntimeControlEffectContractDefinition,
+    RuntimeControlEffectContractError, RuntimeControlEffectContractId,
+    RuntimeControlEffectContractTable, RuntimeControlEffectIdentity, RuntimeControlEffectKind,
+    RuntimeControlEffectOrdering, RuntimeControlEffectRow, RuntimeControlEffectTerminalBehavior,
+    RuntimeTaskControlMode,
 };
 pub use dialogue_content::{
     RuntimeDialogueContentApplicationKey, RuntimeDialogueContentEffectSlot,
@@ -186,6 +196,7 @@ pub struct RuntimePlan {
     pub(crate) nominal_record_domains: RuntimeNominalRecordDomainTable,
     pub(crate) variant_domains: RuntimeVariantDomainTable,
     pub(crate) function_sites: RuntimeFunctionSiteTable,
+    pub(crate) control_effect_contracts: RuntimeControlEffectContractTable,
     /// Dense registration-site order; each row names one executable function
     /// body with a capture-only, Unit-returning ABI.
     pub(crate) defer_sites: Box<[crate::runtime_id::RuntimeFunctionSiteId]>,
@@ -221,6 +232,11 @@ pub enum RuntimePlanValueTypeError {
 }
 
 impl RuntimePlan {
+    #[must_use]
+    pub const fn control_effect_contracts(&self) -> &RuntimeControlEffectContractTable {
+        &self.control_effect_contracts
+    }
+
     #[must_use]
     pub const fn callable_states(&self) -> &RuntimeCallableStateTable {
         &self.callable_states

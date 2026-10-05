@@ -40,7 +40,7 @@ impl GenerationId {
 
 mod producer;
 pub use producer::*;
-mod semantic;
+pub(crate) mod semantic;
 
 // Private final identity preparation. Publish only with the atomic task/Need
 // carrier, journal, host and persistence migration; no String conversion exists.

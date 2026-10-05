@@ -9,6 +9,7 @@ use thiserror::Error;
 
 mod callable_specialization;
 mod callable_states;
+mod control_effect;
 mod lower;
 mod nominal_schema;
 mod seed;
@@ -17,6 +18,7 @@ pub use callable_specialization::{
     RuntimeCallableSpecializationSeed, RuntimeCallableSpecializationSeedId,
 };
 pub use callable_states::{RuntimeCallableStateSeed, RuntimeCallableStateSeedId};
+pub use control_effect::{RuntimeControlEffectContractSeed, RuntimeControlEffectContractSeedId};
 pub use nominal_schema::{RuntimePlanNominalSchemaError, RuntimePlanSchemaComponent};
 
 #[cfg(test)]
@@ -143,6 +145,8 @@ pub enum RuntimePlanTable {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimePlanBuildError {
+    #[error(transparent)]
+    ControlEffectContract(#[from] super::RuntimeControlEffectContractError),
     #[error(transparent)]
     NominalSchema(#[from] RuntimePlanNominalSchemaError),
     #[error("runtime-plan construction is poisoned by an earlier post-admission failure")]
@@ -705,6 +709,7 @@ pub struct RuntimePlanBuilder {
     nominal_record_domains: RuntimeNominalRecordDomainTableBuilder,
     variant_domains: RuntimeVariantDomainTableBuilder,
     function_sites: Vec<ReservedFunctionSite>,
+    control_effect_contracts: Vec<Option<super::RuntimeControlEffectContract>>,
     defer_sites: Vec<crate::runtime_id::RuntimeFunctionSiteId>,
     callable_states: RefCell<callable_states::RuntimeCallableStateBuilder>,
     callable_specializations: Vec<
@@ -741,6 +746,7 @@ impl RuntimePlanBuilder {
             nominal_record_domains: RuntimeNominalRecordDomainTableBuilder::new(),
             variant_domains: RuntimeVariantDomainTableBuilder::new(),
             function_sites: Vec::new(),
+            control_effect_contracts: Vec::new(),
             defer_sites: Vec::new(),
             callable_states: RefCell::new(callable_states::RuntimeCallableStateBuilder::default()),
             callable_specializations: Vec::new(),
@@ -2611,6 +2617,17 @@ impl RuntimePlanBuilder {
             })
             .collect();
         let type_table = self.types.finish()?;
+        let control_effect_contracts = super::RuntimeControlEffectContractTable::seal(
+            self.control_effect_contracts
+                .into_iter()
+                .enumerate()
+                .map(|(index, row)| {
+                    row.ok_or(super::RuntimeControlEffectContractError::Incomplete { index })
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+            &type_table,
+            crate::entry::RuntimeSchemaLimits::engine_default().max_validation_work,
+        )?;
         let project_call_sites = self.project_call_sites.into_inner().finish();
         let local_declarations = self.locals.finish();
         validate_flow_parameters(
@@ -2626,6 +2643,7 @@ impl RuntimePlanBuilder {
             nominal_record_domains: self.nominal_record_domains.finish(),
             variant_domains: self.variant_domains.finish(),
             function_sites: function_site_builder.finish(),
+            control_effect_contracts,
             defer_sites: self.defer_sites.into_boxed_slice(),
             callable_states: self.callable_states.into_inner().finish(),
             callable_specializations: self.callable_specializations.into_boxed_slice(),

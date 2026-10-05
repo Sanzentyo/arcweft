@@ -12,3 +12,8 @@ fn core_identity_boundaries_are_compile_time_closed() {
     cases.compile_fail("tests/ui/runtime_flow_invocation_is_affine.rs");
     cases.compile_fail("tests/ui/removed_awbc_effect_variants_are_absent.rs");
 }
+
+#[test]
+fn control_effect_seal_proof_has_no_raw_or_wire_constructor() {
+    trybuild::TestCases::new().compile_fail("tests/ui/control_effect_seal_proof_is_private.rs");
+}
