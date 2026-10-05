@@ -1049,6 +1049,10 @@ fn project_runtime_semantic_fact_inventories(
         {
             continue;
         }
+        if closed_instance_type_owners.contains(&RuntimeProjectFunctionTypeOwner::Expression(owner))
+        {
+            continue;
+        }
         let is_thread = project
             .modules()
             .find_map(|(_, module)| {
@@ -1070,10 +1074,6 @@ fn project_runtime_semantic_fact_inventories(
             input.push_thread_producer(owner, admission);
         }
 
-        if closed_instance_type_owners.contains(&RuntimeProjectFunctionTypeOwner::Expression(owner))
-        {
-            continue;
-        }
         // Interpretation is structural execution evidence. The selector can
         // forward its selected child's value without owning a runtime type.
         if let CheckedExpressionResolution::PostfixBracket(resolution) = expression.resolution() {
@@ -7609,6 +7609,7 @@ fn runtime_executable_semantic_facts<'abi>(
         .filter_map(|row| row.ty().map(|ty| (row.owner(), ty)))
         .collect::<BTreeMap<_, _>>();
     let execution = analysis.execution_projection();
+    let mut producer_context = None;
     let mut expressions = Vec::with_capacity(partition.expressions().len());
     for expected in partition.expressions() {
         let owner = expected.owner();
@@ -8115,6 +8116,64 @@ fn runtime_executable_semantic_facts<'abi>(
             expected.children().into(),
             payload,
         );
+        let producer_kind = if matches!(fact.payload(), RuntimeProjectFunctionExpressionPayload::Call(call) if matches!(call.dispatch(), RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(_))))
+        {
+            Some(arcweft_lang_sema::CheckedExpressionProducerKind::Call)
+        } else if expected.producer_kind()
+            == Some(arcweft_lang_sema::CheckedExpressionProducerKind::Thread)
+        {
+            Some(arcweft_lang_sema::CheckedExpressionProducerKind::Thread)
+        } else {
+            None
+        };
+        if let Some(kind) = producer_kind {
+            let definition = match lexical {
+                RuntimeExecutableInstantiation::Global => match kind {
+                    arcweft_lang_sema::CheckedExpressionProducerKind::Call => {
+                        analysis.checked_call_producer_definition(project, symbols, owner)
+                    }
+                    arcweft_lang_sema::CheckedExpressionProducerKind::Thread => {
+                        analysis.checked_thread_producer_admission(project, symbols, owner)
+                    }
+                }
+                .map_err(|source| origin.error(source.to_string()))?,
+                RuntimeExecutableInstantiation::Program { environment, .. } => environment
+                    .producer_definition(analysis, project, symbols, owner, kind)
+                    .map_err(|source| origin.error(source.to_string()))?,
+                RuntimeExecutableInstantiation::Project { .. }
+                | RuntimeExecutableInstantiation::Display { .. } => {
+                    if producer_context.is_none() {
+                        let instance = match lexical {
+                            RuntimeExecutableInstantiation::Project { solution, .. } => {
+                                CheckedLocalUseInstantiation::ProjectFunction(
+                                    solution.function_solution().ok_or_else(|| {
+                                        origin.error(
+                                            "project instance has no frozen function solution",
+                                        )
+                                    })?,
+                                )
+                            }
+                            RuntimeExecutableInstantiation::Display { conformance, .. } => {
+                                CheckedLocalUseInstantiation::DisplayText(conformance)
+                            }
+                            _ => unreachable!("closed declaration context selected"),
+                        };
+                        producer_context = Some(
+                            analysis
+                                .checked_execution_context(project, symbols, owner, Some(instance))
+                                .map_err(|source| origin.error(source.to_string()))?,
+                        );
+                    }
+                    producer_context
+                        .as_ref()
+                        .expect("closed producer context issued")
+                        .environment()
+                        .producer_definition(analysis, project, symbols, owner, kind)
+                        .map_err(|source| origin.error(source.to_string()))?
+                }
+            };
+            fact = fact.with_producer(definition);
+        }
         if let Some(specialization) = instances.value_specialization(owner)? {
             fact = fact.with_specialization(specialization);
         }
@@ -8342,36 +8401,40 @@ fn runtime_executable_semantic_facts<'abi>(
         })
         .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
 
-    let local_uses = match lexical {
-        RuntimeExecutableInstantiation::Program { environment, .. } => {
-            environment.local_uses().clone()
-        }
-        RuntimeExecutableInstantiation::Global => {
-            CheckedLocalUseAuthority::Global(Arc::clone(analysis.checked_local_uses()))
-        }
-        RuntimeExecutableInstantiation::Project { solution, .. } => {
-            let checked = analysis
-                .checked_local_uses_for_instance(
-                    project,
-                    symbols,
-                    CheckedLocalUseInstantiation::ProjectFunction(
-                        solution.function_solution().ok_or_else(|| {
-                            origin.error("project instance has no frozen function solution")
-                        })?,
-                    ),
-                )
-                .map_err(|error| origin.error(error.to_string()))?;
-            CheckedLocalUseAuthority::Instance(Arc::new(checked))
-        }
-        RuntimeExecutableInstantiation::Display { conformance, .. } => {
-            let checked = analysis
-                .checked_local_uses_for_instance(
-                    project,
-                    symbols,
-                    CheckedLocalUseInstantiation::DisplayText(conformance),
-                )
-                .map_err(|error| origin.error(error.to_string()))?;
-            CheckedLocalUseAuthority::Instance(Arc::new(checked))
+    let local_uses = if let Some(context) = producer_context {
+        context.environment().local_uses().clone()
+    } else {
+        match lexical {
+            RuntimeExecutableInstantiation::Program { environment, .. } => {
+                environment.local_uses().clone()
+            }
+            RuntimeExecutableInstantiation::Global => {
+                CheckedLocalUseAuthority::Global(Arc::clone(analysis.checked_local_uses()))
+            }
+            RuntimeExecutableInstantiation::Project { solution, .. } => {
+                let checked = analysis
+                    .checked_local_uses_for_instance(
+                        project,
+                        symbols,
+                        CheckedLocalUseInstantiation::ProjectFunction(
+                            solution.function_solution().ok_or_else(|| {
+                                origin.error("project instance has no frozen function solution")
+                            })?,
+                        ),
+                    )
+                    .map_err(|error| origin.error(error.to_string()))?;
+                CheckedLocalUseAuthority::Instance(Arc::new(checked))
+            }
+            RuntimeExecutableInstantiation::Display { conformance, .. } => {
+                let checked = analysis
+                    .checked_local_uses_for_instance(
+                        project,
+                        symbols,
+                        CheckedLocalUseInstantiation::DisplayText(conformance),
+                    )
+                    .map_err(|error| origin.error(error.to_string()))?;
+                CheckedLocalUseAuthority::Instance(Arc::new(checked))
+            }
         }
     };
     RuntimeProjectFunctionInstanceSemanticFacts::try_new(

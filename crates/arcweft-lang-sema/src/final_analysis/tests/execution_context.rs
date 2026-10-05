@@ -12,6 +12,115 @@ use crate::{
 
 use super::{analyze, fixture, project_specialization::selections};
 
+#[test]
+fn monomorphic_producer_plan_excludes_an_incidental_instance_coordinate() {
+    let world = fixture(
+        "fn identity(value: i64) -> i64 { value }\nfn wrapper(value: i64) -> i64 { identity(value) }\nfn numeric() -> i64 { wrapper(1i64) }",
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let instance = selections(&report, "wrapper")[0]
+        .close_instance(None)
+        .unwrap();
+    let source = report
+        .calls()
+        .find_map(|(owner, _)| {
+            let location = report.hir_topology().semantic_path(owner.into()).unwrap()?;
+            (location.root() == &HirSemanticPathRoot::Declaration(instance.declaration().clone()))
+                .then_some(owner)
+        })
+        .unwrap();
+    let global = report
+        .checked_call_producer_definition(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            source,
+        )
+        .unwrap();
+    let context = report
+        .checked_execution_context(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            source,
+            Some(CheckedLocalUseInstantiation::ProjectFunction(&instance)),
+        )
+        .unwrap();
+    let bound = context
+        .checked_call_producer_definition(&world.symbols, source)
+        .unwrap();
+    assert_eq!(global.site(), bound.site());
+    assert_eq!(global.plan(), bound.plan());
+    assert!(!global.matches_authority(source, context.environment().local_uses()));
+    assert!(bound.matches_authority(source, context.environment().local_uses()));
+}
+
+#[test]
+fn producer_definitions_retain_exact_closed_instance_and_source_authority() {
+    let world = fixture(
+        "fn identity<T>(value: T) -> T { value }\nfn wrapper<T>(value: T) -> T { identity(value) }\nfn numeric() -> i64 { wrapper(1i64) }\nfn pending(value: Need<i64>) -> Need<i64> { wrapper(value) }",
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let instances = selections(&report, "wrapper")
+        .into_iter()
+        .map(|selection| selection.close_instance(None).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(instances.len(), 2);
+    let source = report
+        .calls()
+        .find_map(|(owner, _)| {
+            let location = report.hir_topology().semantic_path(owner.into()).unwrap()?;
+            (location.root()
+                == &HirSemanticPathRoot::Declaration(instances[0].declaration().clone()))
+                .then_some(owner)
+        })
+        .unwrap();
+    let contexts = instances
+        .iter()
+        .map(|instance| {
+            report
+                .checked_execution_context(
+                    world.project.analysis_view().unwrap(),
+                    &world.symbols,
+                    source,
+                    Some(CheckedLocalUseInstantiation::ProjectFunction(instance)),
+                )
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    let first = contexts[0]
+        .checked_call_producer_definition(&world.symbols, source)
+        .unwrap();
+    let second = contexts[1]
+        .checked_call_producer_definition(&world.symbols, source)
+        .unwrap();
+    assert_eq!(
+        first,
+        contexts[0]
+            .checked_call_producer_definition(&world.symbols, source)
+            .unwrap()
+    );
+    assert_eq!(first.site(), second.site());
+    assert_ne!(first.plan(), second.plan());
+    assert!(first.matches_authority(source, contexts[0].environment().local_uses()));
+    assert!(!first.matches_authority(source, contexts[1].environment().local_uses()));
+    let other_source = local_source(&report, instances[0].declaration());
+    assert_ne!(source, other_source);
+    assert!(!first.matches_authority(other_source, contexts[0].environment().local_uses()));
+    let foreign_world = fixture("fn wrapper(value: i64) -> i64 { value }", None);
+    let foreign_report = analyze(&foreign_world).unwrap();
+    assert!(matches!(
+        contexts[0].environment().producer_definition(
+            &foreign_report,
+            foreign_world.project.analysis_view().unwrap(),
+            &foreign_world.symbols,
+            source,
+            crate::CheckedExpressionProducerKind::Call,
+        ),
+        Err(CheckedExecutionContextError::ForeignAuthority)
+    ));
+}
+
 fn local_source(report: &FinalSemanticAnalysis, declaration: &CallableDeclarationKey) -> ExprId {
     report
         .expressions()

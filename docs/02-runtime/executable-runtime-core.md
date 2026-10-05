@@ -519,6 +519,21 @@ terminator. The verifier requires source `Need<T>`, a Duration limit, and
 destination `Need<Result<T, Timeout>>` with the exact standard Timeout nominal
 identity and one program-owned producer site.
 
+Static host-call and Thread producer definitions belong to the same scoped
+executable catalog as their checked call, type and ownership facts. A closed
+function, closure, program or trait-method instance must carry its own accepted
+producer evidence; lowering must not consult a global expression map as a
+fallback. Admission checks the expression family, source owner, accepted HIR
+generation and exact frozen instance. The sealed expression partition records
+required Thread producer roles, so a missing or wrong-family producer is rejected
+before lowering; closed-scope producers are not duplicated in the global catalog.
+The canonical site path remains stable.
+The parent plan commits the complete checked expression transcript and any
+semantic type/const/effect substitution; an empty monomorphic substitution adds
+no incidental instance coordinate. Proof ownership remains instance-specific
+even when two instances have the same semantic plan. Generation and physical
+dispatch coordinates do not enter that semantic plan.
+
 ### 4.3 ConstEval execution profile
 
 `const { ... }` uses the same AWBC schema under a restricted verifier profile.

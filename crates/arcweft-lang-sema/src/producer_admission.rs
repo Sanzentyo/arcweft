@@ -32,11 +32,70 @@ use arcweft_core::task::NeedProducerSiteDigest;
 /// uses the canonical checked path; its plan commits the complete body.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedExpressionProducerDefinition {
+    owner: ExprId,
+    kind: CheckedExpressionProducerKind,
+    generation: std::sync::Arc<arcweft_lang_hir::project::AcceptedHirProjectGeneration>,
+    instance: Option<crate::final_analysis::CheckedLocalUseInstanceIdentity>,
     site: NeedProducerSiteDigest,
     plan: arcweft_core::task::TaskPlanSemanticDigest,
 }
 
+/// The report-checked expression family that owns one static producer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CheckedExpressionProducerKind {
+    Call,
+    Thread,
+}
+
 impl CheckedExpressionProducerDefinition {
+    pub const fn kind(&self) -> CheckedExpressionProducerKind {
+        self.kind
+    }
+
+    pub fn matches_authority(
+        &self,
+        owner: ExprId,
+        authority: &crate::final_analysis::CheckedLocalUseAuthority,
+    ) -> bool {
+        self.owner == owner
+            && std::sync::Arc::ptr_eq(&self.generation, authority.generation())
+            && self.instance.as_ref() == authority.instance_identity()
+    }
+
+    pub(crate) fn bind_environment(
+        mut self,
+        environment: &crate::final_analysis::CheckedExecutionEnvironment,
+    ) -> Self {
+        if let Some(instance) = environment.instance_identity() {
+            self.instance = Some(instance.clone());
+            if !environment.has_semantic_substitution() {
+                return self;
+            }
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(b"arcweft.need.closed-producer-plan.v1\0");
+            hasher.update(self.plan.as_bytes());
+            match instance {
+                crate::final_analysis::CheckedLocalUseInstanceIdentity::ProjectFunction {
+                    instantiation,
+                    ..
+                } => {
+                    hasher.update(&[0]);
+                    hasher.update(instantiation.bytes());
+                }
+                crate::final_analysis::CheckedLocalUseInstanceIdentity::DisplayText {
+                    self_type,
+                    ..
+                } => {
+                    hasher.update(&[1]);
+                    hasher.update(self_type.as_bytes());
+                }
+            }
+            self.plan = arcweft_core::task::TaskPlanSemanticDigest::from_bytes(
+                *hasher.finalize().as_bytes(),
+            );
+        }
+        self
+    }
     pub const fn site(&self) -> NeedProducerSiteDigest {
         self.site
     }
@@ -188,7 +247,12 @@ impl FinalSemanticAnalysis {
         ) {
             return Err(CheckedNeedProducerAdmissionError::NotThread);
         }
-        self.checked_expression_producer_definition(project, symbols, owner)
+        self.checked_expression_producer_definition(
+            project,
+            symbols,
+            owner,
+            CheckedExpressionProducerKind::Thread,
+        )
     }
 
     pub fn checked_call_producer_definition(
@@ -205,7 +269,12 @@ impl FinalSemanticAnalysis {
         {
             return Err(CheckedNeedProducerAdmissionError::NotSelectedCall);
         }
-        self.checked_expression_producer_definition(project, symbols, owner)
+        self.checked_expression_producer_definition(
+            project,
+            symbols,
+            owner,
+            CheckedExpressionProducerKind::Call,
+        )
     }
 
     fn checked_expression_producer_definition(
@@ -213,6 +282,7 @@ impl FinalSemanticAnalysis {
         project: HirAnalysisProjectView<'_>,
         symbols: &ProjectSymbolTable,
         owner: ExprId,
+        kind: CheckedExpressionProducerKind,
     ) -> Result<CheckedExpressionProducerDefinition, CheckedNeedProducerAdmissionError> {
         let coordinates = crate::semantic_coordinate::SemanticCoordinateIndex::new(
             self.accepted_root_catalog(),
@@ -239,6 +309,10 @@ impl FinalSemanticAnalysis {
             crate::final_analysis::CheckedMatchLimits::PRODUCTION,
         )?;
         Ok(CheckedExpressionProducerDefinition {
+            owner,
+            kind,
+            generation: std::sync::Arc::clone(self.hir_generation()),
+            instance: None,
             site: NeedProducerSiteDigest::from_bytes(*hasher.finalize().as_bytes()),
             plan: arcweft_core::task::TaskPlanSemanticDigest::from_bytes(*plan.as_bytes()),
         })

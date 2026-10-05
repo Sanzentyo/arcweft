@@ -436,7 +436,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         Ok(Some(RuntimeHostCallTargetSeed {
             producer: {
                 let definition = self
-                    .facts
+                    .semantic_facts
                     .call_producer(id)
                     .ok_or_else(|| format!("host call {id:?} has no accepted producer seal"))?;
                 arcweft_core::task::HostCallProducerDefinition {

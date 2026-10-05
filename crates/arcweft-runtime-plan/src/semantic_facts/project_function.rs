@@ -973,6 +973,7 @@ impl RuntimeProjectFunctionExpressionPayload {
 /// One source-owner-ordered closed expression row.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeProjectFunctionExpressionSemanticFact {
+    producer: Option<Box<arcweft_lang_sema::CheckedExpressionProducerDefinition>>,
     owner: ExprId,
     children: Box<[ExprId]>,
     payload: RuntimeProjectFunctionExpressionPayload,
@@ -980,12 +981,23 @@ pub struct RuntimeProjectFunctionExpressionSemanticFact {
 }
 
 impl RuntimeProjectFunctionExpressionSemanticFact {
+    pub fn with_producer(
+        mut self,
+        producer: arcweft_lang_sema::CheckedExpressionProducerDefinition,
+    ) -> Self {
+        self.producer = Some(Box::new(producer));
+        self
+    }
+    pub fn producer(&self) -> Option<&arcweft_lang_sema::CheckedExpressionProducerDefinition> {
+        self.producer.as_deref()
+    }
     pub fn new(
         owner: ExprId,
         children: Box<[ExprId]>,
         payload: RuntimeProjectFunctionExpressionPayload,
     ) -> Self {
         Self {
+            producer: None,
             owner,
             children,
             payload,
@@ -1462,6 +1474,11 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                     expected.owner() != actual.owner()
                         || expected.family() != actual.payload().family()
                         || expected.children() != actual.children()
+                        || expected.producer_kind().is_some_and(|kind| {
+                            actual
+                                .producer()
+                                .is_none_or(|producer| producer.kind() != kind)
+                        })
                 })
             || partition.patterns().len() != patterns.len()
             || partition
@@ -1491,6 +1508,22 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
             return Err(RuntimeProjectFunctionFactError::NonCanonicalSemanticFacts);
         }
 
+        for expression in &expressions {
+            let host = matches!(expression.payload(), RuntimeProjectFunctionExpressionPayload::Call(call) if matches!(call.dispatch(), super::RuntimeResolvedCallDispatch::Static(super::RuntimeResolvedStaticCallTarget::Host(_))));
+            match expression.producer() {
+                Some(producer)
+                    if producer.matches_authority(expression.owner(), &local_uses)
+                        && match producer.kind() {
+                            arcweft_lang_sema::CheckedExpressionProducerKind::Call => host,
+                            arcweft_lang_sema::CheckedExpressionProducerKind::Thread => matches!(
+                                expression.payload(),
+                                RuntimeProjectFunctionExpressionPayload::Structural
+                            ),
+                        } => {}
+                None if !host => {}
+                _ => return Err(RuntimeProjectFunctionFactError::InvalidProducerDefinition),
+            }
+        }
         let mut captured_locals = BTreeSet::new();
         if captures.iter().any(|capture| {
             partition.locals().contains(&capture.source())
@@ -1694,6 +1727,15 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
             .map(RuntimeProjectFunctionExpressionSemanticFact::children)
     }
 
+    pub fn producer(
+        &self,
+        owner: ExprId,
+    ) -> Option<&arcweft_lang_sema::CheckedExpressionProducerDefinition> {
+        self.expressions
+            .binary_search_by_key(&owner, RuntimeProjectFunctionExpressionSemanticFact::owner)
+            .ok()
+            .and_then(|index| self.expressions[index].producer())
+    }
     pub fn call(&self, owner: ExprId) -> Option<&RuntimeResolvedCall> {
         match self.expression(owner)?.payload() {
             RuntimeProjectFunctionExpressionPayload::Call(call) => Some(call),
@@ -2686,6 +2728,8 @@ fn parameter_binding_type_matches(
 
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeProjectFunctionFactError {
+    #[error("expression producer does not belong to its exact closed owner and authority")]
+    InvalidProducerDefinition,
     #[error("project-function fact does not name an ordinary Function declaration")]
     NotOrdinaryFunction,
     #[error("project-function fact has a non-Function checked ABI type")]

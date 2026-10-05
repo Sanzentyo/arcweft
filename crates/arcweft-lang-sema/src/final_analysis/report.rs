@@ -243,12 +243,17 @@ pub enum CheckedExecutableRuntimeExpressionFactFamily {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedExecutableRuntimeExpressionFactOwner {
     owner: ExprId,
+    producer_kind: Option<crate::CheckedExpressionProducerKind>,
     family: CheckedExecutableRuntimeExpressionFactFamily,
     has_runtime_type: bool,
     children: Box<[ExprId]>,
 }
 
 impl CheckedExecutableRuntimeExpressionFactOwner {
+    pub const fn producer_kind(&self) -> Option<crate::CheckedExpressionProducerKind> {
+        self.producer_kind
+    }
+
     pub const fn owner(&self) -> ExprId {
         self.owner
     }
@@ -685,6 +690,8 @@ impl FinalAnalysisExecutionProjection<'_> {
             };
             expressions.push(CheckedExecutableRuntimeExpressionFactOwner {
                 owner,
+                producer_kind: matches!(hir.kind(), arcweft_lang_hir::expr::HirExprKind::Thread(_))
+                    .then_some(crate::CheckedExpressionProducerKind::Thread),
                 family,
                 has_runtime_type: runtime_type_owners.contains(&owner),
                 children: owners.expression_children(owner).into(),

@@ -60,6 +60,8 @@ pub enum CheckedExecutionContextError {
     MatchTranscript(#[from] Box<super::CheckedSemanticTranscriptError>),
     #[error("execution input evidence belongs to another closed instance")]
     InstanceMismatch,
+    #[error(transparent)]
+    Producer(#[from] crate::CheckedNeedProducerAdmissionError),
 }
 
 #[derive(Debug)]
@@ -81,6 +83,42 @@ pub struct CheckedExecutionEnvironment {
 }
 
 impl CheckedExecutionEnvironment {
+    pub(crate) fn has_semantic_substitution(&self) -> bool {
+        match &self.types {
+            ExecutionTypeEnvironment::ProjectFunction(instance) => instance.has_substitution(),
+            ExecutionTypeEnvironment::DisplayText(_) => true,
+            ExecutionTypeEnvironment::Monomorphic | ExecutionTypeEnvironment::Declaration(_) => {
+                false
+            }
+        }
+    }
+
+    pub fn producer_definition(
+        &self,
+        analysis: &FinalSemanticAnalysis,
+        project: HirAnalysisProjectView<'_>,
+        symbols: &ProjectSymbolTable,
+        owner: ExprId,
+        kind: crate::CheckedExpressionProducerKind,
+    ) -> Result<crate::CheckedExpressionProducerDefinition, CheckedExecutionContextError> {
+        self.validate_analysis(analysis)?;
+        self.validate_project(project)?;
+        if analysis.execution_source_scope(owner.into())? != *self.scope() {
+            return Err(CheckedExecutionContextError::ScopeMismatch {
+                owner: Box::new(CheckedExecutionSource::EvaluateValue(owner)),
+            });
+        }
+        let definition = match kind {
+            crate::CheckedExpressionProducerKind::Call => {
+                analysis.checked_call_producer_definition(project, symbols, owner)?
+            }
+            crate::CheckedExpressionProducerKind::Thread => {
+                analysis.checked_thread_producer_admission(project, symbols, owner)?
+            }
+        };
+        Ok(definition.bind_environment(self))
+    }
+
     pub fn validate_callable_owner(
         &self,
         id: &crate::callable::CheckedCallableId,
@@ -208,6 +246,35 @@ pub struct CheckedClosedExecutionContext<'analysis> {
 }
 
 impl CheckedClosedExecutionContext<'_> {
+    /// Issues a producer from the exact report, lexical owner and frozen environment.
+    pub fn checked_call_producer_definition(
+        &self,
+        symbols: &ProjectSymbolTable,
+        owner: ExprId,
+    ) -> Result<crate::CheckedExpressionProducerDefinition, CheckedExecutionContextError> {
+        self.environment.producer_definition(
+            self.analysis,
+            self.project,
+            symbols,
+            owner,
+            crate::CheckedExpressionProducerKind::Call,
+        )
+    }
+
+    pub fn checked_thread_producer_definition(
+        &self,
+        symbols: &ProjectSymbolTable,
+        owner: ExprId,
+    ) -> Result<crate::CheckedExpressionProducerDefinition, CheckedExecutionContextError> {
+        self.environment.producer_definition(
+            self.analysis,
+            self.project,
+            symbols,
+            owner,
+            crate::CheckedExpressionProducerKind::Thread,
+        )
+    }
+
     pub fn scope(&self) -> &HirSemanticPathRoot {
         self.environment.scope()
     }

@@ -6581,9 +6581,14 @@ impl<'a> FinalFlowLowerer<'a> {
                     }
                     .free_locals()
                     .into_vec();
-                    let admission = self.facts.thread_producer(*thread).ok_or_else(|| {
-                        RuntimePlanLowerError::new("Thread has no accepted producer definition")
-                    })?;
+                    let admission =
+                        self.semantic_facts
+                            .thread_producer(*thread)
+                            .ok_or_else(|| {
+                                RuntimePlanLowerError::new(
+                                    "Thread has no accepted producer definition",
+                                )
+                            })?;
                     let payload = arcweft_core::pattern::RuntimeCheckedType::Unit;
                     let identity = payload.semantic_identity_digest();
                     let mut contract = blake3::Hasher::new();
@@ -9332,11 +9337,49 @@ mod tests {
 
     #[test]
     fn thread_expression_statement_lowers_through_the_sole_expression_owner() {
-        let project = project_fixture(
-            "thread-expression-statement",
-            "flow opening {\n    thread {\n    }\n}\n",
-        );
+        let label = "thread-expression-statement";
+        let source = "flow opening {\n    thread {\n    }\n}\n";
+        let project = project_fixture(label, source);
         let executable = project.analysis_view().expect("executable fixture");
+        let (_, module) = executable.modules().next().unwrap();
+        let document = Arc::new(
+            SourceDocument::try_new(
+                module.provenance().source_identity().id().clone(),
+                SourceName::path(format!("runtime-plan-final-flow-{label}.arcw")),
+                source,
+            )
+            .unwrap(),
+        );
+        let registration = arcweft_lang_sema::registration::ProjectRegistrationFacts::try_new(
+            ProjectSymbolWorldId::try_new(
+                executable.package().clone(),
+                document.identity().id().clone(),
+                "runtime-plan-final-flow-test",
+            )
+            .unwrap(),
+            vec![document],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap();
+        let registered = arcweft_lang_sema::registration::CharacterRegistrar::register(
+            arcweft_lang_sema::registration::CharacterRegistrationRequest::new(
+                Arc::new(arcweft_lang_sema::env::TypeCheckEnv::standard()),
+                project.view(),
+                &registration,
+                None,
+            ),
+        )
+        .unwrap();
+        let cancellation = std::sync::atomic::AtomicBool::new(false);
+        let analysis = arcweft_lang_sema::final_analysis::analyze_final_project(
+            executable,
+            registered.symbols(),
+            arcweft_lang_sema::final_analysis::FinalSemanticCatalogs::production(&registered),
+            arcweft_lang_sema::final_analysis::FinalSemanticAnalysisControl::new(&cancellation),
+        )
+        .unwrap();
         let owner = executable
             .items()
             .find(|item| matches!(item.item().kind(), HirItemKind::Flow(_)))
@@ -9344,11 +9387,103 @@ mod tests {
             .expect("Flow item");
         let identity = FlowRuntimeId::canonical("opening").expect("runtime Flow identity");
         let mut input = complete_type_input(&project);
+        input.attach_checked_local_uses(Arc::clone(analysis.checked_local_uses()));
+        for (owner, _) in analysis.expressions() {
+            let expression = module.resolve_expr(owner).unwrap();
+            if matches!(expression.kind(), HirExprKind::Thread(_)) {
+                input.push_thread_producer(
+                    owner,
+                    analysis
+                        .checked_thread_producer_admission(executable, registered.symbols(), owner)
+                        .unwrap(),
+                );
+            }
+        }
         input.push_flow(
             owner,
             crate::semantic_facts::RuntimeFlowFact::new(identity, RuntimeEffectSet::empty()),
         );
         let facts = runtime_facts(&project, input).expect("checked facts");
+        let partition = analysis
+            .execution_projection()
+            .runtime_fact_partition(
+                &runtime_reachability(&project),
+                &HirRuntimeExecutableOwner::Item(owner),
+            )
+            .unwrap();
+        let projected_types = partition.expressions().iter().map(|row| {
+            let owner = crate::semantic_facts::RuntimeProjectFunctionTypeOwner::Expression(row.owner());
+            if row.has_runtime_type() {
+                crate::semantic_facts::RuntimeProjectFunctionTypeProjection::Value {
+                    owner,
+                    ty: RuntimeNormalizedType::new(
+                        arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest(),
+                        RuntimeTypeShape::Unit,
+                    ),
+                }
+            } else {
+                crate::semantic_facts::RuntimeProjectFunctionTypeProjection::SemanticOnlyExpression { owner: row.owner() }
+            }
+        }).collect::<Box<[_]>>();
+        let rows = partition
+            .expressions()
+            .iter()
+            .map(|row| {
+                assert_eq!(
+                    row.producer_kind(),
+                    Some(arcweft_lang_sema::CheckedExpressionProducerKind::Thread)
+                );
+                crate::semantic_facts::RuntimeProjectFunctionExpressionSemanticFact::new(
+                    row.owner(),
+                    row.children().into(),
+                    crate::semantic_facts::RuntimeProjectFunctionExpressionPayload::Structural,
+                )
+            })
+            .collect::<Box<[_]>>();
+        let statements = partition
+            .statements()
+            .iter()
+            .map(|row| {
+                assert_eq!(row.family(), arcweft_lang_sema::final_analysis::CheckedExecutableRuntimeStatementFactFamily::Structural);
+                crate::semantic_facts::RuntimeProjectFunctionStatementSemanticFact::new(
+                    row.owner(),
+                    crate::semantic_facts::RuntimeProjectFunctionStatementPayload::Structural,
+                )
+            })
+            .collect::<Box<[_]>>();
+        let authority = arcweft_lang_sema::final_analysis::CheckedLocalUseAuthority::Global(
+            Arc::clone(analysis.checked_local_uses()),
+        );
+        assert!(matches!(
+            crate::semantic_facts::RuntimeProjectFunctionInstanceSemanticFacts::try_new(
+                partition.clone(),
+                authority.clone(),
+                projected_types.clone(),
+                rows.clone(),
+                Box::new([]),
+                statements.clone(),
+                Box::new([]),
+            ),
+            Err(crate::semantic_facts::RuntimeProjectFunctionFactError::NonCanonicalSemanticFacts)
+        ));
+        let proved_rows = rows
+            .into_vec()
+            .into_iter()
+            .map(|row| {
+                let producer = facts.thread_producer(row.owner()).unwrap().clone();
+                row.with_producer(producer)
+            })
+            .collect();
+        crate::semantic_facts::RuntimeProjectFunctionInstanceSemanticFacts::try_new(
+            partition,
+            authority,
+            projected_types,
+            proved_rows,
+            Box::new([]),
+            statements,
+            Box::new([]),
+        )
+        .expect("the identical partition admits only after its required producers are restored");
         let report = lower_runtime_plan_with_stats(
             executable,
             &facts,

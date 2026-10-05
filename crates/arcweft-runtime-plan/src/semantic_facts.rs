@@ -5876,6 +5876,18 @@ impl<'facts> RuntimeScopedExecutableSemanticFactView<'facts> {
     pub fn call(self, owner: ExprId) -> Option<&'facts RuntimeResolvedCall> {
         self.facts.call(owner)
     }
+    pub fn call_producer(
+        self,
+        owner: ExprId,
+    ) -> Option<&'facts arcweft_lang_sema::CheckedExpressionProducerDefinition> {
+        self.facts.call_producer(owner)
+    }
+    pub fn thread_producer(
+        self,
+        owner: ExprId,
+    ) -> Option<&'facts arcweft_lang_sema::CheckedExpressionProducerDefinition> {
+        self.facts.thread_producer(owner)
+    }
 
     pub fn select(self, owner: ExprId) -> Option<&'facts RuntimeResolvedSelect> {
         self.facts.select(owner)
@@ -6319,6 +6331,28 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
         }
     }
 
+    pub fn call_producer(
+        self,
+        owner: ExprId,
+    ) -> Option<&'facts arcweft_lang_sema::CheckedExpressionProducerDefinition> {
+        match self {
+            Self::Global(facts) => facts.call_producer(owner),
+            Self::ProjectInstance(facts) => facts.producer(owner).filter(|producer| {
+                producer.kind() == arcweft_lang_sema::CheckedExpressionProducerKind::Call
+            }),
+        }
+    }
+    pub fn thread_producer(
+        self,
+        owner: ExprId,
+    ) -> Option<&'facts arcweft_lang_sema::CheckedExpressionProducerDefinition> {
+        match self {
+            Self::Global(facts) => facts.thread_producer(owner),
+            Self::ProjectInstance(facts) => facts.producer(owner).filter(|producer| {
+                producer.kind() == arcweft_lang_sema::CheckedExpressionProducerKind::Thread
+            }),
+        }
+    }
     pub fn call(self, owner: ExprId) -> Option<&'facts RuntimeResolvedCall> {
         match self {
             Self::Global(facts) => facts.call(owner),
@@ -6970,7 +7004,20 @@ impl RuntimePlanSemanticFacts {
             input.thread_producers,
             RuntimeSemanticFactFamily::ThreadProducer,
         )?;
-        for owner in thread_producers.keys() {
+        for (owner, definition) in &thread_producers {
+            let authority = input
+                .checked_local_uses
+                .as_ref()
+                .map(|catalog| CheckedLocalUseAuthority::Global(Arc::clone(catalog)));
+            if definition.kind() != arcweft_lang_sema::CheckedExpressionProducerKind::Thread
+                || authority
+                    .as_ref()
+                    .is_none_or(|authority| !definition.matches_authority(*owner, authority))
+            {
+                return Err(RuntimeSemanticFactsError::InvalidProducerDefinition {
+                    expression: *owner,
+                });
+            }
             require_expr_family(
                 &modules,
                 runtime_owners,
@@ -6983,7 +7030,20 @@ impl RuntimePlanSemanticFacts {
             input.call_producers,
             RuntimeSemanticFactFamily::CallProducer,
         )?;
-        for owner in call_producers.keys() {
+        for (owner, definition) in &call_producers {
+            let authority = input
+                .checked_local_uses
+                .as_ref()
+                .map(|catalog| CheckedLocalUseAuthority::Global(Arc::clone(catalog)));
+            if definition.kind() != arcweft_lang_sema::CheckedExpressionProducerKind::Call
+                || authority
+                    .as_ref()
+                    .is_none_or(|authority| !definition.matches_authority(*owner, authority))
+            {
+                return Err(RuntimeSemanticFactsError::InvalidProducerDefinition {
+                    expression: *owner,
+                });
+            }
             require_expr_family(
                 &modules,
                 runtime_owners,
@@ -9860,6 +9920,8 @@ fn validate_pure_programs(
 }
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeSemanticFactsError {
+    #[error("producer definition does not belong to its exact expression and local-use authority")]
+    InvalidProducerDefinition { expression: ExprId },
     #[error("checked local use at {site:?} does not belong to the accepted HIR generation")]
     InvalidLocalUse {
         site: arcweft_lang_sema::final_analysis::CheckedLocalUseSite,
