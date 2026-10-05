@@ -482,29 +482,29 @@ impl BundleSession {
             let mut restored_task_pins = std::collections::BTreeMap::new();
             let mut restored_reensure = std::collections::BTreeMap::new();
             for row in &restartable_tasks {
-                let image = self.runtime_images.get(row.generation).map_err(|_| {
-                    BundleSessionSaveError::GenerationMismatch {
+                let image = self
+                    .runtime_images
+                    .get(row.correlation.generation)
+                    .map_err(|_| BundleSessionSaveError::GenerationMismatch {
                         field: "restartable_task_runtime_image",
-                        saved: format!("{:?}", row.generation),
+                        saved: format!("{:?}", row.correlation.generation),
                         actual: "runtime image unavailable for exact restart".to_owned(),
-                    }
-                })?;
+                    })?;
                 let generation = Arc::clone(image.generation());
                 let launch = restored_launches
                     .iter()
-                    .find(|launch| launch.need_id == row.need_id)
+                    .find(|launch| launch.submission.handle().correlation == row.correlation)
                     .expect("registry restore matched each Need identity");
-                let task = launch.task_spec.clone();
+                let task = launch.submission.clone();
                 let bundle_asset_context = matches!(
-                    &task.request,
+                    &task.spec().request,
                     arcweft_core::task::HostTaskRequest::AssetLoad(_)
                 )
                 .then(|| image.generation().bundle_asset_context());
                 restored_task_pins.insert(row.sequence, generation);
                 restored_reensure.insert(
-                    row.task_id.clone(),
+                    row.correlation.task_id,
                     super::HostTaskDispatch {
-                        generation: row.generation,
                         logical_epoch: row.logical_epoch,
                         sequence: row.sequence,
                         task,
@@ -721,7 +721,7 @@ impl BundleSession {
                 && rows.iter().all(|row| {
                     self.task_generation_pins
                         .get(&row.sequence)
-                        .is_some_and(|pin| pin.id == row.generation)
+                        .is_some_and(|pin| pin.id == row.correlation.generation)
                 })
         });
         if !pins_match {

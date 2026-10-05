@@ -58,7 +58,7 @@ pub enum AwbcRuntimeValueSnapshot {
     TensorF64(crate::math::DenseTensorF64),
     String(String),
     Color(super::RuntimeColor),
-    Need(crate::task::NeedId),
+    NeedHandle(crate::task::RuntimeNeedHandleSaveSnapshot),
     Char(char),
     Duration(crate::time::LogicalDuration),
     Progress {
@@ -308,14 +308,9 @@ impl AwbcRuntimeValueSnapshot {
             RuntimeValue::TensorF64(value) => Self::TensorF64(value.clone()),
             RuntimeValue::String(value) => Self::String(value.clone()),
             RuntimeValue::Color(value) => Self::Color(*value),
-            RuntimeValue::Need(value) => {
-                if value.0.is_empty() {
-                    return Err(AwbcRuntimeValueSnapshotError::new(
-                        "Need handle has an empty identity",
-                    ));
-                }
-                Self::Need(value.clone())
-            }
+            RuntimeValue::NeedHandle(value) => Self::NeedHandle(
+                crate::task::RuntimeNeedHandleSaveSnapshot::from_live(value, owner)?,
+            ),
             RuntimeValue::Char(value) => Self::Char(*value),
             RuntimeValue::Duration(value) => Self::Duration(*value),
             RuntimeValue::Progress(value) => Self::Progress {
@@ -396,14 +391,7 @@ impl AwbcRuntimeValueSnapshot {
             Self::TensorF64(value) => RuntimeValue::TensorF64(value),
             Self::String(value) => RuntimeValue::String(value),
             Self::Color(value) => RuntimeValue::Color(value),
-            Self::Need(value) => {
-                if value.0.is_empty() {
-                    return Err(AwbcRuntimeValueSnapshotError::new(
-                        "Need handle snapshot has an empty identity",
-                    ));
-                }
-                RuntimeValue::Need(value)
-            }
+            Self::NeedHandle(value) => RuntimeValue::NeedHandle(value.into_live(program_owner)?),
             Self::Char(value) => RuntimeValue::Char(value),
             Self::Duration(value) => RuntimeValue::Duration(value),
             Self::Progress { ratio, label } => {
@@ -1034,6 +1022,11 @@ fn collect_snapshot_line_handle_tokens(
                 next(payload, tokens)?;
             }
         }
+        AwbcRuntimeValueSnapshot::NeedHandle(handle) => {
+            for value in handle.request_values() {
+                next(value, tokens)?;
+            }
+        }
         AwbcRuntimeValueSnapshot::Unit
         | AwbcRuntimeValueSnapshot::Bool(_)
         | AwbcRuntimeValueSnapshot::Int(_)
@@ -1046,7 +1039,6 @@ fn collect_snapshot_line_handle_tokens(
         | AwbcRuntimeValueSnapshot::TensorF64(_)
         | AwbcRuntimeValueSnapshot::String(_)
         | AwbcRuntimeValueSnapshot::Color(_)
-        | AwbcRuntimeValueSnapshot::Need(_)
         | AwbcRuntimeValueSnapshot::Char(_)
         | AwbcRuntimeValueSnapshot::Duration(_)
         | AwbcRuntimeValueSnapshot::Progress { .. }

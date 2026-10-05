@@ -174,9 +174,16 @@ fn program_continuation_accepts_detached_prefix_and_retains_native_need_result_c
         crate::task::GenerationId::new(0),
         crate::runtime_id::RuntimePersistentFiberId::from_allocated(1),
     );
-    let mut engine =
-        Engine::for_program_invocation(plan, id, vec![RuntimeValue::Need(need.clone())]).unwrap();
+    // Begin from a completed owner retaining its real accepted producer context.
+    // Detached activation correctly rejects an accepted Need without that owner.
+    let mut engine = Engine::new_with_shared_plan(plan, crate::task::GenerationId::new(0));
     engine.need_producers = registry;
+    engine.program_result = Some((id, RuntimeValue::NeedHandle(need.clone())));
+    engine.fiber.status = crate::engine::FlowFiberStatus::Done(crate::engine::FlowExit::Done);
+    engine.main_started = true;
+    let mut engine = engine
+        .continue_program(id, vec![RuntimeProgramInput::PreviousResult])
+        .unwrap();
     assert!(
         engine
             .step(Default::default(), Default::default())
@@ -202,9 +209,9 @@ fn program_continuation_accepts_detached_prefix_and_retains_native_need_result_c
     );
     assert_eq!(
         &engine.program_result.as_ref().unwrap().1,
-        &RuntimeValue::Need(need.clone())
+        &RuntimeValue::NeedHandle(need.clone())
     );
-    assert!(engine.need_producers.launch_for_need(&need).is_some());
+    assert!(engine.need_producers.launch_for_handle(&need).is_some());
 }
 
 #[test]
@@ -514,7 +521,7 @@ fn owned_program_moves_affine_input_and_returns_it_once() {
         .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed { program, site })
         .unwrap();
     let plan = Arc::new(builder.finish().unwrap());
-    let value = RuntimeValue::Need(crate::task::NeedId("need.owned-program".to_owned()));
+    let value = RuntimeValue::NeedHandle(crate::tests::reusable_need("need.owned-program"));
     assert!(!value.ownership().permits_copy());
     let mut engine = Engine::for_program_invocation(plan, program, vec![value]).unwrap();
     let output = engine.step(
@@ -527,7 +534,7 @@ fn owned_program_moves_affine_input_and_returns_it_once() {
         engine.take_program_result().unwrap(),
         Some((
             program,
-            RuntimeValue::Need(crate::task::NeedId("need.owned-program".to_owned()))
+            RuntimeValue::NeedHandle(crate::tests::reusable_need("need.owned-program"))
         ))
     );
     assert_eq!(engine.take_program_result().unwrap(), None);
@@ -536,7 +543,7 @@ fn owned_program_moves_affine_input_and_returns_it_once() {
         restored.take_program_result().unwrap(),
         Some((
             program,
-            RuntimeValue::Need(crate::task::NeedId("need.owned-program".to_owned()))
+            RuntimeValue::NeedHandle(crate::tests::reusable_need("need.owned-program"))
         ))
     );
     assert_eq!(restored.take_program_result().unwrap(), None);

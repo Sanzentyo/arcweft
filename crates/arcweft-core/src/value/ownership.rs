@@ -78,18 +78,17 @@ pub enum RuntimeDetachedValueError {
         token: crate::runtime_id::RuntimeLineHandleToken,
         path: RuntimeValuePath,
     },
-    #[error("Need {need:?} at {path:?} requires its retained producer context")]
+    #[error("Need {correlation:?} at {path:?} requires its retained producer context")]
     NeedProducerCustodyRequired {
-        need: crate::task::NeedId,
+        correlation: crate::task::TaskCorrelation,
         path: RuntimeValuePath,
     },
 }
 
 #[derive(Default)]
-struct RuntimeValueResourceGraph<'a> {
+struct RuntimeValueResourceGraph {
     line_handles: Vec<RuntimeAffineLineHandle>,
-    owned_need: Option<(crate::task::NeedId, RuntimeValuePath)>,
-    need_custody: Option<&'a dyn Fn(&crate::task::NeedId) -> bool>,
+    owned_need: Option<(crate::task::TaskCorrelation, RuntimeValuePath)>,
 }
 
 impl RuntimeValueOwnership {
@@ -114,17 +113,7 @@ impl RuntimeValue {
     /// owner. External Need identities remain valid; issued line handles must
     /// travel with their ledger instead of becoming detached values.
     pub fn validate_detached_custody(&self) -> Result<(), RuntimeDetachedValueError> {
-        self.validate_detached_custody_for(None)
-    }
-
-    pub(crate) fn validate_detached_custody_for(
-        &self,
-        need_custody: Option<&dyn Fn(&crate::task::NeedId) -> bool>,
-    ) -> Result<(), RuntimeDetachedValueError> {
-        let mut graph = RuntimeValueResourceGraph {
-            need_custody,
-            ..Default::default()
-        };
+        let mut graph = RuntimeValueResourceGraph::default();
         self.collect_resources(&RuntimeValuePath::root(), &mut graph)?;
         if let Some(handle) = graph.line_handles.into_iter().next() {
             return Err(RuntimeDetachedValueError::LineHandleCustodyRequired {
@@ -132,8 +121,11 @@ impl RuntimeValue {
                 path: handle.path,
             });
         }
-        if let Some((need, path)) = graph.owned_need {
-            return Err(RuntimeDetachedValueError::NeedProducerCustodyRequired { need, path });
+        if let Some((correlation, path)) = graph.owned_need {
+            return Err(RuntimeDetachedValueError::NeedProducerCustodyRequired {
+                correlation,
+                path,
+            });
         }
         Ok(())
     }
@@ -162,7 +154,7 @@ impl RuntimeValue {
             | Self::Progress(_)
             | Self::Range(_)
             | Self::EntityRef(_) => RuntimeValueOwnership::Unrestricted,
-            Self::Need(_) => RuntimeValueOwnership::Affine,
+            Self::NeedHandle(_) => RuntimeValueOwnership::Affine,
             Self::Iterator(iterator) => iterator_ownership(iterator),
             Self::Tuple(values) => values_ownership(values),
             Self::Seq(sequence) => sequence.ownership(),
@@ -203,7 +195,7 @@ impl RuntimeValue {
     fn collect_resources(
         &self,
         path: &RuntimeValuePath,
-        handles: &mut RuntimeValueResourceGraph<'_>,
+        handles: &mut RuntimeValueResourceGraph,
     ) -> Result<(), RuntimeAffineLineHandleError> {
         match self {
             Self::Unit
@@ -225,11 +217,17 @@ impl RuntimeValue {
             | Self::EntityRef(_)
             | Self::Seq(RuntimeSeq::Dense(_))
             | Self::Iterator(RuntimeIterator::Range(_)) => Ok(()),
-            Self::Need(need) => {
-                if handles.owned_need.is_none()
-                    && handles.need_custody.is_some_and(|custody| custody(need))
-                {
-                    handles.owned_need = Some((need.clone(), path.clone()));
+            Self::NeedHandle(need) => {
+                if handles.owned_need.is_none() && need.requires_producer_custody() {
+                    handles.owned_need = Some((need.correlation(), path.clone()));
+                }
+                for (index, value) in need.request_values().enumerate() {
+                    let index = u32::try_from(index)
+                        .map_err(|_| RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
+                    value.collect_resources(
+                        &path.child(RuntimeValuePathSegment::NeedRequestArgument(index))?,
+                        handles,
+                    )?;
                 }
                 Ok(())
             }
@@ -366,7 +364,7 @@ fn collect_indexed_resources(
     values: &[RuntimeValue],
     path: &RuntimeValuePath,
     segment: impl Fn(u32) -> RuntimeValuePathSegment,
-    handles: &mut RuntimeValueResourceGraph<'_>,
+    handles: &mut RuntimeValueResourceGraph,
 ) -> Result<(), RuntimeAffineLineHandleError> {
     for (index, value) in values.iter().enumerate() {
         let index = u32::try_from(index)
@@ -380,7 +378,7 @@ fn collect_indexed_resources_u64(
     values: &[RuntimeValue],
     path: &RuntimeValuePath,
     segment: impl Fn(u64) -> RuntimeValuePathSegment,
-    handles: &mut RuntimeValueResourceGraph<'_>,
+    handles: &mut RuntimeValueResourceGraph,
 ) -> Result<(), RuntimeAffineLineHandleError> {
     for (index, value) in values.iter().enumerate() {
         let index = u64::try_from(index)
@@ -423,7 +421,7 @@ impl RuntimeSeq {
     fn collect_resources(
         &self,
         path: &RuntimeValuePath,
-        handles: &mut RuntimeValueResourceGraph<'_>,
+        handles: &mut RuntimeValueResourceGraph,
     ) -> Result<(), RuntimeAffineLineHandleError> {
         match self {
             Self::Values(values) => collect_indexed_resources_u64(
@@ -529,7 +527,7 @@ mod tests {
 
     #[test]
     fn need_handle_makes_its_entire_value_graph_affine() {
-        let handle = RuntimeValue::Need(crate::task::NeedId("need.profile".to_owned()));
+        let handle = RuntimeValue::NeedHandle(crate::tests::reusable_need("need.profile"));
         assert_eq!(handle.ownership(), RuntimeValueOwnership::Affine);
         assert_eq!(
             RuntimeValue::Tuple(vec![RuntimeValue::Bool(true), handle]).ownership(),

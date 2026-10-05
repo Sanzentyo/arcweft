@@ -170,6 +170,12 @@ struct BlockEmission {
 
 #[derive(Clone, Debug)]
 pub(crate) enum PendingAwbcClosure {
+    TaskRequest {
+        function: AwbcFunctionId,
+        inputs: Box<[RuntimeLocalDeclarationId]>,
+        arguments: Box<[RuntimeExpr]>,
+        path: String,
+    },
     /// A plan-owned function site. Its ordered input rows are the sole ABI
     /// authority; each row's synthetic input local is bound to the body
     /// pattern before the site body executes.
@@ -1029,7 +1035,7 @@ impl AwbcInventory {
             RuntimeValue::Reduction(_) => {
                 panic!("runtime reduction state cannot be encoded as an AWBC constant")
             }
-            RuntimeValue::Need(_) => {
+            RuntimeValue::NeedHandle(_) => {
                 panic!("runtime Need handle cannot be encoded as an AWBC constant")
             }
             RuntimeValue::Progress(_) => {
@@ -1693,52 +1699,103 @@ impl AwbcInventory {
 
     pub fn intern_await_many_task(
         &mut self,
-        need_id: &str,
-        task_id: &str,
-        request: &HostTaskRequestTemplate,
-        outcome: &TaskOutcomeContract,
+        target: &arcweft_core::task::AwaitManyTarget,
+        captures: Vec<AwbcRegisterId>,
         item_binding: AwbcRegisterId,
-        limit: usize,
     ) -> Option<AwbcTaskPlanId> {
-        let limit = match u32::try_from(limit) {
-            Ok(limit) if limit > 0 => limit,
-            _ => {
-                self.diagnostic(AwbcLowerDiagnostic::error(
-                    format!("await_many.{task_id}"),
-                    format!("AwaitMany limit {limit} must be a positive u32"),
-                ));
-                return None;
-            }
-        };
-        let signature = self.intern_signature(
-            vec![self.dynamic_ty(); request.args.len()],
-            None,
-            AwbcEffectSetId(0),
-        );
-        let arguments = self.intern_host_arguments(&request.args);
-        let payload_type = self.intern_task_outcome_payload(outcome)?;
+        if target.limit == 0 {
+            self.diagnostic(AwbcLowerDiagnostic::error(
+                "await_many.limit",
+                "AwaitMany limit must be positive",
+            ));
+            return None;
+        }
+        let inputs = target.captures().collect::<Vec<_>>();
+        let mut child_inputs = inputs.clone();
+        child_inputs.push(target.item_binding);
+        let child_function = self.intern_task_request_function(&target.child.request, child_inputs);
+        let child = self.intern_producer_template(
+            &target.child,
+            AwbcTaskPlanKind::Template {
+                family: target.child.family,
+                contract: target.child.contract,
+                site: target.child.producer_site,
+                plan: target.child.plan,
+                request_function: child_function,
+            },
+        )?;
+        let request_function = self.intern_task_request_function(&target.base.request, inputs);
+        self.intern_producer_template(
+            &target.base,
+            AwbcTaskPlanKind::AwaitMany {
+                contract: target.base.contract,
+                site: target.base.producer_site,
+                plan: target.base.plan,
+                child,
+                captures,
+                request_function,
+                item_binding,
+                limit: target.limit,
+            },
+        )
+    }
+
+    fn intern_task_request_function(
+        &mut self,
+        request: &HostTaskRequestTemplate,
+        inputs: Vec<RuntimeLocalDeclarationId>,
+    ) -> AwbcFunctionId {
+        let function = self.reserve_function_slot();
+        self.push_pending_closure(PendingAwbcClosure::TaskRequest {
+            function,
+            inputs: inputs.into_boxed_slice(),
+            arguments: request.args.iter().map(|arg| arg.value().clone()).collect(),
+            path: format!("task_request.{}", request.operation),
+        });
+        function
+    }
+
+    fn intern_producer_template(
+        &mut self,
+        template: &arcweft_core::task::NeedProducerTemplate,
+        kind: AwbcTaskPlanKind,
+    ) -> Option<AwbcTaskPlanId> {
+        let params = template
+            .request
+            .args
+            .iter()
+            .map(|arg| self.plan_type(arg.value().ty()))
+            .collect::<Option<Vec<_>>>()?;
+        let signature = self.intern_signature(params, None, AwbcEffectSetId(0));
+        let arguments = self.intern_host_arguments(&template.request.args);
+        let payload_type = self.intern_task_outcome_payload(&template.outcome)?;
+        if self.program.runtime_types[payload_type.index()]
+            .semantic_identity()
+            .as_bytes()
+            != template.payload_type.as_bytes()
+        {
+            self.diagnostic(AwbcLowerDiagnostic::error(
+                "task.payload",
+                "producer template outcome differs from its payload identity",
+            ));
+            return None;
+        }
         let row = AwbcTaskPlan {
             signature,
             request: AwbcTaskRequestProjection::CustomCapability {
-                capability: self.intern_string(&request.capability.0),
-                operation: self.intern_string(&request.operation),
+                capability: self.intern_string(&template.request.capability.0),
+                operation: self.intern_string(&template.request.operation),
             },
-            class: AwbcTaskClass::Io,
-            priority: 0,
-            cancel_scope: self.intern_string("flow"),
-            policy: AwbcTaskPolicy::JoinSameKey,
+            class: awbc_task_class(&template.class),
+            priority: template.priority.0,
+            cancel_scope: self.intern_string(&template.cancel_scope.0),
+            policy: awbc_task_policy(template.policy),
             payload_type,
             arguments,
-            kind: AwbcTaskPlanKind::AwaitMany {
-                public_id: self.intern_string(task_id),
-                need_id: self.intern_string(need_id),
-                item_binding,
-                limit,
-            },
+            kind,
         };
         Some(self.intern_task_plan(row))
     }
-
     /// Interns the closed typed producer row used by both StartNeed and
     /// Product snapshot re-projection. Argument descriptors are derived from
     /// the sealed request binding, and their types come from the checked
@@ -1838,16 +1895,6 @@ impl AwbcInventory {
             kind: AwbcTaskPlanKind::NeedProducer {
                 contract: plan.contract(),
                 site: plan.site(),
-                semantic_digest: match plan.semantic_digest() {
-                    Ok(digest) => digest,
-                    Err(error) => {
-                        self.diagnostic(AwbcLowerDiagnostic::error(
-                            "need_producer.identity",
-                            error.to_string(),
-                        ));
-                        return None;
-                    }
-                },
                 restart: match plan.restart() {
                     HostRestartPolicy::MustBeQuiescent => AwbcTaskRestartPolicy::MustBeQuiescent,
                     HostRestartPolicy::Restartable => AwbcTaskRestartPolicy::Restartable,
@@ -1895,6 +1942,7 @@ impl AwbcInventory {
         let operation = self.intern_string(&target.operation);
         let arguments = self.intern_host_arguments(&target.args);
         let descriptor = AwbcHostCall {
+            producer: target.producer,
             public_id,
             capability,
             operation,

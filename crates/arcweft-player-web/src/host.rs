@@ -94,23 +94,28 @@ impl BrowserTaskBroker {
         let events = dispatches
             .into_iter()
             .map(|dispatch| {
-                if self.cancelled_scopes.contains(&dispatch.task.cancel_scope) {
+                if self
+                    .cancelled_scopes
+                    .contains(&dispatch.task.spec().cancel_scope)
+                {
                     return dispatch.cancelled();
                 }
                 let kind = self
                     .resolve(&dispatch, program_owner)
-                    .unwrap_or_else(|error| TaskEventKind::Failed(error.to_string()));
+                    .unwrap_or_else(|error| {
+                        TaskEventKind::InfrastructureFailure(
+                            arcweft_core::task::RuntimeTaskFailure::new(
+                                arcweft_core::task::RuntimeTaskFailureKind::AdapterUnavailable,
+                                error.to_string(),
+                            ),
+                        )
+                    });
                 dispatch.into_event(kind)
             })
             .collect::<Vec<_>>();
         self.queued_task_events.extend(events);
-        self.queued_task_events.sort_by(|left, right| {
-            (left.logical_epoch, left.sequence, &left.task_id).cmp(&(
-                right.logical_epoch,
-                right.sequence,
-                &right.task_id,
-            ))
-        });
+        self.queued_task_events
+            .sort_by(arcweft_core::task::compare_task_events);
         self.queued_task_events.len()
     }
 
@@ -131,7 +136,7 @@ impl BrowserTaskBroker {
         dispatch: &HostTaskDispatch,
         program_owner: &RuntimeProgramOwner,
     ) -> Result<TaskEventKind, BrowserHostTaskError> {
-        let request = &dispatch.task.request;
+        let request = &dispatch.task.spec().request;
         let call = request.host_call_id();
         if !self.allowed_calls.contains(&call) && !is_internal_scheduler_marker(request) {
             return Err(BrowserHostTaskError::UndeclaredHostCall(call));
@@ -151,7 +156,7 @@ impl BrowserTaskBroker {
                         "asset task has no exact generation context".to_owned(),
                     )
                 })?;
-                if context.generation() != dispatch.generation {
+                if context.generation() != dispatch.task.handle().correlation.generation {
                     return Err(BrowserHostTaskError::AssetResolver(
                         "asset task context does not match its dispatch generation".to_owned(),
                     ));
@@ -166,14 +171,13 @@ impl BrowserTaskBroker {
                     }
                 }
                 .map_err(|error| BrowserHostTaskError::AssetResolver(error.to_string()))?;
-                let bound = BoundTaskSpec::bind(
-                    dispatch.task.clone(),
-                    Some(program_owner.clone()),
-                    RuntimeSchemaLimits::engine_default(),
-                )
-                .map_err(|error| BrowserHostTaskError::AssetResolver(error.to_string()))?;
+                let bound = dispatch
+                    .task
+                    .spec()
+                    .outcome
+                    .bind_program(program_owner.clone(), RuntimeSchemaLimits::engine_default())
+                    .map_err(|error| BrowserHostTaskError::AssetResolver(error.to_string()))?;
                 let payload = bound
-                    .outcome()
                     .try_payload(value)
                     .map_err(|error| BrowserHostTaskError::AssetResolver(error.to_string()))?;
                 Ok(TaskEventKind::Ready(payload))

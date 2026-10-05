@@ -93,7 +93,7 @@ fn runtime_value_label_for_data(value: &RuntimeValue) -> String {
         } => format!("variant/{owner:?}/#{ordinal}/{name}"),
         RuntimeValue::Color(_)
         | RuntimeValue::Duration(_)
-        | RuntimeValue::Need(_)
+        | RuntimeValue::NeedHandle(_)
         | RuntimeValue::Progress(_)
         | RuntimeValue::EntityRef(_)
         | RuntimeValue::Opaque(_)

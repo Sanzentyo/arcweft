@@ -1166,8 +1166,9 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
                 })?;
             }
             AwbcTaskPlanKind::AwaitMany {
-                public_id,
-                need_id,
+                child,
+                captures,
+                request_function,
                 limit,
                 ..
             } => {
@@ -1182,14 +1183,69 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
                                 .to_owned(),
                     });
                 }
-                check_string(program, *public_id, &at)?;
-                check_string(program, *need_id, &at)?;
+                check_index(program.task_plans.len(), child.0, "task_plans", &at)?;
+                check_index(
+                    program.functions.len(),
+                    request_function.0,
+                    "functions",
+                    &at,
+                )?;
+                if !matches!(
+                    program.task_plans[child.index()].kind,
+                    AwbcTaskPlanKind::Template {
+                        family: crate::task::NeedProducerFamily::AwaitManyChild,
+                        ..
+                    }
+                ) {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at,
+                        message:
+                            "AwaitMany child must reference its admitted child producer template"
+                                .into(),
+                    });
+                }
                 if *limit == 0 {
                     return Err(AwbcVerifyError::InvalidInvariant {
                         at,
                         message: "await-many task limit must be non-zero".to_owned(),
                     });
                 }
+                verify_task_request_kernel(program, task, *request_function, &at)?;
+                let child_plan = &program.task_plans[child.index()];
+                let AwbcTaskPlanKind::Template {
+                    request_function: child_function,
+                    ..
+                } = child_plan.kind
+                else {
+                    unreachable!("child kind checked above");
+                };
+                verify_task_request_kernel(program, child_plan, child_function, &at)?;
+                let base_inputs = &program.signatures[program.functions[request_function.index()]
+                    .signature
+                    .index()]
+                .params;
+                let child_inputs = &program.signatures
+                    [program.functions[child_function.index()].signature.index()]
+                .params;
+                if base_inputs.len() != captures.len()
+                    || child_inputs.len() != base_inputs.len() + 1
+                    || child_inputs[..base_inputs.len()] != *base_inputs
+                    || !matches!(program.runtime_types[task.payload_type.index()].shape(),
+                        AwbcRuntimeTypeShape::Sequence { item, .. } if *item == child_plan.payload_type)
+                {
+                    return Err(AwbcVerifyError::InvalidInvariant { at, message: "AwaitMany capture ABI or aggregate payload differs from its child template".into() });
+                }
+            }
+            AwbcTaskPlanKind::Template {
+                request_function, ..
+            } => {
+                check_index(
+                    program.functions.len(),
+                    request_function.0,
+                    "functions",
+                    &at,
+                )?;
+                verify_task_request_kernel(program, task, *request_function, &at)?;
             }
         }
     }
@@ -1371,6 +1427,48 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
             });
         }
         verify_trait_method_receiver(program, index, method)?;
+    }
+    Ok(())
+}
+
+fn verify_task_request_kernel(
+    program: &AwbcProgram,
+    task: &crate::awbc::schema::AwbcTaskPlan,
+    function: AwbcFunctionId,
+    at: &str,
+) -> Result<(), AwbcVerifyError> {
+    let function = program.functions.get(function.index()).ok_or_else(|| {
+        AwbcVerifyError::InvalidInvariant {
+            at: at.into(),
+            message: "task request function is absent".into(),
+        }
+    })?;
+    let signature = program
+        .signatures
+        .get(function.signature.index())
+        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+            at: at.into(),
+            message: "task request signature is absent".into(),
+        })?;
+    let result = signature
+        .result
+        .and_then(|ty| program.runtime_types.get(ty.index()));
+    if function.kind != AwbcFunctionKind::Ordinary
+        || !function
+            .flags
+            .contains(crate::awbc::schema::AwbcFunctionFlag::Deterministic)
+        || !program
+            .effect_sets
+            .get(signature.effects.index())
+            .is_some_and(|effects| effects.effects.is_empty())
+        || !matches!(result.map(AwbcRuntimeType::shape), Some(AwbcRuntimeTypeShape::Tuple(items)) if *items == program.signatures[task.signature.index()].params)
+    {
+        return Err(AwbcVerifyError::InvalidInvariant {
+            at: at.into(),
+            message:
+                "task request kernel must be deterministic and return the exact argument tuple"
+                    .into(),
+        });
     }
     Ok(())
 }

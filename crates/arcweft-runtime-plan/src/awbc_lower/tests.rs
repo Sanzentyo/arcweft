@@ -1291,6 +1291,13 @@ fn discarded_host_call_result_still_has_an_awbc_destination() {
                 RuntimeFlowOpSeed::HostCall {
                     binding: None,
                     target: RuntimeHostCallTargetSeed {
+                        producer: arcweft_core::task::HostCallProducerDefinition {
+                            contract: arcweft_core::task::NeedProducerContractDigest::from_bytes(
+                                [1; 32],
+                            ),
+                            plan: arcweft_core::task::TaskPlanSemanticDigest::from_bytes([2; 32]),
+                            site: arcweft_core::task::NeedProducerSiteDigest::from_bytes([3; 32]),
+                        },
                         public_id: "test.notify".to_owned(),
                         capability: "test".to_owned(),
                         operation: "notify".to_owned(),
@@ -1326,6 +1333,18 @@ fn host_signature_preserves_every_admitted_operand_and_result_identity() {
                     RuntimeFlowOpSeed::HostCall {
                         binding: None,
                         target: RuntimeHostCallTargetSeed {
+                            producer: arcweft_core::task::HostCallProducerDefinition {
+                                contract:
+                                    arcweft_core::task::NeedProducerContractDigest::from_bytes(
+                                        [1; 32],
+                                    ),
+                                plan: arcweft_core::task::TaskPlanSemanticDigest::from_bytes(
+                                    [2; 32],
+                                ),
+                                site: arcweft_core::task::NeedProducerSiteDigest::from_bytes(
+                                    [3; 32],
+                                ),
+                            },
                             public_id: "test.notify".to_owned(),
                             capability: "test".to_owned(),
                             operation: "notify".to_owned(),
@@ -1381,6 +1400,11 @@ fn host_descriptor_interning_preserves_distinct_call_site_values() {
         .map(|message| RuntimeFlowOpSeed::HostCall {
             binding: None,
             target: RuntimeHostCallTargetSeed {
+                producer: arcweft_core::task::HostCallProducerDefinition {
+                    contract: arcweft_core::task::NeedProducerContractDigest::from_bytes([1; 32]),
+                    plan: arcweft_core::task::TaskPlanSemanticDigest::from_bytes([2; 32]),
+                    site: arcweft_core::task::NeedProducerSiteDigest::from_bytes([3; 32]),
+                },
                 public_id: "test.notify".to_owned(),
                 capability: "test".to_owned(),
                 operation: "notify".to_owned(),

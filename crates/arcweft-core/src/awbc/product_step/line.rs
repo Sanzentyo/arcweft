@@ -1938,26 +1938,21 @@ impl super::AwbcProductStepExecutor {
         }
         Ok((
             pending.clone(),
-            crate::step::RuntimeHostCallRequest {
-                id: pending.id,
-                public_id,
-                capability: self
-                    .program
-                    .strings
-                    .get(host.capability.index())
-                    .cloned()
-                    .ok_or(LineRuntimeError::InvalidActivationOperation)?,
-                operation: self
-                    .program
-                    .strings
-                    .get(host.operation.index())
-                    .cloned()
-                    .ok_or(LineRuntimeError::InvalidActivationOperation)?,
-                contract: host.contract,
-                args: positional,
-                named_args,
-                result: result_type.semantic_identity(),
-                mode: match host.mode {
+            crate::step::RuntimeHostCallRequest::admit(
+                pending.id,
+                host.producer,
+                self.runtime_generation,
+                crate::task::HostTaskRequest::Custom {
+                    capability: crate::task::HostCapabilityId(
+                        self.program.strings[host.capability.index()].clone(),
+                    ),
+                    operation: self.program.strings[host.operation.index()].clone(),
+                    manifest_contract: host.contract,
+                    args: positional,
+                    named_args,
+                },
+                result_type.semantic_identity(),
+                match host.mode {
                     crate::awbc::schema::AwbcHostCallMode::Immediate => {
                         crate::step::RuntimeHostCallMode::Immediate
                     }
@@ -1965,8 +1960,10 @@ impl super::AwbcProductStepExecutor {
                         crate::step::RuntimeHostCallMode::Suspend
                     }
                 },
-                deterministic: host.deterministic,
-            },
+                host.deterministic,
+                &mut self.need_producers,
+            )
+            .map_err(|error| ProductStepError::Host(error.to_string()))?,
         ))
     }
 

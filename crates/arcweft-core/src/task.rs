@@ -44,9 +44,24 @@ pub use producer::*;
 // Private final identity preparation. Publish only with the atomic task/Need
 // carrier, journal, host and persistence migration; no String conversion exists.
 mod identity;
-pub use identity::{TaskIdentityError, TaskIdentityKind};
+pub use identity::{
+    NeedId, TaskCorrelation, TaskCorrelationError, TaskId, TaskIdentityError, TaskIdentityKind,
+    TaskKey,
+};
 mod need_handle;
 mod specification;
+pub use need_handle::{RuntimeNeedHandle, RuntimeNeedHandleError, RuntimeNeedHandleSaveSnapshot};
+pub use specification::{NeedProducerInstance, TaskHandle, TaskSpec};
+mod journal;
+pub use journal::{TaskAdmissionJournal, TaskSubmission};
+mod snapshot;
+pub use snapshot::{HostTaskRequestSnapshot, TaskSpecSnapshot, TaskSubmissionSaveSnapshot};
+mod failure;
+pub use failure::{
+    BoundedRuntimeDiagnostic, RuntimeNeedOutcome, RuntimeTaskFailure, RuntimeTaskFailureKind,
+};
+mod template;
+pub use template::{HostCallProducerDefinition, NeedProducerTemplate};
 
 #[cfg(test)]
 mod identity_tests {
@@ -119,15 +134,6 @@ mod identity_tests {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-pub struct TaskId(pub String);
-
-#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-pub struct TaskKey(pub String);
-
-#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-pub struct NeedId(pub String);
-
-#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct CancelScopeId(pub String);
 
 #[derive(
@@ -172,29 +178,25 @@ impl TaskPublicationRevision {
 /// sequence is never reused as the within-dispatch publication revision.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct TaskDispatchIdentity {
-    pub generation: GenerationId,
+    pub correlation: TaskCorrelation,
     pub logical_epoch: LogicalEpoch,
+    /// Physical dispatch attempt fence, separate from publication ordering.
     pub sequence: TaskSequence,
-    pub task_id: TaskId,
 }
 
 impl TaskDispatchIdentity {
-    #[must_use]
     pub const fn new(
-        generation: GenerationId,
+        correlation: TaskCorrelation,
         logical_epoch: LogicalEpoch,
         sequence: TaskSequence,
-        task_id: TaskId,
     ) -> Self {
         Self {
-            generation,
+            correlation,
             logical_epoch,
             sequence,
-            task_id,
         }
     }
 }
-
 /// Starting point for one task dispatch and its publication journal. Restored
 /// re-ensure supplies the last accepted revision so the adapter continues the
 /// same dispatch at its checked successor instead of restarting at revision 1.
@@ -235,176 +237,22 @@ impl TaskDispatchStart {
     }
 }
 
-/// One checked occurrence of an AwaitMany invocation. Item Needs and tasks
-/// derive from this same generation/fiber/ordinal tuple so revisiting a loop
-/// cannot alias an earlier in-flight dispatch.
+/// Monotone publication position within one complete task correlation.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-pub struct AwaitManyInvocationIdentity {
-    generation: GenerationId,
-    fiber: RuntimePersistentFiberId,
-    ordinal: u64,
-}
-
-impl AwaitManyInvocationIdentity {
-    #[must_use]
-    pub const fn new(
-        generation: GenerationId,
-        fiber: RuntimePersistentFiberId,
-        ordinal: u64,
-    ) -> Self {
-        Self {
-            generation,
-            fiber,
-            ordinal,
-        }
-    }
-
-    #[must_use]
-    pub const fn generation(self) -> GenerationId {
-        self.generation
-    }
-
-    #[must_use]
-    pub const fn fiber(self) -> RuntimePersistentFiberId {
-        self.fiber
-    }
-
-    #[must_use]
-    pub const fn ordinal(self) -> u64 {
-        self.ordinal
-    }
-
-    pub fn need_id(
-        self,
-        base: &NeedId,
-        item_index: usize,
-    ) -> Result<NeedId, AwaitManyIdentityError> {
-        await_many_item_id(b"Arcweft.AwaitMany.Need.v1", self, &base.0, item_index)
-            .map(|id| NeedId(format!("need.await_many.{id}")))
-    }
-
-    pub fn task_id(
-        self,
-        base: &TaskId,
-        item_index: usize,
-    ) -> Result<TaskId, AwaitManyIdentityError> {
-        await_many_item_id(b"Arcweft.AwaitMany.Task.v1", self, &base.0, item_index)
-            .map(|id| TaskId(format!("task.await_many.{id}")))
-    }
-}
-
-#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
-pub enum AwaitManyIdentityError {
-    #[error("AwaitMany invocation ordinal is exhausted")]
-    InvocationOrdinalOverflow,
-    #[error("AwaitMany item identity exceeds the supported ordinal range")]
-    ItemIndexOverflow,
-}
-
-fn await_many_item_id(
-    domain: &[u8],
-    identity: AwaitManyInvocationIdentity,
-    base: &str,
-    item_index: usize,
-) -> Result<String, AwaitManyIdentityError> {
-    let item_index =
-        u64::try_from(item_index).map_err(|_| AwaitManyIdentityError::ItemIndexOverflow)?;
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(domain);
-    hasher.update(&identity.generation.get().to_le_bytes());
-    hasher.update(&identity.fiber.get().to_le_bytes());
-    hasher.update(&identity.ordinal.to_le_bytes());
-    hasher.update(&item_index.to_le_bytes());
-    hasher.update(
-        &u64::try_from(base.len())
-            .map_err(|_| AwaitManyIdentityError::ItemIndexOverflow)?
-            .to_le_bytes(),
-    );
-    hasher.update(base.as_bytes());
-    Ok(hasher.finalize().to_hex().to_string())
-}
-
-/// Replay-stable position of one publication. External Need-state publication
-/// sequence and a local task-event dispatch/revision are separate authorities;
-/// callers must never compare cursors from different sources.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[serde(tag = "source", rename_all = "snake_case")]
-pub enum TaskPublicationCursor {
-    ExternalNeedState {
-        logical_epoch: LogicalEpoch,
-        sequence: TaskSequence,
-    },
-    LocalTaskEvent {
-        generation: GenerationId,
-        logical_epoch: LogicalEpoch,
-        dispatch_sequence: TaskSequence,
-        publication_revision: TaskPublicationRevision,
-    },
+#[serde(deny_unknown_fields)]
+pub struct TaskPublicationCursor {
+    pub logical_epoch: LogicalEpoch,
+    pub sequence: TaskSequence,
 }
 
 impl TaskPublicationCursor {
-    #[must_use]
     pub const fn from_event(event: &TaskEvent) -> Self {
-        Self::LocalTaskEvent {
-            generation: event.generation,
-            logical_epoch: event.logical_epoch,
-            dispatch_sequence: event.sequence,
-            publication_revision: event.publication_revision,
-        }
+        event.cursor
     }
-
-    #[must_use]
-    pub const fn from_need_state(state: &RuntimeNeedState) -> Self {
-        Self::ExternalNeedState {
-            logical_epoch: state.logical_epoch,
-            sequence: state.sequence,
-        }
-    }
-
-    #[must_use]
     pub fn compare_same_source(self, other: Self) -> Option<Ordering> {
-        match (self, other) {
-            (
-                Self::ExternalNeedState {
-                    logical_epoch: left_epoch,
-                    sequence: left_sequence,
-                },
-                Self::ExternalNeedState {
-                    logical_epoch: right_epoch,
-                    sequence: right_sequence,
-                },
-            ) => Some(match left_epoch.cmp(&right_epoch) {
-                Ordering::Equal => left_sequence.cmp(&right_sequence),
-                ordering => ordering,
-            }),
-            (
-                Self::LocalTaskEvent {
-                    generation: left_generation,
-                    logical_epoch: left_epoch,
-                    dispatch_sequence: left_dispatch,
-                    publication_revision: left_revision,
-                },
-                Self::LocalTaskEvent {
-                    generation: right_generation,
-                    logical_epoch: right_epoch,
-                    dispatch_sequence: right_dispatch,
-                    publication_revision: right_revision,
-                },
-            ) => Some(match left_generation.cmp(&right_generation) {
-                Ordering::Equal => match left_epoch.cmp(&right_epoch) {
-                    Ordering::Equal => match left_dispatch.cmp(&right_dispatch) {
-                        Ordering::Equal => left_revision.cmp(&right_revision),
-                        ordering => ordering,
-                    },
-                    ordering => ordering,
-                },
-                ordering => ordering,
-            }),
-            _ => None,
-        }
+        Some(self.cmp(&other))
     }
 }
-
 /// One producer-owned, in-memory state publication for a typed `Need<T>`.
 ///
 /// This boundary deliberately does not add a `RuntimeValue` or AWBC wire
@@ -414,49 +262,45 @@ impl TaskPublicationCursor {
 /// `Result<T, E>` as this single payload.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeNeedState {
-    logical_epoch: LogicalEpoch,
-    need: NeedId,
-    sequence: TaskSequence,
-    state: Need<RuntimePayload>,
+    pub correlation: TaskCorrelation,
+    pub cursor: Option<TaskPublicationCursor>,
+    pub state: Need<RuntimeNeedOutcome>,
 }
-
-/// One normalized publication consumed by Await. A host task failure is an
-/// infrastructure fault rather than a fabricated `Need<T>` payload.
+/// Owned publication queued for one exact correlation. Local Ready payloads
+/// remain in their producer owner until the consuming Await takes them.
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeNeedPublication {
     State {
-        need: NeedId,
-        state: Need<RuntimePayload>,
+        correlation: TaskCorrelation,
+        state: Need<RuntimeNeedOutcome>,
         cursor: TaskPublicationCursor,
     },
-    /// Local producer publication carries only cursor metadata. The Ready
-    /// payload stays in its registry until the Await consumer takes it.
     Producer {
-        need: NeedId,
+        correlation: TaskCorrelation,
         cursor: TaskPublicationCursor,
     },
-    Failed {
-        need: NeedId,
+    InfrastructureFailure {
+        correlation: TaskCorrelation,
         cursor: TaskPublicationCursor,
-        message: String,
+        failure: RuntimeTaskFailure,
     },
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum RuntimeNeedPublicationRollbackImage {
     State {
-        need: NeedId,
+        correlation: TaskCorrelation,
         state: RuntimeNeedStateRollbackImage,
         cursor: TaskPublicationCursor,
     },
     Producer {
-        need: NeedId,
+        correlation: TaskCorrelation,
         cursor: TaskPublicationCursor,
     },
-    Failed {
-        need: NeedId,
+    InfrastructureFailure {
+        correlation: TaskCorrelation,
         cursor: TaskPublicationCursor,
-        message: String,
+        failure: RuntimeTaskFailure,
     },
 }
 
@@ -465,6 +309,7 @@ pub(crate) enum RuntimeNeedStateRollbackImage {
     NotStarted,
     Pending(Progress),
     Ready(crate::value::AwbcRuntimeValueSnapshot),
+    InfrastructureFailure(RuntimeTaskFailure),
     Cancelled,
 }
 
@@ -475,39 +320,47 @@ impl RuntimeNeedPublication {
     ) -> Result<RuntimeNeedPublicationRollbackImage, String> {
         Ok(match self {
             Self::State {
-                need,
+                correlation,
                 state,
                 cursor,
             } => RuntimeNeedPublicationRollbackImage::State {
-                need: need.clone(),
+                correlation: *correlation,
+                cursor: *cursor,
                 state: match state {
                     Need::NotStarted => RuntimeNeedStateRollbackImage::NotStarted,
                     Need::Pending(progress) => {
                         RuntimeNeedStateRollbackImage::Pending(progress.clone())
                     }
-                    Need::Ready(value) => RuntimeNeedStateRollbackImage::Ready(
-                        crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
-                            value.value(),
-                            owner,
+                    Need::Ready(RuntimeNeedOutcome::Value(value)) => {
+                        RuntimeNeedStateRollbackImage::Ready(
+                            crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                                value.value(),
+                                owner,
+                            )
+                            .map_err(|error| error.to_string())?,
                         )
-                        .map_err(|error| error.to_string())?,
-                    ),
+                    }
+                    Need::Ready(RuntimeNeedOutcome::InfrastructureFailure(failure)) => {
+                        RuntimeNeedStateRollbackImage::InfrastructureFailure(failure.clone())
+                    }
                     Need::Cancelled => RuntimeNeedStateRollbackImage::Cancelled,
                 },
-                cursor: *cursor,
             },
-            Self::Producer { need, cursor } => RuntimeNeedPublicationRollbackImage::Producer {
-                need: need.clone(),
-                cursor: *cursor,
-            },
-            Self::Failed {
-                need,
+            Self::Producer {
+                correlation,
                 cursor,
-                message,
-            } => RuntimeNeedPublicationRollbackImage::Failed {
-                need: need.clone(),
+            } => RuntimeNeedPublicationRollbackImage::Producer {
+                correlation: *correlation,
                 cursor: *cursor,
-                message: message.clone(),
+            },
+            Self::InfrastructureFailure {
+                correlation,
+                cursor,
+                failure,
+            } => RuntimeNeedPublicationRollbackImage::InfrastructureFailure {
+                correlation: *correlation,
+                cursor: *cursor,
+                failure: failure.clone(),
             },
         })
     }
@@ -518,59 +371,69 @@ impl RuntimeNeedPublication {
     ) -> Result<Self, String> {
         Ok(match image {
             RuntimeNeedPublicationRollbackImage::State {
-                need,
+                correlation,
                 state,
                 cursor,
             } => Self::State {
-                need,
+                correlation,
+                cursor,
                 state: match state {
                     RuntimeNeedStateRollbackImage::NotStarted => Need::NotStarted,
                     RuntimeNeedStateRollbackImage::Pending(progress) => Need::Pending(progress),
-                    RuntimeNeedStateRollbackImage::Ready(saved) => Need::Ready(RuntimePayload(
-                        saved
-                            .into_runtime_value_for_program(owner)
-                            .map_err(|error| error.to_string())?,
-                    )),
+                    RuntimeNeedStateRollbackImage::Ready(saved) => {
+                        Need::Ready(RuntimeNeedOutcome::Value(RuntimePayload(
+                            saved
+                                .into_runtime_value_for_program(owner)
+                                .map_err(|error| error.to_string())?,
+                        )))
+                    }
+                    RuntimeNeedStateRollbackImage::InfrastructureFailure(failure) => {
+                        Need::Ready(RuntimeNeedOutcome::InfrastructureFailure(failure))
+                    }
                     RuntimeNeedStateRollbackImage::Cancelled => Need::Cancelled,
                 },
+            },
+            RuntimeNeedPublicationRollbackImage::Producer {
+                correlation,
+                cursor,
+            } => Self::Producer {
+                correlation,
                 cursor,
             },
-            RuntimeNeedPublicationRollbackImage::Producer { need, cursor } => {
-                Self::Producer { need, cursor }
-            }
-            RuntimeNeedPublicationRollbackImage::Failed {
-                need,
+            RuntimeNeedPublicationRollbackImage::InfrastructureFailure {
+                correlation,
                 cursor,
-                message,
-            } => Self::Failed {
-                need,
+                failure,
+            } => Self::InfrastructureFailure {
+                correlation,
                 cursor,
-                message,
+                failure,
             },
         })
     }
-}
 
-impl RuntimeNeedPublication {
-    #[must_use]
-    pub const fn need(&self) -> &NeedId {
+    pub const fn correlation(&self) -> TaskCorrelation {
         match self {
-            Self::State { need, .. } | Self::Producer { need, .. } | Self::Failed { need, .. } => {
-                need
-            }
+            Self::State { correlation, .. }
+            | Self::Producer { correlation, .. }
+            | Self::InfrastructureFailure { correlation, .. } => *correlation,
         }
     }
-
-    #[must_use]
+    pub const fn need(&self) -> &NeedId {
+        match self {
+            Self::State { correlation, .. }
+            | Self::Producer { correlation, .. }
+            | Self::InfrastructureFailure { correlation, .. } => &correlation.need,
+        }
+    }
     pub const fn cursor(&self) -> TaskPublicationCursor {
         match self {
             Self::State { cursor, .. }
             | Self::Producer { cursor, .. }
-            | Self::Failed { cursor, .. } => *cursor,
+            | Self::InfrastructureFailure { cursor, .. } => *cursor,
         }
     }
 }
-
 /// The exact payload type a host task may publish through temporal `Ready`.
 ///
 /// Fallible producers admit a `Result<T, E>` payload here. Infrastructure
@@ -585,6 +448,12 @@ pub enum TaskOutcomeContract {
 }
 
 impl TaskOutcomeContract {
+    pub fn payload_semantic_identity(&self) -> RuntimeSemanticTypeId {
+        match self {
+            Self::Standalone { payload } => payload.semantic_identity_digest(),
+            Self::Program { payload } => *payload,
+        }
+    }
     #[must_use]
     pub const fn new(payload: RuntimeCheckedType) -> Self {
         Self::Standalone { payload }
@@ -669,47 +538,38 @@ impl Default for TaskOutcomeContract {
 
 impl RuntimeNeedState {
     pub const fn new(
-        logical_epoch: LogicalEpoch,
-        need: NeedId,
-        sequence: TaskSequence,
-        state: Need<RuntimePayload>,
+        correlation: TaskCorrelation,
+        cursor: Option<TaskPublicationCursor>,
+        state: Need<RuntimeNeedOutcome>,
     ) -> Self {
         Self {
-            logical_epoch,
-            need,
-            sequence,
+            correlation,
+            cursor,
             state,
         }
     }
-
-    pub const fn logical_epoch(&self) -> LogicalEpoch {
-        self.logical_epoch
-    }
-
     pub const fn need(&self) -> &NeedId {
-        &self.need
+        &self.correlation.need
     }
-
-    pub const fn sequence(&self) -> TaskSequence {
-        self.sequence
-    }
-
-    pub const fn state(&self) -> &Need<RuntimePayload> {
+    pub const fn state(&self) -> &Need<RuntimeNeedOutcome> {
         &self.state
     }
-
-    pub fn into_parts(self) -> (LogicalEpoch, NeedId, TaskSequence, Need<RuntimePayload>) {
-        (self.logical_epoch, self.need, self.sequence, self.state)
+    pub fn into_parts(
+        self,
+    ) -> (
+        TaskCorrelation,
+        Option<TaskPublicationCursor>,
+        Need<RuntimeNeedOutcome>,
+    ) {
+        (self.correlation, self.cursor, self.state)
     }
-
     pub fn inspect_host_ready_ownership(&self) -> Result<(), RuntimeHostPayloadOwnershipError> {
         match &self.state {
-            Need::Ready(value) => inspect_host_payload_ownership(value),
+            Need::Ready(RuntimeNeedOutcome::Value(value)) => inspect_host_payload_ownership(value),
             _ => Ok(()),
         }
     }
 }
-
 #[derive(
     Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
 )]
@@ -725,13 +585,11 @@ pub struct AwaitTarget {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AwaitManyTarget {
-    pub need: NeedId,
-    pub task: TaskId,
-    pub outcome: TaskOutcomeContract,
     pub source: RuntimeExpr,
     pub item_binding: RuntimeLocalDeclarationId,
-    pub limit: usize,
-    pub request: HostTaskRequestTemplate,
+    pub limit: u32,
+    pub base: NeedProducerTemplate,
+    pub child: NeedProducerTemplate,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -739,6 +597,7 @@ pub struct HostTaskRequestTemplate {
     pub capability: HostCapabilityId,
     pub operation: String,
     pub args: Vec<RuntimeHostArgumentTemplate>,
+    pub(crate) captures: Vec<RuntimeLocalDeclarationId>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -749,22 +608,10 @@ pub enum RuntimeHostArgumentTemplate {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct NamedHostArg<T> {
     pub name: String,
     pub value: T,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct TaskSpec {
-    pub id: TaskId,
-    pub key: TaskKey,
-    pub class: TaskClass,
-    pub priority: TaskPriority,
-    pub cancel_scope: CancelScopeId,
-    pub policy: TaskPolicy,
-    pub outcome: TaskOutcomeContract,
-    pub request: HostTaskRequest,
-    pub debug_label: String,
 }
 
 /// A task identifier was reused with a different accepted specification, or a
@@ -772,6 +619,12 @@ pub struct TaskSpec {
 /// scheduling and outcome contract.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum TaskEnsureError {
+    #[error("task identity derivation failed: {0}")]
+    Identity(#[from] TaskIdentityError),
+    #[error("task launch ordinal is exhausted")]
+    LaunchOrdinalExhausted,
+    #[error("task outcome differs from its issued producer payload type")]
+    OutcomeContractMismatch,
     #[error("task identifier {task_id:?} was reused with a different specification")]
     TaskIdSpecificationConflict { task_id: TaskId },
     #[error("task {task_id:?} conflicts with owner {owner_id:?} for same-key join {key:?}")]
@@ -780,12 +633,6 @@ pub enum TaskEnsureError {
         owner_id: TaskId,
         key: TaskKey,
     },
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct TaskHandle {
-    pub id: TaskId,
-    pub key: TaskKey,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -810,7 +657,7 @@ pub enum TaskClass {
     Background,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum TaskPolicy {
     JoinSameKey,
     AlwaysStart,
@@ -1396,28 +1243,33 @@ pub enum HostTaskRequest {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct FileReadTextRequest {
     pub path: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct FileReadBytesRequest {
     pub path: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct FileWriteTextRequest {
     pub path: String,
     pub text: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct FileWriteBytesRequest {
     pub path: String,
     pub bytes: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct HttpFetchRequest {
     pub url: String,
     pub method: String,
@@ -1426,6 +1278,7 @@ pub struct HttpFetchRequest {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct HttpRespondRequest {
     pub request_id: String,
     pub status: u16,
@@ -1434,6 +1287,7 @@ pub struct HttpRespondRequest {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProcessRunRequest {
     pub program: String,
     pub args: Vec<String>,
@@ -1441,29 +1295,34 @@ pub struct ProcessRunRequest {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AssetRequest {
     pub id: String,
     pub kind: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ShaderRequest {
     pub id: String,
     pub entry: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AudioDecodeRequest {
     pub id: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct TtsRequest {
     pub voice: Option<String>,
     pub text: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct WasmCallRequest {
     pub module: String,
     pub function: String,
@@ -1471,6 +1330,7 @@ pub struct WasmCallRequest {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct SystemInfoRequest {
     pub kind: SystemInfoKind,
 }
@@ -1484,41 +1344,26 @@ pub enum SystemInfoKind {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TaskEvent {
-    pub generation: GenerationId,
-    pub logical_epoch: LogicalEpoch,
-    pub task_id: TaskId,
-    pub sequence: TaskSequence,
-    pub publication_revision: TaskPublicationRevision,
+    pub correlation: TaskCorrelation,
+    pub cursor: TaskPublicationCursor,
     pub kind: TaskEventKind,
 }
 
 impl TaskEvent {
-    #[must_use]
     pub fn from_dispatch(
         dispatch: TaskDispatchIdentity,
         publication_revision: TaskPublicationRevision,
         kind: TaskEventKind,
     ) -> Self {
         Self {
-            generation: dispatch.generation,
-            logical_epoch: dispatch.logical_epoch,
-            task_id: dispatch.task_id,
-            sequence: dispatch.sequence,
-            publication_revision,
+            correlation: dispatch.correlation,
+            cursor: TaskPublicationCursor {
+                logical_epoch: dispatch.logical_epoch,
+                sequence: TaskSequence(publication_revision.get()),
+            },
             kind,
         }
     }
-
-    #[must_use]
-    pub fn dispatch_identity(&self) -> TaskDispatchIdentity {
-        TaskDispatchIdentity {
-            generation: self.generation,
-            logical_epoch: self.logical_epoch,
-            sequence: self.sequence,
-            task_id: self.task_id.clone(),
-        }
-    }
-
     /// Host task completion may introduce a new affine value, but it cannot
     /// claim a dialogue line lease: those tokens are issued and transferred
     /// only by the runtime line ledger, and host requests cannot carry them.
@@ -1570,11 +1415,11 @@ mod host_ready_ownership_tests {
 
     fn ready(value: RuntimeValue) -> TaskEvent {
         TaskEvent {
-            generation: GenerationId::new(0),
-            logical_epoch: LogicalEpoch(0),
-            task_id: TaskId("task.ready".to_owned()),
-            sequence: TaskSequence(0),
-            publication_revision: TaskPublicationRevision::FIRST,
+            correlation: crate::tests::reusable_need("ready argument").correlation(),
+            cursor: TaskPublicationCursor {
+                logical_epoch: LogicalEpoch(0),
+                sequence: TaskSequence(1),
+            },
             kind: TaskEventKind::Ready(RuntimePayload(value)),
         }
     }
@@ -1605,7 +1450,9 @@ mod host_ready_ownership_tests {
             Err(RuntimeHostPayloadOwnershipError::ForeignLineHandle { token })
         );
 
-        let other_affine = ready(RuntimeValue::Need(NeedId("need.ready".to_owned())));
+        let other_affine = ready(RuntimeValue::NeedHandle(crate::tests::reusable_need(
+            "need.ready",
+        )));
         assert!(other_affine.inspect_host_ready_ownership().is_ok());
     }
 }
@@ -1621,8 +1468,6 @@ pub enum TaskCompletionError {
     StalePublication { task_id: TaskId },
     #[error("task {task_id:?} cannot accept a nonterminal publication at the maximum revision")]
     PublicationRevisionExhausted { task_id: TaskId },
-    #[error("joined waiter {task_id:?} cannot publish directly for owner {owner_id:?}")]
-    JoinedWaiterDirectCompletion { task_id: TaskId, owner_id: TaskId },
     #[error("task {task_id:?} received more than one terminal completion")]
     DuplicateTerminalEvent { task_id: TaskId },
     #[error("task {task_id:?} received a publication after its terminal completion")]
@@ -1632,46 +1477,15 @@ pub enum TaskCompletionError {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum TaskEventKind {
     Ready(RuntimePayload),
-    Failed(String),
+    InfrastructureFailure(RuntimeTaskFailure),
     Cancelled,
     Progress(Progress),
 }
 
 pub trait TaskHost {
-    fn ensure_task(&mut self, spec: BoundTaskSpec) -> Result<TaskHandle, TaskEnsureError>;
+    fn ensure_task(&mut self, spec: TaskSpec) -> Result<TaskHandle, TaskEnsureError>;
     fn cancel_scope(&mut self, scope: CancelScopeId);
     fn poll_frame(&mut self, budget: SchedulerBudget) -> Vec<TaskEvent>;
-}
-
-impl TaskSpec {
-    pub fn new(
-        id: TaskId,
-        key: TaskKey,
-        class: TaskClass,
-        priority: TaskPriority,
-        cancel_scope: CancelScopeId,
-        policy: TaskPolicy,
-        request: HostTaskRequest,
-    ) -> Self {
-        let debug_label = request.debug_label();
-        Self {
-            id,
-            key,
-            class,
-            priority,
-            cancel_scope,
-            policy,
-            outcome: TaskOutcomeContract::default(),
-            request,
-            debug_label,
-        }
-    }
-
-    #[must_use]
-    pub fn with_outcome(mut self, outcome: TaskOutcomeContract) -> Self {
-        self.outcome = outcome;
-        self
-    }
 }
 
 impl AwaitTarget {
@@ -1699,38 +1513,9 @@ impl AwaitTarget {
     }
 }
 
-impl AwaitManyTarget {
-    pub fn new(
-        need: NeedId,
-        task: TaskId,
-        source: RuntimeExpr,
-        item_binding: RuntimeLocalDeclarationId,
-        limit: usize,
-        request: HostTaskRequestTemplate,
-    ) -> Self {
-        Self {
-            need,
-            task,
-            outcome: TaskOutcomeContract::default(),
-            source,
-            item_binding,
-            limit,
-            request,
-        }
-    }
-}
-
 impl HostTaskRequestTemplate {
-    pub fn new(
-        capability: impl Into<String>,
-        operation: impl Into<String>,
-        args: impl IntoIterator<Item = RuntimeHostArgumentTemplate>,
-    ) -> Self {
-        Self {
-            capability: HostCapabilityId(capability.into()),
-            operation: operation.into(),
-            args: args.into_iter().collect(),
-        }
+    pub fn captures(&self) -> &[RuntimeLocalDeclarationId] {
+        &self.captures
     }
 }
 
@@ -1770,6 +1555,35 @@ impl RuntimeHostArgumentTemplate {
 }
 
 impl HostTaskRequest {
+    pub(crate) fn runtime_values(&self) -> impl Iterator<Item = &RuntimeValue> {
+        let (body, args, named): (
+            Option<&RuntimePayload>,
+            &[RuntimePayload],
+            &[NamedHostArg<RuntimePayload>],
+        ) = match self {
+            Self::HttpFetch(request) => (request.body.as_ref(), &[], &[]),
+            Self::HttpRespond(request) => (request.body.as_ref(), &[], &[]),
+            Self::WasmCall(request) => (None, &request.args, &[]),
+            Self::Custom {
+                args, named_args, ..
+            } => (None, args, named_args),
+            Self::FileReadText(_)
+            | Self::FileReadBytes(_)
+            | Self::FileWriteText(_)
+            | Self::FileWriteBytes(_)
+            | Self::ProcessRun(_)
+            | Self::AssetLoad(_)
+            | Self::ShaderCompile(_)
+            | Self::AudioDecode(_)
+            | Self::TtsSynthesis(_)
+            | Self::SystemInfo(_) => (None, &[], &[]),
+        };
+        body.into_iter()
+            .chain(args.iter())
+            .chain(named.iter().map(|arg| &arg.value))
+            .map(RuntimePayload::value)
+    }
+
     pub fn custom(
         capability: impl Into<String>,
         operation: impl Into<String>,
@@ -1934,12 +1748,11 @@ pub fn task_events_are_normalized(events: &[TaskEvent]) -> bool {
 
 /// Compares task events by replay-stable completion order.
 pub fn compare_task_events(left: &TaskEvent, right: &TaskEvent) -> std::cmp::Ordering {
-    left.logical_epoch
-        .cmp(&right.logical_epoch)
-        .then_with(|| left.generation.cmp(&right.generation))
-        .then_with(|| left.task_id.cmp(&right.task_id))
-        .then_with(|| left.sequence.cmp(&right.sequence))
-        .then_with(|| left.publication_revision.cmp(&right.publication_revision))
+    left.cursor
+        .logical_epoch
+        .cmp(&right.cursor.logical_epoch)
+        .then_with(|| left.correlation.cmp(&right.correlation))
+        .then_with(|| left.cursor.sequence.cmp(&right.cursor.sequence))
 }
 
 /// Returns producer-owned Need states in replay-stable publication order.
@@ -1963,10 +1776,9 @@ pub fn compare_runtime_need_states(
     left: &RuntimeNeedState,
     right: &RuntimeNeedState,
 ) -> std::cmp::Ordering {
-    left.logical_epoch()
-        .cmp(&right.logical_epoch())
-        .then_with(|| left.need().cmp(right.need()))
-        .then_with(|| left.sequence().cmp(&right.sequence()))
+    left.cursor
+        .cmp(&right.cursor)
+        .then_with(|| left.correlation.cmp(&right.correlation))
 }
 
 /// Selects the current state for one Need from a normalized publication list.
@@ -1976,10 +1788,13 @@ pub fn compare_runtime_need_states(
 /// the same identity cannot replace it.
 pub fn resolved_runtime_need_state<'a>(
     states: &'a [RuntimeNeedState],
-    need: &NeedId,
+    correlation: &TaskCorrelation,
 ) -> Option<&'a RuntimeNeedState> {
     let mut current = None;
-    for candidate in states.iter().filter(|candidate| candidate.need() == need) {
+    for candidate in states
+        .iter()
+        .filter(|candidate| &candidate.correlation == correlation)
+    {
         current = Some(candidate);
         if candidate.state().is_terminal() {
             break;

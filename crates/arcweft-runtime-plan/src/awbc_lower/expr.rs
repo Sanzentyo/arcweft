@@ -1015,6 +1015,62 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
 
     while let Some(closure) = inventory.pop_pending_closure() {
         match closure {
+            PendingAwbcClosure::TaskRequest {
+                function,
+                inputs,
+                arguments,
+                path,
+            } => {
+                let mut frame = FrameBuilder::new();
+                let params = inputs
+                    .iter()
+                    .map(|local| {
+                        let ty = admitted_plan_type(inventory, plan, local_type(plan, *local));
+                        let name = inventory.local_name(*local);
+                        frame.named_parameter(*local, ty, name);
+                        ty
+                    })
+                    .collect::<Vec<_>>();
+                let block =
+                    inventory.begin_function_blocks(function, AwbcSafePointKind::CallableBoundary);
+                let result_items = arguments
+                    .iter()
+                    .map(|argument| admitted_plan_type(inventory, plan, argument.ty()))
+                    .collect();
+                let result_type = inventory.intern_type(AwbcRuntimeTypeShape::Tuple(result_items));
+                let items = arguments
+                    .iter()
+                    .map(|argument| {
+                        AwbcExprLowerer::new(inventory, &mut frame, &path, plan).lower(argument)
+                    })
+                    .collect();
+                let value = frame.temp(result_type);
+                inventory.push_instruction(AwbcInstruction::MakeTuple { dst: value, items });
+                inventory.close_function_block(
+                    AwbcTerminator::Return { value: Some(value) },
+                    AwbcSafePointKind::Return,
+                );
+                let layout = inventory.intern_frame_layout(format!("{path}:frame"), frame.finish());
+                let signature =
+                    inventory.intern_signature(params, Some(result_type), AwbcEffectSetId(0));
+                inventory.replace_function(
+                    function,
+                    AwbcFunction {
+                        public_id: None,
+                        kind: AwbcFunctionKind::Ordinary,
+                        signature,
+                        type_context: None,
+                        input_ownership: vec![AwbcFunctionInputOwnership::default(); inputs.len()],
+                        frame_layout: layout,
+                        blocks: AwbcTableRange::new(
+                            block.0,
+                            table_range_len(block.0, inventory.program.blocks.len()),
+                        ),
+                        entry_block: block,
+                        flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
+                    },
+                );
+            }
             PendingAwbcClosure::FunctionSite {
                 function,
                 function_type,

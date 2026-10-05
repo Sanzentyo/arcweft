@@ -590,6 +590,27 @@ pub(crate) fn canonical_runtime_value_digest(
     Ok(RuntimeValueDigest::from_bytes(sink.finish()))
 }
 
+/// Ordered argument values use the same tuple transcript as an owned value.
+/// Borrowing the fields preserves affine ownership and shares one byte budget.
+pub(crate) fn canonical_runtime_tuple_digest(
+    values: &[&RuntimeValue],
+    max_encoded_bytes: usize,
+) -> Result<RuntimeValueDigest, RuntimeSchemaError> {
+    canonical_runtime_value_view_digest(
+        crate::value::RuntimeValueView::Tuple(crate::value::RuntimeTupleView::Borrowed(values)),
+        max_encoded_bytes,
+    )
+}
+
+pub(crate) fn canonical_runtime_value_view_digest(
+    value: crate::value::RuntimeValueView<'_>,
+    max_encoded_bytes: usize,
+) -> Result<RuntimeValueDigest, RuntimeSchemaError> {
+    let mut sink = CanonicalBlake3Sink::default();
+    visit_runtime_value_view(value, max_encoded_bytes, &mut sink)?;
+    Ok(RuntimeValueDigest::from_bytes(sink.finish()))
+}
+
 /// Private byte boundary shared by canonical schema and value transcripts.
 /// Each algebra has one exhaustive visitor; bytes and direct BLAKE3 consumers
 /// use the same primitive encoding and bounded write accounting.
@@ -671,6 +692,14 @@ fn visit_runtime_value<S: CanonicalSink + ?Sized>(
     max_encoded_bytes: usize,
     sink: &mut S,
 ) -> Result<(), RuntimeSchemaError> {
+    visit_runtime_value_view(value.view(), max_encoded_bytes, sink)
+}
+
+fn visit_runtime_value_view<S: CanonicalSink + ?Sized>(
+    value: crate::value::RuntimeValueView<'_>,
+    max_encoded_bytes: usize,
+    sink: &mut S,
+) -> Result<(), RuntimeSchemaError> {
     let mut visitor = CanonicalWriter {
         sink,
         max_string_bytes: None,
@@ -681,7 +710,7 @@ fn visit_runtime_value<S: CanonicalSink + ?Sized>(
         })?,
     };
     value_encoding::visit(
-        value.view(),
+        value,
         0,
         &mut visitor,
         None,

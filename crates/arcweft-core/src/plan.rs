@@ -59,8 +59,8 @@ pub use construction::{
     RuntimeLineTaskGroupSeedId, RuntimeLineTaskNodeSeed, RuntimeLineTaskNodeSeedId,
     RuntimeLineTaskTriggerSeed, RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed,
     RuntimeLocalSeedId, RuntimeMutablePlaceSeed, RuntimeNeedProducerStartTargetSeed,
-    RuntimeNominalRecordFieldSeed, RuntimePatternRestSeed, RuntimePatternSeed,
-    RuntimePatternSeedKind, RuntimePlanBuildError, RuntimePlanBuilder,
+    RuntimeNeedProducerTemplateSeed, RuntimeNominalRecordFieldSeed, RuntimePatternRestSeed,
+    RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlanBuildError, RuntimePlanBuilder,
     RuntimePlanNominalSchemaError, RuntimePlanSchemaComponent, RuntimePlanSemanticAdmission,
     RuntimePlanTable, RuntimePureHelperDeclarationSeed, RuntimePureHelperSeed,
     RuntimePureHelperSeedId, RuntimePureProgramBindingSeed, RuntimeRecordFieldSeedId,
@@ -1287,6 +1287,8 @@ pub enum FlowOp {
     },
     Thread {
         name: Option<String>,
+        producer: crate::task::NeedProducerTemplate,
+        captures: Vec<RuntimeLocalDeclarationId>,
         body: Vec<FlowOp>,
     },
     Scope {
@@ -1498,6 +1500,7 @@ impl RuntimeDialogueResultTarget {
 /// Direct host-call request surface for runtime-step hosts.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeHostCallTarget {
+    pub producer: crate::task::HostCallProducerDefinition,
     pub public_id: String,
     pub capability: String,
     pub operation: String,

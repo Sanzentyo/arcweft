@@ -678,7 +678,7 @@ impl BundleRunnerStepSummary {
         result: RuntimeStepResult,
     ) -> (
         Self,
-        Vec<arcweft_core::task::TaskSpec>,
+        Vec<arcweft_core::task::TaskSubmission>,
         Vec<RuntimeHostCallRequest>,
         Vec<AudioCommandEnvelope>,
     ) {
@@ -1222,24 +1222,50 @@ mod tests {
                 standard_opaque_checked_type(&["VoiceError"]),
             ),
         };
-        let task = TaskSpec::new(
-            TaskId(format!("asset.{id}")),
-            TaskKey(format!("asset.{id}")),
-            TaskClass::Cpu,
-            TaskPriority(0),
-            CancelScopeId("bundle-asset-test".to_owned()),
-            TaskPolicy::JoinSameKey,
-            HostTaskRequest::AssetLoad(AssetRequest {
-                id: id.to_owned(),
-                kind: kind.as_str().to_owned(),
-            }),
-        )
-        .with_outcome(TaskOutcomeContract::new(RuntimeCheckedType::Result {
+        use arcweft_core::task::{
+            GenerationId, NeedProducerContractDigest, NeedProducerFamily, NeedProducerInstance,
+            NeedProducerSiteDigest, NeedProducerSpec, RuntimeTypeSemanticDigest,
+            TaskAdmissionJournal, TaskPlanSemanticDigest,
+        };
+        let outcome = TaskOutcomeContract::new(RuntimeCheckedType::Result {
             ok: Box::new(ok),
             error: Box::new(error),
-        }));
-        let bound = BoundTaskSpec::bind(task.clone(), None, RuntimeSchemaLimits::engine_default())
-            .expect("typed asset result contract");
+        });
+        let producer = NeedProducerSpec::new(
+            NeedProducerFamily::HostAdapterTask,
+            NeedProducerContractDigest::from_bytes([1; 32]),
+            TaskPlanSemanticDigest::from_bytes([2; 32]),
+            NeedProducerSiteDigest::from_bytes([3; 32]),
+            RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes()),
+            RuntimeValue::Tuple(vec![
+                RuntimeValue::String(kind.as_str().into()),
+                RuntimeValue::String(id.into()),
+            ])
+            .try_digest(1024)
+            .unwrap(),
+        );
+        let task = TaskSpec {
+            generation: GenerationId::new(1),
+            producer: NeedProducerInstance::try_from(&producer).unwrap(),
+            class: TaskClass::Cpu,
+            priority: TaskPriority(0),
+            cancel_scope: CancelScopeId("bundle-asset-test".into()),
+            policy: TaskPolicy::JoinSameKey,
+            outcome,
+            request: HostTaskRequest::AssetLoad(AssetRequest {
+                id: id.into(),
+                kind: kind.as_str().into(),
+            }),
+            debug_label: id.into(),
+        };
+        let mut journal = TaskAdmissionJournal::default();
+        let handle = journal.ensure_task(task.clone()).unwrap();
+        let bound = BoundTaskSpec::bind(
+            journal.submission(handle).unwrap(),
+            None,
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
         (task, bound)
     }
 
@@ -1259,8 +1285,7 @@ mod tests {
     ) -> RuntimeValue {
         let HostTaskSubmission::Completed(outcome) = HostAdapter::submit(
             adapter,
-            task,
-            bound.outcome(),
+            bound,
             HostTaskSubmissionContext::new(TaskPublicationRevision::FIRST)
                 .with_bundle_asset_context(context),
         )

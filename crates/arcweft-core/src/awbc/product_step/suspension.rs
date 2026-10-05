@@ -7,7 +7,7 @@ use super::{
     RuntimeHostCallRequest, RuntimeNeedState, RuntimePayload, RuntimeStepOutput,
     RuntimeStreamEvent, RuntimeValue, TaskEvent, TaskEventKind, TaskId, TaskSequence,
     VmObservation, content_request, resolved_runtime_need_state, runtime_sequence_values,
-    runtime_value_label, stream_id_for, task_spec,
+    runtime_value_label, stream_id_for,
 };
 use crate::awbc::vm::cancel_fiber;
 use crate::stream::StreamEventKind;
@@ -25,6 +25,7 @@ fn observed_ready_payload(value: &RuntimePayload) -> Option<RuntimePayload> {
 }
 
 enum AwaitNeedPublicationKind {
+    InfrastructureFailure(crate::task::RuntimeTaskFailure),
     NotStarted,
     Pending(arcweft_need::Progress),
     LocalReady,
@@ -36,7 +37,7 @@ enum AwaitNeedPublicationKind {
 enum DeferredSuspensionDispatch {
     BudgetYield,
     AwaitNeed {
-        need: NeedId,
+        correlation: crate::task::TaskCorrelation,
         item_type: crate::awbc::schema::AwbcTypeId,
         binding: Option<crate::awbc::schema::AwbcPatternId>,
         observer: Option<AwbcAwaitObserverResume>,
@@ -54,11 +55,14 @@ impl DeferredSuspensionDispatch {
         match reason {
             FiberSuspensionReason::BudgetYield => Self::BudgetYield,
             FiberSuspensionReason::Await {
-                target: FiberAwaitTarget::Need { id, item_type, .. },
+                target:
+                    FiberAwaitTarget::Need {
+                        need, item_type, ..
+                    },
                 binding,
                 observer,
             } => Self::AwaitNeed {
-                need: id.clone(),
+                correlation: need.correlation(),
                 item_type: *item_type,
                 binding: *binding,
                 observer: *observer,
@@ -134,9 +138,9 @@ impl AwbcProductStepExecutor {
             let local_launch = self
                 .need_producers
                 .launches()
-                .find(|launch| launch.task() == &event.task_id);
+                .find(|launch| launch.task() == &event.correlation.task_id);
             if let Some(launch) = local_launch {
-                if launch.generation() != event.generation {
+                if launch.generation() != event.correlation.generation {
                     self.fail_with_trap(
                         AwbcTrapCode::InternalInvariant,
                         "task event generation differs from the accepted Need producer launch"
@@ -189,7 +193,7 @@ impl AwbcProductStepExecutor {
                 }
             };
             let cursor = crate::task::TaskPublicationCursor::from_event(&event);
-            if let Some(observed) = self.task_publications.get(&event.task_id) {
+            if let Some(observed) = self.task_publications.get(&event.correlation.task_id) {
                 match cursor.compare_same_source(*observed) {
                     Some(Ordering::Greater) => {}
                     Some(Ordering::Equal | Ordering::Less) => {
@@ -219,14 +223,15 @@ impl AwbcProductStepExecutor {
                     }
                 }
             }
-            self.task_publications.insert(event.task_id.clone(), cursor);
+            self.task_publications
+                .insert(event.correlation.task_id.clone(), cursor);
             self.queued_task_events.push_back(event);
         }
     }
 
     pub(super) fn resume_need(
         &mut self,
-        need: &NeedId,
+        correlation: &crate::task::TaskCorrelation,
         item_type: crate::awbc::schema::AwbcTypeId,
         binding: Option<crate::awbc::schema::AwbcPatternId>,
         observer: Option<AwbcAwaitObserverResume>,
@@ -234,12 +239,10 @@ impl AwbcProductStepExecutor {
         states: &mut Vec<RuntimeNeedState>,
         output: &mut RuntimeStepOutput,
     ) -> bool {
-        let local_launch = self
-            .need_producers
-            .launches()
-            .find(|launch| launch.need() == need);
+        let need = &correlation.need;
+        let local_launch = self.need_producers.launch_for_correlation(correlation);
         let (cursor, state) = if let Some(launch) = local_launch {
-            if states.iter().any(|state| state.need() == need) {
+            if states.iter().any(|state| &state.correlation == correlation) {
                 self.fail_with_trap(
                     AwbcTrapCode::InternalInvariant,
                     "external Need state attempts to publish a Product-owned Need".to_owned(),
@@ -270,6 +273,9 @@ impl AwbcProductStepExecutor {
                 crate::task::RuntimeNeedProducerState::Ready(_) => {
                     AwaitNeedPublicationKind::LocalReady
                 }
+                crate::task::RuntimeNeedProducerState::InfrastructureFailure(failure) => {
+                    AwaitNeedPublicationKind::InfrastructureFailure(failure.clone())
+                }
                 crate::task::RuntimeNeedProducerState::ReadyTransferred => {
                     AwaitNeedPublicationKind::ReadyTransferred
                 }
@@ -279,24 +285,29 @@ impl AwbcProductStepExecutor {
             };
             (cursor, state)
         } else {
-            let Some(state) = resolved_runtime_need_state(states, need) else {
+            let Some(state) = resolved_runtime_need_state(states, correlation) else {
+                return false;
+            };
+            let Some(cursor) = state.cursor else {
                 return false;
             };
             let kind = match state.state() {
                 Need::NotStarted => AwaitNeedPublicationKind::NotStarted,
                 Need::Pending(progress) => AwaitNeedPublicationKind::Pending(progress.clone()),
-                Need::Ready(_) => AwaitNeedPublicationKind::ExternalReady,
+                Need::Ready(crate::task::RuntimeNeedOutcome::Value(_)) => {
+                    AwaitNeedPublicationKind::ExternalReady
+                }
+                Need::Ready(crate::task::RuntimeNeedOutcome::InfrastructureFailure(failure)) => {
+                    AwaitNeedPublicationKind::InfrastructureFailure(failure.clone())
+                }
                 Need::Cancelled => AwaitNeedPublicationKind::Cancelled,
             };
-            (
-                crate::task::TaskPublicationCursor::from_need_state(state),
-                kind,
-            )
+            (cursor, kind)
         };
         let waiter = crate::runtime_id::RuntimePersistentFiberId::from_allocated(
             self.fiber.instance.get().get(),
         );
-        let publication_key = (waiter, need.clone());
+        let publication_key = (waiter, *correlation);
         if let Some(observed) = self.need_publications.get(&publication_key) {
             match cursor.compare_same_source(*observed) {
                 Some(Ordering::Greater) => {}
@@ -314,6 +325,15 @@ impl AwbcProductStepExecutor {
         }
         self.need_publications.insert(publication_key, cursor);
         match state {
+            AwaitNeedPublicationKind::InfrastructureFailure(failure) => {
+                self.fail_with_trap(
+                    AwbcTrapCode::HostAbiMismatch,
+                    failure.to_string(),
+                    None,
+                    output,
+                );
+                true
+            }
             AwaitNeedPublicationKind::NotStarted => false,
             AwaitNeedPublicationKind::Pending(progress) => {
                 output.flow_events.push(FlowEvent::AwaitProgress {
@@ -329,15 +349,17 @@ impl AwbcProductStepExecutor {
                 let local = matches!(kind, AwaitNeedPublicationKind::LocalReady);
                 let selected = if local {
                     self.need_producers
-                        .ready_for_need(need)
+                        .ready_for_correlation(correlation)
                         .map(|value| (value, None))
                 } else {
-                    resolved_runtime_need_state(states, need).and_then(|state| {
+                    resolved_runtime_need_state(states, correlation).and_then(|state| {
                         let index = states
                             .iter()
                             .position(|candidate| std::ptr::eq(candidate, state))?;
                         match state.state() {
-                            Need::Ready(value) => Some((value, Some((index, state.sequence())))),
+                            Need::Ready(crate::task::RuntimeNeedOutcome::Value(value)) => {
+                                Some((value, state.cursor.map(|cursor| (index, cursor))))
+                            }
                             _ => None,
                         }
                     })
@@ -361,14 +383,14 @@ impl AwbcProductStepExecutor {
                         AwbcTrapCode::HostAbiMismatch,
                         format!(
                             "Need {} published a Ready payload outside its checked item type",
-                            need.0
+                            need
                         ),
                         None,
                         output,
                     );
                     return true;
                 }
-                self.resume_need_ready_owned(need, binding, resume, states, local, output)
+                self.resume_need_ready_owned(correlation, binding, resume, states, local, output)
             }
             AwaitNeedPublicationKind::ReadyTransferred => {
                 self.fail_with_trap(
@@ -419,20 +441,23 @@ impl AwbcProductStepExecutor {
 
     fn resume_need_ready_owned(
         &mut self,
-        need: &NeedId,
+        correlation: &crate::task::TaskCorrelation,
         binding: Option<crate::awbc::schema::AwbcPatternId>,
         resume: AwbcResumePointId,
         states: &mut Vec<RuntimeNeedState>,
         local: bool,
         output: &mut RuntimeStepOutput,
     ) -> bool {
+        let need = &correlation.need;
         let selected = if local {
             self.need_producers
-                .ready_for_need(need)
+                .ready_for_correlation(correlation)
                 .map(|value| (value, None))
         } else {
-            resolved_runtime_need_state(states, need).and_then(|state| match state.state() {
-                Need::Ready(value) => Some((value, Some(state.sequence()))),
+            resolved_runtime_need_state(states, correlation).and_then(|state| match state.state() {
+                Need::Ready(crate::task::RuntimeNeedOutcome::Value(value)) => {
+                    Some((value, state.cursor.map(|cursor| cursor)))
+                }
                 _ => None,
             })
         };
@@ -446,7 +471,10 @@ impl AwbcProductStepExecutor {
             return true;
         };
         let local_take = if local {
-            match self.need_producers.inspect_ready_take_for_need(need) {
+            match self
+                .need_producers
+                .inspect_ready_take_for_correlation(correlation)
+            {
                 Ok(proof) => Some(proof),
                 Err(error) => {
                     self.fail_with_trap(
@@ -520,9 +548,9 @@ impl AwbcProductStepExecutor {
             Ok(value.clone())
         } else {
             sequence
-                .and_then(|sequence| super::take_runtime_need_state(states, need, sequence))
-                .and_then(|(_, state)| match state.into_parts().3 {
-                    Need::Ready(value) => Some(value),
+                .and_then(|sequence| super::take_runtime_need_state(states, correlation, sequence))
+                .and_then(|(_, state)| match state.into_parts().2 {
+                    Need::Ready(crate::task::RuntimeNeedOutcome::Value(value)) => Some(value),
                     _ => None,
                 })
                 .ok_or_else(|| "selected external Need Ready owner is unavailable".to_owned())
@@ -569,196 +597,231 @@ impl AwbcProductStepExecutor {
             })
     }
 
-    pub(super) fn fill_await_many(&mut self, output: &mut RuntimeStepOutput) {
-        let Some((plan_id, limit, argument_count)) =
-            self.fiber
-                .suspension
-                .as_ref()
-                .and_then(|suspension| match &suspension.reason {
-                    FiberSuspensionReason::AwaitMany(state) => self
-                        .program
-                        .task_plans
-                        .get(state.plan.index())
-                        .and_then(|plan| match &plan.kind {
-                            crate::awbc::schema::AwbcTaskPlanKind::AwaitMany { limit, .. } => {
-                                Some((state.plan, *limit as usize, plan.arguments.len()))
-                            }
-                            crate::awbc::schema::AwbcTaskPlanKind::NeedProducer { .. } => None,
-                        }),
-                    _ => None,
-                })
-        else {
-            return;
-        };
-        let Some((base_task, base_need_id)) = self.task_plan_ids(plan_id) else {
-            self.fail_with_trap(
-                AwbcTrapCode::InternalInvariant,
-                "AwaitMany suspension references a non-AwaitMany plan".to_owned(),
-                None,
-                output,
-            );
-            return;
-        };
-        let needs_invocation = self
-            .fiber
-            .suspension
-            .as_ref()
-            .and_then(|suspension| match &suspension.reason {
-                FiberSuspensionReason::AwaitMany(state) => Some(state.invocation.is_none()),
-                _ => None,
-            })
-            .unwrap_or(false);
-        if needs_invocation {
-            let invocation = match self
-                .fiber
-                .take_await_many_invocation(self.runtime_generation)
-            {
-                Ok(invocation) => invocation,
-                Err(error) => {
-                    self.fail_with_trap(
-                        AwbcTrapCode::InternalInvariant,
-                        error.to_string(),
-                        None,
-                        output,
-                    );
-                    return;
-                }
-            };
-            if let Some(suspension) = self.fiber.suspension.as_mut()
-                && let FiberSuspensionReason::AwaitMany(state) = &mut suspension.reason
-            {
-                state.invocation = Some(invocation);
-            }
-        }
-        let Some(suspension) = self.fiber.suspension.as_mut() else {
-            return;
-        };
-        let FiberSuspensionReason::AwaitMany(state) = &mut suspension.reason else {
-            return;
-        };
-        if state.results.len() != state.items.len() {
-            self.fail_with_trap(
-                AwbcTrapCode::InternalInvariant,
-                "AwaitMany fan-out result slots disagree with the admitted item count".to_owned(),
-                None,
-                output,
-            );
-            return;
-        }
-        let Some(invocation) = state.invocation else {
-            self.fail_with_trap(
-                AwbcTrapCode::InternalInvariant,
-                "AwaitMany fan-out has no accepted occurrence identity".to_owned(),
-                None,
-                output,
-            );
-            return;
-        };
-        let mut quota_exhausted = false;
-        while state.in_flight.len() < limit && (state.next_index as usize) < state.items.len() {
-            if self.remaining_new_task_requests == 0 {
-                quota_exhausted = true;
-                break;
-            }
-            let index = state.next_index as usize;
-            let task = match invocation.task_id(&TaskId(base_task.clone()), index) {
-                Ok(task) => task,
-                Err(error) => {
-                    self.fail_with_trap(
-                        AwbcTrapCode::InternalInvariant,
-                        error.to_string(),
-                        None,
-                        output,
-                    );
-                    return;
-                }
-            };
-            let need = match invocation.need_id(&base_need_id, index) {
-                Ok(need) => need,
-                Err(error) => {
-                    self.fail_with_trap(
-                        AwbcTrapCode::InternalInvariant,
-                        error.to_string(),
-                        None,
-                        output,
-                    );
-                    return;
-                }
-            };
-            let args = match argument_count {
-                0 => Vec::new(),
-                1 => {
-                    if !state.items[index].ownership().permits_copy() {
-                        self.fail_with_trap(
-                            AwbcTrapCode::HostAbiMismatch,
-                            "AwaitMany task item requires a deep Copy carrier".to_owned(),
-                            None,
-                            output,
-                        );
-                        return;
-                    }
-                    vec![state.items[index].clone()]
-                }
-                count => {
-                    output.diagnostics.push(RuntimeDiagnostic::categorized(
-                        RuntimeDiagnosticCategory::Input,
-                        format!(
-                            "await-many task `{base_task}` expects {count} arguments; item expansion supports zero or one"
-                        ),
-                    ));
-                    return;
-                }
-            };
-            let Ok(index_u32) = u32::try_from(index) else {
-                output.diagnostics.push(RuntimeDiagnostic::categorized(
-                    RuntimeDiagnosticCategory::Input,
-                    format!("await-many task index {index} exceeds compact index range"),
-                ));
-                return;
-            };
-            match task_spec(&self.program, plan_id, &task, args) {
-                Ok((_, spec)) => {
-                    output.flow_events.push(FlowEvent::AwaitStarted {
-                        need: need.clone(),
-                        task: Some(task.clone()),
-                    });
-                    output.requests.tasks.push(spec);
-                    state.in_flight.push(FiberAwaitManyInFlight {
-                        index: index_u32,
-                        task_id: task.0,
-                        need_id: need.0,
-                    });
-                    let Some(next_index) = state.next_index.checked_add(1) else {
-                        self.fail_with_trap(
-                            AwbcTrapCode::InternalInvariant,
-                            "AwaitMany item cursor overflowed".to_owned(),
-                            None,
-                            output,
-                        );
-                        return;
-                    };
-                    state.next_index = next_index;
-                    self.remaining_new_task_requests -= 1;
-                }
-                Err(error) => {
-                    output.diagnostics.push(RuntimeDiagnostic::categorized(
-                        error.category(),
-                        error.to_string(),
-                    ));
-                    return;
-                }
-            }
-        }
-        if quota_exhausted && state.in_flight.is_empty() {
-            let message = "AwaitMany fan-out exceeds this step's task request quota".to_owned();
-            output.diagnostics.push(RuntimeDiagnostic::categorized(
-                RuntimeDiagnosticCategory::Budget,
-                message.clone(),
-            ));
-            self.fail_with_trap(AwbcTrapCode::InternalInvariant, message, None, output);
+    fn await_many_child_plan(
+        &self,
+        plan: crate::awbc::schema::AwbcTaskPlanId,
+    ) -> crate::awbc::schema::AwbcTaskPlanId {
+        match self.program.task_plans[plan.index()].kind {
+            crate::awbc::schema::AwbcTaskPlanKind::AwaitMany { child, .. } => child,
+            _ => unreachable!("verified AwaitMany state owns an aggregate plan"),
         }
     }
 
+    pub(super) fn fill_await_many(
+        &mut self,
+        output: &mut RuntimeStepOutput,
+        backend: &mut impl crate::pure::RuntimeCallBackend,
+    ) {
+        let Some(suspension) = self.fiber.suspension.as_mut() else {
+            return;
+        };
+        let reason = std::mem::replace(&mut suspension.reason, FiberSuspensionReason::BudgetYield);
+        let FiberSuspensionReason::AwaitMany(mut state) = reason else {
+            suspension.reason = reason;
+            return;
+        };
+        let result = self.fill_await_many_state(&mut state, output, backend);
+        if let Some(suspension) = self.fiber.suspension.as_mut() {
+            suspension.reason = FiberSuspensionReason::AwaitMany(state);
+        }
+        if let Err(error) = result {
+            self.fail_with_error(error, output);
+        }
+    }
+
+    fn fill_await_many_state(
+        &mut self,
+        state: &mut crate::awbc::fiber::FiberAwaitManyState,
+        output: &mut RuntimeStepOutput,
+        backend: &mut impl crate::pure::RuntimeCallBackend,
+    ) -> Result<(), ProductStepError> {
+        use crate::awbc::schema::AwbcTaskPlanKind;
+        use crate::value::{RuntimeTupleView, RuntimeValueView};
+        let record = self
+            .program
+            .task_plans
+            .get(state.plan.index())
+            .ok_or_else(|| ProductStepError::Internal("AwaitMany plan is absent".into()))?;
+        let AwbcTaskPlanKind::AwaitMany {
+            child,
+            limit,
+            request_function,
+            ..
+        } = record.kind
+        else {
+            return Err(ProductStepError::Internal(
+                "AwaitMany suspension has the wrong plan kind".into(),
+            ));
+        };
+        let child = child;
+        let limit = limit as usize;
+        if limit == 0
+            || state.results.len() != state.items.len()
+            || u32::try_from(state.items.len()).is_err()
+        {
+            return Err(ProductStepError::Input(
+                "AwaitMany source count, limit or result partition is invalid".into(),
+            ));
+        }
+        if state.base.is_none() {
+            let args = self.evaluate_task_request(
+                state.plan,
+                request_function,
+                &state.captured,
+                None,
+                backend,
+            )?;
+            let request = super::mapping::task_request(&self.program, state.plan, args)?;
+            let fields = [
+                RuntimeValueView::Tuple(RuntimeTupleView::Values(&state.captured)),
+                RuntimeValueView::Tuple(RuntimeTupleView::Values(&state.items)),
+            ];
+            let spec = self.program.task_plans[state.plan.index()]
+                .instantiate_template(
+                    &self.program,
+                    self.runtime_generation,
+                    RuntimeValueView::Tuple(RuntimeTupleView::Views(&fields)),
+                    request,
+                    16 * 1024 * 1024,
+                )
+                .map_err(ProductStepError::Input)?;
+            let accepted = self
+                .need_producers
+                .ensure_task(spec)
+                .map_err(|error| ProductStepError::Input(error.to_string()))?;
+            let (spec, handle) = accepted.into_parts();
+            state.base = Some(
+                crate::task::RuntimeNeedHandle::try_from_accepted_launch(spec, handle)
+                    .map_err(|error| ProductStepError::Input(error.to_string()))?,
+            );
+        }
+        let child_record = self.program.task_plans.get(child.index()).ok_or_else(|| {
+            ProductStepError::Internal("AwaitMany child template is absent".into())
+        })?;
+        let AwbcTaskPlanKind::Template {
+            request_function, ..
+        } = child_record.kind
+        else {
+            return Err(ProductStepError::Internal(
+                "AwaitMany child has the wrong template kind".into(),
+            ));
+        };
+        while state.in_flight.len() < limit && (state.next_index as usize) < state.items.len() {
+            if self.remaining_new_task_requests == 0 {
+                break;
+            }
+            let index = state.next_index;
+            let next_index = index
+                .checked_add(1)
+                .ok_or_else(|| ProductStepError::Input("AwaitMany index exceeds u32".into()))?;
+            let item = &state.items[index as usize];
+            let args = self.evaluate_task_request(
+                child,
+                request_function,
+                &state.captured,
+                Some(item),
+                backend,
+            )?;
+            let request = super::mapping::task_request(&self.program, child, args)?;
+            let index_value = RuntimeValue::u32(index);
+            let fields = [
+                RuntimeValueView::Tuple(RuntimeTupleView::Values(&state.captured)),
+                index_value.view(),
+                item.view(),
+            ];
+            let spec = self.program.task_plans[child.index()]
+                .instantiate_template(
+                    &self.program,
+                    self.runtime_generation,
+                    RuntimeValueView::Tuple(RuntimeTupleView::Views(&fields)),
+                    request,
+                    16 * 1024 * 1024,
+                )
+                .map_err(ProductStepError::Input)?;
+            let accepted = self
+                .need_producers
+                .ensure_task(spec)
+                .map_err(|error| ProductStepError::Input(error.to_string()))?;
+            let handle = crate::task::RuntimeNeedHandle::try_from_accepted_launch(
+                accepted.spec().clone(),
+                accepted.handle(),
+            )
+            .map_err(|error| ProductStepError::Input(error.to_string()))?;
+            output.flow_events.push(FlowEvent::AwaitStarted {
+                need: handle.need_id(),
+                task: Some(handle.correlation().task_id),
+            });
+            output.requests.tasks.push(accepted);
+            state
+                .in_flight
+                .push(FiberAwaitManyInFlight { index, handle });
+            state.next_index = next_index;
+            self.remaining_new_task_requests -= 1;
+        }
+        if state.in_flight.is_empty() && (state.next_index as usize) < state.items.len() {
+            return Err(ProductStepError::Input(
+                "AwaitMany fan-out exceeds this step's task request quota".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn evaluate_task_request(
+        &mut self,
+        plan: crate::awbc::schema::AwbcTaskPlanId,
+        function: AwbcFunctionId,
+        captured: &[RuntimeValue],
+        item: Option<&RuntimeValue>,
+        backend: &mut impl crate::pure::RuntimeCallBackend,
+    ) -> Result<Vec<RuntimeValue>, ProductStepError> {
+        if captured
+            .iter()
+            .chain(item)
+            .any(|value| !value.ownership().permits_copy())
+        {
+            return Err(ProductStepError::Type(
+                "task request kernel inputs require deep Copy ownership".into(),
+            ));
+        }
+        let mut inputs = captured.to_vec();
+        if let Some(item) = item {
+            inputs.push(item.clone());
+        }
+        let value = super::run_function(
+            &self.program,
+            function,
+            inputs,
+            backend,
+            &mut self.compact_pure_stats,
+        )
+        .map_err(ProductStepError::Vm)?;
+        let RuntimeValue::Tuple(args) = value else {
+            return Err(ProductStepError::Type(
+                "task request kernel must return its argument tuple".into(),
+            ));
+        };
+        let record = &self.program.task_plans[plan.index()];
+        let signature = self
+            .program
+            .signatures
+            .get(record.signature.index())
+            .ok_or_else(|| ProductStepError::Internal("task signature is absent".into()))?;
+        if signature.params.len() != args.len() {
+            return Err(ProductStepError::Type(
+                "task request kernel arity mismatch".into(),
+            ));
+        }
+        for (ty, value) in signature.params.iter().zip(&args) {
+            self.program
+                .validate_live_value(
+                    *ty,
+                    value,
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                )
+                .map_err(|error| ProductStepError::Type(error.to_string()))?;
+        }
+        Ok(args)
+    }
     pub(super) fn resume_await_many(
         &mut self,
         mut state: crate::awbc::fiber::FiberAwaitManyState,
@@ -768,6 +831,7 @@ impl AwbcProductStepExecutor {
             crate::value::ownership::RuntimeOwnedSlotId,
         >,
         output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl crate::pure::RuntimeCallBackend,
     ) -> bool {
         if state.results.len() != state.items.len() {
             if let Some(suspension) = self.fiber.suspension.as_mut() {
@@ -784,22 +848,22 @@ impl AwbcProductStepExecutor {
         let in_flight_tasks = state
             .in_flight
             .iter()
-            .map(|in_flight| in_flight.task_id.clone())
+            .map(|in_flight| in_flight.handle.correlation().task_id)
             .collect::<std::collections::BTreeSet<_>>();
         let events = self.take_await_many_task_events(&in_flight_tasks);
         let mut progressed = false;
         let mut accepted_ready = false;
         for event in events {
-            let Some(position) = state
-                .in_flight
-                .iter()
-                .position(|in_flight| in_flight.task_id == event.task_id.0)
-            else {
+            let Some(position) = state.in_flight.iter().position(|in_flight| {
+                in_flight.handle.correlation().task_id == event.correlation.task_id
+            }) else {
                 continue;
             };
             match event.kind {
                 TaskEventKind::Ready(value) => {
-                    if !self.task_payload_accepts(state.plan, value.value()) {
+                    if !self
+                        .task_payload_accepts(self.await_many_child_plan(state.plan), value.value())
+                    {
                         if !self.discard_extracted_await_many(
                             state,
                             &before_handles,
@@ -812,7 +876,7 @@ impl AwbcProductStepExecutor {
                             AwbcTrapCode::HostAbiMismatch,
                             format!(
                                 "await task {} published a payload outside its checked outcome contract",
-                                event.task_id.0
+                                event.correlation.task_id
                             ),
                             None,
                             output,
@@ -823,7 +887,7 @@ impl AwbcProductStepExecutor {
                     let observation = observed_ready_payload(&value);
                     state.results[in_flight.index as usize] = Some(value.into_value());
                     output.flow_events.push(FlowEvent::AwaitReady {
-                        need: NeedId(in_flight.need_id),
+                        need: in_flight.handle.need_id(),
                         value: observation,
                     });
                     progressed = true;
@@ -831,15 +895,15 @@ impl AwbcProductStepExecutor {
                 }
                 TaskEventKind::Progress(progress) => {
                     output.flow_events.push(FlowEvent::AwaitProgress {
-                        need: NeedId(state.in_flight[position].need_id.clone()),
+                        need: state.in_flight[position].handle.need_id(),
                         progress,
                     });
                     progressed = true;
                 }
-                TaskEventKind::Failed(error) => {
+                TaskEventKind::InfrastructureFailure(error) => {
                     let message = format!(
                         "await task {} at index {} failed: {}",
-                        event.task_id.0, state.in_flight[position].index, error
+                        event.correlation.task_id, state.in_flight[position].index, error
                     );
                     if !self.discard_extracted_await_many(
                         state,
@@ -887,11 +951,13 @@ impl AwbcProductStepExecutor {
                 .collect::<Vec<_>>();
             let value = runtime_sequence_values(values);
             let prepared = (|| -> Result<_, ProductStepError> {
-                let (_, need) = self.task_plan_ids(state.plan).ok_or_else(|| {
-                    ProductStepError::Internal(
-                        "AwaitMany completion references a non-AwaitMany plan".to_owned(),
-                    )
-                })?;
+                let need = state
+                    .base
+                    .as_ref()
+                    .ok_or_else(|| {
+                        ProductStepError::Internal("AwaitMany has no accepted base".into())
+                    })?
+                    .need_id();
                 let resume = self
                     .fiber
                     .validate_resume_at(&self.program, resume)
@@ -1025,7 +1091,7 @@ impl AwbcProductStepExecutor {
         if let Some(suspension) = self.fiber.suspension.as_mut() {
             suspension.reason = FiberSuspensionReason::AwaitMany(state);
         }
-        self.fill_await_many(output);
+        self.fill_await_many(output, pure_backend);
         progressed || !output.requests.tasks.is_empty()
     }
 
@@ -1210,31 +1276,35 @@ impl AwbcProductStepExecutor {
                 positional.push(RuntimePayload::from(value.clone()));
             }
         }
-        output.requests.host_calls.push(RuntimeHostCallRequest {
-            id: id.clone(),
-            public_id,
-            capability: self
-                .program
-                .strings
-                .get(record.capability.index())
-                .cloned()
-                .unwrap_or_else(|| "host".to_owned()),
-            operation: self
-                .program
-                .strings
-                .get(record.operation.index())
-                .cloned()
-                .unwrap_or_else(|| "call".to_owned()),
-            contract: record.contract,
+        let request = crate::task::HostTaskRequest::Custom {
+            capability: crate::task::HostCapabilityId(
+                self.program.strings[record.capability.index()].clone(),
+            ),
+            operation: self.program.strings[record.operation.index()].clone(),
+            manifest_contract: record.contract,
             args: positional,
             named_args,
-            result: result.semantic_identity(),
-            mode: match record.mode {
+        };
+        let request = match RuntimeHostCallRequest::admit(
+            id.clone(),
+            record.producer,
+            self.runtime_generation,
+            request,
+            result.semantic_identity(),
+            match record.mode {
                 AwbcHostCallMode::Immediate => RuntimeHostCallMode::Immediate,
                 AwbcHostCallMode::Suspend => RuntimeHostCallMode::Suspend,
             },
-            deterministic: record.deterministic,
-        });
+            record.deterministic,
+            &mut self.need_producers,
+        ) {
+            Ok(request) => request,
+            Err(error) => {
+                self.record_error(ProductStepError::Host(error.to_string()), output);
+                return;
+            }
+        };
+        output.requests.host_calls.push(request);
         self.pending_host_call = Some(PendingHostCall { call, id });
     }
 
@@ -1382,19 +1452,22 @@ impl AwbcProductStepExecutor {
         &mut self,
         child: &mut super::ProductChildFiber,
         output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl crate::pure::RuntimeCallBackend,
     ) -> Result<(), ProductStepError> {
         let Some(suspension) = child.fiber.suspension.as_ref() else {
             return Ok(());
         };
         let dispatch = DeferredSuspensionDispatch::from_reason(&suspension.reason);
-        if let DeferredSuspensionDispatch::AwaitNeed { need: id, .. } = &dispatch {
+        if let DeferredSuspensionDispatch::AwaitNeed {
+            correlation: id, ..
+        } = &dispatch
+        {
             let task = self
                 .need_producers
-                .launches()
-                .find(|launch| launch.need() == id)
+                .launch_for_correlation(id)
                 .map(|launch| launch.task().clone());
             output.flow_events.push(FlowEvent::AwaitStarted {
-                need: id.clone(),
+                need: id.need,
                 task,
             });
         }
@@ -1403,7 +1476,7 @@ impl AwbcProductStepExecutor {
             | DeferredSuspensionDispatch::BudgetYield => {}
             DeferredSuspensionDispatch::AwaitMany => {
                 let diagnostics = output.diagnostics.len();
-                self.fill_await_many_for_fiber(&mut child.fiber, output);
+                self.fill_await_many_for_fiber(&mut child.fiber, output, pure_backend);
                 if output.diagnostics.len() > diagnostics {
                     return Err(ProductStepError::Internal(
                         output.diagnostics.last().map_or_else(
@@ -1460,6 +1533,7 @@ impl AwbcProductStepExecutor {
         host_results: &mut Vec<crate::step::RuntimeHostCallResult>,
         output: &mut RuntimeStepOutput,
         journal: &mut super::DeferredChildResumeJournal,
+        pure_backend: &mut impl crate::pure::RuntimeCallBackend,
     ) -> Result<bool, ProductStepError> {
         let Some(suspension) = child.fiber.suspension.as_ref() else {
             return Ok(false);
@@ -1483,13 +1557,13 @@ impl AwbcProductStepExecutor {
         };
         match dispatch {
             DeferredSuspensionDispatch::AwaitNeed {
-                need,
+                correlation,
                 item_type,
                 binding,
                 observer,
             } => Ok(self.resume_deferred_await_need(
                 &mut child.fiber,
-                &need,
+                &correlation,
                 item_type,
                 binding,
                 observer,
@@ -1516,6 +1590,7 @@ impl AwbcProductStepExecutor {
                     resume,
                     output,
                     journal,
+                    pure_backend,
                 ))
             }
             DeferredSuspensionDispatch::HostCall { call, destination } => Ok(self
@@ -1539,7 +1614,7 @@ impl AwbcProductStepExecutor {
     fn resume_deferred_await_need(
         &mut self,
         fiber: &mut FiberState,
-        need: &NeedId,
+        correlation: &crate::task::TaskCorrelation,
         item_type: crate::awbc::schema::AwbcTypeId,
         binding: Option<crate::awbc::schema::AwbcPatternId>,
         observer: Option<AwbcAwaitObserverResume>,
@@ -1548,12 +1623,10 @@ impl AwbcProductStepExecutor {
         output: &mut RuntimeStepOutput,
         journal: &mut super::DeferredChildResumeJournal,
     ) -> bool {
-        let local_launch = self
-            .need_producers
-            .launches()
-            .find(|launch| launch.need() == need);
+        let need = &correlation.need;
+        let local_launch = self.need_producers.launch_for_correlation(correlation);
         let (cursor, state) = if let Some(launch) = local_launch {
-            if states.iter().any(|state| state.need() == need) {
+            if states.iter().any(|state| &state.correlation == correlation) {
                 mark_child_trapped(
                     fiber,
                     AwbcTrapCode::InternalInvariant,
@@ -1582,6 +1655,9 @@ impl AwbcProductStepExecutor {
                 crate::task::RuntimeNeedProducerState::Ready(_) => {
                     AwaitNeedPublicationKind::LocalReady
                 }
+                crate::task::RuntimeNeedProducerState::InfrastructureFailure(failure) => {
+                    AwaitNeedPublicationKind::InfrastructureFailure(failure.clone())
+                }
                 crate::task::RuntimeNeedProducerState::ReadyTransferred => {
                     AwaitNeedPublicationKind::ReadyTransferred
                 }
@@ -1591,23 +1667,28 @@ impl AwbcProductStepExecutor {
             };
             (cursor, state)
         } else {
-            let Some(state) = resolved_runtime_need_state(states, need) else {
+            let Some(state) = resolved_runtime_need_state(states, correlation) else {
+                return false;
+            };
+            let Some(cursor) = state.cursor else {
                 return false;
             };
             let kind = match state.state() {
                 Need::NotStarted => AwaitNeedPublicationKind::NotStarted,
                 Need::Pending(progress) => AwaitNeedPublicationKind::Pending(progress.clone()),
-                Need::Ready(_) => AwaitNeedPublicationKind::ExternalReady,
+                Need::Ready(crate::task::RuntimeNeedOutcome::Value(_)) => {
+                    AwaitNeedPublicationKind::ExternalReady
+                }
+                Need::Ready(crate::task::RuntimeNeedOutcome::InfrastructureFailure(failure)) => {
+                    AwaitNeedPublicationKind::InfrastructureFailure(failure.clone())
+                }
                 Need::Cancelled => AwaitNeedPublicationKind::Cancelled,
             };
-            (
-                crate::task::TaskPublicationCursor::from_need_state(state),
-                kind,
-            )
+            (cursor, kind)
         };
         let waiter =
             crate::runtime_id::RuntimePersistentFiberId::from_allocated(fiber.instance.get().get());
-        let publication_key = (waiter, need.clone());
+        let publication_key = (waiter, *correlation);
         if let Some(observed) = self.need_publications.get(&publication_key) {
             match cursor.compare_same_source(*observed) {
                 Some(Ordering::Greater) => {}
@@ -1624,6 +1705,11 @@ impl AwbcProductStepExecutor {
         }
         self.need_publications.insert(publication_key, cursor);
         match state {
+            AwaitNeedPublicationKind::InfrastructureFailure(failure) => {
+                journal.record_default_drop_policy();
+                mark_child_trapped(fiber, AwbcTrapCode::HostAbiMismatch, failure.to_string());
+                true
+            }
             AwaitNeedPublicationKind::NotStarted => false,
             AwaitNeedPublicationKind::Pending(progress) => {
                 output.flow_events.push(FlowEvent::AwaitProgress {
@@ -1645,15 +1731,17 @@ impl AwbcProductStepExecutor {
                 let local = matches!(kind, AwaitNeedPublicationKind::LocalReady);
                 let selected = if local {
                     self.need_producers
-                        .ready_for_need(need)
+                        .ready_for_correlation(correlation)
                         .map(|value| (value, None))
                 } else {
-                    resolved_runtime_need_state(states, need).and_then(|state| {
+                    resolved_runtime_need_state(states, correlation).and_then(|state| {
                         let index = states
                             .iter()
                             .position(|candidate| std::ptr::eq(candidate, state))?;
                         match state.state() {
-                            Need::Ready(value) => Some((value, Some((index, state.sequence())))),
+                            Need::Ready(crate::task::RuntimeNeedOutcome::Value(value)) => {
+                                Some((value, state.cursor.map(|cursor| (index, cursor))))
+                            }
                             _ => None,
                         }
                     })
@@ -1677,7 +1765,7 @@ impl AwbcProductStepExecutor {
                         AwbcTrapCode::HostAbiMismatch,
                         format!(
                             "Need {} published a Ready payload outside its checked item type",
-                            need.0
+                            need
                         ),
                     );
                     return true;
@@ -1731,10 +1819,13 @@ impl AwbcProductStepExecutor {
                     None
                 };
                 let observation = observed_ready_payload(value);
-                let source = if let Some((index, sequence)) = external {
-                    super::DeferredNeedReadySource::External { index, sequence }
+                let source = if let Some((index, cursor)) = external {
+                    super::DeferredNeedReadySource::External { index, cursor }
                 } else {
-                    let proof = match self.need_producers.inspect_ready_take_for_need(need) {
+                    let proof = match self
+                        .need_producers
+                        .inspect_ready_take_for_correlation(correlation)
+                    {
                         Ok(proof) => proof,
                         Err(error) => {
                             mark_child_trapped(
@@ -1748,7 +1839,7 @@ impl AwbcProductStepExecutor {
                     super::DeferredNeedReadySource::Local(proof)
                 };
                 if let Err(error) = journal.stage_need_ready(super::DeferredNeedReadyStage {
-                    need: need.clone(),
+                    correlation: *correlation,
                     source,
                     resume: resume_proof,
                     binding: binding_proof,
@@ -1939,172 +2030,24 @@ impl AwbcProductStepExecutor {
         &mut self,
         fiber: &mut FiberState,
         output: &mut RuntimeStepOutput,
+        backend: &mut impl crate::pure::RuntimeCallBackend,
     ) {
-        let Some((plan_id, limit, argument_count)) =
-            fiber
-                .suspension
-                .as_ref()
-                .and_then(|suspension| match &suspension.reason {
-                    FiberSuspensionReason::AwaitMany(state) => self
-                        .program
-                        .task_plans
-                        .get(state.plan.index())
-                        .and_then(|plan| match &plan.kind {
-                            crate::awbc::schema::AwbcTaskPlanKind::AwaitMany { limit, .. } => {
-                                Some((state.plan, *limit as usize, plan.arguments.len()))
-                            }
-                            crate::awbc::schema::AwbcTaskPlanKind::NeedProducer { .. } => None,
-                        }),
-                    _ => None,
-                })
-        else {
-            return;
-        };
-        let Some((base_task, base_need_id)) = self.task_plan_ids(plan_id) else {
-            output.diagnostics.push(RuntimeDiagnostic::categorized(
-                RuntimeDiagnosticCategory::Internal,
-                "AwaitMany child suspension references a non-AwaitMany plan",
-            ));
-            return;
-        };
-        let needs_invocation = fiber
-            .suspension
-            .as_ref()
-            .and_then(|suspension| match &suspension.reason {
-                FiberSuspensionReason::AwaitMany(state) => Some(state.invocation.is_none()),
-                _ => None,
-            })
-            .unwrap_or(false);
-        if needs_invocation {
-            let invocation = match fiber.take_await_many_invocation(self.runtime_generation) {
-                Ok(invocation) => invocation,
-                Err(error) => {
-                    mark_child_trapped(fiber, AwbcTrapCode::InternalInvariant, error.to_string());
-                    return;
-                }
-            };
-            if let Some(suspension) = fiber.suspension.as_mut()
-                && let FiberSuspensionReason::AwaitMany(state) = &mut suspension.reason
-            {
-                state.invocation = Some(invocation);
-            }
-        }
         let Some(suspension) = fiber.suspension.as_mut() else {
             return;
         };
-        let FiberSuspensionReason::AwaitMany(state) = &mut suspension.reason else {
+        let reason = std::mem::replace(&mut suspension.reason, FiberSuspensionReason::BudgetYield);
+        let FiberSuspensionReason::AwaitMany(mut state) = reason else {
+            suspension.reason = reason;
             return;
         };
-        if state.results.len() != state.items.len() {
-            mark_child_trapped(
-                fiber,
-                AwbcTrapCode::InternalInvariant,
-                "AwaitMany child fan-out result slots disagree with the admitted item count"
-                    .to_owned(),
-            );
-            return;
+        let result = self.fill_await_many_state(&mut state, output, backend);
+        if let Some(suspension) = fiber.suspension.as_mut() {
+            suspension.reason = FiberSuspensionReason::AwaitMany(state);
         }
-        let Some(invocation) = state.invocation else {
-            mark_child_trapped(
-                fiber,
-                AwbcTrapCode::InternalInvariant,
-                "AwaitMany fan-out has no accepted occurrence identity".to_owned(),
-            );
-            return;
-        };
-        let mut quota_exhausted = false;
-        while state.in_flight.len() < limit && (state.next_index as usize) < state.items.len() {
-            if self.remaining_new_task_requests == 0 {
-                quota_exhausted = true;
-                break;
-            }
-            let index = state.next_index as usize;
-            let task = match invocation.task_id(&TaskId(base_task.clone()), index) {
-                Ok(task) => task,
-                Err(error) => {
-                    mark_child_trapped(fiber, AwbcTrapCode::InternalInvariant, error.to_string());
-                    return;
-                }
-            };
-            let need = match invocation.need_id(&base_need_id, index) {
-                Ok(need) => need,
-                Err(error) => {
-                    mark_child_trapped(fiber, AwbcTrapCode::InternalInvariant, error.to_string());
-                    return;
-                }
-            };
-            let args = match argument_count {
-                0 => Vec::new(),
-                1 => {
-                    if !state.items[index].ownership().permits_copy() {
-                        mark_child_trapped(
-                            fiber,
-                            AwbcTrapCode::HostAbiMismatch,
-                            "AwaitMany task item requires a deep Copy carrier".to_owned(),
-                        );
-                        return;
-                    }
-                    vec![state.items[index].clone()]
-                }
-                count => {
-                    output.diagnostics.push(RuntimeDiagnostic::categorized(
-                        RuntimeDiagnosticCategory::Input,
-                        format!(
-                            "await-many task `{base_task}` expects {count} arguments; item expansion supports zero or one"
-                        ),
-                    ));
-                    return;
-                }
-            };
-            let Ok(index_u32) = u32::try_from(index) else {
-                output.diagnostics.push(RuntimeDiagnostic::categorized(
-                    RuntimeDiagnosticCategory::Input,
-                    format!("await-many task index {index} exceeds compact index range"),
-                ));
-                return;
-            };
-            match task_spec(&self.program, plan_id, &task, args) {
-                Ok((_, spec)) => {
-                    output.flow_events.push(FlowEvent::AwaitStarted {
-                        need: need.clone(),
-                        task: Some(task.clone()),
-                    });
-                    output.requests.tasks.push(spec);
-                    state.in_flight.push(FiberAwaitManyInFlight {
-                        index: index_u32,
-                        task_id: task.0,
-                        need_id: need.0,
-                    });
-                    let Some(next_index) = state.next_index.checked_add(1) else {
-                        mark_child_trapped(
-                            fiber,
-                            AwbcTrapCode::InternalInvariant,
-                            "AwaitMany item cursor overflowed".to_owned(),
-                        );
-                        return;
-                    };
-                    state.next_index = next_index;
-                    self.remaining_new_task_requests -= 1;
-                }
-                Err(error) => {
-                    output.diagnostics.push(RuntimeDiagnostic::categorized(
-                        error.category(),
-                        error.to_string(),
-                    ));
-                    return;
-                }
-            }
-        }
-        if quota_exhausted && state.in_flight.is_empty() {
-            let message = "AwaitMany fan-out exceeds this step's task request quota".to_owned();
-            output.diagnostics.push(RuntimeDiagnostic::categorized(
-                RuntimeDiagnosticCategory::Budget,
-                message.clone(),
-            ));
-            mark_child_trapped(fiber, AwbcTrapCode::InternalInvariant, message);
+        if let Err(error) = result {
+            mark_child_trapped(fiber, error.trap_code(), error.to_string());
         }
     }
-
     fn resume_deferred_await_many(
         &mut self,
         fiber: &mut FiberState,
@@ -2112,6 +2055,7 @@ impl AwbcProductStepExecutor {
         resume: AwbcResumePointId,
         output: &mut RuntimeStepOutput,
         journal: &mut super::DeferredChildResumeJournal,
+        pure_backend: &mut impl crate::pure::RuntimeCallBackend,
     ) -> bool {
         if state.results.len() != state.items.len() {
             journal.record_default_drop_policy();
@@ -2125,7 +2069,7 @@ impl AwbcProductStepExecutor {
         let in_flight_tasks = state
             .in_flight
             .iter()
-            .map(|in_flight| in_flight.task_id.clone())
+            .map(|in_flight| in_flight.handle.correlation().task_id)
             .collect::<std::collections::BTreeSet<_>>();
         let events = self.take_await_many_task_events_for_deferred(&in_flight_tasks, journal);
         let mut progressed = false;
@@ -2133,17 +2077,17 @@ impl AwbcProductStepExecutor {
             let event = journal
                 .task_event(event_index)
                 .expect("recorded deferred task event remains present");
-            let Some(position) = state
-                .in_flight
-                .iter()
-                .position(|in_flight| in_flight.task_id == event.task_id.0)
-            else {
+            let Some(position) = state.in_flight.iter().position(|in_flight| {
+                in_flight.handle.correlation().task_id == event.correlation.task_id
+            }) else {
                 continue;
             };
             match &event.kind {
                 TaskEventKind::Ready(value) => {
-                    if !self.task_payload_accepts(state.plan, value.value()) {
-                        let task_id = event.task_id.0.clone();
+                    if !self
+                        .task_payload_accepts(self.await_many_child_plan(state.plan), value.value())
+                    {
+                        let task_id = event.correlation.task_id;
                         journal.record_default_drop_policy();
                         mark_child_trapped(
                             fiber,
@@ -2175,7 +2119,7 @@ impl AwbcProductStepExecutor {
                     };
                     state.results[in_flight.index as usize] = Some(value);
                     output.flow_events.push(FlowEvent::AwaitReady {
-                        need: NeedId(in_flight.need_id),
+                        need: in_flight.handle.need_id(),
                         value: observation,
                     });
                     if let Some(suspension) = fiber.suspension.as_mut() {
@@ -2185,15 +2129,15 @@ impl AwbcProductStepExecutor {
                 }
                 TaskEventKind::Progress(progress) => {
                     output.flow_events.push(FlowEvent::AwaitProgress {
-                        need: NeedId(state.in_flight[position].need_id.clone()),
+                        need: state.in_flight[position].handle.need_id(),
                         progress: progress.clone(),
                     });
                     progressed = true;
                 }
-                TaskEventKind::Failed(error) => {
+                TaskEventKind::InfrastructureFailure(error) => {
                     let message = format!(
                         "await task {} at index {} failed: {}",
-                        event.task_id.0, state.in_flight[position].index, error
+                        event.correlation.task_id, state.in_flight[position].index, error
                     );
                     journal.record_default_drop_policy();
                     mark_child_trapped(fiber, AwbcTrapCode::HostAbiMismatch, message);
@@ -2220,15 +2164,16 @@ impl AwbcProductStepExecutor {
                 })
                 .collect::<Vec<_>>();
             let value = runtime_sequence_values(values);
-            let Some((_, need)) = self.task_plan_ids(state.plan) else {
+            let Some(base) = &state.base else {
                 journal.record_default_drop_policy();
                 mark_child_trapped(
                     fiber,
                     AwbcTrapCode::InternalInvariant,
-                    "AwaitMany completion references a non-AwaitMany plan".to_owned(),
+                    "AwaitMany has no accepted base".into(),
                 );
                 return true;
             };
+            let need = base.need_id();
             let prepared_resume = match fiber.validate_resume_at(&self.program, resume) {
                 Ok(prepared) => prepared,
                 Err(error) => {
@@ -2292,7 +2237,7 @@ impl AwbcProductStepExecutor {
         }
         let request_count = output.requests.tasks.len();
         let diagnostic_count = output.diagnostics.len();
-        self.fill_await_many_for_fiber(fiber, output);
+        self.fill_await_many_for_fiber(fiber, output, pure_backend);
         if fiber.status == crate::awbc::fiber::FiberStatus::Trapped {
             journal.record_default_drop_policy();
         }
@@ -2313,12 +2258,12 @@ impl AwbcProductStepExecutor {
 
     fn take_await_many_task_events(
         &mut self,
-        in_flight_tasks: &std::collections::BTreeSet<String>,
+        in_flight_tasks: &std::collections::BTreeSet<TaskId>,
     ) -> Vec<TaskEvent> {
         let mut events = Vec::new();
         let mut index = 0;
         while index < self.queued_task_events.len() {
-            if in_flight_tasks.contains(&self.queued_task_events[index].task_id.0) {
+            if in_flight_tasks.contains(&self.queued_task_events[index].correlation.task_id) {
                 if let Some(event) = self.queued_task_events.remove(index) {
                     events.push(event);
                 }
@@ -2332,13 +2277,13 @@ impl AwbcProductStepExecutor {
 
     fn take_await_many_task_events_for_deferred(
         &mut self,
-        in_flight_tasks: &std::collections::BTreeSet<String>,
+        in_flight_tasks: &std::collections::BTreeSet<TaskId>,
         journal: &mut super::DeferredChildResumeJournal,
     ) -> std::ops::Range<usize> {
         let start = journal.consumed_task_events.len();
         let mut index = 0;
         while index < self.queued_task_events.len() {
-            if in_flight_tasks.contains(&self.queued_task_events[index].task_id.0) {
+            if in_flight_tasks.contains(&self.queued_task_events[index].correlation.task_id) {
                 let event = self
                     .queued_task_events
                     .remove(index)
@@ -2594,26 +2539,32 @@ impl AwbcProductStepExecutor {
             }
         };
         let committed = self
-            .fiber
-            .active_frame_mut()
-            .and_then(|frame| {
-                frame.set_register(dst, RuntimeValue::Need(started.admission().need().clone()))
-            })
-            .and_then(|()| self.fiber.commit_yielded_instruction(cursor));
-        if let Err(error) = committed {
-            let owner =
-                crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&self.program));
-            if let Err(restore_error) = self.fiber.restore(checkpoint, &owner) {
-                self.fail_with_error(ProductStepError::Fiber(restore_error), output);
-            } else {
-                self.fail_with_error(ProductStepError::Internal(error.to_string()), output);
+            .need_producers
+            .commit_start_visit_with(started, |handle| {
+                self.fiber
+                    .active_frame_mut()
+                    .and_then(|frame| frame.set_register(dst, RuntimeValue::NeedHandle(handle)))
+                    .and_then(|()| self.fiber.commit_yielded_instruction(cursor))
+            });
+        let admission = match committed {
+            Ok((admission, ())) => admission,
+            Err(error) => {
+                let owner =
+                    crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&self.program));
+                if let Err(restore_error) = self.fiber.restore(checkpoint, &owner) {
+                    self.fail_with_error(ProductStepError::Fiber(restore_error), output);
+                } else {
+                    self.fail_with_error(ProductStepError::Internal(error.to_string()), output);
+                }
+                return;
             }
-            return;
-        }
-        let admission = self.need_producers.commit_start_visit(started);
+        };
         if ensure {
             self.remaining_new_task_requests -= 1;
-            output.requests.tasks.push(admission.task_spec().clone());
+            output
+                .requests
+                .tasks
+                .push(self.need_producers.submission_for_admission(&admission));
         }
     }
 
@@ -2671,31 +2622,40 @@ impl AwbcProductStepExecutor {
                 return;
             }
         };
-        let committed = self.child_fibers[index]
-            .fiber
-            .active_frame_mut()
-            .and_then(|frame| {
-                frame.set_register(dst, RuntimeValue::Need(started.admission().need().clone()))
-            })
-            .and_then(|()| {
+        let committed = self
+            .need_producers
+            .commit_start_visit_with(started, |handle| {
                 self.child_fibers[index]
                     .fiber
-                    .commit_yielded_instruction(cursor)
+                    .active_frame_mut()
+                    .and_then(|frame| frame.set_register(dst, RuntimeValue::NeedHandle(handle)))
+                    .and_then(|()| {
+                        self.child_fibers[index]
+                            .fiber
+                            .commit_yielded_instruction(cursor)
+                    })
             });
-        if let Err(error) = committed {
-            let owner =
-                crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&self.program));
-            if let Err(restore_error) = self.child_fibers[index].fiber.restore(checkpoint, &owner) {
-                self.fail_with_error(ProductStepError::Fiber(restore_error), output);
-            } else {
-                self.fail_with_error(ProductStepError::Internal(error.to_string()), output);
+        let admission = match committed {
+            Ok((admission, ())) => admission,
+            Err(error) => {
+                let owner =
+                    crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&self.program));
+                if let Err(restore_error) =
+                    self.child_fibers[index].fiber.restore(checkpoint, &owner)
+                {
+                    self.fail_with_error(ProductStepError::Fiber(restore_error), output);
+                } else {
+                    self.fail_with_error(ProductStepError::Internal(error.to_string()), output);
+                }
+                return;
             }
-            return;
-        }
-        let admission = self.need_producers.commit_start_visit(started);
+        };
         if ensure {
             self.remaining_new_task_requests -= 1;
-            output.requests.tasks.push(admission.task_spec().clone());
+            output
+                .requests
+                .tasks
+                .push(self.need_producers.submission_for_admission(&admission));
         }
     }
 

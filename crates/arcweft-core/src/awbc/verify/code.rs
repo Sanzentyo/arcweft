@@ -3378,22 +3378,65 @@ fn apply_terminator(
                 });
             }
             let source_ty = read_register(verifier, function, block, *source, state)?;
-            if !is_sequence_or_dynamic(runtime_shape(program, source_ty)) {
-                return invalid_type(&at, "await-many sequence source");
+            let item_type = match runtime_shape(program, source_ty) {
+                Some(
+                    AwbcRuntimeTypeShape::Sequence { item, .. }
+                    | AwbcRuntimeTypeShape::Array { item, .. },
+                ) => *item,
+                _ => return invalid_type(&at, "await-many exact sequence source"),
+            };
+            if !state.copy_proofs[source.index()].permits_copy() {
+                return invalid_type(&at, "await-many source with admitted deep Copy ownership");
+            }
+            let task = &program.task_plans[plan.index()];
+            if let AwbcTaskPlanKind::AwaitMany {
+                captures,
+                request_function,
+                child,
+                ..
+            } = &task.kind
+            {
+                let capture_types = &program.signatures[program.functions
+                    [request_function.index()]
+                .signature
+                .index()]
+                .params;
+                for (capture, expected) in captures.iter().zip(capture_types) {
+                    let actual = read_register(verifier, function, block, *capture, state)?;
+                    require_compatible(program, *expected, actual, &at)?;
+                    if !state.copy_proofs[capture.index()].permits_copy() {
+                        return invalid_type(
+                            &at,
+                            "await-many capture with admitted deep Copy ownership",
+                        );
+                    }
+                }
+                let AwbcTaskPlanKind::Template {
+                    request_function, ..
+                } = program.task_plans[child.index()].kind
+                else {
+                    unreachable!("structurally verified child template");
+                };
+                let inputs = &program.signatures[program.functions[request_function.index()]
+                    .signature
+                    .index()]
+                .params;
+                require_compatible(
+                    program,
+                    *inputs.last().expect("structurally verified child item ABI"),
+                    item_type,
+                    &at,
+                )?;
             }
             let mut next = state.clone();
+            clear_register(verifier, function, block, *source, &mut next)?;
             if let Some(pattern) = binding {
-                let dynamic =
-                    dynamic_type(program).ok_or_else(|| AwbcVerifyError::InvalidInvariant {
-                        at: at.clone(),
-                        message: "await-many binding requires Dynamic runtime type".to_owned(),
-                    })?;
                 validate_pattern(
                     verifier,
                     function,
                     block,
                     *pattern,
-                    dynamic,
+                    task.payload_type,
                     Some(AwbcBindMode::Declare),
                     &mut next,
                     0,

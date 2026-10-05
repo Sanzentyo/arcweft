@@ -1334,9 +1334,9 @@ fn restartable_need_session_save_reensures_the_exact_dispatch_once() {
     let asset_context = dispatch
         .bundle_asset_context()
         .expect("AssetLoad dispatch has a complete artifact context");
-    assert_eq!(asset_context.generation(), dispatch.generation);
+    assert_eq!(asset_context.generation(), dispatch.task.spec().generation);
     let artifact = original
-        .artifact_identity_for_generation(dispatch.generation)
+        .artifact_identity_for_generation(dispatch.task.spec().generation)
         .expect("dispatch generation image is retained");
     assert_eq!(
         asset_context.artifact().as_bytes(),

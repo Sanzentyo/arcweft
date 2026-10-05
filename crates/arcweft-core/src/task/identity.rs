@@ -1,5 +1,4 @@
-//! Final fixed task correlation identities, kept private until the atomic
-//! task/Need carrier cut. These owners contain the version-one transcripts;
+//! Final fixed task correlation identities. These owners contain the version-one transcripts;
 //! neither legacy String identifiers nor compatibility readers enter them.
 
 use super::specification::NeedProducerInstance;
@@ -34,10 +33,10 @@ macro_rules! fixed_identity {
     ($name:ident, $kind:ident) => {
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
         #[repr(transparent)]
-        pub(super) struct $name([u8; 32]);
+        pub struct $name([u8; 32]);
 
         impl $name {
-            pub(super) fn try_from_bytes(bytes: [u8; 32]) -> Result<Self, TaskIdentityError> {
+            pub fn try_from_bytes(bytes: [u8; 32]) -> Result<Self, TaskIdentityError> {
                 if bytes == [0; 32] {
                     Err(TaskIdentityError::Zero {
                         kind: TaskIdentityKind::$kind,
@@ -47,7 +46,7 @@ macro_rules! fixed_identity {
                 }
             }
 
-            pub(super) const fn as_bytes(&self) -> &[u8; 32] {
+            pub const fn as_bytes(&self) -> &[u8; 32] {
                 &self.0
             }
         }
@@ -58,6 +57,15 @@ macro_rules! fixed_identity {
                 Self::try_from_bytes(bytes).map_err(serde::de::Error::custom)
             }
         }
+
+        impl std::fmt::Display for $name {
+            fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                for byte in self.as_bytes() {
+                    write!(formatter, "{byte:02x}")?;
+                }
+                Ok(())
+            }
+        }
     };
 }
 
@@ -66,7 +74,7 @@ fixed_identity!(TaskKey, TaskKey);
 fixed_identity!(TaskId, Task);
 
 impl NeedId {
-    pub(super) fn try_for(
+    pub fn try_for(
         producer: NeedProducerInstanceKey,
         policy: TaskPolicy,
         ordinal: TaskLaunchOrdinal,
@@ -82,7 +90,7 @@ impl NeedId {
 }
 
 impl TaskKey {
-    pub(super) fn try_for(
+    pub fn try_for(
         generation: GenerationId,
         producer: NeedProducerInstanceKey,
         policy: TaskPolicy,
@@ -97,7 +105,7 @@ impl TaskKey {
 }
 
 impl TaskId {
-    pub(super) fn try_for(
+    pub fn try_for(
         task_key: TaskKey,
         ordinal: TaskLaunchOrdinal,
     ) -> Result<Self, TaskIdentityError> {
@@ -110,19 +118,20 @@ impl TaskId {
 }
 
 /// One complete correlation row derived from the producer and launch authority.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(super) struct TaskCorrelation {
-    pub(super) generation: GenerationId,
-    pub(super) producer: NeedProducerInstanceKey,
-    pub(super) producer_contract: NeedProducerContractDigest,
-    pub(super) need: NeedId,
-    pub(super) task_key: TaskKey,
-    pub(super) task_id: TaskId,
-    pub(super) launch_ordinal: TaskLaunchOrdinal,
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskCorrelation {
+    pub generation: GenerationId,
+    pub producer: NeedProducerInstanceKey,
+    pub producer_contract: NeedProducerContractDigest,
+    pub need: NeedId,
+    pub task_key: TaskKey,
+    pub task_id: TaskId,
+    pub launch_ordinal: TaskLaunchOrdinal,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
-pub(super) enum TaskCorrelationError {
+pub enum TaskCorrelationError {
     #[error("task correlation identity derivation failed: {0}")]
     Identity(#[from] TaskIdentityError),
     #[error("task correlation differs from its complete producer/launch authority")]
@@ -130,7 +139,7 @@ pub(super) enum TaskCorrelationError {
 }
 
 impl TaskCorrelation {
-    pub(super) fn try_for(
+    pub fn try_for(
         generation: GenerationId,
         spec: &NeedProducerInstance,
         policy: TaskPolicy,
@@ -151,7 +160,7 @@ impl TaskCorrelation {
         })
     }
 
-    pub(super) fn validate(
+    pub fn validate(
         &self,
         generation: GenerationId,
         spec: &NeedProducerInstance,

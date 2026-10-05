@@ -423,13 +423,13 @@ fn runtime_range_iterates_one_value_at_a_time() {
 
 #[test]
 fn runtime_iterator_moves_affine_items_out_of_its_owned_sequence() {
-    let mut iterator = RuntimeIterator::values(vec![RuntimeValue::Need(crate::task::NeedId(
-        "need.iterator".to_owned(),
-    ))]);
+    let mut iterator = RuntimeIterator::values(vec![RuntimeValue::NeedHandle(
+        crate::tests::reusable_need("need.iterator"),
+    )]);
 
     assert!(matches!(
         iterator.next(),
-        Some(RuntimeValue::Need(id)) if id.0 == "need.iterator"
+        Some(RuntimeValue::NeedHandle(handle)) if handle == crate::tests::reusable_need("need.iterator")
     ));
     assert!(matches!(
         &iterator,
@@ -1376,8 +1376,8 @@ fn index_intrinsic_reads_logical_sequence_and_string_values() {
 
 #[test]
 fn index_intrinsic_rejects_an_affine_sequence_without_copying_its_item() {
-    let sequence = RuntimeValue::Seq(RuntimeSeq::Values(vec![RuntimeValue::Need(
-        crate::task::NeedId("need.index.owner".to_owned()),
+    let sequence = RuntimeValue::Seq(RuntimeSeq::Values(vec![RuntimeValue::NeedHandle(
+        crate::tests::reusable_need("need.index.owner"),
     )]));
     assert!(
         evaluate_index_intrinsic(

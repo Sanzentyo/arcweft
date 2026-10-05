@@ -3723,7 +3723,15 @@ impl RuntimePlanBodyConstruction<'_> {
                 if target.limit == 0 {
                     return Err(RuntimePlanBuildError::ZeroAwaitManyLimit);
                 }
-                self.validate_task_outcome(&target.outcome, "await-many payload")?;
+                if target.base.family != crate::task::NeedProducerFamily::AwaitManyBase
+                    || target.child.family != crate::task::NeedProducerFamily::AwaitManyChild
+                {
+                    return Err(RuntimePlanBuildError::InvalidProducerTemplate {
+                        context: "await-many templates",
+                    });
+                }
+                self.validate_task_outcome(&target.base.outcome, "await-many base payload")?;
+                self.validate_task_outcome(&target.child.outcome, "await-many child payload")?;
                 let source = self.lower_expression(target.source)?;
                 let item_ty = self.await_many_item_type(source.ty())?;
                 let (item_binding, binding_ty) = target
@@ -3736,13 +3744,12 @@ impl RuntimePlanBodyConstruction<'_> {
                         .map(|binding| self.lower_pattern_seed(binding))
                         .transpose()?,
                     target: AwaitManyTarget {
-                        need: target.need,
-                        task: target.task,
-                        outcome: target.outcome,
                         source,
                         item_binding,
                         limit: target.limit,
-                        request: self.lower_host_task_request(target.request)?,
+                        base: self.lower_need_producer_template(target.base, &[])?,
+                        child: self
+                            .lower_need_producer_template(target.child, &[target.item_binding])?,
                     },
                     pending: self.lower_line_effects(pending)?,
                 }
@@ -3876,8 +3883,23 @@ impl RuntimePlanBodyConstruction<'_> {
                     body: self.lower_flow_ops(body)?,
                 }
             }
-            RuntimeFlowOpSeed::Thread { name, body } => FlowOp::Thread {
+            RuntimeFlowOpSeed::Thread {
                 name,
+                producer,
+                captures,
+                body,
+            } => FlowOp::Thread {
+                name,
+                producer: self.lower_need_producer_template(producer, &[])?,
+                captures: captures
+                    .iter()
+                    .map(|local| {
+                        local
+                            .resolve(&self.issuer)
+                            .map(|(local, _)| local)
+                            .ok_or(RuntimePlanBuildError::ForeignLocalSeed)
+                    })
+                    .collect::<Result<_, _>>()?,
                 body: self.lower_flow_ops(body)?,
             },
             RuntimeFlowOpSeed::Scope { identity, body } => FlowOp::Scope {
@@ -4654,6 +4676,7 @@ impl RuntimePlanBodyConstruction<'_> {
         target: RuntimeHostCallTargetSeed,
     ) -> Result<RuntimeHostCallTarget, RuntimePlanBuildError> {
         Ok(RuntimeHostCallTarget {
+            producer: target.producer,
             public_id: target.public_id,
             capability: target.capability,
             operation: target.operation,
@@ -4669,11 +4692,51 @@ impl RuntimePlanBodyConstruction<'_> {
         })
     }
 
+    fn lower_need_producer_template(
+        &self,
+        template: super::RuntimeNeedProducerTemplateSeed,
+        bound: &[super::RuntimeLocalSeedId],
+    ) -> Result<crate::task::NeedProducerTemplate, RuntimePlanBuildError> {
+        self.validate_task_outcome(&template.outcome, "producer template payload")?;
+        if template.outcome.payload_semantic_identity().as_bytes()
+            != template.payload_type.as_bytes()
+        {
+            return Err(RuntimePlanBuildError::InvalidProducerTemplate {
+                context: "producer template payload",
+            });
+        }
+        Ok(crate::task::NeedProducerTemplate {
+            family: template.family,
+            contract: template.contract,
+            plan: template.plan,
+            producer_site: template.producer_site,
+            payload_type: template.payload_type,
+            class: template.class,
+            priority: template.priority,
+            cancel_scope: template.cancel_scope,
+            policy: template.policy,
+            outcome: template.outcome,
+            request: self.lower_host_task_request(template.request, bound)?,
+            debug_label: template.debug_label,
+        })
+    }
+
     fn lower_host_task_request(
         &self,
         request: RuntimeHostTaskRequestTemplateSeed,
+        bound: &[super::RuntimeLocalSeedId],
     ) -> Result<HostTaskRequestTemplate, RuntimePlanBuildError> {
         Ok(HostTaskRequestTemplate {
+            captures: request
+                .free_locals(bound)
+                .iter()
+                .map(|local| {
+                    local
+                        .resolve(&self.issuer)
+                        .map(|(local, _)| local)
+                        .ok_or(RuntimePlanBuildError::ForeignLocalSeed)
+                })
+                .collect::<Result<_, _>>()?,
             capability: request.capability,
             operation: request.operation,
             args: request
@@ -5229,7 +5292,8 @@ impl RuntimePlanBodyConstruction<'_> {
                 } => {
                     self.validate_expression_locals(&target.source, scope, used)?;
                     let item_scope = extend_scope(scope, [target.item_binding])?;
-                    self.validate_task_request_locals(&target.request, &item_scope, used)?;
+                    self.validate_task_request_locals(&target.child.request, &item_scope, used)?;
+                    self.validate_task_request_locals(&target.base.request, scope, used)?;
                     self.validate_line_effect_locals(pending, scope, used)?;
                     if let Some(binding) = binding {
                         *scope = extend_scope(scope, pattern_binding_locals(binding))?;
@@ -5735,7 +5799,7 @@ impl RuntimePlanBodyConstruction<'_> {
         value: &RuntimeValue,
     ) -> Result<(), RuntimePlanBuildError> {
         if crate::value::visit_runtime_value_graph(value, |node| {
-            if matches!(node, RuntimeValue::Need(_)) {
+            if matches!(node, RuntimeValue::NeedHandle(_)) {
                 Err(())
             } else {
                 Ok(())

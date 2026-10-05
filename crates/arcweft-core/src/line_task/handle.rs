@@ -5526,7 +5526,7 @@ mod tests {
                 .map(|name| {
                     (
                         name.to_owned(),
-                        RuntimeValue::Need(crate::task::NeedId(name.to_owned())),
+                        RuntimeValue::NeedHandle(crate::tests::reusable_need(name)),
                     )
                 })
                 .collect(),
@@ -5551,7 +5551,7 @@ mod tests {
         );
         assert_eq!(
             env.read(&read).unwrap(),
-            RuntimeValue::Need(crate::task::NeedId("moved".into()))
+            RuntimeValue::NeedHandle(crate::tests::reusable_need("moved"))
         );
         let slots = env.into_slots().into_boxed_slice();
         assert_eq!(slots.len(), 1);
@@ -5579,8 +5579,8 @@ mod tests {
         assert_eq!(
             restored.values().collect::<Vec<_>>(),
             vec![
-                &RuntimeValue::Need(crate::task::NeedId("first".into())),
-                &RuntimeValue::Need(crate::task::NeedId("second".into())),
+                &RuntimeValue::NeedHandle(crate::tests::reusable_need("first")),
+                &RuntimeValue::NeedHandle(crate::tests::reusable_need("second")),
             ]
         );
     }

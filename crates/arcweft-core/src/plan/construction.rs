@@ -47,12 +47,12 @@ pub use seed::{
     RuntimeLineTaskGroupSeedId, RuntimeLineTaskNodeSeed, RuntimeLineTaskNodeSeedId,
     RuntimeLineTaskTriggerSeed, RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed,
     RuntimeLocalSeedId, RuntimeMutablePlaceSeed, RuntimeNeedProducerStartTargetSeed,
-    RuntimeNominalRecordFieldSeed, RuntimePatternRestSeed, RuntimePatternSeed,
-    RuntimePatternSeedKind, RuntimePureHelperDeclarationSeed, RuntimePureHelperSeed,
-    RuntimePureHelperSeedId, RuntimePureProgramBindingSeed, RuntimeRecordFieldSeedId,
-    RuntimeRecordPatternFieldSeed, RuntimeScheduledCaptureSeed, RuntimeStreamMatchArmSeed,
-    RuntimeStreamOpSeed, RuntimeStreamPlanSeed, RuntimeTraitMethodDeclarationSeed,
-    RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
+    RuntimeNeedProducerTemplateSeed, RuntimeNominalRecordFieldSeed, RuntimePatternRestSeed,
+    RuntimePatternSeed, RuntimePatternSeedKind, RuntimePureHelperDeclarationSeed,
+    RuntimePureHelperSeed, RuntimePureHelperSeedId, RuntimePureProgramBindingSeed,
+    RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed, RuntimeScheduledCaptureSeed,
+    RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed, RuntimeStreamPlanSeed,
+    RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
 };
 
 use crate::entry::{
@@ -415,6 +415,8 @@ pub enum RuntimePlanBuildError {
     InvalidIteratorWitness { context: &'static str },
     #[error("AwaitMany concurrency limit must be greater than zero")]
     ZeroAwaitManyLimit,
+    #[error("{context} has inconsistent producer family, payload, or policy")]
+    InvalidProducerTemplate { context: &'static str },
     #[error("runtime function site {site} was defined more than once")]
     DuplicateFunctionSiteDefinition {
         site: crate::runtime_id::RuntimeFunctionSiteId,

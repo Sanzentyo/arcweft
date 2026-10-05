@@ -1496,20 +1496,7 @@ pub(crate) fn match_runtime_pattern(
     value: &RuntimeValue,
 ) -> Result<Option<Vec<RuntimeLocalBinding>>, RuntimePatternMatchError> {
     validate_runtime_pattern(plan, pattern)?;
-    let need_handle = plan
-        .type_table()
-        .get(pattern.ty())
-        .is_some_and(|declaration| {
-            matches!(declaration.projection(), RuntimePlanTypeProjection::Need(_))
-        });
-    if need_handle {
-        // Need is an affine runtime handle, not an ordinary admitted payload.
-        // Its item identity comes from the checked local type; the value only
-        // carries the nonempty registry-issued handle used by Await.
-        if !matches!(value, RuntimeValue::Need(need) if !need.0.is_empty()) {
-            return Ok(None);
-        }
-    } else if !plan.value_matches_type(pattern.ty(), value)? {
+    if !plan.value_matches_type(pattern.ty(), value)? {
         return Ok(None);
     }
     let mut bindings = Vec::with_capacity(pattern_binding_capacity(pattern));
@@ -1960,19 +1947,9 @@ pub(crate) fn inspect_runtime_pattern_owned(
     instantiation: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
 ) -> Result<bool, RuntimePatternMatchError> {
     validate_runtime_pattern(plan, pattern)?;
-    let need_handle = plan
-        .type_table()
-        .get(pattern.ty())
-        .is_some_and(|declaration| {
-            matches!(declaration.projection(), RuntimePlanTypeProjection::Need(_))
-        });
-    let type_matches = if need_handle {
-        matches!(&value, RuntimeValue::Need(need) if !need.0.is_empty())
-    } else {
-        match instantiation {
-            Some(binding) => binding.value_matches(plan, pattern.ty(), value),
-            None => plan.value_matches_type(pattern.ty(), value)?,
-        }
+    let type_matches = match instantiation {
+        Some(binding) => binding.value_matches(plan, pattern.ty(), value),
+        None => plan.value_matches_type(pattern.ty(), value)?,
     };
     if !type_matches || !pattern_matches_borrowed(pattern, value) {
         return Ok(false);
@@ -2973,7 +2950,7 @@ fn runtime_value_matches_type_inner(
         | (RuntimePlanTypeProjection::Duration, RuntimeValue::Duration(_))
         | (RuntimePlanTypeProjection::Progress, RuntimeValue::Progress(_))
         | (RuntimePlanTypeProjection::EntityReference, RuntimeValue::EntityRef(_))
-        | (RuntimePlanTypeProjection::Need(_), RuntimeValue::Need(_))
+        | (RuntimePlanTypeProjection::Need(_), RuntimeValue::NeedHandle(_))
         | (RuntimePlanTypeProjection::Range(_), RuntimeValue::Range(_))
         | (RuntimePlanTypeProjection::Iterator(_), RuntimeValue::Iterator(_)) => true,
         (RuntimePlanTypeProjection::Function { .. }, RuntimeValue::Callable(value)) => {
@@ -3793,7 +3770,7 @@ mod tests {
         let plan = builder.finish().expect("plan");
         let value = RuntimeValue::Tuple(vec![
             RuntimeValue::i64(7),
-            RuntimeValue::Need(crate::task::NeedId("need.guard.affine".to_owned())),
+            RuntimeValue::NeedHandle(crate::tests::reusable_need("need.guard.affine")),
         ]);
         let guard = crate::value::RuntimeExpr::from_admitted_parts(
             admitted.type_ids()[0],
@@ -3821,7 +3798,7 @@ mod tests {
         assert!(bindings.iter().any(|binding| {
             binding.local == affine
                 && binding.value
-                    == RuntimeValue::Need(crate::task::NeedId("need.guard.affine".to_owned()))
+                    == RuntimeValue::NeedHandle(crate::tests::reusable_need("need.guard.affine"))
         }));
 
         let affine_guard = crate::value::RuntimeExpr::from_admitted_parts(
@@ -3836,7 +3813,7 @@ mod tests {
         .with_guard_copy_locals(vec![affine]);
         let value = RuntimeValue::Tuple(vec![
             RuntimeValue::i64(7),
-            RuntimeValue::Need(crate::task::NeedId("need.guard.affine".to_owned())),
+            RuntimeValue::NeedHandle(crate::tests::reusable_need("need.guard.affine")),
         ]);
         assert!(matches!(
             prepare_runtime_pattern_guard_bindings(&plan, &pattern, &value, &affine_guard, None),

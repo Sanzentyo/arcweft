@@ -1,8 +1,7 @@
-use super::{AwbcProductStepExecutor, ProductStepError};
+use super::ProductStepError;
 use crate::awbc::schema::{
     AwbcConstant, AwbcContentUnitId, AwbcEffectKind, AwbcEffectPlanId, AwbcProgram,
-    AwbcResourceResidency, AwbcStringId, AwbcTaskClass, AwbcTaskPlanId, AwbcTaskPlanKind,
-    AwbcTaskPolicy, AwbcTaskRequestProjection,
+    AwbcResourceResidency, AwbcStringId, AwbcTaskPlanId, AwbcTaskRequestProjection,
 };
 use crate::awbc::vm::constant_value;
 use crate::effect::{
@@ -14,10 +13,7 @@ use crate::step::{
     RuntimeContentRequest, RuntimeContentResidency, RuntimeContentResourceRequest,
     RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeDiagnosticSource,
 };
-use crate::task::{
-    CancelScopeId, HostTaskRequest, NeedId, TaskId, TaskKey, TaskOutcomeContract, TaskPolicy,
-    TaskPriority, TaskSpec,
-};
+use crate::task::HostTaskRequest;
 use crate::value::{
     RuntimePayload, RuntimeValue, runtime_value_into_sequence_values, runtime_value_label,
 };
@@ -336,52 +332,35 @@ pub(super) fn content_request(
     Ok(RuntimeContentRequest { content, resources })
 }
 
-pub(super) fn task_spec(
+pub(super) fn task_request(
     program: &AwbcProgram,
     plan: AwbcTaskPlanId,
-    task_id: &TaskId,
     args: Vec<RuntimeValue>,
-) -> Result<(NeedId, TaskSpec), ProductStepError> {
+) -> Result<HostTaskRequest, ProductStepError> {
     let record = program
         .task_plans
         .get(plan.index())
-        .ok_or_else(|| ProductStepError::Internal(format!("missing AWBC task plan {}", plan.0)))?;
+        .ok_or_else(|| ProductStepError::Internal("task plan is absent".into()))?;
     let string = |id: AwbcStringId| {
         program
             .strings
             .get(id.index())
             .cloned()
-            .ok_or_else(|| ProductStepError::Internal("missing AWBC task string".to_owned()))
-    };
-    let AwbcTaskPlanKind::AwaitMany {
-        public_id: _,
-        need_id,
-        ..
-    } = &record.kind
-    else {
-        return Err(ProductStepError::Internal(
-            "AwaitMany execution references a NeedProducer plan".to_owned(),
-        ));
+            .ok_or_else(|| ProductStepError::Internal("task string is absent".into()))
     };
     let AwbcTaskRequestProjection::CustomCapability {
         capability,
         operation,
-    } = &record.request
+    } = record.request
     else {
         return Err(ProductStepError::Internal(
-            "AwaitMany execution references a non-custom task request".to_owned(),
+            "template requires a custom task request".into(),
         ));
     };
-    let capability = string(*capability)?;
-    let operation = string(*operation)?;
-    let need = NeedId(string(*need_id)?);
     if args.len() != record.arguments.len() {
-        return Err(ProductStepError::Input(format!(
-            "AWBC task `{}` expects {} arguments, received {}",
-            task_id.0,
-            record.arguments.len(),
-            args.len()
-        )));
+        return Err(ProductStepError::Input(
+            "task request kernel result has the wrong arity".into(),
+        ));
     }
     let mut positional = Vec::new();
     let mut named = Vec::new();
@@ -400,28 +379,13 @@ pub(super) fn task_spec(
             positional.push(RuntimePayload::from(value));
         }
     }
-    let request = HostTaskRequest::custom_with_named_args(capability, operation, positional, named);
-    let class = task_class(record.class);
-    let outcome = TaskOutcomeContract::program(
-        program
-            .runtime_types
-            .get(record.payload_type.index())
-            .ok_or_else(|| ProductStepError::Internal("task payload type is absent".into()))?
-            .semantic_identity(),
-    );
-    let spec = TaskSpec::new(
-        task_id.clone(),
-        TaskKey(task_id.0.clone()),
-        class,
-        TaskPriority(record.priority),
-        CancelScopeId(string(record.cancel_scope)?),
-        task_policy(record.policy),
-        request,
-    )
-    .with_outcome(outcome);
-    Ok((need, spec))
+    Ok(HostTaskRequest::custom_with_named_args(
+        string(capability)?,
+        string(operation)?,
+        positional,
+        named,
+    ))
 }
-
 pub(super) fn source_diagnostic(
     program: &AwbcProgram,
     source_map: Option<crate::awbc::schema::AwbcSourceMapId>,
@@ -444,45 +408,4 @@ pub(super) fn source_diagnostic(
         });
     }
     diagnostic
-}
-
-const fn task_policy(policy: AwbcTaskPolicy) -> TaskPolicy {
-    match policy {
-        AwbcTaskPolicy::JoinSameKey => TaskPolicy::JoinSameKey,
-        AwbcTaskPolicy::AlwaysStart => TaskPolicy::AlwaysStart,
-    }
-}
-
-impl AwbcProductStepExecutor {
-    pub(super) fn task_plan_ids(&self, plan: AwbcTaskPlanId) -> Option<(String, NeedId)> {
-        let record = self.program.task_plans.get(plan.index())?;
-        let AwbcTaskPlanKind::AwaitMany {
-            public_id, need_id, ..
-        } = &record.kind
-        else {
-            return None;
-        };
-        Some((
-            self.program.strings.get(public_id.index())?.clone(),
-            NeedId(self.program.strings.get(need_id.index())?.clone()),
-        ))
-    }
-}
-
-const fn task_class(class: AwbcTaskClass) -> crate::task::TaskClass {
-    match class {
-        AwbcTaskClass::LocalView => crate::task::TaskClass::LocalView,
-        AwbcTaskClass::Io => crate::task::TaskClass::Io,
-        AwbcTaskClass::Cpu => crate::task::TaskClass::Cpu,
-        AwbcTaskClass::GpuPrepare => crate::task::TaskClass::GpuPrepare,
-        AwbcTaskClass::ShaderCompile => crate::task::TaskClass::ShaderCompile,
-        AwbcTaskClass::WasmCall => crate::task::TaskClass::WasmCall,
-        AwbcTaskClass::AssetDecode => crate::task::TaskClass::AssetDecode,
-        AwbcTaskClass::AudioDecode => crate::task::TaskClass::AudioDecode,
-        AwbcTaskClass::AudioRender => crate::task::TaskClass::AudioRender,
-        AwbcTaskClass::TtsSynthesis => crate::task::TaskClass::TtsSynthesis,
-        AwbcTaskClass::BgmPrecompose => crate::task::TaskClass::BgmPrecompose,
-        AwbcTaskClass::Lsp => crate::task::TaskClass::Lsp,
-        AwbcTaskClass::Background => crate::task::TaskClass::Background,
-    }
 }

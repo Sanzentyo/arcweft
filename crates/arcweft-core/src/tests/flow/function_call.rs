@@ -157,16 +157,22 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
         ))
         .expect("caller application admits");
     let plan = builder.finish().expect("callback plan seals");
+    let (registry, need) = crate::tests::pending_need(string);
     let invocation = plan
         .seal_flow_invocation(
             entry,
             [crate::value::RuntimeFlowParameterBinding {
                 parameter: crate::entry::FlowParameterCoordinate::from_position(0),
-                value: RuntimeValue::Need(NeedId("need.callback".to_owned())),
+                value: RuntimeValue::NeedHandle(need.clone()),
             }],
         )
         .expect("callback Need argument admits");
-    let mut engine = Engine::for_flow_invocation(invocation).expect("caller starts");
+    let mut engine = Engine::for_flow_invocation_with_need_context(
+        invocation,
+        crate::task::GenerationId::new(0),
+        registry,
+    )
+    .expect("caller starts");
     for _ in 0..8 {
         let started = step(&mut engine);
         assert!(started.diagnostics.is_empty(), "{:?}", started.diagnostics);
@@ -187,12 +193,16 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
     let resumed = engine
         .step(
             RuntimeStepInput {
-                need_states: vec![RuntimeNeedState::new(
-                    LogicalEpoch(1),
-                    NeedId("need.callback".to_owned()),
-                    TaskSequence(1),
-                    arcweft_need::Need::Ready(crate::value::RuntimePayload::from("ready")),
-                )],
+                task_events: vec![crate::task::TaskEvent {
+                    correlation: need.correlation(),
+                    cursor: crate::task::TaskPublicationCursor {
+                        logical_epoch: LogicalEpoch(1),
+                        sequence: TaskSequence(1),
+                    },
+                    kind: crate::task::TaskEventKind::Ready(crate::value::RuntimePayload::from(
+                        "ready",
+                    )),
+                }],
                 ..RuntimeStepInput::default()
             },
             RuntimeStepOptions::default(),

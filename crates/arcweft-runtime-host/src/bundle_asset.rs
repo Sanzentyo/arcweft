@@ -6,7 +6,9 @@ use arcweft_bundle::BundleArtifactIdentity;
 use arcweft_bundle_assets::{
     BundleAssetResolver, BundleAssetResolverError, BundleAssetValidationError,
 };
-use arcweft_core::task::{BoundTaskOutcome, GenerationId, HostTaskRequest, TaskSpec};
+use arcweft_core::task::{
+    BoundTaskOutcome, BoundTaskSpec, GenerationId, HostTaskRequest, TaskSpec,
+};
 use arcweft_core::value::{RuntimeBundleAssetContext, RuntimeValue};
 use arcweft_host_adapter::{
     HostAdapter, HostTaskCompletion, HostTaskMetrics, HostTaskOutcome, HostTaskSubmission,
@@ -116,7 +118,7 @@ impl BundleAssetAdapter {
             kind => {
                 return Some(failed(format!(
                     "unsupported bundle asset kind `{kind}` for task {:?}",
-                    task.id
+                    task.debug_label
                 )));
             }
         };
@@ -147,11 +149,10 @@ impl HostAdapter for BundleAssetAdapter {
 
     fn submit(
         &self,
-        task: &TaskSpec,
-        outcome: &BoundTaskOutcome,
+        task: &BoundTaskSpec,
         context: HostTaskSubmissionContext,
     ) -> Option<HostTaskSubmission> {
-        self.submit_asset(task, outcome, context)
+        self.submit_asset(task.spec(), task.outcome(), context)
             .map(HostTaskSubmission::Completed)
     }
 

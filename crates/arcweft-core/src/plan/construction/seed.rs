@@ -524,6 +524,8 @@ pub enum RuntimeFlowOpSeed {
     },
     Thread {
         name: Option<String>,
+        producer: RuntimeNeedProducerTemplateSeed,
+        captures: Vec<RuntimeLocalSeedId>,
         body: Vec<Self>,
     },
     Scope {
@@ -828,7 +830,8 @@ fn collect_binding_or_host_free_locals(
             target.source.collect_free_locals(bound, locals);
             let mut request_bound = bound.clone();
             push_unique_local(&target.item_binding, &mut request_bound);
-            collect_host_argument_free_locals(&target.request.args, &request_bound, locals);
+            collect_host_argument_free_locals(&target.child.request.args, &request_bound, locals);
+            collect_host_argument_free_locals(&target.base.request.args, bound, locals);
             for effect in pending {
                 effect.collect_free_locals(bound, locals);
             }
@@ -1200,13 +1203,27 @@ pub struct RuntimeNeedProducerStartTargetSeed {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeAwaitManyTargetSeed {
-    pub need: NeedId,
-    pub task: TaskId,
-    pub outcome: crate::task::TaskOutcomeContract,
     pub source: RuntimeExprSeed,
     pub item_binding: RuntimeLocalSeedId,
-    pub limit: usize,
+    pub limit: u32,
+    pub base: RuntimeNeedProducerTemplateSeed,
+    pub child: RuntimeNeedProducerTemplateSeed,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeNeedProducerTemplateSeed {
+    pub family: crate::task::NeedProducerFamily,
+    pub contract: crate::task::NeedProducerContractDigest,
+    pub plan: crate::task::TaskPlanSemanticDigest,
+    pub producer_site: crate::task::NeedProducerSiteDigest,
+    pub payload_type: crate::task::RuntimeTypeSemanticDigest,
+    pub class: crate::task::TaskClass,
+    pub priority: crate::task::TaskPriority,
+    pub cancel_scope: crate::task::CancelScopeId,
+    pub policy: crate::task::TaskPolicy,
+    pub outcome: crate::task::TaskOutcomeContract,
     pub request: RuntimeHostTaskRequestTemplateSeed,
+    pub debug_label: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1214,6 +1231,14 @@ pub struct RuntimeHostTaskRequestTemplateSeed {
     pub capability: HostCapabilityId,
     pub operation: String,
     pub args: Vec<RuntimeHostArgumentSeed>,
+}
+
+impl RuntimeHostTaskRequestTemplateSeed {
+    pub(super) fn free_locals(&self, bound: &[RuntimeLocalSeedId]) -> Vec<RuntimeLocalSeedId> {
+        let mut locals = Vec::new();
+        collect_host_argument_free_locals(&self.args, bound, &mut locals);
+        locals
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1225,6 +1250,7 @@ pub enum RuntimeHostArgumentSeed {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeHostCallTargetSeed {
+    pub producer: crate::task::HostCallProducerDefinition,
     pub public_id: String,
     pub capability: String,
     pub operation: String,

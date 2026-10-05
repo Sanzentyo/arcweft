@@ -30,8 +30,9 @@ pub use ownership::{
 mod producer_admission;
 mod record_field;
 pub use producer_admission::{
-    CheckedNeedProducerAdmission, CheckedNeedProducerAdmissionDigest,
-    CheckedNeedProducerAdmissionError, CheckedProducerArgumentAdmission,
+    CheckedExpressionProducerDefinition, CheckedNeedProducerAdmission,
+    CheckedNeedProducerAdmissionDigest, CheckedNeedProducerAdmissionError,
+    CheckedProducerArgumentAdmission,
 };
 pub use record_field::AcceptedRecordFieldSemanticId;
 pub mod project_index;

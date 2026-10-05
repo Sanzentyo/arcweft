@@ -22,7 +22,7 @@ use self::execution::{
     ProductVmHost, has_host_requests, has_visible_output, input_choice_selection, run_function,
     stream_id_for,
 };
-use self::mapping::{MappedEffect, content_request, source_diagnostic, task_spec};
+use self::mapping::{MappedEffect, content_request, source_diagnostic};
 use self::runtime_id::line_id_from_awbc_public_id;
 pub use self::snapshot::{
     AwbcProductActiveChoiceSnapshot, AwbcProductActiveDialogueSaveSnapshot,
@@ -36,7 +36,7 @@ pub use self::snapshot::{
     AwbcProductLineTaskNodeStateSnapshot, AwbcProductLineTaskPhaseSnapshot,
     AwbcProductLineTaskWorkSnapshot, AwbcProductLineTaskWorkTagSnapshot,
     AwbcProductPendingHostCallSnapshot, AwbcProductSaveError, AwbcProductTaskEventKindSaveSnapshot,
-    AwbcProductTaskEventSaveSnapshot, AwbcRestartableDispatch,
+    AwbcProductTaskEventSaveSnapshot,
 };
 use crate::awbc::fiber::{
     FiberAwaitManyInFlight, FiberAwaitManyState, FiberAwaitTarget, FiberBudget, FiberCheckpoint,
@@ -219,8 +219,10 @@ pub enum AwbcProductStepBuildError {
     GenerationRegression { current: u64, requested: u64 },
 }
 
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
+#[derive(Clone, Debug, Error, PartialEq)]
 pub(super) enum ProductStepError {
+    #[error(transparent)]
+    Vm(#[from] crate::awbc::vm::VmError),
     #[error("{0}")]
     Input(String),
     #[error("{0}")]
@@ -278,7 +280,8 @@ impl ProductStepError {
             | Self::DialogueLineCursorOverflow
             | Self::StaleLineTaskChildContent { .. }
             | Self::RuntimeIdentity(_)
-            | Self::Fiber(_) => RuntimeDiagnosticCategory::Internal,
+            | Self::Fiber(_)
+            | Self::Vm(_) => RuntimeDiagnosticCategory::Internal,
         }
     }
 
@@ -296,7 +299,8 @@ impl ProductStepError {
             | Self::DialogueLineCursorOverflow
             | Self::StaleLineTaskChildContent { .. }
             | Self::RuntimeIdentity(_)
-            | Self::Fiber(_) => AwbcTrapCode::InternalInvariant,
+            | Self::Fiber(_)
+            | Self::Vm(_) => AwbcTrapCode::InternalInvariant,
             Self::ActivationTrap(trap) => trap.code,
         }
     }
@@ -914,8 +918,13 @@ struct PendingHostCall {
 /// events. The data-only cursors are copied, while consumed events stay owned
 /// by this journal until the child step commits.
 pub(super) struct DeferredChildResumeJournal {
-    need_publications_before:
-        BTreeMap<(crate::runtime_id::RuntimePersistentFiberId, NeedId), TaskPublicationCursor>,
+    need_publications_before: BTreeMap<
+        (
+            crate::runtime_id::RuntimePersistentFiberId,
+            crate::task::TaskCorrelation,
+        ),
+        TaskPublicationCursor,
+    >,
     remaining_new_task_requests_before: usize,
     next_host_call_sequence_before: u64,
     pending_host_call_before: Option<PendingHostCall>,
@@ -938,12 +947,12 @@ pub(super) enum DeferredNeedReadySource {
     Local(crate::task::NeedProducerReadyTakeProof),
     External {
         index: usize,
-        sequence: TaskSequence,
+        cursor: TaskPublicationCursor,
     },
 }
 
 pub(super) struct DeferredNeedReadyStage {
-    pub(super) need: NeedId,
+    pub(super) correlation: crate::task::TaskCorrelation,
     pub(super) source: DeferredNeedReadySource,
     pub(super) resume: crate::awbc::fiber::PreparedFiberResume,
     pub(super) binding: Option<crate::awbc::vm::PreparedPatternBinding>,
@@ -1071,12 +1080,20 @@ impl DeferredChildResumeJournal {
             DeferredNeedReadySource::Local(proof) => {
                 need_producers.take_ready_for_need_prepared(proof)
             }
-            DeferredNeedReadySource::External { index, sequence } => {
+            DeferredNeedReadySource::External { index, cursor } => {
                 let state = need_states.remove(index);
-                let (_, need, actual_sequence, publication) = state.into_parts();
-                debug_assert_eq!(need, stage.need);
-                debug_assert_eq!(actual_sequence, sequence);
-                let Need::Ready(payload) = publication else {
+                let (correlation, actual_cursor, publication) = state.into_parts();
+                assert_eq!(
+                    correlation, stage.correlation,
+                    "prepared Need correlation remains unchanged"
+                );
+                assert_eq!(
+                    actual_cursor,
+                    Some(cursor),
+                    "prepared Need cursor remains unchanged"
+                );
+                let Need::Ready(crate::task::RuntimeNeedOutcome::Value(payload)) = publication
+                else {
                     unreachable!("staged external Need Ready remains in its owned input slot")
                 };
                 payload
@@ -1359,12 +1376,12 @@ fn append_step_output(output: &mut RuntimeStepOutput, mut staged: RuntimeStepOut
 
 pub(super) fn take_runtime_need_state(
     states: &mut Vec<RuntimeNeedState>,
-    need: &NeedId,
-    sequence: TaskSequence,
+    correlation: &crate::task::TaskCorrelation,
+    cursor: TaskPublicationCursor,
 ) -> Option<(usize, RuntimeNeedState)> {
     let index = states
         .iter()
-        .position(|state| state.need() == need && state.sequence() == sequence)?;
+        .position(|state| &state.correlation == correlation && state.cursor == Some(cursor))?;
     Some((index, states.remove(index)))
 }
 
@@ -1396,8 +1413,13 @@ pub struct AwbcProductStepExecutor {
     pending_host_call: Option<PendingHostCall>,
     started_tasks: BTreeSet<TaskId>,
     task_publications: BTreeMap<TaskId, TaskPublicationCursor>,
-    need_publications:
-        BTreeMap<(crate::runtime_id::RuntimePersistentFiberId, NeedId), TaskPublicationCursor>,
+    need_publications: BTreeMap<
+        (
+            crate::runtime_id::RuntimePersistentFiberId,
+            crate::task::TaskCorrelation,
+        ),
+        TaskPublicationCursor,
+    >,
     need_producers: NeedProducerRegistry,
     remaining_new_task_requests: usize,
     queued_task_events: VecDeque<TaskEvent>,
@@ -1459,10 +1481,7 @@ impl AwbcProductStepExecutor {
     /// accepted producer registry record, never from parsing its spelling.
     #[must_use]
     pub fn need_producer_generation_for_task(&self, task: &TaskId) -> Option<GenerationId> {
-        let need = self.need_producers.need_for_task(task)?;
-        self.need_producers
-            .launch_for_need(need)
-            .map(|launch| launch.generation())
+        self.need_producers.generation_for_task(task)
     }
 
     #[must_use]
@@ -1490,25 +1509,19 @@ impl AwbcProductStepExecutor {
     /// Returns active Restartable Need producer requests, including restored
     /// rows which still need their exact TaskSpec re-issued once.
     #[must_use]
-    pub fn restartable_dispatches(&self) -> Vec<AwbcRestartableDispatch> {
-        self.need_producers
-            .launches()
-            .filter(|launch| {
-                launch.restart() == crate::task::HostRestartPolicy::Restartable
-                    && !launch.task_terminal()
-                    && !launch.state().is_terminal()
-                    && launch.task_fault().is_none()
-            })
-            .map(|launch| AwbcRestartableDispatch {
-                generation: launch.generation(),
-                need_id: launch.need().clone(),
-                task_id: launch.task().clone(),
-                task_spec: launch.task_spec().clone(),
-                restart: launch.restart(),
-                publication: launch.publication(),
-                needs_reensure: !launch.task_submitted(),
-            })
-            .collect()
+    pub fn restartable_dispatches(&self) -> Vec<crate::task::RuntimeNeedProducerDispatch> {
+        self.need_producers.restartable_dispatches()
+    }
+
+    pub(crate) fn admit_host_call(
+        &mut self,
+        start: crate::step::RuntimeHostCallStart,
+    ) -> Result<crate::step::RuntimeHostCallRequest, crate::task::NeedProducerAdmissionError> {
+        crate::step::RuntimeHostCallRequest::admit_start(
+            start,
+            self.runtime_generation,
+            &mut self.need_producers,
+        )
     }
 
     /// Needs whose active producer contract requires the host task to finish
@@ -1750,7 +1763,6 @@ impl AwbcProductStepExecutor {
                     std::num::NonZeroU64::MIN,
                 ),
                 next_frame_instance: crate::runtime_id::RuntimeIdCursor::initial(),
-                next_await_many_ordinal: 0,
                 generation: generation.get(),
                 root: crate::awbc::fiber::AwbcFiberRoot::Empty,
                 cursor: FiberCursor {
@@ -2258,7 +2270,7 @@ impl AwbcProductStepExecutor {
         output.diagnostics.extend(events.iter().map(|event| {
             RuntimeDiagnostic::new(format!(
                 "task {} sequence {} delivered",
-                event.task_id.0, event.sequence.0
+                event.correlation.task_id, event.cursor.sequence.0
             ))
         }));
     }
@@ -2728,6 +2740,7 @@ impl AwbcProductStepExecutor {
                 &mut input.host_call_results,
                 &mut staged_resume_output,
                 &mut resume_journal,
+                pure_backend,
             ) {
                 Ok(true)
                     if matches!(
@@ -3082,7 +3095,8 @@ impl AwbcProductStepExecutor {
         if !skip_vm_instruction
             && child.fiber.status == FiberStatus::Suspended
             && deferred.is_some()
-            && let Err(error) = self.initialize_deferred_child_suspension(&mut child, output)
+            && let Err(error) =
+                self.initialize_deferred_child_suspension(&mut child, output, pure_backend)
         {
             child.fiber.mark_trapped(FiberTrap {
                 code: error.trap_code(),
@@ -3536,7 +3550,7 @@ impl AwbcProductStepExecutor {
         enum Dispatch {
             Choice(AwbcChoiceId),
             AwaitNeed(
-                NeedId,
+                crate::task::TaskCorrelation,
                 AwbcTypeId,
                 Option<crate::awbc::schema::AwbcPatternId>,
                 Option<crate::awbc::schema::AwbcAwaitObserverResume>,
@@ -3551,10 +3565,13 @@ impl AwbcProductStepExecutor {
                 FiberSuspensionReason::Dialogue { .. } => Dispatch::Other,
                 FiberSuspensionReason::Choice { choice, .. } => Dispatch::Choice(*choice),
                 FiberSuspensionReason::Await {
-                    target: FiberAwaitTarget::Need { id, item_type, .. },
+                    target:
+                        FiberAwaitTarget::Need {
+                            need, item_type, ..
+                        },
                     binding,
                     observer,
-                } => Dispatch::AwaitNeed(id.clone(), *item_type, *binding, *observer),
+                } => Dispatch::AwaitNeed(need.correlation(), *item_type, *binding, *observer),
                 FiberSuspensionReason::AwaitMany(_) => Dispatch::AwaitMany,
                 FiberSuspensionReason::HostCall { call, args, .. } => {
                     if args.iter().all(|value| value.ownership().permits_copy()) {
@@ -3577,11 +3594,10 @@ impl AwbcProductStepExecutor {
             Dispatch::AwaitNeed(id, item_type, binding, observer) => {
                 let task = self
                     .need_producers
-                    .launches()
-                    .find(|launch| launch.need() == &id)
+                    .launch_for_correlation(&id)
                     .map(|launch| launch.task().clone());
                 output.flow_events.push(FlowEvent::AwaitStarted {
-                    need: id.clone(),
+                    need: id.need,
                     task,
                 });
                 if let Some(resume) = declared_resume {
@@ -3596,7 +3612,7 @@ impl AwbcProductStepExecutor {
                     );
                 }
             }
-            Dispatch::AwaitMany => self.fill_await_many(output),
+            Dispatch::AwaitMany => self.fill_await_many(output, pure_backend),
             Dispatch::HostCall(call, args) => self.emit_host_call(call, &args, output),
             Dispatch::InvalidHostCall => self.fail_with_trap(
                 AwbcTrapCode::HostAbiMismatch,
@@ -3617,7 +3633,7 @@ impl AwbcProductStepExecutor {
         enum Dispatch {
             Choice(AwbcChoiceId, AwbcRegisterId),
             AwaitNeed(
-                NeedId,
+                crate::task::TaskCorrelation,
                 AwbcTypeId,
                 Option<crate::awbc::schema::AwbcPatternId>,
                 Option<crate::awbc::schema::AwbcAwaitObserverResume>,
@@ -3693,10 +3709,13 @@ impl AwbcProductStepExecutor {
                 destination,
             } => Dispatch::Choice(*choice, *destination),
             FiberSuspensionReason::Await {
-                target: FiberAwaitTarget::Need { id, item_type, .. },
+                target:
+                    FiberAwaitTarget::Need {
+                        need, item_type, ..
+                    },
                 binding,
                 observer,
-            } => Dispatch::AwaitNeed(id.clone(), *item_type, *binding, *observer),
+            } => Dispatch::AwaitNeed(need.correlation(), *item_type, *binding, *observer),
             FiberSuspensionReason::AwaitMany(_) => Dispatch::AwaitMany,
             FiberSuspensionReason::HostCall {
                 call, destination, ..
@@ -3756,7 +3775,7 @@ impl AwbcProductStepExecutor {
                         }
                     }
                 };
-                self.resume_await_many(state, resume, before_handles, output)
+                self.resume_await_many(state, resume, before_handles, output, pure_backend)
             }
             Dispatch::HostCall(call, destination) => self.resume_host_call(
                 call,

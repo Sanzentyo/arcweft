@@ -917,7 +917,7 @@ impl BundleSession {
     fn apply_task_cancellations(&mut self, cancel_scopes: &[CancelScopeId]) {
         for scope in cancel_scopes {
             self.tasks
-                .cancel(&RuntimeTaskCancelTarget::Scope(scope.0.clone()));
+                .cancel(&RuntimeTaskCancelTarget::Scope(scope.clone()));
         }
     }
 
@@ -1311,12 +1311,16 @@ impl BundleSession {
     fn dispatch_requested_tasks(
         &mut self,
         clock: RuntimeClockStep,
-        tasks: Vec<arcweft_core::task::TaskSpec>,
+        tasks: Vec<arcweft_core::task::TaskSubmission>,
     ) -> Vec<HostTaskDispatch> {
         let count = u64::try_from(
             tasks
                 .iter()
-                .filter(|task| !self.pending_restartable_reensure.contains_key(&task.id))
+                .filter(|task| {
+                    !self
+                        .pending_restartable_reensure
+                        .contains_key(&task.task_id())
+                })
                 .count(),
         )
         .expect("an addressable task batch fits the task sequence counter");
@@ -1333,29 +1337,22 @@ impl BundleSession {
                 "task dispatch sequence must be unused before batch publication"
             );
         }
-        let default_generation = self
-            .runtime_generation_pin
-            .as_ref()
-            .map_or_else(|| self.swap.active_generation_id(), |pin| pin.id);
         let tasks = tasks
             .into_iter()
             .map(|task| {
-                if let Some(saved) = self.pending_restartable_reensure.get(&task.id) {
+                if let Some(saved) = self.pending_restartable_reensure.get(&task.task_id()) {
                     assert_eq!(
                         &saved.task, &task,
                         "Product re-ensure must preserve its sealed TaskSpec"
                     );
                     assert_eq!(
-                        self.executor.task_generation(&task.id),
-                        Some(saved.generation),
+                        self.executor.task_generation(&task.task_id()),
+                        Some(saved.task.handle().correlation.generation),
                         "Product re-ensure must preserve its owning generation"
                     );
                     return (task, None);
                 }
-                let launch_generation = self
-                    .executor
-                    .task_generation(&task.id)
-                    .unwrap_or(default_generation);
+                let launch_generation = task.handle().correlation.generation;
                 let generation = Arc::clone(
                     self.runtime_images
                         .get(launch_generation)
@@ -1369,21 +1366,20 @@ impl BundleSession {
         let dispatches = tasks
             .into_iter()
             .map(|(task, generation)| {
-                if let Some(saved) = self.pending_restartable_reensure.remove(&task.id) {
+                if let Some(saved) = self.pending_restartable_reensure.remove(&task.task_id()) {
                     return saved;
                 }
                 let generation = generation.expect("fresh task has a generation pin");
                 let sequence = TaskSequence(first_sequence + new_offset);
                 new_offset += 1;
                 let bundle_asset_context = matches!(
-                    &task.request,
+                    &task.spec().request,
                     arcweft_core::task::HostTaskRequest::AssetLoad(_)
                 )
                 .then(|| generation.bundle_asset_context());
                 self.task_generation_pins
                     .insert(sequence, generation.clone());
                 let dispatch = HostTaskDispatch {
-                    generation: generation.id,
                     logical_epoch: LogicalEpoch(clock.tick().0),
                     sequence,
                     task,
@@ -1406,7 +1402,7 @@ impl BundleSession {
     ) -> Vec<RuntimeHostCallRequest> {
         let mut external = Vec::new();
         for request in requests {
-            if request.capability == "view.action" && request.operation == "await" {
+            if request.capability() == "view.action" && request.operation() == "await" {
                 match action_receive_action_id(&request) {
                     Some(action_id) => {
                         if let Some(invocation) =
@@ -1453,12 +1449,15 @@ impl BundleSession {
             let Some(generation) = self.tasks.generation_for_event(event) else {
                 continue;
             };
+            let Some(dispatch_sequence) = self.tasks.dispatch_sequence_for_event(event) else {
+                continue;
+            };
             if self
                 .task_generation_pins
-                .get(&event.sequence)
+                .get(&dispatch_sequence)
                 .is_some_and(|pinned| pinned.id == generation)
             {
-                self.task_generation_pins.remove(&event.sequence);
+                self.task_generation_pins.remove(&dispatch_sequence);
             }
         }
         self.retire_unused_generations();
@@ -1466,7 +1465,7 @@ impl BundleSession {
 }
 
 fn action_receive_action_id(request: &RuntimeHostCallRequest) -> Option<String> {
-    let value = request.args.first()?.value();
+    let value = request.args().first()?.value();
     match value {
         RuntimeValue::EntityRef(value) => Some(value.runtime_label()),
         RuntimeValue::String(value) => Some(value.to_owned()),

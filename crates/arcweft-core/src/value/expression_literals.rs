@@ -164,7 +164,9 @@ mod tests {
                 RuntimeExpr::from_admitted_parts(ty, RuntimeExprKind::Value(RuntimeValue::i64(7))),
                 RuntimeExpr::from_admitted_parts(
                     ty,
-                    RuntimeExprKind::Value(RuntimeValue::Need(NeedId("need.one".to_owned()))),
+                    RuntimeExprKind::Value(RuntimeValue::NeedHandle(crate::tests::reusable_need(
+                        "need.one",
+                    ))),
                 ),
             ]),
         );
@@ -177,9 +179,9 @@ mod tests {
             RuntimeExprKind::IfLet {
                 pattern: RuntimePattern::from_admitted_parts(
                     ty,
-                    RuntimePatternKind::Literal(RuntimeValue::Need(NeedId(
-                        "need.pattern".to_owned(),
-                    ))),
+                    RuntimePatternKind::Literal(RuntimeValue::NeedHandle(
+                        crate::tests::reusable_need("need.pattern"),
+                    )),
                 ),
                 expr: Box::new(copy.clone()),
                 guard: None,

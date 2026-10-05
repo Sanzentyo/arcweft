@@ -477,6 +477,25 @@ impl ArcweftRuntimeExecutor {
         }
     }
 
+    /// Admits a host-owned catalog call through this execution's sole journal.
+    pub fn admit_host_call(
+        &mut self,
+        start: crate::step::RuntimeHostCallStart,
+    ) -> Result<crate::step::RuntimeHostCallRequest, crate::task::NeedProducerAdmissionError> {
+        match &mut self.inner {
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(executor) => {
+                executor.engine.admit_host_call(start)
+            }
+            ArcweftRuntimeExecutorInner::StructuredAot(executor) => {
+                executor.vm.engine.admit_host_call(start)
+            }
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
+                executor.vm.admit_host_call(start)
+            }
+            ArcweftRuntimeExecutorInner::Vacant => unreachable!("restore slot is not runnable"),
+        }
+    }
+
     #[must_use]
     pub fn generation(&self) -> GenerationId {
         match &self.inner {
@@ -499,20 +518,9 @@ impl ArcweftRuntimeExecutor {
             ArcweftRuntimeExecutorInner::StructuredAot(executor) => {
                 executor.vm.engine.restartable_dispatches()
             }
-            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor
-                .vm
-                .restartable_dispatches()
-                .into_iter()
-                .map(|dispatch| RuntimeNeedProducerDispatch {
-                    generation: dispatch.generation,
-                    need_id: dispatch.need_id,
-                    task_id: dispatch.task_id,
-                    task_spec: dispatch.task_spec,
-                    restart: dispatch.restart,
-                    publication: dispatch.publication,
-                    needs_reensure: dispatch.needs_reensure,
-                })
-                .collect(),
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
+                executor.vm.restartable_dispatches()
+            }
             ArcweftRuntimeExecutorInner::Vacant => unreachable!("restore slot is not runnable"),
         }
     }

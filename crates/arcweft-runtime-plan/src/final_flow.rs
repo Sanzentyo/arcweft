@@ -5906,9 +5906,16 @@ fn resolve_flow_tail_holes(
                 evidence,
                 body: resolve_flow_tail_holes(body, child_ids, child_cursor, resolved)?,
             }),
-            RuntimeFlowOpSeed::Thread { name, body } => {
+            RuntimeFlowOpSeed::Thread {
+                name,
+                producer,
+                captures,
+                body,
+            } => {
                 output.push(RuntimeFlowOpSeed::Thread {
                     name,
+                    producer,
+                    captures,
                     body: resolve_flow_tail_holes(body, child_ids, child_cursor, resolved)?,
                 });
             }
@@ -6567,9 +6574,51 @@ impl<'a> FinalFlowLowerer<'a> {
                             "detached Thread expression {thread:?} requires typed runtime ownership metadata"
                         )));
                     }
+                    let body = self.lower_body_as_one_error(thread_expr.body())?;
+                    let captures = RuntimeFlowOpSeed::Scope {
+                        identity: arcweft_core::scope::RuntimeScopeIdentity::Anonymous,
+                        body: body.clone(),
+                    }
+                    .free_locals()
+                    .into_vec();
+                    let admission = self.facts.thread_producer(*thread).ok_or_else(|| {
+                        RuntimePlanLowerError::new("Thread has no accepted producer definition")
+                    })?;
+                    let payload = arcweft_core::pattern::RuntimeCheckedType::Unit;
+                    let identity = payload.semantic_identity_digest();
+                    let mut contract = blake3::Hasher::new();
+                    contract.update(b"arcweft.thread.producer-contract.v1\0");
+                    contract.update(identity.as_bytes());
+                    let producer = arcweft_core::plan::RuntimeNeedProducerTemplateSeed {
+                        family: arcweft_core::task::NeedProducerFamily::StructuredTaskPlan,
+                        contract: arcweft_core::task::NeedProducerContractDigest::from_bytes(
+                            *contract.finalize().as_bytes(),
+                        ),
+                        plan: admission.plan(),
+                        producer_site: admission.site(),
+                        payload_type: arcweft_core::task::RuntimeTypeSemanticDigest::from_bytes(
+                            *identity.as_bytes(),
+                        ),
+                        class: arcweft_core::task::TaskClass::Cpu,
+                        priority: arcweft_core::task::TaskPriority(0),
+                        cancel_scope: arcweft_core::task::CancelScopeId("flow".into()),
+                        policy: arcweft_core::task::TaskPolicy::AlwaysStart,
+                        outcome: arcweft_core::task::TaskOutcomeContract::new(payload),
+                        request: arcweft_core::plan::RuntimeHostTaskRequestTemplateSeed {
+                            capability: arcweft_core::task::HostCapabilityId("flow_thread".into()),
+                            operation: "run_child".into(),
+                            args: Vec::new(),
+                        },
+                        debug_label: thread_expr
+                            .name()
+                            .map_or("anonymous", |name| name.as_str())
+                            .to_owned(),
+                    };
                     return Ok(vec![RuntimeFlowOpSeed::Thread {
                         name: thread_expr.name().map(|name| name.as_str().to_owned()),
-                        body: self.lower_body_as_one_error(thread_expr.body())?,
+                        producer,
+                        captures,
+                        body,
                     }]);
                 }
                 let ty = self.expression_source_type(*thread)?;
@@ -9307,7 +9356,7 @@ mod tests {
         )
         .expect("Thread expression statement lowers");
 
-        let [FlowOp::Thread { name, body }] = report.plan.flows()[0].body().ops() else {
+        let [FlowOp::Thread { name, body, .. }] = report.plan.flows()[0].body().ops() else {
             panic!("ordinary expression statement must project its typed Thread payload")
         };
         assert!(name.is_none());

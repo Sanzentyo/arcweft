@@ -1036,7 +1036,7 @@ fn encode_frame(frame: &RuntimeArcErrorFrame) -> RuntimeValue {
             frame
                 .task
                 .as_ref()
-                .map(|value| RuntimeValue::String(value.0.clone())),
+                .map(|value| RuntimeValue::Seq(RuntimeSeq::dense_bytes(value.as_bytes().to_vec()))),
         ),
         encode_option(frame.await_target.clone().map(RuntimeValue::EntityRef)),
         encode_option(
@@ -1111,7 +1111,10 @@ fn decode_frame(
         .map(|value| decode_entity_ref(value, "dispatch event"))
         .transpose()?;
     let task = decode_option(task, "task")?
-        .map(|value| Ok(TaskId(decode_string(value, "task")?.to_owned())))
+        .map(|value| {
+            TaskId::try_from_bytes(decode_digest(value, "task")?)
+                .map_err(|_| RuntimeArcErrorValueError::InvalidField { field: "task" })
+        })
         .transpose()?;
     let await_target = decode_option(await_target, "await target")?
         .map(|value| decode_entity_ref(value, "await target"))

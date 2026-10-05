@@ -28,6 +28,23 @@ use crate::{
 };
 use arcweft_core::task::NeedProducerSiteDigest;
 
+/// Static definition issued from one accepted producer expression. Its site
+/// uses the canonical checked path; its plan commits the complete body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedExpressionProducerDefinition {
+    site: NeedProducerSiteDigest,
+    plan: arcweft_core::task::TaskPlanSemanticDigest,
+}
+
+impl CheckedExpressionProducerDefinition {
+    pub const fn site(&self) -> NeedProducerSiteDigest {
+        self.site
+    }
+    pub const fn plan(&self) -> arcweft_core::task::TaskPlanSemanticDigest {
+        self.plan
+    }
+}
+
 /// Stable digest proving that the exact source-ordered Need producer values
 /// are retainable. Producer identity and task identity deliberately do not
 /// participate in this admission digest.
@@ -103,6 +120,10 @@ impl CheckedNeedProducerAdmission {
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum CheckedNeedProducerAdmissionError {
     #[error(transparent)]
+    SemanticTranscript(#[from] crate::final_analysis::CheckedSemanticTranscriptError),
+    #[error("internal thread producer requires an accepted Thread expression")]
+    NotThread,
+    #[error(transparent)]
     GenericScope(#[from] GenericScopeError),
     #[error(transparent)]
     Generation(Box<crate::final_analysis::FinalSemanticAnalysisError>),
@@ -146,6 +167,83 @@ impl From<TranscriptWriteError> for CheckedNeedProducerAdmissionError {
 }
 
 impl FinalSemanticAnalysis {
+    pub fn checked_thread_producer_admission(
+        &self,
+        project: HirAnalysisProjectView<'_>,
+        symbols: &ProjectSymbolTable,
+        owner: ExprId,
+    ) -> Result<CheckedExpressionProducerDefinition, CheckedNeedProducerAdmissionError> {
+        self.validate_generation(project, symbols)?;
+        let expression = project
+            .modules()
+            .find_map(|(_, module)| {
+                (module.module_id() == owner.module())
+                    .then(|| module.resolve_expr(owner).ok())
+                    .flatten()
+            })
+            .ok_or(CheckedNeedProducerAdmissionError::NotThread)?;
+        if !matches!(
+            expression.kind(),
+            arcweft_lang_hir::expr::HirExprKind::Thread(_)
+        ) {
+            return Err(CheckedNeedProducerAdmissionError::NotThread);
+        }
+        self.checked_expression_producer_definition(project, symbols, owner)
+    }
+
+    pub fn checked_call_producer_definition(
+        &self,
+        project: HirAnalysisProjectView<'_>,
+        symbols: &ProjectSymbolTable,
+        owner: ExprId,
+    ) -> Result<CheckedExpressionProducerDefinition, CheckedNeedProducerAdmissionError> {
+        self.validate_generation(project, symbols)?;
+        if self
+            .call(owner)
+            .and_then(|call| call.selected_application())
+            .is_none()
+        {
+            return Err(CheckedNeedProducerAdmissionError::NotSelectedCall);
+        }
+        self.checked_expression_producer_definition(project, symbols, owner)
+    }
+
+    fn checked_expression_producer_definition(
+        &self,
+        project: HirAnalysisProjectView<'_>,
+        symbols: &ProjectSymbolTable,
+        owner: ExprId,
+    ) -> Result<CheckedExpressionProducerDefinition, CheckedNeedProducerAdmissionError> {
+        let coordinates = crate::semantic_coordinate::SemanticCoordinateIndex::new(
+            self.accepted_root_catalog(),
+            self,
+        );
+        let coordinate = coordinates
+            .expression(owner)
+            .map_err(|_| CheckedNeedProducerAdmissionError::SiteEncoding)?;
+        let bytes = coordinate
+            .canonical_bytes()
+            .map_err(|_| CheckedNeedProducerAdmissionError::SiteEncoding)?;
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"arcweft.need.producer-site.v1\0");
+        hasher.update(
+            &u32::try_from(bytes.len())
+                .map_err(|_| CheckedNeedProducerAdmissionError::SiteEncoding)?
+                .to_le_bytes(),
+        );
+        hasher.update(&bytes);
+        let plan = self.checked_expression_semantic_digest(
+            project,
+            symbols,
+            owner,
+            crate::final_analysis::CheckedMatchLimits::PRODUCTION,
+        )?;
+        Ok(CheckedExpressionProducerDefinition {
+            site: NeedProducerSiteDigest::from_bytes(*hasher.finalize().as_bytes()),
+            plan: arcweft_core::task::TaskPlanSemanticDigest::from_bytes(*plan.as_bytes()),
+        })
+    }
+
     /// Derives the exact source-ordered semantic retention certificate for a
     /// direct selected producer call.
     ///

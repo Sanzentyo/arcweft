@@ -1554,6 +1554,13 @@ fn direct_observe_program() -> AwbcProgram {
                         observation,
                     )),
                     target: RuntimeHostCallTargetSeed {
+                        producer: arcweft_core::task::HostCallProducerDefinition {
+                            contract: arcweft_core::task::NeedProducerContractDigest::from_bytes(
+                                [1; 32],
+                            ),
+                            plan: arcweft_core::task::TaskPlanSemanticDigest::from_bytes([2; 32]),
+                            site: arcweft_core::task::NeedProducerSiteDigest::from_bytes([3; 32]),
+                        },
                         public_id: "agent.observe".to_owned(),
                         capability: "agent".to_owned(),
                         operation: "observe".to_owned(),

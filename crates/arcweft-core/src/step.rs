@@ -5,7 +5,7 @@ use crate::runtime_id::{DialogueActivationId, RuntimeDialogueEffectSiteId, Runti
 use crate::stream::RuntimeStreamEvent;
 use crate::task::{
     CancelScopeId, NamedHostArg, RuntimeHostPayloadOwnershipError, RuntimeNeedState, TaskEvent,
-    TaskSpec, inspect_host_payload_ownership,
+    TaskSubmission, inspect_host_payload_ownership,
 };
 use crate::time::{LogicalDuration, TickId};
 use crate::value::RuntimePayload;
@@ -167,7 +167,7 @@ pub struct RuntimeEffectBatch {
 /// Host-facing requests emitted by one deterministic runtime step.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct HostRequestBatch {
-    pub tasks: Vec<TaskSpec>,
+    pub tasks: Vec<TaskSubmission>,
     pub audio: Vec<AudioCommandEnvelope>,
     pub cancel_scopes: Vec<CancelScopeId>,
     pub ensure_content: Vec<RuntimeContentRequest>,
@@ -203,18 +203,120 @@ pub enum RuntimeHostCallMode {
 }
 
 /// Typed host request emitted by compact or structured execution.
-#[derive(Clone, Debug, PartialEq)]
-pub struct RuntimeHostCallRequest {
+#[derive(Debug, PartialEq)]
+pub struct RuntimeHostCallStart {
     pub id: RuntimeHostCallId,
-    pub public_id: String,
-    pub capability: String,
-    pub operation: String,
-    pub contract: Option<HostCallContractDigest>,
-    pub args: Vec<RuntimePayload>,
-    pub named_args: Vec<NamedHostArg<RuntimePayload>>,
+    pub producer: crate::task::HostCallProducerDefinition,
+    pub request: crate::task::HostTaskRequest,
     pub result: crate::pattern::RuntimeSemanticTypeId,
     pub mode: RuntimeHostCallMode,
     pub deterministic: bool,
+}
+
+/// One host call admitted by its runtime owner's task journal.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeHostCallRequest {
+    pub id: RuntimeHostCallId,
+    submission: crate::task::TaskSubmission,
+    pub mode: RuntimeHostCallMode,
+    pub deterministic: bool,
+}
+
+impl RuntimeHostCallRequest {
+    pub(crate) fn admit_start(
+        start: RuntimeHostCallStart,
+        generation: crate::task::GenerationId,
+        registry: &mut crate::task::NeedProducerRegistry,
+    ) -> Result<Self, crate::task::NeedProducerAdmissionError> {
+        Self::admit(
+            start.id,
+            start.producer,
+            generation,
+            start.request,
+            start.result,
+            start.mode,
+            start.deterministic,
+            registry,
+        )
+    }
+    pub(crate) fn admit(
+        id: RuntimeHostCallId,
+        producer: crate::task::HostCallProducerDefinition,
+        generation: crate::task::GenerationId,
+        request: crate::task::HostTaskRequest,
+        result: crate::pattern::RuntimeSemanticTypeId,
+        mode: RuntimeHostCallMode,
+        deterministic: bool,
+        registry: &mut crate::task::NeedProducerRegistry,
+    ) -> Result<Self, crate::task::NeedProducerAdmissionError> {
+        if !matches!(request, crate::task::HostTaskRequest::Custom { .. }) {
+            return Err(crate::task::NeedProducerAdmissionError::InvalidProducerArguments);
+        }
+        let submission =
+            registry.ensure_task(producer.instantiate(generation, result, request)?)?;
+        Ok(Self {
+            id,
+            submission,
+            mode,
+            deterministic,
+        })
+    }
+    pub const fn submission(&self) -> &crate::task::TaskSubmission {
+        &self.submission
+    }
+    pub fn into_submission(self) -> crate::task::TaskSubmission {
+        self.submission
+    }
+    pub fn public_id(&self) -> String {
+        self.submission.spec().request.host_call_id()
+    }
+    pub fn result(&self) -> crate::pattern::RuntimeSemanticTypeId {
+        let crate::task::TaskOutcomeContract::Program { payload } = &self.submission.spec().outcome
+        else {
+            unreachable!("runtime host call admission retains its program result type")
+        };
+        *payload
+    }
+    pub fn capability(&self) -> &str {
+        let crate::task::HostTaskRequest::Custom { capability, .. } =
+            &self.submission.spec().request
+        else {
+            unreachable!("admitted custom host call")
+        };
+        &capability.0
+    }
+    pub fn operation(&self) -> &str {
+        let crate::task::HostTaskRequest::Custom { operation, .. } =
+            &self.submission.spec().request
+        else {
+            unreachable!("admitted custom host call")
+        };
+        operation
+    }
+    pub fn contract(&self) -> Option<HostCallContractDigest> {
+        let crate::task::HostTaskRequest::Custom {
+            manifest_contract, ..
+        } = &self.submission.spec().request
+        else {
+            unreachable!("admitted custom host call")
+        };
+        *manifest_contract
+    }
+    pub fn args(&self) -> &[RuntimePayload] {
+        let crate::task::HostTaskRequest::Custom { args, .. } = &self.submission.spec().request
+        else {
+            unreachable!("admitted custom host call")
+        };
+        args
+    }
+    pub fn named_args(&self) -> &[NamedHostArg<RuntimePayload>] {
+        let crate::task::HostTaskRequest::Custom { named_args, .. } =
+            &self.submission.spec().request
+        else {
+            unreachable!("admitted custom host call")
+        };
+        named_args
+    }
 }
 
 /// Host-supplied outcome for a previously emitted host call request.

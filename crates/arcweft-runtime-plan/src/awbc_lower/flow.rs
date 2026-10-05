@@ -1482,14 +1482,14 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     .lower(&target.source);
                 let item_binding =
                     frame.local(target.item_binding, self.local_type(target.item_binding));
-                let Some(task) = self.inventory.intern_await_many_task(
-                    &target.need.0,
-                    &target.task.0,
-                    &target.request,
-                    &target.outcome,
-                    item_binding,
-                    target.limit,
-                ) else {
+                let captures = target
+                    .captures()
+                    .map(|local| frame.local(local, self.local_type(local)))
+                    .collect();
+                let Some(task) =
+                    self.inventory
+                        .intern_await_many_task(target, captures, item_binding)
+                else {
                     return;
                 };
                 let binding = binding

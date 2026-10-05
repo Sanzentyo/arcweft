@@ -93,6 +93,7 @@ pub struct RootCommandHostCallBinding {
     arguments: Vec<RootCommandHostArgument>,
     result: RuntimeSemanticTypeId,
     result_route: RootCommandHostResultRoute,
+    producer: arcweft_core::task::HostCallProducerDefinition,
 }
 
 impl RootCommandHostCallBinding {
@@ -105,16 +106,79 @@ impl RootCommandHostCallBinding {
         result: RuntimeSemanticTypeId,
         result_route: RootCommandHostResultRoute,
     ) -> Self {
+        let arguments = arguments.into_iter().collect::<Vec<_>>();
+        let producer = Self::producer_definition(
+            &constructor,
+            &target,
+            &endpoint,
+            &arguments,
+            result,
+            result_route,
+        );
         Self {
             constructor,
             target,
             endpoint,
-            arguments: arguments.into_iter().collect(),
+            arguments,
             result,
             result_route,
+            producer,
         }
     }
 
+    fn producer_definition(
+        constructor: &RuntimeCommandConstructorId,
+        target: &RuntimeCommandTargetId,
+        endpoint: &RootCommandHostCallEndpoint,
+        arguments: &[RootCommandHostArgument],
+        result: RuntimeSemanticTypeId,
+        route: RootCommandHostResultRoute,
+    ) -> arcweft_core::task::HostCallProducerDefinition {
+        let mut site = blake3::Hasher::new();
+        site.update(b"arcweft.root-command.host-site.v1\0");
+        for identity in [constructor.as_str(), target.as_str()] {
+            site.update(&(identity.len() as u64).to_le_bytes());
+            site.update(identity.as_bytes());
+        }
+        let site = *site.finalize().as_bytes();
+        let mut plan = blake3::Hasher::new();
+        plan.update(b"arcweft.root-command.host-plan.v1\0");
+        plan.update(&site);
+        plan.update(endpoint.contract.as_bytes());
+        for name in [&endpoint.capability, &endpoint.operation] {
+            plan.update(&(name.len() as u64).to_le_bytes());
+            plan.update(name.as_bytes());
+        }
+        plan.update(result.as_bytes());
+        plan.update(&[
+            match endpoint.mode {
+                RuntimeHostCallMode::Immediate => 0,
+                RuntimeHostCallMode::Suspend => 1,
+            },
+            u8::from(endpoint.deterministic),
+            match route {
+                RootCommandHostResultRoute::Ignore => 0,
+                RootCommandHostResultRoute::RootEventPayload => 1,
+            },
+        ]);
+        plan.update(&(arguments.len() as u64).to_le_bytes());
+        for argument in arguments {
+            plan.update(&[match argument {
+                RootCommandHostArgument::Constructor => 0,
+                RootCommandHostArgument::Target => 1,
+                RootCommandHostArgument::Payload => 2,
+            }]);
+        }
+        arcweft_core::task::HostCallProducerDefinition {
+            contract: arcweft_core::task::NeedProducerContractDigest::from_bytes(
+                *endpoint.contract.as_bytes(),
+            ),
+            plan: arcweft_core::task::TaskPlanSemanticDigest::from_bytes(
+                *plan.finalize().as_bytes(),
+            ),
+            site: arcweft_core::task::NeedProducerSiteDigest::from_bytes(site),
+        }
+    }
     fn key(&self) -> RootCommandHostCallKey {
         RootCommandHostCallKey {
             constructor: self.constructor.clone(),
@@ -168,6 +232,8 @@ pub enum RootCommandHostCallCatalogError {
         "root-command host request identity `{request}` is already pending or duplicated in the publication batch"
     )]
     DuplicatePendingRequest { request: String },
+    #[error("root-command host task admission failed: {message}")]
+    TaskAdmission { message: String },
     #[error(
         "root-command host binding for constructor `{constructor}` and target `{target}` has result semantic type {semantic_type:?} that cannot be resolved in the selected AWBC program: {source}"
     )]
@@ -286,8 +352,13 @@ impl RootCommandHostCallCatalog {
         &self,
         envelope: &RuntimeCommandEnvelope,
         program: &RuntimeProgramOwner,
-    ) -> Result<(RuntimeHostCallRequest, PendingRootCommandResult), RootCommandHostCallCatalogError>
-    {
+    ) -> Result<
+        (
+            arcweft_core::step::RuntimeHostCallStart,
+            PendingRootCommandResult,
+        ),
+        RootCommandHostCallCatalogError,
+    > {
         let key = RootCommandHostCallKey {
             constructor: envelope.command.constructor().clone(),
             target: envelope.command.target().clone(),
@@ -320,14 +391,18 @@ impl RootCommandHostCallCatalog {
             })
             .collect();
         Ok((
-            RuntimeHostCallRequest {
+            arcweft_core::step::RuntimeHostCallStart {
                 id: root_command_request_id(envelope),
-                public_id: binding.endpoint.public_id.clone(),
-                capability: binding.endpoint.capability.clone(),
-                operation: binding.endpoint.operation.clone(),
-                contract: Some(binding.endpoint.contract),
-                args,
-                named_args: Vec::new(),
+                producer: binding.producer,
+                request: arcweft_core::task::HostTaskRequest::Custom {
+                    capability: arcweft_core::task::HostCapabilityId(
+                        binding.endpoint.capability.clone(),
+                    ),
+                    operation: binding.endpoint.operation.clone(),
+                    manifest_contract: Some(binding.endpoint.contract),
+                    args,
+                    named_args: Vec::new(),
+                },
                 result: binding.result,
                 mode: binding.endpoint.mode,
                 deterministic: binding.endpoint.deterministic,
@@ -388,7 +463,12 @@ impl BundleSession {
         }
 
         let mut requests = Vec::with_capacity(prepared.len());
-        for (request, pending) in prepared {
+        for (start, pending) in prepared {
+            let request = self.executor.admit_host_call(start).map_err(|error| {
+                RootCommandHostCallCatalogError::TaskAdmission {
+                    message: error.to_string(),
+                }
+            })?;
             self.pending_root_command_results
                 .insert(request.id.clone(), pending);
             requests.push(request);

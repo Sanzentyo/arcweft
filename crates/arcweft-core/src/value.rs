@@ -277,7 +277,7 @@ pub enum RuntimeValue {
     Color(RuntimeColor),
     /// Opaque identity of a one-shot temporal value. The payload type is owned
     /// by the enclosing runtime type, never inferred from this identity.
-    Need(crate::task::NeedId),
+    NeedHandle(crate::task::RuntimeNeedHandle),
     Char(char),
     Duration(LogicalDuration),
     Progress(Progress),
@@ -382,7 +382,6 @@ impl RuntimeValue {
             | Self::TensorF64(_)
             | Self::String(_)
             | Self::Color(_)
-            | Self::Need(_)
             | Self::Char(_)
             | Self::Duration(_)
             | Self::Progress(_)
@@ -392,6 +391,9 @@ impl RuntimeValue {
             Self::Callable(callable) => callable
                 .retained()
                 .iter()
+                .any(Self::contains_nonconstant_opaque),
+            Self::NeedHandle(handle) => handle
+                .request_values()
                 .any(Self::contains_nonconstant_opaque),
         }
     }
@@ -404,6 +406,7 @@ impl RuntimeValue {
     pub fn contains_function(&self) -> bool {
         match self {
             Self::Callable(_) => true,
+            Self::NeedHandle(handle) => handle.request_values().any(Self::contains_function),
             Self::Tuple(values) => values.iter().any(Self::contains_function),
             Self::Record(fields) => fields.iter().any(|field| field.value().contains_function()),
             Self::Seq(sequence) => sequence_contains_function(sequence),
@@ -440,7 +443,6 @@ impl RuntimeValue {
             | Self::TensorF64(_)
             | Self::String(_)
             | Self::Color(_)
-            | Self::Need(_)
             | Self::Char(_)
             | Self::Duration(_)
             | Self::Progress(_)
@@ -3841,7 +3843,7 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
             let [red, green, blue, alpha] = value.rgba8();
             format!("#{red:02x}{green:02x}{blue:02x}{alpha:02x}")
         }
-        RuntimeValue::Need(value) => format!("need/{}", value.0),
+        RuntimeValue::NeedHandle(value) => format!("need/{}", value.need_id()),
         RuntimeValue::EntityRef(value) => value.runtime_label(),
         RuntimeValue::Char(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),

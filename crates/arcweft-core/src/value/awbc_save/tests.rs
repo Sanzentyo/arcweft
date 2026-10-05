@@ -34,8 +34,8 @@ fn native_rollback_image_round_trips_plan_callable_and_affine_iterator_without_l
     .unwrap();
     let value = RuntimeValue::Tuple(vec![
         RuntimeValue::Callable(callable),
-        RuntimeValue::Iterator(RuntimeIterator::values(vec![RuntimeValue::Need(
-            crate::task::NeedId("need.once".to_owned()),
+        RuntimeValue::Iterator(RuntimeIterator::values(vec![RuntimeValue::NeedHandle(
+            crate::tests::reusable_need("need.once"),
         )])),
     ]);
     assert!(!value.ownership().permits_copy());
@@ -56,13 +56,13 @@ fn native_rollback_image_round_trips_plan_callable_and_affine_iterator_without_l
 fn iterator_snapshot_round_trips_only_the_owned_remainder() {
     let owner = RuntimeProgramOwner::Awbc(Arc::new(AwbcProgram::default()));
     let mut iterator = RuntimeIterator::values(vec![
-        RuntimeValue::Need(crate::task::NeedId("need.consumed".to_owned())),
-        RuntimeValue::Need(crate::task::NeedId("need.remaining".to_owned())),
+        RuntimeValue::NeedHandle(crate::tests::reusable_need("need.consumed")),
+        RuntimeValue::NeedHandle(crate::tests::reusable_need("need.remaining")),
     ]);
     assert_eq!(
         iterator.next(),
-        Some(RuntimeValue::Need(crate::task::NeedId(
-            "need.consumed".to_owned()
+        Some(RuntimeValue::NeedHandle(crate::tests::reusable_need(
+            "need.consumed"
         )))
     );
 
@@ -81,15 +81,15 @@ fn iterator_snapshot_round_trips_only_the_owned_remainder() {
     };
     assert_eq!(
         restored_iterator.next(),
-        Some(RuntimeValue::Need(crate::task::NeedId(
-            "need.remaining".to_owned()
+        Some(RuntimeValue::NeedHandle(crate::tests::reusable_need(
+            "need.remaining"
         )))
     );
 }
 
 #[test]
-fn need_snapshot_preserves_handle_identity_and_rejects_empty_ids() {
-    let value = RuntimeValue::Need(crate::task::NeedId("need.profile".to_owned()));
+fn need_snapshot_preserves_handle_identity_and_rejects_zero_or_forged_correlations() {
+    let value = RuntimeValue::NeedHandle(crate::tests::reusable_need("need.profile"));
     let snapshot =
         AwbcRuntimeValueSnapshot::from_runtime_value(&value).expect("typed Need handle snapshots");
     let encoded = serde_json::to_vec(&snapshot).expect("Need snapshot serializes");
@@ -97,17 +97,13 @@ fn need_snapshot_preserves_handle_identity_and_rejects_empty_ids() {
         serde_json::from_slice(&encoded).expect("Need snapshot decodes");
     let owner = RuntimeProgramOwner::Awbc(Arc::new(AwbcProgram::default()));
     assert_eq!(decoded.into_runtime_value_for_program(&owner), Ok(value));
-    assert!(
-        AwbcRuntimeValueSnapshot::from_runtime_value(&RuntimeValue::Need(crate::task::NeedId(
-            String::new()
-        )))
-        .is_err()
-    );
-    assert!(
-        AwbcRuntimeValueSnapshot::Need(crate::task::NeedId(String::new()))
-            .into_runtime_value_for_program(&owner)
-            .is_err()
-    );
+    let mut zero: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+    zero["NeedHandle"]["correlation"]["need"] = serde_json::json!(vec![0_u8; 32]);
+    assert!(serde_json::from_value::<AwbcRuntimeValueSnapshot>(zero).is_err());
+    let mut forged: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+    forged["NeedHandle"]["correlation"]["producer_contract"] = serde_json::json!(vec![9_u8; 32]);
+    let forged: AwbcRuntimeValueSnapshot = serde_json::from_value(forged).unwrap();
+    assert!(forged.into_runtime_value_for_program(&owner).is_err());
 }
 
 #[test]

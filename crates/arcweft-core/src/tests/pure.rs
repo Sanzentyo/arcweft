@@ -62,14 +62,14 @@ fn pure_value_backend_moves_an_affine_need_argument_into_its_result() {
     let plan = Arc::new(builder.finish().expect("sealed pure helper"));
     let helper =
         RuntimePureHelperRef::resolve(&plan, plan.pure_helpers()[0].id).expect("helper reference");
-    let value = RuntimeValue::Need(crate::task::NeedId("need.pure.affine".to_owned()));
+    let value = RuntimeValue::NeedHandle(crate::tests::reusable_need("need.pure.affine"));
     assert!(!value.ownership().permits_copy());
     let mut backend = VmRuntimePureCallBackend::default();
     assert_eq!(
         backend
             .call_values(helper, vec![value])
             .expect("affine argument transfers into pure result"),
-        RuntimeValue::Need(crate::task::NeedId("need.pure.affine".to_owned()))
+        RuntimeValue::NeedHandle(crate::tests::reusable_need("need.pure.affine"))
     );
 }
 
@@ -128,9 +128,9 @@ fn pure_collect_intrinsic_moves_affine_sequence_items() {
     let plan = Arc::new(builder.finish().expect("collect helper seals"));
     let helper = RuntimePureHelperRef::resolve(&plan, plan.pure_helpers()[0].id)
         .expect("collect helper reference");
-    let item = RuntimeValue::Need(crate::task::NeedId("need.pure.collect".to_owned()));
+    let item = RuntimeValue::NeedHandle(crate::tests::reusable_need("need.pure.collect"));
     let original = match &item {
-        RuntimeValue::Need(handle) => handle.0.as_ptr(),
+        RuntimeValue::NeedHandle(handle) => handle.spec() as *const crate::task::TaskSpec,
         _ => unreachable!(),
     };
     let input = RuntimeValue::Seq(RuntimeSeq::Values(vec![item]));
@@ -140,10 +140,10 @@ fn pure_collect_intrinsic_moves_affine_sequence_items() {
     let RuntimeValue::Seq(RuntimeSeq::Values(items)) = result else {
         panic!("collect returns its affine sequence")
     };
-    let [RuntimeValue::Need(item)] = items.as_slice() else {
+    let [RuntimeValue::NeedHandle(item)] = items.as_slice() else {
         panic!("collect retains one Need")
     };
-    assert_eq!(item.0.as_ptr(), original);
+    assert_eq!(item.spec() as *const crate::task::TaskSpec, original);
 }
 
 #[test]

@@ -22,8 +22,8 @@ use arcweft_core::{
         RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimePlanBuilder,
     },
     task::{
-        CancelScopeId, HostTaskRequest, LogicalEpoch, TaskClass, TaskId, TaskKey, TaskPolicy,
-        TaskPriority, TaskSequence, TaskSpec,
+        CancelScopeId, HostTaskRequest, LogicalEpoch, TaskClass, TaskPolicy, TaskPriority,
+        TaskSequence, TaskSpec,
     },
 };
 use arcweft_presentation::appearance::{
@@ -86,20 +86,11 @@ fn local_task_cancellation_reaches_runtime_and_releases_its_generation_pin() {
     .unwrap();
     let sequence = TaskSequence(7);
     let dispatch = crate::task::HostTaskDispatch {
-        generation: GenerationId::new(0),
         logical_epoch: LogicalEpoch(1),
         sequence,
         last_publication_revision: None,
         bundle_asset_context: None,
-        task: TaskSpec::new(
-            TaskId("task.cancelled".to_owned()),
-            TaskKey("task.cancelled".to_owned()),
-            TaskClass::Background,
-            TaskPriority(0),
-            CancelScopeId("test".to_owned()),
-            TaskPolicy::AlwaysStart,
-            HostTaskRequest::custom("test", "unit", []),
-        ),
+        task: admitted_test_task("task.cancelled"),
     };
     session.tasks.register_dispatch(&dispatch);
     session
@@ -114,10 +105,10 @@ fn local_task_cancellation_reaches_runtime_and_releases_its_generation_pin() {
     assert!(matches!(
         prepared.runtime.task_events.as_slice(),
         [arcweft_core::task::TaskEvent {
-            task_id,
+            correlation,
             kind: arcweft_core::task::TaskEventKind::Cancelled,
             ..
-        }] if task_id.0 == "task.cancelled"
+        }] if correlation == &dispatch.task.handle().correlation
     ));
     assert!(session.task_generation_pins.is_empty());
 }
@@ -130,15 +121,7 @@ fn task_sequence_uses_last_available_identity_once() {
     )
     .unwrap();
     session.next_task_sequence = u64::MAX - 1;
-    let task = TaskSpec::new(
-        TaskId("task.last".to_owned()),
-        TaskKey("task.last".to_owned()),
-        TaskClass::Background,
-        TaskPriority(0),
-        CancelScopeId("test".to_owned()),
-        TaskPolicy::AlwaysStart,
-        HostTaskRequest::custom("test", "unit", []),
-    );
+    let task = admitted_test_task("task.last");
 
     let dispatch =
         session.dispatch_requested_tasks(RuntimeClockStep::from_millis(1, 16).unwrap(), vec![task]);
@@ -445,4 +428,41 @@ fn restore_rejects_a_retired_installed_presentation_before_reinterpreting_its_vi
     ));
     assert_eq!(session.presentation_generation.id, GenerationId::new(0));
     assert_eq!(session.view_style_program(), Some(&original_style));
+}
+
+fn admitted_test_task(label: &str) -> arcweft_core::task::TaskSubmission {
+    use arcweft_core::{
+        pattern::RuntimeCheckedType,
+        task::{
+            NeedProducerContractDigest, NeedProducerFamily, NeedProducerInstance,
+            NeedProducerSiteDigest, NeedProducerSpec, RuntimeTypeSemanticDigest,
+            TaskAdmissionJournal, TaskOutcomeContract, TaskPlanSemanticDigest,
+        },
+        value::{RuntimePayload, RuntimeValue},
+    };
+    let outcome = TaskOutcomeContract::new(RuntimeCheckedType::Unit);
+    let producer = NeedProducerSpec::new(
+        NeedProducerFamily::HostAdapterTask,
+        NeedProducerContractDigest::from_bytes([1; 32]),
+        TaskPlanSemanticDigest::from_bytes([2; 32]),
+        NeedProducerSiteDigest::from_bytes([3; 32]),
+        RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes()),
+        RuntimeValue::Tuple(vec![RuntimeValue::String(label.into())])
+            .try_digest(1024)
+            .unwrap(),
+    );
+    let spec = TaskSpec {
+        generation: GenerationId::new(0),
+        producer: NeedProducerInstance::try_from(&producer).unwrap(),
+        class: TaskClass::Background,
+        priority: TaskPriority(0),
+        cancel_scope: CancelScopeId("test".into()),
+        policy: TaskPolicy::AlwaysStart,
+        outcome,
+        request: HostTaskRequest::custom("test", "unit", [RuntimePayload::from(label)]),
+        debug_label: label.into(),
+    };
+    let mut journal = TaskAdmissionJournal::default();
+    let handle = journal.ensure_task(spec).unwrap();
+    journal.submission(handle).unwrap()
 }

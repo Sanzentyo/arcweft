@@ -4,7 +4,7 @@ use super::{
     ChoiceRuntimeOption, ChoiceState, FiberAwaitTarget, FiberStatus, FiberSuspensionReason,
     FiberTerminalValue, FiberTrap, FlowExit, FlowFiberStatus, HostCallState, MappedEffect,
     ProductStepError, RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeHostCallId,
-    RuntimeStepMode, RuntimeStepOptions, RuntimeStepOutput, RuntimeStepStopReason, TaskId,
+    RuntimeStepMode, RuntimeStepOptions, RuntimeStepOutput, RuntimeStepStopReason,
     has_host_requests, has_visible_output, runtime_value_label, source_diagnostic,
 };
 
@@ -29,6 +29,11 @@ impl AwbcProductStepExecutor {
         output: &mut RuntimeStepOutput,
     ) {
         let (category, code, message) = match error {
+            ProductStepError::Vm(error) => (
+                RuntimeDiagnosticCategory::Internal,
+                AwbcTrapCode::InternalInvariant,
+                error.to_string(),
+            ),
             ProductStepError::Type(message) => (
                 RuntimeDiagnosticCategory::Type,
                 AwbcTrapCode::TypeMismatch,
@@ -132,6 +137,7 @@ impl AwbcProductStepExecutor {
 
     pub(super) fn record_error(&self, error: ProductStepError, output: &mut RuntimeStepOutput) {
         let (category, message) = match error {
+            ProductStepError::Vm(error) => (RuntimeDiagnosticCategory::Internal, error.to_string()),
             ProductStepError::Input(message) => (RuntimeDiagnosticCategory::Input, message),
             ProductStepError::Type(message) => (RuntimeDiagnosticCategory::Type, message),
             ProductStepError::Host(message) => (RuntimeDiagnosticCategory::Host, message),
@@ -283,19 +289,13 @@ impl AwbcProductStepExecutor {
         match self.product_status() {
             AwbcProductExecutorStatus::Shared(status) => *status,
             AwbcProductExecutorStatus::WaitingMany(state) => {
-                self.task_plan_ids(state.plan).map_or_else(
-                    || {
-                        FlowFiberStatus::Failed(
-                            "AWBC AwaitMany suspension references a non-AwaitMany plan".to_owned(),
-                        )
-                    },
-                    |(task, _)| {
+                state
+                    .base
+                    .as_ref()
+                    .map_or(FlowFiberStatus::Running, |base| {
                         FlowFiberStatus::WaitingMany(crate::engine::WaitingManyStatus::Observed(
                             crate::engine::AwaitManyProgress {
-                                task: state.in_flight.first().map_or_else(
-                                    || TaskId(task),
-                                    |item| TaskId(item.task_id.clone()),
-                                ),
+                                task: base.correlation().task_id,
                                 completed: state
                                     .results
                                     .iter()
@@ -304,8 +304,7 @@ impl AwbcProductStepExecutor {
                                 total: state.items.len(),
                             },
                         ))
-                    },
-                )
+                    })
             }
         }
     }
@@ -386,17 +385,20 @@ impl AwbcProductStepExecutor {
                 })
             }
             FiberSuspensionReason::Await {
-                target: FiberAwaitTarget::Need { id, item_type, .. },
+                target:
+                    FiberAwaitTarget::Need {
+                        need, item_type, ..
+                    },
                 ..
             } => FlowFiberStatus::NeedWaiting(Box::new(AwaitState {
                 binding: None,
-                need: id.clone(),
+                handle: need.clone(),
                 item_type: AwaitItemType::Awbc(*item_type),
                 observers: Vec::new(),
                 resume: None,
                 observed_through: self
                     .need_publications
-                    .get(&(self.facade_fiber.persistent_id, id.clone()))
+                    .get(&(self.facade_fiber.persistent_id, need.correlation()))
                     .copied(),
                 queued: std::collections::VecDeque::new(),
             })),

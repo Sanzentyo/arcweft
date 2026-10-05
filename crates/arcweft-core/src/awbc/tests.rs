@@ -1207,8 +1207,14 @@ fn sequence_next_moves_affine_item_and_initializes_only_nonempty_edge() {
         "{invalid_error:?}"
     );
 
-    let first = RuntimeValue::Need(crate::task::NeedId("need.first".to_owned()));
-    let second = RuntimeValue::Need(crate::task::NeedId("need.second".to_owned()));
+    let first = RuntimeValue::NeedHandle(crate::tests::reusable_need_with_outcome(
+        "need.first",
+        crate::task::TaskOutcomeContract::program(RuntimeSemanticTypeId::from_bytes([71; 32])),
+    ));
+    let second = RuntimeValue::NeedHandle(crate::tests::reusable_need_with_outcome(
+        "need.second",
+        crate::task::TaskOutcomeContract::program(RuntimeSemanticTypeId::from_bytes([71; 32])),
+    ));
     let mut fiber = FiberState::for_entry(&decoded, AwbcEntryId(0), 3, 64)
         .expect("sequence next fiber initializes");
     fiber
@@ -7473,6 +7479,7 @@ fn expression_apply_surfaces_host_call_from_the_dynamic_callee() {
         effects: AwbcEffectSetId(0),
     });
     host_program.host_calls.push(AwbcHostCall {
+        producer: crate::tests::host_producer(),
         public_id: AwbcStringId(0),
         capability: AwbcStringId(0),
         operation: AwbcStringId(0),

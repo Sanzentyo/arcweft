@@ -62,10 +62,9 @@ fn task_outcome_contract_owns_one_exact_ready_payload() {
 #[test]
 fn task_dispatch_start_continues_the_saved_revision_frontier() {
     let identity = TaskDispatchIdentity::new(
-        GenerationId::new(2),
+        crate::tests::reusable_need("task.resume").correlation(),
         LogicalEpoch(4),
         TaskSequence(7),
-        TaskId("task.resume".to_owned()),
     );
     let initial = TaskDispatchStart::new(identity.clone(), None);
     assert_eq!(
@@ -96,100 +95,83 @@ fn task_dispatch_start_continues_the_saved_revision_frontier() {
 
 #[test]
 fn normalizes_task_events_by_replay_stable_keys() {
-    let events = vec![
-        TaskEvent {
-            generation: GenerationId::new(0),
-            logical_epoch: LogicalEpoch(1),
-            task_id: TaskId("b".to_owned()),
-            sequence: TaskSequence(0),
-            publication_revision: TaskPublicationRevision::FIRST,
-            kind: TaskEventKind::Ready(RuntimePayload::from("b")),
-        },
-        TaskEvent {
-            generation: GenerationId::new(0),
+    let correlation = crate::tests::reusable_need("ordered producer input").correlation();
+    let early = TaskEvent {
+        correlation: crate::tests::reusable_need("other producer input").correlation(),
+        cursor: TaskPublicationCursor {
             logical_epoch: LogicalEpoch(0),
-            task_id: TaskId("z".to_owned()),
             sequence: TaskSequence(9),
-            publication_revision: TaskPublicationRevision::FIRST,
-            kind: TaskEventKind::Ready(RuntimePayload::from("z")),
         },
-        TaskEvent {
-            generation: GenerationId::new(0),
+        kind: TaskEventKind::Ready(RuntimePayload::from("early")),
+    };
+    let pending = TaskEvent {
+        correlation,
+        cursor: TaskPublicationCursor {
             logical_epoch: LogicalEpoch(1),
-            task_id: TaskId("a".to_owned()),
             sequence: TaskSequence(1),
-            publication_revision: TaskPublicationRevision::FIRST,
-            kind: TaskEventKind::Ready(RuntimePayload::from("a")),
         },
-    ];
-
-    let normalized = normalize_task_events(events);
-    let keys: Vec<_> = normalized
-        .iter()
-        .map(|event| {
-            (
-                event.logical_epoch,
-                event.task_id.0.as_str(),
-                event.sequence,
-            )
-        })
-        .collect();
+        kind: TaskEventKind::Progress(crate::value::Progress::new(0.5).unwrap()),
+    };
+    let ready = TaskEvent {
+        correlation,
+        cursor: TaskPublicationCursor {
+            logical_epoch: LogicalEpoch(1),
+            sequence: TaskSequence(2),
+        },
+        kind: TaskEventKind::Ready(RuntimePayload::from("ready")),
+    };
     assert_eq!(
-        keys,
-        vec![
-            (LogicalEpoch(0), "z", TaskSequence(9)),
-            (LogicalEpoch(1), "a", TaskSequence(1)),
-            (LogicalEpoch(1), "b", TaskSequence(0)),
-        ]
+        normalize_task_events(vec![ready.clone(), pending.clone(), early.clone()]),
+        vec![early, pending, ready]
     );
 }
 
 #[test]
 fn detects_already_normalized_task_events_without_reordering() {
+    let correlation = crate::tests::reusable_need("ordered producer input").correlation();
     let events = vec![
         TaskEvent {
-            generation: GenerationId::new(0),
-            logical_epoch: LogicalEpoch(0),
-            task_id: TaskId("a".to_owned()),
-            sequence: TaskSequence(0),
-            publication_revision: TaskPublicationRevision::FIRST,
-            kind: TaskEventKind::Ready(RuntimePayload::from("a")),
+            correlation,
+            cursor: TaskPublicationCursor {
+                logical_epoch: LogicalEpoch(0),
+                sequence: TaskSequence(1),
+            },
+            kind: TaskEventKind::Progress(crate::value::Progress::new(0.5).unwrap()),
         },
         TaskEvent {
-            generation: GenerationId::new(0),
-            logical_epoch: LogicalEpoch(0),
-            task_id: TaskId("b".to_owned()),
-            sequence: TaskSequence(1),
-            publication_revision: TaskPublicationRevision::FIRST,
-            kind: TaskEventKind::Ready(RuntimePayload::from("b")),
+            correlation,
+            cursor: TaskPublicationCursor {
+                logical_epoch: LogicalEpoch(0),
+                sequence: TaskSequence(2),
+            },
+            kind: TaskEventKind::Ready(RuntimePayload::from("ready")),
         },
     ];
-
     assert!(task_events_are_normalized(&events));
     assert_eq!(normalize_task_events(events.clone()), events);
 }
 
 #[test]
 fn task_spec_uses_typed_request_and_debug_label() {
-    let spec = TaskSpec::new(
-        TaskId("task.asset.bg".to_owned()),
-        TaskKey("asset.bg".to_owned()),
-        TaskClass::AssetDecode,
-        TaskPriority(3),
-        CancelScopeId("flow.opening".to_owned()),
-        TaskPolicy::JoinSameKey,
+    let mut spec = crate::tests::task_spec(
+        TaskOutcomeContract::new(RuntimeCheckedType::String),
         HostTaskRequest::AssetLoad(AssetRequest {
             id: "asset.bg.room".to_owned(),
             kind: "image".to_owned(),
         }),
     );
-
+    spec.priority = TaskPriority(3);
+    spec.cancel_scope = CancelScopeId("flow.opening".to_owned());
     assert_eq!(spec.debug_label, "asset.load image asset.bg.room");
-    assert!(matches!(
-        spec.request,
-        HostTaskRequest::AssetLoad(AssetRequest { id, kind })
-            if id == "asset.bg.room" && kind == "image"
-    ));
+    assert!(
+        matches!(&spec.request, HostTaskRequest::AssetLoad(AssetRequest { id, kind })
+        if id == "asset.bg.room" && kind == "image")
+    );
+    let receipt = crate::tests::task_submission(spec);
+    assert_eq!(
+        receipt.handle().correlation,
+        receipt.spec().correlation(TaskLaunchOrdinal::JOIN).unwrap()
+    );
 }
 
 #[test]

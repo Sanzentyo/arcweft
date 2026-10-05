@@ -118,23 +118,18 @@ fn runtime_plan_vm_starts_and_awaits_a_typed_need_producer() {
     );
     let task = started.output.requests.tasks[0].clone();
     assert!(matches!(
-        &task.request,
+        &task.spec().request,
         HostTaskRequest::Custom { capability, operation, .. }
             if capability.0 == "custom" && operation == "echo"
     ));
     assert_eq!(
-        executor.task_generation(&task.id),
+        executor.task_generation(&task.task_id()),
         Some(executor.generation())
     );
     assert_eq!(executor.restartable_dispatches().len(), 1);
 
     let event = TaskEvent::from_dispatch(
-        TaskDispatchIdentity::new(
-            executor.generation(),
-            LogicalEpoch(1),
-            TaskSequence(1),
-            task.id,
-        ),
+        TaskDispatchIdentity::new(task.handle().correlation, LogicalEpoch(1), TaskSequence(1)),
         TaskPublicationRevision::FIRST,
         TaskEventKind::Ready(RuntimePayload::new(RuntimeValue::String(
             "echo-ok".to_owned(),

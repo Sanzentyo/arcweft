@@ -147,11 +147,9 @@ pub struct BundleSessionRuntimeSnapshot {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BundleSessionTaskDispatchSnapshot {
-    pub need_id: NeedId,
-    pub generation: GenerationId,
+    pub correlation: arcweft_core::task::TaskCorrelation,
     pub logical_epoch: LogicalEpoch,
     pub sequence: TaskSequence,
-    pub task_id: TaskId,
     pub last_publication_revision: Option<TaskPublicationRevision>,
     pub status: RuntimeTaskStatus,
 }

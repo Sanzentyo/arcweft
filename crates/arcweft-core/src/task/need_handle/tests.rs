@@ -56,11 +56,10 @@ fn accepted(spec: TaskSpec, ordinal: u64) -> RuntimeNeedHandle {
 #[test]
 fn need_handle_preparation_distinguishes_reusable_and_accepted_origins() {
     assert_eq!(
-        RuntimeNeedHandle::try_reusable_join(specification(TaskPolicy::AlwaysStart)),
+        RuntimeNeedHandle::try_from(specification(TaskPolicy::AlwaysStart)),
         Err(RuntimeNeedHandleError::ReusableAlwaysStart)
     );
-    let reusable =
-        RuntimeNeedHandle::try_reusable_join(specification(TaskPolicy::JoinSameKey)).unwrap();
+    let reusable = RuntimeNeedHandle::try_from(specification(TaskPolicy::JoinSameKey)).unwrap();
     assert!(reusable.reusable_spec().is_some());
     assert_eq!(
         reusable.correlation().launch_ordinal,
@@ -108,8 +107,8 @@ fn need_handle_preparation_snapshot_moves_complete_specification_without_startin
         .unwrap();
         let handle = accepted(spec.clone(), ordinal);
         let correlation = handle.correlation();
-        let spec_address = std::ptr::from_ref(handle.spec.as_ref());
-        let HostTaskRequest::Custom { args, .. } = &handle.spec.request else {
+        let spec_address = std::ptr::from_ref(&handle.0.spec);
+        let HostTaskRequest::Custom { args, .. } = &handle.0.spec.request else {
             panic!("custom request fixture");
         };
         let RuntimeValue::String(argument) = args[0].value() else {
@@ -119,24 +118,23 @@ fn need_handle_preparation_snapshot_moves_complete_specification_without_startin
         let restored = RuntimeNeedHandle::try_from_snapshot(handle.into_snapshot()).unwrap();
         assert_eq!(restored.correlation(), correlation);
         assert_eq!(
-            restored.spec.producer.arguments(),
+            restored.0.spec.producer.arguments(),
             RuntimeValue::Tuple(vec![RuntimeValue::String("owned argument".to_owned())])
                 .try_digest(1024)
                 .unwrap()
         );
-        assert_eq!(std::ptr::from_ref(restored.spec.as_ref()), spec_address);
-        let HostTaskRequest::Custom { args, .. } = &restored.spec.request else {
+        assert_eq!(std::ptr::from_ref(&restored.0.spec), spec_address);
+        let HostTaskRequest::Custom { args, .. } = &restored.0.spec.request else {
             panic!("restored request fixture");
         };
         let RuntimeValue::String(argument) = args[0].value() else {
             panic!("restored argument fixture");
         };
         assert_eq!(argument.as_ptr(), argument_address);
-        assert_eq!(*restored.spec, spec);
+        assert_eq!(restored.0.spec, spec);
         assert!(restored.reusable_spec().is_none());
     }
-    let handle =
-        RuntimeNeedHandle::try_reusable_join(specification(TaskPolicy::JoinSameKey)).unwrap();
+    let handle = RuntimeNeedHandle::try_from(specification(TaskPolicy::JoinSameKey)).unwrap();
     let restored = RuntimeNeedHandle::try_from_snapshot(handle.into_snapshot()).unwrap();
     assert!(restored.reusable_spec().is_some());
 }
@@ -214,7 +212,7 @@ fn need_handle_preparation_rejects_every_forged_correlation_field() {
             Err(expected)
         );
         let mut snapshot = accepted(spec.clone(), 1).into_snapshot();
-        snapshot.correlation = forged;
+        snapshot.0.correlation = forged;
         assert_eq!(
             RuntimeNeedHandle::try_from_snapshot(snapshot),
             Err(expected)
@@ -282,7 +280,7 @@ fn need_handle_preparation_rejects_changed_producer_instance_on_restore() {
         } else {
             RuntimeNeedHandleError::ProducerContractMismatch
         };
-        snapshot.spec.producer = NeedProducerInstance::try_from(&changed).unwrap();
+        snapshot.0.spec.producer = NeedProducerInstance::try_from(&changed).unwrap();
         assert_eq!(
             RuntimeNeedHandle::try_from_snapshot(snapshot),
             Err(expected)
@@ -294,13 +292,13 @@ fn need_handle_preparation_rejects_changed_producer_instance_on_restore() {
 fn need_handle_preparation_checks_policy_origin_and_generation_on_restore() {
     let spec = specification(TaskPolicy::AlwaysStart);
     let mut snapshot = accepted(spec.clone(), 1).into_snapshot();
-    snapshot.origin = RuntimeNeedHandleOrigin::ReusableJoin;
+    snapshot.0.origin = RuntimeNeedHandleOrigin::ReusableJoin;
     assert_eq!(
         RuntimeNeedHandle::try_from_snapshot(snapshot),
         Err(RuntimeNeedHandleError::ReusableAlwaysStart)
     );
     let mut snapshot = accepted(spec.clone(), 1).into_snapshot();
-    snapshot.spec.policy = TaskPolicy::JoinSameKey;
+    snapshot.0.spec.policy = TaskPolicy::JoinSameKey;
     assert_eq!(
         RuntimeNeedHandle::try_from_snapshot(snapshot),
         Err(RuntimeNeedHandleError::Identity(
@@ -308,7 +306,7 @@ fn need_handle_preparation_checks_policy_origin_and_generation_on_restore() {
         ))
     );
     let mut snapshot = accepted(spec.clone(), 1).into_snapshot();
-    snapshot.spec.generation = GenerationId::new(1);
+    snapshot.0.spec.generation = GenerationId::new(1);
     assert_eq!(
         RuntimeNeedHandle::try_from_snapshot(snapshot),
         Err(RuntimeNeedHandleError::CorrelationMismatch)

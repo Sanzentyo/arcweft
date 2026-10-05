@@ -1007,18 +1007,27 @@ impl Engine {
                     &assignment_before,
                 )?;
                 return Ok(DialogueActivationStep::HostCall(
-                    crate::step::RuntimeHostCallRequest {
+                    crate::step::RuntimeHostCallRequest::admit(
                         id,
-                        public_id: target.public_id,
-                        capability: target.capability,
-                        operation: target.operation,
-                        contract: target.contract,
-                        args,
-                        named_args,
+                        target.producer,
+                        self.generation,
+                        crate::task::HostTaskRequest::Custom {
+                            capability: crate::task::HostCapabilityId(target.capability),
+                            operation: target.operation,
+                            manifest_contract: target.contract,
+                            args,
+                            named_args,
+                        },
                         result,
-                        mode: target.mode,
-                        deterministic: target.deterministic,
-                    },
+                        target.mode,
+                        target.deterministic,
+                        &mut self.need_producers,
+                    )
+                    .map_err(|error| {
+                        DialogueExecutionError::HostCallFailed {
+                            message: error.to_string(),
+                        }
+                    })?,
                 ));
             }
             FlowOp::LineOperation { binding, operation } => {
@@ -2782,12 +2791,12 @@ mod tests {
             .line()
             .inspect_schedule(&token, child, &work, deadline, &[local])
             .expect("schedule proof");
-        let need = crate::task::NeedId("need.native.scheduled.capture".to_owned());
+        let need = crate::tests::reusable_need("need.native.scheduled.capture");
         transaction.line_mut().schedule_prepared(
             proof,
             vec![RuntimeLocalBinding {
                 local,
-                value: RuntimeValue::Need(need.clone()),
+                value: RuntimeValue::NeedHandle(need.clone()),
             }]
             .into_boxed_slice(),
         );
@@ -2826,7 +2835,7 @@ mod tests {
         );
         assert!(matches!(
             transaction.line().scheduled_packet_for_child(&token),
-            Ok([RuntimeLocalBinding { value: RuntimeValue::Need(actual), .. }]) if actual == &need
+            Ok([RuntimeLocalBinding { value: RuntimeValue::NeedHandle(actual), .. }]) if actual == &need
         ));
         assert!(engine.child_fibers.is_empty());
     }
@@ -3103,18 +3112,16 @@ mod tests {
             .dialogue_activations
             .begin_transaction(&id)
             .expect("transaction");
-        let request = crate::step::RuntimeHostCallRequest {
-            id: call_id.clone(),
-            public_id: "log.info".to_owned(),
-            capability: "log".to_owned(),
-            operation: "info".to_owned(),
-            contract: None,
-            args: Vec::new(),
-            named_args: Vec::new(),
-            result: unit,
-            mode: crate::step::RuntimeHostCallMode::Suspend,
-            deterministic: true,
-        };
+        let request = engine
+            .admit_host_call(crate::step::RuntimeHostCallStart {
+                id: call_id.clone(),
+                producer: crate::tests::host_producer(),
+                request: crate::task::HostTaskRequest::custom("log", "info", []),
+                result: unit,
+                mode: crate::step::RuntimeHostCallMode::Suspend,
+                deterministic: true,
+            })
+            .unwrap();
         let mut output = crate::step::RuntimeStepOutput::default();
         engine.commit_and_suspend_dialogue(
             transaction,

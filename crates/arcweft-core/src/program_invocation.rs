@@ -60,7 +60,6 @@ impl<E> RuntimeProgramContinuationError<E> {
 pub(crate) fn input_refs<'a>(
     inputs: &'a [RuntimeProgramInput],
     result: &'a RuntimeValue,
-    producers: &crate::task::NeedProducerRegistry,
 ) -> Result<Vec<&'a RuntimeValue>, RuntimeProgramContinuationFailure> {
     let count = inputs
         .iter()
@@ -75,14 +74,9 @@ pub(crate) fn input_refs<'a>(
         .map(|(position, input)| match input {
             RuntimeProgramInput::PreviousResult => Ok(result),
             RuntimeProgramInput::Detached(value) => {
-                value
-                    .validate_detached_custody_for(Some(&|need| {
-                        producers.launch_for_need(need).is_some()
-                    }))
-                    .map_err(|source| RuntimeProgramContinuationFailure::DetachedInput {
-                        position,
-                        source,
-                    })?;
+                value.validate_detached_custody().map_err(|source| {
+                    RuntimeProgramContinuationFailure::DetachedInput { position, source }
+                })?;
                 Ok(value)
             }
         })

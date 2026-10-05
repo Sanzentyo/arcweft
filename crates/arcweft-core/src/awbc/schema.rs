@@ -18,9 +18,7 @@ use crate::runtime_id::{
     RuntimeDialogueEffectSiteId, RuntimeDialogueMarkId, RuntimeDialogueValueSlotId,
     RuntimeFormatAttemptId, RuntimeLocalDeclarationId,
 };
-use crate::task::{
-    AssetLoadKind, NeedProducerContractDigest, NeedProducerSiteDigest, TaskPlanSemanticDigest,
-};
+use crate::task::{AssetLoadKind, NeedProducerContractDigest, NeedProducerSiteDigest};
 use crate::value::{
     RuntimeAgentConstructor, RuntimeDialoguePlainTextContextTemplateRef, RuntimeEntityReference,
     RuntimeFmtParameterId, RuntimeHandleKind, RuntimeRecordFieldId,
@@ -523,13 +521,6 @@ fn visit_program_strings(program: &mut AwbcProgram, visitor: &mut dyn FnMut(&mut
         }
         for argument in &mut task.arguments {
             visit_optional_string_id(&mut argument.name, visitor);
-        }
-        if let AwbcTaskPlanKind::AwaitMany {
-            public_id, need_id, ..
-        } = &mut task.kind
-        {
-            visit_string_id(public_id, visitor);
-            visit_string_id(need_id, visitor);
         }
     }
     for effect in &mut program.effect_plans {
@@ -2696,6 +2687,7 @@ pub struct AwbcIntrinsic {
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct AwbcHostCall {
+    pub producer: crate::task::HostCallProducerDefinition,
     pub public_id: AwbcStringId,
     pub capability: AwbcStringId,
     pub operation: AwbcStringId,
@@ -2759,22 +2751,103 @@ pub enum AwbcTaskPlanKind {
     NeedProducer {
         contract: NeedProducerContractDigest,
         site: NeedProducerSiteDigest,
-        semantic_digest: TaskPlanSemanticDigest,
         restart: AwbcTaskRestartPolicy,
     },
     AwaitMany {
-        public_id: AwbcStringId,
-        /// Stable need identifier reported at the shared runtime boundary.
-        need_id: AwbcStringId,
+        contract: NeedProducerContractDigest,
+        site: NeedProducerSiteDigest,
+        /// Semantic parent task-plan authority, not this row's self digest.
+        plan: crate::task::TaskPlanSemanticDigest,
+        child: AwbcTaskPlanId,
+        captures: Vec<AwbcRegisterId>,
+        request_function: AwbcFunctionId,
         item_binding: AwbcRegisterId,
         limit: u32,
+    },
+    Template {
+        family: crate::task::NeedProducerFamily,
+        contract: NeedProducerContractDigest,
+        site: NeedProducerSiteDigest,
+        /// Supplied by the admitted parent definition's semantic transcript.
+        plan: crate::task::TaskPlanSemanticDigest,
+        request_function: AwbcFunctionId,
     },
 }
 
 impl AwbcTaskPlan {
+    pub(crate) fn instantiate_template(
+        &self,
+        program: &AwbcProgram,
+        generation: crate::task::GenerationId,
+        arguments: crate::value::RuntimeValueView<'_>,
+        request: crate::task::HostTaskRequest,
+        max_encoded_bytes: usize,
+    ) -> Result<crate::task::TaskSpec, String> {
+        use crate::task::{
+            NeedProducerFamily, NeedProducerInstance, NeedProducerSpec, TaskOutcomeContract,
+            TaskPolicy, TaskSpec,
+        };
+        let (family, contract, site, plan) = match self.kind {
+            AwbcTaskPlanKind::AwaitMany {
+                contract,
+                site,
+                plan,
+                ..
+            } => (NeedProducerFamily::AwaitManyBase, contract, site, plan),
+            AwbcTaskPlanKind::Template {
+                family,
+                contract,
+                site,
+                plan,
+                ..
+            } => (family, contract, site, plan),
+            AwbcTaskPlanKind::NeedProducer { .. } => {
+                return Err("selected producer is not a template".into());
+            }
+        };
+        let digest =
+            crate::entry::schema::canonical_runtime_value_view_digest(arguments, max_encoded_bytes)
+                .map_err(|error| error.to_string())?;
+        let payload_type = program
+            .runtime_types
+            .get(self.payload_type.index())
+            .ok_or("task payload type is absent")?
+            .semantic_identity();
+        let input = NeedProducerSpec::new(
+            family,
+            contract,
+            plan,
+            site,
+            crate::task::RuntimeTypeSemanticDigest::from_bytes(*payload_type.as_bytes()),
+            digest,
+        );
+        let spec = TaskSpec {
+            generation,
+            producer: NeedProducerInstance::try_from(&input).map_err(|error| error.to_string())?,
+            class: awbc_task_class(self.class),
+            priority: crate::task::TaskPriority(self.priority),
+            cancel_scope: crate::task::CancelScopeId(
+                program
+                    .strings
+                    .get(self.cancel_scope.index())
+                    .ok_or("task scope is absent")?
+                    .clone(),
+            ),
+            policy: match self.policy {
+                AwbcTaskPolicy::JoinSameKey => TaskPolicy::JoinSameKey,
+                AwbcTaskPolicy::AlwaysStart => TaskPolicy::AlwaysStart,
+            },
+            outcome: TaskOutcomeContract::program(payload_type),
+            request,
+            debug_label: format!("awbc.template.{family:?}"),
+        };
+        spec.validate_outcome().map_err(|error| error.to_string())?;
+        Ok(spec)
+    }
+
     /// Reconstructs the Core producer authority from this typed AWBC row.
     /// Callers use this only after verifying the program; the reconstructed
-    /// digest must still match the digest retained by the sealed row.
+    /// semantic digest is recomputed from the complete verified row.
     pub fn need_producer_plan(
         &self,
         program: &AwbcProgram,
@@ -2782,7 +2855,6 @@ impl AwbcTaskPlan {
         let AwbcTaskPlanKind::NeedProducer {
             contract,
             site,
-            semantic_digest,
             restart,
         } = &self.kind
         else {
@@ -2864,9 +2936,6 @@ impl AwbcTaskPlan {
             crate::task::CancelScopeId(string(self.cancel_scope)?),
         )
         .map_err(|error| format!("invalid Need producer plan: {error}"))?;
-        if plan.semantic_digest().map_err(|error| error.to_string())? != *semantic_digest {
-            return Err("Need producer semantic digest does not match its typed row".to_owned());
-        }
         Ok(plan)
     }
 }

@@ -11,7 +11,7 @@ use arcweft_core::pattern::{
 };
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::task::{
-    BoundTaskOutcome, HostTaskRequest, NamedHostArg, Progress, TaskId, TaskPolicy,
+    BoundTaskOutcome, BoundTaskSpec, HostTaskRequest, NamedHostArg, Progress, TaskId, TaskPolicy,
     TaskPublicationRevision, TaskSpec,
 };
 use arcweft_core::value::{
@@ -38,11 +38,10 @@ pub trait HostAdapter: Send + Sync + std::fmt::Debug {
     /// Starts one task and reports whether it completed or remains pending.
     fn submit(
         &self,
-        task: &TaskSpec,
-        outcome: &BoundTaskOutcome,
+        task: &BoundTaskSpec,
         _context: HostTaskSubmissionContext,
     ) -> Option<HostTaskSubmission> {
-        self.complete(task, outcome)
+        self.complete(task.spec(), task.outcome())
             .map(HostTaskSubmission::Completed)
     }
 
@@ -354,10 +353,10 @@ impl HostAdapterRegistry {
     /// Starts a task through the concrete adapter registered for its host-call id.
     pub fn submit(
         &self,
-        task: &TaskSpec,
-        outcome: &BoundTaskOutcome,
+        bound: &BoundTaskSpec,
         context: HostTaskSubmissionContext,
     ) -> Option<HostTaskSubmission> {
+        let task = bound.spec();
         let call = self.calls.get(&task.request.host_call_id())?;
         if let HostTaskRequest::Custom {
             manifest_contract: Some(contract),
@@ -370,7 +369,7 @@ impl HostAdapterRegistry {
         {
             return None;
         }
-        call.adapter.submit(task, outcome, context)
+        call.adapter.submit(bound, context)
     }
 
     /// Starts a direct, checked host-call request using its selected modality.
@@ -379,11 +378,11 @@ impl HostAdapterRegistry {
     /// without weakening that task boundary.
     pub fn submit_runtime_host_call(
         &self,
-        task: &TaskSpec,
-        outcome: &BoundTaskOutcome,
+        bound: &BoundTaskSpec,
         mode: RuntimeHostCallMode,
         context: HostTaskSubmissionContext,
     ) -> Option<HostTaskSubmission> {
+        let task = bound.spec();
         let call = self.calls.get(&task.request.host_call_id())?;
         let HostTaskRequest::Custom {
             manifest_contract: Some(contract),
@@ -399,14 +398,13 @@ impl HostAdapterRegistry {
         {
             return None;
         }
-        call.adapter.submit(task, outcome, context)
+        call.adapter.submit(bound, context)
     }
 
     /// Synchronous helper. Pending work returns `None`.
-    pub fn dispatch(&self, task: &TaskSpec, outcome: &BoundTaskOutcome) -> Option<HostTaskOutcome> {
+    pub fn dispatch(&self, task: &BoundTaskSpec) -> Option<HostTaskOutcome> {
         match self.submit(
             task,
-            outcome,
             HostTaskSubmissionContext::new(TaskPublicationRevision::FIRST),
         )? {
             HostTaskSubmission::Completed(outcome) => Some(outcome),
@@ -819,7 +817,7 @@ fn runtime_value_kind(value: &RuntimeValue) -> &'static str {
         RuntimeValue::TensorF64(_) => "TensorF64",
         RuntimeValue::String(_) => "String",
         RuntimeValue::Color(_) => "Color",
-        RuntimeValue::Need(_) => "Need",
+        RuntimeValue::NeedHandle(_) => "Need",
         RuntimeValue::Char(_) => "Char",
         RuntimeValue::Duration(_) => "Duration",
         RuntimeValue::Progress(_) => "Progress",
@@ -850,8 +848,7 @@ mod tests {
     };
     use arcweft_core::pattern::RuntimeCheckedType;
     use arcweft_core::task::{
-        CancelScopeId, HostTaskRequest, TaskClass, TaskId, TaskKey, TaskOutcomeContract,
-        TaskPolicy, TaskPriority,
+        CancelScopeId, HostTaskRequest, TaskClass, TaskOutcomeContract, TaskPolicy, TaskPriority,
     };
 
     #[derive(Debug)]
@@ -900,13 +897,15 @@ mod tests {
             .build();
 
         let task = task("fixture", "echo");
-        let bound = task
-            .outcome
-            .bind_standalone()
-            .expect("test task has a standalone outcome contract");
-        let outcome = registry
-            .dispatch(&task, &bound)
-            .expect("adapter handles task");
+        let mut journal = arcweft_core::task::TaskAdmissionJournal::default();
+        let handle = journal.ensure_task(task.clone()).unwrap();
+        let bound = arcweft_core::task::BoundTaskSpec::bind(
+            journal.submission(handle).unwrap(),
+            None,
+            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
+        let outcome = registry.dispatch(&bound).expect("adapter handles task");
 
         let HostTaskCompletion::Ready(value) = outcome.completion else {
             panic!("task succeeds");
@@ -1163,15 +1162,30 @@ mod tests {
     }
 
     fn task(capability: &str, operation: &str) -> TaskSpec {
-        TaskSpec::new(
-            TaskId(format!("{capability}.{operation}")),
-            TaskKey(format!("{capability}.{operation}")),
-            TaskClass::Background,
-            TaskPriority(0),
-            CancelScopeId("test".to_owned()),
-            TaskPolicy::JoinSameKey,
-            HostTaskRequest::custom(capability, operation, []),
-        )
-        .with_outcome(TaskOutcomeContract::new(RuntimeCheckedType::String))
+        use arcweft_core::task::{
+            GenerationId, NeedProducerContractDigest, NeedProducerFamily, NeedProducerInstance,
+            NeedProducerSiteDigest, NeedProducerSpec, RuntimeTypeSemanticDigest,
+            TaskPlanSemanticDigest,
+        };
+        let outcome = TaskOutcomeContract::new(RuntimeCheckedType::String);
+        let producer = NeedProducerSpec::new(
+            NeedProducerFamily::HostAdapterTask,
+            NeedProducerContractDigest::from_bytes([1; 32]),
+            TaskPlanSemanticDigest::from_bytes([2; 32]),
+            NeedProducerSiteDigest::from_bytes([3; 32]),
+            RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes()),
+            RuntimeValue::Tuple(vec![]).try_digest(1024).unwrap(),
+        );
+        TaskSpec {
+            generation: GenerationId::new(1),
+            producer: NeedProducerInstance::try_from(&producer).unwrap(),
+            class: TaskClass::Background,
+            priority: TaskPriority(0),
+            cancel_scope: CancelScopeId("test".into()),
+            policy: TaskPolicy::JoinSameKey,
+            outcome,
+            request: HostTaskRequest::custom(capability, operation, []),
+            debug_label: format!("{capability}.{operation}"),
+        }
     }
 }

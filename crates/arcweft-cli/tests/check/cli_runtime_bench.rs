@@ -3564,7 +3564,7 @@ fn assert_scheduler_completion_counts(measurement: &serde_json::Value, expected_
             .is_some(),
         "bench JSON should expose skipped completion sort items: {measurement}"
     );
-    assert_eq!(scheduler["joined_completion_events_emitted"], 0);
+    assert!(scheduler.get("joined_completion_events_emitted").is_none());
 }
 
 fn assert_native_bridge_phase_timings(measurement: &serde_json::Value) {

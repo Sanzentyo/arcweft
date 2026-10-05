@@ -65,9 +65,27 @@ where
 
     fn cancel(&mut self, command: &CancelCommand) -> ReplCommandHostResult<ReplCancelOutcome> {
         let target = command.target.clone();
-        let outcome = self
-            .tasks
-            .cancel_runtime_tasks(target.clone().into_runtime_task_target());
+        let runtime_target = match &target {
+            ReplCancelTarget::All => RuntimeTaskCancelTarget::All,
+            ReplCancelTarget::Scope(scope) => {
+                RuntimeTaskCancelTarget::Scope(arcweft_core::task::CancelScopeId(scope.clone()))
+            }
+            ReplCancelTarget::Task(selector) => {
+                let record = self
+                    .tasks
+                    .runtime_tasks(RuntimeTaskListOptions {
+                        include_completed: true,
+                    })
+                    .into_iter()
+                    .find(|record| record.dispatch.correlation.task_id.to_string() == *selector)
+                    .ok_or_else(|| super::host::ReplCommandHostError {
+                        code: super::types::ReplCommandDiagnosticCode::InvalidArgument,
+                        message: "task selector does not name an accepted runtime task".to_owned(),
+                    })?;
+                RuntimeTaskCancelTarget::Task(record.dispatch.correlation.task_id)
+            }
+        };
+        let outcome = self.tasks.cancel_runtime_tasks(runtime_target);
         Ok(ReplCancelOutcome::from_runtime_task_outcome(
             target, outcome,
         ))
@@ -89,22 +107,10 @@ impl From<RuntimeTaskStatus> for ReplTaskStatus {
 impl From<RuntimeTaskRecord> for ReplTaskRecord {
     fn from(record: RuntimeTaskRecord) -> Self {
         Self {
-            id: record.id,
+            dispatch: record.dispatch,
             status: ReplTaskStatus::from(record.status),
-            generation: record.generation,
-            logical_epoch: record.logical_epoch,
-            sequence: record.sequence,
+            cursor: record.cursor,
             cancel_scope: record.cancel_scope,
-        }
-    }
-}
-
-impl ReplCancelTarget {
-    fn into_runtime_task_target(self) -> RuntimeTaskCancelTarget {
-        match self {
-            Self::All => RuntimeTaskCancelTarget::All,
-            Self::Task(id) => RuntimeTaskCancelTarget::Task(id),
-            Self::Scope(scope) => RuntimeTaskCancelTarget::Scope(scope),
         }
     }
 }

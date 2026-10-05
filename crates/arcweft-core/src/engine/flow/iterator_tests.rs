@@ -103,8 +103,8 @@ fn iterator_plan(copy_receiver: bool) -> RuntimePlan {
 fn witness_with_need(plan: &RuntimePlan) -> RuntimeIterator {
     RuntimeIterator::witness(
         RuntimeValue::Seq(RuntimeSeq::values(vec![
-            RuntimeValue::Need(NeedId("need.iterator.first".to_owned())),
-            RuntimeValue::Need(NeedId("need.iterator.second".to_owned())),
+            RuntimeValue::NeedHandle(crate::tests::reusable_need("need.iterator.first")),
+            RuntimeValue::NeedHandle(crate::tests::reusable_need("need.iterator.second")),
         ])),
         plan.trait_methods()[0].id,
     )
@@ -117,10 +117,10 @@ fn remaining_need_identity_ptr(iterator: &RuntimeIterator) -> *const u8 {
     let RuntimeValue::Seq(RuntimeSeq::Values(values)) = state.as_ref() else {
         panic!("the affine Vec must remain the live witness state");
     };
-    let Some(RuntimeValue::Need(handle)) = values.last() else {
+    let Some(RuntimeValue::NeedHandle(handle)) = values.last() else {
         panic!("the remaining affine Need handle must stay in the witness state");
     };
-    handle.0.as_ptr()
+    handle.spec() as *const crate::task::TaskSpec as *const u8
 }
 
 #[test]
@@ -133,8 +133,8 @@ fn witness_next_moves_affine_receiver_and_snapshot_restores_the_selected_state()
 
     assert_eq!(
         engine.next_runtime_iterator_item(&mut iterator, &mut backend),
-        Ok(Some(RuntimeValue::Need(NeedId(
-            "need.iterator.first".to_owned()
+        Ok(Some(RuntimeValue::NeedHandle(crate::tests::reusable_need(
+            "need.iterator.first"
         ))))
     );
     assert_eq!(
@@ -159,8 +159,8 @@ fn witness_next_moves_affine_receiver_and_snapshot_restores_the_selected_state()
         .expect("the selected witness state restores under its plan lease");
     assert_eq!(
         engine.next_runtime_iterator_item(&mut iterator, &mut backend),
-        Ok(Some(RuntimeValue::Need(NeedId(
-            "need.iterator.second".to_owned()
+        Ok(Some(RuntimeValue::NeedHandle(crate::tests::reusable_need(
+            "need.iterator.second"
         ))))
     );
     assert_eq!(

@@ -1,8 +1,8 @@
 use arcweft_core::{
     pattern::{RuntimeBuiltinVariantCaseIdentity, RuntimeCheckedType},
     task::{
-        CancelScopeId, HostTaskRequest, TaskClass, TaskId, TaskKey, TaskOutcomeContract,
-        TaskPolicy, TaskPriority, TaskSpec,
+        CancelScopeId, HostTaskRequest, TaskClass, TaskOutcomeContract, TaskPolicy, TaskPriority,
+        TaskSpec,
     },
     value::RuntimeValue,
 };
@@ -23,15 +23,18 @@ fn native_desktop_capabilities_complete_through_host_registry() {
         .expect("desktop host calls are uniquely owned");
     let registry = builder.build();
     let task = task("desktop.platform", "capabilities");
-    let bound_outcome = task
-        .outcome
-        .bind_standalone()
-        .expect("integration task has a standalone outcome contract");
+    let mut journal = arcweft_core::task::TaskAdmissionJournal::default();
+    let handle = journal.ensure_task(task).expect("task admission");
+    let task = arcweft_core::task::BoundTaskSpec::bind(
+        journal.submission(handle).unwrap(),
+        None,
+        arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+    )
+    .expect("standalone bound receipt");
 
     let submission = registry
         .submit(
             &task,
-            &bound_outcome,
             HostTaskSubmissionContext::new(arcweft_core::task::TaskPublicationRevision::FIRST),
         )
         .expect("desktop platform adapter owns capabilities");
@@ -67,18 +70,32 @@ fn native_desktop_capabilities_complete_through_host_registry() {
 }
 
 fn task(capability: &str, operation: &str) -> TaskSpec {
-    let id = format!("{capability}.{operation}");
-    TaskSpec::new(
-        TaskId(id.clone()),
-        TaskKey(id),
-        TaskClass::Background,
-        TaskPriority(0),
-        CancelScopeId("desktop-test".to_owned()),
-        TaskPolicy::JoinSameKey,
-        HostTaskRequest::custom(capability, operation, []),
-    )
-    .with_outcome(TaskOutcomeContract::new(RuntimeCheckedType::Result {
+    use arcweft_core::task::{
+        GenerationId, NeedProducerContractDigest, NeedProducerFamily, NeedProducerInstance,
+        NeedProducerSiteDigest, NeedProducerSpec, RuntimeTypeSemanticDigest,
+        TaskPlanSemanticDigest,
+    };
+    let outcome = TaskOutcomeContract::new(RuntimeCheckedType::Result {
         ok: Box::new(RuntimeCheckedType::String),
         error: Box::new(RuntimeCheckedType::String),
-    }))
+    });
+    let producer = NeedProducerSpec::new(
+        NeedProducerFamily::HostAdapterTask,
+        NeedProducerContractDigest::from_bytes([1; 32]),
+        TaskPlanSemanticDigest::from_bytes([2; 32]),
+        NeedProducerSiteDigest::from_bytes([3; 32]),
+        RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes()),
+        RuntimeValue::Tuple(vec![]).try_digest(1024).unwrap(),
+    );
+    TaskSpec {
+        generation: GenerationId::new(1),
+        producer: NeedProducerInstance::try_from(&producer).unwrap(),
+        class: TaskClass::Background,
+        priority: TaskPriority(0),
+        cancel_scope: CancelScopeId("desktop-test".into()),
+        policy: TaskPolicy::JoinSameKey,
+        outcome,
+        request: HostTaskRequest::custom(capability, operation, []),
+        debug_label: format!("{capability}.{operation}"),
+    }
 }

@@ -32,6 +32,7 @@ pub fn visit_runtime_value_graph<E>(
                     .map(|(_, nested)| nested),
             ),
             RuntimeValue::Callable(value) => pending.extend(value.retained()),
+            RuntimeValue::NeedHandle(handle) => pending.extend(handle.request_values()),
             RuntimeValue::Iterator(RuntimeIterator::Values { items, .. }) => pending.extend(items),
             RuntimeValue::Iterator(RuntimeIterator::Witness { state, .. }) => {
                 pending.push(state);
@@ -52,7 +53,6 @@ pub fn visit_runtime_value_graph<E>(
             | RuntimeValue::TensorF64(_)
             | RuntimeValue::String(_)
             | RuntimeValue::Color(_)
-            | RuntimeValue::Need(_)
             | RuntimeValue::Char(_)
             | RuntimeValue::Duration(_)
             | RuntimeValue::Progress(_)

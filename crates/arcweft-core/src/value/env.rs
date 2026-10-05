@@ -191,13 +191,41 @@ impl RuntimeEnv {
         }
         Ok(env)
     }
-    pub(crate) fn try_duplicate_unrestricted(&self) -> Result<Self, RuntimeEvalError> {
-        for (local, value) in self.bindings() {
+
+    pub(crate) fn try_capture_unrestricted(
+        &self,
+        locals: &[RuntimeLocalDeclarationId],
+    ) -> Result<Self, RuntimeEvalError> {
+        let selected = locals
+            .iter()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>();
+        for local in &selected {
+            let value = self
+                .get(*local)
+                .ok_or(RuntimeEvalError::UninitializedLocal(*local))?;
             if !value.ownership().permits_copy() {
-                return Err(RuntimeEvalError::AffineLocalCopy(local));
+                return Err(RuntimeEvalError::AffineLocalCopy(*local));
             }
         }
-        Ok(self.clone())
+        Ok(Self {
+            scopes: self
+                .scopes
+                .iter()
+                .map(|scope| RuntimeScope {
+                    identity: scope.identity.clone(),
+                    function_context: scope.function_context.clone(),
+                    slots: scope
+                        .slots
+                        .iter()
+                        .filter(|slot| selected.contains(&slot.local()))
+                        .cloned()
+                        .collect(),
+                })
+                .collect(),
+            spare_scopes: Vec::new(),
+            assignment_discards: crate::line_task::RuntimeHandleDropAuthorization::default(),
+        })
     }
 
     pub fn push_scope(&mut self) {
@@ -911,7 +939,7 @@ mod tests {
         let affine = local(1);
         let scalar = local(2);
         let mut env = RuntimeEnv::default();
-        let need = RuntimeValue::Need(crate::task::NeedId("need.local-read".to_owned()));
+        let need = RuntimeValue::NeedHandle(crate::tests::reusable_need("need.local-read"));
         env.set(affine, need.clone());
         env.set(scalar, RuntimeValue::Bool(true));
 
@@ -948,11 +976,11 @@ mod tests {
             RuntimeValue::try_record(vec![
                 (
                     "first".into(),
-                    RuntimeValue::Need(crate::task::NeedId("moved".into())),
+                    RuntimeValue::NeedHandle(crate::tests::reusable_need("moved")),
                 ),
                 (
                     "second".into(),
-                    RuntimeValue::Need(crate::task::NeedId("remaining".into())),
+                    RuntimeValue::NeedHandle(crate::tests::reusable_need("remaining")),
                 ),
             ])
             .unwrap(),
@@ -966,7 +994,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             moved,
-            RuntimeValue::Need(crate::task::NeedId("moved".into()))
+            RuntimeValue::NeedHandle(crate::tests::reusable_need("moved"))
         );
         let assignment = |fields| {
             RuntimeAssignment::new(
@@ -996,7 +1024,9 @@ mod tests {
             .unwrap();
         assert_eq!(
             displaced,
-            vec![RuntimeValue::Need(crate::task::NeedId("remaining".into()))]
+            vec![RuntimeValue::NeedHandle(crate::tests::reusable_need(
+                "remaining"
+            ))]
         );
         assert_eq!(env.get(source), Some(&RuntimeValue::Bool(false)));
     }
@@ -1017,7 +1047,7 @@ mod tests {
             RuntimeValue::try_record(vec![
                 (
                     "owner".into(),
-                    RuntimeValue::Need(crate::task::NeedId("need.first".into())),
+                    RuntimeValue::NeedHandle(crate::tests::reusable_need("need.first")),
                 ),
                 ("other".into(), RuntimeValue::Bool(true)),
             ])
@@ -1035,7 +1065,9 @@ mod tests {
         );
         assert_eq!(
             env.read(&move_field),
-            Ok(RuntimeValue::Need(crate::task::NeedId("need.first".into())))
+            Ok(RuntimeValue::NeedHandle(crate::tests::reusable_need(
+                "need.first"
+            )))
         );
         assert_eq!(env.read(&copy_other), Ok(RuntimeValue::Bool(true)));
         assert!(env.get(source).is_none());
@@ -1095,7 +1127,7 @@ mod tests {
                         base: source,
                         fields: vec![field].into_boxed_slice()
                     },
-                    RuntimeValue::Need(crate::task::NeedId("need.second".into()))
+                    RuntimeValue::NeedHandle(crate::tests::reusable_need("need.second"))
                 )
                 .unwrap()
                 .is_empty()
@@ -1109,7 +1141,7 @@ mod tests {
             .unwrap();
         assert_eq!(displaced.len(), 1);
         assert!(
-            matches!(&displaced[0], RuntimeValue::Record(record) if matches!(record.fields()[0].value(), RuntimeValue::Need(need) if need.0 == "need.second"))
+            matches!(&displaced[0], RuntimeValue::Record(record) if matches!(record.fields()[0].value(), RuntimeValue::NeedHandle(need) if need == &crate::tests::reusable_need("need.second")))
         );
     }
 
@@ -1172,7 +1204,7 @@ mod tests {
         let mut env = RuntimeEnv::default();
         let target = local(1);
         env.set(target, RuntimeValue::Bool(false));
-        let input = RuntimeValue::Need(crate::task::NeedId("need.rejected-write".to_owned()));
+        let input = RuntimeValue::NeedHandle(crate::tests::reusable_need("need.rejected-write"));
         let error = env
             .assign_runtime_place(RuntimeMutablePlace::Local(local(2)), input)
             .unwrap_err();
@@ -1180,7 +1212,7 @@ mod tests {
         assert_eq!(cause, RuntimeEvalError::UnknownLocal(local(2)));
         assert_eq!(
             retained,
-            RuntimeValue::Need(crate::task::NeedId("need.rejected-write".to_owned()))
+            RuntimeValue::NeedHandle(crate::tests::reusable_need("need.rejected-write"))
         );
         assert_eq!(env.get(target), Some(&RuntimeValue::Bool(false)));
         assert!(env.get(local(2)).is_none());

@@ -1829,7 +1829,7 @@ fn native_vec_push_returns_unit_and_pop_back_moves_the_last_item() {
 fn await_progress_runs_only_the_first_matching_observer() {
     let progress_type = RuntimeSemanticTypeId::from_bytes([3; 32]);
     let need_string_type = RuntimeSemanticTypeId::from_bytes([4; 32]);
-    let need_id = NeedId("need.observe".to_owned());
+    let (registry, need_id) = crate::tests::pending_need(string_type());
     let entry = flow_id("flow.await_observer");
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
@@ -1898,21 +1898,30 @@ fn await_progress_runs_only_the_first_matching_observer() {
             entry,
             [crate::value::RuntimeFlowParameterBinding {
                 parameter: crate::entry::FlowParameterCoordinate::from_position(0),
-                value: RuntimeValue::Need(need_id.clone()),
+                value: RuntimeValue::NeedHandle(need_id.clone()),
             }],
         )
         .expect("Await observer Need argument admits");
-    let mut engine = Engine::for_flow_invocation(invocation).expect("Await observer flow exists");
+    let mut engine = Engine::for_flow_invocation_with_need_context(
+        invocation,
+        crate::task::GenerationId::new(0),
+        registry,
+    )
+    .expect("Await observer flow exists");
     let _started = step(&mut engine);
 
     let result = engine.step(
         RuntimeStepInput {
-            need_states: vec![RuntimeNeedState::new(
-                LogicalEpoch(1),
-                need_id,
-                TaskSequence(1),
-                arcweft_need::Need::Pending(Progress::new(0.5).expect("fixture Progress is valid")),
-            )],
+            task_events: vec![crate::task::TaskEvent {
+                correlation: need_id.correlation(),
+                cursor: crate::task::TaskPublicationCursor {
+                    logical_epoch: LogicalEpoch(1),
+                    sequence: TaskSequence(1),
+                },
+                kind: crate::task::TaskEventKind::Progress(
+                    Progress::new(0.5).expect("fixture Progress is valid"),
+                ),
+            }],
             ..RuntimeStepInput::default()
         },
         RuntimeStepOptions::default(),

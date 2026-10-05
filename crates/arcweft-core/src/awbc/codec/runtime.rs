@@ -10,8 +10,8 @@ use crate::awbc::schema::{
     AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger, AwbcParallelPolicy,
     AwbcPresentationCleanup, AwbcPureHelper, AwbcPureHelperOrigin, AwbcReduceOp, AwbcRegisterId,
     AwbcResourceAccess, AwbcResourceAccessMode, AwbcResourceId, AwbcSignatureId, AwbcStreamPlan,
-    AwbcStringId, AwbcTableRange, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanKind, AwbcTaskPolicy,
-    AwbcTaskRequestProjection, AwbcTaskRestartPolicy, AwbcTypeId,
+    AwbcStringId, AwbcTableRange, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanId, AwbcTaskPlanKind,
+    AwbcTaskPolicy, AwbcTaskRequestProjection, AwbcTaskRestartPolicy, AwbcTypeId,
 };
 use crate::runtime_id::{RuntimeDialogueMarkId, RuntimeLocalDeclarationId};
 use crate::value::{RuntimeCallTarget, RuntimeIntrinsic};
@@ -77,6 +77,9 @@ impl Wire for RuntimeCallTarget {
 
 impl Wire for AwbcHostCall {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.producer.contract.as_bytes().write_wire(writer)?;
+        self.producer.plan.as_bytes().write_wire(writer)?;
+        self.producer.site.as_bytes().write_wire(writer)?;
         self.public_id.write_wire(writer)?;
         self.capability.write_wire(writer)?;
         self.operation.write_wire(writer)?;
@@ -89,6 +92,17 @@ impl Wire for AwbcHostCall {
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
+            producer: crate::task::HostCallProducerDefinition {
+                contract: crate::task::NeedProducerContractDigest::from_bytes(
+                    <[u8; 32]>::read_wire(reader)?,
+                ),
+                plan: crate::task::TaskPlanSemanticDigest::from_bytes(<[u8; 32]>::read_wire(
+                    reader,
+                )?),
+                site: crate::task::NeedProducerSiteDigest::from_bytes(<[u8; 32]>::read_wire(
+                    reader,
+                )?),
+            },
             public_id: AwbcStringId::read_wire(reader)?,
             capability: AwbcStringId::read_wire(reader)?,
             operation: AwbcStringId::read_wire(reader)?,
@@ -243,26 +257,46 @@ impl Wire for AwbcTaskPlanKind {
             Self::NeedProducer {
                 contract,
                 site,
-                semantic_digest,
                 restart,
             } => {
                 writer.write_u8(0);
                 contract.write_wire(writer)?;
                 site.write_wire(writer)?;
-                semantic_digest.write_wire(writer)?;
                 restart.write_wire(writer)?;
             }
             Self::AwaitMany {
-                public_id,
-                need_id,
+                contract,
+                site,
+                plan,
+                child,
+                captures,
+                request_function,
                 item_binding,
                 limit,
             } => {
                 writer.write_u8(1);
-                public_id.write_wire(writer)?;
-                need_id.write_wire(writer)?;
+                contract.write_wire(writer)?;
+                site.write_wire(writer)?;
+                plan.write_wire(writer)?;
+                child.write_wire(writer)?;
+                captures.write_wire(writer)?;
+                request_function.write_wire(writer)?;
                 item_binding.write_wire(writer)?;
                 limit.write_wire(writer)?;
+            }
+            Self::Template {
+                family,
+                contract,
+                site,
+                plan,
+                request_function,
+            } => {
+                writer.write_u8(2);
+                writer.write_u8(family.semantic_tag());
+                contract.write_wire(writer)?;
+                site.write_wire(writer)?;
+                plan.write_wire(writer)?;
+                request_function.write_wire(writer)?;
             }
         }
         Ok(())
@@ -274,15 +308,36 @@ impl Wire for AwbcTaskPlanKind {
             0 => Ok(Self::NeedProducer {
                 contract: crate::task::NeedProducerContractDigest::read_wire(reader)?,
                 site: crate::task::NeedProducerSiteDigest::read_wire(reader)?,
-                semantic_digest: crate::task::TaskPlanSemanticDigest::read_wire(reader)?,
                 restart: AwbcTaskRestartPolicy::read_wire(reader)?,
             }),
             1 => Ok(Self::AwaitMany {
-                public_id: AwbcStringId::read_wire(reader)?,
-                need_id: AwbcStringId::read_wire(reader)?,
+                contract: crate::task::NeedProducerContractDigest::read_wire(reader)?,
+                site: crate::task::NeedProducerSiteDigest::read_wire(reader)?,
+                plan: crate::task::TaskPlanSemanticDigest::read_wire(reader)?,
+                child: AwbcTaskPlanId::read_wire(reader)?,
+                captures: Vec::<AwbcRegisterId>::read_wire(reader)?,
+                request_function: AwbcFunctionId::read_wire(reader)?,
                 item_binding: AwbcRegisterId::read_wire(reader)?,
                 limit: u32::read_wire(reader)?,
             }),
+            2 => {
+                let family_offset = reader.offset();
+                let tag = reader.read_u8()?;
+                let family = crate::task::NeedProducerFamily::from_semantic_tag(tag).ok_or(
+                    AwbcCodecError::UnknownTag {
+                        kind: "Need producer family",
+                        tag,
+                        offset: family_offset,
+                    },
+                )?;
+                Ok(Self::Template {
+                    family,
+                    contract: crate::task::NeedProducerContractDigest::read_wire(reader)?,
+                    site: crate::task::NeedProducerSiteDigest::read_wire(reader)?,
+                    plan: crate::task::TaskPlanSemanticDigest::read_wire(reader)?,
+                    request_function: AwbcFunctionId::read_wire(reader)?,
+                })
+            }
             tag => Err(AwbcCodecError::UnknownTag {
                 kind: "task plan kind",
                 tag,

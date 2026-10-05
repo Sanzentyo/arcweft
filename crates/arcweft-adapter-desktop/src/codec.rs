@@ -268,9 +268,7 @@ fn metrics(request: &DesktopRequest, response: &DesktopResponse) -> HostTaskMetr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_core::task::{
-        CancelScopeId, HostTaskRequest, TaskClass, TaskId, TaskKey, TaskPolicy, TaskPriority,
-    };
+    use arcweft_core::task::{CancelScopeId, HostTaskRequest, TaskClass, TaskPolicy, TaskPriority};
     use arcweft_core::value::RuntimeValue;
 
     #[test]
@@ -341,15 +339,34 @@ mod tests {
         operation: &str,
         args: [RuntimePayload; N],
     ) -> TaskSpec {
-        let id = format!("{capability}.{operation}");
-        TaskSpec::new(
-            TaskId(id.clone()),
-            TaskKey(id),
-            TaskClass::Background,
-            TaskPriority(0),
-            CancelScopeId("desktop-codec-test".to_owned()),
-            TaskPolicy::JoinSameKey,
-            HostTaskRequest::custom(capability, operation, args),
-        )
+        use arcweft_core::{
+            pattern::RuntimeCheckedType,
+            task::{
+                GenerationId, NeedProducerContractDigest, NeedProducerFamily, NeedProducerInstance,
+                NeedProducerSiteDigest, NeedProducerSpec, RuntimeTypeSemanticDigest,
+                TaskOutcomeContract, TaskPlanSemanticDigest,
+            },
+        };
+        let arguments = RuntimeValue::Tuple(args.iter().map(|payload| payload.0.clone()).collect());
+        let outcome = TaskOutcomeContract::new(RuntimeCheckedType::Unit);
+        let producer = NeedProducerSpec::new(
+            NeedProducerFamily::HostAdapterTask,
+            NeedProducerContractDigest::from_bytes([1; 32]),
+            TaskPlanSemanticDigest::from_bytes([2; 32]),
+            NeedProducerSiteDigest::from_bytes([3; 32]),
+            RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes()),
+            arguments.try_digest(1024 * 1024).unwrap(),
+        );
+        TaskSpec {
+            generation: GenerationId::new(1),
+            producer: NeedProducerInstance::try_from(&producer).unwrap(),
+            class: TaskClass::Background,
+            priority: TaskPriority(0),
+            cancel_scope: CancelScopeId("desktop-codec-test".into()),
+            policy: TaskPolicy::JoinSameKey,
+            outcome,
+            request: HostTaskRequest::custom(capability, operation, args),
+            debug_label: format!("{capability}.{operation}"),
+        }
     }
 }

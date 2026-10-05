@@ -24,10 +24,10 @@ use crate::stream::{
     RuntimeStreamEvent, StreamMatchArm, StreamOp, StreamRuntimeId, StreamRuntimeState,
 };
 use crate::task::{
-    AwaitManyInvocationIdentity, AwaitManyTarget, CancelScopeId, GenerationId, NeedId,
-    NeedProducerOwnedTaskEventDisposition, NeedProducerRegistry, RuntimeNeedPublication, TaskEvent,
-    TaskEventKind, TaskId, TaskKey, TaskPolicy, TaskPriority, TaskPublicationCursor, TaskSpec,
-    normalize_runtime_need_states, normalize_task_events,
+    AwaitManyTarget, CancelScopeId, GenerationId, NeedId, NeedProducerOwnedTaskEventDisposition,
+    NeedProducerRegistry, RuntimeNeedPublication, TaskEvent, TaskEventKind, TaskId, TaskKey,
+    TaskPolicy, TaskPriority, TaskPublicationCursor, TaskSpec, normalize_runtime_need_states,
+    normalize_task_events,
 };
 use crate::value::{
     RuntimeCallableValue, RuntimeCallableZeroArgInvocationProof,
@@ -63,10 +63,10 @@ pub struct Engine {
     generation: GenerationId,
     need_producers: NeedProducerRegistry,
     task_request_quota_remaining: usize,
-    need_publications: BTreeMap<NeedId, VecDeque<RuntimeNeedPublication>>,
-    latest_need_publications: BTreeMap<NeedId, crate::task::RuntimeNeedPublicationRollbackImage>,
-    need_publication_frontiers: BTreeMap<NeedId, TaskPublicationCursor>,
-    await_many_invocations: BTreeMap<(GenerationId, RuntimePersistentFiberId), u64>,
+    need_publications: BTreeMap<crate::task::TaskCorrelation, VecDeque<RuntimeNeedPublication>>,
+    latest_need_publications:
+        BTreeMap<crate::task::TaskCorrelation, crate::task::RuntimeNeedPublicationRollbackImage>,
+    need_publication_frontiers: BTreeMap<crate::task::TaskCorrelation, TaskPublicationCursor>,
     flow_positions: BTreeMap<FlowRuntimeId, usize>,
     main_started: bool,
     root: Option<RootRuntime>,
@@ -106,10 +106,13 @@ struct NativeEngineRollbackImage {
     generation: GenerationId,
     need_producers: crate::task::NeedProducerRegistryRollbackImage,
     task_request_quota_remaining: usize,
-    need_publications: BTreeMap<NeedId, VecDeque<crate::task::RuntimeNeedPublicationRollbackImage>>,
-    latest_need_publications: BTreeMap<NeedId, crate::task::RuntimeNeedPublicationRollbackImage>,
-    need_publication_frontiers: BTreeMap<NeedId, TaskPublicationCursor>,
-    await_many_invocations: BTreeMap<(GenerationId, RuntimePersistentFiberId), u64>,
+    need_publications: BTreeMap<
+        crate::task::TaskCorrelation,
+        VecDeque<crate::task::RuntimeNeedPublicationRollbackImage>,
+    >,
+    latest_need_publications:
+        BTreeMap<crate::task::TaskCorrelation, crate::task::RuntimeNeedPublicationRollbackImage>,
+    need_publication_frontiers: BTreeMap<crate::task::TaskCorrelation, TaskPublicationCursor>,
     flow_positions: BTreeMap<FlowRuntimeId, usize>,
     main_started: bool,
     root: Option<crate::root::RootRuntimeRollbackImage>,
@@ -1170,7 +1173,7 @@ pub enum FlowStatusLabelStyle {
 #[derive(Debug, PartialEq)]
 pub struct AwaitState {
     pub binding: Option<RuntimePattern>,
-    pub need: NeedId,
+    pub handle: crate::task::RuntimeNeedHandle,
     pub item_type: AwaitItemType,
     pub observers: Vec<crate::plan::RuntimeAwaitPendingObserver>,
     pub resume: Option<FlowCursor>,
@@ -1181,7 +1184,7 @@ pub struct AwaitState {
 #[derive(Clone, Debug, PartialEq)]
 struct AwaitStateRollbackImage {
     binding: Option<RuntimePattern>,
-    need: NeedId,
+    handle: crate::task::RuntimeNeedHandleSaveSnapshot,
     item_type: AwaitItemType,
     observers: Vec<crate::plan::RuntimeAwaitPendingObserver>,
     resume: Option<FlowCursor>,
@@ -1196,7 +1199,11 @@ impl AwaitState {
     ) -> Result<AwaitStateRollbackImage, String> {
         Ok(AwaitStateRollbackImage {
             binding: self.binding.clone(),
-            need: self.need.clone(),
+            handle: crate::task::RuntimeNeedHandleSaveSnapshot::from_live(
+                &self.handle,
+                Some(owner),
+            )
+            .map_err(|error| error.to_string())?,
             item_type: self.item_type,
             observers: self.observers.clone(),
             resume: self.resume,
@@ -1215,7 +1222,10 @@ impl AwaitState {
     ) -> Result<Self, String> {
         Ok(Self {
             binding: image.binding,
-            need: image.need,
+            handle: image
+                .handle
+                .into_live(owner)
+                .map_err(|error| error.to_string())?,
             item_type: image.item_type,
             observers: image.observers,
             resume: image.resume,
@@ -1242,7 +1252,8 @@ pub enum AwaitItemType {
 pub struct AwaitManyState {
     pub binding: Option<RuntimePattern>,
     pub target: AwaitManyTarget,
-    pub invocation: AwaitManyInvocationIdentity,
+    pub base: crate::task::RuntimeNeedHandle,
+    pub captured: Vec<RuntimeValue>,
     pub resume: Option<FlowCursor>,
     pub items: Vec<RuntimeValue>,
     pub next_index: usize,
@@ -1254,7 +1265,8 @@ pub struct AwaitManyState {
 struct AwaitManyStateRollbackImage {
     binding: Option<RuntimePattern>,
     target: AwaitManyTarget,
-    invocation: AwaitManyInvocationIdentity,
+    base: crate::task::RuntimeNeedHandleSaveSnapshot,
+    captured: Vec<crate::value::AwbcRuntimeValueSnapshot>,
     resume: Option<FlowCursor>,
     items: Vec<crate::value::AwbcRuntimeValueSnapshot>,
     next_index: usize,
@@ -1274,7 +1286,9 @@ impl AwaitManyState {
         Ok(AwaitManyStateRollbackImage {
             binding: self.binding.clone(),
             target: self.target.clone(),
-            invocation: self.invocation,
+            base: crate::task::RuntimeNeedHandleSaveSnapshot::from_live(&self.base, Some(owner))
+                .map_err(|error| error.to_string())?,
+            captured: self.captured.iter().map(image).collect::<Result<_, _>>()?,
             resume: self.resume,
             items: self
                 .items
@@ -1308,7 +1322,15 @@ impl AwaitManyState {
         Ok(Self {
             binding: image.binding,
             target: image.target,
-            invocation: image.invocation,
+            base: image
+                .base
+                .into_live(owner)
+                .map_err(|error| error.to_string())?,
+            captured: image
+                .captured
+                .into_iter()
+                .map(value)
+                .collect::<Result<_, _>>()?,
             resume: image.resume,
             items: image
                 .items
@@ -1334,8 +1356,7 @@ impl AwaitManyState {
 #[derive(Clone, Debug, PartialEq)]
 pub struct AwaitManyInFlight {
     pub index: usize,
-    pub task: TaskId,
-    pub need: NeedId,
+    pub handle: crate::task::RuntimeNeedHandle,
 }
 
 /// Shared status projection for both native and Product AwaitMany execution.
@@ -1359,13 +1380,13 @@ impl WaitingManyStatus {
         match self {
             Self::Native(state) => format!(
                 "waiting_many {} {}/{}",
-                state.target.task.0,
+                state.base.correlation().task_id,
                 state.results.iter().filter(|value| value.is_some()).count(),
                 state.results.len()
             ),
             Self::Observed(progress) => format!(
                 "waiting_many {} {}/{}",
-                progress.task.0, progress.completed, progress.total
+                progress.task, progress.completed, progress.total
             ),
         }
     }
@@ -1419,7 +1440,7 @@ impl FlowFiberStatus {
         match self {
             Self::Running => "running".to_owned(),
             Self::Dialogue(_) => "dialogue".to_owned(),
-            Self::NeedWaiting(state) => format!("need_waiting {}", state.need.0),
+            Self::NeedWaiting(state) => format!("need_waiting {}", state.handle.need_id()),
             Self::WaitingMany(state) => state.runtime_status_label(),
             Self::HostCall(state) => format!("host_call {}", state.id.0),
             Self::Choice(state) => {
@@ -1434,7 +1455,7 @@ impl FlowFiberStatus {
         match self {
             Self::Running => "running".to_owned(),
             Self::Dialogue(_) => "dialogue".to_owned(),
-            Self::NeedWaiting(state) => format!("need_waiting {}", state.need.0),
+            Self::NeedWaiting(state) => format!("need_waiting {}", state.handle.need_id()),
             Self::WaitingMany(state) => state.debug_status_label(),
             Self::HostCall(state) => format!("host_call {}", state.id.0),
             Self::Choice(state) => {
@@ -1567,7 +1588,6 @@ impl Engine {
                 .collect::<Result<_, String>>()?,
             latest_need_publications: self.latest_need_publications.clone(),
             need_publication_frontiers: self.need_publication_frontiers.clone(),
-            await_many_invocations: self.await_many_invocations.clone(),
             flow_positions: self.flow_positions.clone(),
             main_started: self.main_started,
             root: self
@@ -1633,7 +1653,6 @@ impl Engine {
                 .collect::<Result<_, String>>()?,
             latest_need_publications: image.latest_need_publications,
             need_publication_frontiers: image.need_publication_frontiers,
-            await_many_invocations: image.await_many_invocations,
             flow_positions: image.flow_positions,
             main_started: image.main_started,
             root: image
@@ -1762,7 +1781,6 @@ impl Engine {
             need_publications: BTreeMap::new(),
             latest_need_publications: BTreeMap::new(),
             need_publication_frontiers: BTreeMap::new(),
-            await_many_invocations: BTreeMap::new(),
             flow_positions,
             main_started,
             root: None,
@@ -1817,9 +1835,7 @@ impl Engine {
         crate::value::ownership::RuntimeDetachedValueError,
     > {
         if let Some((_, value)) = &self.program_result {
-            value.validate_detached_custody_for(Some(&|need| {
-                self.need_producers.launch_for_need(need).is_some()
-            }))?;
+            value.validate_detached_custody()?;
         }
         Ok(self.program_result.take())
     }
@@ -1861,8 +1877,35 @@ impl Engine {
         invocation: crate::plan::RuntimeFlowInvocation,
         generation: GenerationId,
     ) -> Result<Self, EngineStartError> {
+        Self::for_flow_invocation_with_need_context(
+            invocation,
+            generation,
+            NeedProducerRegistry::default(),
+        )
+    }
+
+    /// Transfers Need producer custody together with coordinate-addressed inputs.
+    pub fn for_flow_invocation_with_need_context(
+        invocation: crate::plan::RuntimeFlowInvocation,
+        generation: GenerationId,
+        need_producers: NeedProducerRegistry,
+    ) -> Result<Self, EngineStartError> {
         let (plan, flow, bindings) = invocation.into_parts();
+        for binding in &bindings {
+            crate::value::visit_runtime_value_graph(&binding.value, |value| {
+                if let RuntimeValue::NeedHandle(handle) = value
+                    && need_producers.launch_for_handle(handle).is_none()
+                {
+                    return Err(EngineStartError::InvalidFlowInvocation {
+                        message: "Flow Need input lacks its complete accepted producer context"
+                            .to_owned(),
+                    });
+                }
+                Ok(())
+            })?;
+        }
         let mut engine = Self::new_with_generation(plan, generation);
+        engine.need_producers = need_producers;
         engine.start_flow_cursor(&flow)?;
         let admitted = engine
             .validate_current_flow_parameter_bindings(bindings.iter())
@@ -2155,6 +2198,17 @@ impl Engine {
         self.child_fibers.len()
     }
 
+    pub(crate) fn admit_host_call(
+        &mut self,
+        start: crate::step::RuntimeHostCallStart,
+    ) -> Result<crate::step::RuntimeHostCallRequest, crate::task::NeedProducerAdmissionError> {
+        crate::step::RuntimeHostCallRequest::admit_start(
+            start,
+            self.generation,
+            &mut self.need_producers,
+        )
+    }
+
     fn latch_need_publications(
         &mut self,
         states: Vec<crate::task::RuntimeNeedState>,
@@ -2162,7 +2216,11 @@ impl Engine {
         output: &mut RuntimeStepOutput,
     ) -> Vec<TaskEvent> {
         for state in states {
-            if self.need_producers.launch_for_need(state.need()).is_some() {
+            if self
+                .need_producers
+                .launch_for_correlation(&state.correlation)
+                .is_some()
+            {
                 match self.need_producers.publish_need_state(&state) {
                     Ok(true) => {}
                     Ok(false) => continue,
@@ -2177,11 +2235,13 @@ impl Engine {
                     }
                 }
             }
-            let cursor = TaskPublicationCursor::from_need_state(&state);
-            let (_, need, _, state) = state.into_parts();
+            let (correlation, cursor, state) = state.into_parts();
+            let Some(cursor) = cursor else {
+                continue;
+            };
             if !self.enqueue_need_publication(
                 RuntimeNeedPublication::State {
-                    need,
+                    correlation,
                     state,
                     cursor,
                 },
@@ -2226,7 +2286,7 @@ impl Engine {
         publication: RuntimeNeedPublication,
         output: &mut RuntimeStepOutput,
     ) -> bool {
-        let need = publication.need().clone();
+        let need = publication.correlation();
         let cursor = publication.cursor();
         let image = match publication.inert_rollback_image(&crate::task::RuntimeProgramOwner::Plan(
             Arc::clone(&self.plan),
@@ -2419,7 +2479,7 @@ impl Engine {
         output.diagnostics.extend(events.iter().map(|event| {
             RuntimeDiagnostic::new(format!(
                 "task {} sequence {} delivered",
-                event.task_id.0, event.sequence.0
+                event.correlation.task_id, event.cursor.sequence.0
             ))
         }));
         let events = self.latch_need_publications(need_states, events, &mut output);
@@ -2671,42 +2731,17 @@ impl Engine {
                 .sum::<usize>()
     }
 
-    fn allocate_fiber_identity(
-        &mut self,
-    ) -> Result<
-        (
-            FlowFiberId,
-            RuntimePersistentFiberId,
-            crate::runtime_id::ExecutionInstanceId,
-        ),
-        RuntimeEvalError,
-    > {
+    fn prepare_child_fiber(
+        &self,
+        body: Vec<FlowOp>,
+        captures: &[crate::runtime_id::RuntimeLocalDeclarationId],
+    ) -> Result<(FlowFiber, u64), RuntimeEvalError> {
+        let env = self.fiber.env.try_capture_unrestricted(captures)?;
         let ordinal = self.next_fiber_id;
-        let allocated = ordinal
+        let next = ordinal
             .checked_add(1)
             .and_then(std::num::NonZeroU64::new)
             .ok_or(RuntimeEvalError::FiberIdentityOverflow)?;
-        self.next_fiber_id = self
-            .next_fiber_id
-            .checked_add(1)
-            .ok_or(RuntimeEvalError::FiberIdentityOverflow)?;
-        Ok((
-            FlowFiberId(ordinal),
-            RuntimePersistentFiberId::from_allocated(allocated.get()),
-            crate::runtime_id::ExecutionInstanceId::from_allocated(allocated),
-        ))
-    }
-
-    pub(super) fn spawn_child_fiber(&mut self, body: Vec<FlowOp>) -> Result<(), RuntimeEvalError> {
-        let env = self.fiber.env.try_duplicate_unrestricted()?;
-        self.spawn_child_fiber_with_env(body, env)
-    }
-
-    fn spawn_child_fiber_with_env(
-        &mut self,
-        body: Vec<FlowOp>,
-        env: RuntimeEnv,
-    ) -> Result<(), RuntimeEvalError> {
         let mut pending_ops = VecDeque::with_capacity(body.len().saturating_add(2));
         if !body.is_empty() {
             pending_ops.push_front(FlowOp::ExitScope);
@@ -2717,28 +2752,27 @@ impl Engine {
                 identity: crate::scope::RuntimeScopeIdentity::Anonymous,
             });
         }
-        let (id, persistent_id, execution) = self.allocate_fiber_identity()?;
-        self.child_fibers.push_back(FlowFiber {
-            line_cursor: 0,
-            cursor: None,
-            pending_ops,
-            control_stack: Vec::new(),
-            await_observer: None,
-            root_cleanups: Vec::new(),
-            env,
-            observations: RuntimeObservationState::default(),
-            stream_states: BTreeMap::new(),
-            selected_dialogue_result: None,
-            id,
-            persistent_id,
-            execution,
-            owner: FlowFiberOwner::Executor,
-            status: FlowFiberStatus::Running,
-        });
-        self.run_child_next = true;
-        Ok(())
+        Ok((
+            FlowFiber {
+                line_cursor: 0,
+                cursor: None,
+                pending_ops,
+                control_stack: Vec::new(),
+                await_observer: None,
+                root_cleanups: Vec::new(),
+                env,
+                observations: RuntimeObservationState::default(),
+                stream_states: BTreeMap::new(),
+                selected_dialogue_result: None,
+                id: FlowFiberId(ordinal),
+                persistent_id: RuntimePersistentFiberId::from_allocated(next.get()),
+                execution: crate::runtime_id::ExecutionInstanceId::from_allocated(next),
+                owner: FlowFiberOwner::Executor,
+                status: FlowFiberStatus::Running,
+            },
+            next.get(),
+        ))
     }
-
     fn inspect_dialogue_effect_callback(
         &self,
         activation: &DialogueActivationId,
@@ -3893,7 +3927,7 @@ impl Engine {
                 FlowFiberStatus::NeedWaiting(state) => {
                     FlowFiberStatus::NeedWaiting(Box::new(AwaitState {
                         binding: state.binding.clone(),
-                        need: state.need.clone(),
+                        handle: state.handle.clone(),
                         item_type: state.item_type,
                         observers: state.observers.clone(),
                         resume: state.resume,
@@ -3903,7 +3937,7 @@ impl Engine {
                 }
                 FlowFiberStatus::WaitingMany(WaitingManyStatus::Native(state)) => {
                     FlowFiberStatus::WaitingMany(WaitingManyStatus::Observed(AwaitManyProgress {
-                        task: state.target.task.clone(),
+                        task: state.base.correlation().task_id,
                         completed: state
                             .results
                             .iter()
@@ -4051,25 +4085,46 @@ mod rollback_tests {
         let local = RuntimeLocalDeclarationId::from_accepted_ordinal(
             NonZeroU32::new(1).expect("nonzero local"),
         );
-        let local_need = NeedId("need.native.rollback.local".to_owned());
+        let local_need = crate::tests::reusable_need_with_outcome(
+            "local input",
+            crate::task::TaskOutcomeContract::program(unit),
+        );
         engine.fiber.env.bind_all_root([RuntimeLocalBinding {
             local,
-            value: RuntimeValue::Need(local_need.clone()),
+            value: RuntimeValue::NeedHandle(local_need.clone()),
         }]);
-        let ready_need = NeedId("need.native.rollback.ready".to_owned());
-        let ready_value = RuntimeValue::Need(NeedId("need.native.rollback.payload".to_owned()));
+        let mut ready_spec = crate::tests::task_spec(
+            crate::task::TaskOutcomeContract::program(need),
+            crate::task::HostTaskRequest::custom("fixture", "ready", []),
+        );
+        ready_spec.policy = TaskPolicy::AlwaysStart;
+        ready_spec.generation = engine.generation;
+        let ready_correlation = engine
+            .need_producers
+            .ensure_task(ready_spec)
+            .unwrap()
+            .handle()
+            .correlation;
+        let ready_value = RuntimeValue::NeedHandle(crate::tests::reusable_need_with_outcome(
+            "ready payload",
+            crate::task::TaskOutcomeContract::program(unit),
+        ));
         assert!(!ready_value.ownership().permits_copy());
         let published = RuntimeNeedState::new(
-            LogicalEpoch(1),
-            ready_need.clone(),
-            TaskSequence(1),
-            Need::Ready(RuntimePayload(ready_value)),
+            ready_correlation,
+            Some(TaskPublicationCursor {
+                logical_epoch: LogicalEpoch(1),
+                sequence: TaskSequence(1),
+            }),
+            Need::Ready(crate::task::RuntimeNeedOutcome::Value(RuntimePayload(
+                ready_value,
+            ))),
         );
-        let cursor = TaskPublicationCursor::from_need_state(&published);
-        let (_, need, _, state) = published.into_parts();
+        let cursor = published.cursor.unwrap();
+        let (correlation, _, state) = published.into_parts();
         assert!(engine.enqueue_need_publication(
             RuntimeNeedPublication::State {
-                need,
+                correlation,
                 state,
                 cursor,
             },
@@ -4081,16 +4136,17 @@ mod rollback_tests {
         let restored = Engine::from_rollback_image(image).expect("exact owner restore");
         assert_eq!(
             restored.fiber.env.get(local),
-            Some(&RuntimeValue::Need(local_need))
+            Some(&RuntimeValue::NeedHandle(local_need))
         );
-        let queued = restored.need_publications.get(&ready_need).unwrap();
+        let queued = restored.need_publications.get(&ready_correlation).unwrap();
         assert_eq!(queued.len(), 1);
         assert!(matches!(
             &queued[0],
             RuntimeNeedPublication::State {
-                state: Need::Ready(value),
+                state: Need::Ready(crate::task::RuntimeNeedOutcome::Value(value)),
                 ..
-            } if value.value() == &RuntimeValue::Need(NeedId("need.native.rollback.payload".to_owned()))
+            } if value.value() == &RuntimeValue::NeedHandle(crate::tests::reusable_need_with_outcome("ready payload",
+                crate::task::TaskOutcomeContract::program(unit)))
         ));
         assert_eq!(restored.latest_need_publications.len(), 1);
     }

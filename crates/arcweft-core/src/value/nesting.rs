@@ -59,6 +59,9 @@ fn validate_value(
             .retained()
             .iter()
             .try_for_each(|value| validate_value(value, depth + 1, maximum)),
+        RuntimeValue::NeedHandle(handle) => {
+            validate_values(handle.request_values(), depth + 1, maximum)
+        }
         RuntimeValue::Iterator(RuntimeIterator::Values { items, .. }) => {
             validate_values(items, depth + 1, maximum)
         }
@@ -81,7 +84,6 @@ fn validate_value(
         | RuntimeValue::TensorF64(_)
         | RuntimeValue::String(_)
         | RuntimeValue::Color(_)
-        | RuntimeValue::Need(_)
         | RuntimeValue::Char(_)
         | RuntimeValue::Duration(_)
         | RuntimeValue::Progress(_)

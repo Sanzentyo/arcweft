@@ -460,10 +460,14 @@ fn bundle_required_host_calls(plan: &RuntimePlan) -> Vec<String> {
                 } => calls.push(host_call_id_for_template(&capability.0, operation)),
             }
         }
-        FlowOp::AwaitMany { target, .. } => calls.push(host_call_id_for_template(
-            target.request.capability.0.as_str(),
-            target.request.operation.as_str(),
-        )),
+        FlowOp::AwaitMany { target, .. } => {
+            for template in [&target.base.request, &target.child.request] {
+                calls.push(host_call_id_for_template(
+                    template.capability.0.as_str(),
+                    template.operation.as_str(),
+                ));
+            }
+        }
         FlowOp::HostCall { target, .. } => calls.push(target.public_id.clone()),
         FlowOp::Thread { .. } => calls.push("flow_thread.run_child".to_owned()),
         _ => {}
@@ -811,7 +815,8 @@ fn static_image_asset_refs(plan: &RuntimePlan) -> Vec<String> {
         FlowOp::AwaitMany {
             target, pending, ..
         } => {
-            refs.extend(static_image_asset_ref_for_template(&target.request));
+            refs.extend(static_image_asset_ref_for_template(&target.base.request));
+            refs.extend(static_image_asset_ref_for_template(&target.child.request));
             refs.extend(collect_line_effects_static_image_asset_refs(pending));
         }
         FlowOp::Effect(effect) | FlowOp::RegisterCleanup { effect, .. } => {

@@ -23,7 +23,7 @@ use arcweft_core::{
     pattern::RuntimeSemanticTypeId,
     plan::{EntryRuntimeId, FlowRuntimeId},
     scope::RuntimeScopeIdentity,
-    task::{NeedId, RuntimeProgramOwner},
+    task::{RuntimeNeedHandle, RuntimeProgramOwner},
     value::RuntimeValue,
 };
 use std::sync::Arc;
@@ -82,13 +82,13 @@ fn direct_call_reaches_need_await_on_the_same_fiber() {
         suspended.exit,
         VmExit::Suspended(FiberSuspensionReason::Await {
             target: FiberAwaitTarget::Need {
-                id: NeedId(ref need),
+                need,
                 item_type: AwbcTypeId(1),
                 handle: NEED_REGISTER,
             },
             binding: None,
             observer: None,
-        }) if need == "need.profile"
+        }) if need.correlation() == fixture_need("need.profile").correlation()
     ));
     assert_eq!(fiber.status, FiberStatus::Suspended);
     assert_eq!(fiber.frames.len(), 2);
@@ -191,6 +191,9 @@ fn direct_return_restores_destination_and_drains_each_frame_lifo() {
             "callee.root.2",
             "callee.root.1",
         ]
+        .into_iter()
+        .map(|key| fixture_need(key).correlation())
+        .collect::<Vec<_>>()
     );
     assert_eq!(
         fiber
@@ -198,7 +201,7 @@ fn direct_return_restores_destination_and_drains_each_frame_lifo() {
             .expect("caller frame")
             .register(RETURN_REGISTER)
             .expect("callee return destination"),
-        &RuntimeValue::Need(NeedId("need.profile".to_owned()))
+        &RuntimeValue::NeedHandle(fixture_need("need.profile"))
     );
     assert_eq!(
         fiber.frames[0]
@@ -226,6 +229,9 @@ fn direct_return_restores_destination_and_drains_each_frame_lifo() {
             "caller.root.2",
             "caller.root.1",
         ]
+        .into_iter()
+        .map(|key| fixture_need(key).correlation())
+        .collect::<Vec<_>>()
     );
 }
 
@@ -427,6 +433,37 @@ fn trap_below_suspended_callers_unwinds_without_becoming_cancellation() {
     assert!(duplicate.observations.is_empty());
 }
 
+fn fixture_need(argument: &str) -> RuntimeNeedHandle {
+    use arcweft_core::task::*;
+    let program = direct_suspension_program();
+    let outcome = TaskOutcomeContract::program(program.runtime_types[1].semantic_identity());
+    let value = RuntimeValue::String(argument.to_owned());
+    let producer = NeedProducerSpec::new(
+        NeedProducerFamily::HostAdapterTask,
+        NeedProducerContractDigest::from_bytes([1; 32]),
+        TaskPlanSemanticDigest::from_bytes([2; 32]),
+        NeedProducerSiteDigest::from_bytes([3; 32]),
+        RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes()),
+        RuntimeValue::Tuple(vec![value.clone()])
+            .try_digest(4096)
+            .unwrap(),
+    );
+    let spec = TaskSpec {
+        generation: GenerationId::new(1),
+        producer: NeedProducerInstance::try_from(&producer).unwrap(),
+        class: TaskClass::Cpu,
+        priority: TaskPriority(0),
+        cancel_scope: CancelScopeId("fixture".to_owned()),
+        policy: TaskPolicy::JoinSameKey,
+        outcome,
+        request: HostTaskRequest::custom("fixture", "run", [value.into()]),
+        debug_label: "fixture Need".to_owned(),
+    };
+    let mut journal = TaskAdmissionJournal::default();
+    let handle = journal.ensure_task(spec).unwrap();
+    RuntimeNeedHandle::try_from(journal.submission(handle).unwrap()).unwrap()
+}
+
 fn direct_suspension_fiber(program: &AwbcProgram) -> FiberState {
     let mut fiber =
         FiberState::for_entry(program, AwbcEntryId(0), 7, 64).expect("entry fiber initializes");
@@ -435,7 +472,7 @@ fn direct_suspension_fiber(program: &AwbcProgram) -> FiberState {
         .expect("caller frame")
         .set_register(
             NEED_REGISTER,
-            RuntimeValue::Need(NeedId("need.profile".to_owned())),
+            RuntimeValue::NeedHandle(fixture_need("need.profile")),
         )
         .expect("bind typed Need handle");
     fiber
@@ -465,14 +502,14 @@ fn suspended_three_frame_fiber(program: &AwbcProgram) -> FiberState {
             .expect("innermost callee")
             .take_register(NEED_REGISTER)
             .expect("await consumes the sole Need handle"),
-        RuntimeValue::Need(NeedId("need.profile".to_owned()))
+        RuntimeValue::NeedHandle(fixture_need("need.profile"))
     );
     fiber
         .suspend(FiberSuspension {
             resume: FiberResumeTarget::Declared(AWAIT_RESUME),
             reason: FiberSuspensionReason::Await {
                 target: FiberAwaitTarget::Need {
-                    id: NeedId("need.profile".to_owned()),
+                    need: fixture_need("need.profile"),
                     item_type: AwbcTypeId(1),
                     handle: NEED_REGISTER,
                 },
@@ -519,11 +556,13 @@ fn cleanup(key: String) -> FiberScopeCleanup {
     FiberScopeCleanup {
         key: key.clone(),
         effect: CLEANUP_EFFECT,
-        args: vec![RuntimeValue::Need(NeedId(key))],
+        args: vec![RuntimeValue::NeedHandle(fixture_need(&key))],
     }
 }
 
-fn cleanup_observation_keys(observations: &[VmObservation]) -> Vec<&str> {
+fn cleanup_observation_keys(
+    observations: &[VmObservation],
+) -> Vec<arcweft_core::task::TaskCorrelation> {
     observations
         .iter()
         .filter_map(|observation| {
@@ -534,15 +573,15 @@ fn cleanup_observation_keys(observations: &[VmObservation]) -> Vec<&str> {
             else {
                 return None;
             };
-            let [RuntimeValue::Need(NeedId(key))] = args.as_slice() else {
+            let [RuntimeValue::NeedHandle(handle)] = args.as_slice() else {
                 panic!("cleanup observation has an unexpected payload: {args:?}");
             };
-            Some(key.as_str())
+            Some(handle.correlation())
         })
         .collect()
 }
 
-fn expected_nested_cleanup_order() -> Vec<&'static str> {
+fn expected_nested_cleanup_order() -> Vec<arcweft_core::task::TaskCorrelation> {
     vec![
         "inner.scope.2",
         "inner.scope.1",
@@ -557,6 +596,9 @@ fn expected_nested_cleanup_order() -> Vec<&'static str> {
         "caller.root.2",
         "caller.root.1",
     ]
+    .into_iter()
+    .map(|key| fixture_need(key).correlation())
+    .collect()
 }
 
 fn direct_return_program() -> AwbcProgram {

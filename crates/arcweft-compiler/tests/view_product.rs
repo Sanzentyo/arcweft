@@ -1138,11 +1138,11 @@ view Main(first: Slot<i64 -> i64> = .Full(|input: i64| input + 1), value: Slot<i
             let before = runtime.snapshot().unwrap();
             let supplied = [RuntimeBinding {
                 name: "value".to_owned(),
-                value: RuntimeValue::Tuple(vec![RuntimeValue::Need(arcweft_core::task::NeedId("need.borrowed-view".to_owned()))]),
+                value: RuntimeValue::Tuple(vec![RuntimeValue::NeedHandle(arcweft_core::task::NeedId("need.borrowed-view".to_owned()))]),
             }];
             assert!(!runtime.evaluate(&handles, &supplied, false).diagnostics.is_empty());
             assert_eq!(runtime.snapshot().unwrap(), before);
-            assert!(matches!(&supplied[0].value, RuntimeValue::Tuple(values) if matches!(values.first(), Some(RuntimeValue::Need(_)))));
+            assert!(matches!(&supplied[0].value, RuntimeValue::Tuple(values) if matches!(values.first(), Some(RuntimeValue::NeedHandle(_)))));
         }
         {
             let before = runtime.snapshot().unwrap();

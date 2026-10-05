@@ -186,13 +186,13 @@ pub(crate) fn agent_host_request_from_task(
 pub(crate) fn agent_host_request_from_host_call(
     request: &RuntimeHostCallRequest,
 ) -> Result<AgentHostRequest, AgentHostRequestAdmissionError> {
-    if request.capability != "agent" {
+    if request.capability() != "agent" {
         return Err(AgentHostRequestAdmissionError::UnsupportedCapability {
-            capability: request.capability.clone(),
+            capability: request.capability().to_owned(),
         });
     }
-    let args = RuntimeAgentArgs::new(&request.args, &request.named_args);
-    agent_host_request_from_runtime_args(&request.operation, &args)
+    let args = RuntimeAgentArgs::new(request.args(), request.named_args());
+    agent_host_request_from_runtime_args(request.operation(), &args)
 }
 
 fn agent_host_request_from_runtime_args(

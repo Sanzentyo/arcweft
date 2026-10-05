@@ -19,8 +19,8 @@ use super::schema::{
     AwbcProjectCall, AwbcProjectCallAttachedPresence, AwbcProjectCallOperandMode,
     AwbcProjectCallOrdinaryMaterialization, AwbcPureHelperId, AwbcRegisterId, AwbcResumePointId,
     AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSignedIntKind, AwbcSourceMapId, AwbcStreamPlanId,
-    AwbcStringId, AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcTypeId,
-    AwbcUnaryOp, AwbcUnsignedIntKind,
+    AwbcStringId, AwbcTaskPlanId, AwbcTaskPlanKind, AwbcTerminator, AwbcTraitMethodId,
+    AwbcTrapCode, AwbcTypeId, AwbcUnaryOp, AwbcUnsignedIntKind,
 };
 use crate::effect::RuntimeArtifactFingerprint;
 use crate::pattern::RuntimeSemanticTypeId;
@@ -2958,21 +2958,39 @@ fn execute_terminator(
                 .task_plans
                 .get(plan.index())
                 .ok_or_else(|| VmError::Runtime("AwaitMany plan is absent".to_owned()))?;
-            let signature = program
-                .signatures
-                .get(plan_record.signature.index())
-                .ok_or_else(|| VmError::Runtime("AwaitMany signature is absent".to_owned()))?;
+            let AwbcTaskPlanKind::AwaitMany { captures, .. } = &plan_record.kind else {
+                return Err(VmError::Runtime(
+                    "AwaitMany references a different producer family".into(),
+                ));
+            };
+            let mut captured = Vec::with_capacity(captures.len());
+            for capture in captures {
+                let value = fiber.active_frame()?.register(*capture)?;
+                if !value.ownership().permits_copy() {
+                    return Err(VmError::Runtime(
+                        "AwaitMany host capture requires checked Copy input".into(),
+                    ));
+                }
+                captured.push(value.clone());
+            }
             let source_value = fiber.active_frame()?.register(*source)?;
-            if signature.params.len() == 1 && !source_value.ownership().permits_copy() {
+            if !source_value.ownership().permits_copy() {
                 return Err(VmError::Runtime(
                     "AwaitMany host payload items require deep Copy values".to_owned(),
                 ));
             }
-            let source = fiber.active_frame_mut()?.take_register(*source)?;
-            let items = match source {
-                RuntimeValue::Seq(sequence) => sequence.into_values(),
-                value => vec![value],
+            let RuntimeValue::Seq(sequence) = source_value else {
+                return Err(VmError::Runtime(
+                    "AwaitMany source must be a sequence".into(),
+                ));
             };
+            u32::try_from(sequence.len())
+                .map_err(|_| VmError::Runtime("AwaitMany source exceeds u32".into()))?;
+            let source = fiber.active_frame_mut()?.take_register(*source)?;
+            let RuntimeValue::Seq(sequence) = source else {
+                unreachable!("validated AwaitMany source remains a sequence");
+            };
+            let items = sequence.into_values();
             let results = vec![None; items.len()];
             suspend(
                 fiber,
@@ -2980,7 +2998,8 @@ fn execute_terminator(
                 FiberSuspensionReason::AwaitMany(FiberAwaitManyState {
                     plan: *plan,
                     binding: *binding,
-                    invocation: None,
+                    base: None,
+                    captured,
                     items,
                     next_index: 0,
                     in_flight: Vec::new(),
@@ -3764,11 +3783,20 @@ fn await_target(
     let value = fiber.active_frame_mut()?.take_register(register_id)?;
     match runtime_type.shape() {
         AwbcRuntimeTypeShape::Need(item_type) => match value {
-            RuntimeValue::Need(id) if !id.0.is_empty() => Ok(FiberAwaitTarget::Need {
-                id,
-                item_type: *item_type,
-                handle: register_id,
-            }),
+            RuntimeValue::NeedHandle(need)
+                if program
+                    .runtime_types
+                    .get(item_type.index())
+                    .is_some_and(|ty| {
+                        ty.semantic_identity() == need.outcome().payload_semantic_identity()
+                    }) =>
+            {
+                Ok(FiberAwaitTarget::Need {
+                    need,
+                    item_type: *item_type,
+                    handle: register_id,
+                })
+            }
             value => Err(VmError::Runtime(format!(
                 "NeedHandle register contained {}",
                 runtime_value_label(&value)
@@ -4482,8 +4510,9 @@ pub(crate) fn runtime_value_view_matches_type(
                     )
             })
         }
-        (RuntimeValueView::RuntimeOnly(RuntimeValue::Need(need)), AwbcRuntimeTypeShape::Need(_)) => {
-            !need.0.is_empty()
+        (RuntimeValueView::RuntimeOnly(RuntimeValue::NeedHandle(need)), AwbcRuntimeTypeShape::Need(item)) => {
+            program.runtime_types.get(item.index()).is_some_and(|ty|
+                ty.semantic_identity() == need.outcome().payload_semantic_identity())
         }
         (_, AwbcRuntimeTypeShape::Dynamic)
         | (RuntimeValueView::Scalar(RuntimeScalarView::Unit), AwbcRuntimeTypeShape::Unit)

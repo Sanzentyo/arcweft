@@ -350,7 +350,6 @@ struct NativeSchedulerStatsSamples {
     failed: Vec<usize>,
     cancelled: Vec<usize>,
     cancel_requested: Vec<usize>,
-    joined_completed: Vec<usize>,
     in_flight: Vec<usize>,
     max_in_flight: Vec<usize>,
     dispatch_sorts: Vec<usize>,
@@ -360,11 +359,9 @@ struct NativeSchedulerStatsSamples {
     completion_normalization_passes: Vec<usize>,
     completion_normalization_checks: Vec<usize>,
     completion_events_in: Vec<usize>,
-    completion_events_joined: Vec<usize>,
     completion_events_out: Vec<usize>,
     completion_sort_skipped_items: Vec<usize>,
     completion_sort_performed_items: Vec<usize>,
-    joined_completion_events_emitted: Vec<usize>,
     submitted_by_class: Vec<NativeTaskClassCounts>,
     dispatched_by_class: Vec<NativeTaskClassCounts>,
     completed_by_class: Vec<NativeTaskClassCounts>,
@@ -380,7 +377,6 @@ impl NativeSchedulerStatsSamples {
             failed: Vec::with_capacity(capacity),
             cancelled: Vec::with_capacity(capacity),
             cancel_requested: Vec::with_capacity(capacity),
-            joined_completed: Vec::with_capacity(capacity),
             in_flight: Vec::with_capacity(capacity),
             max_in_flight: Vec::with_capacity(capacity),
             dispatch_sorts: Vec::with_capacity(capacity),
@@ -390,11 +386,9 @@ impl NativeSchedulerStatsSamples {
             completion_normalization_passes: Vec::with_capacity(capacity),
             completion_normalization_checks: Vec::with_capacity(capacity),
             completion_events_in: Vec::with_capacity(capacity),
-            completion_events_joined: Vec::with_capacity(capacity),
             completion_events_out: Vec::with_capacity(capacity),
             completion_sort_skipped_items: Vec::with_capacity(capacity),
             completion_sort_performed_items: Vec::with_capacity(capacity),
-            joined_completion_events_emitted: Vec::with_capacity(capacity),
             submitted_by_class: Vec::with_capacity(capacity),
             dispatched_by_class: Vec::with_capacity(capacity),
             completed_by_class: Vec::with_capacity(capacity),
@@ -409,7 +403,6 @@ impl NativeSchedulerStatsSamples {
         self.failed.push(stats.failed);
         self.cancelled.push(stats.cancelled);
         self.cancel_requested.push(stats.cancel_requested);
-        self.joined_completed.push(stats.joined_completed);
         self.in_flight.push(stats.in_flight);
         self.max_in_flight.push(stats.max_in_flight);
         self.dispatch_sorts.push(stats.dispatch_sorts);
@@ -421,15 +414,11 @@ impl NativeSchedulerStatsSamples {
         self.completion_normalization_checks
             .push(stats.completion_normalization_checks);
         self.completion_events_in.push(stats.completion_events_in);
-        self.completion_events_joined
-            .push(stats.completion_events_joined);
         self.completion_events_out.push(stats.completion_events_out);
         self.completion_sort_skipped_items
             .push(stats.completion_sort_skipped_items);
         self.completion_sort_performed_items
             .push(stats.completion_sort_performed_items);
-        self.joined_completion_events_emitted
-            .push(stats.joined_completion_events_emitted);
         self.submitted_by_class.push(stats.submitted_by_class);
         self.dispatched_by_class.push(stats.dispatched_by_class);
         self.completed_by_class.push(stats.completed_by_class);
@@ -444,7 +433,6 @@ impl NativeSchedulerStatsSamples {
             failed: median_usize(&mut self.failed),
             cancelled: median_usize(&mut self.cancelled),
             cancel_requested: median_usize(&mut self.cancel_requested),
-            joined_completed: median_usize(&mut self.joined_completed),
             in_flight: median_usize(&mut self.in_flight),
             max_in_flight: median_usize(&mut self.max_in_flight),
             dispatch_sorts: median_usize(&mut self.dispatch_sorts),
@@ -458,14 +446,10 @@ impl NativeSchedulerStatsSamples {
                 &mut self.completion_normalization_checks,
             ),
             completion_events_in: median_usize(&mut self.completion_events_in),
-            completion_events_joined: median_usize(&mut self.completion_events_joined),
             completion_events_out: median_usize(&mut self.completion_events_out),
             completion_sort_skipped_items: median_usize(&mut self.completion_sort_skipped_items),
             completion_sort_performed_items: median_usize(
                 &mut self.completion_sort_performed_items,
-            ),
-            joined_completion_events_emitted: median_usize(
-                &mut self.joined_completion_events_emitted,
             ),
             submitted_by_class: median_task_class_counts(&mut self.submitted_by_class),
             dispatched_by_class: median_task_class_counts(&mut self.dispatched_by_class),

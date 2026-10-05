@@ -7,7 +7,7 @@ use arcweft_core::line_task::{LineTaskGroup, LineTaskNode, LineTaskTrigger, Scop
 use arcweft_core::plan::FlowEvent;
 use arcweft_core::step::{RuntimePureCallStats, RuntimeStepResult, RuntimeStepStats};
 use arcweft_core::stream::{RuntimeStreamEvent, StreamEventKind, StreamOp};
-use arcweft_core::task::TaskSpec;
+use arcweft_core::task::TaskSubmission;
 use arcweft_core::value::RuntimePayload;
 use arcweft_lang_sema::final_analysis::FinalSemanticAnalysis;
 use arcweft_lang_syntax::incremental::SyntaxParseStats;
@@ -971,7 +971,7 @@ impl RuntimeStepRunSummary {
     ) -> Result<
         (
             Self,
-            Vec<TaskSpec>,
+            Vec<TaskSubmission>,
             Vec<arcweft_core::step::RuntimeHostCallRequest>,
             FlowFiberStatus,
         ),
@@ -1137,13 +1137,14 @@ fn flow_event_label(event: &FlowEvent) -> String {
         }
         FlowEvent::AwaitStarted { need, task } => format!(
             "await_started {} {}",
-            need.0,
-            task.as_ref().map_or("-", |task| task.0.as_str())
+            need,
+            task.as_ref()
+                .map_or_else(|| "-".to_owned(), ToString::to_string)
         ),
         FlowEvent::AwaitReady { need, value } => {
             format!(
                 "await_ready {} {}",
-                need.0,
+                need,
                 value
                     .as_ref()
                     .map_or_else(|| "-".to_owned(), |value| value.label())
@@ -1152,7 +1153,7 @@ fn flow_event_label(event: &FlowEvent) -> String {
         FlowEvent::AwaitProgress { need, progress } => {
             format!(
                 "await_progress {} {}",
-                need.0,
+                need,
                 progress
                     .label()
                     .map_or_else(|| progress.ratio().to_string(), str::to_owned)
@@ -1164,10 +1165,13 @@ fn flow_event_label(event: &FlowEvent) -> String {
     }
 }
 
-fn task_request_label(task: &TaskSpec) -> String {
+fn task_request_label(task: &TaskSubmission) -> String {
     format!(
         "{} key={} class={:?} request={}",
-        task.id.0, task.key.0, task.class, task.debug_label
+        task.task_id(),
+        task.task_key(),
+        task.spec().class,
+        task.spec().debug_label
     )
 }
 

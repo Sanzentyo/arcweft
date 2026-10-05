@@ -8,7 +8,7 @@ use crate::{
     pattern::{RuntimeCheckedType, RuntimeSemanticTypeId},
     plan::{RuntimeAgentTypeProjection, RuntimePlan},
     program_types::{RuntimeProgramTypeError, RuntimeProgramTypes},
-    task::{TaskOutcomeContract, TaskSpec},
+    task::{TaskOutcomeContract, TaskSpec, TaskSubmission},
     value::{RuntimePayload, RuntimeValue},
 };
 
@@ -86,7 +86,7 @@ pub struct BoundTaskOutcome {
 /// [`BoundTaskSpec::bind`].
 #[derive(Clone, Debug)]
 pub struct BoundTaskSpec {
-    spec: TaskSpec,
+    submission: TaskSubmission,
     outcome: BoundTaskOutcome,
 }
 
@@ -98,20 +98,36 @@ impl BoundTaskSpec {
     /// independently constructed bound outcome, so the specification and its
     /// admission authority cannot disagree.
     pub fn bind(
-        spec: TaskSpec,
+        submission: TaskSubmission,
         owner: Option<RuntimeProgramOwner>,
         limits: RuntimeSchemaLimits,
     ) -> Result<Self, TaskOutcomeBindingError> {
+        let spec = submission.spec();
         let outcome = match owner {
             Some(owner) => spec.outcome.bind_program(owner, limits)?,
             None => spec.outcome.bind_standalone()?,
         };
-        Ok(Self { spec, outcome })
+        Ok(Self {
+            submission,
+            outcome,
+        })
     }
 
     #[must_use]
     pub const fn spec(&self) -> &TaskSpec {
-        &self.spec
+        self.submission.spec()
+    }
+
+    pub const fn handle(&self) -> super::TaskHandle {
+        self.submission.handle()
+    }
+
+    pub const fn task_id(&self) -> super::TaskId {
+        self.submission.task_id()
+    }
+
+    pub const fn task_key(&self) -> super::TaskKey {
+        self.submission.task_key()
     }
 
     #[must_use]
@@ -123,26 +139,20 @@ impl BoundTaskSpec {
     /// another task. Task id and diagnostic label are intentionally excluded.
     #[must_use]
     pub fn same_join_contract(&self, other: &Self) -> bool {
-        self.spec.key == other.spec.key
-            && self.spec.class == other.spec.class
-            && self.spec.priority == other.spec.priority
-            && self.spec.cancel_scope == other.spec.cancel_scope
-            && self.spec.policy == other.spec.policy
-            && self.spec.request == other.spec.request
-            && self.outcome.same_contract(&other.outcome)
+        self.spec().same_join_contract(other.spec()) && self.outcome.same_contract(&other.outcome)
     }
 
     /// Whether two specifications for the same task id are identical apart
     /// from the diagnostic-only label.
     #[must_use]
     pub fn same_identity_spec(&self, other: &Self) -> bool {
-        self.spec.id == other.spec.id && self.same_join_contract(other)
+        self.handle() == other.handle() && self.same_join_contract(other)
     }
 }
 
 impl PartialEq for BoundTaskSpec {
     fn eq(&self, other: &Self) -> bool {
-        self.spec == other.spec && self.outcome.same_contract(&other.outcome)
+        self.submission == other.submission && self.outcome.same_contract(&other.outcome)
     }
 }
 
@@ -302,10 +312,22 @@ impl BoundTaskOutcome {
         &self,
         value: RuntimeValue,
     ) -> Result<RuntimePayload, TaskOutcomeValueError> {
+        self.validate_value(&value)?;
+        Ok(value.into())
+    }
+
+    /// Checks the borrowed value without duplicating an affine payload.
+    pub fn validate_value(&self, value: &RuntimeValue) -> Result<(), TaskOutcomeValueError> {
         match &self.ty {
-            BoundTaskOutcomeType::Standalone(payload) => payload
-                .try_payload(value)
-                .map_err(TaskOutcomeValueError::Standalone),
+            BoundTaskOutcomeType::Standalone(payload) => {
+                if payload.accepts_value(value) {
+                    Ok(())
+                } else {
+                    Err(TaskOutcomeValueError::Standalone(
+                        "runtime payload does not satisfy its checked type".to_owned(),
+                    ))
+                }
+            }
             BoundTaskOutcomeType::Program {
                 payload,
                 owner,
@@ -313,8 +335,8 @@ impl BoundTaskOutcome {
             } => {
                 owner
                     .types()
-                    .validate_live_value(*payload, &value, *limits)?;
-                Ok(value.into())
+                    .validate_live_value(*payload, value, *limits)?;
+                Ok(())
             }
         }
     }

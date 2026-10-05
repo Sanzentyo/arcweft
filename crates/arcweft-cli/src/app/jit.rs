@@ -330,7 +330,7 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
             "function/{}",
             callable.remaining_arity().unwrap_or_default()
         ),
-        RuntimeValue::Need(need) => format!("need/{}", need.0),
+        RuntimeValue::NeedHandle(need) => format!("need/{}", need.need_id()),
         RuntimeValue::Variant { name, payload, .. } => {
             if payload.is_some() {
                 format!(".{name}(...)")

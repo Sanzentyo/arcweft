@@ -207,7 +207,7 @@ impl Engine {
                 .program_result
                 .as_ref()
                 .ok_or(RuntimeProgramContinuationFailure::NotCompleted)?;
-            let refs = input_refs(&inputs, result, &self.need_producers)?;
+            let refs = input_refs(&inputs, result)?;
             let site = prepare_program_inputs(&self.plan, program, &refs)?;
             let before = self.main_fiber_line_handle_owners()?;
             self.dialogue_activations

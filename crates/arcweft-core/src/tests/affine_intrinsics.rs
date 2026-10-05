@@ -16,15 +16,15 @@ fn call(intrinsic: RuntimeIntrinsic, args: Vec<RuntimeValue>) -> RuntimeValue {
 }
 
 fn need_pointer(value: &RuntimeValue) -> *const u8 {
-    let RuntimeValue::Need(need) = value else {
+    let RuntimeValue::NeedHandle(need) = value else {
         panic!("expected the affine Need payload")
     };
-    need.0.as_ptr()
+    need.spec() as *const crate::task::TaskSpec as *const u8
 }
 
 #[test]
 fn consuming_iterator_intrinsics_move_the_same_affine_payload() {
-    let item = RuntimeValue::Need(NeedId("need.intrinsic.owner".to_owned()));
+    let item = RuntimeValue::NeedHandle(crate::tests::reusable_need("need.intrinsic.owner"));
     let original = need_pointer(&item);
     let source = RuntimeValue::Seq(RuntimeSeq::Values(vec![item]));
 

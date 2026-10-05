@@ -547,7 +547,7 @@ fn owned_program_root_retains_affine_inputs_and_result_across_save_restore() {
     use arcweft_core::awbc::product_step::{
         AwbcProductExecutorSaveSnapshot, AwbcProductStepExecutor,
     };
-    use arcweft_core::task::NeedId;
+    let retained = reusable_bool_need();
 
     let boolean = type_id(41);
     let need = type_id(42);
@@ -596,16 +596,13 @@ fn owned_program_root_retains_affine_inputs_and_result_across_save_restore() {
     let rejected = AwbcProductStepExecutor::for_program_invocation(
         Arc::clone(&program),
         RuntimePureProgramId::from_checked_digest([44; 32]),
-        vec![RuntimeValue::Need(NeedId("need.retained".to_owned()))],
+        vec![RuntimeValue::NeedHandle(retained.clone())],
         GenerationId::new(7),
         64,
     )
     .unwrap_err();
     let (_, inputs) = rejected.into_parts();
-    assert_eq!(
-        inputs,
-        [RuntimeValue::Need(NeedId("need.retained".to_owned()))]
-    );
+    assert_eq!(inputs, [RuntimeValue::NeedHandle(retained.clone())]);
 
     let executor = AwbcProductStepExecutor::for_program_invocation(
         Arc::clone(&program),
@@ -645,7 +642,7 @@ fn owned_program_root_retains_affine_inputs_and_result_across_save_restore() {
     let (mut executor, _) = executor.restore_inert_snapshot_owned(forged).unwrap_err();
     assert_eq!(
         executor.take_program_result().unwrap(),
-        Some((id, RuntimeValue::Need(NeedId("need.retained".to_owned()))))
+        Some((id, RuntimeValue::NeedHandle(retained.clone())))
     );
     assert_eq!(executor.take_program_result().unwrap(), None);
     let bytes = serde_json::to_vec(&saved).unwrap();
@@ -653,7 +650,7 @@ fn owned_program_root_retains_affine_inputs_and_result_across_save_restore() {
     let mut executor = executor.restore_inert_snapshot_owned(saved).unwrap();
     assert_eq!(
         executor.take_program_result().unwrap(),
-        Some((id, RuntimeValue::Need(NeedId("need.retained".to_owned()))))
+        Some((id, RuntimeValue::NeedHandle(retained.clone())))
     );
     assert_eq!(executor.take_program_result().unwrap(), None);
 }
@@ -805,20 +802,23 @@ fn product_awbc_matches_first_progress_observer_and_consumes_publication_once() 
     let native_dispatch = native
         .restartable_dispatches()
         .into_iter()
-        .find(|dispatch| dispatch.task_id == task.id)
+        .find(|dispatch| dispatch.submission.task_id() == task.task_id())
         .expect("native Need producer is registered");
     let product_dispatch = product
         .restartable_dispatches()
         .into_iter()
-        .find(|dispatch| dispatch.task_id == task.id)
+        .find(|dispatch| dispatch.submission.task_id() == task.task_id())
         .expect("Product Need producer is registered");
-    assert_eq!(native_dispatch.need_id, product_dispatch.need_id);
+    assert_eq!(
+        native_dispatch.submission.handle().correlation,
+        product_dispatch.submission.handle().correlation
+    );
     let publication = TaskEvent {
-        generation: GenerationId::new(0),
-        logical_epoch: LogicalEpoch(1),
-        task_id: task.id,
-        sequence: TaskSequence(1),
-        publication_revision: TaskPublicationRevision::FIRST,
+        correlation: task.handle().correlation,
+        cursor: arcweft_core::task::TaskPublicationCursor {
+            logical_epoch: LogicalEpoch(1),
+            sequence: TaskSequence(1),
+        },
         kind: TaskEventKind::Progress(Progress::new(0.5).expect("fixture Progress is valid")),
     };
 
@@ -910,4 +910,36 @@ fn product_awbc_standard_map_programs_match_structured_results() {
         }
         assert_eq!(product_backend.stats().awbc_pure_program_calls, 1);
     }
+}
+
+fn reusable_bool_need() -> arcweft_core::task::RuntimeNeedHandle {
+    use arcweft_core::{
+        pattern::RuntimeCheckedType,
+        task::{
+            CancelScopeId, HostTaskRequest, NeedProducerFamily, NeedProducerInstance,
+            NeedProducerSpec, RuntimeTypeSemanticDigest, TaskClass, TaskOutcomeContract,
+            TaskPlanSemanticDigest, TaskSpec,
+        },
+    };
+    let outcome = TaskOutcomeContract::new(RuntimeCheckedType::Bool);
+    let producer = NeedProducerSpec::new(
+        NeedProducerFamily::HostAdapterTask,
+        NeedProducerContractDigest::from_bytes([1; 32]),
+        TaskPlanSemanticDigest::from_bytes([2; 32]),
+        NeedProducerSiteDigest::from_bytes([3; 32]),
+        RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes()),
+        RuntimeValue::Tuple(vec![]).try_digest(1024).unwrap(),
+    );
+    arcweft_core::task::RuntimeNeedHandle::try_from(TaskSpec {
+        generation: GenerationId::new(7),
+        producer: NeedProducerInstance::try_from(&producer).unwrap(),
+        class: TaskClass::Background,
+        priority: TaskPriority(0),
+        cancel_scope: CancelScopeId("fixture".into()),
+        policy: TaskPolicy::JoinSameKey,
+        outcome,
+        request: HostTaskRequest::custom("fixture", "bool", []),
+        debug_label: "retained".into(),
+    })
+    .unwrap()
 }

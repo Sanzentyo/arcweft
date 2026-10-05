@@ -37,18 +37,20 @@ pub(crate) struct IssuedProgramHandle {
 pub(crate) fn pending_program_need(
     generation: crate::task::GenerationId,
     fiber: RuntimePersistentFiberId,
-) -> (crate::task::NeedProducerRegistry, crate::task::NeedId) {
+) -> (
+    crate::task::NeedProducerRegistry,
+    crate::task::RuntimeNeedHandle,
+) {
     use crate::task::*;
     let plan = program_need_plan();
     let mut registry = NeedProducerRegistry::default();
     let invocation = registry
         .begin_invocation(generation, fiber, plan.site())
         .unwrap();
-    let need = registry
-        .admit_start(invocation, plan, Vec::new())
-        .unwrap()
-        .need()
-        .clone();
+    let admission = registry.admit_start(invocation, plan, Vec::new()).unwrap();
+    let need =
+        crate::task::RuntimeNeedHandle::try_from(registry.submission_for_admission(&admission))
+            .unwrap();
     (registry, need)
 }
 
@@ -368,7 +370,6 @@ pub(crate) fn awbc_handle_program(
         kind: AwbcTaskPlanKind::NeedProducer {
             contract: crate::task::NeedProducerContractDigest::from_bytes([7; 32]),
             site: need_plan.site(),
-            semantic_digest: need_plan.semantic_digest().expect("valid producer plan"),
             restart: AwbcTaskRestartPolicy::Restartable,
         },
     });
@@ -456,15 +457,16 @@ fn detached_nested_need_requires_its_own_producer_context() {
         crate::task::GenerationId::new(37),
         RuntimePersistentFiberId::from_allocated(1),
     );
-    let value = RuntimeValue::Tuple(vec![RuntimeValue::Unit, RuntimeValue::Need(need.clone())]);
-    assert!(value.validate_detached_custody().is_ok());
-    let error = value
-        .validate_detached_custody_for(Some(&|need| registry.launch_for_need(need).is_some()))
-        .unwrap_err();
+    let value = RuntimeValue::Tuple(vec![
+        RuntimeValue::Unit,
+        RuntimeValue::NeedHandle(need.clone()),
+    ]);
+    assert!(registry.launch_for_handle(&need).is_some());
+    let error = value.validate_detached_custody().unwrap_err();
     assert_eq!(
         error,
         crate::value::ownership::RuntimeDetachedValueError::NeedProducerCustodyRequired {
-            need,
+            correlation: need.correlation(),
             path: crate::value::ownership::RuntimeValuePath::root()
                 .child(crate::value::ownership::RuntimeValuePathSegment::TupleElement(1))
                 .unwrap()

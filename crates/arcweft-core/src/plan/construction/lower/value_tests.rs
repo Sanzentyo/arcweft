@@ -163,7 +163,10 @@ fn literal_builder_uses_the_same_choice_rule_and_preserves_runtime_only_values()
 #[test]
 fn need_handle_is_live_input_and_never_a_plan_constant() {
     let types = || [seed(1, Type::String), seed(2, Type::Need(semantic(1)))];
-    let value = RuntimeValue::Need(crate::task::NeedId("need.input".to_owned()));
+    let value = RuntimeValue::NeedHandle(crate::tests::reusable_need_with_outcome(
+        "need.input",
+        crate::task::TaskOutcomeContract::program(semantic(1)),
+    ));
     let mut builder = RuntimePlanBuilder::new();
     builder.admit_type_batch(types(), []).unwrap();
     assert!(matches!(
@@ -185,7 +188,10 @@ fn need_handle_is_live_input_and_never_a_plan_constant() {
             )
             .is_ok()
     );
-    assert!(admitted(&sealed, 2, &value).is_err());
+    assert_eq!(
+        admitted(&sealed, 2, &value).unwrap(),
+        value.try_digest(4096).unwrap()
+    );
 }
 
 #[test]

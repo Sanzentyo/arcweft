@@ -191,9 +191,9 @@ fn borrowed_program_inputs_reject_nested_affine_values_before_execution() {
     let args = [
         RuntimeValue::Bool(false),
         owner
-            .try_wrap(RuntimeValue::Tuple(vec![RuntimeValue::Need(NeedId(
-                "need.borrowed-input".to_owned(),
-            ))]))
+            .try_wrap(RuntimeValue::Tuple(vec![RuntimeValue::NeedHandle(
+                crate::tests::reusable_need("need.borrowed-input"),
+            )]))
             .unwrap(),
     ];
     let binding = &plan.pure_programs()[0];
@@ -207,8 +207,8 @@ fn borrowed_program_inputs_reject_nested_affine_values_before_execution() {
     };
     assert_eq!(
         value.payload(),
-        &RuntimeValue::Tuple(vec![RuntimeValue::Need(NeedId(
-            "need.borrowed-input".to_owned()
+        &RuntimeValue::Tuple(vec![RuntimeValue::NeedHandle(crate::tests::reusable_need(
+            "need.borrowed-input"
         ))])
     );
     assert_eq!(backend.external.calls, 0);

@@ -870,8 +870,8 @@ entry agent @entry.agent.controller {
         panic!("selected Agent entry retains its exact controller");
     };
     let request = run_controller_to_host_call(&compiled.runtime_plan().plan, controller);
-    assert_eq!(request.operation, "observe");
-    assert!(request.args.is_empty());
+    assert_eq!(request.operation(), "observe");
+    assert!(request.args().is_empty());
 
     let awbc = arcweft_runtime_plan::awbc_lower::AwbcLowerer::for_entry(
         &compiled.runtime_plan().plan,
@@ -965,8 +965,8 @@ entry agent @entry.agent.controller {
         .find(|flow| flow.id.canonical_label().contains("controller"))
         .expect("selected controller flow");
     let request = run_controller_to_host_call(&compiled.runtime_plan().plan, &controller.id);
-    assert_eq!(request.operation, "wait");
-    let [predicate] = request.args.as_slice() else {
+    assert_eq!(request.operation(), "wait");
+    let [predicate] = request.args() else {
         panic!("wait has one positional predicate");
     };
     let RuntimeValue::Agent(RuntimeAgentValue::Predicate(RuntimeAgentPredicate::All {
@@ -1014,8 +1014,8 @@ entry agent @entry.agent.controller {
         .find(|flow| flow.id.canonical_label().contains("controller"))
         .expect("selected controller flow");
     let request = run_controller_to_host_call(&compiled.runtime_plan().plan, &controller.id);
-    assert_eq!(request.operation, "wait");
-    let [predicate] = request.args.as_slice() else {
+    assert_eq!(request.operation(), "wait");
+    let [predicate] = request.args() else {
         panic!("wait has one positional predicate");
     };
     assert!(matches!(

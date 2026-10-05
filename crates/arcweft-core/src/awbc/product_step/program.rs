@@ -62,7 +62,7 @@ impl AwbcProductStepExecutor {
             if !matches!(self.fiber.root, AwbcFiberRoot::Program(_)) {
                 return Err(RuntimeProgramContinuationFailure::NotCompleted);
             }
-            let refs = input_refs(&inputs, result, &self.need_producers)?;
+            let refs = input_refs(&inputs, result)?;
             let binding = self.program.pure_program_binding(id).ok_or_else(|| {
                 AwbcProductStepBuildError::FiberState {
                     message: format!("admitted program {id} is absent"),
@@ -135,7 +135,6 @@ impl AwbcProductStepExecutor {
             unreachable!("the complete borrowed continuation proof retains its result")
         };
         let streams = std::mem::take(&mut self.fiber.streams);
-        let next_await_many_ordinal = self.fiber.next_await_many_ordinal;
         let line_cursor = self.fiber.line_cursor;
         let budget = self.fiber.budget;
         self.fiber = FiberState::for_function_with_arguments_prepared(
@@ -151,7 +150,6 @@ impl AwbcProductStepExecutor {
         self.fiber.frames[0].instance = frame_instance;
         self.fiber.next_frame_instance = next_frame_instance;
         self.fiber.streams = streams;
-        self.fiber.next_await_many_ordinal = next_await_many_ordinal;
         self.fiber.line_cursor = line_cursor;
         self.fiber.budget = budget;
         let committed = (|| {
@@ -264,9 +262,7 @@ impl AwbcProductStepExecutor {
             return Ok(None);
         };
         if let Some(value) = value.as_ref() {
-            value.validate_detached_custody_for(Some(&|need| {
-                self.need_producers.launch_for_need(need).is_some()
-            }))?;
+            value.validate_detached_custody()?;
         }
         Ok(value.take().map(|value| (id, value)))
     }

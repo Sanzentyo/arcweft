@@ -789,6 +789,12 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
                 ));
             }
         }
+        RuntimeValueView::RuntimeOnly(RuntimeValue::NeedHandle(handle))
+            if !matches!(encoding, ValueEncoding::Literal) =>
+        {
+            writer.u8(20)?;
+            writer.extend(handle.need_id().as_bytes())?;
+        }
         RuntimeValueView::RuntimeOnly(RuntimeValue::Callable(callable))
             if matches!(encoding, ValueEncoding::Live | ValueEncoding::Snapshot) =>
         {

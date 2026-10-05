@@ -357,14 +357,23 @@ impl Engine {
         mut state: AwaitState,
         output: &mut RuntimeStepOutput,
     ) {
-        let publication = state
-            .queued
-            .pop_front()
-            .or_else(|| self.next_need_publication_for_await(&state.need, state.observed_through));
+        let publication = state.queued.pop_front().or_else(|| {
+            self.next_need_publication_for_await(
+                &state.handle.correlation(),
+                state.observed_through,
+            )
+        });
         let Some(publication) = publication else {
             self.fiber.status = FlowFiberStatus::NeedWaiting(Box::new(state));
             return;
         };
+        if publication.correlation() != state.handle.correlation() {
+            self.fail_eval(
+                "Await publication differs from its retained handle correlation",
+                output,
+            );
+            return;
+        }
         let publication_cursor = publication.cursor();
         if let Some(queued_cursor) = state.queued.back().map(RuntimeNeedPublication::cursor) {
             match state.observed_through {
@@ -391,8 +400,12 @@ impl Engine {
             },
         }
         match publication {
-            RuntimeNeedPublication::Failed { need, message, .. } => {
-                let message = format!("await Need {} failed: {message}", need.0);
+            RuntimeNeedPublication::InfrastructureFailure {
+                correlation,
+                failure,
+                ..
+            } => {
+                let message = format!("await Need {} failed: {failure}", correlation.need);
                 self.fiber.status = FlowFiberStatus::Failed(message.clone());
                 output.diagnostics.push(RuntimeDiagnostic::categorized(
                     RuntimeDiagnosticCategory::Host,
@@ -407,12 +420,15 @@ impl Engine {
                 }
                 Need::Pending(progress) => {
                     output.flow_events.push(FlowEvent::AwaitProgress {
-                        need: state.need.clone(),
+                        need: state.handle.need_id(),
                         progress: progress.clone(),
                     });
                     self.start_await_pending_observer(state, progress, output);
                 }
-                Need::Ready(value) => {
+                Need::Ready(crate::task::RuntimeNeedOutcome::InfrastructureFailure(failure)) => {
+                    self.fail_eval(failure, output);
+                }
+                Need::Ready(crate::task::RuntimeNeedOutcome::Value(value)) => {
                     let type_matches = match state.item_type {
                         AwaitItemType::Plan(item_type) => self
                             .plan
@@ -427,7 +443,7 @@ impl Engine {
                     if !type_matches {
                         let message = format!(
                             "await Need {} published a payload outside its checked item type",
-                            state.need.0
+                            state.handle.need_id()
                         );
                         self.fiber.status = FlowFiberStatus::Failed(message.clone());
                         output.diagnostics.push(RuntimeDiagnostic::categorized(
@@ -476,7 +492,7 @@ impl Engine {
                         self.fiber.env.bind_all(bindings);
                     }
                     output.flow_events.push(FlowEvent::AwaitReady {
-                        need: state.need,
+                        need: state.handle.need_id(),
                         value: observed,
                     });
                     self.fiber.cursor = state.resume;
@@ -487,7 +503,7 @@ impl Engine {
                 }
             },
             RuntimeNeedPublication::Producer { .. } => {
-                let Some(launch) = self.need_producers.launch_for_need(&state.need) else {
+                let Some(launch) = self.need_producers.launch_for_handle(&state.handle) else {
                     self.fail_eval("local Need publication has no producer launch", output);
                     return;
                 };
@@ -495,10 +511,13 @@ impl Engine {
                     RuntimeNeedProducerState::NotStarted => {
                         self.fiber.status = FlowFiberStatus::NeedWaiting(Box::new(state));
                     }
+                    RuntimeNeedProducerState::InfrastructureFailure(failure) => {
+                        self.fail_eval(failure.clone(), output);
+                    }
                     RuntimeNeedProducerState::Pending(progress) => {
                         let progress = progress.clone();
                         output.flow_events.push(FlowEvent::AwaitProgress {
-                            need: state.need.clone(),
+                            need: state.handle.need_id(),
                             progress: progress.clone(),
                         });
                         self.start_await_pending_observer(state, progress, output);
@@ -550,7 +569,7 @@ impl Engine {
                             .then(|| value.clone());
                         let value = self
                             .need_producers
-                            .take_ready_for_need(&state.need)
+                            .take_ready_for_correlation(&state.handle.correlation())
                             .expect("checked producer Ready remains available");
                         if let Some(binding) = &state.binding {
                             let bindings = crate::pattern::match_runtime_pattern_owned(
@@ -564,7 +583,7 @@ impl Engine {
                             self.fiber.env.bind_all(bindings);
                         }
                         output.flow_events.push(FlowEvent::AwaitReady {
-                            need: state.need,
+                            need: state.handle.need_id(),
                             value: observed,
                         });
                         self.fiber.cursor = state.resume;
@@ -620,10 +639,10 @@ impl Engine {
                 None => Some(observed),
             },
         };
-        let need = state.need.clone();
+        let correlation = state.handle.correlation();
         let mut through = queued_through;
         let mut additions = Vec::new();
-        while let Some(publication) = self.next_need_publication_for_await(&need, through) {
+        while let Some(publication) = self.next_need_publication_for_await(&correlation, through) {
             through = Some(publication.cursor());
             additions.push(publication);
         }
@@ -651,10 +670,10 @@ impl Engine {
     /// copied for another observer of the same Need.
     fn next_need_publication_for_await(
         &mut self,
-        need: &NeedId,
+        correlation: &crate::task::TaskCorrelation,
         through: Option<crate::task::TaskPublicationCursor>,
     ) -> Option<RuntimeNeedPublication> {
-        let queue = self.need_publications.get_mut(need)?;
+        let queue = self.need_publications.get_mut(correlation)?;
         let index = queue.iter().position(|publication| {
             through.is_none_or(|cursor| {
                 cursor.compare_same_source(publication.cursor()) == Some(std::cmp::Ordering::Less)
@@ -664,7 +683,7 @@ impl Engine {
         if matches!(
             publication,
             RuntimeNeedPublication::State {
-                state: Need::Ready(value),
+                state: Need::Ready(crate::task::RuntimeNeedOutcome::Value(value)),
                 ..
             } if !value.value().ownership().permits_copy()
         ) {
@@ -846,11 +865,7 @@ impl Engine {
             }
         };
         let need = match value {
-            RuntimeValue::Need(need) if !need.0.is_empty() => need,
-            RuntimeValue::Need(_) => {
-                self.fail_eval("Await source contains an empty Need identity", output);
-                return;
-            }
+            RuntimeValue::NeedHandle(need) => need,
             value => {
                 self.fail_eval(
                     format!(
@@ -874,18 +889,23 @@ impl Engine {
                 return;
             }
         };
-        let task = self
-            .need_producers
-            .launch_for_need(&need)
-            .map(|launch| launch.task().clone());
+        let correlation = need.correlation();
+        if self.need_producers.launch_for_handle(&need).is_none() {
+            self.fail_eval(
+                "Await handle does not belong to its complete accepted producer context",
+                output,
+            );
+            return;
+        }
+        let task = Some(correlation.task_id);
         output.flow_events.push(FlowEvent::AwaitStarted {
-            need: need.clone(),
+            need: correlation.need,
             task,
         });
         let queued = VecDeque::new();
         let state = AwaitState {
             binding,
-            need,
+            handle: need,
             item_type: AwaitItemType::Plan(item_type),
             observers,
             resume,
@@ -950,26 +970,6 @@ impl Engine {
                 return;
             }
         };
-        let need_value = RuntimeValue::Need(proof.admission().need().clone());
-        match crate::pattern::inspect_runtime_pattern_owned(
-            &self.plan,
-            &binding,
-            &need_value,
-            self.fiber.env.function_instantiation(),
-        ) {
-            Ok(true) => {}
-            Ok(false) => {
-                self.fail_eval(
-                    "Need producer result did not match its checked binding",
-                    output,
-                );
-                return;
-            }
-            Err(error) => {
-                self.fail_eval(error, output);
-                return;
-            }
-        }
         let ensure = proof.admission().disposition() == NeedProducerTaskDisposition::Ensure;
         if ensure && self.task_request_quota_remaining == 0 {
             self.fail_task_request_quota(
@@ -978,20 +978,30 @@ impl Engine {
             );
             return;
         }
-        let bindings = crate::pattern::match_runtime_pattern_owned(
-            &self.plan,
-            &binding,
-            need_value,
-            self.fiber.env.function_instantiation(),
-        )
-        .expect("checked Need binding remains valid")
-        .expect("checked Need binding matches");
-        let admission = self.need_producers.commit_start_visit(proof);
+        let bound = self
+            .need_producers
+            .commit_start_visit_with(proof, |handle| {
+                crate::pattern::match_runtime_pattern_owned(
+                    &self.plan,
+                    &binding,
+                    RuntimeValue::NeedHandle(handle),
+                    self.fiber.env.function_instantiation(),
+                )
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| "Need producer result did not match its checked binding".to_owned())
+            });
+        let (admission, bindings) = match bound {
+            Ok(bound) => bound,
+            Err(error) => {
+                self.fail_eval(error, output);
+                return;
+            }
+        };
         if ensure {
             self.task_request_quota_remaining -= 1;
         }
         let task_spec = (admission.disposition() == NeedProducerTaskDisposition::Ensure)
-            .then(|| admission.task_spec().clone());
+            .then(|| self.need_producers.submission_for_admission(&admission));
         self.fiber.env.bind_all(bindings);
         self.advance_if_needed(next_op_index);
         if let Some(task_spec) = task_spec {
@@ -1023,17 +1033,72 @@ impl Engine {
                 return;
             }
         };
-        let invocation = match self.allocate_await_many_invocation() {
-            Ok(invocation) => invocation,
+        if u32::try_from(items.len()).is_err() || target.limit == 0 {
+            self.fail_eval(
+                "AwaitMany source/limit exceeds its checked u32 domain",
+                output,
+            );
+            return;
+        }
+        let captured = target
+            .captures()
+            .map(|local| {
+                let value = self
+                    .fiber
+                    .env
+                    .get(local)
+                    .ok_or_else(|| "AwaitMany capture is unavailable".to_owned())?;
+                if !value.ownership().permits_copy() {
+                    return Err(
+                        "AwaitMany host request capture requires its checked Copy input".to_owned(),
+                    );
+                }
+                Ok(value.clone())
+            })
+            .collect::<Result<Vec<_>, String>>();
+        let captured = match captured {
+            Ok(captured) => captured,
             Err(error) => {
-                self.fail_task_request_quota(error.to_string(), output);
+                self.fail_eval(error, output);
                 return;
             }
         };
+        let request =
+            match self.evaluate_host_task_request_template(&target.base.request, pure_backend) {
+                Ok(request) => request,
+                Err(error) => {
+                    self.fail_eval(error, output);
+                    return;
+                }
+            };
+        let spec = match target.instantiate_base(
+            self.generation,
+            &captured,
+            &items,
+            request,
+            16 * 1024 * 1024,
+        ) {
+            Ok(spec) => spec,
+            Err(error) => {
+                self.fail_eval(error, output);
+                return;
+            }
+        };
+        let submission = match self.need_producers.ensure_task(spec.clone()) {
+            Ok(submission) => submission,
+            Err(error) => {
+                self.fail_eval(error, output);
+                return;
+            }
+        };
+        let base =
+            crate::task::RuntimeNeedHandle::try_from_accepted_launch(spec, submission.handle())
+                .expect("aggregate base uses its actual accepted journal receipt");
         let mut state = AwaitManyState {
             binding,
             target,
-            invocation,
+            base,
+            captured,
             resume,
             next_index: 0,
             in_flight: Vec::new(),
@@ -1043,22 +1108,6 @@ impl Engine {
         if self.fill_await_many_queue(&mut state, output, pure_backend) {
             self.commit_await_many_state(state, output);
         }
-    }
-
-    fn allocate_await_many_invocation(
-        &mut self,
-    ) -> Result<crate::task::AwaitManyInvocationIdentity, crate::task::AwaitManyIdentityError> {
-        let key = (self.generation, self.fiber.persistent_id);
-        let ordinal = self.await_many_invocations.get(&key).copied().unwrap_or(0);
-        let next = ordinal
-            .checked_add(1)
-            .ok_or(crate::task::AwaitManyIdentityError::InvocationOrdinalOverflow)?;
-        self.await_many_invocations.insert(key, next);
-        Ok(crate::task::AwaitManyInvocationIdentity::new(
-            self.generation,
-            self.fiber.persistent_id,
-            ordinal,
-        ))
     }
 
     pub(super) fn resume_await_many_state(
@@ -1072,17 +1121,20 @@ impl Engine {
             let Some(position) = state
                 .in_flight
                 .iter()
-                .position(|task| task.task == event.task_id)
+                .position(|task| task.handle.correlation().task_id == event.correlation.task_id)
             else {
                 continue;
             };
             match &event.kind {
                 TaskEventKind::Ready(value) => {
-                    if !self.task_outcome_accepts_live_value(&state.target.outcome, value.value()) {
+                    if !self
+                        .task_outcome_accepts_live_value(&state.target.child.outcome, value.value())
+                    {
                         let in_flight = &state.in_flight[position];
                         let message = format!(
                             "await task {} at index {} published a payload outside its checked outcome contract",
-                            in_flight.task.0, in_flight.index
+                            in_flight.handle.correlation().task_id,
+                            in_flight.index
                         );
                         self.fiber.status = FlowFiberStatus::Failed(message.clone());
                         output.diagnostics.push(RuntimeDiagnostic::categorized(
@@ -1094,7 +1146,7 @@ impl Engine {
                     let in_flight = state.in_flight.remove(position);
                     state.results[in_flight.index] = Some(value.clone());
                     output.flow_events.push(FlowEvent::AwaitReady {
-                        need: in_flight.need,
+                        need: in_flight.handle.need_id(),
                         value: value
                             .value()
                             .ownership()
@@ -1105,15 +1157,16 @@ impl Engine {
                 TaskEventKind::Progress(progress) => {
                     let in_flight = &state.in_flight[position];
                     output.flow_events.push(FlowEvent::AwaitProgress {
-                        need: in_flight.need.clone(),
+                        need: in_flight.handle.need_id(),
                         progress: progress.clone(),
                     });
                 }
-                TaskEventKind::Failed(error) => {
+                TaskEventKind::InfrastructureFailure(error) => {
                     let in_flight = &state.in_flight[position];
                     let message = format!(
                         "await task {} at index {} failed: {error}",
-                        in_flight.task.0, in_flight.index
+                        in_flight.handle.correlation().task_id,
+                        in_flight.index
                     );
                     self.fiber.status = FlowFiberStatus::Failed(message.clone());
                     output.diagnostics.push(RuntimeDiagnostic::categorized(
@@ -1139,7 +1192,9 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
-        while state.in_flight.len() < state.target.limit && state.next_index < state.items.len() {
+        while state.in_flight.len() < state.target.limit as usize
+            && state.next_index < state.items.len()
+        {
             if self.task_request_quota_remaining == 0 {
                 if state.in_flight.is_empty() {
                     self.fail_task_request_quota(
@@ -1151,24 +1206,22 @@ impl Engine {
                 return true;
             }
             let index = state.next_index;
-            let item = state.items[index].clone();
-            let need = match state.invocation.need_id(&state.target.need, index) {
-                Ok(need) => need,
-                Err(error) => {
-                    self.fail_eval(error, output);
-                    return false;
-                }
-            };
-            let task = match state.invocation.task_id(&state.target.task, index) {
-                Ok(task) => task,
-                Err(error) => {
-                    self.fail_eval(error, output);
-                    return false;
-                }
-            };
-            let Some(spec) =
-                self.await_many_task_spec(&state.target, index, &item, &task, output, pure_backend)
-            else {
+            let item = &state.items[index];
+            if !item.ownership().permits_copy() {
+                self.fail_eval(
+                    "AwaitMany host request item requires its checked Copy input",
+                    output,
+                );
+                return false;
+            }
+            let Some(spec) = self.await_many_task_spec(
+                &state.target,
+                &state.captured,
+                index,
+                item,
+                output,
+                pure_backend,
+            ) else {
                 return false;
             };
             if !self.reserve_new_task_request() {
@@ -1181,14 +1234,23 @@ impl Engine {
                 }
                 return true;
             }
+            let submission = match self.need_producers.ensure_task(spec.clone()) {
+                Ok(submission) => submission,
+                Err(error) => {
+                    self.fail_eval(error, output);
+                    return false;
+                }
+            };
+            let handle =
+                crate::task::RuntimeNeedHandle::try_from_accepted_launch(spec, submission.handle())
+                    .expect("child uses its actual accepted journal receipt");
+            let correlation = handle.correlation();
             output.flow_events.push(FlowEvent::AwaitStarted {
-                need: need.clone(),
-                task: Some(task.clone()),
+                need: correlation.need,
+                task: Some(correlation.task_id),
             });
-            output.requests.tasks.push(spec);
-            state
-                .in_flight
-                .push(AwaitManyInFlight { index, task, need });
+            output.requests.tasks.push(submission);
+            state.in_flight.push(AwaitManyInFlight { index, handle });
             state.next_index += 1;
         }
         true
@@ -1236,7 +1298,7 @@ impl Engine {
             }
         }
         output.flow_events.push(FlowEvent::AwaitReady {
-            need: state.target.need,
+            need: state.base.need_id(),
             value: observed,
         });
         self.fiber.cursor = state.resume;
@@ -1246,37 +1308,54 @@ impl Engine {
     fn await_many_task_spec(
         &mut self,
         target: &AwaitManyTarget,
+        captured: &[RuntimeValue],
         index: usize,
         item: &RuntimeValue,
-        task: &TaskId,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Option<TaskSpec> {
-        let request = match self.with_temp_binding_ref(target.item_binding, item, |this| {
-            this.evaluate_host_task_request_template(&target.request, pure_backend)
-        }) {
+        let bindings = target
+            .captures()
+            .zip(captured)
+            .map(|(local, value)| crate::value::RuntimeLocalBinding {
+                local,
+                value: value.clone(),
+            })
+            .collect::<Vec<_>>();
+        let request = self.with_temp_bindings(bindings, |this| {
+            this.with_temp_binding_ref(target.item_binding, item, |this| {
+                this.evaluate_host_task_request_template(&target.child.request, pure_backend)
+            })
+        });
+        let request = match request {
             Ok(request) => request,
             Err(error) => {
                 self.fail_eval(format!("await many item {index}: {error}"), output);
                 return None;
             }
         };
-        Some(
-            TaskSpec::new(
-                task.clone(),
-                // The occurrence-scoped key keeps AwaitMany visits and runtime
-                // generations from joining under a request-only identity.
-                TaskKey(task.0.clone()),
-                request.task_class(),
-                TaskPriority(0),
-                CancelScopeId("flow".to_owned()),
-                TaskPolicy::JoinSameKey,
-                request,
-            )
-            .with_outcome(target.outcome.clone()),
-        )
+        let index = match u32::try_from(index) {
+            Ok(index) => index,
+            Err(error) => {
+                self.fail_eval(error, output);
+                return None;
+            }
+        };
+        match target.instantiate_child(
+            self.generation,
+            captured,
+            index,
+            item,
+            request,
+            16 * 1024 * 1024,
+        ) {
+            Ok(spec) => Some(spec),
+            Err(error) => {
+                self.fail_eval(error, output);
+                None
+            }
+        }
     }
-
     fn evaluate_host_task_request_template(
         &mut self,
         template: &HostTaskRequestTemplate,
@@ -1685,7 +1764,7 @@ fn runtime_value_to_string(value: &RuntimeValue) -> String {
             .label()
             .map_or_else(|| value.ratio().to_string(), str::to_owned),
         RuntimeValue::Unit
-        | RuntimeValue::Need(_)
+        | RuntimeValue::NeedHandle(_)
         | RuntimeValue::Range(_)
         | RuntimeValue::Iterator(_)
         | RuntimeValue::MatrixF32(_)

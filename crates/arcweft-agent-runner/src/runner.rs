@@ -587,47 +587,43 @@ where
                 report.events_emitted = host_report.events_emitted;
             }
             for task in &step.output.requests.tasks {
-                let request = agent_host_request_from_task(&task.request)
+                let request = agent_host_request_from_task(&task.spec().request)
                     .map_err(AgentRunError::InvalidControllerRequest)?;
                 let host_report =
                     self.handle_controller_host_request(request, budget, &mut budget_tracker)?;
                 let response = runtime_payload_from_response(&host_report.response)
                     .map_err(AgentRunError::InvalidHostResponse)?;
-                let bound = match &task.outcome {
+                let bound = match &task.spec().outcome {
                     arcweft_core::task::TaskOutcomeContract::Standalone { .. } => {
-                        task.outcome.bind_standalone()
+                        task.spec().outcome.bind_standalone()
                     }
                     arcweft_core::task::TaskOutcomeContract::Program { .. } => {
-                        task.outcome.bind_program(program.clone(), limits)
+                        task.spec().outcome.bind_program(program.clone(), limits)
                     }
                 }
                 .map_err(|detail| {
                     AgentRunError::InvalidControllerOutcome(
                         AgentControllerOutcomeAdmissionError::contract_rejected(
-                            task.id.0.clone(),
+                            task.task_id().to_string(),
                             detail.to_string(),
                         ),
                     )
                 })?;
                 let response = bound
-                    .try_result_ok(response.value().clone())
+                    .try_result_ok(response.into_value())
                     .map_err(|detail| {
                         AgentRunError::InvalidControllerOutcome(
                             AgentControllerOutcomeAdmissionError::contract_rejected(
-                                task.id.0.clone(),
+                                task.task_id().to_string(),
                                 detail.to_string(),
                             ),
                         )
                     })?;
-                let generation = executor
-                    .task_generation(&task.id)
-                    .unwrap_or_else(|| executor.generation());
                 task_events.push(TaskEvent::from_dispatch(
                     TaskDispatchIdentity::new(
-                        generation,
+                        task.handle().correlation,
                         LogicalEpoch(0),
                         TaskSequence(report.host_calls as u64),
-                        task.id.clone(),
                     ),
                     TaskPublicationRevision::FIRST,
                     TaskEventKind::Ready(response),
@@ -643,7 +639,7 @@ where
                     self.handle_controller_host_request(request, budget, &mut budget_tracker)?;
                 let payload = runtime_payload_from_response(&host_report.response)
                     .map_err(AgentRunError::InvalidHostResponse)?;
-                let bound = arcweft_core::task::TaskOutcomeContract::program(call.result)
+                let bound = arcweft_core::task::TaskOutcomeContract::program(call.result())
                     .bind_program(program.clone(), limits)
                     .map_err(|detail| {
                         AgentRunError::InvalidControllerOutcome(

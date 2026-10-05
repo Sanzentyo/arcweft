@@ -173,11 +173,11 @@ fn tasks_json(value: &ReplTasksEvidence, options: &ReplCommandJsonOptions) -> Va
 
 fn task_json(value: &ReplTaskRecord) -> Value {
     json!({
-        "id": &value.id,
+        "correlation": &value.dispatch.correlation,
         "status": task_status_label(value.status),
-        "generation": value.generation,
-        "logical_epoch": value.logical_epoch,
-        "sequence": value.sequence,
+        "dispatch_epoch": value.dispatch.logical_epoch,
+        "dispatch_sequence": value.dispatch.sequence,
+        "cursor": value.cursor,
         "cancel_scope": &value.cancel_scope,
     })
 }

@@ -10,7 +10,9 @@ use crate::manifest::{
     desktop_pointer_global_control_manifest, desktop_pointer_global_observe_manifest,
 };
 use arcweft_adapter_context::manifest::AdapterManifest;
-use arcweft_core::task::{BoundTaskOutcome, HostTaskRequest, TaskId, TaskSpec};
+use arcweft_core::task::{
+    BoundTaskOutcome, BoundTaskSpec, HostTaskRequest, TaskHandle, TaskId, TaskSpec,
+};
 use arcweft_desktop_contract::{
     DesktopRequest, ExternalWindowRequest, FileDialogMode, GlobalPointerRequest, GrantAccess,
     UserFileRequest,
@@ -43,7 +45,7 @@ enum RequestDomain {
 
 #[derive(Clone, Debug)]
 struct PendingTask {
-    arcweft_task: TaskId,
+    arcweft_task: TaskHandle,
     next_publication_revision: arcweft_core::task::TaskPublicationRevision,
     request: DesktopRequest,
     outcome: BoundTaskOutcome,
@@ -150,10 +152,11 @@ impl<B: DesktopBackend> HostAdapter for DesktopArcweftAdapter<B> {
 
     fn submit(
         &self,
-        task: &TaskSpec,
-        outcome_contract: &BoundTaskOutcome,
+        bound: &BoundTaskSpec,
         context: HostTaskSubmissionContext,
     ) -> Option<HostTaskSubmission> {
+        let task = bound.spec();
+        let outcome_contract = bound.outcome();
         if !self.domains.contains_key(&task.request.host_call_id()) {
             return None;
         }
@@ -181,7 +184,7 @@ impl<B: DesktopBackend> HostAdapter for DesktopArcweftAdapter<B> {
                 self.pending().insert(
                     desktop_task,
                     PendingTask {
-                        arcweft_task: task.id.clone(),
+                        arcweft_task: bound.handle(),
                         next_publication_revision: context.next_publication_revision(),
                         request,
                         outcome: outcome_contract.clone(),
@@ -199,7 +202,7 @@ impl<B: DesktopBackend> HostAdapter for DesktopArcweftAdapter<B> {
                 let result = self.coordinator.host.poll(desktop_task)?;
                 let pending = self.pending().remove(&desktop_task)?;
                 Some(HostAdapterCompletion {
-                    task_id: pending.arcweft_task,
+                    task_id: pending.arcweft_task.correlation.task_id,
                     publication_revision: pending.next_publication_revision,
                     outcome: outcome(&pending.request, &pending.outcome, result),
                 })
@@ -209,7 +212,7 @@ impl<B: DesktopBackend> HostAdapter for DesktopArcweftAdapter<B> {
 
     fn cancel(&self, task_id: &TaskId) -> bool {
         let desktop_task = self.pending().iter().find_map(|(desktop_task, pending)| {
-            (&pending.arcweft_task == task_id).then_some(*desktop_task)
+            (&pending.arcweft_task.correlation.task_id == task_id).then_some(*desktop_task)
         });
         let Some(desktop_task) = desktop_task else {
             return false;

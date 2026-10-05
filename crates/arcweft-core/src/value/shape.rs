@@ -54,7 +54,7 @@ impl RuntimeValue {
             Self::TensorF64(_) => RuntimeValueShape::TensorF64,
             Self::String(_) => RuntimeValueShape::String,
             Self::Color(_) => RuntimeValueShape::Color,
-            Self::Need(_) => RuntimeValueShape::Need,
+            Self::NeedHandle(_) => RuntimeValueShape::Need,
             Self::Char(_) => RuntimeValueShape::Char,
             Self::Duration(_) => RuntimeValueShape::Duration,
             Self::Progress(_) => RuntimeValueShape::Progress,
@@ -88,7 +88,7 @@ mod tests {
             RuntimeValueShape::String
         );
         assert_eq!(
-            RuntimeValue::Need(crate::task::NeedId("need.profile".to_owned())).shape(),
+            RuntimeValue::NeedHandle(crate::tests::reusable_need("need.profile")).shape(),
             RuntimeValueShape::Need
         );
         assert_eq!(

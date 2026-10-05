@@ -283,19 +283,16 @@ fn human_tasks(
 
 fn human_task(value: &ReplTaskRecord) -> String {
     format!(
-        "{} status={} generation={} epoch={} sequence={} scope={}",
-        value.id,
+        "{} status={} generation={} epoch={} dispatch={} publication={} scope={}",
+        value.dispatch.correlation.task_id,
         task_status_label(value.status),
+        value.dispatch.correlation.generation.get(),
+        value.dispatch.logical_epoch.0,
+        value.dispatch.sequence.0,
         value
-            .generation
-            .map_or_else(|| "-".to_owned(), |value| value.to_string()),
-        value
-            .logical_epoch
-            .map_or_else(|| "-".to_owned(), |value| value.to_string()),
-        value
-            .sequence
-            .map_or_else(|| "-".to_owned(), |value| value.to_string()),
-        value.cancel_scope.as_deref().unwrap_or("-")
+            .cursor
+            .map_or_else(|| "-".to_owned(), |cursor| cursor.sequence.0.to_string()),
+        value.cancel_scope.0
     )
 }
 

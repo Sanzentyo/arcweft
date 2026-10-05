@@ -268,12 +268,10 @@ pub struct ReplTaskList {
 /// Stable projection of one host task.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReplTaskRecord {
-    pub id: String,
+    pub dispatch: arcweft_core::task::TaskDispatchIdentity,
     pub status: ReplTaskStatus,
-    pub generation: Option<u64>,
-    pub logical_epoch: Option<u64>,
-    pub sequence: Option<u64>,
-    pub cancel_scope: Option<String>,
+    pub cursor: Option<arcweft_core::task::TaskPublicationCursor>,
+    pub cancel_scope: arcweft_core::task::CancelScopeId,
 }
 
 /// Stable task status labels for adapters over runtime-driver task state.

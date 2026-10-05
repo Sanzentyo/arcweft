@@ -293,7 +293,7 @@ impl<'a> RuntimeValueView<'a> {
                 RuntimeValue::TensorF64(_) => "f64 tensor",
                 RuntimeValue::Range(_) => "range",
                 RuntimeValue::Iterator(_) => "iterator",
-                RuntimeValue::Need(_) => "Need value",
+                RuntimeValue::NeedHandle(_) => "Need value",
                 RuntimeValue::Callable(_) => "function",
                 _ => unreachable!("runtime-only views are issued for runtime-only values"),
             },
@@ -331,6 +331,8 @@ impl<'a> RuntimeValueView<'a> {
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum RuntimeTupleView<'a> {
     Values(&'a [RuntimeValue]),
+    Borrowed(&'a [&'a RuntimeValue]),
+    Views(&'a [RuntimeValueView<'a>]),
     Columns {
         columns: &'a [RuntimeSeq],
         row: usize,
@@ -389,7 +391,7 @@ impl RuntimeValue {
             | Self::TensorF64(_)
             | Self::Range(_)
             | Self::Iterator(_)
-            | Self::Need(_)
+            | Self::NeedHandle(_)
             | Self::Callable(_) => View::RuntimeOnly(self),
         }
     }
@@ -459,6 +461,8 @@ impl<'a> RuntimeTupleView<'a> {
     pub(crate) fn len(self) -> usize {
         match self {
             Self::Values(values) => values.len(),
+            Self::Borrowed(values) => values.len(),
+            Self::Views(values) => values.len(),
             Self::Columns { columns, .. } => columns.len(),
         }
     }
@@ -466,6 +470,8 @@ impl<'a> RuntimeTupleView<'a> {
     pub(crate) fn get(self, index: usize) -> Option<RuntimeValueView<'a>> {
         match self {
             Self::Values(values) => values.get(index).map(RuntimeValue::view),
+            Self::Borrowed(values) => values.get(index).map(|value| value.view()),
+            Self::Views(values) => values.get(index).copied(),
             Self::Columns { columns, row } => columns.get(index)?.value_view(row),
         }
     }

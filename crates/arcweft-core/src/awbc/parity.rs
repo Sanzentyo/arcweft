@@ -9,6 +9,7 @@ use super::vm::{VmExit, VmObservation, VmStepOutput};
 use crate::engine::FlowFiberStatus;
 use crate::plan::FlowEvent;
 use crate::step::{RuntimeStepResult, RuntimeStepStopReason};
+use crate::task::{NeedId, TaskId};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ParityTrace {
@@ -29,14 +30,14 @@ pub enum ParityEvent {
         option: String,
     },
     AwaitStarted {
-        need: String,
-        task: Option<String>,
+        need: NeedId,
+        task: Option<TaskId>,
     },
     AwaitReady {
-        need: String,
+        need: NeedId,
     },
     AwaitProgress {
-        need: String,
+        need: NeedId,
     },
     Effect {
         id: String,
@@ -147,15 +148,11 @@ fn flow_event(event: &FlowEvent) -> ParityEvent {
             option: option.clone(),
         },
         FlowEvent::AwaitStarted { need, task } => ParityEvent::AwaitStarted {
-            need: need.0.clone(),
-            task: task.as_ref().map(|task| task.0.clone()),
+            need: *need,
+            task: *task,
         },
-        FlowEvent::AwaitReady { need, .. } => ParityEvent::AwaitReady {
-            need: need.0.clone(),
-        },
-        FlowEvent::AwaitProgress { need, .. } => ParityEvent::AwaitProgress {
-            need: need.0.clone(),
-        },
+        FlowEvent::AwaitReady { need, .. } => ParityEvent::AwaitReady { need: *need },
+        FlowEvent::AwaitProgress { need, .. } => ParityEvent::AwaitProgress { need: *need },
         FlowEvent::Goto { target } => ParityEvent::Effect {
             id: format!("goto:{target}"),
         },

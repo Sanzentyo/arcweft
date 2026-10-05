@@ -25,21 +25,9 @@ pub struct RuntimeScheduler {
     pending: Vec<ScheduledTask>,
     pending_sorted: bool,
     in_flight: BTreeMap<TaskId, InFlightTask>,
-    in_flight_by_key: BTreeMap<TaskKey, TaskId>,
     accepted_specs: BTreeMap<TaskId, BoundTaskSpec>,
-    joined_waiters: BTreeMap<TaskId, Vec<TaskId>>,
-    joined_waiter_owners: BTreeMap<TaskId, TaskId>,
-    joined_publication_revisions: BTreeMap<TaskId, TaskPublicationRevision>,
     terminal_task_ids: BTreeSet<TaskId>,
-    publication_cursors: BTreeMap<
-        TaskId,
-        (
-            GenerationId,
-            LogicalEpoch,
-            TaskSequence,
-            TaskPublicationRevision,
-        ),
-    >,
+    publication_cursors: BTreeMap<TaskId, arcweft_core::task::TaskPublicationCursor>,
     cancel_scopes: BTreeSet<CancelScopeId>,
     stats: RuntimeSchedulerStats,
 }
@@ -61,7 +49,6 @@ pub struct RuntimeSchedulerStats {
     pub failed: usize,
     pub cancelled: usize,
     pub cancel_requested: usize,
-    pub joined_completed: usize,
     pub in_flight: usize,
     pub max_in_flight: usize,
     pub dispatch_sorts: usize,
@@ -71,11 +58,9 @@ pub struct RuntimeSchedulerStats {
     pub completion_normalization_passes: usize,
     pub completion_normalization_checks: usize,
     pub completion_events_in: usize,
-    pub completion_events_joined: usize,
     pub completion_events_out: usize,
     pub completion_sort_skipped_items: usize,
     pub completion_sort_performed_items: usize,
-    pub joined_completion_events_emitted: usize,
     pub submitted_by_class: TaskClassCounts,
     pub dispatched_by_class: TaskClassCounts,
     pub completed_by_class: TaskClassCounts,
@@ -145,17 +130,7 @@ struct ScheduledTask {
 
 #[derive(Clone, Debug, PartialEq)]
 struct InFlightTask {
-    key: TaskKey,
     class: TaskClass,
-    policy: TaskPolicy,
-}
-
-enum Submission {
-    Launch(BoundTaskSpec),
-    Join {
-        owner_id: TaskId,
-        spec: BoundTaskSpec,
-    },
 }
 
 impl RuntimeScheduler {
@@ -167,11 +142,7 @@ impl RuntimeScheduler {
             pending: Vec::new(),
             pending_sorted: true,
             in_flight: BTreeMap::new(),
-            in_flight_by_key: BTreeMap::new(),
             accepted_specs: BTreeMap::new(),
-            joined_waiters: BTreeMap::new(),
-            joined_waiter_owners: BTreeMap::new(),
-            joined_publication_revisions: BTreeMap::new(),
             terminal_task_ids: BTreeSet::new(),
             publication_cursors: BTreeMap::new(),
             cancel_scopes: BTreeSet::new(),
@@ -183,7 +154,6 @@ impl RuntimeScheduler {
                 failed: 0,
                 cancelled: 0,
                 cancel_requested: 0,
-                joined_completed: 0,
                 in_flight: 0,
                 max_in_flight: 0,
                 dispatch_sorts: 0,
@@ -193,11 +163,9 @@ impl RuntimeScheduler {
                 completion_normalization_passes: 0,
                 completion_normalization_checks: 0,
                 completion_events_in: 0,
-                completion_events_joined: 0,
                 completion_events_out: 0,
                 completion_sort_skipped_items: 0,
                 completion_sort_performed_items: 0,
-                joined_completion_events_emitted: 0,
                 submitted_by_class: TaskClassCounts::empty(),
                 dispatched_by_class: TaskClassCounts::empty(),
                 completed_by_class: TaskClassCounts::empty(),
@@ -211,65 +179,32 @@ impl RuntimeScheduler {
         &mut self,
         tasks: impl IntoIterator<Item = BoundTaskSpec>,
     ) -> Result<(), TaskEnsureError> {
-        let mut staged = Vec::new();
-        let mut staged_by_id = BTreeMap::new();
-        let mut staged_owners_by_key = BTreeMap::new();
-
+        let mut staged = BTreeMap::new();
+        let mut launches = Vec::new();
+        let mut reused_joins = 0;
         for spec in tasks {
-            let task_id = &spec.spec().id;
-            if let Some(existing) = staged_by_id
-                .get(task_id)
-                .or_else(|| self.accepted_specs.get(task_id))
+            let task_id = spec.task_id();
+            if let Some(existing) = staged
+                .get(&task_id)
+                .or_else(|| self.accepted_specs.get(&task_id))
             {
-                if existing.same_identity_spec(&spec) {
-                    continue;
+                if !existing.same_identity_spec(&spec) {
+                    return Err(TaskEnsureError::TaskIdSpecificationConflict { task_id });
                 }
-                return Err(TaskEnsureError::TaskIdSpecificationConflict {
-                    task_id: task_id.clone(),
-                });
+                if spec.spec().policy == TaskPolicy::JoinSameKey {
+                    reused_joins += 1;
+                }
+                continue;
             }
-
-            let task_spec = spec.spec();
-            let owner = staged_owners_by_key
-                .get(&task_spec.key)
-                .or_else(|| self.in_flight_by_key.get(&task_spec.key));
-            if task_spec.policy == TaskPolicy::JoinSameKey
-                && let Some(owner_id) = owner
-            {
-                let owner_spec = staged_by_id
-                    .get(owner_id)
-                    .or_else(|| self.accepted_specs.get(owner_id))
-                    .expect("same-key owner has an accepted specification");
-                if !owner_spec.same_join_contract(&spec) {
-                    return Err(TaskEnsureError::JoinSpecificationConflict {
-                        task_id: task_spec.id.clone(),
-                        owner_id: owner_id.clone(),
-                        key: task_spec.key.clone(),
-                    });
-                }
-                staged_by_id.insert(task_spec.id.clone(), spec.clone());
-                staged.push(Submission::Join {
-                    owner_id: owner_id.clone(),
-                    spec,
-                });
-            } else {
-                staged_by_id.insert(task_spec.id.clone(), spec.clone());
-                if task_spec.policy == TaskPolicy::JoinSameKey {
-                    staged_owners_by_key.insert(task_spec.key.clone(), task_spec.id.clone());
-                }
-                staged.push(Submission::Launch(spec));
-            }
+            staged.insert(task_id, spec.clone());
+            launches.push(spec);
         }
-
-        for submission in staged {
-            match submission {
-                Submission::Launch(spec) => self.launch(spec),
-                Submission::Join { owner_id, spec } => self.join(owner_id, spec),
-            }
+        self.stats.joined += reused_joins;
+        for spec in launches {
+            self.launch(spec);
         }
         Ok(())
     }
-
     /// Records a cancellation request for the next dispatch batch.
     pub fn cancel_scope(&mut self, scope: CancelScopeId) {
         if self.cancel_scopes.insert(scope) {
@@ -328,26 +263,10 @@ impl RuntimeScheduler {
             self.admit_ready_event(event);
         }
 
-        let mut joined_events = None;
         for event in &events {
-            self.publication_cursors.insert(
-                event.task_id.clone(),
-                (
-                    event.generation,
-                    event.logical_epoch,
-                    event.sequence,
-                    event.publication_revision,
-                ),
-            );
-            let completed = self.complete_one(event);
-            if !completed.is_empty() {
-                joined_events.get_or_insert_with(Vec::new).extend(completed);
-            }
-        }
-        if let Some(joined_events) = joined_events {
-            self.stats.completion_events_joined += joined_events.len();
-            events.extend(joined_events);
-            self.normalize_completion_events(&mut events);
+            self.publication_cursors
+                .insert(event.correlation.task_id.clone(), event.cursor);
+            self.complete_one(event);
         }
         self.stats.completion_events_out += events.len();
         self.refresh_in_flight_stats();
@@ -374,8 +293,7 @@ impl RuntimeScheduler {
         let order = self.next_order;
         self.next_order = self.next_order.saturating_add(1);
         self.track_in_flight(&spec);
-        self.accepted_specs
-            .insert(task_spec.id.clone(), spec.clone());
+        self.accepted_specs.insert(spec.task_id(), spec.clone());
         self.stats.submitted_by_class.record(&task_spec.class);
         let scheduled = ScheduledTask { spec, order };
         self.pending_sorted = self.pending_sorted
@@ -388,50 +306,28 @@ impl RuntimeScheduler {
         self.refresh_in_flight_stats();
     }
 
-    fn join(&mut self, owner_id: TaskId, spec: BoundTaskSpec) {
-        let task_id = spec.spec().id.clone();
-        self.accepted_specs.insert(task_id.clone(), spec);
-        self.joined_waiters
-            .entry(owner_id.clone())
-            .or_default()
-            .push(task_id.clone());
-        self.joined_waiter_owners.insert(task_id, owner_id);
-        self.stats.joined += 1;
-    }
-
     fn track_in_flight(&mut self, spec: &BoundTaskSpec) {
         let task_spec = spec.spec();
         self.in_flight.insert(
-            task_spec.id.clone(),
+            spec.task_id(),
             InFlightTask {
-                key: task_spec.key.clone(),
                 class: task_spec.class.clone(),
-                policy: task_spec.policy,
             },
         );
-        if task_spec.policy == TaskPolicy::JoinSameKey {
-            self.in_flight_by_key
-                .insert(task_spec.key.clone(), task_spec.id.clone());
-        }
     }
 
-    fn complete_one(&mut self, event: &TaskEvent) -> Vec<TaskEvent> {
+    fn complete_one(&mut self, event: &TaskEvent) {
         if matches!(event.kind, TaskEventKind::Progress(_)) {
-            return self.progress_joined_waiters(event);
+            return;
         }
         let task = self
             .in_flight
-            .remove(&event.task_id)
+            .remove(&event.correlation.task_id)
             .expect("completion preflight retained every task owner");
-        if task.policy == TaskPolicy::JoinSameKey
-            && self.in_flight_by_key.get(&task.key) == Some(&event.task_id)
-        {
-            self.in_flight_by_key.remove(&task.key);
-        }
         self.stats.completed_by_class.record(&task.class);
         match event.kind {
             TaskEventKind::Ready(_) => self.stats.completed += 1,
-            TaskEventKind::Failed(_) => {
+            TaskEventKind::InfrastructureFailure(_) => {
                 self.stats.failed += 1;
             }
             TaskEventKind::Cancelled => {
@@ -439,81 +335,66 @@ impl RuntimeScheduler {
             }
             TaskEventKind::Progress(_) => unreachable!("progress is nonterminal"),
         }
-        self.terminal_task_ids.insert(event.task_id.clone());
-        self.complete_joined_waiters(event)
+        self.terminal_task_ids
+            .insert(event.correlation.task_id.clone());
     }
 
     fn preflight_completions(&self, events: &[TaskEvent]) -> Result<(), TaskCompletionError> {
-        let mut ordered = events.to_vec();
-        ordered.sort_by(compare_task_events);
+        let mut ordered = events.iter().collect::<Vec<_>>();
+        ordered.sort_by(|left, right| compare_task_events(left, right));
         let mut terminal_in_batch = BTreeSet::new();
         let mut batch_cursors = BTreeMap::new();
 
         for event in &ordered {
-            if let Some(owner_id) = self.joined_waiter_owners.get(&event.task_id) {
-                return Err(TaskCompletionError::JoinedWaiterDirectCompletion {
-                    task_id: event.task_id.clone(),
-                    owner_id: owner_id.clone(),
-                });
-            }
-
-            if self.terminal_task_ids.contains(&event.task_id)
-                || terminal_in_batch.contains(&event.task_id)
+            if self.terminal_task_ids.contains(&event.correlation.task_id)
+                || terminal_in_batch.contains(&event.correlation.task_id)
             {
                 return Err(if is_terminal_event(&event.kind) {
                     TaskCompletionError::DuplicateTerminalEvent {
-                        task_id: event.task_id.clone(),
+                        task_id: event.correlation.task_id.clone(),
                     }
                 } else {
                     TaskCompletionError::EventAfterTerminal {
-                        task_id: event.task_id.clone(),
+                        task_id: event.correlation.task_id.clone(),
                     }
                 });
             }
 
-            if !self.in_flight.contains_key(&event.task_id) {
+            if !self.in_flight.contains_key(&event.correlation.task_id) {
                 return Err(TaskCompletionError::UnknownTask {
-                    task_id: event.task_id.clone(),
+                    task_id: event.correlation.task_id.clone(),
                 });
             }
 
-            if let Some((generation, epoch, sequence, revision)) = batch_cursors
-                .get(&event.task_id)
-                .or_else(|| self.publication_cursors.get(&event.task_id))
-            {
-                if (*generation, *epoch, *sequence)
-                    != (event.generation, event.logical_epoch, event.sequence)
-                {
-                    return Err(TaskCompletionError::DispatchMismatch {
-                        task_id: event.task_id.clone(),
-                    });
-                }
-                if event.publication_revision <= *revision {
-                    return Err(TaskCompletionError::StalePublication {
-                        task_id: event.task_id.clone(),
-                    });
-                }
+            let accepted = self
+                .accepted_specs
+                .get(&event.correlation.task_id)
+                .expect("in-flight task retains its accepted specification");
+            if event.correlation != accepted.handle().correlation {
+                return Err(TaskCompletionError::DispatchMismatch {
+                    task_id: event.correlation.task_id,
+                });
             }
-            batch_cursors.insert(
-                event.task_id.clone(),
-                (
-                    event.generation,
-                    event.logical_epoch,
-                    event.sequence,
-                    event.publication_revision,
-                ),
-            );
-
+            if batch_cursors
+                .get(&event.correlation.task_id)
+                .or_else(|| self.publication_cursors.get(&event.correlation.task_id))
+                .is_some_and(|previous| event.cursor <= *previous)
+            {
+                return Err(TaskCompletionError::StalePublication {
+                    task_id: event.correlation.task_id,
+                });
+            }
+            batch_cursors.insert(event.correlation.task_id, event.cursor);
             if matches!(event.kind, TaskEventKind::Progress(_))
-                && event.publication_revision.checked_next().is_none()
+                && event.cursor.sequence.0 == u64::MAX
             {
                 return Err(TaskCompletionError::PublicationRevisionExhausted {
-                    task_id: event.task_id.clone(),
+                    task_id: event.correlation.task_id,
                 });
             }
 
             if is_terminal_event(&event.kind) {
-                terminal_in_batch.insert(event.task_id.clone());
+                terminal_in_batch.insert(event.correlation.task_id.clone());
             }
         }
 
@@ -526,67 +407,15 @@ impl RuntimeScheduler {
         };
         let spec = self
             .accepted_specs
-            .get(&event.task_id)
+            .get(&event.correlation.task_id)
             .expect("completion preflight retained every accepted task");
-        match spec.outcome().try_payload(payload.clone().into_value()) {
-            Ok(admitted) => event.kind = TaskEventKind::Ready(admitted),
-            Err(error) => event.kind = TaskEventKind::Failed(error.to_string()),
+        if let Err(error) = spec.outcome().validate_value(payload.value()) {
+            event.kind =
+                TaskEventKind::InfrastructureFailure(arcweft_core::task::RuntimeTaskFailure::new(
+                    arcweft_core::task::RuntimeTaskFailureKind::AdapterProtocolViolation,
+                    error.to_string(),
+                ));
         }
-    }
-
-    fn progress_joined_waiters(&mut self, event: &TaskEvent) -> Vec<TaskEvent> {
-        self.joined_waiters
-            .get(&event.task_id)
-            .into_iter()
-            .flatten()
-            .cloned()
-            .collect::<Vec<_>>()
-            .into_iter()
-            .map(|task_id| TaskEvent {
-                generation: event.generation,
-                logical_epoch: event.logical_epoch,
-                publication_revision: self.next_joined_publication_revision(&task_id),
-                task_id,
-                sequence: event.sequence,
-                kind: event.kind.clone(),
-            })
-            .collect()
-    }
-
-    fn complete_joined_waiters(&mut self, event: &TaskEvent) -> Vec<TaskEvent> {
-        let Some(waiters) = self.joined_waiters.remove(&event.task_id) else {
-            return Vec::new();
-        };
-        self.stats.joined_completed += waiters.len();
-        self.stats.joined_completion_events_emitted += waiters.len();
-        waiters
-            .into_iter()
-            .map(|task_id| TaskEvent {
-                generation: event.generation,
-                logical_epoch: event.logical_epoch,
-                publication_revision: self.next_joined_publication_revision(&task_id),
-                task_id: {
-                    self.joined_waiter_owners.remove(&task_id);
-                    self.terminal_task_ids.insert(task_id.clone());
-                    task_id
-                },
-                sequence: event.sequence,
-                kind: event.kind.clone(),
-            })
-            .collect()
-    }
-
-    fn next_joined_publication_revision(&mut self, task_id: &TaskId) -> TaskPublicationRevision {
-        let revision = self
-            .joined_publication_revisions
-            .get(task_id)
-            .map_or(Some(TaskPublicationRevision::FIRST), |last| {
-                last.checked_next()
-            })
-            .expect("owner cannot publish more revisions than the waiter frontier supports");
-        self.joined_publication_revisions
-            .insert(task_id.clone(), revision);
-        revision
     }
 
     fn refresh_in_flight_stats(&mut self) {
@@ -614,7 +443,9 @@ impl RuntimeScheduler {
 fn is_terminal_event(kind: &TaskEventKind) -> bool {
     matches!(
         kind,
-        TaskEventKind::Ready(_) | TaskEventKind::Failed(_) | TaskEventKind::Cancelled
+        TaskEventKind::Ready(_)
+            | TaskEventKind::InfrastructureFailure(_)
+            | TaskEventKind::Cancelled
     )
 }
 
@@ -641,7 +472,7 @@ fn compare_scheduled_tasks(left: &ScheduledTask, right: &ScheduledTask) -> std::
         .priority
         .cmp(&left.spec.spec().priority)
         .then_with(|| left.order.cmp(&right.order))
-        .then_with(|| left.spec.spec().id.cmp(&right.spec.spec().id))
+        .then_with(|| left.spec.task_id().cmp(&right.spec.task_id()))
 }
 
 #[cfg(test)]
@@ -651,578 +482,408 @@ mod tests {
         entry::RuntimeSchemaLimits,
         pattern::RuntimeCheckedType,
         task::{
-            FileReadTextRequest, HostTaskRequest, LogicalEpoch, TaskOutcomeContract, TaskPriority,
-            TaskSequence, TaskSpec,
+            FileReadTextRequest, HostTaskRequest, NeedProducerContractDigest, NeedProducerFamily,
+            NeedProducerInstance, NeedProducerSiteDigest, NeedProducerSpec, RuntimeTaskFailure,
+            RuntimeTaskFailureKind, RuntimeTypeSemanticDigest, TaskAdmissionJournal,
+            TaskOutcomeContract, TaskPlanSemanticDigest, TaskPriority, TaskPublicationCursor,
+            TaskSpec,
         },
-        value::{RuntimePayload, RuntimeValue},
+        value::{Progress, RuntimePayload, RuntimeValue},
     };
+
+    fn spec(path: &str, policy: TaskPolicy, priority: i32) -> TaskSpec {
+        let producer = NeedProducerSpec::new(
+            NeedProducerFamily::HostAdapterTask,
+            NeedProducerContractDigest::from_bytes([1; 32]),
+            TaskPlanSemanticDigest::from_bytes([2; 32]),
+            NeedProducerSiteDigest::from_bytes([3; 32]),
+            RuntimeTypeSemanticDigest::from_bytes(
+                *RuntimeCheckedType::String
+                    .semantic_identity_digest()
+                    .as_bytes(),
+            ),
+            RuntimeValue::Tuple(vec![RuntimeValue::String(path.into())])
+                .try_digest(1024)
+                .unwrap(),
+        );
+        TaskSpec {
+            generation: GenerationId::new(1),
+            producer: NeedProducerInstance::try_from(&producer).unwrap(),
+            class: TaskClass::Io,
+            priority: TaskPriority(priority),
+            cancel_scope: CancelScopeId("test".into()),
+            policy,
+            outcome: TaskOutcomeContract::new(RuntimeCheckedType::String),
+            request: HostTaskRequest::FileReadText(FileReadTextRequest { path: path.into() }),
+            debug_label: path.into(),
+        }
+    }
+    fn admit(journal: &mut TaskAdmissionJournal, spec: TaskSpec) -> BoundTaskSpec {
+        let handle = journal.ensure_task(spec).unwrap();
+        BoundTaskSpec::bind(
+            journal.submission(handle).unwrap(),
+            None,
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap()
+    }
+    fn task(path: &str, policy: TaskPolicy, priority: i32) -> BoundTaskSpec {
+        admit(
+            &mut TaskAdmissionJournal::default(),
+            spec(path, policy, priority),
+        )
+    }
+    fn event(task: &BoundTaskSpec, revision: u64, kind: TaskEventKind) -> TaskEvent {
+        TaskEvent {
+            correlation: task.handle().correlation,
+            cursor: TaskPublicationCursor {
+                logical_epoch: LogicalEpoch(0),
+                sequence: TaskSequence(revision),
+            },
+            kind,
+        }
+    }
+    fn ready(task: &BoundTaskSpec, revision: u64) -> TaskEvent {
+        event(
+            task,
+            revision,
+            TaskEventKind::Ready(RuntimePayload::from("ok")),
+        )
+    }
+    fn progress(task: &BoundTaskSpec, revision: u64) -> TaskEvent {
+        event(
+            task,
+            revision,
+            TaskEventKind::Progress(Progress::new(0.5).unwrap()),
+        )
+    }
 
     #[test]
     fn joins_same_key_in_flight_tasks() {
         let mut scheduler = RuntimeScheduler::default();
-        scheduler
-            .submit([task("a", "asset.bg", TaskPolicy::JoinSameKey, 0)])
-            .expect("first task is valid");
-        scheduler
-            .submit([task("b", "asset.bg", TaskPolicy::JoinSameKey, 0)])
-            .expect("same-contract task joins");
-
+        let mut journal = TaskAdmissionJournal::default();
+        let first = admit(&mut journal, spec("asset.bg", TaskPolicy::JoinSameKey, 0));
+        let second = admit(&mut journal, spec("asset.bg", TaskPolicy::JoinSameKey, 0));
+        assert_eq!(first.handle(), second.handle());
+        scheduler.submit([first.clone()]).unwrap();
+        scheduler.submit([second]).unwrap();
         let batch = scheduler.dispatch(SchedulerBudget { max_events: 8 });
-
-        assert_eq!(batch.tasks.len(), 1);
-        assert_eq!(batch.tasks[0].spec().id, TaskId("a".to_owned()));
+        assert_eq!(batch.tasks, [first]);
         assert_eq!(scheduler.stats().submitted, 1);
         assert_eq!(scheduler.stats().joined, 1);
         assert_eq!(scheduler.stats().in_flight, 1);
-        assert_eq!(scheduler.stats().dispatch_sorts, 0);
     }
-
     #[test]
-    fn joined_tasks_receive_owner_completion_events() {
+    fn joined_receipt_has_one_owner_publication() {
         let mut scheduler = RuntimeScheduler::default();
-        scheduler
-            .submit([task("owner", "asset.bg", TaskPolicy::JoinSameKey, 0)])
-            .expect("owner is valid");
+        let owner = task("asset.bg", TaskPolicy::JoinSameKey, 0);
+        scheduler.submit([owner.clone()]).unwrap();
         scheduler.dispatch(SchedulerBudget { max_events: 8 });
-        scheduler
-            .submit([
-                task("waiter-a", "asset.bg", TaskPolicy::JoinSameKey, 0),
-                task("waiter-b", "asset.bg", TaskPolicy::JoinSameKey, 0),
-            ])
-            .expect("waiters share the owner's contract");
-
-        let events = scheduler
-            .complete([event(
-                "owner",
-                1,
-                TaskEventKind::Ready(RuntimePayload::from("shared")),
-            )])
-            .expect("owner can publish a string");
-        let ids = events
-            .iter()
-            .map(|event| event.task_id.0.as_str())
-            .collect::<Vec<_>>();
-
-        assert_eq!(ids, ["owner", "waiter-a", "waiter-b"]);
-        assert!(events.iter().all(|event| {
-            matches!(&event.kind, TaskEventKind::Ready(value) if value.label() == "shared")
-        }));
-        assert_eq!(scheduler.stats().completed, 1);
+        scheduler.submit([owner.clone(), owner.clone()]).unwrap();
+        let events = scheduler.complete([ready(&owner, 1)]).unwrap();
+        assert_eq!(events, [ready(&owner, 1)]);
         assert_eq!(scheduler.stats().joined, 2);
-        assert_eq!(scheduler.stats().joined_completed, 2);
-        assert_eq!(scheduler.stats().joined_completion_events_emitted, 2);
+        assert_eq!(scheduler.stats().completed, 1);
         assert_eq!(scheduler.stats().completion_events_in, 1);
-        assert_eq!(scheduler.stats().completion_events_joined, 2);
-        assert_eq!(scheduler.stats().completion_events_out, 3);
-        assert_eq!(scheduler.stats().completion_normalization_passes, 2);
-        assert_eq!(scheduler.stats().completion_normalization_checks, 1);
-        assert_eq!(scheduler.stats().completion_sort_skipped_items, 3);
+        assert_eq!(scheduler.stats().completion_events_out, 1);
         assert_eq!(scheduler.stats().in_flight, 0);
-        assert_eq!(scheduler.stats().completion_sorts, 0);
     }
-
     #[test]
     fn always_start_does_not_join_same_key_tasks() {
+        let mut journal = TaskAdmissionJournal::default();
         let mut scheduler = RuntimeScheduler::default();
-        scheduler
-            .submit([
-                task("a", "asset.bg", TaskPolicy::AlwaysStart, 0),
-                task("b", "asset.bg", TaskPolicy::AlwaysStart, 0),
-            ])
-            .expect("always-start tasks do not join");
-
-        let batch = scheduler.dispatch(SchedulerBudget { max_events: 8 });
-
-        assert_eq!(batch.tasks.len(), 2);
+        let a = admit(&mut journal, spec("asset.bg", TaskPolicy::AlwaysStart, 0));
+        let b = admit(&mut journal, spec("asset.bg", TaskPolicy::AlwaysStart, 0));
+        assert_eq!(
+            a.handle().correlation.task_key,
+            b.handle().correlation.task_key
+        );
+        assert_ne!(a.task_id(), b.task_id());
+        scheduler.submit([a, b]).unwrap();
+        assert_eq!(
+            scheduler
+                .dispatch(SchedulerBudget { max_events: 8 })
+                .tasks
+                .len(),
+            2
+        );
         assert_eq!(scheduler.stats().joined, 0);
         assert_eq!(scheduler.stats().max_in_flight, 2);
     }
-
     #[test]
     fn dispatches_by_priority_then_submission_order() {
         let mut scheduler = RuntimeScheduler::default();
+        let high_a = task("high-a", TaskPolicy::AlwaysStart, 9);
+        let high_b = task("high-b", TaskPolicy::AlwaysStart, 9);
         scheduler
             .submit([
-                task("low", "low", TaskPolicy::AlwaysStart, 1),
-                task("high-a", "high-a", TaskPolicy::AlwaysStart, 9),
-                task("high-b", "high-b", TaskPolicy::AlwaysStart, 9),
+                task("low", TaskPolicy::AlwaysStart, 1),
+                high_a.clone(),
+                high_b.clone(),
             ])
-            .expect("tasks have distinct keys");
-
-        let batch = scheduler.dispatch(SchedulerBudget { max_events: 2 });
-
-        let ids = batch
-            .tasks
-            .iter()
-            .map(|task| task.spec().id.0.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(ids, ["high-a", "high-b"]);
-        assert_eq!(scheduler.stats().dispatched, 2);
+            .unwrap();
+        assert_eq!(
+            scheduler.dispatch(SchedulerBudget { max_events: 2 }).tasks,
+            [high_a, high_b]
+        );
         assert_eq!(scheduler.stats().dispatch_sorts, 1);
         assert_eq!(scheduler.stats().dispatch_sort_items, 3);
     }
-
     #[test]
     fn dispatch_avoids_sort_when_submissions_are_already_ordered() {
         let mut scheduler = RuntimeScheduler::default();
-        scheduler
-            .submit([
-                task("high-a", "high-a", TaskPolicy::AlwaysStart, 9),
-                task("high-b", "high-b", TaskPolicy::AlwaysStart, 9),
-                task("low", "low", TaskPolicy::AlwaysStart, 1),
-            ])
-            .expect("tasks have distinct keys");
-
-        let batch = scheduler.dispatch(SchedulerBudget { max_events: 8 });
-
-        let ids = batch
-            .tasks
-            .iter()
-            .map(|task| task.spec().id.0.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(ids, ["high-a", "high-b", "low"]);
+        let tasks = [
+            task("high-a", TaskPolicy::AlwaysStart, 9),
+            task("high-b", TaskPolicy::AlwaysStart, 9),
+            task("low", TaskPolicy::AlwaysStart, 1),
+        ];
+        scheduler.submit(tasks.clone()).unwrap();
+        assert_eq!(
+            scheduler.dispatch(SchedulerBudget { max_events: 8 }).tasks,
+            tasks
+        );
         assert_eq!(scheduler.stats().dispatch_sorts, 0);
-        assert_eq!(scheduler.stats().dispatch_sort_items, 0);
     }
-
     #[test]
     fn completion_updates_stats_and_normalizes_events() {
         let mut scheduler = RuntimeScheduler::default();
-        scheduler
-            .submit([
-                task("a", "a", TaskPolicy::AlwaysStart, 0),
-                task("b", "b", TaskPolicy::AlwaysStart, 0),
-            ])
-            .expect("tasks have distinct keys");
-        scheduler.dispatch(SchedulerBudget { max_events: 8 });
-
-        let events = scheduler
-            .complete([
-                event("b", 2, TaskEventKind::Failed("failed".to_owned())),
-                event("a", 1, TaskEventKind::Ready(RuntimePayload::from("ok"))),
-            ])
-            .expect("events belong to distinct owners");
-
-        assert_eq!(events[0].task_id, TaskId("a".to_owned()));
+        let a = task("a", TaskPolicy::AlwaysStart, 0);
+        let b = task("b", TaskPolicy::AlwaysStart, 0);
+        scheduler.submit([a.clone(), b.clone()]).unwrap();
+        let fault = event(
+            &b,
+            2,
+            TaskEventKind::InfrastructureFailure(RuntimeTaskFailure::new(
+                RuntimeTaskFailureKind::WorkerFailure,
+                "failed",
+            )),
+        );
+        let mut expected = vec![fault.clone(), ready(&a, 1)];
+        expected.sort_by(compare_task_events);
+        let mut shuffled = expected.clone();
+        shuffled.reverse();
+        assert_eq!(scheduler.complete(shuffled).unwrap(), expected);
         assert_eq!(scheduler.stats().completed, 1);
         assert_eq!(scheduler.stats().failed, 1);
         assert_eq!(scheduler.stats().in_flight, 0);
         assert_eq!(scheduler.stats().completion_sorts, 1);
-        assert_eq!(scheduler.stats().completion_sort_items, 2);
-        assert_eq!(scheduler.stats().completion_normalization_passes, 1);
-        assert_eq!(scheduler.stats().completion_normalization_checks, 1);
-        assert_eq!(scheduler.stats().completion_events_in, 2);
-        assert_eq!(scheduler.stats().completion_events_out, 2);
-        assert_eq!(scheduler.stats().completion_sort_performed_items, 2);
-        assert_eq!(scheduler.stats().completion_sort_skipped_items, 0);
     }
-
     #[test]
     fn progress_keeps_joined_work_in_flight_until_terminal_delivery() {
         let mut scheduler = RuntimeScheduler::default();
-        scheduler
-            .submit([task("owner", "asset.bg", TaskPolicy::JoinSameKey, 0)])
-            .expect("owner is valid");
-        scheduler.dispatch(SchedulerBudget { max_events: 8 });
-        scheduler
-            .submit([task("waiter-a", "asset.bg", TaskPolicy::JoinSameKey, 0)])
-            .expect("waiter shares the owner's contract");
-
-        let progress = scheduler
-            .complete([event(
-                "owner",
-                1,
-                TaskEventKind::Progress(
-                    arcweft_core::value::Progress::new(0.5)
-                        .expect("fixture progress is valid")
-                        .with_label("halfway"),
-                ),
-            )])
-            .expect("progress belongs to the owner");
-
+        let owner = task("asset.bg", TaskPolicy::JoinSameKey, 0);
+        scheduler.submit([owner.clone(), owner.clone()]).unwrap();
         assert_eq!(
-            progress
-                .iter()
-                .map(|event| event.task_id.0.as_str())
-                .collect::<Vec<_>>(),
-            ["owner", "waiter-a"]
+            scheduler.complete([progress(&owner, 1)]).unwrap(),
+            [progress(&owner, 1)]
         );
-        assert!(progress.iter().all(|event| {
-            matches!(&event.kind, TaskEventKind::Progress(value) if value.label() == Some("halfway"))
-        }));
         assert_eq!(scheduler.stats().in_flight, 1);
         assert_eq!(scheduler.stats().completed, 0);
+        scheduler.submit([owner.clone()]).unwrap();
         assert_eq!(
-            scheduler.stats().completed_by_class,
-            TaskClassCounts::default()
+            scheduler.complete([ready(&owner, 2)]).unwrap(),
+            [ready(&owner, 2)]
         );
-        assert_eq!(scheduler.stats().joined_completed, 0);
-        assert_eq!(scheduler.stats().joined_completion_events_emitted, 0);
-
-        scheduler
-            .submit([task("waiter-b", "asset.bg", TaskPolicy::JoinSameKey, 0)])
-            .expect("second waiter shares the owner's contract");
-        let terminal = scheduler
-            .complete([event_at_revision(
-                "owner",
-                1,
-                2,
-                TaskEventKind::Ready(RuntimePayload::from("done")),
-            )])
-            .expect("owner can publish a string");
-
-        assert_eq!(
-            terminal
-                .iter()
-                .map(|event| event.task_id.0.as_str())
-                .collect::<Vec<_>>(),
-            ["owner", "waiter-a", "waiter-b"]
-        );
-        assert_eq!(
-            terminal
-                .iter()
-                .map(|event| event.publication_revision.get())
-                .collect::<Vec<_>>(),
-            [2, 2, 1]
-        );
-        assert_eq!(scheduler.stats().in_flight, 0);
-        assert_eq!(scheduler.stats().completed, 1);
         assert_eq!(scheduler.stats().completed_by_class.io, 1);
-        assert_eq!(scheduler.stats().joined, 2);
-        assert_eq!(scheduler.stats().joined_completed, 2);
-        assert_eq!(scheduler.stats().joined_completion_events_emitted, 2);
+        assert_eq!(scheduler.stats().in_flight, 0);
     }
-
     #[test]
-    fn join_conflicts_reject_the_whole_submission_batch() {
+    fn conflicting_receipt_rejects_whole_submission_batch() {
         let mut scheduler = RuntimeScheduler::default();
-        scheduler
-            .submit([task("owner", "asset.bg", TaskPolicy::JoinSameKey, 0)])
-            .expect("owner is valid");
+        let owner = task("asset.bg", TaskPolicy::JoinSameKey, 0);
+        scheduler.submit([owner.clone()]).unwrap();
         let before = scheduler.clone();
-        let error = scheduler.submit([
-            task("valid-waiter", "asset.bg", TaskPolicy::JoinSameKey, 0),
-            task("conflicting-waiter", "asset.bg", TaskPolicy::JoinSameKey, 1),
-        ]);
-
+        let conflict = task("asset.bg", TaskPolicy::JoinSameKey, 1);
+        assert_eq!(conflict.task_id(), owner.task_id());
         assert_eq!(
-            error,
-            Err(TaskEnsureError::JoinSpecificationConflict {
-                task_id: TaskId("conflicting-waiter".to_owned()),
-                owner_id: TaskId("owner".to_owned()),
-                key: TaskKey("asset.bg".to_owned()),
+            scheduler.submit([task("other", TaskPolicy::AlwaysStart, 0), conflict]),
+            Err(TaskEnsureError::TaskIdSpecificationConflict {
+                task_id: owner.task_id()
             })
         );
         assert_eq!(scheduler, before);
     }
-
     #[test]
     fn same_key_join_compares_all_non_identity_task_semantics() {
-        let base = task("owner", "asset.bg", TaskPolicy::JoinSameKey, 0);
-        let mut same_spec = base.spec().clone();
-        same_spec.id = TaskId("waiter".to_owned());
-        same_spec.debug_label = "diagnostic-only difference".to_owned();
-        assert!(base.same_join_contract(&bind(same_spec)));
-
-        let mut different_request = base.spec().clone();
-        different_request.request = HostTaskRequest::FileReadText(FileReadTextRequest {
-            path: "save:other.txt".to_owned(),
+        let original = spec("asset.bg", TaskPolicy::JoinSameKey, 0);
+        let mut diagnostic = original.clone();
+        diagnostic.debug_label = "diagnostic only".into();
+        assert!(original.same_join_contract(&diagnostic));
+        let mut variants = vec![];
+        let mut changed = original.clone();
+        changed.request = HostTaskRequest::FileReadText(FileReadTextRequest {
+            path: "other".into(),
         });
-        assert!(!base.same_join_contract(&bind(different_request)));
-
-        let mut different_class = base.spec().clone();
-        different_class.class = TaskClass::Cpu;
-        assert!(!base.same_join_contract(&bind(different_class)));
-
-        let mut different_priority = base.spec().clone();
-        different_priority.priority = TaskPriority(1);
-        assert!(!base.same_join_contract(&bind(different_priority)));
-
-        let mut different_scope = base.spec().clone();
-        different_scope.cancel_scope = CancelScopeId("other".to_owned());
-        assert!(!base.same_join_contract(&bind(different_scope)));
-
-        let mut different_policy = base.spec().clone();
-        different_policy.policy = TaskPolicy::AlwaysStart;
-        assert!(!base.same_join_contract(&bind(different_policy)));
-
-        let mut different_key = base.spec().clone();
-        different_key.key = TaskKey("other-key".to_owned());
-        assert!(!base.same_join_contract(&bind(different_key)));
-
-        let mut different_outcome = base.spec().clone();
-        different_outcome.outcome = TaskOutcomeContract::new(RuntimeCheckedType::Bool);
-        assert!(!base.same_join_contract(&bind(different_outcome)));
+        variants.push(changed);
+        let mut changed = original.clone();
+        changed.class = TaskClass::Cpu;
+        variants.push(changed);
+        let mut changed = original.clone();
+        changed.priority = TaskPriority(1);
+        variants.push(changed);
+        let mut changed = original.clone();
+        changed.cancel_scope = CancelScopeId("other".into());
+        variants.push(changed);
+        let mut changed = original.clone();
+        changed.policy = TaskPolicy::AlwaysStart;
+        variants.push(changed);
+        let mut changed = original.clone();
+        changed.generation = GenerationId::new(2);
+        variants.push(changed);
+        let mut changed = original.clone();
+        changed.outcome = TaskOutcomeContract::new(RuntimeCheckedType::Bool);
+        variants.push(changed);
+        variants.push(spec("other", TaskPolicy::JoinSameKey, 0));
+        for changed in variants {
+            assert!(!original.same_join_contract(&changed));
+        }
     }
-
     #[test]
-    fn task_id_resubmission_is_idempotent_except_for_contract_changes() {
+    fn task_id_resubmission_ignores_only_diagnostic_changes() {
         let mut scheduler = RuntimeScheduler::default();
-        let original = task("same", "asset.bg", TaskPolicy::JoinSameKey, 0);
-        scheduler
-            .submit([original.clone()])
-            .expect("first submission is valid");
+        let original = task("asset.bg", TaskPolicy::AlwaysStart, 0);
+        scheduler.submit([original.clone()]).unwrap();
         let before = scheduler.clone();
-
-        let mut same_id_different_label = original.spec().clone();
-        same_id_different_label.debug_label = "alternate diagnostic".to_owned();
+        let mut diagnostic = original.spec().clone();
+        diagnostic.debug_label = "renamed".into();
         scheduler
-            .submit([bind(same_id_different_label)])
-            .expect("diagnostic labels do not change identity");
+            .submit([admit(&mut TaskAdmissionJournal::default(), diagnostic)])
+            .unwrap();
         assert_eq!(scheduler, before);
-
         assert_eq!(
-            scheduler.submit([task("same", "asset.bg", TaskPolicy::JoinSameKey, 1)]),
+            scheduler.submit([task("asset.bg", TaskPolicy::AlwaysStart, 1)]),
             Err(TaskEnsureError::TaskIdSpecificationConflict {
-                task_id: TaskId("same".to_owned())
+                task_id: original.task_id()
             })
         );
         assert_eq!(scheduler, before);
     }
-
     #[test]
-    fn wrong_ready_payload_becomes_failed_before_join_fanout() {
+    fn wrong_ready_payload_becomes_one_protocol_failure() {
         let mut scheduler = RuntimeScheduler::default();
-        scheduler
-            .submit([
-                task("owner", "asset.bg", TaskPolicy::JoinSameKey, 0),
-                task("waiter", "asset.bg", TaskPolicy::JoinSameKey, 0),
-            ])
-            .expect("same contract tasks join");
-
+        let owner = task("asset.bg", TaskPolicy::JoinSameKey, 0);
+        scheduler.submit([owner.clone(), owner.clone()]).unwrap();
         let events = scheduler
             .complete([event(
-                "owner",
+                &owner,
                 1,
-                TaskEventKind::Ready(RuntimePayload::from(RuntimeValue::Bool(true))),
+                TaskEventKind::Ready(RuntimeValue::Bool(true).into()),
             )])
-            .expect("a wrong value is reported as a failed task");
-
-        assert_eq!(events.len(), 2);
-        assert!(events.iter().all(|event| {
-            matches!(&event.kind, TaskEventKind::Failed(message) if message.contains("rejected"))
-        }));
+            .unwrap();
+        assert_eq!(events.len(), 1);
+        assert!(
+            matches!(&events[0].kind, TaskEventKind::InfrastructureFailure(f)
+            if f.kind == RuntimeTaskFailureKind::AdapterProtocolViolation)
+        );
         assert_eq!(scheduler.stats().failed, 1);
         assert_eq!(scheduler.stats().completed, 0);
-        assert_eq!(scheduler.stats().joined_completed, 1);
     }
-
     #[test]
     fn invalid_completion_batches_are_rejected_without_state_changes() {
         let mut scheduler = RuntimeScheduler::default();
-        scheduler
-            .submit([
-                task("owner", "asset.bg", TaskPolicy::JoinSameKey, 0),
-                task("waiter", "asset.bg", TaskPolicy::JoinSameKey, 0),
-            ])
-            .expect("same contract tasks join");
-
+        let owner = task("asset.bg", TaskPolicy::JoinSameKey, 0);
+        scheduler.submit([owner.clone()]).unwrap();
+        let unknown = task("unknown", TaskPolicy::AlwaysStart, 0);
         let before = scheduler.clone();
         assert_eq!(
-            scheduler.complete([event(
-                "waiter",
-                1,
-                TaskEventKind::Ready(RuntimePayload::from("direct")),
-            )]),
-            Err(TaskCompletionError::JoinedWaiterDirectCompletion {
-                task_id: TaskId("waiter".to_owned()),
-                owner_id: TaskId("owner".to_owned()),
-            })
-        );
-        assert_eq!(scheduler, before);
-
-        assert_eq!(
             scheduler.complete([
-                event(
-                    "owner",
-                    1,
-                    TaskEventKind::Ready(RuntimePayload::from("valid")),
-                ),
-                event("unknown", 1, TaskEventKind::Cancelled),
+                ready(&owner, 1),
+                event(&unknown, 1, TaskEventKind::Cancelled)
             ]),
             Err(TaskCompletionError::UnknownTask {
-                task_id: TaskId("unknown".to_owned()),
+                task_id: unknown.task_id()
             })
         );
         assert_eq!(scheduler, before);
-
         assert_eq!(
-            scheduler.complete([
-                event(
-                    "owner",
-                    1,
-                    TaskEventKind::Ready(RuntimePayload::from("first")),
-                ),
-                event("owner", 2, TaskEventKind::Cancelled),
-            ]),
+            scheduler.complete([ready(&owner, 1), event(&owner, 2, TaskEventKind::Cancelled)]),
             Err(TaskCompletionError::DuplicateTerminalEvent {
-                task_id: TaskId("owner".to_owned()),
+                task_id: owner.task_id()
             })
         );
         assert_eq!(scheduler, before);
     }
-
     #[test]
     fn terminal_task_rejects_later_completion() {
         let mut scheduler = RuntimeScheduler::default();
-        scheduler
-            .submit([task("done", "asset.bg", TaskPolicy::AlwaysStart, 0)])
-            .expect("task is valid");
-        scheduler
-            .complete([event(
-                "done",
-                1,
-                TaskEventKind::Ready(RuntimePayload::from("ok")),
-            )])
-            .expect("first terminal event is accepted");
+        let owner = task("done", TaskPolicy::AlwaysStart, 0);
+        scheduler.submit([owner.clone()]).unwrap();
+        scheduler.complete([ready(&owner, 1)]).unwrap();
         let before = scheduler.clone();
-
         assert_eq!(
-            scheduler.complete([event("done", 2, TaskEventKind::Cancelled)]),
+            scheduler.complete([event(&owner, 2, TaskEventKind::Cancelled)]),
             Err(TaskCompletionError::DuplicateTerminalEvent {
-                task_id: TaskId("done".to_owned()),
+                task_id: owner.task_id()
+            })
+        );
+        assert_eq!(scheduler, before);
+        assert_eq!(
+            scheduler.complete([progress(&owner, 2)]),
+            Err(TaskCompletionError::EventAfterTerminal {
+                task_id: owner.task_id()
             })
         );
         assert_eq!(scheduler, before);
     }
-
     #[test]
     fn shuffled_progress_and_ready_revisions_are_normalized_before_commit() {
         let mut scheduler = RuntimeScheduler::default();
-        scheduler
-            .submit([task("owner", "asset.bg", TaskPolicy::AlwaysStart, 0)])
-            .unwrap();
-        scheduler.dispatch(SchedulerBudget { max_events: 8 });
-
-        let progress = |revision| {
-            event_at_revision(
-                "owner",
-                1,
-                revision,
-                TaskEventKind::Progress(arcweft_core::value::Progress::new(0.5).unwrap()),
-            )
-        };
+        let owner = task("owner", TaskPolicy::AlwaysStart, 0);
+        scheduler.submit([owner.clone()]).unwrap();
         let events = scheduler
-            .complete([
-                event_at_revision(
-                    "owner",
-                    1,
-                    3,
-                    TaskEventKind::Ready(RuntimePayload::from("ok")),
-                ),
-                progress(2),
-                progress(1),
-            ])
+            .complete([ready(&owner, 3), progress(&owner, 2), progress(&owner, 1)])
             .unwrap();
         assert_eq!(
             events
                 .iter()
-                .map(|event| event.publication_revision.get())
+                .map(|e| e.cursor.sequence.0)
                 .collect::<Vec<_>>(),
             [1, 2, 3]
         );
         assert_eq!(scheduler.stats().completed, 1);
     }
-
     #[test]
     fn repeated_or_mismatched_publications_reject_atomically() {
         let mut scheduler = RuntimeScheduler::default();
-        scheduler
-            .submit([task("owner", "asset.bg", TaskPolicy::AlwaysStart, 0)])
-            .unwrap();
-        scheduler.dispatch(SchedulerBudget { max_events: 8 });
-        let progress = |revision| {
-            event_at_revision(
-                "owner",
-                1,
-                revision,
-                TaskEventKind::Progress(arcweft_core::value::Progress::new(0.5).unwrap()),
-            )
-        };
-        scheduler.complete([progress(2)]).unwrap();
+        let owner = task("owner", TaskPolicy::AlwaysStart, 0);
+        scheduler.submit([owner.clone()]).unwrap();
+        scheduler.complete([progress(&owner, 2)]).unwrap();
         let before = scheduler.clone();
         assert_eq!(
-            scheduler.complete([progress(2)]),
+            scheduler.complete([progress(&owner, 2)]),
             Err(TaskCompletionError::StalePublication {
-                task_id: TaskId("owner".to_owned())
+                task_id: owner.task_id()
             })
         );
         assert_eq!(scheduler, before);
+        let mut mismatched = ready(&owner, 3);
+        mismatched.correlation.generation = GenerationId::new(2);
         assert_eq!(
-            scheduler.complete([event_at_revision(
-                "owner",
-                2,
-                3,
-                TaskEventKind::Ready(RuntimePayload::from("ok"))
-            )]),
+            scheduler.complete([mismatched]),
             Err(TaskCompletionError::DispatchMismatch {
-                task_id: TaskId("owner".to_owned())
+                task_id: owner.task_id()
             })
         );
         assert_eq!(scheduler, before);
         assert_eq!(
-            scheduler.complete([progress(u64::MAX)]),
+            scheduler.complete([progress(&owner, u64::MAX)]),
             Err(TaskCompletionError::PublicationRevisionExhausted {
-                task_id: TaskId("owner".to_owned()),
+                task_id: owner.task_id()
             })
         );
         assert_eq!(scheduler, before);
     }
-
     #[test]
     fn cancellation_requests_are_dispatched_once() {
         let mut scheduler = RuntimeScheduler::default();
-        scheduler.cancel_scope(CancelScopeId("flow".to_owned()));
-        scheduler.cancel_scope(CancelScopeId("flow".to_owned()));
-
-        let batch = scheduler.dispatch(SchedulerBudget { max_events: 0 });
-
-        assert_eq!(batch.cancel_scopes, [CancelScopeId("flow".to_owned())]);
+        scheduler.cancel_scope(CancelScopeId("flow".into()));
+        scheduler.cancel_scope(CancelScopeId("flow".into()));
+        assert_eq!(
+            scheduler
+                .dispatch(SchedulerBudget { max_events: 0 })
+                .cancel_scopes,
+            [CancelScopeId("flow".into())]
+        );
         assert_eq!(scheduler.stats().cancel_requested, 1);
-    }
-
-    fn task(id: &str, key: &str, policy: TaskPolicy, priority: i32) -> BoundTaskSpec {
-        bind(task_spec(id, key, policy, priority))
-    }
-
-    fn task_spec(id: &str, key: &str, policy: TaskPolicy, priority: i32) -> TaskSpec {
-        let request = HostTaskRequest::FileReadText(FileReadTextRequest {
-            path: "save:test.txt".to_owned(),
-        });
-        TaskSpec::new(
-            TaskId(id.to_owned()),
-            TaskKey(key.to_owned()),
-            request.task_class(),
-            TaskPriority(priority),
-            CancelScopeId("test".to_owned()),
-            policy,
-            request,
-        )
-        .with_outcome(TaskOutcomeContract::new(RuntimeCheckedType::String))
-    }
-
-    fn bind(spec: TaskSpec) -> BoundTaskSpec {
-        BoundTaskSpec::bind(spec, None, RuntimeSchemaLimits::engine_default())
-            .expect("fixture outcome is bindable")
-    }
-
-    fn event(id: &str, sequence: u64, kind: TaskEventKind) -> TaskEvent {
-        TaskEvent {
-            generation: GenerationId::new(1),
-            logical_epoch: LogicalEpoch(0),
-            task_id: TaskId(id.to_owned()),
-            sequence: TaskSequence(sequence),
-            publication_revision: TaskPublicationRevision::FIRST,
-            kind,
-        }
-    }
-
-    fn event_at_revision(id: &str, sequence: u64, revision: u64, kind: TaskEventKind) -> TaskEvent {
-        use std::num::NonZeroU64;
-
-        let mut event = event(id, sequence, kind);
-        event.publication_revision =
-            TaskPublicationRevision::new(NonZeroU64::new(revision).unwrap());
-        event
     }
 }

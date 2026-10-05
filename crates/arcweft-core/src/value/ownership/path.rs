@@ -27,6 +27,7 @@ pub enum RuntimeValuePathSegment {
     ReductionCommandPayload(u32),
     AgentEmbeddedValue(u32),
     CallableRetained(u32),
+    NeedRequestArgument(u32),
 }
 
 /// Failure to construct or resolve a canonical runtime-value path.
@@ -105,6 +106,7 @@ impl RuntimeValuePathSegment {
             Self::AgentEmbeddedValue(_) => 13,
             // Tags 6 and 14 belonged to the retired split callable paths.
             Self::CallableRetained(_) => 15,
+            Self::NeedRequestArgument(_) => 16,
         }
     }
 }
@@ -119,12 +121,14 @@ impl Ord for RuntimeValuePathSegment {
                     | Self::TupleColumn(left)
                     | Self::ReductionCommandPayload(left)
                     | Self::AgentEmbeddedValue(left)
-                    | Self::CallableRetained(left),
+                    | Self::CallableRetained(left)
+                    | Self::NeedRequestArgument(left),
                     Self::TupleElement(right)
                     | Self::TupleColumn(right)
                     | Self::ReductionCommandPayload(right)
                     | Self::AgentEmbeddedValue(right)
-                    | Self::CallableRetained(right),
+                    | Self::CallableRetained(right)
+                    | Self::NeedRequestArgument(right),
                 ) => left.cmp(right),
                 (Self::SequenceElement(left), Self::SequenceElement(right))
                 | (Self::IteratorRemainder(left), Self::IteratorRemainder(right)) => {
@@ -175,6 +179,7 @@ enum HumanPathSegmentRef {
     ReductionCommandPayload { index: u32 },
     AgentEmbeddedValue { index: u32 },
     CallableRetained { index: u32 },
+    NeedRequestArgument { index: u32 },
 }
 
 #[derive(Deserialize)]
@@ -194,6 +199,7 @@ enum HumanPathSegment {
     ReductionCommandPayload { index: u32 },
     AgentEmbeddedValue { index: u32 },
     CallableRetained { index: u32 },
+    NeedRequestArgument { index: u32 },
 }
 
 #[derive(Serialize)]
@@ -213,6 +219,7 @@ enum NonHumanPathSegmentRef {
     ReductionCommandPayload { index: u32 },
     AgentEmbeddedValue { index: u32 },
     CallableRetained { index: u32 },
+    NeedRequestArgument { index: u32 },
 }
 
 #[derive(Deserialize)]
@@ -232,6 +239,7 @@ enum NonHumanPathSegment {
     ReductionCommandPayload { index: u32 },
     AgentEmbeddedValue { index: u32 },
     CallableRetained { index: u32 },
+    NeedRequestArgument { index: u32 },
 }
 
 fn parse_canonical_u64<E: serde::de::Error>(value: &str) -> Result<u64, E> {
@@ -260,6 +268,9 @@ impl Serialize for RuntimeValuePathSegment {
                     NonHumanPathSegmentRef::NominalRecordField { field }
                 }
                 Self::CallableRetained(index) => NonHumanPathSegmentRef::CallableRetained { index },
+                Self::NeedRequestArgument(index) => {
+                    NonHumanPathSegmentRef::NeedRequestArgument { index }
+                }
                 Self::VariantPayload => NonHumanPathSegmentRef::VariantPayload,
                 Self::IteratorRemainder(index) => {
                     NonHumanPathSegmentRef::IteratorRemainder { index }
@@ -286,6 +297,7 @@ impl Serialize for RuntimeValuePathSegment {
             Self::RecordColumn(field) => HumanPathSegmentRef::RecordColumn { field },
             Self::NominalRecordField(field) => HumanPathSegmentRef::NominalRecordField { field },
             Self::CallableRetained(index) => HumanPathSegmentRef::CallableRetained { index },
+            Self::NeedRequestArgument(index) => HumanPathSegmentRef::NeedRequestArgument { index },
             Self::VariantPayload => HumanPathSegmentRef::VariantPayload,
             Self::IteratorRemainder(index) => HumanPathSegmentRef::IteratorRemainder {
                 index: index.to_string(),
@@ -318,6 +330,9 @@ impl<'de> Deserialize<'de> for RuntimeValuePathSegment {
                     Self::NominalRecordField(field)
                 }
                 NonHumanPathSegment::CallableRetained { index } => Self::CallableRetained(index),
+                NonHumanPathSegment::NeedRequestArgument { index } => {
+                    Self::NeedRequestArgument(index)
+                }
                 NonHumanPathSegment::VariantPayload => Self::VariantPayload,
                 NonHumanPathSegment::IteratorRemainder { index } => Self::IteratorRemainder(index),
                 NonHumanPathSegment::IteratorWitnessState => Self::IteratorWitnessState,
@@ -341,6 +356,7 @@ impl<'de> Deserialize<'de> for RuntimeValuePathSegment {
             HumanPathSegment::RecordColumn { field } => Self::RecordColumn(field),
             HumanPathSegment::NominalRecordField { field } => Self::NominalRecordField(field),
             HumanPathSegment::CallableRetained { index } => Self::CallableRetained(index),
+            HumanPathSegment::NeedRequestArgument { index } => Self::NeedRequestArgument(index),
             HumanPathSegment::VariantPayload => Self::VariantPayload,
             HumanPathSegment::IteratorRemainder { index } => {
                 Self::IteratorRemainder(parse_canonical_u64(&index)?)

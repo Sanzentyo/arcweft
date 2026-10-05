@@ -5162,6 +5162,14 @@ pub struct RuntimePlanSemanticFactInput {
     flows: Vec<(ItemId, RuntimeFlowFact)>,
     expression_scopes: Vec<(ExprId, crate::semantic_facts::RuntimeScopeFact)>,
     statement_scopes: Vec<(StmtId, crate::semantic_facts::RuntimeScopeFact)>,
+    thread_producers: Vec<(
+        ExprId,
+        arcweft_lang_sema::CheckedExpressionProducerDefinition,
+    )>,
+    call_producers: Vec<(
+        ExprId,
+        arcweft_lang_sema::CheckedExpressionProducerDefinition,
+    )>,
     expression_types: Vec<(ExprId, RuntimeNormalizedType)>,
     pattern_types: Vec<(PatternId, RuntimeNormalizedType)>,
     expression_literals: Vec<(ExprId, RuntimeValue)>,
@@ -5221,6 +5229,8 @@ impl RuntimePlanSemanticFactInput {
             flows: Vec::new(),
             expression_scopes: Vec::new(),
             statement_scopes: Vec::new(),
+            thread_producers: Vec::new(),
+            call_producers: Vec::new(),
             expression_types: Vec::new(),
             pattern_types: Vec::new(),
             expression_literals: Vec::new(),
@@ -5312,6 +5322,20 @@ impl RuntimePlanSemanticFactInput {
 
     /// Stages the accepted normalized type of one selected runtime-domain
     /// final-HIR expression.
+    pub fn push_thread_producer(
+        &mut self,
+        owner: ExprId,
+        admission: arcweft_lang_sema::CheckedExpressionProducerDefinition,
+    ) {
+        self.thread_producers.push((owner, admission));
+    }
+    pub fn push_call_producer(
+        &mut self,
+        owner: ExprId,
+        definition: arcweft_lang_sema::CheckedExpressionProducerDefinition,
+    ) {
+        self.call_producers.push((owner, definition));
+    }
     pub fn push_expression_type(&mut self, owner: ExprId, ty: RuntimeNormalizedType) {
         self.expression_types.push((owner, ty));
     }
@@ -5622,6 +5646,8 @@ pub struct RuntimePlanSemanticFacts {
     flows: BTreeMap<ItemId, RuntimeFlowFact>,
     expression_scopes: BTreeMap<ExprId, crate::semantic_facts::RuntimeScopeFact>,
     statement_scopes: BTreeMap<StmtId, crate::semantic_facts::RuntimeScopeFact>,
+    thread_producers: BTreeMap<ExprId, arcweft_lang_sema::CheckedExpressionProducerDefinition>,
+    call_producers: BTreeMap<ExprId, arcweft_lang_sema::CheckedExpressionProducerDefinition>,
     expression_types: BTreeMap<ExprId, RuntimeNormalizedType>,
     expression_children: BTreeMap<ExprId, Box<[ExprId]>>,
     pattern_types: BTreeMap<PatternId, RuntimeNormalizedType>,
@@ -6939,6 +6965,32 @@ impl RuntimePlanSemanticFacts {
             for ty in types {
                 validate_normalized_type(&modules, ty)?;
             }
+        }
+        let thread_producers = collect_unique(
+            input.thread_producers,
+            RuntimeSemanticFactFamily::ThreadProducer,
+        )?;
+        for owner in thread_producers.keys() {
+            require_expr_family(
+                &modules,
+                runtime_owners,
+                *owner,
+                RuntimeSemanticFactFamily::ThreadProducer,
+                |kind| matches!(kind, HirExprKind::Thread(_)),
+            )?;
+        }
+        let call_producers = collect_unique(
+            input.call_producers,
+            RuntimeSemanticFactFamily::CallProducer,
+        )?;
+        for owner in call_producers.keys() {
+            require_expr_family(
+                &modules,
+                runtime_owners,
+                *owner,
+                RuntimeSemanticFactFamily::CallProducer,
+                |kind| matches!(kind, HirExprKind::Call(_)),
+            )?;
         }
         let expression_types = collect_unique(
             input.expression_types,
@@ -8579,6 +8631,8 @@ impl RuntimePlanSemanticFacts {
             flows,
             expression_scopes,
             statement_scopes,
+            thread_producers,
+            call_producers,
             expression_types,
             expression_children,
             pattern_types,
@@ -8948,6 +9002,18 @@ impl RuntimePlanSemanticFacts {
 
     /// Returns the sole accepted normalized type of one selected runtime-domain
     /// final-HIR expression.
+    pub fn call_producer(
+        &self,
+        expression: ExprId,
+    ) -> Option<&arcweft_lang_sema::CheckedExpressionProducerDefinition> {
+        self.call_producers.get(&expression)
+    }
+    pub fn thread_producer(
+        &self,
+        expression: ExprId,
+    ) -> Option<&arcweft_lang_sema::CheckedExpressionProducerDefinition> {
+        self.thread_producers.get(&expression)
+    }
     pub fn expression_type(&self, expression: ExprId) -> Option<&RuntimeNormalizedType> {
         self.expression_types.get(&expression)
     }
@@ -10051,6 +10117,8 @@ pub enum RuntimeSemanticFactFamily {
     FlowIdentity,
     ExpressionScope,
     StatementScope,
+    ThreadProducer,
+    CallProducer,
     ExpressionType,
     ExpressionChildren,
     PatternType,

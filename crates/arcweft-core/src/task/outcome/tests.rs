@@ -267,21 +267,16 @@ fn joined_waiters_require_the_same_selected_program_and_result_contract() {
 #[test]
 fn bound_task_spec_binds_its_own_outcome_to_the_exact_program() {
     let limits = RuntimeSchemaLimits::engine_default();
-    let spec = TaskSpec::new(
-        TaskId("task".to_owned()),
-        TaskKey("request".to_owned()),
-        TaskClass::Io,
-        TaskPriority(0),
-        CancelScopeId("scope".to_owned()),
-        TaskPolicy::JoinSameKey,
+    let spec = crate::tests::task_spec(
+        TaskOutcomeContract::program(semantic(5)),
         HostTaskRequest::FileReadText(FileReadTextRequest {
             path: "save:fixture.txt".to_owned(),
         }),
-    )
-    .with_outcome(TaskOutcomeContract::program(semantic(5)));
+    );
+    let submission = crate::tests::task_submission(spec.clone());
     let program = Arc::new(result_plan());
     let bound = BoundTaskSpec::bind(
-        spec.clone(),
+        submission.clone(),
         Some(RuntimeProgramOwner::Plan(program.clone())),
         limits,
     )
@@ -311,7 +306,7 @@ fn bound_task_spec_binds_its_own_outcome_to_the_exact_program() {
     );
 
     let same_owner = BoundTaskSpec::bind(
-        spec.clone(),
+        submission.clone(),
         Some(RuntimeProgramOwner::Plan(program.clone())),
         limits,
     )
@@ -319,7 +314,7 @@ fn bound_task_spec_binds_its_own_outcome_to_the_exact_program() {
     assert!(bound.same_join_contract(&same_owner));
 
     let distinct_owner = BoundTaskSpec::bind(
-        spec.clone(),
+        submission.clone(),
         Some(RuntimeProgramOwner::Plan(Arc::new(result_plan()))),
         limits,
     )
@@ -327,28 +322,21 @@ fn bound_task_spec_binds_its_own_outcome_to_the_exact_program() {
     assert!(!bound.same_join_contract(&distinct_owner));
 
     let mut different_identity = spec.clone();
-    different_identity.id = TaskId("waiter".to_owned());
     different_identity.debug_label = "diagnostic-only label".to_owned();
     let same_contract = BoundTaskSpec::bind(
-        different_identity,
+        crate::tests::task_submission(different_identity),
         Some(RuntimeProgramOwner::Plan(program.clone())),
         limits,
     )
     .unwrap();
     assert!(bound.same_join_contract(&same_contract));
 
-    let standalone = TaskSpec::new(
-        TaskId("standalone".to_owned()),
-        TaskKey("request".to_owned()),
-        TaskClass::Io,
-        TaskPriority(0),
-        CancelScopeId("scope".to_owned()),
-        TaskPolicy::JoinSameKey,
+    let standalone = crate::tests::task_submission(crate::tests::task_spec(
+        TaskOutcomeContract::new(RuntimeCheckedType::String),
         HostTaskRequest::FileReadText(FileReadTextRequest {
             path: "save:fixture.txt".to_owned(),
         }),
-    )
-    .with_outcome(TaskOutcomeContract::new(RuntimeCheckedType::String));
+    ));
     assert!(matches!(
         BoundTaskSpec::bind(
             standalone,
@@ -358,7 +346,7 @@ fn bound_task_spec_binds_its_own_outcome_to_the_exact_program() {
         Err(TaskOutcomeBindingError::StandaloneRequiresStandaloneBinding)
     ));
     assert!(matches!(
-        BoundTaskSpec::bind(spec, None, limits),
+        BoundTaskSpec::bind(submission, None, limits),
         Err(TaskOutcomeBindingError::ProgramRequiresExecutable)
     ));
 }

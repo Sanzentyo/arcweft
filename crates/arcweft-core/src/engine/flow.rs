@@ -19,10 +19,7 @@ use crate::plan::{
 use crate::pure::RuntimeCallBackend;
 use crate::scope::RuntimeScopeIdentity;
 use crate::step::{RuntimeHostCallId, RuntimeHostCallRequest};
-use crate::task::{
-    CancelScopeId, HostTaskRequest, NamedHostArg, RuntimeHostArgumentTemplate, TaskClass, TaskId,
-    TaskKey, TaskPolicy, TaskPriority, TaskSpec,
-};
+use crate::task::{HostTaskRequest, NamedHostArg, RuntimeHostArgumentTemplate};
 use crate::time::LogicalDuration;
 use crate::value::{RuntimeEnv, RuntimeLocalBinding};
 use std::sync::Arc;
@@ -391,18 +388,30 @@ impl Engine {
                     return;
                 };
                 let id = self.next_host_call_id(&target.public_id);
-                output.requests.host_calls.push(RuntimeHostCallRequest {
-                    id: id.clone(),
-                    public_id: target.public_id.clone(),
-                    capability: target.capability.clone(),
+                let request = crate::task::HostTaskRequest::Custom {
+                    capability: crate::task::HostCapabilityId(target.capability.clone()),
                     operation: target.operation.clone(),
-                    contract: target.contract,
+                    manifest_contract: target.contract,
                     args,
                     named_args,
+                };
+                let request = match RuntimeHostCallRequest::admit(
+                    id.clone(),
+                    target.producer,
+                    self.generation,
+                    request,
                     result,
-                    mode: target.mode,
-                    deterministic: target.deterministic,
-                });
+                    target.mode,
+                    target.deterministic,
+                    &mut self.need_producers,
+                ) {
+                    Ok(request) => request,
+                    Err(error) => {
+                        self.fail_eval(error, output);
+                        return;
+                    }
+                };
+                output.requests.host_calls.push(request);
                 self.fiber.status = FlowFiberStatus::HostCall(HostCallState {
                     binding,
                     id,
@@ -608,15 +617,71 @@ impl Engine {
             } => {
                 self.push_for_next(pattern, iterator, evidence, &body, output, pure_backend);
             }
-            FlowOp::Thread { name, body } => {
+            FlowOp::Thread {
+                name,
+                producer,
+                captures,
+                body,
+            } => {
+                let captured = captures
+                    .iter()
+                    .map(|local| {
+                        let value = self
+                            .fiber
+                            .env
+                            .get(*local)
+                            .ok_or(RuntimeEvalError::UnknownLocal(*local))?;
+                        if !value.ownership().permits_copy() {
+                            return Err(RuntimeEvalError::AffineLocalCopy(*local));
+                        }
+                        Ok(value)
+                    })
+                    .collect::<Result<Vec<_>, RuntimeEvalError>>();
+                let captured = match captured {
+                    Ok(values) => values,
+                    Err(error) => {
+                        self.fail_eval(error, output);
+                        return;
+                    }
+                };
+                let arguments = crate::value::RuntimeValueView::Tuple(
+                    crate::value::RuntimeTupleView::Borrowed(&captured),
+                );
+                let label = name.as_deref().unwrap_or("anonymous");
+                let request = HostTaskRequest::custom("flow_thread", "run_child", [label.into()]);
+                let spec = match producer.instantiate_view(
+                    self.generation,
+                    arguments,
+                    request,
+                    16 * 1024 * 1024,
+                ) {
+                    Ok(spec) => spec,
+                    Err(error) => {
+                        self.fail_eval(error, output);
+                        return;
+                    }
+                };
+                let (child, next_fiber_id) = match self.prepare_child_fiber(body, &captures) {
+                    Ok(prepared) => prepared,
+                    Err(error) => {
+                        self.fail_eval(error, output);
+                        return;
+                    }
+                };
+                let accepted = self.need_producers.ensure_task_with_publication(spec, |_| {
+                    self.child_fibers.push_back(child);
+                    self.next_fiber_id = next_fiber_id;
+                    self.run_child_next = true;
+                });
+                let accepted = match accepted {
+                    Ok(accepted) => accepted,
+                    Err(error) => {
+                        self.fail_eval(error, output);
+                        return;
+                    }
+                };
                 self.advance_if_needed(next_op_index);
-                output
-                    .requests
-                    .tasks
-                    .push(flow_thread_task_spec(name.as_deref()));
-                if let Err(error) = self.spawn_child_fiber(body) {
-                    self.fail_eval(error, output);
-                }
+                output.requests.tasks.push(accepted);
             }
             FlowOp::Scope { identity, body } => {
                 self.advance_if_needed(next_op_index);
@@ -1626,11 +1691,11 @@ mod ownership_tests {
         )
         .expect("each physical source has one destination");
         let engine = Engine::new(plan);
-        let first = NeedId("need.project.rest.first".to_owned());
-        let second = NeedId("need.project.rest.second".to_owned());
+        let first = crate::tests::reusable_need("need.project.rest.first");
+        let second = crate::tests::reusable_need("need.project.rest.second");
         let operands = vec![
-            vec![RuntimeValue::Need(first.clone())],
-            vec![RuntimeValue::Need(second.clone())],
+            vec![RuntimeValue::NeedHandle(first.clone())],
+            vec![RuntimeValue::NeedHandle(second.clone())],
         ];
         engine
             .inspect_project_call_materialization(&call, &operands)
@@ -1643,21 +1708,10 @@ mod ownership_tests {
         let values = runtime_value_into_sequence_values(sequence).expect("owned rest pack");
         assert_eq!(
             values,
-            vec![RuntimeValue::Need(first), RuntimeValue::Need(second)]
+            vec![
+                RuntimeValue::NeedHandle(first),
+                RuntimeValue::NeedHandle(second)
+            ]
         );
     }
-}
-
-fn flow_thread_task_spec(name: Option<&str>) -> TaskSpec {
-    let label = name.unwrap_or("anonymous");
-    let id = TaskId(format!("flow.thread.{label}"));
-    TaskSpec::new(
-        id,
-        TaskKey(format!("flow.thread.{label}")),
-        TaskClass::Cpu,
-        TaskPriority(0),
-        CancelScopeId("flow".to_owned()),
-        TaskPolicy::AlwaysStart,
-        HostTaskRequest::custom("flow_thread", "run_child", [label.into()]),
-    )
 }

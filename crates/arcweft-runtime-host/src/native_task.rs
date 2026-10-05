@@ -13,7 +13,7 @@ use arcweft_core::task::{
     RuntimeProgramOwner, SchedulerBudget, TaskCompletionError, TaskDispatchIdentity,
     TaskDispatchStart, TaskEnsureError, TaskEvent, TaskEventKind, TaskId, TaskKey,
     TaskOutcomeBindingError, TaskOutcomeContract, TaskPolicy, TaskPriority,
-    TaskPublicationRevision, TaskSequence, TaskSpec, normalize_task_events,
+    TaskPublicationRevision, TaskSequence, TaskSpec, TaskSubmission, normalize_task_events,
 };
 use arcweft_core::value::{
     RuntimeBundleAssetContext, RuntimePayload, RuntimeUnsignedIntWidth, RuntimeValue,
@@ -100,7 +100,7 @@ pub enum NativeTaskBridgeError {
 #[derive(Clone, Debug)]
 pub struct NativeTaskDispatch {
     start: TaskDispatchStart,
-    task: TaskSpec,
+    task: TaskSubmission,
     bundle_asset_context: Option<RuntimeBundleAssetContext>,
 }
 
@@ -108,7 +108,7 @@ impl NativeTaskDispatch {
     #[must_use]
     pub const fn new(
         start: TaskDispatchStart,
-        task: TaskSpec,
+        task: TaskSubmission,
         bundle_asset_context: Option<RuntimeBundleAssetContext>,
     ) -> Self {
         Self {
@@ -125,7 +125,11 @@ impl NativeTaskDispatch {
 
     #[must_use]
     pub const fn task(&self) -> &TaskSpec {
-        &self.task
+        self.task.spec()
+    }
+
+    pub const fn correlation(&self) -> arcweft_core::task::TaskCorrelation {
+        self.task.handle().correlation
     }
 
     #[must_use]
@@ -166,7 +170,6 @@ pub struct NativeSchedulerStats {
     pub failed: usize,
     pub cancelled: usize,
     pub cancel_requested: usize,
-    pub joined_completed: usize,
     pub in_flight: usize,
     pub max_in_flight: usize,
     pub dispatch_sorts: usize,
@@ -176,11 +179,9 @@ pub struct NativeSchedulerStats {
     pub completion_normalization_passes: usize,
     pub completion_normalization_checks: usize,
     pub completion_events_in: usize,
-    pub completion_events_joined: usize,
     pub completion_events_out: usize,
     pub completion_sort_skipped_items: usize,
     pub completion_sort_performed_items: usize,
-    pub joined_completion_events_emitted: usize,
     pub submitted_by_class: NativeTaskClassCounts,
     pub dispatched_by_class: NativeTaskClassCounts,
     pub completed_by_class: NativeTaskClassCounts,
@@ -378,14 +379,7 @@ impl NativeTaskBridge {
             }
         };
         self.record_scheduler_owner_outcomes(&owner_ids, &events);
-        let events = match self.restamp_dispatch_events(events) {
-            Ok(events) => normalize_task_events(events),
-            Err(error) => {
-                self.stats = saved_stats;
-                self.sequence = saved_sequence;
-                return Err(error);
-            }
-        };
+        let events = normalize_task_events(events);
         let frontiers = match self.prepare_task_event_frontiers(&events) {
             Ok(frontiers) => frontiers,
             Err(error) => {
@@ -449,43 +443,32 @@ impl NativeTaskBridge {
             ));
         }
         let runtime_id = request.id.clone();
-        let task_id = host_call_task_id(&request.id);
+        let mode = request.mode;
+        let result = request.result();
+        let contract = request.contract();
+        let task_id = request.submission().task_id();
         if self.scheduler.contains_task_id(&task_id) {
             return Some(host_call_error(
                 runtime_id,
                 RuntimeHostCallErrorKind::Rejected,
-                "runtime host-call identity collides with a scheduler task",
+                "runtime host-call receipt collides with scheduled work",
             ));
         }
-        let contract = request.contract;
-        let named_args = request
-            .named_args
-            .into_iter()
-            .map(|argument| (argument.name, argument.value))
-            .collect::<Vec<_>>();
-        let host_request = if let Some(contract) = contract {
-            HostTaskRequest::custom_with_named_args_and_manifest_contract(
-                request.capability,
-                request.operation,
-                request.args,
-                named_args,
-                contract,
-            )
-        } else {
-            HostTaskRequest::custom_with_named_args(
-                request.capability,
-                request.operation,
-                request.args,
-                named_args,
-            )
+        let bound = match BoundTaskSpec::bind(
+            request.into_submission(),
+            Some(program),
+            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        ) {
+            Ok(bound) => bound,
+            Err(error) => {
+                return Some(host_call_error(
+                    runtime_id,
+                    RuntimeHostCallErrorKind::Rejected,
+                    error.to_string(),
+                ));
+            }
         };
-        if request.public_id != host_request.host_call_id() {
-            return Some(host_call_error(
-                runtime_id,
-                RuntimeHostCallErrorKind::Rejected,
-                "host-call public identity does not match its capability and operation",
-            ));
-        }
+        let host_request = &bound.spec().request;
         if !self.policy.allows(&host_request) {
             return Some(host_call_error(
                 runtime_id,
@@ -513,8 +496,8 @@ impl NativeTaskBridge {
         }
         if !self.registry.host_call_accepts_runtime_result(
             &host_request.host_call_id(),
-            request.mode,
-            request.result,
+            mode,
+            result,
         ) {
             return Some(host_call_error(
                 runtime_id,
@@ -522,45 +505,20 @@ impl NativeTaskBridge {
                 "host-call result type does not match the registered adapter manifest",
             ));
         }
-        let outcome_contract = TaskOutcomeContract::program(request.result);
-        let bound = match outcome_contract.bind_program(
-            program,
-            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
-        ) {
-            Ok(bound) => bound,
-            Err(error) => {
-                return Some(host_call_error(
-                    runtime_id,
-                    RuntimeHostCallErrorKind::Rejected,
-                    error.to_string(),
-                ));
-            }
-        };
-        let task = TaskSpec::new(
-            task_id.clone(),
-            TaskKey(task_id.0.clone()),
-            host_request.task_class(),
-            TaskPriority(0),
-            CancelScopeId("runtime-host-call".to_owned()),
-            TaskPolicy::AlwaysStart,
-            host_request,
-        )
-        .with_outcome(outcome_contract);
         match self.registry.submit_runtime_host_call(
-            &task,
             &bound,
-            request.mode,
+            mode,
             HostTaskSubmissionContext::new(TaskPublicationRevision::FIRST),
         ) {
             Some(HostTaskSubmission::Completed(outcome)) => {
-                Some(self.host_call_result(runtime_id, &bound, outcome))
+                Some(self.host_call_result(runtime_id, bound.outcome(), outcome))
             }
-            Some(HostTaskSubmission::Pending) if request.mode == RuntimeHostCallMode::Suspend => {
+            Some(HostTaskSubmission::Pending) if mode == RuntimeHostCallMode::Suspend => {
                 self.pending_host_calls.insert(
                     task_id,
                     PendingRuntimeHostCall {
                         id: runtime_id,
-                        result: bound,
+                        result: bound.outcome().clone(),
                         publication_revision: None,
                     },
                 );
@@ -639,7 +597,7 @@ impl NativeTaskBridge {
     pub fn complete_tasks(
         &mut self,
         program: RuntimeProgramOwner,
-        tasks: Vec<TaskSpec>,
+        tasks: Vec<TaskSubmission>,
     ) -> Result<Vec<TaskEvent>, NativeTaskBridgeError> {
         self.complete_tasks_with_generation(program, GenerationId::new(0), LogicalEpoch(0), tasks)
     }
@@ -651,7 +609,7 @@ impl NativeTaskBridge {
         program: RuntimeProgramOwner,
         generation: GenerationId,
         request_epoch: LogicalEpoch,
-        tasks: Vec<TaskSpec>,
+        tasks: Vec<TaskSubmission>,
     ) -> Result<Vec<TaskEvent>, NativeTaskBridgeError> {
         self.complete_tasks_with_generation_and_bundle_asset_context(
             program,
@@ -669,35 +627,42 @@ impl NativeTaskBridge {
         program: RuntimeProgramOwner,
         generation: GenerationId,
         request_epoch: LogicalEpoch,
-        tasks: Vec<TaskSpec>,
+        tasks: Vec<TaskSubmission>,
         bundle_asset_context: Option<RuntimeBundleAssetContext>,
     ) -> Result<Vec<TaskEvent>, NativeTaskBridgeError> {
         let mut next_sequence = self.sequence;
         let mut dispatches = Vec::with_capacity(tasks.len());
         let mut seen = BTreeSet::new();
         for task in tasks {
-            if !seen.insert(task.id.clone()) {
-                return Err(
-                    TaskEnsureError::TaskIdSpecificationConflict { task_id: task.id }.into(),
-                );
+            if task.handle().correlation.generation != generation {
+                return Err(TaskCompletionError::DispatchMismatch {
+                    task_id: task.task_id(),
+                }
+                .into());
             }
-            let identity = if let Some(identity) = self.dispatches.get(&task.id) {
+            if !seen.insert(task.task_id()) {
+                return Err(TaskEnsureError::TaskIdSpecificationConflict {
+                    task_id: task.task_id(),
+                }
+                .into());
+            }
+            let identity = if let Some(identity) = self.dispatches.get(&task.task_id()) {
                 identity.clone()
             } else {
                 let identity = TaskDispatchIdentity::new(
-                    generation,
+                    task.handle().correlation,
                     request_epoch,
                     TaskSequence(next_sequence),
-                    task.id.clone(),
                 );
                 next_sequence = next_sequence
                     .checked_add(1)
                     .ok_or(NativeTaskBridgeError::DispatchSequenceExhausted)?;
                 identity
             };
-            let last_publication_revision = self.publication_frontiers.get(&task.id).copied();
+            let last_publication_revision =
+                self.publication_frontiers.get(&task.task_id()).copied();
             let task_asset_context = bundle_asset_context
-                .filter(|_| matches!(&task.request, HostTaskRequest::AssetLoad(_)));
+                .filter(|_| matches!(&task.spec().request, HostTaskRequest::AssetLoad(_)));
             dispatches.push(NativeTaskDispatch::new(
                 TaskDispatchStart::new(identity, last_publication_revision),
                 task,
@@ -729,61 +694,78 @@ impl NativeTaskBridge {
             bundle_asset_context,
         } in dispatches
         {
-            if !task_ids.insert(task.id.clone()) {
-                return Err(
-                    TaskEnsureError::TaskIdSpecificationConflict { task_id: task.id }.into(),
-                );
+            if !task_ids.insert(task.task_id()) {
+                return Err(TaskEnsureError::TaskIdSpecificationConflict {
+                    task_id: task.task_id(),
+                }
+                .into());
             }
             let identity = start.identity();
-            if identity.task_id != task.id {
-                return Err(TaskCompletionError::DispatchMismatch { task_id: task.id }.into());
+            if identity.correlation != task.handle().correlation {
+                return Err(TaskCompletionError::DispatchMismatch {
+                    task_id: task.task_id(),
+                }
+                .into());
             }
             if let Some(context) = bundle_asset_context
-                && context.generation() != identity.generation
+                && context.generation() != identity.correlation.generation
             {
                 return Err(
                     NativeTaskBridgeError::BundleAssetContextGenerationMismatch {
-                        task_id: task.id,
+                        task_id: task.task_id(),
                         context_generation: context.generation(),
-                        dispatch_generation: identity.generation,
+                        dispatch_generation: identity.correlation.generation,
                     },
                 );
             }
-            if let Some(existing) = self.dispatches.get(&task.id)
+            if let Some(existing) = self.dispatches.get(&task.task_id())
                 && existing != identity
             {
-                return Err(TaskCompletionError::DispatchMismatch { task_id: task.id }.into());
+                return Err(TaskCompletionError::DispatchMismatch {
+                    task_id: task.task_id(),
+                }
+                .into());
             }
             let last_publication_revision = start.last_publication_revision();
-            if self.dispatches.contains_key(&task.id)
-                && self.publication_frontiers.get(&task.id).copied() != last_publication_revision
+            if self.dispatches.contains_key(&task.task_id())
+                && self.publication_frontiers.get(&task.task_id()).copied()
+                    != last_publication_revision
             {
-                return Err(TaskCompletionError::DispatchMismatch { task_id: task.id }.into());
+                return Err(TaskCompletionError::DispatchMismatch {
+                    task_id: task.task_id(),
+                }
+                .into());
             }
-            if !self.dispatches.contains_key(&task.id)
-                && self.publication_frontiers.contains_key(&task.id)
+            if !self.dispatches.contains_key(&task.task_id())
+                && self.publication_frontiers.contains_key(&task.task_id())
             {
-                return Err(TaskCompletionError::DispatchMismatch { task_id: task.id }.into());
+                return Err(TaskCompletionError::DispatchMismatch {
+                    task_id: task.task_id(),
+                }
+                .into());
             }
             let next_publication_revision = start.next_publication_revision().ok_or_else(|| {
                 NativeTaskBridgeError::PublicationRevisionExhausted {
-                    task_id: task.id.clone(),
+                    task_id: task.task_id(),
                 }
             })?;
             let tuple = (
-                identity.generation,
+                identity.correlation.generation,
                 identity.logical_epoch,
                 identity.sequence,
             );
             if !identities.insert(tuple)
                 || self.dispatches.iter().any(|(task_id, existing)| {
-                    task_id != &task.id
-                        && existing.generation == identity.generation
+                    task_id != &task.task_id()
+                        && existing.correlation.generation == identity.correlation.generation
                         && existing.logical_epoch == identity.logical_epoch
                         && existing.sequence == identity.sequence
                 })
             {
-                return Err(TaskCompletionError::DispatchMismatch { task_id: task.id }.into());
+                return Err(TaskCompletionError::DispatchMismatch {
+                    task_id: task.task_id(),
+                }
+                .into());
             }
             let following = identity
                 .sequence
@@ -791,43 +773,43 @@ impl NativeTaskBridge {
                 .checked_add(1)
                 .ok_or(NativeTaskBridgeError::DispatchSequenceExhausted)?;
             next_sequence = next_sequence.max(following);
-            candidate_dispatches.insert(task.id.clone(), identity.clone());
-            candidate_start_frontiers.insert(task.id.clone(), last_publication_revision);
+            candidate_dispatches.insert(task.task_id(), identity.clone());
+            candidate_start_frontiers.insert(task.task_id(), last_publication_revision);
             let mut submission_context = HostTaskSubmissionContext::new(next_publication_revision);
             if let Some(context) = bundle_asset_context {
                 submission_context = submission_context.with_bundle_asset_context(context);
             }
-            submission_contexts.insert(task.id.clone(), submission_context);
+            submission_contexts.insert(task.task_id(), submission_context);
             tasks.push(task);
         }
         for task in &tasks {
-            if self.pending_host_calls.contains_key(&task.id)
-                || self.retired_host_call_tasks.contains(&task.id)
+            if self.pending_host_calls.contains_key(&task.task_id())
+                || self.retired_host_call_tasks.contains(&task.task_id())
             {
                 return Err(TaskEnsureError::TaskIdSpecificationConflict {
-                    task_id: task.id.clone(),
+                    task_id: task.task_id(),
                 }
                 .into());
             }
         }
         let (unauthorized, tasks): (Vec<_>, Vec<_>) = tasks
             .into_iter()
-            .partition(|task| !self.policy.allows(&task.request));
+            .partition(|task| !self.policy.allows(&task.spec().request));
         let (unimplemented, tasks): (Vec<_>, Vec<_>) = tasks
             .into_iter()
-            .partition(|task| !self.registry.contains(&task.request.host_call_id()));
+            .partition(|task| !self.registry.contains(&task.spec().request.host_call_id()));
         let scheduled_ids = tasks
             .iter()
-            .map(|task| task.id.clone())
+            .map(|task| task.task_id())
             .collect::<BTreeSet<_>>();
         let mut rejected_ids = BTreeSet::new();
         for task in unauthorized.iter().chain(&unimplemented) {
-            if self.scheduler.contains_task_id(&task.id)
-                || scheduled_ids.contains(&task.id)
-                || !rejected_ids.insert(task.id.clone())
+            if self.scheduler.contains_task_id(&task.task_id())
+                || scheduled_ids.contains(&task.task_id())
+                || !rejected_ids.insert(task.task_id())
             {
                 return Err(TaskEnsureError::TaskIdSpecificationConflict {
-                    task_id: task.id.clone(),
+                    task_id: task.task_id(),
                 }
                 .into());
             }
@@ -835,7 +817,7 @@ impl NativeTaskBridge {
         let bound_tasks = tasks
             .into_iter()
             .map(|task| {
-                let owner = match &task.outcome {
+                let owner = match &task.spec().outcome {
                     TaskOutcomeContract::Standalone { .. } => None,
                     TaskOutcomeContract::Program { .. } => Some(program.clone()),
                 };
@@ -935,13 +917,13 @@ impl NativeTaskBridge {
             Err(error) => return Err(error.into()),
         };
         self.record_scheduler_owner_outcomes(&owner_ids, &scheduler_events);
-        events = self.restamp_dispatch_events(scheduler_events)?;
+        events = scheduler_events;
         events.extend(
             unauthorized
                 .into_iter()
                 .map(|task| {
                     let next = submission_contexts
-                        .get(&task.id)
+                        .get(&task.task_id())
                         .expect("every submitted task has a publication context")
                         .next_publication_revision();
                     self.rejected_task_event(task, next)
@@ -953,14 +935,13 @@ impl NativeTaskBridge {
                 .into_iter()
                 .map(|task| {
                     let next = submission_contexts
-                        .get(&task.id)
+                        .get(&task.task_id())
                         .expect("every submitted task has a publication context")
                         .next_publication_revision();
                     self.unimplemented_task_event(task, next)
                 })
                 .collect::<Result<Vec<_>, _>>()?,
         );
-        events = self.restamp_dispatch_events(events)?;
         self.stats.scheduler_complete_elapsed_ns = self
             .stats
             .scheduler_complete_elapsed_ns
@@ -975,33 +956,36 @@ impl NativeTaskBridge {
 
     fn rejected_task_event(
         &mut self,
-        task: TaskSpec,
+        task: TaskSubmission,
         publication_revision: TaskPublicationRevision,
     ) -> Result<TaskEvent, NativeTaskBridgeError> {
         self.stats.failed_tasks += 1;
         self.event_for_task(
-            &task.id,
+            &task.task_id(),
             publication_revision,
-            TaskEventKind::Failed(format!(
-                "host call `{}` is not provided by the active adapter manifest",
-                task.request.host_call_id()
+            TaskEventKind::InfrastructureFailure(arcweft_core::task::RuntimeTaskFailure::new(
+                arcweft_core::task::RuntimeTaskFailureKind::AdapterUnavailable,
+                format!(
+                    "host call `{}` is not provided by the active adapter manifest",
+                    task.spec().request.host_call_id()
+                ),
             )),
         )
     }
 
     fn unimplemented_task_event(
         &mut self,
-        task: TaskSpec,
+        task: TaskSubmission,
         publication_revision: TaskPublicationRevision,
     ) -> Result<TaskEvent, NativeTaskBridgeError> {
         self.stats.failed_tasks += 1;
         self.event_for_task(
-            &task.id,
+            &task.task_id(),
             publication_revision,
-            TaskEventKind::Failed(format!(
+            TaskEventKind::InfrastructureFailure(arcweft_core::task::RuntimeTaskFailure::new(arcweft_core::task::RuntimeTaskFailureKind::AdapterUnavailable, format!(
                 "host call `{}` is provided by the active adapter manifest but no native adapter implementation is registered",
-                task.request.host_call_id()
-            )),
+                task.spec().request.host_call_id()
+            ))),
         )
     }
 
@@ -1013,7 +997,12 @@ impl NativeTaskBridge {
         let kind = match completion.completion {
             HostTaskCompletion::Progress(value) => TaskEventKind::Progress(value),
             HostTaskCompletion::Ready(value) => TaskEventKind::Ready(value),
-            HostTaskCompletion::Failed(error) => TaskEventKind::Failed(error),
+            HostTaskCompletion::Failed(error) => {
+                TaskEventKind::InfrastructureFailure(arcweft_core::task::RuntimeTaskFailure::new(
+                    arcweft_core::task::RuntimeTaskFailureKind::WorkerFailure,
+                    error,
+                ))
+            }
         };
         self.event_for_task(&completion.task_id, completion.publication_revision, kind)
     }
@@ -1036,41 +1025,17 @@ impl NativeTaskBridge {
         ))
     }
 
-    /// Rebinds scheduler events, including joined waiter events, to the exact
-    /// dispatch accepted for each task id. The scheduler owns publication
-    /// revision ordering; this bridge only restores each waiter's own request
-    /// coordinates before the events leave the native boundary.
-    fn restamp_dispatch_events(
-        &self,
-        events: Vec<TaskEvent>,
-    ) -> Result<Vec<TaskEvent>, NativeTaskBridgeError> {
-        events
-            .into_iter()
-            .map(|event| {
-                let identity = self
-                    .dispatches
-                    .get(&event.task_id)
-                    .cloned()
-                    .ok_or_else(|| TaskCompletionError::DispatchMismatch {
-                        task_id: event.task_id.clone(),
-                    })?;
-                Ok(TaskEvent::from_dispatch(
-                    identity,
-                    event.publication_revision,
-                    event.kind,
-                ))
-            })
-            .collect()
-    }
-
     fn retire_terminal_dispatches(&mut self, events: &[TaskEvent]) {
         for event in events {
             if matches!(
                 event.kind,
-                TaskEventKind::Ready(_) | TaskEventKind::Failed(_) | TaskEventKind::Cancelled
+                TaskEventKind::Ready(_)
+                    | TaskEventKind::InfrastructureFailure(_)
+                    | TaskEventKind::Cancelled
             ) {
-                self.dispatches.remove(&event.task_id);
-                self.publication_frontiers.remove(&event.task_id);
+                self.dispatches.remove(&event.correlation.task_id);
+                self.publication_frontiers
+                    .remove(&event.correlation.task_id);
             }
         }
     }
@@ -1082,53 +1047,58 @@ impl NativeTaskBridge {
         let mut frontiers = self.publication_frontiers.clone();
         let mut terminal = BTreeSet::new();
         for event in events {
-            if terminal.contains(&event.task_id) {
+            if terminal.contains(&event.correlation.task_id) {
                 return Err(TaskCompletionError::StalePublication {
-                    task_id: event.task_id.clone(),
+                    task_id: event.correlation.task_id.clone(),
                 }
                 .into());
             }
-            let identity = self.dispatches.get(&event.task_id).ok_or_else(|| {
-                TaskCompletionError::DispatchMismatch {
-                    task_id: event.task_id.clone(),
-                }
-            })?;
-            if identity != &event.dispatch_identity() {
+            let identity = self
+                .dispatches
+                .get(&event.correlation.task_id)
+                .ok_or_else(|| TaskCompletionError::DispatchMismatch {
+                    task_id: event.correlation.task_id.clone(),
+                })?;
+            if identity.correlation != event.correlation
+                || identity.logical_epoch != event.cursor.logical_epoch
+            {
                 return Err(TaskCompletionError::DispatchMismatch {
-                    task_id: event.task_id.clone(),
+                    task_id: event.correlation.task_id.clone(),
                 }
                 .into());
             }
             let expected = frontiers
-                .get(&event.task_id)
+                .get(&event.correlation.task_id)
                 .copied()
                 .map_or(
                     Some(TaskPublicationRevision::FIRST),
                     TaskPublicationRevision::checked_next,
                 )
                 .ok_or_else(|| NativeTaskBridgeError::PublicationRevisionExhausted {
-                    task_id: event.task_id.clone(),
+                    task_id: event.correlation.task_id.clone(),
                 })?;
-            if event.publication_revision != expected {
+            if event.cursor.sequence.0 != expected.get() {
                 return Err(TaskCompletionError::StalePublication {
-                    task_id: event.task_id.clone(),
+                    task_id: event.correlation.task_id.clone(),
                 }
                 .into());
             }
             if matches!(event.kind, TaskEventKind::Progress(_))
-                && event.publication_revision.checked_next().is_none()
+                && event.cursor.sequence.0 == u64::MAX
             {
                 return Err(TaskCompletionError::PublicationRevisionExhausted {
-                    task_id: event.task_id.clone(),
+                    task_id: event.correlation.task_id.clone(),
                 }
                 .into());
             }
-            frontiers.insert(event.task_id.clone(), event.publication_revision);
+            frontiers.insert(event.correlation.task_id, expected);
             if matches!(
                 event.kind,
-                TaskEventKind::Ready(_) | TaskEventKind::Failed(_) | TaskEventKind::Cancelled
+                TaskEventKind::Ready(_)
+                    | TaskEventKind::InfrastructureFailure(_)
+                    | TaskEventKind::Cancelled
             ) {
-                terminal.insert(event.task_id.clone());
+                terminal.insert(event.correlation.task_id.clone());
             }
         }
         Ok(frontiers)
@@ -1140,20 +1110,16 @@ impl NativeTaskBridge {
         events: &[TaskEvent],
     ) {
         for event in events {
-            if !owner_ids.contains(&event.task_id) {
+            if !owner_ids.contains(&event.correlation.task_id) {
                 continue;
             }
             match event.kind {
                 TaskEventKind::Ready(_) => self.stats.completed_tasks += 1,
-                TaskEventKind::Failed(_) => self.stats.failed_tasks += 1,
+                TaskEventKind::InfrastructureFailure(_) => self.stats.failed_tasks += 1,
                 TaskEventKind::Progress(_) | TaskEventKind::Cancelled => {}
             }
         }
     }
-}
-
-fn host_call_task_id(id: &arcweft_core::step::RuntimeHostCallId) -> TaskId {
-    TaskId(format!("runtime-host-call:{}", id.0))
 }
 
 fn host_call_error(
@@ -1756,14 +1722,14 @@ fn complete_dispatched_tasks(
         tasks
             .par_iter()
             .filter_map(|task| {
-                complete_task(registry, task, *submission_contexts.get(&task.spec().id)?)
+                complete_task(registry, task, *submission_contexts.get(&task.task_id())?)
             })
             .collect()
     } else {
         tasks
             .iter()
             .filter_map(|task| {
-                complete_task(registry, task, *submission_contexts.get(&task.spec().id)?)
+                complete_task(registry, task, *submission_contexts.get(&task.task_id())?)
             })
             .collect()
     };
@@ -1785,9 +1751,9 @@ fn complete_task(
     task: &BoundTaskSpec,
     context: HostTaskSubmissionContext,
 ) -> Option<TaskCompletion> {
-    match registry.submit(task.spec(), task.outcome(), context) {
+    match registry.submit(task, context) {
         Some(HostTaskSubmission::Completed(outcome)) => Some(TaskCompletion {
-            task_id: task.spec().id.clone(),
+            task_id: task.task_id(),
             completion: match outcome.completion {
                 HostTaskCompletion::Progress(_) => HostTaskCompletion::Failed(
                     "adapter returned progress from an immediate task submission".to_owned(),
@@ -1799,7 +1765,7 @@ fn complete_task(
         }),
         Some(HostTaskSubmission::Pending) => None,
         None => Some(TaskCompletion {
-            task_id: task.spec().id.clone(),
+            task_id: task.task_id().clone(),
             completion: HostTaskCompletion::Failed(format!(
                 "adapter rejected the registered host-call request `{}`",
                 task.spec().request.host_call_id()
@@ -1987,7 +1953,6 @@ impl From<RuntimeSchedulerStats> for NativeSchedulerStats {
             failed: stats.failed,
             cancelled: stats.cancelled,
             cancel_requested: stats.cancel_requested,
-            joined_completed: stats.joined_completed,
             in_flight: stats.in_flight,
             max_in_flight: stats.max_in_flight,
             dispatch_sorts: stats.dispatch_sorts,
@@ -1997,11 +1962,9 @@ impl From<RuntimeSchedulerStats> for NativeSchedulerStats {
             completion_normalization_passes: stats.completion_normalization_passes,
             completion_normalization_checks: stats.completion_normalization_checks,
             completion_events_in: stats.completion_events_in,
-            completion_events_joined: stats.completion_events_joined,
             completion_events_out: stats.completion_events_out,
             completion_sort_skipped_items: stats.completion_sort_skipped_items,
             completion_sort_performed_items: stats.completion_sort_performed_items,
-            joined_completion_events_emitted: stats.joined_completion_events_emitted,
             submitted_by_class: NativeTaskClassCounts::from(stats.submitted_by_class),
             dispatched_by_class: NativeTaskClassCounts::from(stats.dispatched_by_class),
             completed_by_class: NativeTaskClassCounts::from(stats.completed_by_class),

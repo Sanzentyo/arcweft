@@ -1,24 +1,20 @@
 use crate::task::{
-    GenerationId, LogicalEpoch, TaskEvent, TaskEventKind, TaskId, TaskPublicationRevision,
-    TaskSequence,
+    RuntimeTaskFailure, TaskCorrelation, TaskEvent, TaskEventKind, TaskPublicationCursor,
 };
 use crate::value::{AwbcRuntimeValueSnapshot, RuntimePayload};
 
 #[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AwbcProductTaskEventSaveSnapshot {
-    pub generation: GenerationId,
-    pub logical_epoch: LogicalEpoch,
-    pub task_id: TaskId,
-    pub sequence: TaskSequence,
-    pub publication_revision: TaskPublicationRevision,
+    pub correlation: TaskCorrelation,
+    pub cursor: TaskPublicationCursor,
     pub kind: AwbcProductTaskEventKindSaveSnapshot,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
 pub enum AwbcProductTaskEventKindSaveSnapshot {
     Ready(AwbcRuntimeValueSnapshot),
-    Failed(String),
+    InfrastructureFailure(RuntimeTaskFailure),
     Cancelled,
     Progress(arcweft_need::Progress),
 }
@@ -26,18 +22,15 @@ pub enum AwbcProductTaskEventKindSaveSnapshot {
 impl AwbcProductTaskEventSaveSnapshot {
     pub(super) fn from_live(event: &TaskEvent) -> Result<Self, String> {
         Ok(Self {
-            generation: event.generation,
-            logical_epoch: event.logical_epoch,
-            task_id: event.task_id.clone(),
-            sequence: event.sequence,
-            publication_revision: event.publication_revision,
+            correlation: event.correlation,
+            cursor: event.cursor,
             kind: match &event.kind {
                 TaskEventKind::Ready(value) => AwbcProductTaskEventKindSaveSnapshot::Ready(
                     AwbcRuntimeValueSnapshot::from_runtime_value(value.value())
                         .map_err(|error| error.to_string())?,
                 ),
-                TaskEventKind::Failed(error) => {
-                    AwbcProductTaskEventKindSaveSnapshot::Failed(error.clone())
+                TaskEventKind::InfrastructureFailure(error) => {
+                    AwbcProductTaskEventKindSaveSnapshot::InfrastructureFailure(error.clone())
                 }
                 TaskEventKind::Cancelled => AwbcProductTaskEventKindSaveSnapshot::Cancelled,
                 TaskEventKind::Progress(progress) => {
@@ -52,11 +45,8 @@ impl AwbcProductTaskEventSaveSnapshot {
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<TaskEvent, String> {
         Ok(TaskEvent {
-            generation: self.generation,
-            logical_epoch: self.logical_epoch,
-            task_id: self.task_id,
-            sequence: self.sequence,
-            publication_revision: self.publication_revision,
+            correlation: self.correlation,
+            cursor: self.cursor,
             kind: match self.kind {
                 AwbcProductTaskEventKindSaveSnapshot::Ready(value) => {
                     TaskEventKind::Ready(RuntimePayload::from(
@@ -65,7 +55,9 @@ impl AwbcProductTaskEventSaveSnapshot {
                             .map_err(|error| error.to_string())?,
                     ))
                 }
-                AwbcProductTaskEventKindSaveSnapshot::Failed(error) => TaskEventKind::Failed(error),
+                AwbcProductTaskEventKindSaveSnapshot::InfrastructureFailure(error) => {
+                    TaskEventKind::InfrastructureFailure(error)
+                }
                 AwbcProductTaskEventKindSaveSnapshot::Cancelled => TaskEventKind::Cancelled,
                 AwbcProductTaskEventKindSaveSnapshot::Progress(progress) => {
                     TaskEventKind::Progress(progress)

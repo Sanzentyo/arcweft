@@ -1049,6 +1049,27 @@ fn project_runtime_semantic_fact_inventories(
         {
             continue;
         }
+        let is_thread = project
+            .modules()
+            .find_map(|(_, module)| {
+                (module.module_id() == owner.module())
+                    .then(|| module.resolve_expr(owner).ok())
+                    .flatten()
+                    .map(|expr| {
+                        matches!(expr.kind(), arcweft_lang_hir::expr::HirExprKind::Thread(_))
+                    })
+            })
+            .unwrap_or(false);
+        if is_thread {
+            let admission = analysis
+                .checked_thread_producer_admission(project, symbols, owner)
+                .map_err(|error| RuntimeSemanticProjectionError::Call {
+                    owner,
+                    reason: error.to_string(),
+                })?;
+            input.push_thread_producer(owner, admission);
+        }
+
         if closed_instance_type_owners.contains(&RuntimeProjectFunctionTypeOwner::Expression(owner))
         {
             continue;
@@ -1558,6 +1579,18 @@ fn project_runtime_semantic_fact_inventories(
         input.push_project_function_root(root);
     }
     for (owner, call) in runtime_calls {
+        if matches!(
+            call.dispatch(),
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(_))
+        ) {
+            let definition = analysis
+                .checked_call_producer_definition(project, symbols, owner)
+                .map_err(|error| RuntimeSemanticProjectionError::Call {
+                    owner,
+                    reason: error.to_string(),
+                })?;
+            input.push_call_producer(owner, definition);
+        }
         input.push_call(owner, call);
     }
 
