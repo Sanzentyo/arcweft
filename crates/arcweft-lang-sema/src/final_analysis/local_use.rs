@@ -113,6 +113,44 @@ pub enum CheckedLocalReadMode {
     Borrow,
 }
 
+/// Type-directed possibility of an unrestricted runtime carrier. A callable
+/// type does not prove that its captures can be copied; its actual producer or
+/// exact ingress must supply that evidence. An affine member rules out the
+/// complete aggregate, including an empty initial value.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CheckedTypeCopyCapability {
+    Unrestricted,
+    ValueDependent,
+    Unavailable,
+}
+
+impl CheckedTypeCopyCapability {
+    fn join(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Unavailable, _) | (_, Self::Unavailable) => Self::Unavailable,
+            (Self::ValueDependent, _) | (_, Self::ValueDependent) => Self::ValueDependent,
+            (Self::Unrestricted, Self::Unrestricted) => Self::Unrestricted,
+        }
+    }
+
+    /// This is an admission possibility, never evidence that a live value can
+    /// be cloned. Value-dependent carriers retain their checked ingress rule.
+    pub const fn may_admit_unrestricted(self) -> bool {
+        !matches!(self, Self::Unavailable)
+    }
+}
+
+impl FinalSemanticAnalysis {
+    /// Uses the same complete type/nominal authority as local Copy/Move modes.
+    pub fn type_copy_capability(
+        &self,
+        ty: &TypeKind,
+        scope: &crate::types::GenericScope,
+    ) -> Result<CheckedTypeCopyCapability, CheckedLocalUseError> {
+        type_copy_capability(ty, self, None, scope, &mut BTreeSet::new())
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedLocalValueTransfer {
     local: LocalId,
@@ -2980,6 +3018,24 @@ fn definitely_copy(
     instance: Option<CheckedLocalUseInstantiation<'_>>,
     visiting: &mut BTreeSet<SemanticTypeDigest>,
 ) -> Result<bool, CheckedLocalUseError> {
+    type_copy_capability(
+        ty,
+        analysis,
+        instance,
+        &crate::types::GenericScope::default(),
+        visiting,
+    )
+    .map(|capability| capability == CheckedTypeCopyCapability::Unrestricted)
+}
+
+fn type_copy_capability(
+    ty: &TypeKind,
+    analysis: &FinalSemanticAnalysis,
+    instance: Option<CheckedLocalUseInstantiation<'_>>,
+    scope: &crate::types::GenericScope,
+    visiting: &mut BTreeSet<SemanticTypeDigest>,
+) -> Result<CheckedTypeCopyCapability, CheckedLocalUseError> {
+    use CheckedTypeCopyCapability::{Unavailable, Unrestricted, ValueDependent};
     match ty {
         TypeKind::Bool
         | TypeKind::I8
@@ -3003,20 +3059,45 @@ fn definitely_copy(
         | TypeKind::Progress
         | TypeKind::Unit
         | TypeKind::Never
-        | TypeKind::Ref(_) => Ok(true),
+        | TypeKind::Ref(_)
+        | TypeKind::CompileTimeScalar(_) => Ok(Unrestricted),
+        TypeKind::Function { .. } | TypeKind::CharacterDialogue(_) => Ok(ValueDependent),
+        TypeKind::AcceptedNominal(nominal) => {
+            use crate::env::nominal::AcceptedNominalSemantics;
+            let plain = match analysis.accepted_nominal_semantics(nominal) {
+                Some(AcceptedNominalSemantics::Opaque(carrier)) => {
+                    carrier.value_class() == RuntimeOpaqueValueClass::Plain
+                }
+                Some(AcceptedNominalSemantics::Record(record)) => record
+                    .runtime_carrier()
+                    .is_some_and(|carrier| carrier.value_class() == RuntimeOpaqueValueClass::Plain),
+                _ => false,
+            };
+            if !plain {
+                return Ok(Unavailable);
+            }
+            nominal
+                .arguments()
+                .iter()
+                .try_fold(ValueDependent, |all, argument| {
+                    type_copy_capability(argument, analysis, instance, scope, visiting)
+                        .map(|next| all.join(next))
+                })
+        }
         TypeKind::GenericParam(_) => {
             let Some(instance) = instance else {
-                return Ok(false);
+                return Ok(Unavailable);
             };
             let closed = instance.instantiate_type(ty)?;
             if closed == *ty {
                 return Err(CheckedLocalUseError::InvalidTopology);
             }
-            definitely_copy(&closed, analysis, None, visiting)
+            type_copy_capability(&closed, analysis, None, scope, visiting)
         }
         TypeKind::Tuple(items) | TypeKind::Choice(items) => {
-            items.iter().try_fold(true, |all, item| {
-                definitely_copy(item, analysis, instance, visiting).map(|next| all && next)
+            items.iter().try_fold(Unrestricted, |all, item| {
+                type_copy_capability(item, analysis, instance, scope, visiting)
+                    .map(|next| all.join(next))
             })
         }
         TypeKind::Vec(item)
@@ -3024,71 +3105,96 @@ fn definitely_copy(
         | TypeKind::Slice(item)
         | TypeKind::Seq(item)
         | TypeKind::Option(item)
-        | TypeKind::Range(item) => definitely_copy(item, analysis, instance, visiting),
+        | TypeKind::Range(item) => type_copy_capability(item, analysis, instance, scope, visiting),
         TypeKind::Result { ok, error }
         | TypeKind::Map {
             key: ok,
             value: error,
             ..
-        } => Ok(definitely_copy(ok, analysis, instance, visiting)?
-            && definitely_copy(error, analysis, instance, visiting)?),
+        } => Ok(
+            type_copy_capability(ok, analysis, instance, scope, visiting)?.join(
+                type_copy_capability(error, analysis, instance, scope, visiting)?,
+            ),
+        ),
         TypeKind::ProjectNominal(_) => {
-            let Ok(digest) = ty.semantic_identity_digest() else {
-                return Ok(false);
+            let Ok(digest) = ty
+                .semantic_identity_digest()
+                .or_else(|_| ty.semantic_identity_digest_in_scope(scope))
+            else {
+                return Ok(Unavailable);
             };
             if !visiting.insert(digest) {
-                return Ok(false);
+                return Ok(ValueDependent);
             }
             let result = (|| {
                 let Some(definition) = analysis.project_nominal_semantic(digest) else {
-                    return Ok(false);
+                    return Ok(Unavailable);
                 };
+                let mut capability = Unrestricted;
                 if let Some(fields) = definition.fields() {
                     for field in fields {
-                        if !definitely_copy(field.ty(), analysis, instance, visiting)? {
-                            return Ok(false);
-                        }
+                        capability = capability.join(type_copy_capability(
+                            field.ty(),
+                            analysis,
+                            instance,
+                            definition.nominal().scope(),
+                            visiting,
+                        )?);
                     }
-                    return Ok(true);
+                    return Ok(capability);
                 }
                 let Some(cases) = definition.cases() else {
-                    return Ok(false);
+                    return Ok(Unavailable);
                 };
                 for case in cases {
                     match case.payload() {
                         VariantPayloadShape::Unit => {}
                         VariantPayloadShape::Tuple(fields) => {
                             for field in fields {
-                                if !definitely_copy(field.ty(), analysis, instance, visiting)? {
-                                    return Ok(false);
-                                }
+                                capability = capability.join(type_copy_capability(
+                                    field.ty(),
+                                    analysis,
+                                    instance,
+                                    definition.nominal().scope(),
+                                    visiting,
+                                )?);
                             }
                         }
                         VariantPayloadShape::Record(fields) => {
                             for field in fields {
-                                if !definitely_copy(field.ty(), analysis, instance, visiting)? {
-                                    return Ok(false);
-                                }
+                                capability = capability.join(type_copy_capability(
+                                    field.ty(),
+                                    analysis,
+                                    instance,
+                                    definition.nominal().scope(),
+                                    visiting,
+                                )?);
                             }
                         }
                     }
                 }
-                Ok(true)
+                Ok(capability)
             })();
             visiting.remove(&digest);
             result
         }
         TypeKind::Named(name) => {
             let Some(graph) = analysis.character_dialogue_policy_types() else {
-                return Ok(false);
+                return Ok(Unavailable);
             };
             let Some(owner) = CharacterDialoguePolicyTypeGraph::owner_for_language_type(name)
             else {
-                return Ok(false);
+                return Ok(Unavailable);
             };
-            Ok(policy_owner_is_copy(graph, owner, &mut BTreeSet::new()))
+            Ok(
+                if policy_owner_is_copy(graph, owner, &mut BTreeSet::new()) {
+                    Unrestricted
+                } else {
+                    Unavailable
+                },
+            )
         }
-        _ => Ok(false),
+        _ => Ok(Unavailable),
     }
 }
 

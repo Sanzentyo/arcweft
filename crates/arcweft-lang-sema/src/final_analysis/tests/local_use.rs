@@ -1597,3 +1597,64 @@ fn whole_record_replacement_retains_static_moved_child_cleanup_contours() {
     assert_eq!(field.fields().len(), 1);
     assert_eq!(field.fields()[0].runtime_field().unwrap().zero_based(), 0);
 }
+
+#[test]
+fn type_copy_capability_separates_carrier_evidence_from_affine_layouts() {
+    use crate::final_analysis::CheckedTypeCopyCapability;
+    for (declarations, parameter, expected) in [
+        ("", "Vec<String>", CheckedTypeCopyCapability::Unrestricted),
+        ("", "Vec<Need<i64>>", CheckedTypeCopyCapability::Unavailable),
+        (
+            "",
+            "i64 -> Need<i64>",
+            CheckedTypeCopyCapability::ValueDependent,
+        ),
+        (
+            "struct Holder { callback: i64 -> i64 }",
+            "Holder",
+            CheckedTypeCopyCapability::ValueDependent,
+        ),
+        (
+            "struct Holder { callback: i64 -> i64, values: Vec<Need<i64>> }",
+            "Holder",
+            CheckedTypeCopyCapability::Unavailable,
+        ),
+        (
+            "enum Slot<T> { Empty, Full T }",
+            "Slot<Need<i64>>",
+            CheckedTypeCopyCapability::Unavailable,
+        ),
+    ] {
+        let world = fixture(
+            &format!("{declarations}\nfn root(value: {parameter}) {{}}"),
+            None,
+        );
+        let analysis = analyze(&world).unwrap();
+        let (_, module) = world
+            .project
+            .analysis_view()
+            .unwrap()
+            .modules()
+            .next()
+            .unwrap();
+        let local = module
+            .locals()
+            .find(|(_, local)| local.name().as_str() == "value")
+            .unwrap()
+            .0;
+        let ty = analysis.local(local).unwrap().ty();
+        assert_eq!(
+            analysis
+                .type_copy_capability(ty, &crate::types::GenericScope::default())
+                .unwrap(),
+            expected,
+            "{parameter}"
+        );
+        if expected == CheckedTypeCopyCapability::ValueDependent {
+            assert!(
+                analysis.checked_local_uses().copy_evidence(local).is_none(),
+                "a callable signature cannot issue a value Copy proof"
+            );
+        }
+    }
+}

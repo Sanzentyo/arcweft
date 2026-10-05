@@ -1721,22 +1721,29 @@ impl FinalSemanticAnalysis {
         &self,
         nominal: &crate::types::AcceptedNominalType,
     ) -> bool {
+        matches!(self.accepted_nominal_semantics(nominal),
+            Some(crate::env::nominal::AcceptedNominalSemantics::Opaque(carrier))
+                if carrier.value_class() == arcweft_core::value::RuntimeOpaqueValueClass::Plain)
+    }
+
+    /// Exact accepted declaration metadata; consumers do not resolve a type
+    /// spelling or manufacture a separate nominal ownership table.
+    pub(super) fn accepted_nominal_semantics(
+        &self,
+        nominal: &crate::types::AcceptedNominalType,
+    ) -> Option<&crate::env::nominal::AcceptedNominalSemantics> {
         match &self.authority {
             FinalSemanticAnalysisAuthority::Registered(world) => world
                 .environment
                 .nominal_catalog()
                 .exact(nominal.declaration().canonical_path())
-                .is_some_and(|record| {
+                .filter(|record| {
                     record.id() == nominal.declaration()
-                        && matches!(
-                            record.semantics(),
-                            crate::env::nominal::AcceptedNominalSemantics::Opaque(carrier)
-                                if carrier.value_class()
-                                    == arcweft_core::value::RuntimeOpaqueValueClass::Plain
-                        )
-                }),
+                        && usize::from(record.arity()) == nominal.arguments().len()
+                })
+                .map(crate::env::nominal::AcceptedNominalRecord::semantics),
             #[cfg(test)]
-            FinalSemanticAnalysisAuthority::Fixture => false,
+            FinalSemanticAnalysisAuthority::Fixture => None,
         }
     }
 

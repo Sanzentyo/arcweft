@@ -147,7 +147,7 @@ pub use local_use::{
     CheckedLocalUseCatalog, CheckedLocalUseError, CheckedLocalUseInstanceCatalog,
     CheckedLocalUseInstanceIdentity, CheckedLocalUseInstantiation, CheckedLocalValueTransfer,
     CheckedPlaceDisplacement, CheckedPlaceInitialization, CheckedSyntheticCopyRequirement,
-    CheckedSyntheticUse, CheckedSyntheticUseOwner,
+    CheckedSyntheticUse, CheckedSyntheticUseOwner, CheckedTypeCopyCapability,
 };
 pub use match_coverage::{
     CheckedMatchCoverage, CheckedMatchLimitKind, CheckedMatchLimits, CheckedPatternCoordinateStep,

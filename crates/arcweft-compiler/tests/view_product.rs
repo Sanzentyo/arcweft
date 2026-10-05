@@ -5676,3 +5676,33 @@ view Main() {
         matches!(&updated.mounts[0].text[0].value, BundleViewTextValue::Plain { value } if value == "changed")
     );
 }
+
+#[test]
+fn affine_view_parameter_is_rejected_even_when_its_initial_value_is_empty_or_unused() {
+    for source in [
+        "view Main(value: Need<i64>) { Text(\"static\") }",
+        "view Main(value: Vec<Need<i64>> = []) { Text(\"static\") }",
+        "struct Holder { items: Vec<Need<i64>> }\nview Main(value: Holder) { Text(\"static\") }",
+        "enum Slot<T> { Empty, Full T }\nview Main(value: Slot<Need<i64>> = .Empty) { Text(\"static\") }",
+        "struct Holder<T> { callback: T, items: Vec<Need<i64>> }\nview Main(value: Holder<i64 -> i64> = Holder { callback = |value: i64| value, items = [] }) { Text(\"static\") }",
+        "view Main() { local state mut value: Vec<Need<i64>> = []; Text(\"static\") }",
+        "view Main() { let value: Vec<Need<i64>> = []; Text(\"static\") }",
+    ] {
+        let result = project_view_fixture(source, "arcweft-test://view-affine-parameter-admission")
+            .compile();
+        let Err(error) = result else {
+            panic!("retained parameter layout must reject affine ownership: {source}");
+        };
+        let [diagnostic] = error.diagnostics() else {
+            panic!("one retained ownership rejection: {error:?}");
+        };
+        assert_eq!(diagnostic.stage(), ProjectCompileStage::ViewLower);
+        assert!(
+            diagnostic
+                .diagnostic()
+                .message()
+                .contains("is not snapshot-retainable"),
+            "{error:?}"
+        );
+    }
+}

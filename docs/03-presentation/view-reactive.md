@@ -535,6 +535,13 @@ dispatch は公開済み route と seal revision を検証し、retained cell �
 route を公開する。別 handle の state と route は独立する。restore は保存済み cell を
 復元し、callback を再実行せず、restore 前の route を受理しない。
 
+retained parameter、派生値、local state、programme の入力・結果は、同じ semantic
+Copy/Move 型 authority で保持可能性を検証する。Need など affine member を含む型は、
+未使用の parameter、空の collection、選択されていない enum payload でも unrestricted
+retention へ入れない。nominal の field／variant と generic scope は確定済み catalog に従う。
+関数型や runtime carrier の保持可能性は値に依存し、型だけでは Copy 証拠にならない。
+実際の producer／ingress の完全な証拠と frame の carrier 検証も必要である。
+
 この unrestricted handler ingress は完全な Copy 証拠を要求する。affine Need を複製したり、
 この snapshot 経路へ通したりしない。affine cell、subscription、binding lens の custody は
 それぞれの型付き owner／transfer 契約で扱う。

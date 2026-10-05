@@ -151,6 +151,19 @@ pub(crate) enum ViewProjectLowerError {
     MissingViewSource { owner: ItemId, role: &'static str },
     #[error("final-HIR View item {owner:?} has an unsupported parameter at ordinal {ordinal}")]
     InvalidViewParameter { owner: ItemId, ordinal: usize },
+    #[error(
+        "retained View {owner:?} type {value_type:?} is not snapshot-retainable as an unrestricted value"
+    )]
+    InvalidRetainedValueType {
+        owner: ItemId,
+        value_type: Box<TypeKind>,
+    },
+    #[error("retained View {owner:?} ownership admission failed: {source}")]
+    RetainedValueOwnership {
+        owner: ItemId,
+        #[source]
+        source: Box<arcweft_lang_sema::final_analysis::CheckedLocalUseError>,
+    },
     #[error("checked View Fx application {expression:?} is inconsistent with its final authority")]
     InvalidViewFxApplication { expression: ExprId },
     #[error(
@@ -270,6 +283,35 @@ impl ViewProjectLowerError {
     pub(crate) fn diagnostic(&self) -> Diagnostic {
         Diagnostic::new(DiagnosticSeverity::Error, self.to_string())
             .with_code("compiler.view.lower")
+    }
+}
+
+/// Compiler context for the canonical semantic Copy/Move type authority.
+/// Dynamic producer/ingress evidence remains mandatory for callable carriers;
+/// this admission rejects layouts that can never satisfy that requirement.
+struct ViewRetainedTypeAdmission<'a> {
+    analysis: &'a FinalSemanticAnalysis,
+    owner: ItemId,
+    scope: &'a arcweft_lang_sema::types::GenericScope,
+}
+
+impl ViewRetainedTypeAdmission<'_> {
+    fn admit(&self, value_type: &TypeKind) -> Result<(), ViewProjectLowerError> {
+        let capability = self
+            .analysis
+            .type_copy_capability(value_type, self.scope)
+            .map_err(|source| ViewProjectLowerError::RetainedValueOwnership {
+                owner: self.owner,
+                source: Box::new(source),
+            })?;
+        if capability.may_admit_unrestricted() {
+            Ok(())
+        } else {
+            Err(ViewProjectLowerError::InvalidRetainedValueType {
+                owner: self.owner,
+                value_type: Box::new(value_type.clone()),
+            })
+        }
     }
 }
 
@@ -753,6 +795,17 @@ fn prepare_authored_view<'a>(
             let local_fact = analysis
                 .local(local)
                 .ok_or(ViewProjectLowerError::InvalidViewParameter { owner, ordinal })?;
+            ViewRetainedTypeAdmission {
+                analysis,
+                owner,
+                scope: parameter_contract.scope(),
+            }
+            .admit(
+                parameter_contract
+                    .parameters()
+                    .get(ordinal)
+                    .ok_or_else(invalid)?,
+            )?;
             let name = module
                 .resolve_local(local)
                 .map_err(|_| ViewProjectLowerError::InvalidViewParameter { owner, ordinal })?
@@ -1002,6 +1055,13 @@ impl ViewExpressionLowerer<'_> {
             return Err(invalid());
         }
         let result = abi.result().value_type().ok_or_else(invalid)?;
+        let type_scope = abi.environment().type_scope();
+        let retention = ViewRetainedTypeAdmission {
+            analysis: self.analysis,
+            owner: self.owner,
+            scope: &type_scope,
+        };
+        retention.admit(result)?;
         let result_type = ViewHandlerValueTypeId::from_semantic_digest(
             *abi.environment().semantic_type_identity(result)?.as_bytes(),
         );
@@ -1010,6 +1070,7 @@ impl ViewExpressionLowerer<'_> {
             .iter()
             .filter(|input| matches!(input.role(), CheckedExecutionInputRole::Free))
             .map(|input| {
+                retention.admit(input.binding().ty())?;
                 let value_type = ViewHandlerValueTypeId::from_semantic_digest(
                     *abi.environment()
                         .semantic_type_identity(input.binding().ty())?
