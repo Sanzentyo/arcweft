@@ -196,10 +196,11 @@ impl<'a> AwbcLowerer<'a> {
                 .verify(
                     AwbcVerifyBudget::default(),
                     AwbcVerifyContext {
-                        // An admitted program binding is a callable library root.
-                        // Selected-entry products still require their entry table.
-                        require_entrypoint: self.entry.is_some()
-                            || self.plan.pure_programs().is_empty(),
+                        // Whole-plan artifacts also support explicitly selected
+                        // Flow and callable library roots. A public entry is
+                        // required only when the accepted plan declares one or
+                        // this operation selects one.
+                        require_entrypoint: entry.is_some() || !plan.entries().is_empty(),
                         ..AwbcVerifyContext::default()
                     },
                 )

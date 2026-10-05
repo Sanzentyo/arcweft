@@ -394,6 +394,10 @@ fn admit_flow_authority(builder: &mut RuntimePlanBuilder, flow: &FlowRuntimeId) 
 }
 
 fn plan_with_return(value: &str) -> RuntimePlan {
+    plan_with_return_and_entry(value, true)
+}
+
+fn plan_with_return_and_entry(value: &str, include_entry: bool) -> RuntimePlan {
     let flow = flow_id("parity.main");
     let mut builder = RuntimePlanBuilder::new();
     builder
@@ -405,7 +409,16 @@ fn plan_with_return(value: &str) -> RuntimePlan {
             [],
         )
         .expect("semantic facts admit");
-    admit_flow_authority(&mut builder, &flow);
+    if include_entry {
+        admit_flow_authority(&mut builder, &flow);
+    } else {
+        builder
+            .push_flow_schema(RuntimeFlowSchema {
+                flow: flow.clone(),
+                parameters: Vec::new(),
+            })
+            .expect("direct Flow schema admits without an entry executable");
+    }
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
             flow.clone(),
@@ -414,15 +427,17 @@ fn plan_with_return(value: &str) -> RuntimePlan {
             vec![RuntimeFlowOpSeed::ReturnExpr(string(value))],
         ))
         .expect("flow admits");
-    builder
-        .push_entry(RuntimeEntrySpec {
-            id: entry_id(),
-            kind: RuntimeEntryKind::Cli,
-            binding: EntryBindingIdentity::from_bytes([2; 32]),
-            target: RuntimeEntryTarget::Flow(flow),
-            roles: RuntimeEntryRoles::None,
-        })
-        .expect("entry admits");
+    if include_entry {
+        builder
+            .push_entry(RuntimeEntrySpec {
+                id: entry_id(),
+                kind: RuntimeEntryKind::Cli,
+                binding: EntryBindingIdentity::from_bytes([2; 32]),
+                target: RuntimeEntryTarget::Flow(flow),
+                roles: RuntimeEntryRoles::None,
+            })
+            .expect("entry admits");
+    }
     builder.finish().expect("builder seals plan")
 }
 
@@ -709,6 +724,50 @@ fn owned_unit_program_retains_its_typed_result_across_save_restore() {
     let saved = executor.inert_rollback_image().unwrap().product;
     let mut executor = executor.restore_inert_snapshot_owned(saved).unwrap();
     assert_eq!(executor.take_program_result().unwrap(), None);
+}
+
+#[test]
+fn flow_library_without_public_entry_preserves_verified_executable_roots() {
+    let plan = plan_with_return_and_entry("library", false);
+    assert!(plan.entries().is_empty());
+    assert!(plan.pure_programs().is_empty());
+    let program = lower(&plan);
+    assert!(program.entries.is_empty());
+    assert_eq!(program.flow_bindings.len(), 1);
+    let bytes = program.encode_canonical().expect("flow library encodes");
+    let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+        &bytes,
+        AwbcDecodeBudget::default(),
+    )
+    .expect("flow library decodes");
+    decoded
+        .verify(
+            AwbcVerifyBudget::default(),
+            AwbcVerifyContext {
+                require_entrypoint: false,
+                ..AwbcVerifyContext::default()
+            },
+        )
+        .expect("flow library passes complete structural verification");
+    assert_eq!(decoded.flow_bindings, program.flow_bindings);
+    assert_eq!(decoded.functions, program.functions);
+    assert_eq!(
+        decoded.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(arcweft_core::awbc::verify::AwbcVerifyError::MissingEntrypoint),
+        "public-entry execution must still require an entry"
+    );
+    assert!(matches!(
+        AwbcLowerer::for_entry(
+            &plan,
+            &DialogueContentCatalog::default(),
+            "selected-library.arcw",
+            &entry_id(),
+        )
+        .lower(),
+        Err(arcweft_runtime_plan::awbc_lower::AwbcLowerError::Lowering(
+            _
+        ))
+    ));
 }
 
 #[test]

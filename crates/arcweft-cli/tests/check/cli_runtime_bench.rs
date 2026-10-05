@@ -1384,11 +1384,59 @@ flow main() {
 }
 
 #[test]
+fn run_explicit_flow_library_preserves_selection_without_public_entry() {
+    let path = temp_arcw(
+        "explicit-flow-library",
+        r#"
+flow main() -> String {
+    return "unselected"
+}
+flow opening() -> String {
+    return "selected"
+}
+"#,
+    );
+    for executor in ["bytecode-vm", "aot"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+            .arg("run")
+            .arg(&path)
+            .args(["--flow", "flow.opening", "--executor", executor, "--steps", "1", "--json"])
+            .output()
+            .expect("explicit Flow library executes");
+        assert!(
+            output.status.success(),
+            "{executor} Flow library failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout)
+            .expect("explicit Flow library reports JSON");
+        assert_eq!(
+            report["final_status"],
+            serde_json::json!("done Return(\"selected\")"),
+            "wrong Flow ran: {report}"
+        );
+    }
+    let missing_entry = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(&path)
+        .args(["--entry", "entry.missing"])
+        .output()
+        .expect("missing public entry is rejected");
+    assert!(!missing_entry.status.success());
+    assert!(
+        String::from_utf8_lossy(&missing_entry.stderr).contains("unknown entry `entry.missing`"),
+        "unexpected entry diagnostic: {}",
+        String::from_utf8_lossy(&missing_entry.stderr)
+    );
+    fs::remove_file(&path).expect("remove Flow library source");
+}
+
+#[test]
 fn run_flow_values_are_sealed_once_by_parameter_coordinate() {
     let path = temp_arcw(
         "explicit-flow-value",
         r#"
-flow choose(first: i64, second: i64) {
+flow choose(first: i64, second: i64) -> i64 {
     return first
 }
 "#,
@@ -1426,7 +1474,7 @@ fn run_flow_values_reject_incomplete_or_ambiguous_external_inventory() {
     let path = temp_arcw(
         "explicit-flow-invalid-values",
         r#"
-flow choose(first: i64, second: i64) {
+flow choose(first: i64, second: i64) -> i64 {
     return first
 }
 "#,
