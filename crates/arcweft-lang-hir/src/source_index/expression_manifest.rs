@@ -656,7 +656,14 @@ fn expr_recovery_operand_is_referenced(
         }),
         _ => None,
     };
-    let retained_by_parent = match parent_payload.kind().recovery_operand_slot(key.ordinal()) {
+    let HirPoisonState::Poisoned(HirRecoveryIssue::MissingOperand { role }) = child_payload.state()
+    else {
+        return false;
+    };
+    let retained_by_parent = match parent_payload
+        .kind()
+        .recovery_operand_slot(key.ordinal(), *role)
+    {
         Some(HirRecoveryOperandSlot::Retained(expected)) => expected == child,
         Some(HirRecoveryOperandSlot::SyntheticOnly) => true,
         None => false,

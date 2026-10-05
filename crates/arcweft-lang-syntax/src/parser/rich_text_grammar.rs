@@ -330,7 +330,8 @@ fn emit_point_action_or_error(
     *argument_count = argument_count
         .checked_add(arguments.len())
         .expect("dialogue point-action argument count remains bounded");
-    emit_point_action_syntax(parser, surface, open, ordinal, scanned.as_ref(), payload);
+    let payload =
+        emit_point_action_syntax(parser, surface, open, ordinal, scanned.as_ref(), payload);
     nodes.push(SyntaxDialogueNodeProjection::PointAction(
         SyntaxDialoguePointActionProjection::new(identity, arguments, payload),
     ));
@@ -552,7 +553,7 @@ fn emit_point_action_syntax(
     ordinal: u32,
     scanned: Option<&ScannedDialogueActionArguments>,
     payload: SyntaxDialoguePointActionPayload,
-) {
+) -> SyntaxDialoguePointActionPayload {
     let kind = match payload {
         SyntaxDialoguePointActionPayload::None if open.source_name == "mark" => {
             SyntaxKind::DialogueMark
@@ -570,22 +571,24 @@ fn emit_point_action_syntax(
         SyntaxRole::Name,
         open.name_range,
     );
-    match payload {
+    let payload = match payload {
         SyntaxDialoguePointActionPayload::Call(_) => {
             let range = open.attrs_range;
-            let _ = emit_expression_payload(
+            SyntaxDialoguePointActionPayload::Call(emit_expression_payload(
                 parser,
                 range,
                 SyntaxKind::DialogueActionDialogueCallPayload,
                 SyntaxRole::Operand,
-            );
+            ))
         }
         SyntaxDialoguePointActionPayload::TimedCue(_) => {
             let timed = open
                 .timed_cue
                 .as_ref()
                 .expect("timed-cue actions retain their scanned payload");
-            emit_timed_point_payload(parser, open, timed, ordinal);
+            SyntaxDialoguePointActionPayload::TimedCue(emit_timed_point_payload(
+                parser, open, timed,
+            ))
         }
         SyntaxDialoguePointActionPayload::None => {
             if let Some(scanned) = scanned {
@@ -598,17 +601,18 @@ fn emit_point_action_syntax(
                     &mut point_argument_limit_exhausted,
                 );
             }
+            SyntaxDialoguePointActionPayload::None
         }
-    }
+    };
     emit_point_action_close(parser, surface);
+    payload
 }
 
 fn emit_timed_point_payload(
     parser: &mut DocumentParser<'_, '_>,
     open: &OpenActionSurface<'_>,
     timed: &ScannedTimedCuePayload,
-    ordinal: u32,
-) {
+) -> SyntaxExpressionSlot {
     parser.start(
         SyntaxKind::DialogueActionTimedCuePayload,
         SyntaxRole::Payload,
@@ -639,9 +643,9 @@ fn emit_timed_point_payload(
             SyntaxRole::Operand,
         ),
     };
-    let _ = (ordinal, call);
     bump_until_offset(parser, open.attrs_range.end());
     parser.finish();
+    call
 }
 
 fn emit_point_action_close(

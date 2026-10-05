@@ -584,8 +584,14 @@ pub(super) fn expression_children_match(
         let expected_len = if else_branch.is_some() { 3 } else { 2 };
         if attached.children().len() != expected_len
             || !attached.children().iter().all(|attached_child| {
+                let Some(role) = expression_component_role(
+                    attached.projection(),
+                    attached_child.component_role(),
+                ) else {
+                    return false;
+                };
                 matches!(
-                    payload.kind().recovery_operand_slot(attached_child.ordinal()),
+                    payload.kind().recovery_operand_slot(attached_child.ordinal(), role),
                     Some(HirRecoveryOperandSlot::Retained(child))
                         if expression_child_matches(
                             parsed,
@@ -1148,7 +1154,7 @@ fn composite_parent_state_matches(
             break;
         }
         let Some(HirRecoveryOperandSlot::Retained(child_id)) =
-            payload.kind().recovery_operand_slot(child.ordinal())
+            payload.kind().recovery_operand_slot(child.ordinal(), role)
         else {
             return false;
         };

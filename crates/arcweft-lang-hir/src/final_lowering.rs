@@ -1347,6 +1347,12 @@ impl HirDialogueTransactionContext for StagedHirModuleTransaction<'_> {
                     HirDialogueExpressionExpectation::Call => {
                         matches!(expression.kind(), HirExprKind::Call(_))
                     }
+                    HirDialogueExpressionExpectation::MissingOperand(role) => {
+                        matches!(expression.kind(), HirExprKind::Error(_))
+                            && matches!(expression.state(), crate::expr::HirPoisonState::Poisoned(
+                                crate::expr::HirRecoveryIssue::MissingOperand { role: actual }
+                            ) if *actual == role)
+                    }
                     HirDialogueExpressionExpectation::PostfixIndexCandidate {
                         owner,
                         role,

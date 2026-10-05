@@ -13,6 +13,9 @@ use crate::dialogue_application::{
     HirAttachedContentApplication, HirDialogueNodeKind, HirPostfixBracketCandidates,
 };
 use crate::identity::ExprId;
+use crate::source_index::{
+    HirDialogueNodeSourcePart, HirDialoguePointActionSourcePart, HirExprSourceRole,
+};
 use crate::stmt::HirTrigger;
 use thiserror::Error;
 
@@ -582,7 +585,11 @@ impl HirExprKind {
 
     /// Resolves a recovery operand through the edge authority while preserving
     /// source semantic ordinals for optional and recovered slots.
-    pub(crate) fn recovery_operand_slot(&self, ordinal: u32) -> Option<HirRecoveryOperandSlot> {
+    pub(crate) fn recovery_operand_slot(
+        &self,
+        ordinal: u32,
+        source_role: HirExprSourceRole,
+    ) -> Option<HirRecoveryOperandSlot> {
         if let Self::Choice(expression) = self {
             let slot = expression
                 .required_expression_slots()
@@ -599,6 +606,33 @@ impl HirExprKind {
         }
 
         let edges = self.child_edges();
+        if let Self::AttachedContentApplication(application) = self {
+            let role = match source_role {
+                HirExprSourceRole::Target => Some(match application.family() {
+                    crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine { .. } => HirExpressionChildRole::DialogueTarget,
+                    crate::dialogue_application::HirAttachedContentApplicationFamily::ContentCall { .. } => HirExpressionChildRole::ContentCallee,
+                }),
+                HirExprSourceRole::DialogueNode {
+                    ordinal,
+                    part: HirDialogueNodeSourcePart::Interpolation,
+                } => Some(HirExpressionChildRole::DialogueInterpolation { ordinal }),
+                HirExprSourceRole::DialogueNode {
+                    ordinal,
+                    part: HirDialogueNodeSourcePart::Expression,
+                } => Some(HirExpressionChildRole::AttachedContentApplication { ordinal }),
+                HirExprSourceRole::DialoguePointAction {
+                    ordinal,
+                    part: HirDialoguePointActionSourcePart::Payload,
+                } => Some(HirExpressionChildRole::DialoguePointActionPayload { ordinal }),
+                _ => None,
+            };
+            if let Some(role) = role {
+                return edges
+                    .iter()
+                    .find(|edge| edge.role() == &role)
+                    .map(|edge| HirRecoveryOperandSlot::Retained(edge.child()));
+            }
+        }
         if let Some(child) = recovery_edge_child(self, &edges, ordinal) {
             return Some(HirRecoveryOperandSlot::Retained(child));
         }

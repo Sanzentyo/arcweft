@@ -768,20 +768,20 @@ impl StagedHirModuleTransaction<'_> {
                             recovery.get_or_insert(HirRecoveryIssue::InvalidRichText(
                                 HirRichTextIssue::InvalidPayload,
                             ));
-                            return Ok(HirDialogueNodeKind::Error(
-                                crate::dialogue_application::HirDialogueContentError::InvalidPointAction,
-                            ));
+                            HirDialoguePointActionIdentity::RecoveredMark(
+                                id_ref_projection::id_ref(selector.reference())?,
+                            )
+                        } else {
+                            let suffix =
+                                id_ref_projection::dialogue_mark_suffix(selector.reference())?;
+                            HirDialoguePointActionIdentity::Mark(HirDialogueMarkName::new(suffix))
                         }
-                        let suffix = id_ref_projection::dialogue_mark_suffix(selector.reference())?;
-                        HirDialoguePointActionIdentity::Mark(HirDialogueMarkName::new(suffix))
                     }
-                    SyntaxDialoguePointActionIdentity::Invalid(_) => {
+                    SyntaxDialoguePointActionIdentity::Invalid(issue) => {
                         recovery.get_or_insert(HirRecoveryIssue::InvalidRichText(
                             HirRichTextIssue::InvalidPayload,
                         ));
-                        return Ok(HirDialogueNodeKind::Error(
-                            crate::dialogue_application::HirDialogueContentError::InvalidPointAction,
-                        ));
+                        HirDialoguePointActionIdentity::Invalid(issue.clone().into())
                     }
                 };
                 let mut arguments = Vec::with_capacity(action.arguments().len());
@@ -798,21 +798,26 @@ impl StagedHirModuleTransaction<'_> {
                     (SyntaxDialoguePointActionPayload::None, None) => {
                         HirDialoguePointActionPayload::None
                     }
+                    (
+                        SyntaxDialoguePointActionPayload::Call(SyntaxExpressionSlot::Missing),
+                        Some(expression),
+                    ) => HirDialoguePointActionPayload::MissingCall(expression),
+                    (
+                        SyntaxDialoguePointActionPayload::TimedCue(SyntaxExpressionSlot::Missing),
+                        Some(expression),
+                    ) => HirDialoguePointActionPayload::MissingTimedCue(expression),
                     (SyntaxDialoguePointActionPayload::Call(_), Some(expression)) => {
                         HirDialoguePointActionPayload::Call(expression)
                     }
                     (SyntaxDialoguePointActionPayload::TimedCue(_), Some(expression)) => {
                         HirDialoguePointActionPayload::TimedCue(expression)
                     }
-                    (_, None) => {
-                        recovery.get_or_insert(HirRecoveryIssue::InvalidRichText(
-                            HirRichTextIssue::InvalidPayload,
-                        ));
-                        return Ok(HirDialogueNodeKind::Error(
-                            crate::dialogue_application::HirDialogueContentError::InvalidPointAction,
-                        ));
-                    }
-                    (SyntaxDialoguePointActionPayload::None, Some(_)) => {
+                    (
+                        SyntaxDialoguePointActionPayload::Call(_)
+                        | SyntaxDialoguePointActionPayload::TimedCue(_),
+                        None,
+                    )
+                    | (SyntaxDialoguePointActionPayload::None, Some(_)) => {
                         return Err(HirInvariantFailure::InvalidArenaCommit.into());
                     }
                 };

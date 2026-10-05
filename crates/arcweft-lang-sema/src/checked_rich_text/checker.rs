@@ -116,7 +116,7 @@ impl RichTextContentChecker {
                 && !matches!(
                     node.kind(),
                     HirDialogueNodeKind::PointAction(action)
-                        if action.arguments().iter().any(|argument| argument.issue().is_some())
+                        if action.has_recovery()
                 )
         });
 
@@ -138,6 +138,16 @@ impl RichTextContentChecker {
         diagnostics: &mut Vec<RichTextDiagnostic>,
     ) -> Result<Option<PreparedCheckedRichTextAction>, HirSourceQueryError> {
         match action.identity() {
+            HirDialoguePointActionIdentity::RecoveredMark(_)
+            | HirDialoguePointActionIdentity::Invalid(_) => {
+                diagnostics.push(point_action_diagnostic(
+                    module,
+                    content.id().owner(),
+                    node,
+                    RichTextDiagnosticCode::InvalidSelector,
+                )?);
+                Ok(None)
+            }
             HirDialoguePointActionIdentity::Control(control) => {
                 let owner = dialogue_control(*control);
                 let positional = match owner {

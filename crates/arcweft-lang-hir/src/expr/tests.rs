@@ -185,28 +185,28 @@ fn child_edges_project_direct_children_and_preserve_recovery_source_gaps() {
     ));
     assert_projection(associated.clone(), &[first, second]);
     assert_eq!(
-        associated.recovery_operand_slot(0),
+        associated.recovery_operand_slot(0, crate::source_index::HirExprSourceRole::Whole),
         None,
         "an associated call keeps its absent callee recovery slot"
     );
     assert_eq!(
-        associated.recovery_operand_slot(1),
+        associated.recovery_operand_slot(1, crate::source_index::HirExprSourceRole::Whole),
         Some(HirRecoveryOperandSlot::Retained(first))
     );
     assert_eq!(
-        associated.recovery_operand_slot(2),
+        associated.recovery_operand_slot(2, crate::source_index::HirExprSourceRole::Whole),
         Some(HirRecoveryOperandSlot::Retained(second))
     );
 
     let range_end_only = HirExprKind::Range(HirRangeExpr::new(None, Some(second), false));
     assert_projection(range_end_only.clone(), &[second]);
     assert_eq!(
-        range_end_only.recovery_operand_slot(0),
+        range_end_only.recovery_operand_slot(0, crate::source_index::HirExprSourceRole::Whole),
         None,
         "an end-only range keeps its source ordinal 1"
     );
     assert_eq!(
-        range_end_only.recovery_operand_slot(1),
+        range_end_only.recovery_operand_slot(1, crate::source_index::HirExprSourceRole::Whole),
         Some(HirRecoveryOperandSlot::Retained(second))
     );
 
@@ -220,16 +220,19 @@ fn child_edges_project_direct_children_and_preserve_recovery_source_gaps() {
     ));
     assert_projection(if_let_without_guard.clone(), &[first, second, third]);
     assert_eq!(
-        if_let_without_guard.recovery_operand_slot(1),
+        if_let_without_guard
+            .recovery_operand_slot(1, crate::source_index::HirExprSourceRole::Whole),
         None,
         "the omitted guard remains an absent semantic slot"
     );
     assert_eq!(
-        if_let_without_guard.recovery_operand_slot(2),
+        if_let_without_guard
+            .recovery_operand_slot(2, crate::source_index::HirExprSourceRole::Whole),
         Some(HirRecoveryOperandSlot::Retained(second))
     );
     assert_eq!(
-        if_let_without_guard.recovery_operand_slot(3),
+        if_let_without_guard
+            .recovery_operand_slot(3, crate::source_index::HirExprSourceRole::Whole),
         Some(HirRecoveryOperandSlot::Retained(third))
     );
 
@@ -239,11 +242,11 @@ fn child_edges_project_direct_children_and_preserve_recovery_source_gaps() {
     ])));
     assert_projection(record.clone(), &[second]);
     assert_eq!(
-        record.recovery_operand_slot(0),
+        record.recovery_operand_slot(0, crate::source_index::HirExprSourceRole::Whole),
         Some(HirRecoveryOperandSlot::SyntheticOnly)
     );
     assert_eq!(
-        record.recovery_operand_slot(1),
+        record.recovery_operand_slot(1, crate::source_index::HirExprSourceRole::Whole),
         Some(HirRecoveryOperandSlot::Retained(second))
     );
 }
@@ -260,7 +263,10 @@ fn choice_invalid_assignment_has_no_expression_recovery_slot() {
         )]))),
     ));
 
-    assert_eq!(choice.recovery_operand_slot(0), None);
+    assert_eq!(
+        choice.recovery_operand_slot(0, crate::source_index::HirExprSourceRole::Whole),
+        None
+    );
     assert!(choice.child_edges().is_empty());
 }
 

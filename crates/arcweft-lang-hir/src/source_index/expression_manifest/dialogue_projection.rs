@@ -228,6 +228,18 @@ fn point_action_projection_matches(
         ) => expected
             .name()
             .is_some_and(|name| actual.as_str() == name.as_str()),
+        (
+            HirDialoguePointActionIdentity::RecoveredMark(actual),
+            SyntaxDialoguePointActionIdentity::Mark(expected),
+        ) => {
+            expected.has_recovery()
+                && crate::final_lowering::id_ref_projection::id_ref(expected.reference())
+                    .is_ok_and(|reference| actual == &reference)
+        }
+        (
+            HirDialoguePointActionIdentity::Invalid(actual),
+            SyntaxDialoguePointActionIdentity::Invalid(expected),
+        ) => actual == &expected.clone().into(),
         _ => false,
     };
     if !identity_matches || actual.arguments().len() != expected.arguments().len() {
@@ -248,10 +260,24 @@ fn point_action_projection_matches(
             SyntaxDialoguePointActionPayload::None
         ) | (
             crate::dialogue_application::HirDialoguePointActionPayload::Call(_),
-            SyntaxDialoguePointActionPayload::Call(_)
+            SyntaxDialoguePointActionPayload::Call(
+                arcweft_lang_syntax::expressions::SyntaxExpressionSlot::Authored
+            )
         ) | (
             crate::dialogue_application::HirDialoguePointActionPayload::TimedCue(_),
-            SyntaxDialoguePointActionPayload::TimedCue(_)
+            SyntaxDialoguePointActionPayload::TimedCue(
+                arcweft_lang_syntax::expressions::SyntaxExpressionSlot::Authored
+            )
+        ) | (
+            crate::dialogue_application::HirDialoguePointActionPayload::MissingCall(_),
+            SyntaxDialoguePointActionPayload::Call(
+                arcweft_lang_syntax::expressions::SyntaxExpressionSlot::Missing
+            )
+        ) | (
+            crate::dialogue_application::HirDialoguePointActionPayload::MissingTimedCue(_),
+            SyntaxDialoguePointActionPayload::TimedCue(
+                arcweft_lang_syntax::expressions::SyntaxExpressionSlot::Missing
+            )
         )
     )
 }

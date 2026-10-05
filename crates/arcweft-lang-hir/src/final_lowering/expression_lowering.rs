@@ -688,11 +688,17 @@ impl StagedHirModuleTransaction<'_> {
             ExpressionProjection::Select(member) => {
                 matches!(member, SyntaxSelectedMember::Missing)
             }
-            // E33 represents missing content and a missing closing bracket on
-            // the application owner itself. It deliberately does not mint a
-            // synthetic content expression, so that owner must publish the
-            // recovery diagnostic directly.
-            ExpressionProjection::AttachedContentApplication(_) => true,
+            // Owner-only content/delimiter recovery needs its own diagnostic.
+            // A retained missing operand already owns the diagnostic for its
+            // exact source role, as it does in other expression families.
+            ExpressionProjection::AttachedContentApplication(_) => !matches!(
+                &recovery,
+                Some(HirRecoveryIssue::MissingOperand { role }) if attached.children().iter().any(|child| {
+                    child.missing().is_some()
+                        && expression_component_role(attached.projection(), child.component_role()) == Some(*role)
+                        && matches!(kind.recovery_operand_slot(child.ordinal(), *role), Some(crate::expr::HirRecoveryOperandSlot::Retained(_)))
+                })
+            ),
             _ => !matches!(
                 &recovery,
                 Some(

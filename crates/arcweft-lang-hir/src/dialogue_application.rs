@@ -875,6 +875,7 @@ pub(crate) enum HirDialogueExpressionExpectation {
     /// to the later semantic layer.
     ContentApplication,
     Call,
+    MissingOperand(crate::source_index::HirExprSourceRole),
     PostfixIndexCandidate {
         owner: ExprId,
         role: SyntheticRole,

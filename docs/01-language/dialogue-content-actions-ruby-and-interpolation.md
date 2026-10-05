@@ -468,6 +468,11 @@ alice: まぶしい……[call flash(color=rgb("#ffffff"), time=90ms)][p]
 
 Use `[mark @.name]` to place a zero-width local marker in the line. Handlers live in the line plan; this keeps text markup separate from effectful behavior.
 
+A mark selector is a local relative entity reference with exactly one suffix
+segment and no parent traversal. Malformed selectors and missing point-action
+payloads retain typed recovery and their authored source components for
+diagnostics. They cannot issue executable actions or entries in the mark catalog.
+
 ```arcw
 alice: 変な夢[mark @.keyword][p]
 with:

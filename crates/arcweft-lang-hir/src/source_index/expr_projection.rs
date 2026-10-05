@@ -433,6 +433,15 @@ fn validate_id_ref_role(
     let HirExprSourceRole::EntityReference(part) = role else {
         return not_applicable(owner, role);
     };
+    validate_id_ref_part(owner, role, reference, part)
+}
+
+fn validate_id_ref_part(
+    owner: ExprId,
+    role: HirExprSourceRole,
+    reference: &HirIdRefValue,
+    part: HirIdRefSourcePart,
+) -> Result<(), HirSourceQueryError> {
     match (reference, part) {
         (_, HirIdRefSourcePart::Whole)
         | (HirIdRefValue::Resolved(HirIdRef::Absolute(_)), HirIdRefSourcePart::AbsoluteMarker)
@@ -785,6 +794,13 @@ fn validate_dialogue_application_role(
             let HirDialogueNodeKind::PointAction(action) = node.kind() else {
                 return admit(owner, role, false);
             };
+            if let (
+                HirDialoguePointActionIdentity::RecoveredMark(reference),
+                HirDialoguePointActionSourcePart::Marker(part),
+            ) = (action.identity(), part)
+            {
+                return validate_id_ref_part(owner, role, reference, part);
+            }
             let applicable = matches!(
                 part,
                 HirDialoguePointActionSourcePart::Whole

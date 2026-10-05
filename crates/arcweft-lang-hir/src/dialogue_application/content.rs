@@ -7,7 +7,8 @@
 use std::collections::BTreeSet;
 
 use super::rich_text::{
-    HirDialogueControl, HirRichTextArgumentIssue, HirRichTextHostEvent, HirRichTextValue,
+    HirDialogueControl, HirRichTextArgumentIssue, HirRichTextHostEvent, HirRichTextIssue,
+    HirRichTextValue,
 };
 use super::{
     HirDialogueExpressionExpectation, HirDialogueInvariantError, HirDialogueOrdinalError,
@@ -15,7 +16,7 @@ use super::{
     HirRichTextCharge, validate_module,
 };
 use crate::identity::{ExprId, HirLimit, HirModuleId};
-use crate::leaf::HirIdSuffix;
+use crate::leaf::{HirIdRefValue, HirIdSuffix};
 use arcweft_lang_syntax::expressions::{
     SyntaxDialogueContentIssue, SyntaxDialogueControl, SyntaxLineBreakKind,
 };
@@ -225,15 +226,37 @@ impl HirDialoguePointAction {
             context
                 .require(HirDialogueTransactionRequirement::Expression {
                     id: expression,
-                    expected: HirDialogueExpressionExpectation::Call,
+                    expected: match self.payload {
+                        HirDialoguePointActionPayload::MissingCall(_)
+                        | HirDialoguePointActionPayload::MissingTimedCue(_) => {
+                            HirDialogueExpressionExpectation::MissingOperand(
+                                crate::source_index::HirExprSourceRole::DialoguePointAction {
+                                    ordinal: self.id.ordinal(),
+                                    part: crate::source_index::HirDialoguePointActionSourcePart::Payload,
+                                },
+                            )
+                        }
+                        _ => HirDialogueExpressionExpectation::Call,
+                    },
                 })
                 .map_err(HirDialogueTransactionError::Context)?;
         }
         Ok(())
     }
 
-    fn has_recovery(&self) -> bool {
-        self.arguments
+    /// Returns whether the action retains an invalid identity, missing payload,
+    /// or malformed argument rather than an executable point action.
+    pub fn has_recovery(&self) -> bool {
+        matches!(
+            self.identity,
+            HirDialoguePointActionIdentity::RecoveredMark(_)
+                | HirDialoguePointActionIdentity::Invalid(_)
+        ) || matches!(
+            self.payload,
+            HirDialoguePointActionPayload::MissingCall(_)
+                | HirDialoguePointActionPayload::MissingTimedCue(_)
+        ) || self
+            .arguments
             .iter()
             .any(|argument| argument.issue().is_some())
     }
@@ -245,6 +268,10 @@ pub enum HirDialoguePointActionIdentity {
     Control(HirDialogueControl),
     Mark(HirDialogueMarkName),
     Host(HirRichTextHostEvent),
+    /// Invalid mark-local selector, retaining its lexer-owned reference shape.
+    RecoveredMark(HirIdRefValue),
+    /// Invalid point-action identity retained for source-owned diagnostics.
+    Invalid(HirRichTextIssue),
 }
 
 /// Optional call payload owned by a point action.
@@ -253,12 +280,17 @@ pub enum HirDialoguePointActionPayload {
     None,
     Call(ExprId),
     TimedCue(ExprId),
+    MissingCall(ExprId),
+    MissingTimedCue(ExprId),
 }
 
 impl HirDialoguePointActionPayload {
     pub const fn expression(self) -> Option<ExprId> {
         match self {
-            Self::Call(expression) | Self::TimedCue(expression) => Some(expression),
+            Self::Call(expression)
+            | Self::TimedCue(expression)
+            | Self::MissingCall(expression)
+            | Self::MissingTimedCue(expression) => Some(expression),
             Self::None => None,
         }
     }

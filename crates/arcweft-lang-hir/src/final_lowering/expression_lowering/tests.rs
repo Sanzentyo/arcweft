@@ -51,6 +51,8 @@ mod dialogue_candidate_control;
 mod dialogue_desugaring;
 #[path = "tests/dialogue_init.rs"]
 mod dialogue_init;
+#[path = "tests/dialogue_point_recovery.rs"]
+mod dialogue_point_recovery;
 #[path = "tests/identity.rs"]
 mod identity;
 #[path = "tests/select.rs"]
