@@ -201,7 +201,7 @@ fn check_json_reports_compiler_pipeline_summary() {
     let path = temp_arcw(
         "valid-json",
         r#"
-flow opening {
+flow opening() -> String {
     return "done"
 }
 "#,
@@ -220,23 +220,6 @@ flow opening {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("\"status\": \"ok\"")
-            && stdout.contains("\"flows\": 1")
-            && stdout.contains("\"line_task_groups\"")
-            && stdout.contains("\"typecheck\"")
-            && stdout.contains("\"borrow_check\"")
-            && stdout.contains("\"phases\"")
-            && stdout.contains("\"name\": \"parse\"")
-            && stdout.contains("\"name\": \"typecheck\"")
-            && stdout.contains("\"name\": \"line_task_lower\"")
-            && stdout.contains("\"name\": \"verify\"")
-            && stdout.contains("\"elapsed_ns\"")
-            && stdout.contains("\"judgments\"")
-            && stdout.contains("\"boundary_checks\"")
-            && stdout.contains("\"verifier_obligations\""),
-        "check JSON should include compiler timing and counter summary: {stdout}"
-    );
     assert_check_json_pipeline_summary(&stdout);
 }
 

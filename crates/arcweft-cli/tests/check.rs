@@ -238,23 +238,40 @@ fn assert_check_json_pipeline_summary(stdout: &str) {
         json["line_task_groups"].as_u64().is_some(),
         "line task group count should be numeric: {json}"
     );
-    assert_phase_timings_include(
-        &json["phases"],
-        &[
-            "read_source",
-            "parse",
-            "lint",
-            "lower_hir",
-            "resolve",
-            "readiness",
-            "typecheck",
-            "line_task_lower",
-            "verify",
-        ],
-    );
-
-    assert_typecheck_metrics(&json["typecheck"]);
-    assert_borrow_check_metrics(&json["borrow_check"]);
+    assert_eq!(json["emit"], "check");
+    assert!(json["output"].is_null());
+    for key in [
+        "syntax_warnings",
+        "verifier_diagnostics",
+        "obligations",
+        "unsafe_audits",
+    ] {
+        assert_eq!(json[key], 0, "successful check summary: {json}");
+    }
+    let semantic = &json["semantic"];
+    for key in ["types", "expressions", "statements", "items"] {
+        assert!(
+            semantic[key].as_u64().is_some_and(|count| count > 0),
+            "final semantic facts should be populated: {semantic}"
+        );
+    }
+    for key in [
+        "locals",
+        "captures",
+        "patterns",
+        "calls",
+        "call_diagnostics",
+        "logical_argument_checks",
+        "resolver_invocations",
+        "candidate_argument_probes",
+        "selected_replay_argument_visits",
+        "retained_argument_fact_publications",
+    ] {
+        assert!(
+            semantic[key].as_u64().is_some(),
+            "final semantic counters should be numeric: {semantic}"
+        );
+    }
 }
 
 fn assert_jit_check_json(

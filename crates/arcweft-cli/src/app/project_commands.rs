@@ -15,6 +15,7 @@ use super::runtime::profile::compile_accepted_project_runtime_plan;
 use super::runtime::run::watch_inputs;
 use super::runtime_artifact::accepted_build_snapshot;
 use super::shared::print_json;
+use crate::output::FinalSemanticProfileStats;
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleVirtualFileSpace,
     container::{BundleSectionKind, BundleView, ReadBudget, SectionDescriptor},
@@ -352,6 +353,8 @@ struct CompileReport {
     line_task_groups: usize,
     verifier_diagnostics: usize,
     obligations: usize,
+    unsafe_audits: usize,
+    semantic: FinalSemanticProfileStats,
 }
 
 impl CompileEmit {
@@ -2217,6 +2220,10 @@ pub(super) fn compile_command(options: &CompileOptions) -> Result<(), ExitCode> 
         line_task_groups: checked.runtime_plan().plan.line_task_groups().len(),
         verifier_diagnostics: verification.diagnostics.len(),
         obligations: verification.obligations.len(),
+        unsafe_audits: verification.unsafe_audit_count(),
+        semantic: FinalSemanticProfileStats::from(
+            checked.compiled.analysis_lease().final_analysis().as_ref(),
+        ),
     };
     if options.json {
         print_json(&report)?;
