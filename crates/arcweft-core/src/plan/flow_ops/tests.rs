@@ -1,5 +1,5 @@
 use super::*;
-use crate::line_task::{LineCancelRule, LineTaskCleanup, LineTaskGroup};
+use crate::line_task::{LineCancelRule, LineCleanupPolicy, LineTaskCleanup, LineTaskGroup};
 use crate::pattern::{RuntimePattern, RuntimePatternKind, RuntimeSemanticTypeId};
 use crate::plan::{
     RuntimeAwaitPendingObserver, RuntimeMatchArm, RuntimeMatchGuard, RuntimePlanBuilder,
@@ -70,11 +70,13 @@ fn roles_retain_empty_branches_and_sparse_guard_arm_ordinals() {
         [(Role::Then, 0), (Role::Else, 1)]
     );
     let mut returns = Vec::new();
-    visit_ops(&[op], &mut |op| {
+    try_visit_ops(&[op], &mut |op| {
         if let FlowOp::Return(label) = op {
             returns.push(label.clone());
         }
-    });
+        Ok::<(), ()>(())
+    })
+    .unwrap();
     assert_eq!(returns, ["else", "guard", "arm"]);
 }
 
@@ -105,8 +107,7 @@ fn observer_bodies_are_owned_in_source_order() {
     );
 }
 
-#[test]
-fn whole_plan_inventory_includes_activation_before_action_cancel_and_cleanup() {
+fn inventory_plan(activation: Box<[FlowOp]>) -> RuntimePlan {
     let mut builder = RuntimePlanBuilder::new();
     builder
         .admit_type_batch(
@@ -123,10 +124,7 @@ fn whole_plan_inventory_includes_activation_before_action_cancel_and_cleanup() {
     plan.line_task_groups.push(LineTaskGroup::new(
         Box::new([]),
         Box::new([]),
-        Box::new([FlowOp::Loop {
-            result: None,
-            body: vec![marker("activation")],
-        }]),
+        activation,
         ty(),
         Box::new([]),
         RuntimeLineTaskNodeId::from_zero_based(0).unwrap(),
@@ -139,9 +137,18 @@ fn whole_plan_inventory_includes_activation_before_action_cancel_and_cleanup() {
             Box::new([marker("completed")]),
             Box::new([marker("cancelled")]),
             Box::new([marker("failed")]),
-            Default::default(),
+            LineCleanupPolicy::default(),
         ),
     ));
+    plan
+}
+
+#[test]
+fn whole_plan_inventory_includes_activation_before_action_cancel_and_cleanup() {
+    let plan = inventory_plan(Box::new([FlowOp::Loop {
+        result: None,
+        body: vec![marker("activation")],
+    }]));
     let mut labels = Vec::new();
     plan.visit_flow_ops(&mut |op| {
         if let FlowOp::Return(label) = op {
@@ -172,7 +179,11 @@ fn deep_owned_bodies_visit_without_native_recursion() {
         }];
     }
     let mut count = 0;
-    visit_ops(&ops, &mut |_| count += 1);
+    try_visit_ops(&ops, &mut |_| {
+        count += 1;
+        Ok::<(), ()>(())
+    })
+    .unwrap();
     assert_eq!(count, depth + 1);
     // Drop the fixture iteratively too: this test concerns traversal, not the
     // recursive drop glue of a deliberately very deep synthetic tree.
@@ -181,4 +192,44 @@ fn deep_owned_bodies_visit_without_native_recursion() {
             ops = body;
         }
     }
+}
+
+#[test]
+fn visitor_rejection_stops_before_later_children_and_inventory_rows() {
+    let plan = inventory_plan(Box::new([FlowOp::If {
+        condition: value(),
+        then_ops: vec![marker("before"), marker("reject"), marker("after")],
+        else_ops: vec![marker("else")],
+    }]));
+    let mut visited = Vec::new();
+    let result = plan.try_visit_flow_ops(&mut |op| {
+        if let FlowOp::Return(label) = op {
+            visited.push(label.clone());
+            if label == "reject" {
+                return Err("first rejection");
+            }
+        }
+        Ok(())
+    });
+    assert_eq!(result, Err("first rejection"));
+    assert_eq!(visited, ["before", "reject"]);
+}
+
+#[test]
+fn executable_site_verification_rejects_the_first_nested_activation_reference() {
+    use crate::plan::entry_inventory::RuntimePlanError;
+    use crate::runtime_id::RuntimeProjectCallSiteId;
+    let first = RuntimeProjectCallSiteId::from_accepted_ordinal(NonZeroU32::MIN);
+    let later = RuntimeProjectCallSiteId::from_accepted_ordinal(NonZeroU32::new(2).unwrap());
+    let plan = inventory_plan(Box::new([FlowOp::If {
+        condition: value(),
+        then_ops: vec![FlowOp::Loop {
+            result: None,
+            body: vec![FlowOp::ProjectCall { site: first }],
+        }],
+        else_ops: vec![FlowOp::ProjectCall { site: later }],
+    }]));
+    assert!(
+        matches!(plan.verify(), Err(RuntimePlanError::MissingProjectCallSite { site }) if site == first)
+    );
 }

@@ -137,19 +137,35 @@ impl RuntimePlan {
     /// owning table; `ProjectCall` references do not recursively revisit them.
     /// This is a whole-plan inventory, not a path-sensitive execution trace.
     pub fn visit_flow_ops(&self, visitor: &mut impl FnMut(&FlowOp)) {
+        match self.try_visit_flow_ops(&mut |op| {
+            visitor(op);
+            Ok::<(), std::convert::Infallible>(())
+        }) {
+            Ok(()) => {}
+            Err(never) => match never {},
+        }
+    }
+
+    /// Visits the same owned inventory as [`Self::visit_flow_ops`], stopping
+    /// immediately at the first visitor error. Later children and table rows
+    /// are not visited after rejection.
+    pub fn try_visit_flow_ops<E>(
+        &self,
+        visitor: &mut impl FnMut(&FlowOp) -> Result<(), E>,
+    ) -> Result<(), E> {
         for flow in self.flows() {
-            visit_ops(flow.body().ops(), visitor);
+            try_visit_ops(flow.body().ops(), visitor)?;
         }
         for site in self.function_sites().iter() {
             if let RuntimeFunctionSiteBody::Executable(body) = site.body() {
-                visit_ops(body.ops(), visitor);
+                try_visit_ops(body.ops(), visitor)?;
             }
         }
         for group in self.line_task_groups() {
-            visit_ops(group.activation_ops(), visitor);
+            try_visit_ops(group.activation_ops(), visitor)?;
             for node in group.nodes() {
                 match node {
-                    LineTaskNode::Action(ops) => visit_ops(ops, visitor),
+                    LineTaskNode::Action(ops) => try_visit_ops(ops, visitor)?,
                     LineTaskNode::Sequence(_)
                     | LineTaskNode::Start(_)
                     | LineTaskNode::Parallel { .. }
@@ -157,20 +173,24 @@ impl RuntimePlan {
                 }
             }
             for rule in group.cancel_rules() {
-                visit_ops(rule.action(), visitor);
+                try_visit_ops(rule.action(), visitor)?;
             }
             for exit in [
                 ScopeExit::Completed,
                 ScopeExit::Cancelled,
                 ScopeExit::Failed,
             ] {
-                visit_ops(group.cleanup().actions(exit), visitor);
+                try_visit_ops(group.cleanup().actions(exit), visitor)?;
             }
         }
+        Ok(())
     }
 }
 
-fn visit_ops(ops: &[FlowOp], visitor: &mut impl FnMut(&FlowOp)) {
+fn try_visit_ops<E>(
+    ops: &[FlowOp],
+    visitor: &mut impl FnMut(&FlowOp) -> Result<(), E>,
+) -> Result<(), E> {
     enum Frame<'a> {
         Ops(std::slice::Iter<'a, FlowOp>),
         Children(RuntimeFlowOwnedBodies<'a>),
@@ -180,7 +200,7 @@ fn visit_ops(ops: &[FlowOp], visitor: &mut impl FnMut(&FlowOp)) {
         match frame {
             Frame::Ops(ops) => {
                 if let Some(op) = ops.next() {
-                    visitor(op);
+                    visitor(op)?;
                     stack.push(Frame::Children(op.owned_bodies()));
                 } else {
                     stack.pop();
@@ -195,6 +215,7 @@ fn visit_ops(ops: &[FlowOp], visitor: &mut impl FnMut(&FlowOp)) {
             }
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
