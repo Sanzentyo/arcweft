@@ -165,7 +165,8 @@ flow @flow.opening start {
         String::from_utf8_lossy(&output.stderr)
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("error[AWF0102 identity::decl_binding_mismatch]"));
+    assert!(stderr.contains("error[AWF0102]"), "{stderr}");
+    assert!(stderr.contains("identity::decl_binding_mismatch"), "{stderr}");
 }
 
 #[test]
@@ -173,7 +174,7 @@ fn check_allows_redundant_decl_identity_warning() {
     let path = temp_arcw(
         "redundant-decl-identity-warning",
         r"
-flow opening {
+flow @flow.opening opening {
 }
 ",
     );
@@ -191,8 +192,9 @@ flow opening {
     );
     assert!(
         String::from_utf8_lossy(&output.stderr)
-            .contains("warning[AWF0101 style::redundant_decl_identity]")
+            .contains("warning[AWF0101]")
     );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("style::redundant_decl_identity"));
 }
 
 #[test]
