@@ -31,6 +31,15 @@ pub struct AwaitedTaskSnapshot {
 
 load 時は `ensure_task` で再登録。
 
+Restartable dispatch の復元では、保存された完全な task correlation、logical epoch、
+dispatch sequence と publication frontier を保持する。復元先には新しい native host
+dispatch owner を用意し、再登録時に新しい `HostTaskAttempt` を発行する。
+adapter と worker はその寿命証拠を返す。
+保存前の worker packet は、公開座標と次の publication revision が一致していても
+復元後の attempt と一致しないため、scheduler・frontier・統計を更新する前に拒否する。
+稼働中の同一 dispatch の Join は既存 attempt を共有する。この host 内の証拠は保存・
+digest・公開イベント順序には含めず、成功した publication は従来の決定的な座標を使う。
+
 ## ReplayTrace
 
 ```rust
@@ -59,14 +68,11 @@ incoming patch
   → commit at frame boundary
 ```
 
-## Migration
+## 保存形式の契約
 
-```rust
-migrate save from "1.2.0" to "1.3.0" {
-    state.config.text_speed = 1.0
-    state.flags = state.flags ?? {}
-}
-```
+Arcweft が所有する save・snapshot・codec の contract version は `1`。
+未公開の内部形式は同じ version のまま更新し、旧形式の reader や migration 経路を
+並置しない。host 内の worker 寿命証拠は保存形式に含めない。
 
 ## Agent replay
 

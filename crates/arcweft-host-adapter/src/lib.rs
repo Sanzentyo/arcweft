@@ -69,19 +69,61 @@ pub trait HostAdapter: Send + Sync + std::fmt::Debug {
 /// its saved frontier instead of restarting at revision one.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HostTaskSubmissionContext {
-    dispatch: TaskDispatchIdentity,
+    attempt: HostTaskAttempt,
     next_publication_revision: TaskPublicationRevision,
     bundle_asset_context: Option<RuntimeBundleAssetContext>,
 }
 
+/// One live host dispatch. Its lifetime is deliberately not serialized: a
+/// restored dispatch can keep its saved journal coordinates while obtaining a
+/// fresh worker capability. Clones retain the same live attempt.
+#[derive(Clone, Debug)]
+pub struct HostTaskAttempt {
+    identity: TaskDispatchIdentity,
+    lifetime: Arc<HostTaskAttemptLifetime>,
+}
+
+#[derive(Debug)]
+struct HostTaskAttemptLifetime;
+
+impl HostTaskAttempt {
+    #[must_use]
+    pub const fn identity(&self) -> &TaskDispatchIdentity {
+        &self.identity
+    }
+}
+
+impl PartialEq for HostTaskAttempt {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.lifetime, &other.lifetime)
+    }
+}
+
+impl Eq for HostTaskAttempt {}
+
 impl HostTaskSubmissionContext {
     #[must_use]
-    pub const fn new(
+    pub fn new(
         dispatch: TaskDispatchIdentity,
         next_publication_revision: TaskPublicationRevision,
     ) -> Self {
+        Self::for_attempt(
+            HostTaskAttempt {
+                identity: dispatch,
+                lifetime: Arc::new(HostTaskAttemptLifetime),
+            },
+            next_publication_revision,
+        )
+    }
+
+    /// Continues an existing live worker capability at its next publication.
+    #[must_use]
+    pub const fn for_attempt(
+        attempt: HostTaskAttempt,
+        next_publication_revision: TaskPublicationRevision,
+    ) -> Self {
         Self {
-            dispatch,
+            attempt,
             next_publication_revision,
             bundle_asset_context: None,
         }
@@ -90,7 +132,12 @@ impl HostTaskSubmissionContext {
     /// The exact owner-issued attempt fence retained by every pending worker.
     #[must_use]
     pub const fn dispatch_identity(&self) -> &TaskDispatchIdentity {
-        &self.dispatch
+        self.attempt.identity()
+    }
+
+    #[must_use]
+    pub const fn attempt(&self) -> &HostTaskAttempt {
+        &self.attempt
     }
 
     #[must_use]
@@ -120,7 +167,7 @@ pub enum HostTaskSubmission {
 /// Completion emitted later by a pending host adapter task.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HostAdapterCompletion {
-    pub dispatch: TaskDispatchIdentity,
+    pub dispatch: HostTaskAttempt,
     /// Host-issued monotone revision within this task dispatch. Completion
     /// arrival order is never used to invent publication identity.
     pub publication_revision: TaskPublicationRevision,

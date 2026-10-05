@@ -22,8 +22,8 @@ use arcweft_core::value::{
 };
 use arcweft_host_adapter::{
     HostAdapter, HostAdapterCompletion, HostAdapterError, HostAdapterRegistry,
-    HostAdapterRegistryBuilder, HostCallArgs, HostCallPolicy, HostTaskCompletion, HostTaskMetrics,
-    HostTaskOutcome, HostTaskSubmission, HostTaskSubmissionContext,
+    HostAdapterRegistryBuilder, HostCallArgs, HostCallPolicy, HostTaskAttempt, HostTaskCompletion,
+    HostTaskMetrics, HostTaskOutcome, HostTaskSubmission, HostTaskSubmissionContext,
 };
 use arcweft_runtime_scheduler::{RuntimeScheduler, RuntimeSchedulerStats, TaskClassCounts};
 use rayon::prelude::*;
@@ -54,11 +54,11 @@ pub struct NativeTaskBridge {
     policy: HostCallPolicy,
     registry: HostAdapterRegistry,
     sequence: u64,
-    dispatches: BTreeMap<TaskId, TaskDispatchIdentity>,
+    dispatches: BTreeMap<TaskId, HostTaskAttempt>,
     publication_frontiers: BTreeMap<TaskId, TaskPublicationRevision>,
     scheduler: RuntimeScheduler,
     pending_host_calls: BTreeMap<TaskId, PendingRuntimeHostCall>,
-    retired_host_call_tasks: BTreeMap<TaskId, TaskDispatchIdentity>,
+    retired_host_call_tasks: BTreeMap<TaskId, HostTaskAttempt>,
     seen_host_calls: BTreeSet<arcweft_core::step::RuntimeHostCallId>,
     ready_host_call_results: Vec<RuntimeHostCallResult>,
     stats: NativeTaskStats,
@@ -66,7 +66,7 @@ pub struct NativeTaskBridge {
 
 #[derive(Clone, Debug)]
 struct PendingRuntimeHostCall {
-    dispatch: TaskDispatchIdentity,
+    dispatch: HostTaskAttempt,
     id: arcweft_core::step::RuntimeHostCallId,
     result: BoundTaskOutcome,
     publication_revision: Option<TaskPublicationRevision>,
@@ -297,9 +297,10 @@ impl NativeTaskBridge {
         let mut completions = self.registry.drain_completions();
         completions.sort_by(|left, right| {
             left.dispatch
+                .identity()
                 .correlation
                 .task_id
-                .cmp(&right.dispatch.correlation.task_id)
+                .cmp(&right.dispatch.identity().correlation.task_id)
                 .then_with(|| left.publication_revision.cmp(&right.publication_revision))
         });
         let mut owner_ids = BTreeSet::new();
@@ -317,7 +318,7 @@ impl NativeTaskBridge {
             outcome,
         } in completions
         {
-            let task_id = dispatch.correlation.task_id;
+            let task_id = dispatch.identity().correlation.task_id;
             if terminal_host_calls.contains(&task_id) {
                 self.stats = saved_stats;
                 return Err(match outcome.completion {
@@ -541,11 +542,12 @@ impl NativeTaskBridge {
             TaskSequence(self.sequence),
         );
         self.sequence = next_sequence;
-        match self.registry.submit_runtime_host_call(
-            &bound,
-            mode,
-            HostTaskSubmissionContext::new(dispatch.clone(), TaskPublicationRevision::FIRST),
-        ) {
+        let context = HostTaskSubmissionContext::new(dispatch, TaskPublicationRevision::FIRST);
+        let attempt = context.attempt().clone();
+        match self
+            .registry
+            .submit_runtime_host_call(&bound, mode, context)
+        {
             Some(HostTaskSubmission::Completed(outcome)) => {
                 Some(self.host_call_result(runtime_id, bound.outcome(), outcome))
             }
@@ -553,7 +555,7 @@ impl NativeTaskBridge {
                 self.pending_host_calls.insert(
                     task_id,
                     PendingRuntimeHostCall {
-                        dispatch,
+                        dispatch: attempt,
                         id: runtime_id,
                         result: bound.outcome().clone(),
                         publication_revision: None,
@@ -563,7 +565,7 @@ impl NativeTaskBridge {
             }
             Some(HostTaskSubmission::Pending) => {
                 self.registry.cancel(&task_id);
-                self.retired_host_call_tasks.insert(task_id, dispatch);
+                self.retired_host_call_tasks.insert(task_id, attempt);
                 Some(host_call_error(
                     runtime_id,
                     RuntimeHostCallErrorKind::Failed,
@@ -684,7 +686,7 @@ impl NativeTaskBridge {
                 .into());
             }
             let identity = if let Some(identity) = self.dispatches.get(&task.task_id()) {
-                identity.clone()
+                identity.identity().clone()
             } else {
                 let identity = TaskDispatchIdentity::new(
                     task.handle().correlation,
@@ -756,7 +758,7 @@ impl NativeTaskBridge {
                 );
             }
             if let Some(existing) = self.dispatches.get(&task.task_id())
-                && existing != identity
+                && existing.identity() != identity
             {
                 return Err(TaskCompletionError::DispatchMismatch {
                     task_id: task.task_id(),
@@ -793,6 +795,7 @@ impl NativeTaskBridge {
             );
             if !identities.insert(tuple)
                 || self.dispatches.iter().any(|(task_id, existing)| {
+                    let existing = existing.identity();
                     task_id != &task.task_id()
                         && existing.correlation.generation == identity.correlation.generation
                         && existing.logical_epoch == identity.logical_epoch
@@ -810,13 +813,18 @@ impl NativeTaskBridge {
                 .checked_add(1)
                 .ok_or(NativeTaskBridgeError::DispatchSequenceExhausted)?;
             next_sequence = next_sequence.max(following);
-            candidate_dispatches.insert(task.task_id(), identity.clone());
             candidate_start_frontiers.insert(task.task_id(), last_publication_revision);
-            let mut submission_context =
-                HostTaskSubmissionContext::new(identity.clone(), next_publication_revision);
+            let mut submission_context = match self.dispatches.get(&task.task_id()) {
+                Some(attempt) => HostTaskSubmissionContext::for_attempt(
+                    attempt.clone(),
+                    next_publication_revision,
+                ),
+                None => HostTaskSubmissionContext::new(identity.clone(), next_publication_revision),
+            };
             if let Some(context) = bundle_asset_context {
                 submission_context = submission_context.with_bundle_asset_context(context);
             }
+            candidate_dispatches.insert(task.task_id(), submission_context.attempt().clone());
             submission_contexts.insert(task.task_id(), submission_context);
             tasks.push(task);
         }
@@ -931,7 +939,7 @@ impl NativeTaskBridge {
         let owner_ids = completions
             .items
             .iter()
-            .map(|completion| completion.dispatch.correlation.task_id)
+            .map(|completion| completion.dispatch.identity().correlation.task_id)
             .collect::<BTreeSet<_>>();
         let mut events = completions
             .items
@@ -1031,7 +1039,7 @@ impl NativeTaskBridge {
         &mut self,
         completion: TaskCompletion,
     ) -> Result<TaskEvent, NativeTaskBridgeError> {
-        let task_id = completion.dispatch.correlation.task_id;
+        let task_id = completion.dispatch.identity().correlation.task_id;
         if self.dispatches.get(&task_id) != Some(&completion.dispatch) {
             return Err(TaskCompletionError::DispatchMismatch { task_id }.into());
         }
@@ -1061,7 +1069,7 @@ impl NativeTaskBridge {
             }
         })?;
         Ok(TaskEvent::from_dispatch(
-            dispatch,
+            dispatch.identity().clone(),
             publication_revision,
             kind,
         ))
@@ -1101,6 +1109,7 @@ impl NativeTaskBridge {
                 .ok_or_else(|| TaskCompletionError::DispatchMismatch {
                     task_id: event.correlation.task_id.clone(),
                 })?;
+            let identity = identity.identity();
             if identity.correlation != event.correlation
                 || identity.logical_epoch != event.cursor.logical_epoch
             {
@@ -1216,7 +1225,7 @@ struct TaskCompletions {
 
 #[derive(Clone, Debug)]
 struct TaskCompletion {
-    dispatch: TaskDispatchIdentity,
+    dispatch: HostTaskAttempt,
     completion: HostTaskCompletion,
     publication_revision: TaskPublicationRevision,
     stats: HostTaskMetrics,
@@ -1801,7 +1810,7 @@ fn complete_task(
     task: &BoundTaskSpec,
     context: HostTaskSubmissionContext,
 ) -> Option<TaskCompletion> {
-    let dispatch = context.dispatch_identity().clone();
+    let dispatch = context.attempt().clone();
     let publication_revision = context.next_publication_revision();
     match registry.submit(task, context) {
         Some(HostTaskSubmission::Completed(outcome)) => Some(TaskCompletion {
@@ -2144,21 +2153,21 @@ mod tests {
             };
             self.completions.lock().expect("completion queue").extend([
                 HostAdapterCompletion {
-                    dispatch: context.dispatch_identity().clone(),
+                    dispatch: context.attempt().clone(),
                     publication_revision: first,
                     outcome: completion(HostTaskCompletion::Progress(
                         Progress::new(0.25).expect("valid progress"),
                     )),
                 },
                 HostAdapterCompletion {
-                    dispatch: context.dispatch_identity().clone(),
+                    dispatch: context.attempt().clone(),
                     publication_revision: second,
                     outcome: completion(HostTaskCompletion::Progress(
                         Progress::new(0.75).expect("valid progress"),
                     )),
                 },
                 HostAdapterCompletion {
-                    dispatch: context.dispatch_identity().clone(),
+                    dispatch: context.attempt().clone(),
                     publication_revision: third,
                     outcome: completion(HostTaskCompletion::Ready(RuntimePayload::from("done"))),
                 },
@@ -2189,7 +2198,7 @@ mod tests {
                 .lock()
                 .expect("completion queue")
                 .push(HostAdapterCompletion {
-                    dispatch: context.dispatch_identity().clone(),
+                    dispatch: context.attempt().clone(),
                     publication_revision: context.next_publication_revision(),
                     outcome: HostTaskOutcome {
                         completion: HostTaskCompletion::Ready(RuntimePayload(RuntimeValue::Bool(
@@ -2231,7 +2240,7 @@ mod tests {
             self.completions.lock().expect("completion queue").extend(
                 [(first, 0.25), (second, 0.75)].map(|(publication_revision, ratio)| {
                     HostAdapterCompletion {
-                        dispatch: context.dispatch_identity().clone(),
+                        dispatch: context.attempt().clone(),
                         publication_revision,
                         outcome: HostTaskOutcome {
                             completion: HostTaskCompletion::Progress(
@@ -2486,7 +2495,12 @@ mod tests {
             )
             .unwrap();
         let original = queue.lock().unwrap().clone();
-        queue.lock().unwrap()[0].dispatch.sequence = TaskSequence(10);
+        let mut stale_identity = dispatch.clone();
+        stale_identity.sequence = TaskSequence(10);
+        queue.lock().unwrap()[0].dispatch =
+            HostTaskSubmissionContext::new(stale_identity, TaskPublicationRevision::FIRST)
+                .attempt()
+                .clone();
         let before_scheduler = bridge.scheduler.clone();
         let before_dispatches = bridge.dispatches.clone();
         let before_frontiers = bridge.publication_frontiers.clone();
@@ -2610,7 +2624,7 @@ mod tests {
                 .publication_revision
                 .is_none()
         );
-        assert_eq!(first.dispatch.correlation, correlation);
+        assert_eq!(first.dispatch.identity().correlation, correlation);
         queue.lock().unwrap().extend(original);
         assert!(bridge.poll_completions().unwrap().is_empty());
         assert!(bridge.pending_host_calls.is_empty());
@@ -2622,6 +2636,103 @@ mod tests {
             &RuntimeValue::String("done".into())
         );
         assert!(bridge.take_host_call_results().is_empty());
+    }
+
+    #[test]
+    fn restored_host_bridge_rejects_previous_worker_with_identical_saved_coordinates() {
+        let manifest = AdapterManifest::new("restore-worker", "Restore worker")
+            .with_host_call(AdapterHostCall::new("progress.echo", []));
+        let queue = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let registry = HostAdapterRegistry::builder()
+            .register(RevisionPublishingAdapter {
+                manifest: manifest.clone(),
+                completions: std::sync::Arc::clone(&queue),
+            })
+            .unwrap()
+            .build();
+        let task = fixture_spec(
+            HostTaskRequest::custom("progress", "echo", []),
+            TaskClass::Cpu,
+            TaskPriority(0),
+            CancelScopeId("test".into()),
+            TaskPolicy::AlwaysStart,
+            TaskOutcomeContract::new(RuntimeCheckedType::String),
+        );
+        let identity = TaskDispatchIdentity::new(
+            fixture_correlation(&task, GenerationId::new(14)),
+            LogicalEpoch(23),
+            TaskSequence(5),
+        );
+        let mut initial = NativeTaskBridge::try_with_registry(
+            NativeTaskBridge::policy_from_manifest(&manifest),
+            registry.clone(),
+        )
+        .unwrap();
+        initial
+            .complete_tasks_with_dispatches(
+                standalone_test_program(),
+                vec![native_dispatch(
+                    TaskDispatchStart::new(identity.clone(), None),
+                    task.clone(),
+                )],
+            )
+            .unwrap();
+        let stale = queue.lock().unwrap().pop().unwrap();
+        let progress = initial.poll_completions().unwrap();
+        assert_eq!(
+            progress
+                .iter()
+                .map(|event| event.cursor.sequence.0)
+                .collect::<Vec<_>>(),
+            [1, 2]
+        );
+        let mut restored = NativeTaskBridge::try_with_registry(
+            NativeTaskBridge::policy_from_manifest(&manifest),
+            registry,
+        )
+        .unwrap();
+        restored
+            .complete_tasks_with_dispatches(
+                standalone_test_program(),
+                vec![native_dispatch(
+                    TaskDispatchStart::new(
+                        identity.clone(),
+                        Some(TaskPublicationRevision::new(
+                            std::num::NonZeroU64::new(2).unwrap(),
+                        )),
+                    ),
+                    task,
+                )],
+            )
+            .unwrap();
+        let mut fresh = queue.lock().unwrap().remove(0);
+        fresh.outcome.completion = HostTaskCompletion::Ready(RuntimePayload::from("fresh"));
+        assert_eq!(fresh.dispatch.identity(), stale.dispatch.identity());
+        assert_ne!(fresh.dispatch, stale.dispatch);
+        assert_eq!(fresh.publication_revision, stale.publication_revision);
+        queue.lock().unwrap().clear();
+        queue.lock().unwrap().push(stale);
+        let before_scheduler = restored.scheduler.clone();
+        let before_dispatches = restored.dispatches.clone();
+        let before_frontiers = restored.publication_frontiers.clone();
+        let before_stats = restored.stats();
+        assert!(
+            matches!(restored.poll_completions(), Err(NativeTaskBridgeError::TaskCompletion(
+            TaskCompletionError::DispatchMismatch { task_id }
+        )) if task_id == identity.correlation.task_id)
+        );
+        assert_eq!(restored.scheduler, before_scheduler);
+        assert_eq!(restored.dispatches, before_dispatches);
+        assert_eq!(restored.publication_frontiers, before_frontiers);
+        assert_eq!(restored.stats(), before_stats);
+        queue.lock().unwrap().push(fresh);
+        let accepted = restored.poll_completions().unwrap();
+        assert_eq!(accepted.len(), 1);
+        assert_eq!(accepted[0].correlation, identity.correlation);
+        assert_eq!(accepted[0].cursor.logical_epoch, identity.logical_epoch);
+        assert_eq!(accepted[0].cursor.sequence.0, 3);
+        assert!(matches!(&accepted[0].kind, TaskEventKind::Ready(value)
+            if value.value() == &RuntimeValue::String("fresh".into())));
     }
 
     #[test]
