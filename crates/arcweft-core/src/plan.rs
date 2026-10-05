@@ -15,6 +15,7 @@ mod local_declarations;
 pub(crate) use local_declarations::RuntimeLocalDeclarationTableBuilder;
 mod nominal_record_domains;
 mod project_call;
+mod task_semantic;
 mod type_kind;
 mod type_scope;
 mod type_table;
@@ -120,6 +121,7 @@ pub use project_call::{
     RuntimeProjectCallRestMaterialization, RuntimeProjectCallRestMaterializationSeed,
     RuntimeProjectCallSite, RuntimeProjectCallSiteTable, RuntimeProjectCallSiteTableError,
 };
+pub use task_semantic::RuntimeTaskPlanSealLimits;
 pub use type_kind::{
     RuntimeAgentOperationalType, RuntimeAgentTypeProjection, RuntimeOperationalType,
     RuntimePlanRecordField, RuntimePlanSequenceKind, RuntimePlanTypeClass,

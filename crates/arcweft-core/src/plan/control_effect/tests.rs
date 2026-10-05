@@ -379,7 +379,12 @@ fn semantic_work_budget_rejects_before_publishing_a_digest() {
         children: Box::new([]),
     });
     assert_eq!(
-        RuntimeControlEffectContractTable::seal(vec![leaf.clone()], types.type_table(), 2),
+        RuntimeControlEffectContractTable::seal(
+            vec![leaf.clone()],
+            types.type_table(),
+            RuntimeTaskPlanSealLimits::default(),
+            &mut TaskSemanticMeter::new(2, 67_108_864),
+        ),
         Err(RuntimeControlEffectContractError::WorkLimit)
     );
     let child = RuntimeControlEffectContractId::for_index(1).unwrap();
@@ -389,7 +394,140 @@ fn semantic_work_budget_rejects_before_publishing_a_digest() {
         children: vec![child; 1000].into_boxed_slice(),
     });
     assert_eq!(
-        RuntimeControlEffectContractTable::seal(vec![parent, leaf], types.type_table(), 20),
+        RuntimeControlEffectContractTable::seal(
+            vec![parent, leaf],
+            types.type_table(),
+            RuntimeTaskPlanSealLimits::default(),
+            &mut TaskSemanticMeter::new(20, 67_108_864),
+        ),
         Err(RuntimeControlEffectContractError::WorkLimit)
     );
+}
+
+#[test]
+fn exact_shared_c_meter_charges_memoized_references_without_rehashing_children() {
+    let types = builder(false).finish().unwrap();
+    let leaf = RuntimeControlEffectContract::new(RuntimeControlEffectContractDefinition {
+        mode: RuntimeTaskControlMode::StraightLine,
+        effects: Box::new([]),
+        children: Box::new([]),
+    });
+    let child = RuntimeControlEffectContractId::for_index(1).unwrap();
+    let parent = RuntimeControlEffectContract::new(RuntimeControlEffectContractDefinition {
+        mode: RuntimeTaskControlMode::RuntimeAggregate,
+        effects: Box::new([]),
+        children: Box::new([child, child]),
+    });
+    // Two domains, two (mode/count/count) triples, two (ordinal/digest)
+    // references. Work: row visits2 + scalar atoms8 + edges2 + roles2 + digests2.
+    let bytes = u64::try_from(CONTROL_EFFECT_DOMAIN.len()).unwrap() * 2 + 18 + 72;
+    let mut meter = TaskSemanticMeter::new(16, bytes);
+    let table = RuntimeControlEffectContractTable::seal(
+        vec![parent.clone(), leaf.clone()],
+        types.type_table(),
+        RuntimeTaskPlanSealLimits::default(),
+        &mut meter,
+    )
+    .unwrap();
+    assert_eq!(meter.totals(), (16, bytes));
+    let mut generous = TaskSemanticMeter::new(100, bytes + 100);
+    let second = RuntimeControlEffectContractTable::seal(
+        vec![parent.clone(), leaf.clone()],
+        types.type_table(),
+        RuntimeTaskPlanSealLimits::default(),
+        &mut generous,
+    )
+    .unwrap();
+    assert_eq!(table, second, "validation limits are not semantic fields");
+    let mut short_work = TaskSemanticMeter::new(15, bytes);
+    assert_eq!(
+        RuntimeControlEffectContractTable::seal(
+            vec![parent.clone(), leaf.clone()],
+            types.type_table(),
+            RuntimeTaskPlanSealLimits::default(),
+            &mut short_work,
+        ),
+        Err(RuntimeControlEffectContractError::WorkLimit)
+    );
+    let mut short_bytes = TaskSemanticMeter::new(16, bytes - 1);
+    assert_eq!(
+        RuntimeControlEffectContractTable::seal(
+            vec![parent, leaf],
+            types.type_table(),
+            RuntimeTaskPlanSealLimits::default(),
+            &mut short_bytes,
+        ),
+        Err(RuntimeControlEffectContractError::TranscriptByteLimit)
+    );
+    assert_eq!(
+        short_bytes.totals(),
+        (0, 0),
+        "known byte bound rejects before traversal"
+    );
+}
+
+#[test]
+fn c_preflight_limits_precede_invalid_children_in_accepted_field_order() {
+    let types = builder(false).finish().unwrap();
+    let child = RuntimeControlEffectContractId::for_index(99).unwrap();
+    let row = RuntimeControlEffectContract::new(RuntimeControlEffectContractDefinition {
+        mode: RuntimeTaskControlMode::RuntimeAggregate,
+        effects: Box::new([]),
+        children: Box::new([child, child]),
+    });
+    let limits = RuntimeTaskPlanSealLimits {
+        max_children_per_row: 1,
+        ..RuntimeTaskPlanSealLimits::default()
+    };
+    let mut meter = TaskSemanticMeter::new(0, 0);
+    assert_eq!(
+        RuntimeControlEffectContractTable::seal(vec![row], types.type_table(), limits, &mut meter),
+        Err(RuntimeControlEffectContractError::ChildrenLimit {
+            index: 0,
+            actual: 2,
+            maximum: 1
+        })
+    );
+    assert_eq!(meter.totals(), (0, 0));
+}
+
+#[test]
+fn effect_row_limit_passes_at_boundary_and_rejects_one_more_before_encoding() {
+    let mut builder = builder(false);
+    let child = builder
+        .push_control_effect_contract(empty(RuntimeTaskControlMode::StraightLine))
+        .unwrap();
+    let parent = builder.push_control_effect_contract(seed(child)).unwrap();
+    let plan = builder.finish().unwrap();
+    let rows = plan
+        .control_effect_contracts()
+        .iter()
+        .map(|(row, _)| row.clone())
+        .collect::<Vec<_>>();
+    let limits = RuntimeTaskPlanSealLimits {
+        max_control_effect_rows: 1,
+        ..RuntimeTaskPlanSealLimits::default()
+    };
+    let mut meter = TaskSemanticMeter::new(limits.max_semantic_work, limits.max_transcript_bytes);
+    let accepted = RuntimeControlEffectContractTable::seal(
+        rows.clone(),
+        plan.type_table(),
+        limits,
+        &mut meter,
+    )
+    .unwrap();
+    assert_eq!(accepted.digest(parent.id()), digest(&plan, &parent).into());
+    let limits = RuntimeTaskPlanSealLimits {
+        max_control_effect_rows: 0,
+        ..limits
+    };
+    let mut meter = TaskSemanticMeter::new(limits.max_semantic_work, limits.max_transcript_bytes);
+    assert_eq!(
+        RuntimeControlEffectContractTable::seal(rows, plan.type_table(), limits, &mut meter),
+        Err(RuntimeControlEffectContractError::EffectRowsLimit {
+            actual: 1,
+            maximum: 0
+        })
+    );
+    assert_eq!(meter.totals(), (0, 0));
 }

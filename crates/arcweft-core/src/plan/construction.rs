@@ -2617,6 +2617,11 @@ impl RuntimePlanBuilder {
             })
             .collect();
         let type_table = self.types.finish()?;
+        let limits = super::RuntimeTaskPlanSealLimits::default();
+        let mut meter = crate::task::semantic::TaskSemanticMeter::new(
+            limits.max_semantic_work,
+            limits.max_transcript_bytes,
+        );
         let control_effect_contracts = super::RuntimeControlEffectContractTable::seal(
             self.control_effect_contracts
                 .into_iter()
@@ -2626,7 +2631,8 @@ impl RuntimePlanBuilder {
                 })
                 .collect::<Result<Vec<_>, _>>()?,
             &type_table,
-            crate::entry::RuntimeSchemaLimits::engine_default().max_validation_work,
+            limits,
+            &mut meter,
         )?;
         let project_call_sites = self.project_call_sites.into_inner().finish();
         let local_declarations = self.locals.finish();

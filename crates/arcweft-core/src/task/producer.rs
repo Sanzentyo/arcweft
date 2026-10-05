@@ -274,6 +274,12 @@ pub enum NeedProducerPlanError {
     ArgumentTypeCountMismatch,
     #[error("Need producer request string length exceeds the version-one semantic transcript")]
     RequestStringLengthOverflow,
+    #[error("Need producer semantic transcript arithmetic overflow")]
+    TranscriptArithmeticOverflow,
+    #[error("Need producer semantic work limit exceeded")]
+    SemanticWorkLimit,
+    #[error("Need producer semantic transcript byte limit exceeded")]
+    TranscriptByteLimit,
 }
 
 /// Complete static selected contract for one host-backed Need producer.
@@ -617,8 +623,15 @@ impl NeedProducerTaskPlan {
     /// This does not accept or read a stored self-digest. Count conversion remains
     /// checked at the encoder boundary even for constructor-validated plans.
     pub fn semantic_digest(&self) -> Result<TaskPlanSemanticDigest, NeedProducerPlanError> {
-        let mut encoder =
-            super::semantic::TaskSemanticEncoder::new(b"arcweft.need.producer-task-plan.v1\0");
+        let limits = crate::plan::RuntimeTaskPlanSealLimits::default();
+        let mut meter = super::semantic::TaskSemanticMeter::new(
+            limits.max_semantic_work,
+            limits.max_transcript_bytes,
+        );
+        let mut encoder = super::semantic::TaskSemanticEncoder::new(
+            b"arcweft.need.producer-task-plan.v1\0",
+            &mut meter,
+        );
         match &self.request {
             NeedProducerRequestProjection::AssetLoad {
                 kind,
@@ -642,6 +655,8 @@ impl NeedProducerTaskPlan {
                 encoder.string(operation);
                 encoder.count(argument_names.len());
                 for name in argument_names.iter() {
+                    encoder.enter_element();
+                    encoder.enter_role();
                     match name {
                         Some(name) => {
                             encoder.tag(1);
@@ -656,6 +671,8 @@ impl NeedProducerTaskPlan {
         }
         encoder.count(self.argument_types.len());
         for argument_type in &self.argument_types {
+            encoder.enter_element();
+            encoder.enter_role();
             encoder.digest(argument_type.as_bytes());
         }
         encoder.tag(match self.restart {
@@ -668,6 +685,15 @@ impl NeedProducerTaskPlan {
             }
             super::semantic::TaskSemanticEncodingError::StringLengthOverflow => {
                 NeedProducerPlanError::RequestStringLengthOverflow
+            }
+            super::semantic::TaskSemanticEncodingError::ArithmeticOverflow => {
+                NeedProducerPlanError::TranscriptArithmeticOverflow
+            }
+            super::semantic::TaskSemanticEncodingError::SemanticWork => {
+                NeedProducerPlanError::SemanticWorkLimit
+            }
+            super::semantic::TaskSemanticEncodingError::TranscriptBytes => {
+                NeedProducerPlanError::TranscriptByteLimit
             }
         })?;
         Ok(TaskPlanSemanticDigest::from_bytes(*digest.as_bytes()))
