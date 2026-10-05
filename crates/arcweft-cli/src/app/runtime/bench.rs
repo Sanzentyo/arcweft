@@ -104,8 +104,14 @@ pub(in crate::app) fn run_runtime_bench_steps_with_pure(
                         eprintln!("error: {error}");
                         ExitCode::FAILURE
                     })?;
-                host_call_results =
-                    host.complete_host_calls(executor.program_owner(), host_call_requests);
+                host_call_results = host.complete_host_calls(
+                    executor.program_owner(),
+                    LogicalEpoch(u64::try_from(step_index).map_err(|_| {
+                        eprintln!("error: runtime step index exceeds task epoch range");
+                        ExitCode::FAILURE
+                    })?),
+                    host_call_requests,
+                );
             }
         }
     }

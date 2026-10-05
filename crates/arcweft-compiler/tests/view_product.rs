@@ -1138,7 +1138,7 @@ view Main(first: Slot<i64 -> i64> = .Full(|input: i64| input + 1), value: Slot<i
             let before = runtime.snapshot().unwrap();
             let supplied = [RuntimeBinding {
                 name: "value".to_owned(),
-                value: RuntimeValue::Tuple(vec![RuntimeValue::NeedHandle(arcweft_core::task::NeedId("need.borrowed-view".to_owned()))]),
+                value: RuntimeValue::Tuple(vec![RuntimeValue::NeedHandle(borrowed_view_need())]),
             }];
             assert!(!runtime.evaluate(&handles, &supplied, false).diagnostics.is_empty());
             assert_eq!(runtime.snapshot().unwrap(), before);
@@ -5705,4 +5705,29 @@ fn affine_view_parameter_is_rejected_even_when_its_initial_value_is_empty_or_unu
             "{error:?}"
         );
     }
+}
+
+fn borrowed_view_need() -> arcweft_core::task::RuntimeNeedHandle {
+    use arcweft_core::{pattern::RuntimeCheckedType, task::*, value::RuntimeValue};
+    let outcome = TaskOutcomeContract::new(RuntimeCheckedType::Unit);
+    let producer = NeedProducerSpec::new(
+        NeedProducerFamily::HostAdapterTask,
+        NeedProducerContractDigest::from_bytes([1; 32]),
+        TaskPlanSemanticDigest::from_bytes([2; 32]),
+        NeedProducerSiteDigest::from_bytes([3; 32]),
+        RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes()),
+        RuntimeValue::Tuple(vec![]).try_digest(1024).unwrap(),
+    );
+    RuntimeNeedHandle::try_from(TaskSpec {
+        generation: GenerationId::new(0),
+        producer: NeedProducerInstance::try_from(&producer).unwrap(),
+        class: TaskClass::Background,
+        priority: TaskPriority(0),
+        cancel_scope: CancelScopeId("view-fixture".into()),
+        policy: TaskPolicy::JoinSameKey,
+        outcome,
+        request: HostTaskRequest::custom("fixture", "view-input", []),
+        debug_label: "borrowed View input".into(),
+    })
+    .unwrap()
 }

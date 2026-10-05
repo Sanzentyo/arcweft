@@ -302,8 +302,8 @@ mod tests {
     };
     use arcweft_core::plan::{RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed};
     use arcweft_core::task::{
-        AssetRequest, GenerationId, TaskClass, TaskId, TaskKey, TaskOutcomeContract, TaskPolicy,
-        TaskPriority, TaskSpec,
+        AssetRequest, GenerationId, TaskClass, TaskOutcomeContract, TaskPolicy, TaskPriority,
+        TaskSpec,
     };
     use arcweft_core::value::{
         RuntimeAssetErrorValue, RuntimeAudioHandleValue, RuntimeBundleAssetArtifactDigest,
@@ -335,18 +335,26 @@ mod tests {
         let (program, image_result, voice_result) = asset_result_program();
         let owner = RuntimeProgramOwner::Plan(Arc::clone(&program));
 
-        broker.queue_dispatches(
-            vec![
-                asset_dispatch(context, 0, "image", "asset.image.good", image_result),
-                asset_dispatch(context, 1, "voice", "asset.voice.good", voice_result),
-            ],
-            &owner,
-        );
+        let dispatches = vec![
+            asset_dispatch(context, 0, "image", "asset.image.good", image_result),
+            asset_dispatch(context, 1, "voice", "asset.voice.good", voice_result),
+        ];
+        let correlations = dispatches
+            .iter()
+            .map(|dispatch| dispatch.task.handle().correlation)
+            .collect::<Vec<_>>();
+        broker.queue_dispatches(dispatches, &owner);
         let events = broker.drain_queued_task_events();
+        let event_for = |position: usize| {
+            events
+                .iter()
+                .find(|event| event.correlation == correlations[position])
+                .expect("each accepted dispatch publishes its own result")
+        };
         assert_eq!(events.len(), 2);
 
         let image = ready_result_payload(
-            events[0].kind.clone(),
+            event_for(0).kind.clone(),
             RuntimeBuiltinVariantCaseIdentity::ResultOk,
         )
         .expect("image load succeeds");
@@ -362,7 +370,7 @@ mod tests {
         );
 
         let voice = ready_result_payload(
-            events[1].kind.clone(),
+            event_for(1).kind.clone(),
             RuntimeBuiltinVariantCaseIdentity::ResultOk,
         )
         .expect("voice load succeeds");
@@ -390,20 +398,28 @@ mod tests {
         let (program, image_result, voice_result) = asset_result_program();
         let owner = RuntimeProgramOwner::Plan(program);
 
-        broker.queue_dispatches(
-            vec![
-                asset_dispatch(context, 0, "image", "asset.image.missing", image_result),
-                asset_dispatch(context, 1, "voice", "asset.voice.missing", voice_result),
-                asset_dispatch(context, 2, "image", "asset.image.malformed", image_result),
-                asset_dispatch(context, 3, "voice", "asset.voice.malformed", voice_result),
-            ],
-            &owner,
-        );
+        let dispatches = vec![
+            asset_dispatch(context, 0, "image", "asset.image.missing", image_result),
+            asset_dispatch(context, 1, "voice", "asset.voice.missing", voice_result),
+            asset_dispatch(context, 2, "image", "asset.image.malformed", image_result),
+            asset_dispatch(context, 3, "voice", "asset.voice.malformed", voice_result),
+        ];
+        let correlations = dispatches
+            .iter()
+            .map(|dispatch| dispatch.task.handle().correlation)
+            .collect::<Vec<_>>();
+        broker.queue_dispatches(dispatches, &owner);
         let events = broker.drain_queued_task_events();
+        let event_for = |position: usize| {
+            events
+                .iter()
+                .find(|event| event.correlation == correlations[position])
+                .expect("each accepted dispatch publishes its own result")
+        };
         assert_eq!(events.len(), 4);
 
         let image_missing = ready_result_payload(
-            events[0].kind.clone(),
+            event_for(0).kind.clone(),
             RuntimeBuiltinVariantCaseIdentity::ResultErr,
         )
         .expect("missing image is a completed domain result");
@@ -416,7 +432,7 @@ mod tests {
         );
 
         let voice_missing = ready_result_payload(
-            events[1].kind.clone(),
+            event_for(1).kind.clone(),
             RuntimeBuiltinVariantCaseIdentity::ResultErr,
         )
         .expect("missing voice is a completed domain result");
@@ -431,7 +447,7 @@ mod tests {
         assert_eq!(
             RuntimeAssetErrorValue::try_from_runtime_value(
                 &ready_result_payload(
-                    events[2].kind.clone(),
+                    event_for(2).kind.clone(),
                     RuntimeBuiltinVariantCaseIdentity::ResultErr,
                 )
                 .expect("malformed image has Result::Err")
@@ -444,7 +460,7 @@ mod tests {
         assert_eq!(
             RuntimeVoiceErrorValue::try_from_runtime_value(
                 &ready_result_payload(
-                    events[3].kind.clone(),
+                    event_for(3).kind.clone(),
                     RuntimeBuiltinVariantCaseIdentity::ResultErr,
                 )
                 .expect("malformed voice has Result::Err")
@@ -482,7 +498,7 @@ mod tests {
 
         assert!(matches!(
             broker.drain_queued_task_events()[0].kind,
-            TaskEventKind::Failed(_)
+            TaskEventKind::InfrastructureFailure(_)
         ));
     }
 
@@ -781,28 +797,54 @@ mod tests {
         id: &str,
         result_type: RuntimeSemanticTypeId,
     ) -> HostTaskDispatch {
-        let task = TaskSpec::new(
-            TaskId(format!("task.{sequence}")),
-            TaskKey(format!("asset.{kind}.{id}")),
-            TaskClass::AssetDecode,
-            TaskPriority(0),
-            CancelScopeId("asset-tests".to_owned()),
-            TaskPolicy::JoinSameKey,
-            HostTaskRequest::AssetLoad(AssetRequest {
-                id: id.to_owned(),
-                kind: kind.to_owned(),
+        use arcweft_core::task::{
+            NeedProducerContractDigest, NeedProducerFamily, NeedProducerInstance,
+            NeedProducerSiteDigest, NeedProducerSpec, RuntimeTypeSemanticDigest,
+            TaskAdmissionJournal, TaskPlanSemanticDigest,
+        };
+        let outcome = TaskOutcomeContract::program(result_type);
+        let producer = NeedProducerSpec::new(
+            NeedProducerFamily::HostAdapterTask,
+            NeedProducerContractDigest::from_bytes([1; 32]),
+            TaskPlanSemanticDigest::from_bytes([2; 32]),
+            NeedProducerSiteDigest::from_bytes([3; 32]),
+            RuntimeTypeSemanticDigest::from_bytes(*result_type.as_bytes()),
+            RuntimeValue::Tuple(vec![
+                RuntimeValue::String(kind.into()),
+                RuntimeValue::String(id.into()),
+            ])
+            .try_digest(1024)
+            .unwrap(),
+        );
+        let spec = TaskSpec {
+            generation: context.generation(),
+            producer: NeedProducerInstance::try_from(&producer).unwrap(),
+            class: TaskClass::AssetDecode,
+            priority: TaskPriority(0),
+            cancel_scope: CancelScopeId("asset-tests".into()),
+            policy: TaskPolicy::JoinSameKey,
+            outcome,
+            request: HostTaskRequest::AssetLoad(AssetRequest {
+                id: id.into(),
+                kind: kind.into(),
             }),
+            debug_label: id.into(),
+        };
+        let mut journal = TaskAdmissionJournal::default();
+        let handle = journal.ensure_task(spec).unwrap();
+        HostTaskDispatch::try_new(
+            arcweft_core::task::TaskDispatchStart::new(
+                arcweft_core::task::TaskDispatchIdentity::new(
+                    handle.correlation,
+                    arcweft_core::task::LogicalEpoch(0),
+                    arcweft_core::task::TaskSequence(sequence),
+                ),
+                None,
+            ),
+            journal.submission(handle).unwrap(),
+            Some(context),
         )
-        .with_outcome(TaskOutcomeContract::program(result_type));
-        let value = serde_json::json!({
-            "generation": context.generation(),
-            "logical_epoch": 0,
-            "sequence": sequence,
-            "task": serde_json::to_value(task).expect("task encodes"),
-            "last_publication_revision": null,
-            "bundle_asset_context": serde_json::to_value(context).expect("context encodes"),
-        });
-        serde_json::from_value(value).expect("host task dispatch decodes")
+        .expect("asset dispatch carries its accepted receipt and exact generation context")
     }
 
     fn ready_result_payload(

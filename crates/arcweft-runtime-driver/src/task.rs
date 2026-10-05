@@ -349,7 +349,58 @@ pub struct HostTaskDispatch {
     pub last_publication_revision: Option<TaskPublicationRevision>,
     pub(crate) bundle_asset_context: Option<RuntimeBundleAssetContext>,
 }
+
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum HostTaskDispatchBindingError {
+    #[error("dispatch correlation differs from its accepted submission")]
+    Correlation {
+        expected: arcweft_core::task::TaskCorrelation,
+        actual: arcweft_core::task::TaskCorrelation,
+    },
+    #[error("asset context generation {context:?} differs from accepted task generation {task:?}")]
+    AssetGeneration {
+        context: GenerationId,
+        task: GenerationId,
+    },
+    #[error("active dispatch has no remaining publication revision")]
+    PublicationExhausted,
+}
+
 impl HostTaskDispatch {
+    /// Binds one accepted receipt to its exact attempt and optional asset image.
+    pub fn try_new(
+        start: TaskDispatchStart,
+        task: TaskSubmission,
+        bundle_asset_context: Option<RuntimeBundleAssetContext>,
+    ) -> Result<Self, HostTaskDispatchBindingError> {
+        let identity = start.identity();
+        let expected = task.handle().correlation;
+        if identity.correlation != expected {
+            return Err(HostTaskDispatchBindingError::Correlation {
+                expected,
+                actual: identity.correlation,
+            });
+        }
+        if let Some(context) = bundle_asset_context
+            && context.generation() != expected.generation
+        {
+            return Err(HostTaskDispatchBindingError::AssetGeneration {
+                context: context.generation(),
+                task: expected.generation,
+            });
+        }
+        if start.next_publication_revision().is_none() {
+            return Err(HostTaskDispatchBindingError::PublicationExhausted);
+        }
+        Ok(Self {
+            logical_epoch: identity.logical_epoch,
+            sequence: identity.sequence,
+            task,
+            last_publication_revision: start.last_publication_revision(),
+            bundle_asset_context,
+        })
+    }
+
     #[must_use]
     pub fn identity(&self) -> TaskDispatchIdentity {
         TaskDispatchIdentity::new(
@@ -416,6 +467,35 @@ mod tests {
         assert_eq!(event.cursor.logical_epoch, identity.logical_epoch);
         assert_eq!(event.cursor.sequence, TaskSequence(1));
         assert_eq!(identity.sequence, TaskSequence(7));
+    }
+
+    #[test]
+    fn dispatch_binding_checks_full_receipt_and_reserves_next_publication() {
+        let dispatch = task_dispatch("binding", "scope", 7);
+        let accepted = dispatch.task.clone();
+        assert_eq!(
+            HostTaskDispatch::try_new(dispatch.dispatch_start(), accepted.clone(), None).unwrap(),
+            dispatch
+        );
+        let mut wrong = dispatch.identity();
+        wrong.correlation.generation = GenerationId::new(8);
+        assert!(matches!(
+            HostTaskDispatch::try_new(TaskDispatchStart::new(wrong, None), accepted.clone(), None),
+            Err(HostTaskDispatchBindingError::Correlation { .. })
+        ));
+        assert_eq!(
+            HostTaskDispatch::try_new(
+                TaskDispatchStart::new(
+                    dispatch.identity(),
+                    Some(TaskPublicationRevision::new(
+                        std::num::NonZeroU64::new(u64::MAX).unwrap()
+                    ))
+                ),
+                accepted,
+                None
+            ),
+            Err(HostTaskDispatchBindingError::PublicationExhausted)
+        );
     }
 
     #[test]

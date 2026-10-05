@@ -97,7 +97,17 @@ fn mcp_repl_command_lists_runtime_tasks_through_existing_owner() {
     assert_eq!(json["status"], "ok");
     assert_eq!(json["evidence"]["kind"], "tasks");
     assert_eq!(json["evidence"]["include_completed"], true);
-    assert_eq!(json["evidence"]["tasks"][0]["id"], "task.alpha");
+    assert_eq!(
+        json["evidence"]["tasks"][0]["correlation"],
+        serde_json::to_value(
+            active_task("task.alpha", "scope.view", 0)
+                .dispatch
+                .correlation
+        )
+        .unwrap()
+    );
+    assert_eq!(json["evidence"]["tasks"][0]["dispatch_epoch"], 12);
+    assert_eq!(json["evidence"]["tasks"][0]["dispatch_sequence"], 0);
     assert_eq!(json["evidence"]["tasks"][0]["status"], "running");
     assert_eq!(
         tasks.list_options.get(),
@@ -110,15 +120,32 @@ fn mcp_repl_command_lists_runtime_tasks_through_existing_owner() {
 #[test]
 fn mcp_repl_command_cancels_all_task_and_scope_targets() {
     let cases = [
-        (":cancel all", RuntimeTaskCancelTarget::All, "all"),
         (
-            ":cancel task task.alpha",
-            RuntimeTaskCancelTarget::Task("task.alpha".to_owned()),
+            ":cancel all".to_owned(),
+            RuntimeTaskCancelTarget::All,
+            "all",
+        ),
+        (
+            format!(
+                ":cancel task {}",
+                active_task("task.alpha", "scope.view", 0)
+                    .dispatch
+                    .correlation
+                    .task_id
+            ),
+            RuntimeTaskCancelTarget::Task(
+                active_task("task.alpha", "scope.view", 0)
+                    .dispatch
+                    .correlation
+                    .task_id,
+            ),
             "task",
         ),
         (
-            ":cancel scope scope.view",
-            RuntimeTaskCancelTarget::Scope("scope.view".to_owned()),
+            ":cancel scope scope.view".to_owned(),
+            RuntimeTaskCancelTarget::Scope(arcweft_core::task::CancelScopeId(
+                "scope.view".to_owned(),
+            )),
             "scope",
         ),
     ];
@@ -133,7 +160,7 @@ fn mcp_repl_command_cancels_all_task_and_scope_targets() {
         let result = McpReplCommandEndpoint::new(&mut session, &mut handler)
             .with_host(&mut host)
             .with_runtime_tasks(&mut tasks)
-            .execute(&request(input));
+            .execute(&request(&input));
 
         let json = result_json(&result);
         assert_eq!(json["status"], "ok");
@@ -228,13 +255,56 @@ impl ReplCommandHost for FakeHost {
     }
 }
 
-fn active_task(id: &str, scope: &str, sequence: u64) -> RuntimeTaskRecord {
+fn active_task(argument: &str, scope: &str, sequence: u64) -> RuntimeTaskRecord {
+    use arcweft_core::{
+        pattern::RuntimeCheckedType,
+        task::{
+            CancelScopeId, GenerationId, HostTaskRequest, LogicalEpoch, NeedProducerContractDigest,
+            NeedProducerFamily, NeedProducerInstance, NeedProducerSiteDigest, NeedProducerSpec,
+            RuntimeTypeSemanticDigest, TaskAdmissionJournal, TaskClass, TaskDispatchIdentity,
+            TaskOutcomeContract, TaskPlanSemanticDigest, TaskPolicy, TaskPriority,
+            TaskPublicationCursor, TaskSequence, TaskSpec,
+        },
+        value::RuntimeValue,
+    };
+    let outcome = TaskOutcomeContract::new(RuntimeCheckedType::Unit);
+    let values = RuntimeValue::Tuple(vec![RuntimeValue::String(argument.into())]);
+    let producer = NeedProducerSpec::new(
+        NeedProducerFamily::HostAdapterTask,
+        NeedProducerContractDigest::from_bytes([1; 32]),
+        TaskPlanSemanticDigest::from_bytes([2; 32]),
+        NeedProducerSiteDigest::from_bytes([3; 32]),
+        RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes()),
+        values.try_digest(1024).unwrap(),
+    );
+    let spec = TaskSpec {
+        generation: GenerationId::new(4),
+        producer: NeedProducerInstance::try_from(&producer).unwrap(),
+        class: TaskClass::Background,
+        priority: TaskPriority(0),
+        cancel_scope: CancelScopeId(scope.into()),
+        policy: TaskPolicy::JoinSameKey,
+        outcome,
+        request: HostTaskRequest::custom(
+            "fixture",
+            "record",
+            [RuntimeValue::String(argument.into()).into()],
+        ),
+        debug_label: argument.into(),
+    };
+    let mut journal = TaskAdmissionJournal::default();
+    let handle = journal.ensure_task(spec).unwrap();
     RuntimeTaskRecord {
-        id: id.to_owned(),
+        dispatch: TaskDispatchIdentity::new(
+            handle.correlation,
+            LogicalEpoch(12),
+            TaskSequence(sequence),
+        ),
         status: RuntimeTaskStatus::Running,
-        generation: Some(4),
-        logical_epoch: Some(12),
-        sequence: Some(sequence),
-        cancel_scope: Some(scope.to_owned()),
+        cursor: Some(TaskPublicationCursor {
+            logical_epoch: LogicalEpoch(12),
+            sequence: TaskSequence(2),
+        }),
+        cancel_scope: CancelScopeId(scope.into()),
     }
 }

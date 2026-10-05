@@ -17,6 +17,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 
 [dev-dependencies]
+arcweft-core = { workspace = true }
 arcweft-lang-sema = { workspace = true }
 
 [lints]

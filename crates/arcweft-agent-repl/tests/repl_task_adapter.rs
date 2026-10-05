@@ -31,22 +31,15 @@ fn repl_runtime_task_adapter_lists_runtime_owned_projection() {
     let mut delegate = ReadOnlyHost;
     let mut tasks = FakeRuntimeTaskOwner {
         records: vec![
-            RuntimeTaskRecord {
-                id: "task.pending".to_owned(),
-                status: RuntimeTaskStatus::Pending,
-                generation: Some(2),
-                logical_epoch: Some(11),
-                sequence: Some(0),
-                cancel_scope: Some("scope.pending".to_owned()),
-            },
-            RuntimeTaskRecord {
-                id: "task.done".to_owned(),
-                status: RuntimeTaskStatus::Completed,
-                generation: Some(1),
-                logical_epoch: Some(7),
-                sequence: Some(1),
-                cancel_scope: Some("scope.done".to_owned()),
-            },
+            task_record(
+                "pending",
+                2,
+                11,
+                0,
+                "scope.pending",
+                RuntimeTaskStatus::Pending,
+            ),
+            task_record("done", 1, 7, 1, "scope.done", RuntimeTaskStatus::Completed),
         ],
         ..FakeRuntimeTaskOwner::default()
     };
@@ -64,8 +57,8 @@ fn repl_runtime_task_adapter_lists_runtime_owned_projection() {
         ReplCommandEvidence::Tasks(evidence)
             if evidence.include_completed
                 && evidence.tasks.tasks.len() == 2
-                && evidence.tasks.tasks[0].id == "task.pending"
-                && evidence.tasks.tasks[1].id == "task.done"
+                && evidence.tasks.tasks[0].dispatch == task_record("pending", 2, 11, 0, "scope.pending", RuntimeTaskStatus::Pending).dispatch
+                && evidence.tasks.tasks[1].dispatch == task_record("done", 1, 7, 1, "scope.done", RuntimeTaskStatus::Completed).dispatch
     ));
 }
 
@@ -87,7 +80,9 @@ fn repl_runtime_task_adapter_cancels_through_runtime_owner() {
 
     assert_eq!(
         tasks.cancellations,
-        vec![RuntimeTaskCancelTarget::Scope("scope.pending".to_owned())]
+        vec![RuntimeTaskCancelTarget::Scope(
+            arcweft_core::task::CancelScopeId("scope.pending".to_owned())
+        )]
     );
     assert_eq!(result.status, ReplCommandStatus::Ok);
     assert!(matches!(
@@ -159,5 +154,56 @@ fn observation(tick: u64) -> ObservationEnvelope {
         actions: Vec::new(),
         signals: BTreeMap::new(),
         payload: serde_json::json!({ "tick": tick }),
+    }
+}
+
+fn task_record(
+    argument: &str,
+    generation: u64,
+    epoch: u64,
+    sequence: u64,
+    scope: &str,
+    status: RuntimeTaskStatus,
+) -> RuntimeTaskRecord {
+    use arcweft_core::{pattern::RuntimeCheckedType, task::*, value::RuntimeValue};
+    let outcome = TaskOutcomeContract::new(RuntimeCheckedType::Unit);
+    let arguments = RuntimeValue::Tuple(vec![RuntimeValue::String(argument.into())]);
+    let producer = NeedProducerSpec::new(
+        NeedProducerFamily::HostAdapterTask,
+        NeedProducerContractDigest::from_bytes([1; 32]),
+        TaskPlanSemanticDigest::from_bytes([2; 32]),
+        NeedProducerSiteDigest::from_bytes([3; 32]),
+        RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes()),
+        arguments.try_digest(1024).unwrap(),
+    );
+    let spec = TaskSpec {
+        generation: GenerationId::new(generation),
+        producer: NeedProducerInstance::try_from(&producer).unwrap(),
+        class: TaskClass::Background,
+        priority: TaskPriority(0),
+        cancel_scope: CancelScopeId(scope.into()),
+        policy: TaskPolicy::JoinSameKey,
+        outcome,
+        request: HostTaskRequest::custom(
+            "fixture",
+            "record",
+            [RuntimeValue::String(argument.into()).into()],
+        ),
+        debug_label: argument.into(),
+    };
+    let mut journal = TaskAdmissionJournal::default();
+    let handle = journal.ensure_task(spec).unwrap();
+    RuntimeTaskRecord {
+        dispatch: TaskDispatchIdentity::new(
+            handle.correlation,
+            LogicalEpoch(epoch),
+            TaskSequence(sequence),
+        ),
+        status,
+        cursor: status.is_terminal().then_some(TaskPublicationCursor {
+            logical_epoch: LogicalEpoch(epoch),
+            sequence: TaskSequence(3),
+        }),
+        cancel_scope: CancelScopeId(scope.into()),
     }
 }

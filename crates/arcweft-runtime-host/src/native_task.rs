@@ -58,7 +58,7 @@ pub struct NativeTaskBridge {
     publication_frontiers: BTreeMap<TaskId, TaskPublicationRevision>,
     scheduler: RuntimeScheduler,
     pending_host_calls: BTreeMap<TaskId, PendingRuntimeHostCall>,
-    retired_host_call_tasks: BTreeSet<TaskId>,
+    retired_host_call_tasks: BTreeMap<TaskId, TaskDispatchIdentity>,
     seen_host_calls: BTreeSet<arcweft_core::step::RuntimeHostCallId>,
     ready_host_call_results: Vec<RuntimeHostCallResult>,
     stats: NativeTaskStats,
@@ -66,6 +66,7 @@ pub struct NativeTaskBridge {
 
 #[derive(Clone, Debug)]
 struct PendingRuntimeHostCall {
+    dispatch: TaskDispatchIdentity,
     id: arcweft_core::step::RuntimeHostCallId,
     result: BoundTaskOutcome,
     publication_revision: Option<TaskPublicationRevision>,
@@ -79,8 +80,6 @@ pub enum NativeTaskBridgeError {
     TaskSubmission(#[from] TaskEnsureError),
     #[error("task completion rejected an unregistered or repeated event: {0}")]
     TaskCompletion(#[from] TaskCompletionError),
-    #[error("adapter returned the same task completion twice in one batch: {task_id:?}")]
-    DuplicateAdapterCompletion { task_id: TaskId },
     #[error("native host task dispatch identity sequence is exhausted")]
     DispatchSequenceExhausted,
     #[error("task {task_id:?} publication revision is exhausted")]
@@ -229,7 +228,7 @@ impl NativeTaskBridge {
             publication_frontiers: BTreeMap::new(),
             scheduler: RuntimeScheduler::default(),
             pending_host_calls: BTreeMap::new(),
-            retired_host_call_tasks: BTreeSet::new(),
+            retired_host_call_tasks: BTreeMap::new(),
             seen_host_calls: BTreeSet::new(),
             ready_host_call_results: Vec::new(),
             stats: NativeTaskStats::default(),
@@ -297,18 +296,12 @@ impl NativeTaskBridge {
     pub fn poll_completions(&mut self) -> Result<Vec<TaskEvent>, NativeTaskBridgeError> {
         let mut completions = self.registry.drain_completions();
         completions.sort_by(|left, right| {
-            left.task_id
-                .cmp(&right.task_id)
+            left.dispatch
+                .correlation
+                .task_id
+                .cmp(&right.dispatch.correlation.task_id)
                 .then_with(|| left.publication_revision.cmp(&right.publication_revision))
         });
-        if let Some(pair) = completions.windows(2).find(|pair| {
-            pair[0].task_id == pair[1].task_id
-                && self.pending_host_calls.contains_key(&pair[0].task_id)
-        }) {
-            return Err(NativeTaskBridgeError::DuplicateAdapterCompletion {
-                task_id: pair[0].task_id.clone(),
-            });
-        }
         let mut owner_ids = BTreeSet::new();
         let mut host_results = Vec::new();
         let mut host_call_progress_metrics = Vec::new();
@@ -316,38 +309,66 @@ impl NativeTaskBridge {
         let saved_stats = self.stats;
         let saved_sequence = self.sequence;
         let mut pending_host_calls_after = self.pending_host_calls.clone();
+        let mut terminal_host_calls = BTreeSet::new();
         let mut task_events = Vec::new();
         for HostAdapterCompletion {
-            task_id,
+            dispatch,
             publication_revision,
             outcome,
         } in completions
         {
+            let task_id = dispatch.correlation.task_id;
+            if terminal_host_calls.contains(&task_id) {
+                self.stats = saved_stats;
+                return Err(match outcome.completion {
+                    HostTaskCompletion::Progress(_) => {
+                        TaskCompletionError::EventAfterTerminal { task_id }
+                    }
+                    _ => TaskCompletionError::DuplicateTerminalEvent { task_id },
+                }
+                .into());
+            }
             if let Some(mut pending) = pending_host_calls_after.get(&task_id).cloned() {
-                if pending
-                    .publication_revision
-                    .is_some_and(|previous| publication_revision <= previous)
-                    || pending.publication_revision.is_none()
-                        && publication_revision != TaskPublicationRevision::FIRST
-                {
+                if pending.dispatch != dispatch {
+                    self.stats = saved_stats;
+                    return Err(TaskCompletionError::DispatchMismatch { task_id }.into());
+                }
+                let expected = pending.publication_revision.map_or(
+                    Some(TaskPublicationRevision::FIRST),
+                    TaskPublicationRevision::checked_next,
+                );
+                if expected != Some(publication_revision) {
                     self.stats = saved_stats;
                     return Err(TaskCompletionError::StalePublication { task_id }.into());
+                }
+                if matches!(&outcome.completion, HostTaskCompletion::Progress(_))
+                    && publication_revision.checked_next().is_none()
+                {
+                    self.stats = saved_stats;
+                    return Err(
+                        TaskCompletionError::PublicationRevisionExhausted { task_id }.into(),
+                    );
                 }
                 pending.publication_revision = Some(publication_revision);
                 if matches!(&outcome.completion, HostTaskCompletion::Progress(_)) {
                     host_call_progress_metrics.push(outcome.metrics);
                     pending_host_calls_after.insert(task_id, pending);
                 } else {
-                    pending_host_calls_after.insert(task_id.clone(), pending.clone());
+                    terminal_host_calls.insert(task_id);
+                    pending_host_calls_after.insert(task_id, pending.clone());
                     host_results.push((task_id, pending, outcome));
                 }
-            } else if self.retired_host_call_tasks.contains(&task_id) {
+            } else if let Some(retired) = self.retired_host_call_tasks.get(&task_id) {
+                if retired != &dispatch {
+                    self.stats = saved_stats;
+                    return Err(TaskCompletionError::DispatchMismatch { task_id }.into());
+                }
                 retired_seen.push(task_id);
                 continue;
             } else {
                 owner_ids.insert(task_id.clone());
                 let event = match self.task_event(TaskCompletion {
-                    task_id,
+                    dispatch,
                     completion: outcome.completion,
                     publication_revision,
                     stats: outcome.metrics,
@@ -415,11 +436,12 @@ impl NativeTaskBridge {
     pub fn complete_host_calls(
         &mut self,
         program: RuntimeProgramOwner,
+        logical_epoch: LogicalEpoch,
         requests: Vec<RuntimeHostCallRequest>,
     ) -> Vec<RuntimeHostCallResult> {
         let mut results = requests
             .into_iter()
-            .filter_map(|request| self.complete_host_call(program.clone(), request))
+            .filter_map(|request| self.complete_host_call(program.clone(), logical_epoch, request))
             .collect::<Vec<_>>();
         results.sort_by(|left, right| left.id.cmp(&right.id));
         results
@@ -433,6 +455,7 @@ impl NativeTaskBridge {
     fn complete_host_call(
         &mut self,
         program: RuntimeProgramOwner,
+        logical_epoch: LogicalEpoch,
         request: RuntimeHostCallRequest,
     ) -> Option<RuntimeHostCallResult> {
         if !self.seen_host_calls.insert(request.id.clone()) {
@@ -505,10 +528,23 @@ impl NativeTaskBridge {
                 "host-call result type does not match the registered adapter manifest",
             ));
         }
+        let Some(next_sequence) = self.sequence.checked_add(1) else {
+            return Some(host_call_error(
+                runtime_id,
+                RuntimeHostCallErrorKind::Failed,
+                "native host task dispatch identity sequence is exhausted",
+            ));
+        };
+        let dispatch = TaskDispatchIdentity::new(
+            bound.handle().correlation,
+            logical_epoch,
+            TaskSequence(self.sequence),
+        );
+        self.sequence = next_sequence;
         match self.registry.submit_runtime_host_call(
             &bound,
             mode,
-            HostTaskSubmissionContext::new(TaskPublicationRevision::FIRST),
+            HostTaskSubmissionContext::new(dispatch.clone(), TaskPublicationRevision::FIRST),
         ) {
             Some(HostTaskSubmission::Completed(outcome)) => {
                 Some(self.host_call_result(runtime_id, bound.outcome(), outcome))
@@ -517,6 +553,7 @@ impl NativeTaskBridge {
                 self.pending_host_calls.insert(
                     task_id,
                     PendingRuntimeHostCall {
+                        dispatch,
                         id: runtime_id,
                         result: bound.outcome().clone(),
                         publication_revision: None,
@@ -526,7 +563,7 @@ impl NativeTaskBridge {
             }
             Some(HostTaskSubmission::Pending) => {
                 self.registry.cancel(&task_id);
-                self.retired_host_call_tasks.insert(task_id);
+                self.retired_host_call_tasks.insert(task_id, dispatch);
                 Some(host_call_error(
                     runtime_id,
                     RuntimeHostCallErrorKind::Failed,
@@ -775,7 +812,8 @@ impl NativeTaskBridge {
             next_sequence = next_sequence.max(following);
             candidate_dispatches.insert(task.task_id(), identity.clone());
             candidate_start_frontiers.insert(task.task_id(), last_publication_revision);
-            let mut submission_context = HostTaskSubmissionContext::new(next_publication_revision);
+            let mut submission_context =
+                HostTaskSubmissionContext::new(identity.clone(), next_publication_revision);
             if let Some(context) = bundle_asset_context {
                 submission_context = submission_context.with_bundle_asset_context(context);
             }
@@ -784,7 +822,7 @@ impl NativeTaskBridge {
         }
         for task in &tasks {
             if self.pending_host_calls.contains_key(&task.task_id())
-                || self.retired_host_call_tasks.contains(&task.task_id())
+                || self.retired_host_call_tasks.contains_key(&task.task_id())
             {
                 return Err(TaskEnsureError::TaskIdSpecificationConflict {
                     task_id: task.task_id(),
@@ -893,7 +931,7 @@ impl NativeTaskBridge {
         let owner_ids = completions
             .items
             .iter()
-            .map(|completion| completion.task_id.clone())
+            .map(|completion| completion.dispatch.correlation.task_id)
             .collect::<BTreeSet<_>>();
         let mut events = completions
             .items
@@ -993,6 +1031,10 @@ impl NativeTaskBridge {
         &mut self,
         completion: TaskCompletion,
     ) -> Result<TaskEvent, NativeTaskBridgeError> {
+        let task_id = completion.dispatch.correlation.task_id;
+        if self.dispatches.get(&task_id) != Some(&completion.dispatch) {
+            return Err(TaskCompletionError::DispatchMismatch { task_id }.into());
+        }
         self.record_metrics(completion.stats);
         let kind = match completion.completion {
             HostTaskCompletion::Progress(value) => TaskEventKind::Progress(value),
@@ -1004,7 +1046,7 @@ impl NativeTaskBridge {
                 ))
             }
         };
-        self.event_for_task(&completion.task_id, completion.publication_revision, kind)
+        self.event_for_task(&task_id, completion.publication_revision, kind)
     }
 
     fn event_for_task(
@@ -1174,7 +1216,7 @@ struct TaskCompletions {
 
 #[derive(Clone, Debug)]
 struct TaskCompletion {
-    task_id: arcweft_core::task::TaskId,
+    dispatch: TaskDispatchIdentity,
     completion: HostTaskCompletion,
     publication_revision: TaskPublicationRevision,
     stats: HostTaskMetrics,
@@ -1722,14 +1764,22 @@ fn complete_dispatched_tasks(
         tasks
             .par_iter()
             .filter_map(|task| {
-                complete_task(registry, task, *submission_contexts.get(&task.task_id())?)
+                complete_task(
+                    registry,
+                    task,
+                    submission_contexts.get(&task.task_id())?.clone(),
+                )
             })
             .collect()
     } else {
         tasks
             .iter()
             .filter_map(|task| {
-                complete_task(registry, task, *submission_contexts.get(&task.task_id())?)
+                complete_task(
+                    registry,
+                    task,
+                    submission_contexts.get(&task.task_id())?.clone(),
+                )
             })
             .collect()
     };
@@ -1751,26 +1801,28 @@ fn complete_task(
     task: &BoundTaskSpec,
     context: HostTaskSubmissionContext,
 ) -> Option<TaskCompletion> {
+    let dispatch = context.dispatch_identity().clone();
+    let publication_revision = context.next_publication_revision();
     match registry.submit(task, context) {
         Some(HostTaskSubmission::Completed(outcome)) => Some(TaskCompletion {
-            task_id: task.task_id(),
+            dispatch: dispatch.clone(),
             completion: match outcome.completion {
                 HostTaskCompletion::Progress(_) => HostTaskCompletion::Failed(
                     "adapter returned progress from an immediate task submission".to_owned(),
                 ),
                 terminal => terminal,
             },
-            publication_revision: context.next_publication_revision(),
+            publication_revision,
             stats: outcome.metrics,
         }),
         Some(HostTaskSubmission::Pending) => None,
         None => Some(TaskCompletion {
-            task_id: task.task_id().clone(),
+            dispatch,
             completion: HostTaskCompletion::Failed(format!(
                 "adapter rejected the registered host-call request `{}`",
                 task.spec().request.host_call_id()
             )),
-            publication_revision: context.next_publication_revision(),
+            publication_revision,
             stats: HostTaskMetrics::default(),
         }),
     }
@@ -2034,8 +2086,9 @@ mod tests {
         }
     }
 
-    fn native_dispatch(start: TaskDispatchStart, task: TaskSpec) -> NativeTaskDispatch {
-        NativeTaskDispatch::new(start, task, None)
+    fn native_dispatch(start: TaskDispatchStart, mut task: TaskSpec) -> NativeTaskDispatch {
+        task.generation = start.identity().correlation.generation;
+        NativeTaskDispatch::new(start, admit_fixture_task(task), None)
     }
 
     #[derive(Debug)]
@@ -2047,7 +2100,7 @@ mod tests {
     #[derive(Debug)]
     struct RevisionPublishingAdapter {
         manifest: AdapterManifest,
-        completions: Mutex<Vec<HostAdapterCompletion>>,
+        completions: std::sync::Arc<Mutex<Vec<HostAdapterCompletion>>>,
     }
 
     #[derive(Debug)]
@@ -2079,8 +2132,7 @@ mod tests {
 
         fn submit(
             &self,
-            task: &TaskSpec,
-            _outcome: &BoundTaskOutcome,
+            task: &BoundTaskSpec,
             context: HostTaskSubmissionContext,
         ) -> Option<HostTaskSubmission> {
             let first = context.next_publication_revision();
@@ -2092,21 +2144,21 @@ mod tests {
             };
             self.completions.lock().expect("completion queue").extend([
                 HostAdapterCompletion {
-                    task_id: task.id.clone(),
+                    dispatch: context.dispatch_identity().clone(),
                     publication_revision: first,
                     outcome: completion(HostTaskCompletion::Progress(
                         Progress::new(0.25).expect("valid progress"),
                     )),
                 },
                 HostAdapterCompletion {
-                    task_id: task.id.clone(),
+                    dispatch: context.dispatch_identity().clone(),
                     publication_revision: second,
                     outcome: completion(HostTaskCompletion::Progress(
                         Progress::new(0.75).expect("valid progress"),
                     )),
                 },
                 HostAdapterCompletion {
-                    task_id: task.id.clone(),
+                    dispatch: context.dispatch_identity().clone(),
                     publication_revision: third,
                     outcome: completion(HostTaskCompletion::Ready(RuntimePayload::from("done"))),
                 },
@@ -2130,15 +2182,14 @@ mod tests {
 
         fn submit(
             &self,
-            task: &TaskSpec,
-            _outcome: &BoundTaskOutcome,
+            task: &BoundTaskSpec,
             context: HostTaskSubmissionContext,
         ) -> Option<HostTaskSubmission> {
             self.completions
                 .lock()
                 .expect("completion queue")
                 .push(HostAdapterCompletion {
-                    task_id: task.id.clone(),
+                    dispatch: context.dispatch_identity().clone(),
                     publication_revision: context.next_publication_revision(),
                     outcome: HostTaskOutcome {
                         completion: HostTaskCompletion::Ready(RuntimePayload(RuntimeValue::Bool(
@@ -2166,8 +2217,7 @@ mod tests {
 
         fn submit(
             &self,
-            task: &TaskSpec,
-            _outcome: &BoundTaskOutcome,
+            task: &BoundTaskSpec,
             context: HostTaskSubmissionContext,
         ) -> Option<HostTaskSubmission> {
             if self.complete_on_submit {
@@ -2181,7 +2231,7 @@ mod tests {
             self.completions.lock().expect("completion queue").extend(
                 [(first, 0.25), (second, 0.75)].map(|(publication_revision, ratio)| {
                     HostAdapterCompletion {
-                        task_id: task.id.clone(),
+                        dispatch: context.dispatch_identity().clone(),
                         publication_revision,
                         outcome: HostTaskOutcome {
                             completion: HostTaskCompletion::Progress(
@@ -2220,26 +2270,30 @@ mod tests {
             registry,
         )
         .expect("implemented policy");
-        let pending = TaskSpec::new(
-            TaskId("pending-value".to_owned()),
-            TaskKey("pending-value".to_owned()),
+        let pending = fixture_spec(
+            HostTaskRequest::custom("pending", "echo", []),
             TaskClass::Cpu,
             TaskPriority(0),
             CancelScopeId("test".to_owned()),
             TaskPolicy::JoinSameKey,
-            HostTaskRequest::custom("pending", "echo", []),
-        )
-        .with_outcome(TaskOutcomeContract::new(RuntimeCheckedType::String));
+            TaskOutcomeContract::new(RuntimeCheckedType::String),
+        );
 
         assert!(
             bridge
-                .complete_tasks(standalone_test_program(), vec![pending])
+                .complete_tasks(
+                    standalone_test_program(),
+                    (vec![pending])
+                        .into_iter()
+                        .map(admit_fixture_task)
+                        .collect()
+                )
                 .expect("pending task submission")
                 .is_empty()
         );
         let events = bridge.poll_completions().expect("pending completion");
         assert!(
-            matches!(events.as_slice(), [TaskEvent { kind: TaskEventKind::Failed(message), .. }] if message.contains("standalone task outcome rejected"))
+            matches!(events.as_slice(), [TaskEvent { kind: TaskEventKind::InfrastructureFailure(message), .. }] if message.diagnostic.as_str().contains("standalone task outcome rejected"))
         );
         assert!(bridge.poll_completions().unwrap().is_empty());
     }
@@ -2259,40 +2313,44 @@ mod tests {
             registry,
         )
         .expect("registered call implements selected policy");
-        let request = TaskSpec::new(
-            TaskId("declined-request".to_owned()),
-            TaskKey("declined-request".to_owned()),
+        let request = fixture_spec(
+            HostTaskRequest::custom("decline", "echo", []),
             TaskClass::Cpu,
             TaskPriority(0),
             CancelScopeId("test".to_owned()),
             TaskPolicy::AlwaysStart,
-            HostTaskRequest::custom("decline", "echo", []),
-        )
-        .with_outcome(TaskOutcomeContract::new(RuntimeCheckedType::String));
+            TaskOutcomeContract::new(RuntimeCheckedType::String),
+        );
 
         let events = bridge
-            .complete_tasks(standalone_test_program(), vec![request])
+            .complete_tasks(
+                standalone_test_program(),
+                (vec![request])
+                    .into_iter()
+                    .map(admit_fixture_task)
+                    .collect(),
+            )
             .expect("declined registered request becomes an event");
 
         assert!(matches!(
             events.as_slice(),
             [TaskEvent {
-                kind: TaskEventKind::Failed(message),
+                kind: TaskEventKind::InfrastructureFailure(message),
                 ..
-            }] if message.contains("adapter rejected the registered host-call request `decline.echo`")
+            }] if message.diagnostic.as_str().contains("adapter rejected the registered host-call request `decline.echo`")
         ));
         assert_eq!(bridge.stats().failed_tasks, 1);
         assert_eq!(bridge.stats().scheduler.in_flight, 0);
     }
 
     #[test]
-    fn progress_revisions_survive_bridge_and_joined_waiters_keep_their_dispatch() {
+    fn progress_revisions_preserve_each_generation_and_publication() {
         let manifest = AdapterManifest::new("progress-adapter", "Progress Adapter")
             .with_host_call(AdapterHostCall::new("progress.echo", []));
         let registry = HostAdapterRegistry::builder()
             .register(RevisionPublishingAdapter {
                 manifest: manifest.clone(),
-                completions: Mutex::new(Vec::new()),
+                completions: std::sync::Arc::new(Mutex::new(Vec::new())),
             })
             .expect("progress adapter")
             .build();
@@ -2301,29 +2359,25 @@ mod tests {
             registry,
         )
         .expect("implemented policy");
-        let make_task = |id: &str| {
-            TaskSpec::new(
-                TaskId(id.to_owned()),
-                TaskKey("shared-progress-task".to_owned()),
+        let make_task = |_id: &str| {
+            fixture_spec(
+                HostTaskRequest::custom("progress", "echo", []),
                 TaskClass::Cpu,
                 TaskPriority(0),
                 CancelScopeId("test".to_owned()),
                 TaskPolicy::JoinSameKey,
-                HostTaskRequest::custom("progress", "echo", []),
+                TaskOutcomeContract::new(RuntimeCheckedType::String),
             )
-            .with_outcome(TaskOutcomeContract::new(RuntimeCheckedType::String))
         };
         let owner_identity = TaskDispatchIdentity::new(
-            GenerationId::new(3),
+            fixture_correlation(&make_task("progress-owner"), GenerationId::new(3)),
             LogicalEpoch(5),
             TaskSequence(11),
-            TaskId("progress-owner".to_owned()),
         );
         let waiter_identity = TaskDispatchIdentity::new(
-            GenerationId::new(8),
+            fixture_correlation(&make_task("progress-waiter"), GenerationId::new(8)),
             LogicalEpoch(9),
             TaskSequence(27),
-            TaskId("progress-waiter".to_owned()),
         );
 
         assert!(
@@ -2362,8 +2416,9 @@ mod tests {
             (&waiter_identity, 3),
         ];
         for (event, (identity, revision)) in events.iter().zip(expected) {
-            assert_eq!(event.dispatch_identity(), identity.clone());
-            assert_eq!(event.publication_revision.get(), revision);
+            assert_eq!(event.correlation, identity.correlation);
+            assert_eq!(event.cursor.logical_epoch, identity.logical_epoch);
+            assert_eq!(event.cursor.sequence.0, revision);
         }
         assert!(matches!(
             events[0].kind,
@@ -2392,24 +2447,199 @@ mod tests {
     }
 
     #[test]
+    fn worker_attempt_fence_rejects_stale_packet_before_publication() {
+        let manifest = AdapterManifest::new("fenced-worker", "Fenced worker")
+            .with_host_call(AdapterHostCall::new("progress.echo", []));
+        let queue = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let registry = HostAdapterRegistry::builder()
+            .register(RevisionPublishingAdapter {
+                manifest: manifest.clone(),
+                completions: std::sync::Arc::clone(&queue),
+            })
+            .unwrap()
+            .build();
+        let mut bridge = NativeTaskBridge::try_with_registry(
+            NativeTaskBridge::policy_from_manifest(&manifest),
+            registry,
+        )
+        .unwrap();
+        let task = fixture_spec(
+            HostTaskRequest::custom("progress", "echo", []),
+            TaskClass::Cpu,
+            TaskPriority(0),
+            CancelScopeId("test".into()),
+            TaskPolicy::AlwaysStart,
+            TaskOutcomeContract::new(RuntimeCheckedType::String),
+        );
+        let dispatch = TaskDispatchIdentity::new(
+            fixture_correlation(&task, GenerationId::new(4)),
+            LogicalEpoch(7),
+            TaskSequence(11),
+        );
+        bridge
+            .complete_tasks_with_dispatches(
+                standalone_test_program(),
+                vec![native_dispatch(
+                    TaskDispatchStart::new(dispatch.clone(), None),
+                    task,
+                )],
+            )
+            .unwrap();
+        let original = queue.lock().unwrap().clone();
+        queue.lock().unwrap()[0].dispatch.sequence = TaskSequence(10);
+        let before_scheduler = bridge.scheduler.clone();
+        let before_dispatches = bridge.dispatches.clone();
+        let before_frontiers = bridge.publication_frontiers.clone();
+        let before_stats = bridge.stats();
+        assert!(
+            matches!(bridge.poll_completions(), Err(NativeTaskBridgeError::TaskCompletion(
+            TaskCompletionError::DispatchMismatch { task_id })
+        ) if task_id == dispatch.correlation.task_id)
+        );
+        assert_eq!(bridge.scheduler, before_scheduler);
+        assert_eq!(bridge.dispatches, before_dispatches);
+        assert_eq!(bridge.publication_frontiers, before_frontiers);
+        assert_eq!(bridge.stats(), before_stats);
+        queue.lock().unwrap().extend(original);
+        let accepted = bridge.poll_completions().unwrap();
+        assert_eq!(accepted.len(), 3);
+        assert!(
+            accepted
+                .iter()
+                .all(|event| event.correlation == dispatch.correlation
+                    && event.cursor.logical_epoch == dispatch.logical_epoch)
+        );
+        assert_eq!(
+            accepted
+                .iter()
+                .map(|event| event.cursor.sequence.0)
+                .collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
+        assert_eq!(dispatch.sequence, TaskSequence(11));
+    }
+
+    #[test]
+    fn pending_host_call_accepts_progress_then_ready_in_one_fenced_batch() {
+        use arcweft_adapter_context::manifest::{
+            AdapterCallableGroupIndex, AdapterFunctionSignature, AdapterParameterGroup,
+            AdapterTypeKind,
+        };
+        let call = AdapterHostCall::with_signature(
+            "progress.echo",
+            AdapterFunctionSignature::try_new(
+                vec![
+                    AdapterParameterGroup::try_new(
+                        AdapterCallableGroupIndex::try_from_usize(0).unwrap(),
+                        vec![],
+                    )
+                    .unwrap(),
+                ],
+                AdapterTypeKind::Need {
+                    item: Box::new(AdapterTypeKind::String),
+                },
+            )
+            .unwrap(),
+            [],
+        );
+        let contract = call.contract_digest();
+        let manifest = AdapterManifest::new("fenced-root", "Fenced root").with_host_call(call);
+        let queue = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let registry = HostAdapterRegistry::builder()
+            .register(RevisionPublishingAdapter {
+                manifest: manifest.clone(),
+                completions: std::sync::Arc::clone(&queue),
+            })
+            .unwrap()
+            .build();
+        let mut bridge = NativeTaskBridge::try_with_registry(
+            NativeTaskBridge::policy_from_manifest(&manifest),
+            registry,
+        )
+        .unwrap();
+        let result = RuntimeCheckedType::String.semantic_identity_digest();
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    result,
+                    RuntimePlanTypeProjection::String,
+                )],
+                [],
+            )
+            .unwrap();
+        let program = RuntimeProgramOwner::Plan(std::sync::Arc::new(builder.finish().unwrap()));
+        let request = fixture_host_call(arcweft_core::step::RuntimeHostCallStart {
+            id: arcweft_core::step::RuntimeHostCallId("root.progress".into()),
+            producer: arcweft_core::task::HostCallProducerDefinition {
+                contract: arcweft_core::task::NeedProducerContractDigest::from_bytes([1; 32]),
+                plan: arcweft_core::task::TaskPlanSemanticDigest::from_bytes([2; 32]),
+                site: arcweft_core::task::NeedProducerSiteDigest::from_bytes([3; 32]),
+            },
+            request: HostTaskRequest::Custom {
+                capability: arcweft_core::task::HostCapabilityId("progress".into()),
+                operation: "echo".into(),
+                args: vec![],
+                named_args: vec![],
+                manifest_contract: Some(contract),
+            },
+            result,
+            mode: RuntimeHostCallMode::Suspend,
+            deterministic: true,
+        });
+        let correlation = request.submission().handle().correlation;
+        assert!(
+            bridge
+                .complete_host_calls(program, LogicalEpoch(13), vec![request])
+                .is_empty()
+        );
+        let original = queue.lock().unwrap().clone();
+        let first = queue.lock().unwrap()[0].clone();
+        // Missing revision 2 must leave the completed value and pending owner unpublished.
+        queue.lock().unwrap().remove(1);
+        let before = bridge.stats();
+        assert!(
+            matches!(bridge.poll_completions(), Err(NativeTaskBridgeError::TaskCompletion(
+            TaskCompletionError::StalePublication { task_id })
+        ) if task_id == correlation.task_id)
+        );
+        assert_eq!(bridge.stats(), before);
+        assert!(bridge.ready_host_call_results.is_empty());
+        assert!(
+            bridge.pending_host_calls[&correlation.task_id]
+                .publication_revision
+                .is_none()
+        );
+        assert_eq!(first.dispatch.correlation, correlation);
+        queue.lock().unwrap().extend(original);
+        assert!(bridge.poll_completions().unwrap().is_empty());
+        assert!(bridge.pending_host_calls.is_empty());
+        let results = bridge.take_host_call_results();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id.0, "root.progress");
+        assert_eq!(
+            results[0].outcome.as_ref().unwrap().value(),
+            &RuntimeValue::String("done".into())
+        );
+        assert!(bridge.take_host_call_results().is_empty());
+    }
+
+    #[test]
     fn restored_host_bridge_continues_publication_revision_frontier() {
         let manifest = AdapterManifest::new("restore-adapter", "Restore Adapter")
             .with_host_call(AdapterHostCall::new("restore.echo", []));
-        let task = TaskSpec::new(
-            TaskId("restore-progress-task".to_owned()),
-            TaskKey("restore-progress-task".to_owned()),
+        let task = fixture_spec(
+            HostTaskRequest::custom("restore", "echo", []),
             TaskClass::Cpu,
             TaskPriority(0),
             CancelScopeId("test".to_owned()),
             TaskPolicy::AlwaysStart,
-            HostTaskRequest::custom("restore", "echo", []),
-        )
-        .with_outcome(TaskOutcomeContract::new(RuntimeCheckedType::String));
+            TaskOutcomeContract::new(RuntimeCheckedType::String),
+        );
         let identity = TaskDispatchIdentity::new(
-            GenerationId::new(14),
+            fixture_correlation(&task, GenerationId::new(14)),
             LogicalEpoch(23),
             TaskSequence(5),
-            task.id.clone(),
         );
 
         let initial_registry = HostAdapterRegistry::builder()
@@ -2439,8 +2669,8 @@ mod tests {
         );
         let progress = initial.poll_completions().expect("two progress events");
         assert_eq!(progress.len(), 2);
-        assert_eq!(progress[0].publication_revision.get(), 1);
-        assert_eq!(progress[1].publication_revision.get(), 2);
+        assert_eq!(progress[0].cursor.sequence.0, 1);
+        assert_eq!(progress[1].cursor.sequence.0, 2);
         assert!(
             progress
                 .iter()
@@ -2477,8 +2707,9 @@ mod tests {
             )
             .expect("restored re-ensure");
         assert_eq!(ready.len(), 1);
-        assert_eq!(ready[0].dispatch_identity(), identity);
-        assert_eq!(ready[0].publication_revision.get(), 3);
+        assert_eq!(ready[0].correlation, identity.correlation);
+        assert_eq!(ready[0].cursor.logical_epoch, identity.logical_epoch);
+        assert_eq!(ready[0].cursor.sequence.0, 3);
         assert!(matches!(
             &ready[0].kind,
             TaskEventKind::Ready(value)
@@ -2491,27 +2722,28 @@ mod tests {
         let registry = HostAdapterRegistry::builder().build();
         let mut bridge = NativeTaskBridge::try_with_registry(HostCallPolicy::default(), registry)
             .expect("empty policy needs no adapters");
-        let task = TaskSpec::new(
-            TaskId("bridge-duplicate".to_owned()),
-            TaskKey("bridge-duplicate".to_owned()),
+        let task = fixture_spec(
+            HostTaskRequest::custom("bridge", "echo", []),
             TaskClass::Cpu,
             TaskPriority(0),
             CancelScopeId("test".to_owned()),
             TaskPolicy::AlwaysStart,
-            HostTaskRequest::custom("bridge", "echo", []),
-        )
-        .with_outcome(TaskOutcomeContract::new(RuntimeCheckedType::String));
+            TaskOutcomeContract::new(RuntimeCheckedType::String),
+        );
         let identity = TaskDispatchIdentity::new(
-            GenerationId::new(0),
+            fixture_correlation(&task, GenerationId::new(0)),
             LogicalEpoch(0),
             TaskSequence(1),
-            task.id.clone(),
         );
         let mismatched = TaskDispatchIdentity::new(
-            GenerationId::new(0),
+            {
+                let mut correlation = fixture_correlation(&task, GenerationId::new(0));
+                correlation.producer_contract =
+                    arcweft_core::task::NeedProducerContractDigest::from_bytes([0x77; 32]);
+                correlation
+            },
             LogicalEpoch(0),
             TaskSequence(1),
-            TaskId("different-id".to_owned()),
         );
 
         assert!(matches!(
@@ -2542,7 +2774,7 @@ mod tests {
     }
 
     #[test]
-    fn conflicting_joined_task_result_does_not_replace_the_pending_owner() {
+    fn different_payload_producers_preserve_each_pending_owner() {
         let manifest = AdapterManifest::new("pending-join", "Pending Join")
             .with_host_call(AdapterHostCall::new("pending.echo", []));
         let registry = HostAdapterRegistry::builder()
@@ -2557,40 +2789,39 @@ mod tests {
             registry,
         )
         .unwrap();
-        let make_task = |id: &str, payload| {
-            TaskSpec::new(
-                TaskId(id.to_owned()),
-                TaskKey("same-producer".to_owned()),
+        let make_task = |payload| {
+            admit_fixture_task(fixture_spec(
+                HostTaskRequest::custom("pending", "echo", []),
                 TaskClass::Cpu,
                 TaskPriority(0),
-                CancelScopeId("test".to_owned()),
+                CancelScopeId("test".into()),
                 TaskPolicy::JoinSameKey,
-                HostTaskRequest::custom("pending", "echo", []),
-            )
-            .with_outcome(TaskOutcomeContract::new(payload))
-        };
-
-        assert!(
-            bridge
-                .complete_tasks(
-                    standalone_test_program(),
-                    vec![make_task("owner", RuntimeCheckedType::Bool)],
-                )
-                .unwrap()
-                .is_empty()
-        );
-        assert!(matches!(
-            bridge.complete_tasks(
-                standalone_test_program(),
-                vec![make_task("foreign-waiter", RuntimeCheckedType::String)],
-            ),
-            Err(NativeTaskBridgeError::TaskSubmission(
-                TaskEnsureError::JoinSpecificationConflict { .. }
+                TaskOutcomeContract::new(payload),
             ))
-        ));
+        };
+        let original = make_task(RuntimeCheckedType::Bool);
+        let other = make_task(RuntimeCheckedType::String);
+        assert_ne!(
+            original.task_key(),
+            other.task_key(),
+            "payload type belongs to producer identity"
+        );
+        bridge
+            .complete_tasks(
+                standalone_test_program(),
+                vec![original.clone(), other.clone()],
+            )
+            .unwrap();
         let events = bridge.poll_completions().unwrap();
+        assert_eq!(events.len(), 2);
+        assert!(events.iter().any(|event| event.correlation == original.handle().correlation
+            && matches!(&event.kind, TaskEventKind::Ready(value) if value.value() == &RuntimeValue::Bool(true))));
         assert!(
-            matches!(events.as_slice(), [TaskEvent { task_id, kind: TaskEventKind::Ready(value), .. }] if task_id.0 == "owner" && value.value() == &RuntimeValue::Bool(true))
+            events
+                .iter()
+                .any(|event| event.correlation == other.handle().correlation
+                    && matches!(&event.kind, TaskEventKind::InfrastructureFailure(failure)
+                if failure.kind == arcweft_core::task::RuntimeTaskFailureKind::AdapterProtocolViolation))
         );
     }
 
@@ -2608,20 +2839,23 @@ mod tests {
         let events = bridge
             .complete_tasks(
                 standalone_test_program(),
-                vec![task(
+                (vec![task(
                     "missing",
                     HostTaskRequest::SystemInfo(SystemInfoRequest {
                         kind: SystemInfoKind::CoreCount,
                     }),
-                )],
+                )])
+                .into_iter()
+                .map(admit_fixture_task)
+                .collect(),
             )
             .expect("rejected host call event");
 
         assert_eq!(events.len(), 1);
         assert!(matches!(
             &events[0].kind,
-            TaskEventKind::Failed(message)
-                if message.contains("host call `system.core_count` is not provided")
+            TaskEventKind::InfrastructureFailure(message)
+                if message.diagnostic.as_str().contains("host call `system.core_count` is not provided")
         ));
         assert_eq!(bridge.stats().failed_tasks, 1);
         assert_eq!(bridge.stats().scheduler.submitted, 0);
@@ -2642,12 +2876,15 @@ mod tests {
         let events = bridge
             .complete_tasks(
                 standalone_test_program(),
-                vec![task(
+                (vec![task(
                     "system",
                     HostTaskRequest::SystemInfo(SystemInfoRequest {
                         kind: SystemInfoKind::AvailableParallelism,
                     }),
-                )],
+                )])
+                .into_iter()
+                .map(admit_fixture_task)
+                .collect(),
             )
             .expect("completed host call event");
 
@@ -2809,20 +3046,31 @@ mod tests {
             .unwrap();
             let results = bridge.complete_host_calls(
                 program.clone(),
-                vec![RuntimeHostCallRequest {
-                    id: arcweft_core::step::RuntimeHostCallId("cli.exit.invalid".to_owned()),
-                    public_id: "cli.exit".to_owned(),
-                    capability: "cli".to_owned(),
-                    operation: "exit".to_owned(),
-                    contract,
-                    args: vec![RuntimePayload::new(RuntimeValue::Int(
-                        arcweft_core::value::RuntimeInt::i32(7),
-                    ))],
-                    named_args: Vec::new(),
-                    result: requested_result,
-                    mode: RuntimeHostCallMode::Immediate,
-                    deterministic: true,
-                }],
+                LogicalEpoch(13),
+                vec![fixture_host_call(
+                    arcweft_core::step::RuntimeHostCallStart {
+                        id: arcweft_core::step::RuntimeHostCallId("cli.exit.invalid".to_owned()),
+                        producer: arcweft_core::task::HostCallProducerDefinition {
+                            contract: arcweft_core::task::NeedProducerContractDigest::from_bytes(
+                                [1; 32],
+                            ),
+                            plan: arcweft_core::task::TaskPlanSemanticDigest::from_bytes([2; 32]),
+                            site: arcweft_core::task::NeedProducerSiteDigest::from_bytes([3; 32]),
+                        },
+                        request: HostTaskRequest::Custom {
+                            capability: arcweft_core::task::HostCapabilityId("cli".to_owned()),
+                            operation: "exit".to_owned(),
+                            manifest_contract: contract,
+                            args: vec![RuntimePayload::new(RuntimeValue::Int(
+                                arcweft_core::value::RuntimeInt::i32(7),
+                            ))],
+                            named_args: Vec::new(),
+                        },
+                        result: requested_result,
+                        mode: RuntimeHostCallMode::Immediate,
+                        deterministic: true,
+                    },
+                )],
             );
             assert!(matches!(
                 results.as_slice(),
@@ -2857,18 +3105,31 @@ mod tests {
             .expect("registered result type");
         let results = bridge.complete_host_calls(
             cli_test_program(result_type),
-            vec![RuntimeHostCallRequest {
-                id: arcweft_core::step::RuntimeHostCallId("cli.args.0".to_owned()),
-                public_id: "cli.args".to_owned(),
-                capability: "cli".to_owned(),
-                operation: "args".to_owned(),
-                contract: Some(standard::native_cli_manifest().host_calls()[0].contract_digest()),
-                args: Vec::new(),
-                named_args: Vec::new(),
-                result: result_type,
-                mode: RuntimeHostCallMode::Immediate,
-                deterministic: true,
-            }],
+            LogicalEpoch(13),
+            vec![fixture_host_call(
+                arcweft_core::step::RuntimeHostCallStart {
+                    id: arcweft_core::step::RuntimeHostCallId("cli.args.0".to_owned()),
+                    producer: arcweft_core::task::HostCallProducerDefinition {
+                        contract: arcweft_core::task::NeedProducerContractDigest::from_bytes(
+                            [1; 32],
+                        ),
+                        plan: arcweft_core::task::TaskPlanSemanticDigest::from_bytes([2; 32]),
+                        site: arcweft_core::task::NeedProducerSiteDigest::from_bytes([3; 32]),
+                    },
+                    request: HostTaskRequest::Custom {
+                        capability: arcweft_core::task::HostCapabilityId("cli".to_owned()),
+                        operation: "args".to_owned(),
+                        manifest_contract: Some(
+                            standard::native_cli_manifest().host_calls()[0].contract_digest(),
+                        ),
+                        args: Vec::new(),
+                        named_args: Vec::new(),
+                    },
+                    result: result_type,
+                    mode: RuntimeHostCallMode::Immediate,
+                    deterministic: true,
+                },
+            )],
         );
 
         assert_eq!(results.len(), 1);
@@ -2908,20 +3169,31 @@ mod tests {
             .expect("registered result type");
         let results = bridge.complete_host_calls(
             cli_test_program(result_type),
-            vec![RuntimeHostCallRequest {
-                id: arcweft_core::step::RuntimeHostCallId("cli.args.0".to_owned()),
-                public_id: "cli.args".to_owned(),
-                capability: "cli".to_owned(),
-                operation: "args".to_owned(),
-                contract: Some(arcweft_core::step::HostCallContractDigest::from_bytes(
-                    [0xa5; 32],
-                )),
-                args: Vec::new(),
-                named_args: Vec::new(),
-                result: result_type,
-                mode: RuntimeHostCallMode::Immediate,
-                deterministic: true,
-            }],
+            LogicalEpoch(13),
+            vec![fixture_host_call(
+                arcweft_core::step::RuntimeHostCallStart {
+                    id: arcweft_core::step::RuntimeHostCallId("cli.args.0".to_owned()),
+                    producer: arcweft_core::task::HostCallProducerDefinition {
+                        contract: arcweft_core::task::NeedProducerContractDigest::from_bytes(
+                            [1; 32],
+                        ),
+                        plan: arcweft_core::task::TaskPlanSemanticDigest::from_bytes([2; 32]),
+                        site: arcweft_core::task::NeedProducerSiteDigest::from_bytes([3; 32]),
+                    },
+                    request: HostTaskRequest::Custom {
+                        capability: arcweft_core::task::HostCapabilityId("cli".to_owned()),
+                        operation: "args".to_owned(),
+                        manifest_contract: Some(
+                            arcweft_core::step::HostCallContractDigest::from_bytes([0xa5; 32]),
+                        ),
+                        args: Vec::new(),
+                        named_args: Vec::new(),
+                    },
+                    result: result_type,
+                    mode: RuntimeHostCallMode::Immediate,
+                    deterministic: true,
+                },
+            )],
         );
 
         assert!(matches!(
@@ -2957,18 +3229,29 @@ mod tests {
             .expect("registered result type");
         let results = bridge.complete_host_calls(
             cli_test_program(result_type),
-            vec![RuntimeHostCallRequest {
-                id: arcweft_core::step::RuntimeHostCallId("cli.args.0".to_owned()),
-                public_id: "cli.args".to_owned(),
-                capability: "cli".to_owned(),
-                operation: "args".to_owned(),
-                contract: Some(manifest.host_calls()[0].contract_digest()),
-                args: Vec::new(),
-                named_args: Vec::new(),
-                result: RuntimeCheckedType::String.semantic_identity_digest(),
-                mode: RuntimeHostCallMode::Immediate,
-                deterministic: true,
-            }],
+            LogicalEpoch(13),
+            vec![fixture_host_call(
+                arcweft_core::step::RuntimeHostCallStart {
+                    id: arcweft_core::step::RuntimeHostCallId("cli.args.0".to_owned()),
+                    producer: arcweft_core::task::HostCallProducerDefinition {
+                        contract: arcweft_core::task::NeedProducerContractDigest::from_bytes(
+                            [1; 32],
+                        ),
+                        plan: arcweft_core::task::TaskPlanSemanticDigest::from_bytes([2; 32]),
+                        site: arcweft_core::task::NeedProducerSiteDigest::from_bytes([3; 32]),
+                    },
+                    request: HostTaskRequest::Custom {
+                        capability: arcweft_core::task::HostCapabilityId("cli".to_owned()),
+                        operation: "args".to_owned(),
+                        manifest_contract: Some(manifest.host_calls()[0].contract_digest()),
+                        args: Vec::new(),
+                        named_args: Vec::new(),
+                    },
+                    result: RuntimeCheckedType::String.semantic_identity_digest(),
+                    mode: RuntimeHostCallMode::Immediate,
+                    deterministic: true,
+                },
+            )],
         );
 
         assert!(matches!(
@@ -3223,20 +3506,18 @@ mod tests {
         );
     }
 
-    fn task(id: &str, request: HostTaskRequest) -> TaskSpec {
-        TaskSpec::new(
-            TaskId(id.to_owned()),
-            TaskKey(id.to_owned()),
+    fn task(_id: &str, request: HostTaskRequest) -> TaskSpec {
+        fixture_spec(
+            request,
             TaskClass::Cpu,
             TaskPriority(0),
             CancelScopeId("test".to_owned()),
             TaskPolicy::JoinSameKey,
-            request,
+            TaskOutcomeContract::new(RuntimeCheckedType::Result {
+                ok: Box::new(RuntimeCheckedType::String),
+                error: Box::new(RuntimeCheckedType::String),
+            }),
         )
-        .with_outcome(TaskOutcomeContract::new(RuntimeCheckedType::Result {
-            ok: Box::new(RuntimeCheckedType::String),
-            error: Box::new(RuntimeCheckedType::String),
-        }))
     }
 
     fn result_type(ok: RuntimeCheckedType) -> RuntimeCheckedType {
@@ -3248,7 +3529,7 @@ mod tests {
 
     fn manifest_file_task(
         manifest: &AdapterManifest,
-        id: &str,
+        _id: &str,
         operation: &str,
         named_arguments: impl IntoIterator<Item = (&'static str, RuntimeValue)>,
         result_type: RuntimeCheckedType,
@@ -3274,16 +3555,14 @@ mod tests {
                 .map(|(name, value)| (name.to_owned(), RuntimePayload::new(value))),
             contract,
         );
-        let task = TaskSpec::new(
-            TaskId(id.to_owned()),
-            TaskKey(id.to_owned()),
+        let task = fixture_spec(
+            request,
             TaskClass::Io,
             TaskPriority(0),
             CancelScopeId("native-file-test".to_owned()),
             TaskPolicy::AlwaysStart,
-            request,
-        )
-        .with_outcome(outcome);
+            outcome,
+        );
         (task, bound)
     }
 
@@ -3312,5 +3591,79 @@ mod tests {
             )
             .expect("CLI result graph");
         RuntimeProgramOwner::Plan(std::sync::Arc::new(builder.finish().expect("CLI program")))
+    }
+    fn fixture_spec(
+        request: HostTaskRequest,
+        class: TaskClass,
+        priority: TaskPriority,
+        cancel_scope: CancelScopeId,
+        policy: TaskPolicy,
+        outcome: TaskOutcomeContract,
+    ) -> TaskSpec {
+        use arcweft_core::task::{
+            NeedProducerContractDigest, NeedProducerFamily, NeedProducerInstance,
+            NeedProducerSiteDigest, NeedProducerSpec, RuntimeTypeSemanticDigest,
+            TaskPlanSemanticDigest,
+        };
+        let values = match &request {
+            HostTaskRequest::Custom {
+                args, named_args, ..
+            } => args
+                .iter()
+                .map(|arg| arg.value())
+                .chain(named_args.iter().map(|arg| arg.value.value()))
+                .map(|value| {
+                    assert!(
+                        value.ownership().permits_copy(),
+                        "this host fixture has Copy arguments"
+                    );
+                    value.clone()
+                })
+                .collect(),
+            HostTaskRequest::SystemInfo(_) => Vec::new(),
+            _ => panic!("fixture request requires an explicit typed argument inventory"),
+        };
+        let producer = NeedProducerSpec::new(
+            NeedProducerFamily::HostAdapterTask,
+            NeedProducerContractDigest::from_bytes([1; 32]),
+            TaskPlanSemanticDigest::from_bytes([2; 32]),
+            NeedProducerSiteDigest::from_bytes([3; 32]),
+            RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes()),
+            RuntimeValue::Tuple(values).try_digest(1024 * 1024).unwrap(),
+        );
+        TaskSpec {
+            generation: GenerationId::new(0),
+            producer: NeedProducerInstance::try_from(&producer).unwrap(),
+            class,
+            priority,
+            cancel_scope,
+            policy,
+            outcome,
+            debug_label: request.host_call_id(),
+            request,
+        }
+    }
+    fn admit_fixture_task(spec: TaskSpec) -> TaskSubmission {
+        let mut journal = arcweft_core::task::TaskAdmissionJournal::default();
+        let handle = journal.ensure_task(spec).unwrap();
+        journal.submission(handle).unwrap()
+    }
+    fn fixture_correlation(
+        spec: &TaskSpec,
+        generation: GenerationId,
+    ) -> arcweft_core::task::TaskCorrelation {
+        let mut spec = spec.clone();
+        spec.generation = generation;
+        admit_fixture_task(spec).handle().correlation
+    }
+    fn fixture_host_call(
+        start: arcweft_core::step::RuntimeHostCallStart,
+    ) -> RuntimeHostCallRequest {
+        let mut executor = arcweft_core::executor::ArcweftRuntimeExecutor::from_runtime_plan(
+            RuntimePlanBuilder::new().finish().unwrap(),
+            arcweft_core::executor::ArcweftExecutionTier::RuntimePlanVm,
+        )
+        .unwrap();
+        executor.admit_host_call(start).unwrap()
     }
 }

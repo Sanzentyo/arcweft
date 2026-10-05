@@ -577,8 +577,11 @@ fn run_runtime_steps_with_executor(
                     Some(asset_context),
                 )?,
             );
-            host_call_results
-                .extend(host.complete_host_calls(executor.program_owner(), host_call_requests));
+            host_call_results.extend(host.complete_host_calls(
+                executor.program_owner(),
+                logical_epoch(step_index)?,
+                host_call_requests,
+            ));
         }
     }
     Ok(RuntimeRunTrace {
@@ -1286,8 +1289,15 @@ mod tests {
         let HostTaskSubmission::Completed(outcome) = HostAdapter::submit(
             adapter,
             bound,
-            HostTaskSubmissionContext::new(TaskPublicationRevision::FIRST)
-                .with_bundle_asset_context(context),
+            HostTaskSubmissionContext::new(
+                arcweft_core::task::TaskDispatchIdentity::new(
+                    bound.handle().correlation,
+                    arcweft_core::task::LogicalEpoch(1),
+                    arcweft_core::task::TaskSequence(1),
+                ),
+                TaskPublicationRevision::FIRST,
+            )
+            .with_bundle_asset_context(context),
         )
         .expect("asset adapter handles task") else {
             panic!("bundle asset result is synchronous")

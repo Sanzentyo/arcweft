@@ -493,24 +493,68 @@ mod tests {
 
     #[test]
     fn repl_command_formatter_preserves_task_json() {
+        use arcweft_core::{
+            pattern::RuntimeCheckedType,
+            task::{
+                CancelScopeId, GenerationId, HostTaskRequest, LogicalEpoch,
+                NeedProducerContractDigest, NeedProducerFamily, NeedProducerInstance,
+                NeedProducerSiteDigest, NeedProducerSpec, RuntimeTypeSemanticDigest,
+                TaskAdmissionJournal, TaskClass, TaskDispatchIdentity, TaskOutcomeContract,
+                TaskPlanSemanticDigest, TaskPolicy, TaskPriority, TaskPublicationCursor,
+                TaskSequence, TaskSpec,
+            },
+            value::RuntimeValue,
+        };
+        let outcome = TaskOutcomeContract::new(RuntimeCheckedType::Unit);
+        let producer = NeedProducerSpec::new(
+            NeedProducerFamily::HostAdapterTask,
+            NeedProducerContractDigest::from_bytes([1; 32]),
+            TaskPlanSemanticDigest::from_bytes([2; 32]),
+            NeedProducerSiteDigest::from_bytes([3; 32]),
+            RuntimeTypeSemanticDigest::from_bytes(*outcome.payload_semantic_identity().as_bytes()),
+            RuntimeValue::Tuple(vec![]).try_digest(1024).unwrap(),
+        );
+        let spec = TaskSpec {
+            generation: GenerationId::new(4),
+            producer: NeedProducerInstance::try_from(&producer).unwrap(),
+            class: TaskClass::Background,
+            priority: TaskPriority(0),
+            cancel_scope: CancelScopeId("scope.view".into()),
+            policy: TaskPolicy::JoinSameKey,
+            outcome,
+            request: HostTaskRequest::custom("fixture", "record", []),
+            debug_label: "formatter fixture".into(),
+        };
+        let mut journal = TaskAdmissionJournal::default();
+        let handle = journal.ensure_task(spec).unwrap();
         let result = ReplCommandResult::ok(
             ReplCommandId::new(2),
             ReplCommandEvidence::Tasks(ReplTasksEvidence {
                 include_completed: false,
                 tasks: ReplTaskList {
                     tasks: vec![ReplTaskRecord {
-                        id: "task.alpha".to_owned(),
+                        dispatch: TaskDispatchIdentity::new(
+                            handle.correlation,
+                            LogicalEpoch(12),
+                            TaskSequence(7),
+                        ),
                         status: ReplTaskStatus::Running,
-                        generation: Some(4),
-                        logical_epoch: Some(12),
-                        sequence: Some(7),
-                        cancel_scope: Some("scope.view".to_owned()),
+                        cursor: Some(TaskPublicationCursor {
+                            logical_epoch: LogicalEpoch(12),
+                            sequence: TaskSequence(2),
+                        }),
+                        cancel_scope: CancelScopeId("scope.view".into()),
                     }],
                 },
             }),
         );
         let output = CliReplCommandFormatter.format_result(&result, &json_options());
-        assert_eq!(output.json["evidence"]["tasks"][0]["id"], "task.alpha");
+        assert_eq!(
+            output.json["evidence"]["tasks"][0]["correlation"],
+            serde_json::to_value(handle.correlation).unwrap()
+        );
+        assert_eq!(output.json["evidence"]["tasks"][0]["dispatch_sequence"], 7);
+        assert_eq!(output.json["evidence"]["tasks"][0]["cursor"]["sequence"], 2);
         assert_eq!(output.json["evidence"]["tasks"][0]["status"], "running");
         assert!(output.text.contains("\"kind\":\"tasks\""));
     }

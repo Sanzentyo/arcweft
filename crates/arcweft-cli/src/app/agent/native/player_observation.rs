@@ -359,6 +359,7 @@ fn advance_player_runtime(
             runtime.host.as_mut().map_or_else(Vec::new, |host| {
                 host.complete_host_calls(
                     runtime.session.program_owner(),
+                    arcweft_core::task::LogicalEpoch(clock.tick().0),
                     std::mem::take(&mut step.requested_host_calls),
                 )
             })

@@ -185,10 +185,11 @@ impl BundleRunnerSession {
                         Some(self.bundle_asset_context),
                     )?,
             );
-            self.host_call_results.extend(
-                self.host
-                    .complete_host_calls(self.executor.program_owner(), host_call_requests),
-            );
+            self.host_call_results.extend(self.host.complete_host_calls(
+                self.executor.program_owner(),
+                super::logical_epoch(index)?,
+                host_call_requests,
+            ));
         }
 
         self.steps.push(summary.clone());

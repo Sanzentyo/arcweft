@@ -11,8 +11,8 @@ use arcweft_core::pattern::{
 };
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::task::{
-    BoundTaskOutcome, BoundTaskSpec, HostTaskRequest, NamedHostArg, Progress, TaskId, TaskPolicy,
-    TaskPublicationRevision, TaskSpec,
+    BoundTaskOutcome, BoundTaskSpec, HostTaskRequest, NamedHostArg, Progress, TaskDispatchIdentity,
+    TaskId, TaskPolicy, TaskPublicationRevision, TaskSpec,
 };
 use arcweft_core::value::{
     RuntimeBundleAssetContext, RuntimePayload, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth,
@@ -67,19 +67,30 @@ pub trait HostAdapter: Send + Sync + std::fmt::Debug {
 /// Revision an adapter must use for the next publication from this task
 /// dispatch. A restored Restartable request receives the checked successor of
 /// its saved frontier instead of restarting at revision one.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HostTaskSubmissionContext {
+    dispatch: TaskDispatchIdentity,
     next_publication_revision: TaskPublicationRevision,
     bundle_asset_context: Option<RuntimeBundleAssetContext>,
 }
 
 impl HostTaskSubmissionContext {
     #[must_use]
-    pub const fn new(next_publication_revision: TaskPublicationRevision) -> Self {
+    pub const fn new(
+        dispatch: TaskDispatchIdentity,
+        next_publication_revision: TaskPublicationRevision,
+    ) -> Self {
         Self {
+            dispatch,
             next_publication_revision,
             bundle_asset_context: None,
         }
+    }
+
+    /// The exact owner-issued attempt fence retained by every pending worker.
+    #[must_use]
+    pub const fn dispatch_identity(&self) -> &TaskDispatchIdentity {
+        &self.dispatch
     }
 
     #[must_use]
@@ -89,12 +100,12 @@ impl HostTaskSubmissionContext {
     }
 
     #[must_use]
-    pub const fn next_publication_revision(self) -> TaskPublicationRevision {
+    pub const fn next_publication_revision(&self) -> TaskPublicationRevision {
         self.next_publication_revision
     }
 
     #[must_use]
-    pub const fn bundle_asset_context(self) -> Option<RuntimeBundleAssetContext> {
+    pub const fn bundle_asset_context(&self) -> Option<RuntimeBundleAssetContext> {
         self.bundle_asset_context
     }
 }
@@ -109,7 +120,7 @@ pub enum HostTaskSubmission {
 /// Completion emitted later by a pending host adapter task.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HostAdapterCompletion {
-    pub task_id: TaskId,
+    pub dispatch: TaskDispatchIdentity,
     /// Host-issued monotone revision within this task dispatch. Completion
     /// arrival order is never used to invent publication identity.
     pub publication_revision: TaskPublicationRevision,
@@ -356,6 +367,14 @@ impl HostAdapterRegistry {
         bound: &BoundTaskSpec,
         context: HostTaskSubmissionContext,
     ) -> Option<HostTaskSubmission> {
+        if context.dispatch_identity().correlation != bound.handle().correlation {
+            return None;
+        }
+        let call = self.task_call(bound)?;
+        call.adapter.submit(bound, context)
+    }
+
+    fn task_call(&self, bound: &BoundTaskSpec) -> Option<&RegisteredHostCall> {
         let task = bound.spec();
         let call = self.calls.get(&task.request.host_call_id())?;
         if let HostTaskRequest::Custom {
@@ -369,7 +388,7 @@ impl HostAdapterRegistry {
         {
             return None;
         }
-        call.adapter.submit(bound, context)
+        Some(call)
     }
 
     /// Starts a direct, checked host-call request using its selected modality.
@@ -382,6 +401,9 @@ impl HostAdapterRegistry {
         mode: RuntimeHostCallMode,
         context: HostTaskSubmissionContext,
     ) -> Option<HostTaskSubmission> {
+        if context.dispatch_identity().correlation != bound.handle().correlation {
+            return None;
+        }
         let task = bound.spec();
         let call = self.calls.get(&task.request.host_call_id())?;
         let HostTaskRequest::Custom {
@@ -401,15 +423,11 @@ impl HostAdapterRegistry {
         call.adapter.submit(bound, context)
     }
 
-    /// Synchronous helper. Pending work returns `None`.
+    /// Completes synchronous work without starting an unobserved pending attempt.
     pub fn dispatch(&self, task: &BoundTaskSpec) -> Option<HostTaskOutcome> {
-        match self.submit(
-            task,
-            HostTaskSubmissionContext::new(TaskPublicationRevision::FIRST),
-        )? {
-            HostTaskSubmission::Completed(outcome) => Some(outcome),
-            HostTaskSubmission::Pending => None,
-        }
+        self.task_call(task)?
+            .adapter
+            .complete(task.spec(), task.outcome())
     }
 
     /// Drains every registered adapter once, even when it owns multiple calls.

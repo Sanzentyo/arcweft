@@ -150,8 +150,14 @@ fn try_run_runtime_steps_with_executor(
                 task_requests,
                 host_config.bundle_assets.map(|assets| assets.context),
             )?;
-            host_call_results =
-                host.complete_host_calls(executor.program_owner(), host_call_requests);
+            host_call_results = host.complete_host_calls(
+                executor.program_owner(),
+                LogicalEpoch(
+                    u64::try_from(step_index)
+                        .map_err(|_| RuntimeStepRunError::LogicalEpochOverflow)?,
+                ),
+                host_call_requests,
+            );
         }
     }
     Ok(RuntimeRunTrace {

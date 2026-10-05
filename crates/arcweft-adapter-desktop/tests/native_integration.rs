@@ -35,7 +35,14 @@ fn native_desktop_capabilities_complete_through_host_registry() {
     let submission = registry
         .submit(
             &task,
-            HostTaskSubmissionContext::new(arcweft_core::task::TaskPublicationRevision::FIRST),
+            HostTaskSubmissionContext::new(
+                arcweft_core::task::TaskDispatchIdentity::new(
+                    task.handle().correlation,
+                    arcweft_core::task::LogicalEpoch(1),
+                    arcweft_core::task::TaskSequence(1),
+                ),
+                arcweft_core::task::TaskPublicationRevision::FIRST,
+            ),
         )
         .expect("desktop platform adapter owns capabilities");
     let HostTaskSubmission::Completed(outcome) = submission else {
