@@ -58,6 +58,7 @@ pub(super) fn validate_defer<'types>(
     owners: RuntimeSemanticOwnerSet<'_>,
     local_type: impl Fn(&LocalId) -> Option<&'types RuntimeNormalizedType>,
     expressions: &BTreeMap<ExprId, RuntimeNormalizedType>,
+    authority: Option<&arcweft_lang_sema::final_analysis::CheckedLocalUseAuthority>,
     statement: StmtId,
     fact: &RuntimeDeferFact,
 ) -> Result<(), RuntimeSemanticFactsError> {
@@ -68,13 +69,14 @@ pub(super) fn validate_defer<'types>(
         RuntimeSemanticFactFamily::Defer,
         |kind| matches!(kind, HirStmtKind::Defer { .. }),
     )?;
-    validate_defer_payload(modules, local_type, expressions, statement, fact)
+    validate_defer_payload(modules, local_type, expressions, authority, statement, fact)
 }
 
 pub(super) fn validate_defer_payload<'types>(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     local_type: impl Fn(&LocalId) -> Option<&'types RuntimeNormalizedType>,
     expressions: &BTreeMap<ExprId, RuntimeNormalizedType>,
+    authority: Option<&arcweft_lang_sema::final_analysis::CheckedLocalUseAuthority>,
     statement: StmtId,
     fact: &RuntimeDeferFact,
 ) -> Result<(), RuntimeSemanticFactsError> {
@@ -117,6 +119,15 @@ pub(super) fn validate_defer_payload<'types>(
         if !seen.insert(capture.local())
             || !origins.insert(capture.origin().clone())
             || local_type(&capture.local()) != Some(capture.ty())
+            || authority.is_none_or(|authority| {
+                !capture.matches_authority(
+                    arcweft_lang_sema::final_analysis::CheckedLocalUseSite::StatementCapture {
+                        owner: statement,
+                        local: capture.local(),
+                    },
+                    authority,
+                )
+            })
         {
             return Err(RuntimeSemanticFactsError::InvalidDeferFact { statement });
         }

@@ -119,6 +119,7 @@ pub use content::{
     RuntimeDialogueEffectCaptureKey, RuntimeDialogueEffectOperationFact,
     RuntimeDialogueEffectProgramFact, RuntimeDialogueEffectProgramKey, RuntimeDialogueMarkFact,
     RuntimeDialogueMarkKey, RuntimeDialogueValueCaptureKey, RuntimeExecutableCaptureFact,
+    RuntimeExecutableCaptureFactError,
 };
 pub use evaluated_effect::{
     RuntimeDropFadeFact, RuntimeDropPolicyFact, RuntimeEffectFieldFact, RuntimeEvaluatedEffect,
@@ -8518,6 +8519,9 @@ impl RuntimePlanSemanticFacts {
         }
 
         let defers = collect_unique(input.defers, RuntimeSemanticFactFamily::Defer)?;
+        let capture_authority = input.checked_local_uses.as_ref().map(|catalog| {
+            arcweft_lang_sema::final_analysis::CheckedLocalUseAuthority::Global(Arc::clone(catalog))
+        });
         if defers
             .keys()
             .any(|owner| instance_statement_owners.contains(owner))
@@ -8532,6 +8536,7 @@ impl RuntimePlanSemanticFacts {
                 runtime_owners,
                 |local| local_declarations.get(local).map(|fact| &fact.ty),
                 &expression_types,
+                capture_authority.as_ref(),
                 *statement,
                 defer,
             )?;
@@ -8687,6 +8692,15 @@ impl RuntimePlanSemanticFacts {
                         .get(&capture.local())
                         .map(|fact| &fact.ty)
                         != Some(capture.ty())
+                        || capture_authority.as_ref().is_none_or(|authority| {
+                            !capture.matches_authority(
+                                arcweft_lang_sema::final_analysis::CheckedLocalUseSite::Capture {
+                                    owner: effect.operation().root(),
+                                    local: capture.local(),
+                                },
+                                authority,
+                            )
+                        })
                     {
                         return Err(RuntimeSemanticFactsError::InvalidContentFragment {
                             expression: fragment.source(),
@@ -12937,6 +12951,7 @@ fn validate_project_function_semantic_catalog(
                     modules,
                     |local| local_types.get(local),
                     &expression_types,
+                    Some(semantics.local_uses()),
                     row.owner(),
                     fact,
                 )?;
@@ -13090,7 +13105,15 @@ fn validate_project_instance_fragments(
                 return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
             }
             for capture in effect.captures() {
-                if semantics.local_type(capture.local()) != Some(capture.ty()) {
+                if semantics.local_type(capture.local()) != Some(capture.ty())
+                    || !capture.matches_authority(
+                        arcweft_lang_sema::final_analysis::CheckedLocalUseSite::Capture {
+                            owner: effect.operation().root(),
+                            local: capture.local(),
+                        },
+                        semantics.local_uses(),
+                    )
+                {
                     return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
                 }
                 validate_normalized_type(modules, capture.ty())?;

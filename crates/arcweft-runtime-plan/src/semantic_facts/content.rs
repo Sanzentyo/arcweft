@@ -167,16 +167,32 @@ impl RuntimeDialogueEffectCaptureKey {
 pub struct RuntimeExecutableCaptureFact {
     local: LocalId,
     origin: StableCheckedBindingCoordinate,
+    transfer: arcweft_lang_sema::final_analysis::CheckedLocalValueTransfer,
     ty: RuntimeNormalizedType,
 }
 
 impl RuntimeExecutableCaptureFact {
-    pub const fn new(
+    pub fn try_new(
         local: LocalId,
         origin: StableCheckedBindingCoordinate,
+        transfer: arcweft_lang_sema::final_analysis::CheckedLocalValueTransfer,
         ty: RuntimeNormalizedType,
-    ) -> Self {
-        Self { local, origin, ty }
+    ) -> Result<Self, RuntimeExecutableCaptureFactError> {
+        if transfer.local() != local
+            || !transfer.fields().is_empty()
+            || matches!(
+                transfer.mode(),
+                arcweft_lang_sema::final_analysis::CheckedLocalReadMode::Borrow
+            )
+        {
+            return Err(RuntimeExecutableCaptureFactError::InvalidTransfer);
+        }
+        Ok(Self {
+            local,
+            origin,
+            transfer,
+            ty,
+        })
     }
 
     pub const fn local(&self) -> LocalId {
@@ -187,9 +203,39 @@ impl RuntimeExecutableCaptureFact {
         &self.origin
     }
 
+    pub const fn transfer(&self) -> &arcweft_lang_sema::final_analysis::CheckedLocalValueTransfer {
+        &self.transfer
+    }
+
+    pub fn input_ownership(&self) -> arcweft_core::plan::RuntimeFunctionInputOwnershipRequirement {
+        use arcweft_core::plan::RuntimeFunctionInputOwnershipRequirement;
+        use arcweft_lang_sema::final_analysis::CheckedLocalReadMode;
+        match self.transfer.mode() {
+            CheckedLocalReadMode::Copy => RuntimeFunctionInputOwnershipRequirement::Unrestricted,
+            CheckedLocalReadMode::Move => RuntimeFunctionInputOwnershipRequirement::Owned,
+            CheckedLocalReadMode::Borrow => {
+                unreachable!("accepted executable capture is a value transfer")
+            }
+        }
+    }
+
+    pub(super) fn matches_authority(
+        &self,
+        site: arcweft_lang_sema::final_analysis::CheckedLocalUseSite,
+        authority: &arcweft_lang_sema::final_analysis::CheckedLocalUseAuthority,
+    ) -> bool {
+        authority.value_transfer_at(site).as_ref() == Some(&self.transfer)
+    }
+
     pub const fn ty(&self) -> &RuntimeNormalizedType {
         &self.ty
     }
+}
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum RuntimeExecutableCaptureFactError {
+    #[error("executable capture requires an exact whole-local value transfer")]
+    InvalidTransfer,
 }
 
 /// Closed operation family accepted for one template-local effect site.

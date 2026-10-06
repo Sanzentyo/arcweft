@@ -1556,6 +1556,32 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         }
 
         for expression in &expressions {
+            let fragments = match expression.payload() {
+                RuntimeProjectFunctionExpressionPayload::DialogueApplication {
+                    fragments, ..
+                }
+                | RuntimeProjectFunctionExpressionPayload::ContentApplication { fragments } => {
+                    fragments.as_ref()
+                }
+                _ => &[],
+            };
+            if fragments
+                .iter()
+                .flat_map(RuntimeContentFragmentFact::effects)
+                .any(|effect| {
+                    effect.captures().iter().any(|capture| {
+                        !capture.matches_authority(
+                            arcweft_lang_sema::final_analysis::CheckedLocalUseSite::Capture {
+                                owner: effect.operation().root(),
+                                local: capture.local(),
+                            },
+                            &local_uses,
+                        )
+                    })
+                })
+            {
+                return Err(RuntimeProjectFunctionFactError::NonCanonicalSemanticFacts);
+            }
             if let RuntimeProjectFunctionExpressionPayload::ImplicitCallable { callable, .. } =
                 expression.payload()
                 && (callable.definition().owner() != expression.owner()
@@ -1589,6 +1615,21 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
             }
         }
         let mut captured_locals = BTreeSet::new();
+        for statement in &statements {
+            if let RuntimeProjectFunctionStatementPayload::Defer(defer) = statement.payload()
+                && defer.captures().iter().any(|capture| {
+                    !capture.matches_authority(
+                        arcweft_lang_sema::final_analysis::CheckedLocalUseSite::StatementCapture {
+                            owner: statement.owner(),
+                            local: capture.local(),
+                        },
+                        &local_uses,
+                    )
+                })
+            {
+                return Err(RuntimeProjectFunctionFactError::NonCanonicalSemanticFacts);
+            }
+        }
         if captures.iter().any(|capture| {
             partition.locals().contains(&capture.source())
                 || !captured_locals.insert(capture.source())

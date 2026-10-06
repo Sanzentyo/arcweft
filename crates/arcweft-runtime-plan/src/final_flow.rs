@@ -4568,7 +4568,7 @@ fn reserve_dialogue_effect_sites<'facts>(
                             effect.site()
                         ));
                     }
-                    Ok((local, input_local, capture.ty().identity()))
+                    Ok((local, input_local, capture.ty().identity(), capture.input_ownership()))
                 })
                 .collect::<Result<Vec<_>, _>>();
             let result = effect.operation().result().clone();
@@ -4587,14 +4587,18 @@ fn reserve_dialogue_effect_sites<'facts>(
                 captures
                     .into_iter()
                     .enumerate()
-                    .map(|(position, (binding, input_local, ty))| {
+                    .map(|(position, (binding, input_local, ty, ownership))| {
                         let position = u32::try_from(position).map_err(|_| {
                             "dialogue content effect capture position exceeds checked limits"
                                 .to_owned()
                         })?;
                         Ok(RuntimeFunctionInputBindingSeed {
-                    ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
-                    unrestricted_bindings: Box::new([]),
+                            ownership,
+                            unrestricted_bindings: if matches!(ownership, RuntimeFunctionInputOwnershipRequirement::Unrestricted) {
+                                Box::new([binding.clone()])
+                            } else {
+                                Box::new([])
+                            },
                             source: RuntimeFunctionInputSource::Capture { position },
                             input_local,
                             pattern: RuntimePatternSeed::new(
@@ -4993,11 +4997,7 @@ fn lower_dialogue_application<'facts>(
                         .iter()
                         .map(|capture| {
                             locals.get(&capture.local()).cloned().and_then(|local| {
-                                let site = arcweft_lang_sema::final_analysis::CheckedLocalUseSite::Capture {
-                                    owner: effect.operation().root(),
-                                    local: capture.local(),
-                                };
-                                let checked = scope.checked_local_value_transfer(site)?;
+                                let checked = capture.transfer();
                                 (checked.local() == capture.local()).then(|| {
                                     RuntimeExprSeed::new(
                                         capture.ty().identity(),
@@ -6860,11 +6860,7 @@ impl<'a> FinalFlowLowerer<'a> {
                     .get(&capture.local())
                     .cloned()
                     .and_then(|local| {
-                        let site = arcweft_lang_sema::final_analysis::CheckedLocalUseSite::StatementCapture {
-                            owner: statement,
-                            local: capture.local(),
-                        };
-                        let checked = self.semantic_facts.checked_local_value_transfer(site)?;
+                        let checked = capture.transfer();
                         (checked.local() == capture.local()).then(|| {
                             RuntimeExprSeed::new(
                                 capture.ty().identity(),

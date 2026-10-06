@@ -2862,13 +2862,10 @@ impl<'hir> FinalExprLowerer<'hir> {
                     .captures()
                     .iter()
                     .map(|capture| {
-                        let read = self.checked_local_read(
-                            CheckedLocalUseSite::Capture {
-                                owner: effect.operation().root(),
-                                local: capture.local(),
-                            },
-                            capture.local(),
-                        )?;
+                        let read = RuntimeLocalReadSeed::new(
+                            self.local(capture.local())?,
+                            runtime_local_read_mode(capture.transfer().mode()),
+                        );
                         Ok(RuntimeExprSeed::new(
                             capture.ty().identity(),
                             RuntimeExprSeedKind::Local(read),

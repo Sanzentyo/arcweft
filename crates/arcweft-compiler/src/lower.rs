@@ -1518,7 +1518,18 @@ fn project_runtime_semantic_fact_inventories(
             CheckedStatementPayload::Defer(defer) => {
                 input.push_defer(
                     owner,
-                    runtime_defer(defer, statement.effects(), None, symbols, world, analysis)?,
+                    runtime_defer(
+                        owner,
+                        &CheckedLocalUseAuthority::Global(Arc::clone(
+                            analysis.checked_local_uses(),
+                        )),
+                        defer,
+                        statement.effects(),
+                        None,
+                        symbols,
+                        world,
+                        analysis,
+                    )?,
                 );
             }
             CheckedStatementPayload::Iteration(iteration) => {
@@ -1829,6 +1840,45 @@ enum RuntimeExecutableInstantiation<'a> {
 }
 
 impl<'a> RuntimeExecutableInstantiation<'a> {
+    fn local_uses(
+        self,
+        project: HirAnalysisProjectView<'_>,
+        symbols: &ProjectSymbolTable,
+        analysis: &FinalSemanticAnalysis,
+        origin: ProjectInstantiationOrigin,
+    ) -> Result<CheckedLocalUseAuthority, RuntimeSemanticProjectionError> {
+        let error = |reason: String| origin.error(reason);
+        match self {
+            Self::Program { environment, .. } => Ok(environment.local_uses().clone()),
+            Self::Global => Ok(CheckedLocalUseAuthority::Global(Arc::clone(
+                analysis.checked_local_uses(),
+            ))),
+            Self::Project { solution, .. } => {
+                let solution = solution.function_solution().ok_or_else(|| {
+                    error("project instance has no frozen function solution".to_owned())
+                })?;
+                let checked = analysis
+                    .checked_local_uses_for_instance(
+                        project,
+                        symbols,
+                        CheckedLocalUseInstantiation::ProjectFunction(solution),
+                    )
+                    .map_err(|reason| error(reason.to_string()))?;
+                Ok(CheckedLocalUseAuthority::Instance(Arc::new(checked)))
+            }
+            Self::Display { conformance, .. } => {
+                let checked = analysis
+                    .checked_local_uses_for_instance(
+                        project,
+                        symbols,
+                        CheckedLocalUseInstantiation::DisplayText(conformance),
+                    )
+                    .map_err(|reason| error(reason.to_string()))?;
+                Ok(CheckedLocalUseAuthority::Instance(Arc::new(checked)))
+            }
+        }
+    }
+
     const fn types(self) -> Option<ProjectInstanceTypes<'a>> {
         match self {
             Self::Global => None,
@@ -2184,6 +2234,7 @@ struct RuntimeDialogueApplicationProjection<'analysis> {
     report: &'analysis CheckedRichTextReport,
     line_result: &'analysis TypeKind,
     solution: Option<ProjectInstanceTypes<'analysis>>,
+    local_uses: CheckedLocalUseAuthority,
 }
 
 #[allow(
@@ -2246,6 +2297,12 @@ fn project_runtime_dialogue_projection_catalog<'analysis>(
                     report: rich_text,
                     line_result,
                     solution: instances.program_types(program.program())?,
+                    local_uses: program
+                        .admission()
+                        .input_abi()
+                        .environment()
+                        .local_uses()
+                        .clone(),
                 });
             }
         }
@@ -2292,6 +2349,11 @@ fn project_runtime_dialogue_projection_catalog<'analysis>(
                 report: rich_text,
                 line_result,
                 solution: Some(instances.types(node)),
+                local_uses: RuntimeExecutableInstantiation::Project {
+                    key,
+                    solution: instances.types(node),
+                }
+                .local_uses(project, symbols, analysis, node.origin)?,
             });
         }
     }
@@ -2308,6 +2370,7 @@ fn project_runtime_dialogue_projection_catalog<'analysis>(
             report,
             line_result,
             solution: None,
+            local_uses: CheckedLocalUseAuthority::Global(Arc::clone(analysis.checked_local_uses())),
         });
     }
     projections.sort_by(|left, right| (&left.scope, left.owner).cmp(&(&right.scope, right.owner)));
@@ -2374,6 +2437,7 @@ fn project_runtime_dialogue_projection_catalog<'analysis>(
             symbols,
             world,
             analysis,
+            &projection.local_uses,
             projection.solution,
             generation,
             producer_generation,
@@ -2575,6 +2639,7 @@ fn project_dialogue_application(
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
+    local_uses: &CheckedLocalUseAuthority,
     instance: Option<ProjectInstanceTypes<'_>>,
     generation: CharacterPresentationCatalogGeneration,
     producer_generation: &arcweft_dialogue::CharacterDialogueGenerationDeclaration<
@@ -2639,6 +2704,7 @@ fn project_dialogue_application(
         symbols,
         world,
         analysis,
+        local_uses,
         instance,
         scope,
         template_ids,
@@ -2893,6 +2959,7 @@ fn lower_checked_rich_text(
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
+    local_uses: &CheckedLocalUseAuthority,
     instance: Option<ProjectInstanceTypes<'_>>,
     scope: &RuntimeDialogueProjectionScope,
     template_ids: &RuntimeDialogueTemplateIdCatalog,
@@ -3107,6 +3174,7 @@ fn lower_checked_rich_text(
                     symbols,
                     world,
                     analysis,
+                    local_uses,
                     instance,
                 )?;
             }
@@ -3213,6 +3281,7 @@ fn lower_checked_rich_text(
                                 symbols,
                                 world,
                                 analysis,
+                                local_uses,
                                 instance,
                                 scope,
                                 template_ids,
@@ -3255,6 +3324,7 @@ fn lower_checked_rich_text(
                                 symbols,
                                 world,
                                 analysis,
+                                local_uses,
                                 instance,
                                 scope,
                                 template_ids,
@@ -3289,6 +3359,7 @@ fn lower_checked_rich_text(
                                 symbols,
                                 world,
                                 analysis,
+                                local_uses,
                                 instance,
                                 scope,
                                 template_ids,
@@ -3328,6 +3399,7 @@ fn lower_checked_rich_text(
                                 symbols,
                                 world,
                                 analysis,
+                                local_uses,
                                 instance,
                                 scope,
                                 template_ids,
@@ -3392,6 +3464,7 @@ fn lower_checked_rich_text(
                                 symbols,
                                 world,
                                 analysis,
+                                local_uses,
                                 instance,
                                 scope,
                                 template_ids,
@@ -3475,6 +3548,7 @@ fn lower_attached_content_body(
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
+    local_uses: &CheckedLocalUseAuthority,
     instance: Option<ProjectInstanceTypes<'_>>,
     scope: &RuntimeDialogueProjectionScope,
     template_ids: &RuntimeDialogueTemplateIdCatalog,
@@ -3493,6 +3567,7 @@ fn lower_attached_content_body(
         symbols,
         world,
         analysis,
+        local_uses,
         instance,
         scope,
         template_ids,
@@ -4431,6 +4506,7 @@ fn lower_rich_text_action(
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
+    local_uses: &CheckedLocalUseAuthority,
     instance: Option<ProjectInstanceTypes<'_>>,
 ) -> Result<(), RuntimeSemanticProjectionError> {
     match action {
@@ -4463,6 +4539,7 @@ fn lower_rich_text_action(
                 symbols,
                 world,
                 analysis,
+                local_uses,
                 instance,
             )?;
         }
@@ -4522,6 +4599,7 @@ fn lower_dialogue_host_action(
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
+    local_uses: &CheckedLocalUseAuthority,
     instance: Option<ProjectInstanceTypes<'_>>,
 ) -> Result<(), RuntimeSemanticProjectionError> {
     let static_event = match event {
@@ -4580,6 +4658,7 @@ fn lower_dialogue_host_action(
                 symbols,
                 world,
                 analysis,
+                local_uses,
                 instance,
             )?);
             return Ok(());
@@ -4603,6 +4682,7 @@ fn lower_dialogue_host_action(
                 symbols,
                 world,
                 analysis,
+                local_uses,
                 instance,
             )?);
             return Ok(());
@@ -4680,6 +4760,7 @@ fn runtime_dialogue_effect(
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
+    local_uses: &CheckedLocalUseAuthority,
     instance: Option<ProjectInstanceTypes<'_>>,
 ) -> Result<RuntimeDialogueEffectProgramFact, RuntimeSemanticProjectionError> {
     let operation = match site.operation() {
@@ -4744,11 +4825,25 @@ fn runtime_dialogue_effect(
         .captures()
         .iter()
         .map(|capture| {
-            Ok(RuntimeExecutableCaptureFact::new(
+            let site = arcweft_lang_sema::final_analysis::CheckedLocalUseSite::Capture {
+                owner: site.root(),
+                local: capture.local(),
+            };
+            RuntimeExecutableCaptureFact::try_new(
                 capture.local(),
                 capture.origin().clone(),
+                local_uses.value_transfer_at(site).ok_or_else(|| {
+                    RuntimeSemanticProjectionError::Dialogue {
+                        owner: Some(owner),
+                        reason: "dialogue effect capture has no selected value transfer".to_owned(),
+                    }
+                })?,
                 runtime_type_under(capture.ty(), instance, symbols, world, analysis)?,
-            ))
+            )
+            .map_err(|error| RuntimeSemanticProjectionError::Dialogue {
+                owner: Some(owner),
+                reason: error.to_string(),
+            })
         })
         .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
     Ok(RuntimeDialogueEffectProgramFact::new(
@@ -4772,6 +4867,8 @@ fn runtime_dialogue_effect(
 }
 
 fn runtime_defer(
+    owner: StmtId,
+    local_uses: &CheckedLocalUseAuthority,
     defer: &CheckedDefer,
     effects: &arcweft_lang_sema::effects::EffectSet,
     instance: Option<ProjectInstanceTypes<'_>>,
@@ -4791,11 +4888,23 @@ fn runtime_defer(
         .captures()
         .iter()
         .map(|capture| {
-            Ok(RuntimeExecutableCaptureFact::new(
+            let site = arcweft_lang_sema::final_analysis::CheckedLocalUseSite::StatementCapture {
+                owner,
+                local: capture.local(),
+            };
+            RuntimeExecutableCaptureFact::try_new(
                 capture.local(),
                 capture.origin().clone(),
+                local_uses.value_transfer_at(site).ok_or_else(|| {
+                    RuntimeSemanticProjectionError::Type {
+                        reason: "defer capture has no selected value transfer".to_owned(),
+                    }
+                })?,
                 runtime_type_under(capture.ty(), instance, symbols, world, analysis)?,
-            ))
+            )
+            .map_err(|error| RuntimeSemanticProjectionError::Type {
+                reason: error.to_string(),
+            })
         })
         .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
     Ok(RuntimeDeferFact::new(
@@ -7609,38 +7718,7 @@ fn runtime_executable_semantic_facts<'abi>(
         .filter_map(|row| row.ty().map(|ty| (row.owner(), ty)))
         .collect::<BTreeMap<_, _>>();
     let execution = analysis.execution_projection();
-    let local_uses = match lexical {
-        RuntimeExecutableInstantiation::Program { environment, .. } => {
-            environment.local_uses().clone()
-        }
-        RuntimeExecutableInstantiation::Global => {
-            CheckedLocalUseAuthority::Global(Arc::clone(analysis.checked_local_uses()))
-        }
-        RuntimeExecutableInstantiation::Project { solution, .. } => {
-            let checked = analysis
-                .checked_local_uses_for_instance(
-                    project,
-                    symbols,
-                    CheckedLocalUseInstantiation::ProjectFunction(
-                        solution.function_solution().ok_or_else(|| {
-                            origin.error("project instance has no frozen function solution")
-                        })?,
-                    ),
-                )
-                .map_err(|error| origin.error(error.to_string()))?;
-            CheckedLocalUseAuthority::Instance(Arc::new(checked))
-        }
-        RuntimeExecutableInstantiation::Display { conformance, .. } => {
-            let checked = analysis
-                .checked_local_uses_for_instance(
-                    project,
-                    symbols,
-                    CheckedLocalUseInstantiation::DisplayText(conformance),
-                )
-                .map_err(|error| origin.error(error.to_string()))?;
-            CheckedLocalUseAuthority::Instance(Arc::new(checked))
-        }
-    };
+    let local_uses = lexical.local_uses(project, symbols, analysis, origin)?;
     let mut producer_context = None;
     let mut expressions = Vec::with_capacity(partition.expressions().len());
     for expected in partition.expressions() {
@@ -8299,6 +8377,8 @@ fn runtime_executable_semantic_facts<'abi>(
                 CheckedExecutableRuntimeStatementFactFamily::Defer,
                 CheckedStatementPayload::Defer(defer),
             ) => RuntimeProjectFunctionStatementPayload::Defer(runtime_defer(
+                owner,
+                &local_uses,
                 defer,
                 checked.effects(),
                 lexical.types(),

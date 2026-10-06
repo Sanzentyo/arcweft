@@ -2826,3 +2826,207 @@ fn root_implicit_capture_transfer_drives_creation_and_ingress() {
         assert_eq!(reads, vec![read]);
     }
 }
+
+#[test]
+fn closed_dialogue_effect_captures_reject_foreign_transfer_authority() {
+    use arcweft_lang_sema::final_analysis::CheckedLocalReadMode;
+    use arcweft_runtime_plan::semantic_facts::{
+        RuntimeProjectFunctionExpressionPayload, RuntimeProjectFunctionFactError,
+        RuntimeProjectFunctionInstanceSemanticFacts,
+    };
+    let (project, context) = removed_role_dialogue_project(
+        "pub character alice { display = \"Alice\" }\nfn consume<T>(value: T) { let consumed = value; }\nfn speak<T>(value: T) { alice[hello [call consume(value)]]; }\nflow main() { speak(42i64); speak(Vec<Need<i64>>::with_capacity(0usize)); }",
+    );
+    let (mut session, parsed) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed, &context)
+        .expect("closed effect captures compile");
+    let effects = compiled
+        .runtime_facts()
+        .project_function_instances()
+        .flat_map(|instance| {
+            instance
+                .semantics()
+                .expressions()
+                .iter()
+                .filter_map(|row| match row.payload() {
+                    RuntimeProjectFunctionExpressionPayload::DialogueApplication {
+                        fragments,
+                        ..
+                    } => Some((
+                        instance.semantics(),
+                        fragments[0].effects()[0].captures()[0].clone(),
+                    )),
+                    _ => None,
+                })
+        })
+        .collect::<Vec<_>>();
+    let [(first, first_capture), (second, second_capture)] = effects.as_slice() else {
+        panic!("two closed effects")
+    };
+    assert_eq!(first_capture.origin(), second_capture.origin());
+    assert!(matches!(
+        (
+            first_capture.transfer().mode(),
+            second_capture.transfer().mode()
+        ),
+        (CheckedLocalReadMode::Copy, CheckedLocalReadMode::Move)
+            | (CheckedLocalReadMode::Move, CheckedLocalReadMode::Copy)
+    ));
+    // The lexical partition is shared, but its closed transfer proof cannot
+    // be substituted by another instantiation's authority.
+    assert!(matches!(
+        RuntimeProjectFunctionInstanceSemanticFacts::try_new(
+            first.partition().clone(),
+            second.local_uses().clone(),
+            first.type_projection().into(),
+            first.expressions().into(),
+            first.patterns().into(),
+            first.statements().into(),
+            first.captures().into(),
+        ),
+        Err(RuntimeProjectFunctionFactError::NonCanonicalSemanticFacts)
+    ));
+}
+
+#[test]
+fn defer_capture_transfer_drives_registration_and_ingress() {
+    use arcweft_core::{
+        plan::{FlowOp, RuntimeFunctionInputOwnershipRequirement},
+        value::{RuntimeExprKind, RuntimeLocalReadMode},
+    };
+    use arcweft_lang_sema::final_analysis::CheckedLocalReadMode;
+    for (initializer, mode, read_mode, ownership) in [
+        (
+            "42i64",
+            CheckedLocalReadMode::Copy,
+            RuntimeLocalReadMode::Copy,
+            RuntimeFunctionInputOwnershipRequirement::Unrestricted,
+        ),
+        (
+            "Vec<Need<i64>>::with_capacity(0usize)",
+            CheckedLocalReadMode::Move,
+            RuntimeLocalReadMode::Move,
+            RuntimeFunctionInputOwnershipRequirement::Owned,
+        ),
+    ] {
+        let source = format!(
+            "pub character alice {{ display = \"Alice\" }}\nflow main() -> Unit {{\n let value = {initializer}\n alice: hello[p]\n with:\n  defer {{ let _ = value; }}\n}}"
+        );
+        let (project, context) = removed_role_dialogue_project(&source);
+        let (mut session, parsed) = compilation_state(&project);
+        let compiled = compile_project(&mut session, &project, &parsed, &context)
+            .expect("checked deferred transfer compiles");
+        let (_, defer) = compiled
+            .runtime_facts()
+            .defers()
+            .next()
+            .expect("defer fact");
+        let [capture] = defer.captures() else {
+            panic!("one capture")
+        };
+        assert_eq!(capture.transfer().mode(), mode);
+        let plan = &compiled.runtime_plan().plan;
+        let site = plan.function_sites().get(plan.defer_sites()[0]).unwrap();
+        let input = site.capture_inputs().next().unwrap();
+        assert_eq!(input.ownership(), ownership);
+        assert_eq!(
+            input.unrestricted_bindings().len(),
+            usize::from(mode == CheckedLocalReadMode::Copy)
+        );
+        let mut registrations = Vec::new();
+        plan.try_visit_flow_ops(&mut |op| {
+            if let FlowOp::RegisterDefer { captures, .. } = op {
+                for value in captures {
+                    let RuntimeExprKind::Local(read) = value.kind() else {
+                        panic!("local transfer")
+                    };
+                    registrations.push(read.mode());
+                }
+            }
+            Ok::<_, std::convert::Infallible>(())
+        })
+        .unwrap();
+        assert_eq!(registrations, vec![read_mode]);
+    }
+}
+
+#[test]
+fn dialogue_effect_capture_transfer_drives_creation_and_ingress() {
+    use arcweft_core::plan::{
+        RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionSemanticRole,
+    };
+    use arcweft_core::value::{RuntimeExprKind, RuntimeLocalReadMode};
+    use arcweft_lang_sema::final_analysis::CheckedLocalReadMode;
+    for (initializer, mode, ownership) in [
+        (
+            "42i64",
+            CheckedLocalReadMode::Copy,
+            RuntimeFunctionInputOwnershipRequirement::Unrestricted,
+        ),
+        (
+            "Vec<Need<i64>>::with_capacity(0usize)",
+            CheckedLocalReadMode::Move,
+            RuntimeFunctionInputOwnershipRequirement::Owned,
+        ),
+    ] {
+        let source = format!(
+            "pub character alice {{ display = \"Alice\" }}\nfn consume<T>(value: T) {{ let consumed = value; }}\nflow main() {{ let value = {initializer}; alice[hello [call consume(value)]]; }}"
+        );
+        let (project, context) = removed_role_dialogue_project(&source);
+        let (mut session, parsed) = compilation_state(&project);
+        let compiled = compile_project(&mut session, &project, &parsed, &context)
+            .expect("checked effect transfer compiles");
+        let [fragment] = compiled.runtime_facts().dialogue_content_fragments() else {
+            panic!("one fragment")
+        };
+        let [effect] = fragment.effects() else {
+            panic!("one effect")
+        };
+        let [capture] = effect.captures() else {
+            panic!("one capture")
+        };
+        assert_eq!(capture.transfer().mode(), mode);
+        let sites = compiled
+            .runtime_plan()
+            .plan
+            .function_sites()
+            .iter()
+            .filter(|site| {
+                site.role() == RuntimeFunctionSemanticRole::Effect
+                    && site.capture_inputs().count() == 1
+            })
+            .collect::<Vec<_>>();
+        let [site] = sites.as_slice() else {
+            panic!("one effect function")
+        };
+        let input = site.capture_inputs().next().unwrap();
+        assert_eq!(input.ownership(), ownership);
+        assert_eq!(
+            input.unrestricted_bindings().len(),
+            usize::from(mode == CheckedLocalReadMode::Copy)
+        );
+        let creation = compiled
+            .runtime_plan()
+            .plan
+            .dialogue_content()
+            .rows()
+            .iter()
+            .flat_map(|content| content.effect_sites())
+            .flat_map(|effect| effect.captures())
+            .map(|capture| {
+                let RuntimeExprKind::Local(read) = capture.kind() else {
+                    panic!("activation capture transfers the accepted local")
+                };
+                read.mode()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            creation,
+            vec![match mode {
+                CheckedLocalReadMode::Copy => RuntimeLocalReadMode::Copy,
+                CheckedLocalReadMode::Move => RuntimeLocalReadMode::Move,
+                CheckedLocalReadMode::Borrow => unreachable!("fixture captures values"),
+            }]
+        );
+    }
+}
