@@ -173,6 +173,8 @@ pub struct RuntimeFlowExecutableParameter {
     pub coordinate: FlowParameterCoordinate,
     pub name: String,
     pub mode: RuntimeFlowParameterMode,
+    /// Static whole-formal class, independent of the frame's ingress mode.
+    pub passing: crate::plan::RuntimeFunctionParameterPassing,
     pub semantic_identity: RuntimeSemanticTypeId,
 }
 

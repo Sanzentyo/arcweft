@@ -1876,6 +1876,7 @@ fn await_progress_runs_only_the_first_matching_observer() {
                 coordinate: crate::entry::FlowParameterCoordinate::from_position(0),
                 name: "pending".to_owned(),
                 mode: crate::entry::RuntimeFlowParameterMode::Owned,
+                passing: crate::plan::RuntimeFunctionParameterPassing::Affine,
                 semantic_identity: need_string_type,
             }],
         })

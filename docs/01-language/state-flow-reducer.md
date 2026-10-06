@@ -104,6 +104,11 @@ Flow の実行 contract は、受理済みの body invocation と complete forma
 未使用 permission や scoped coverage も保持し、body の実行 effects と区別する。別の Flow の
 証拠や、mutation intent の証拠を Flow invocation として受理しない。
 
+Core の Flow invocation schema は、whole formal の `Value`／`Shared`／`Affine`
+passing 区分を必須で保持する。Entry や stateful Entry の schema も同じ受理済み
+formal から区分を取得する。frame の `Owned`／`Shared`／`Mutable` ingress mode と
+区分を混同せず、保存された schema に区分が欠けている場合は復元を拒否する。
+
 ## View
 
 View は状態から描画仕様を作る純粋関数。

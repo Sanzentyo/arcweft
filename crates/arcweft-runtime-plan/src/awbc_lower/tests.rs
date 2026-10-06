@@ -2006,6 +2006,7 @@ fn await_observers_lower_to_progress_dispatch_and_rewait_backedge() {
                 coordinate: arcweft_core::entry::FlowParameterCoordinate::from_position(0),
                 name: "pending".to_owned(),
                 mode: arcweft_core::entry::RuntimeFlowParameterMode::Owned,
+                passing: arcweft_core::plan::RuntimeFunctionParameterPassing::Affine,
                 semantic_identity: need_type,
             }],
         })

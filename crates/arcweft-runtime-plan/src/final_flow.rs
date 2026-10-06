@@ -1871,7 +1871,13 @@ pub fn lower_runtime_plan_with_stats(
                     continue;
                 };
                 let identity = flow_fact.identity().clone();
-                match flow_invocation_schema(item.module(), flow, &identity, facts) {
+                match flow_invocation_schema(
+                    item.module(),
+                    flow,
+                    &identity,
+                    flow_fact.definition(),
+                    facts,
+                ) {
                     Ok(schema) => flow_schemas.push(schema),
                     Err(error) => {
                         errors.push(error);
@@ -2092,11 +2098,17 @@ fn flow_invocation_schema(
     module: &HirModule,
     flow: &HirFlowItem,
     identity: &FlowRuntimeId,
+    definition: &arcweft_lang_sema::final_analysis::CheckedExecutionInputAbi,
     facts: &RuntimePlanSemanticFacts,
 ) -> Result<RuntimeFlowSchema, RuntimePlanLowerError> {
     if !flow.generic_parameters().is_empty() || !flow.where_predicates().is_empty() {
         return Err(RuntimePlanLowerError::new(format!(
             "runtime Flow {identity} cannot publish an invocation schema with open generics"
+        )));
+    }
+    if definition.parameters().len() != flow.parameters().len() {
+        return Err(RuntimePlanLowerError::new(format!(
+            "runtime Flow {identity} has a different accepted formal arity"
         )));
     }
     let parameters =
@@ -2133,11 +2145,21 @@ fn flow_invocation_schema(
                         "runtime Flow {identity} parameter {index} has no checked semantic type"
                     ))
                 })?;
+                let formal = &definition.parameters()[index];
+                if formal.pattern() != Some(parameter.pattern()) || formal.bindings() != [*local]
+                    || !matches!(formal.origin(), arcweft_lang_sema::final_analysis::CheckedExecutionParameterOrigin::Declaration(position)
+                        if position.group().get() == 0 && position.parameter().get() == index)
+                {
+                    return Err(RuntimePlanLowerError::new(format!(
+                        "runtime Flow {identity} parameter {index} disagrees with its accepted formal"
+                    )));
+                }
                 Ok(RuntimeFlowExecutableParameter {
                     coordinate: FlowParameterCoordinate::try_from_index(index)
                         .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
                     name: name.as_str().to_owned(),
                     mode: RuntimeFlowParameterMode::Owned,
+                    passing: formal.passing(),
                     semantic_identity: ty.identity(),
                 })
             })

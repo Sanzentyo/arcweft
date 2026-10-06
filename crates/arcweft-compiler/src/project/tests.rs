@@ -2960,6 +2960,35 @@ fn flow_facts_retain_the_accepted_body_and_complete_formals() {
     ) if declaration == symbols.flow_symbol_for_item(root.id()).unwrap().declaration())
     );
     assert_eq!(fact.definition().parameters().len(), 3);
+    let schema = compiled
+        .runtime_plan()
+        .plan
+        .flow_schemas()
+        .iter()
+        .find(|schema| &schema.flow == fact.identity())
+        .unwrap();
+    assert_eq!(schema.parameters.len(), 3);
+    for (parameter, formal) in schema.parameters.iter().zip(fact.definition().parameters()) {
+        assert_eq!(parameter.passing, formal.passing());
+        assert_eq!(
+            parameter.mode,
+            arcweft_core::entry::RuntimeFlowParameterMode::Owned
+        );
+    }
+    let encoded = serde_json::to_value(schema).unwrap();
+    assert_eq!(
+        serde_json::from_value::<arcweft_core::entry::RuntimeFlowSchema>(encoded.clone()).unwrap(),
+        *schema
+    );
+    let mut omitted = encoded;
+    omitted["parameters"][2]
+        .as_object_mut()
+        .unwrap()
+        .remove("passing");
+    assert!(
+        serde_json::from_value::<arcweft_core::entry::RuntimeFlowSchema>(omitted).is_err(),
+        "restored Flow input must retain its static passing class"
+    );
     for (formal, passing) in fact.definition().parameters().iter().zip([
         RuntimeFunctionParameterPassing::Value,
         RuntimeFunctionParameterPassing::Value,

@@ -111,6 +111,7 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
                 coordinate: crate::entry::FlowParameterCoordinate::from_position(0),
                 name: "pending".to_owned(),
                 mode: crate::entry::RuntimeFlowParameterMode::Owned,
+                passing: crate::plan::RuntimeFunctionParameterPassing::Affine,
                 semantic_identity: need_string,
             }],
         })

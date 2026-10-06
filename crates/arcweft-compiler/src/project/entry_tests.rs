@@ -310,6 +310,10 @@ fn sel_005_checks_selected_entry_identity_and_kind_before_runtime_lowering() {
     assert_eq!(plan.flow_executables().len(), 1);
     assert_eq!(plan.flow_schemas()[0].parameters[0].name, "current");
     assert_eq!(
+        plan.flow_schemas()[0].parameters[0].passing,
+        arcweft_core::plan::RuntimeFunctionParameterPassing::Value
+    );
+    assert_eq!(
         entry.target,
         RuntimeEntryTarget::Flow(roles.initial_flow.flow.clone())
     );

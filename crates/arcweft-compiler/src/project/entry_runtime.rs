@@ -89,6 +89,7 @@ pub(super) fn runtime_entry_lowering_input(
     symbols: &ProjectSymbolTable,
     analysis: &FinalSemanticAnalysis,
     reachability: &HirRuntimeSemanticReachability<'_>,
+    facts: &arcweft_runtime_plan::semantic_facts::RuntimePlanSemanticFacts,
     command_policy: Option<&RuntimeCommandPolicy>,
 ) -> Result<RuntimeEntryLoweringInput, EntryRuntimeProjectionError> {
     let catalog = analysis.checked_entries();
@@ -121,6 +122,7 @@ pub(super) fn runtime_entry_lowering_input(
                     world,
                     symbols,
                     analysis,
+                    facts,
                 )?;
                 callables.extend(entry_callables);
                 flows.extend(entry_flows);
@@ -133,7 +135,7 @@ pub(super) fn runtime_entry_lowering_input(
                 (target, roles)
             }
             CheckedEntryBinding::Existing(checked) => {
-                let (target, entry_flows) = project_existing_entry(checked)?;
+                let (target, entry_flows) = project_existing_entry(checked, facts)?;
                 flows.extend(entry_flows);
                 (target, RuntimeEntryRoles::None)
             }
@@ -163,6 +165,7 @@ fn project_stateful_entry(
     world: &RegisteredSemanticWorld,
     symbols: &ProjectSymbolTable,
     analysis: &FinalSemanticAnalysis,
+    facts: &arcweft_runtime_plan::semantic_facts::RuntimePlanSemanticFacts,
 ) -> Result<
     (
         RuntimeEntryTarget,
@@ -182,6 +185,18 @@ fn project_stateful_entry(
     let initializer = runtime_callable_role(checked.initializer(), analysis)?;
     let reducer = runtime_callable_role(checked.reducer(), analysis)?;
     let initial_flow = runtime_flow_role(checked.initial_flow())?;
+    let initial_definition = facts
+        .flow(checked.initial_flow().source_item())
+        .ok_or_else(|| {
+            EntryRuntimeProjectionError::InvalidFlowIdentity(
+                "stateful initial Flow has no accepted execution fact".to_owned(),
+            )
+        })?;
+    let [state_formal] = initial_definition.definition().parameters() else {
+        return Err(EntryRuntimeProjectionError::InvalidFlowIdentity(
+            "stateful initial Flow must retain exactly one accepted formal".to_owned(),
+        ));
+    };
     let callable_inputs = vec![
         runtime_callable_input(
             checked.initializer(),
@@ -213,6 +228,7 @@ fn project_stateful_entry(
                 coordinate: arcweft_core::entry::FlowParameterCoordinate::from_position(0),
                 name: checked.initial_flow().state_parameter_name().to_owned(),
                 mode: RuntimeFlowParameterMode::Owned,
+                passing: state_formal.passing(),
                 semantic_identity: state.semantic_identity,
             }],
         },
@@ -289,18 +305,19 @@ fn runtime_callable_input(
 
 fn project_existing_entry(
     checked: &CheckedExistingEntry,
+    facts: &arcweft_runtime_plan::semantic_facts::RuntimePlanSemanticFacts,
 ) -> Result<(RuntimeEntryTarget, Vec<RuntimeEntryFlowInput>), EntryRuntimeProjectionError> {
     let mut flows = std::collections::BTreeMap::new();
     let target = match checked.target() {
         CheckedExistingEntryTarget::Flow(flow) => {
-            let (runtime, input) = runtime_entry_flow(flow)?;
+            let (runtime, input) = runtime_entry_flow(flow, facts)?;
             flows.insert(runtime.clone(), input);
             RuntimeEntryTarget::Flow(runtime)
         }
         CheckedExistingEntryTarget::Routes(routes) => {
             let mut projected = Vec::with_capacity(routes.len());
             for route in routes {
-                let (runtime, input) = runtime_entry_flow(route.target())?;
+                let (runtime, input) = runtime_entry_flow(route.target(), facts)?;
                 if let Some(previous) = flows.insert(runtime.clone(), input.clone())
                     && previous != input
                 {
@@ -320,6 +337,7 @@ fn project_existing_entry(
 
 fn runtime_entry_flow(
     checked: &CheckedEntryFlowTarget,
+    facts: &arcweft_runtime_plan::semantic_facts::RuntimePlanSemanticFacts,
 ) -> Result<(FlowRuntimeId, RuntimeEntryFlowInput), EntryRuntimeProjectionError> {
     let flow = FlowRuntimeId::from_checked_declaration_digest(
         checked.id().declaration_digest().into_bytes(),
@@ -331,15 +349,27 @@ fn runtime_entry_flow(
         contract: FlowContractHash::from_bytes(*checked.contract_digest().as_bytes()),
         controller: None,
     };
+    let definition = facts.flow(checked.source_item()).ok_or_else(|| {
+        EntryRuntimeProjectionError::InvalidFlowIdentity(
+            "Entry Flow has no accepted execution fact".to_owned(),
+        )
+    })?;
+    if definition.definition().parameters().len() != checked.parameters().len() {
+        return Err(EntryRuntimeProjectionError::InvalidFlowIdentity(
+            "Entry Flow schema and accepted formal arities disagree".to_owned(),
+        ));
+    }
     let expected_schema = RuntimeFlowSchema {
         flow: flow.clone(),
         parameters: checked
             .parameters()
             .iter()
-            .map(|parameter| RuntimeFlowExecutableParameter {
+            .zip(definition.definition().parameters())
+            .map(|(parameter, formal)| RuntimeFlowExecutableParameter {
                 coordinate: parameter.coordinate(),
                 name: parameter.name().as_str().to_owned(),
                 mode: RuntimeFlowParameterMode::Owned,
+                passing: formal.passing(),
                 semantic_identity: RuntimeSemanticTypeId::from_bytes(
                     *parameter.semantic_type().as_bytes(),
                 ),

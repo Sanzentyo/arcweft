@@ -973,6 +973,7 @@ where
                 registered_world.symbols(),
                 final_analysis,
                 &runtime_reachability,
+                &runtime_facts,
                 context.command_policy(),
             )
             .map_err(|error| {
