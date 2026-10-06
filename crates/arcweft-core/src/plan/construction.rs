@@ -967,6 +967,7 @@ impl RuntimePlanBuilder {
             input_types.push(input_type);
             input_sources.push(input.source);
             inputs.push(RuntimeFunctionInputBinding::new(
+                input.origin,
                 input.source,
                 input_local,
                 pattern,
@@ -3002,6 +3003,20 @@ fn validate_function_input_bindings(
     let mut parameter_phase = false;
     let mut locals = BTreeSet::new();
     for (index, input) in inputs.iter().enumerate() {
+        if !matches!(
+            (input.source(), input.origin()),
+            (
+                RuntimeFunctionInputSource::Capture { .. },
+                super::RuntimeFunctionInputOrigin::Binding(_)
+                    | super::RuntimeFunctionInputOrigin::EvaluatedResult(_)
+            ) | (
+                RuntimeFunctionInputSource::CapturedParameter { .. }
+                    | RuntimeFunctionInputSource::Parameter { .. },
+                super::RuntimeFunctionInputOrigin::Parameter(_)
+            )
+        ) {
+            return Err(RuntimePlanBuildError::InvalidFunctionInputSource { index });
+        }
         if input
             .unrestricted_bindings()
             .windows(2)
@@ -3528,6 +3543,69 @@ mod tests {
     }
 
     #[test]
+    fn function_input_origin_rejects_an_unrelated_semantic_role_atomically() {
+        for (source, origin) in [
+            (
+                RuntimeFunctionInputSource::Capture { position: 0 },
+                super::super::RuntimeFunctionInputOrigin::Parameter([1; 32]),
+            ),
+            (
+                RuntimeFunctionInputSource::CapturedParameter {
+                    position: 0,
+                    passing: super::super::RuntimeFunctionParameterPassing::Value,
+                },
+                super::super::RuntimeFunctionInputOrigin::Binding([1; 32]),
+            ),
+            (
+                RuntimeFunctionInputSource::Parameter {
+                    position: 0,
+                    passing: super::super::RuntimeFunctionParameterPassing::Value,
+                },
+                super::super::RuntimeFunctionInputOrigin::EvaluatedResult(
+                    super::super::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                        [1; 32],
+                    ),
+                ),
+            ),
+        ] {
+            let mut builder = RuntimePlanBuilder::new();
+            let admitted = builder
+                .admit_type_batch(
+                    [RuntimePlanTypeSeed::new(
+                        identity(1),
+                        RuntimePlanTypeProjection::Bool,
+                    )],
+                    [RuntimeLocalDeclarationSeed::new(identity(1))],
+                )
+                .unwrap();
+            let result = builder.reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+                definition: super::super::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [2; 32],
+                ),
+                role: super::super::RuntimeFunctionSemanticRole::Ordinary,
+                function_type: None,
+                inputs: Box::new([RuntimeFunctionInputBindingSeed {
+                    origin,
+                    source,
+                    input_local: admitted.local_ids()[0].clone(),
+                    pattern: RuntimePatternSeed::new(identity(1), RuntimePatternSeedKind::Discard),
+                    ownership: Default::default(),
+                    unrestricted_bindings: Box::new([]),
+                }]),
+                result: identity(1),
+                body_kind: RuntimeFunctionSiteBodyKind::Expression,
+                effects: RuntimeEffectSet::empty(),
+            });
+            assert!(matches!(
+                result,
+                Err(RuntimePlanBuildError::InvalidFunctionInputSource { index: 0 })
+            ));
+            assert!(builder.function_sites.is_empty());
+            assert!(builder.poisoned);
+        }
+    }
+
+    #[test]
     fn cross_builder_local_injection_poisoned_the_target_builder() {
         let mut first = RuntimePlanBuilder::new();
         let foreign = first
@@ -3557,6 +3635,7 @@ mod tests {
                 crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
                 crate::plan::RuntimeFunctionSemanticRole::Ordinary,
                 [RuntimeFunctionInputBindingSeed {
+                    origin: crate::plan::RuntimeFunctionInputOrigin::Parameter([81; 32]),
                     ownership: Default::default(),
                     unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Parameter {

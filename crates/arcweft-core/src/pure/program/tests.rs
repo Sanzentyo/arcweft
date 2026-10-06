@@ -153,6 +153,7 @@ fn borrowed_program_inputs_reject_nested_affine_values_before_execution() {
         .zip([boolean, owner.semantic_identity()])
         .enumerate()
         .map(|(position, (local, ty))| RuntimeFunctionInputBindingSeed {
+            origin: crate::plan::RuntimeFunctionInputOrigin::Binding([81; 32]),
             source: RuntimeFunctionInputSource::Capture {
                 position: position as u32,
             },

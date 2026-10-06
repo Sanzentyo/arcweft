@@ -46,6 +46,7 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
             function_type: None,
             inputs: Box::new([
                 RuntimeFunctionInputBindingSeed {
+                    origin: crate::plan::RuntimeFunctionInputOrigin::Binding([81; 32]),
                     ownership: Default::default(),
                     unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Capture { position: 0 },
@@ -59,6 +60,7 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
                     ),
                 },
                 RuntimeFunctionInputBindingSeed {
+                    origin: crate::plan::RuntimeFunctionInputOrigin::Binding([81; 32]),
                     ownership: Default::default(),
                     unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Capture { position: 1 },

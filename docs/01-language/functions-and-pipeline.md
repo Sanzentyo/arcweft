@@ -384,6 +384,11 @@ structured function-site の parameter 入力は、受理済み formal の passi
 として区分を保持する。capture packet で値を運ぶことと、formal の静的な
 passing 区分は独立しており、一般の lexical capture へ置き換えて区分を落とさない。
 
+Core の入力行は ordinal と別に stable origin を必須で保持する。lexical capture は
+受理済み binding coordinate、通常・捕捉済み formal は whole-parameter identity を使う。
+合成 dialogue 値の入力は評価済み callback の定義で識別する。取得元種別と origin の
+種別が一致しない行は、function の予約を公開する前に拒否する。
+
 AWBC の各入力行も取得元を必須で保持し、parameter と captured parameter は
 静的な passing 区分を codec の往復後も保持する。retained 入力を先行させ、
 retained と現在の parameter の ordinal をそれぞれ連続した順序で検証する。

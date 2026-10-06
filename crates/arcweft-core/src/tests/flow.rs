@@ -574,6 +574,7 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
             crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             [RuntimeFunctionInputBindingSeed {
+                origin: crate::plan::RuntimeFunctionInputOrigin::Parameter([81; 32]),
                 ownership: Default::default(),
                 unrestricted_bindings: Box::new([]),
                 source: RuntimeFunctionInputSource::Parameter {
@@ -714,6 +715,7 @@ fn native_project_call_rest_materialization_accepts_empty_and_source_ordered_val
                 crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
                 crate::plan::RuntimeFunctionSemanticRole::Ordinary,
                 [RuntimeFunctionInputBindingSeed {
+                    origin: crate::plan::RuntimeFunctionInputOrigin::Parameter([81; 32]),
                     ownership: Default::default(),
                     unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Parameter {
@@ -894,6 +896,7 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
             crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             [RuntimeFunctionInputBindingSeed {
+                origin: crate::plan::RuntimeFunctionInputOrigin::Parameter([81; 32]),
                 ownership: Default::default(),
                 unrestricted_bindings: Box::new([]),
                 source: RuntimeFunctionInputSource::Parameter {

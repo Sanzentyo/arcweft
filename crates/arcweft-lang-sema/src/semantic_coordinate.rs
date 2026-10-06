@@ -1211,6 +1211,16 @@ pub struct StableCheckedBindingCoordinate {
 }
 
 impl StableCheckedBindingCoordinate {
+    /// Projects this accepted coordinate into the runtime input origin domain.
+    pub fn runtime_input_origin(
+        &self,
+    ) -> Result<arcweft_core::plan::RuntimeFunctionInputOrigin, StableCheckedBindingDigestError>
+    {
+        self.semantic_digest().map(|digest| {
+            arcweft_core::plan::RuntimeFunctionInputOrigin::Binding(*digest.as_bytes())
+        })
+    }
+
     /// Commits the accepted root and complete typed binding path. This is
     /// coordinate metadata, not a body digest or task-seal proof.
     pub fn semantic_digest(

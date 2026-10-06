@@ -209,6 +209,7 @@ fn standard_map_awbc_plan() -> (Arc<RuntimePlan>, Vec<AwbcStandardMapCase>) {
             arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             arcweft_core::plan::RuntimeFunctionSemanticRole::Closure,
             [RuntimeFunctionInputBindingSeed {
+                origin: arcweft_core::plan::RuntimeFunctionInputOrigin::Parameter([81; 32]),
                 source: RuntimeFunctionInputSource::Parameter {
                     position: 0,
                     passing: arcweft_core::plan::RuntimeFunctionParameterPassing::Value,
@@ -591,6 +592,7 @@ fn owned_program_root_retains_affine_inputs_and_result_across_save_restore() {
         .unwrap();
     let local = locals.local_ids()[0].clone();
     let input = RuntimeFunctionInputBindingSeed {
+        origin: arcweft_core::plan::RuntimeFunctionInputOrigin::Parameter([81; 32]),
         source: RuntimeFunctionInputSource::Parameter {
             position: 0,
             passing: arcweft_core::plan::RuntimeFunctionParameterPassing::Affine,

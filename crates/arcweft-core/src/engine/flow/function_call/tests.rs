@@ -499,6 +499,7 @@ fn owned_program_moves_affine_input_and_returns_it_once() {
         .unwrap();
     let local = admitted.local_ids()[0].clone();
     let input = RuntimeFunctionInputBindingSeed {
+        origin: crate::plan::RuntimeFunctionInputOrigin::Parameter([81; 32]),
         source: RuntimeFunctionInputSource::Parameter {
             position: 0,
             passing: crate::plan::RuntimeFunctionParameterPassing::Affine,

@@ -94,7 +94,7 @@ pub use format_attempt::{
     RuntimeFormatAttempt, RuntimeFormatAttemptOperand, RuntimeFormatAttemptTable,
 };
 pub use function_sites::{
-    RuntimeFunctionDefinitionIdentity, RuntimeFunctionInputBinding,
+    RuntimeFunctionDefinitionIdentity, RuntimeFunctionInputBinding, RuntimeFunctionInputOrigin,
     RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionInputSource,
     RuntimeFunctionParameterPassing, RuntimeFunctionSemanticRole, RuntimeFunctionSite,
     RuntimeFunctionSiteBody, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteError,

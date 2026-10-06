@@ -55,6 +55,7 @@ pub(crate) fn returning_function_plan(body_kind: RuntimeFunctionSiteBodyKind) ->
             role: crate::plan::RuntimeFunctionSemanticRole::Closure,
             function_type: None,
             inputs: Box::new([RuntimeFunctionInputBindingSeed {
+                origin: crate::plan::RuntimeFunctionInputOrigin::Parameter([81; 32]),
                 ownership: Default::default(),
                 unrestricted_bindings: Box::new([]),
                 source: RuntimeFunctionInputSource::Parameter {

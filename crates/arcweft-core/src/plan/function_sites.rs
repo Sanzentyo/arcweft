@@ -30,6 +30,15 @@ impl RuntimeFunctionDefinitionIdentity {
     }
 }
 
+/// Stable semantic origin of a whole input, separate from its frame ordinal.
+/// Binding coordinates and whole-formal identities retain distinct domains.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeFunctionInputOrigin {
+    Binding([u8; 32]),
+    Parameter([u8; 32]),
+    EvaluatedResult(RuntimeFunctionDefinitionIdentity),
+}
+
 /// Semantic purpose of an accepted function definition, independent of its
 /// expression or control-transfer execution body.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -152,6 +161,7 @@ pub enum RuntimeFunctionInputOwnershipRequirement {
 /// rest patterns in the same binder used by ordinary flow operations.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeFunctionInputBinding {
+    origin: RuntimeFunctionInputOrigin,
     source: RuntimeFunctionInputSource,
     input_local: RuntimeLocalDeclarationId,
     pattern: RuntimePattern,
@@ -161,6 +171,7 @@ pub struct RuntimeFunctionInputBinding {
 
 impl RuntimeFunctionInputBinding {
     pub(crate) const fn new(
+        origin: RuntimeFunctionInputOrigin,
         source: RuntimeFunctionInputSource,
         input_local: RuntimeLocalDeclarationId,
         pattern: RuntimePattern,
@@ -168,12 +179,18 @@ impl RuntimeFunctionInputBinding {
         unrestricted_bindings: Box<[RuntimeLocalDeclarationId]>,
     ) -> Self {
         Self {
+            origin,
             source,
             input_local,
             pattern,
             ownership,
             unrestricted_bindings,
         }
+    }
+
+    #[must_use]
+    pub const fn origin(&self) -> RuntimeFunctionInputOrigin {
+        self.origin
     }
 
     #[must_use]

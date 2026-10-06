@@ -128,6 +128,9 @@ impl CheckedExecutionParameter {
     pub const fn identity(&self) -> CheckedExecutionParameterIdentity {
         self.identity
     }
+    pub const fn runtime_input_origin(&self) -> arcweft_core::plan::RuntimeFunctionInputOrigin {
+        arcweft_core::plan::RuntimeFunctionInputOrigin::Parameter(*self.identity.as_bytes())
+    }
     pub const fn definition_identity(&self) -> super::CheckedExecutionDefinitionIdentity {
         self.definition
     }

@@ -79,6 +79,10 @@ pub(super) fn reserve_global_defer_sites(
                         RuntimePlanLowerError::new("defer capture position exceeds checked limits")
                     })?;
                     Ok(RuntimeFunctionInputBindingSeed {
+                        origin: capture
+                            .origin()
+                            .runtime_input_origin()
+                            .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
                         ownership: capture.input_ownership(),
                         unrestricted_bindings: if matches!(
                             capture.input_ownership(),
