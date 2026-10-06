@@ -334,7 +334,10 @@ pub(crate) fn awbc_handle_program(
         kind: AwbcFunctionKind::Ordinary,
         signature: AwbcSignatureId(0),
         type_context: None,
-        input_ownership: vec![AwbcFunctionInputOwnership::default()],
+        input_ownership: vec![AwbcFunctionInputOwnership::parameter(
+            0,
+            crate::plan::RuntimeFunctionParameterPassing::Affine,
+        )],
         frame_layout: AwbcFrameLayoutId(0),
         blocks: AwbcTableRange::new(0, 1),
         entry_block: AwbcBlockId(0),
@@ -417,9 +420,18 @@ pub(crate) fn awbc_prefixed_handle_program(
             scope_depth: 0,
         },
     );
-    program.functions[0]
-        .input_ownership
-        .insert(0, AwbcFunctionInputOwnership::default());
+    program.functions[0].input_ownership.insert(
+        0,
+        AwbcFunctionInputOwnership::parameter(
+            0,
+            crate::plan::RuntimeFunctionParameterPassing::Value,
+        ),
+    );
+    program.functions[0].input_ownership[1].source =
+        crate::plan::RuntimeFunctionInputSource::Parameter {
+            position: 1,
+            passing: crate::plan::RuntimeFunctionParameterPassing::Affine,
+        };
     program.blocks[0].terminator = AwbcTerminator::Return {
         value: Some(AwbcRegisterId(1)),
     };

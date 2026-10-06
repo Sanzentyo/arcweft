@@ -137,7 +137,10 @@ fn install_dialogue_handler_rows(candidate: &mut AwbcProgram) -> Result<(), Stan
         kind: AwbcFunctionKind::Ordinary,
         signature,
         type_context: None,
-        input_ownership: vec![AwbcFunctionInputOwnership::default()],
+        input_ownership: vec![AwbcFunctionInputOwnership::parameter(
+            0,
+            arcweft_core::plan::RuntimeFunctionParameterPassing::Affine,
+        )],
         frame_layout,
         blocks: AwbcTableRange::new(block.0, 1),
         entry_block: block,

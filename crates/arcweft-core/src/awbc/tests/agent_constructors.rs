@@ -1,5 +1,6 @@
 use super::*;
 use crate::awbc::vm::{VmExit, VmStepOptions, step};
+use crate::plan::RuntimeFunctionParameterPassing::{self, Affine, Value};
 use crate::value::{
     RuntimeAgentCompareOp, RuntimeAgentConstructor, RuntimeAgentPredicate, RuntimeAgentValue,
 };
@@ -8,8 +9,10 @@ fn constructor_program(
     constructor: RuntimeAgentConstructor,
     shapes: Vec<AwbcRuntimeTypeShape>,
     operands: &[u32],
+    passing: &[RuntimeFunctionParameterPassing],
     result: u32,
 ) -> AwbcProgram {
+    assert_eq!(operands.len(), passing.len());
     let mut program = minimal_program();
     program.runtime_types = shapes
         .into_iter()
@@ -17,8 +20,17 @@ fn constructor_program(
         .map(|(index, shape)| runtime_type(u8::try_from(index + 1).unwrap(), shape))
         .collect();
     program.signatures[0].params = operands.iter().copied().map(AwbcTypeId).collect();
-    program.functions[0].input_ownership =
-        vec![AwbcFunctionInputOwnership::default(); operands.len()];
+    program.functions[0].input_ownership = passing
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(position, passing)| {
+            AwbcFunctionInputOwnership::parameter(
+                u32::try_from(position).expect("fixture input ordinal"),
+                passing,
+            )
+        })
+        .collect();
     program.signatures[0].result = Some(AwbcTypeId(result));
     program.frame_layouts[0].slots = operands
         .iter()
@@ -117,17 +129,23 @@ fn comparison_contract_survives_codec_verification_and_execution() {
             constructor,
             shapes.clone(),
             &[2, 0],
+            &[Affine, Value],
             3,
         ));
         let value = execute(&program, &[probe(), RuntimeValue::Bool(true)]);
         assert!(
             matches!(value, RuntimeValue::Agent(RuntimeAgentValue::Predicate(RuntimeAgentPredicate::Compare { op: actual, value, .. })) if actual == op && *value == RuntimeValue::Bool(true))
         );
-        for operands in [[2, 1], [2, 4], [4, 0]] {
+        for (operands, passing) in [
+            ([2, 1], [Affine, Value]),
+            ([2, 4], [Affine, Affine]),
+            ([4, 0], [Affine, Value]),
+        ] {
             let program = round_trip(&constructor_program(
                 constructor,
                 shapes.clone(),
                 &operands,
+                &passing,
                 3,
             ));
             assert!(
@@ -149,6 +167,7 @@ fn choice_action_materializes_the_retained_identity_in_the_vm() {
             )),
         ],
         &[0],
+        &[Value],
         1,
     ));
     let value = execute(
@@ -205,7 +224,13 @@ fn collection_types_match_the_one_level_runtime_expansion() {
             (2, RuntimeValue::Tuple(vec![predicate()])),
             (3, runtime_sequence_values(vec![predicate()])),
         ] {
-            let program = round_trip(&constructor_program(constructor, shapes.clone(), &[ty], 0));
+            let program = round_trip(&constructor_program(
+                constructor,
+                shapes.clone(),
+                &[ty],
+                &[Affine],
+                0,
+            ));
             let value = execute(&program, &[value]);
             let predicates = match value {
                 RuntimeValue::Agent(RuntimeAgentValue::Predicate(RuntimeAgentPredicate::All {
@@ -218,8 +243,20 @@ fn collection_types_match_the_one_level_runtime_expansion() {
             };
             assert_eq!(predicates.len(), 1);
         }
-        for ty in [4, 5, 6, 7, 8] {
-            let program = round_trip(&constructor_program(constructor, shapes.clone(), &[ty], 0));
+        for (ty, passing) in [
+            (4, Value),
+            (5, Affine),
+            (6, Affine),
+            (7, Affine),
+            (8, Affine),
+        ] {
+            let program = round_trip(&constructor_program(
+                constructor,
+                shapes.clone(),
+                &[ty],
+                &[passing],
+                0,
+            ));
             assert!(
                 program
                     .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
@@ -227,14 +264,15 @@ fn collection_types_match_the_one_level_runtime_expansion() {
                 "{constructor:?} type {ty}"
             );
         }
-        for (ty, value) in [
-            (4, RuntimeValue::Tuple(Vec::new())),
-            (5, runtime_sequence_values(Vec::new())),
+        for (ty, value, passing) in [
+            (4, RuntimeValue::Tuple(Vec::new()), Value),
+            (5, runtime_sequence_values(Vec::new()), Affine),
         ] {
             let program = round_trip(&constructor_program(
                 constructor,
                 shapes.clone(),
                 &[ty, 0],
+                &[passing, Affine],
                 0,
             ));
             execute(&program, &[value, predicate()]);
@@ -251,11 +289,16 @@ fn dynamic_types_do_not_bypass_fixed_constructor_contracts() {
         )),
         AwbcRuntimeTypeShape::Dynamic,
     ];
-    for (operands, result) in [([2, 0], 1), ([0, 2], 1), ([0, 0], 2)] {
+    for (operands, passing, result) in [
+        ([2, 0], [Affine, Value], 1),
+        ([0, 2], [Value, Affine], 1),
+        ([0, 0], [Value, Value], 2),
+    ] {
         let program = round_trip(&constructor_program(
             RuntimeAgentConstructor::ViewportPoint,
             shapes.clone(),
             &operands,
+            &passing,
             result,
         ));
         assert!(
@@ -268,6 +311,7 @@ fn dynamic_types_do_not_bypass_fixed_constructor_contracts() {
         RuntimeAgentConstructor::ViewportPoint,
         shapes,
         &[0, 0],
+        &[Value, Value],
         1,
     ));
     execute(&program, &[RuntimeValue::u32(1), RuntimeValue::u32(2)]);
@@ -291,6 +335,7 @@ fn an_unsized_empty_collection_rejects_when_its_cardinality_is_known() {
                 },
             ],
             &[1],
+            &[Affine],
             0,
         ));
         program

@@ -364,6 +364,7 @@ impl Wire for AwbcFunction {
 
 impl Wire for crate::awbc::schema::AwbcFunctionInputOwnership {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.source.write_wire(writer)?;
         self.requirement.write_wire(writer)?;
         self.pattern.write_wire(writer)?;
         self.unrestricted_bindings.write_wire(writer)
@@ -371,10 +372,70 @@ impl Wire for crate::awbc::schema::AwbcFunctionInputOwnership {
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
+            source: crate::plan::RuntimeFunctionInputSource::read_wire(reader)?,
             requirement: crate::plan::RuntimeFunctionInputOwnershipRequirement::read_wire(reader)?,
             pattern: Option::<crate::awbc::schema::AwbcPatternId>::read_wire(reader)?,
             unrestricted_bindings: Vec::read_wire(reader)?,
         })
+    }
+}
+
+impl Wire for crate::plan::RuntimeFunctionParameterPassing {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.semantic_tag());
+        Ok(())
+    }
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_semantic_tag(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "function parameter passing",
+            tag,
+            offset,
+        })
+    }
+}
+
+impl Wire for crate::plan::RuntimeFunctionInputSource {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::Capture { position } => {
+                writer.write_u8(0);
+                position.write_wire(writer)
+            }
+            Self::Parameter { position, passing } => {
+                writer.write_u8(1);
+                position.write_wire(writer)?;
+                passing.write_wire(writer)
+            }
+            Self::CapturedParameter { position, passing } => {
+                writer.write_u8(2);
+                position.write_wire(writer)?;
+                passing.write_wire(writer)
+            }
+        }
+    }
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        match tag {
+            0 => Ok(Self::Capture {
+                position: u32::read_wire(reader)?,
+            }),
+            1 => Ok(Self::Parameter {
+                position: u32::read_wire(reader)?,
+                passing: crate::plan::RuntimeFunctionParameterPassing::read_wire(reader)?,
+            }),
+            2 => Ok(Self::CapturedParameter {
+                position: u32::read_wire(reader)?,
+                passing: crate::plan::RuntimeFunctionParameterPassing::read_wire(reader)?,
+            }),
+            _ => Err(AwbcCodecError::UnknownTag {
+                kind: "function input source",
+                tag,
+                offset,
+            }),
+        }
     }
 }
 
@@ -2453,6 +2514,91 @@ mod function_semantic_role_wire_tests {
                     offset: 0
                 }
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod function_input_source_wire_tests {
+    use super::*;
+    use crate::awbc::{codec::AwbcDecodeBudget, schema::AwbcFunctionInputOwnership};
+    use crate::plan::{RuntimeFunctionInputSource, RuntimeFunctionParameterPassing};
+
+    #[test]
+    fn mandatory_input_sources_and_all_passing_classes_round_trip() {
+        let mut sources = vec![RuntimeFunctionInputSource::Capture { position: 7 }];
+        for passing in [
+            RuntimeFunctionParameterPassing::Value,
+            RuntimeFunctionParameterPassing::Shared,
+            RuntimeFunctionParameterPassing::Affine,
+        ] {
+            sources.extend([
+                RuntimeFunctionInputSource::Parameter {
+                    position: 7,
+                    passing,
+                },
+                RuntimeFunctionInputSource::CapturedParameter {
+                    position: 7,
+                    passing,
+                },
+            ]);
+        }
+        for source in sources {
+            let row = AwbcFunctionInputOwnership::owned(source);
+            let mut writer = Writer::with_capacity(32);
+            row.write_wire(&mut writer).unwrap();
+            let bytes = writer.into_bytes();
+            let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+            assert_eq!(
+                AwbcFunctionInputOwnership::read_wire(&mut reader).unwrap(),
+                row
+            );
+            reader.finish().unwrap();
+            let json = serde_json::to_value(&row).unwrap();
+            assert_eq!(
+                serde_json::from_value::<AwbcFunctionInputOwnership>(json.clone()).unwrap(),
+                row
+            );
+            let mut missing = json;
+            missing.as_object_mut().unwrap().remove("source");
+            assert!(serde_json::from_value::<AwbcFunctionInputOwnership>(missing).is_err());
+        }
+        for kind in ["Parameter", "CapturedParameter"] {
+            let json = serde_json::json!({ kind: { "position": 0 } });
+            assert!(serde_json::from_value::<RuntimeFunctionInputSource>(json).is_err());
+        }
+    }
+
+    #[test]
+    fn input_source_and_passing_decoders_reject_every_unassigned_tag() {
+        for tag in 3..=u8::MAX {
+            let bytes = [tag];
+            let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+            assert_eq!(
+                RuntimeFunctionInputSource::read_wire(&mut reader).unwrap_err(),
+                AwbcCodecError::UnknownTag {
+                    kind: "function input source",
+                    tag,
+                    offset: 0
+                }
+            );
+            for source_tag in [1, 2] {
+                let mut writer = Writer::with_capacity(8);
+                writer.write_u8(source_tag);
+                0u32.write_wire(&mut writer).unwrap();
+                let mut bytes = writer.into_bytes();
+                let offset = bytes.len();
+                bytes.push(tag);
+                let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+                assert_eq!(
+                    RuntimeFunctionInputSource::read_wire(&mut reader).unwrap_err(),
+                    AwbcCodecError::UnknownTag {
+                        kind: "function parameter passing",
+                        tag,
+                        offset
+                    }
+                );
+            }
         }
     }
 }

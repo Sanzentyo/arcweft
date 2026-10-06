@@ -77,7 +77,17 @@ impl<'a, 'plan> AwbcTraitMethodLowerer<'a, 'plan> {
                 kind: AwbcFunctionKind::TraitMethod,
                 signature,
                 type_context: None,
-                input_ownership: vec![AwbcFunctionInputOwnership::default(); method.inputs.len()],
+                input_ownership: method
+                    .inputs
+                    .iter()
+                    .enumerate()
+                    .map(|(position, input)| {
+                        AwbcFunctionInputOwnership::parameter(
+                            table_index(position),
+                            input.passing(),
+                        )
+                    })
+                    .collect(),
                 frame_layout: layout,
                 blocks: body.blocks,
                 entry_block: body.entry_block,

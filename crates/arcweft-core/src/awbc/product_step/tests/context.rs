@@ -254,7 +254,16 @@ fn context_program() -> AwbcContextFixture {
                 kind: AwbcFunctionKind::Ordinary,
                 signature: AwbcSignatureId(1),
                 type_context: None,
-                input_ownership: vec![AwbcFunctionInputOwnership::default(); 2],
+                input_ownership: vec![
+                    AwbcFunctionInputOwnership::parameter(
+                        0,
+                        crate::plan::RuntimeFunctionParameterPassing::Value,
+                    ),
+                    AwbcFunctionInputOwnership::parameter(
+                        1,
+                        crate::plan::RuntimeFunctionParameterPassing::Affine,
+                    ),
+                ],
                 frame_layout: AwbcFrameLayoutId(1),
                 blocks: AwbcTableRange::new(1, 1),
                 entry_block: AwbcBlockId(1),
@@ -319,10 +328,13 @@ fn context_program() -> AwbcContextFixture {
             kind: AwbcFunctionKind::Ordinary,
             signature,
             type_context: None,
-            input_ownership: vec![
-                AwbcFunctionInputOwnership::default();
-                program.signatures[signature.index()].params.len()
-            ],
+            input_ownership: (0..program.signatures[signature.index()].params.len())
+                .map(|position| {
+                    AwbcFunctionInputOwnership::capture(
+                        u32::try_from(position).expect("fixture input ordinal"),
+                    )
+                })
+                .collect(),
             frame_layout,
             blocks: AwbcTableRange::new(index + 1, 1),
             entry_block: AwbcBlockId(index + 1),

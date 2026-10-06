@@ -118,7 +118,10 @@ fn specialization_program() -> AwbcProgram {
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(1),
             type_context: None,
-            input_ownership: vec![AwbcFunctionInputOwnership::default(); 1],
+            input_ownership: vec![AwbcFunctionInputOwnership::parameter(
+                0,
+                crate::plan::RuntimeFunctionParameterPassing::Value,
+            )],
             frame_layout: AwbcFrameLayoutId(1),
             blocks: AwbcTableRange::new(1, 1),
             entry_block: AwbcBlockId(1),

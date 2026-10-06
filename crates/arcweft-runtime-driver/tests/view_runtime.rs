@@ -2928,7 +2928,10 @@ fn pure_fixture_awbc(
         signature: AwbcSignatureId(0),
         type_context: None,
         input_ownership: if has_parameter {
-            vec![AwbcFunctionInputOwnership::default()]
+            vec![AwbcFunctionInputOwnership::parameter(
+                0,
+                arcweft_core::plan::RuntimeFunctionParameterPassing::Value,
+            )]
         } else {
             Vec::new()
         },
@@ -3121,7 +3124,14 @@ fn repeat_fixture_awbc(
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(ordinal),
             type_context: None,
-            input_ownership: vec![AwbcFunctionInputOwnership::default(); inputs.len()],
+            input_ownership: (0..inputs.len())
+                .map(|position| {
+                    AwbcFunctionInputOwnership::parameter(
+                        u32::try_from(position).expect("fixture input ordinal"),
+                        arcweft_core::plan::RuntimeFunctionParameterPassing::Value,
+                    )
+                })
+                .collect(),
             frame_layout: AwbcFrameLayoutId(ordinal),
             blocks: AwbcTableRange::new(ordinal, 1),
             entry_block: AwbcBlockId(ordinal),

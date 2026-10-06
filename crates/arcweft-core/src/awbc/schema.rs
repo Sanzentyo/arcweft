@@ -1280,12 +1280,32 @@ pub struct AwbcFunction {
 /// Exact bindings whose values must be unrestricted when one positional
 /// function input enters its frame. Rows are aligned with `signature.params`;
 /// an empty binding list admits an owned input without projecting a copy proof.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AwbcFunctionInputOwnership {
+    /// Exact semantic source, including mandatory static passing for a formal.
+    pub source: crate::plan::RuntimeFunctionInputSource,
     pub requirement: RuntimeFunctionInputOwnershipRequirement,
     pub pattern: Option<AwbcPatternId>,
     pub unrestricted_bindings: Vec<AwbcRegisterId>,
+}
+
+impl AwbcFunctionInputOwnership {
+    /// Direct value ingress with an explicit source; Copy guarantees stay separate.
+    pub fn owned(source: crate::plan::RuntimeFunctionInputSource) -> Self {
+        Self {
+            source,
+            requirement: RuntimeFunctionInputOwnershipRequirement::Owned,
+            pattern: None,
+            unrestricted_bindings: Vec::new(),
+        }
+    }
+    pub fn parameter(position: u32, passing: crate::plan::RuntimeFunctionParameterPassing) -> Self {
+        Self::owned(crate::plan::RuntimeFunctionInputSource::Parameter { position, passing })
+    }
+    pub fn capture(position: u32) -> Self {
+        Self::owned(crate::plan::RuntimeFunctionInputSource::Capture { position })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

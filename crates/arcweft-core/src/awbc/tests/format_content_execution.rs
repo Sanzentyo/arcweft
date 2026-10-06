@@ -220,7 +220,7 @@ fn format_program(value_thunk: ValueThunk) -> AwbcProgram {
             kind: AwbcFunctionKind::Synthetic,
             signature: AwbcSignatureId(1),
             type_context: None,
-            input_ownership: vec![AwbcFunctionInputOwnership::default()],
+            input_ownership: vec![AwbcFunctionInputOwnership::capture(0)],
             frame_layout: AwbcFrameLayoutId(1),
             blocks: AwbcTableRange::new(1, 1),
             entry_block: AwbcBlockId(1),
@@ -275,7 +275,7 @@ fn flow_format_attempt_program(outcome: FlowAttemptHelperOutcome) -> AwbcProgram
     let int_type = AwbcTypeId(1);
     let string_type = AwbcTypeId(2);
     program.signatures[2].params = vec![int_type];
-    program.functions[2].input_ownership = vec![AwbcFunctionInputOwnership::default()];
+    program.functions[2].input_ownership = vec![AwbcFunctionInputOwnership::capture(0)];
     program.frame_layouts[2].slots[0].role = AwbcFrameSlotRole::Parameter;
     let attempt = crate::runtime_id::RuntimeFormatAttemptId::from_zero_based(0)
         .expect("format attempt identity");
@@ -807,7 +807,16 @@ fn project_display_program(project_success: bool) -> AwbcProgram {
         kind: AwbcFunctionKind::TraitMethod,
         signature: method_entry,
         type_context: None,
-        input_ownership: vec![AwbcFunctionInputOwnership::default(); 2],
+        input_ownership: vec![
+            AwbcFunctionInputOwnership::parameter(
+                0,
+                crate::plan::RuntimeFunctionParameterPassing::Value,
+            ),
+            AwbcFunctionInputOwnership::parameter(
+                1,
+                crate::plan::RuntimeFunctionParameterPassing::Value,
+            ),
+        ],
         frame_layout: method_layout,
         blocks: AwbcTableRange::new(method_block.0, 1),
         entry_block: method_block,
@@ -871,7 +880,7 @@ fn project_display_program(project_success: bool) -> AwbcProgram {
             kind: AwbcFunctionKind::Synthetic,
             signature: value_signature,
             type_context: None,
-            input_ownership: vec![AwbcFunctionInputOwnership::default()],
+            input_ownership: vec![AwbcFunctionInputOwnership::capture(0)],
             frame_layout: value_layout,
             blocks: AwbcTableRange::new(value_block.0, 1),
             entry_block: value_block,
@@ -1161,7 +1170,10 @@ fn nested_format_program(call: NestedValueCall, value_thunk: ValueThunk) -> Awbc
         },
         signature: AwbcSignatureId(1),
         type_context: None,
-        input_ownership: vec![AwbcFunctionInputOwnership::default()],
+        input_ownership: vec![AwbcFunctionInputOwnership::parameter(
+            0,
+            crate::plan::RuntimeFunctionParameterPassing::Value,
+        )],
         frame_layout: AwbcFrameLayoutId(3),
         blocks: AwbcTableRange::new(3, 1),
         entry_block: AwbcBlockId(3),

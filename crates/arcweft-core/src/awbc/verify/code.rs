@@ -490,8 +490,44 @@ fn validate_function_input_ownership(
     )?;
 
     let mut prologue_offset = 0;
+    let mut retained = 0u32;
+    let mut supplied = 0u32;
+    let mut parameter_phase = false;
     for (position, (row, parameter)) in function.input_ownership.iter().zip(parameters).enumerate()
     {
+        match row.source {
+            crate::plan::RuntimeFunctionInputSource::Capture { position: ordinal }
+            | crate::plan::RuntimeFunctionInputSource::CapturedParameter {
+                position: ordinal,
+                ..
+            } if !parameter_phase && ordinal == retained => {
+                retained =
+                    retained
+                        .checked_add(1)
+                        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                            at: at.clone(),
+                            message: "retained input ordinal overflows".to_owned(),
+                        })?;
+            }
+            crate::plan::RuntimeFunctionInputSource::Parameter {
+                position: ordinal, ..
+            } if ordinal == supplied => {
+                parameter_phase = true;
+                supplied =
+                    supplied
+                        .checked_add(1)
+                        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                            at: at.clone(),
+                            message: "parameter input ordinal overflows".to_owned(),
+                        })?;
+            }
+            _ => {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: format!("input {position} has a noncanonical source role or ordinal"),
+                });
+            }
+        }
         let mut required = BTreeSet::new();
         for target in &row.unrestricted_bindings {
             if !required.insert(*target) {

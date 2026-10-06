@@ -205,7 +205,10 @@ fn partial_parameter_storage_is_borrowed_and_transferred_without_losing_its_chil
     let mut program = partial_record_program();
     program.frame_layouts[0].slots[0].role = AwbcFrameSlotRole::Parameter;
     program.signatures[0].params = vec![AwbcTypeId(1)];
-    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::default()];
+    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::parameter(
+        0,
+        crate::plan::RuntimeFunctionParameterPassing::Affine,
+    )];
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .unwrap();
@@ -756,7 +759,20 @@ fn sequence_output_cannot_overwrite_a_conditionally_initialized_slot() {
             runtime_type(114, AwbcRuntimeTypeShape::Bool),
         ];
         program.signatures[0].params = vec![AwbcTypeId(2), AwbcTypeId(3), AwbcTypeId(1)];
-        program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::default(); 3];
+        program.functions[0].input_ownership = vec![
+            AwbcFunctionInputOwnership::parameter(
+                0,
+                crate::plan::RuntimeFunctionParameterPassing::Affine,
+            ),
+            AwbcFunctionInputOwnership::parameter(
+                1,
+                crate::plan::RuntimeFunctionParameterPassing::Value,
+            ),
+            AwbcFunctionInputOwnership::parameter(
+                2,
+                crate::plan::RuntimeFunctionParameterPassing::Affine,
+            ),
+        ];
         program.functions[0].blocks = AwbcTableRange::new(0, 6);
         program.frame_layouts[0].slots = [2, 3, 1, 1, 1]
             .into_iter()

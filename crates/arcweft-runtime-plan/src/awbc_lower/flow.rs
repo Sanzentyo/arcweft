@@ -428,7 +428,17 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 kind: AwbcFunctionKind::PureHelper,
                 signature,
                 type_context: None,
-                input_ownership: vec![AwbcFunctionInputOwnership::default(); helper.inputs.len()],
+                input_ownership: helper
+                    .inputs
+                    .iter()
+                    .enumerate()
+                    .map(|(position, input)| {
+                        AwbcFunctionInputOwnership::parameter(
+                            table_index(position),
+                            input.passing(),
+                        )
+                    })
+                    .collect(),
                 frame_layout: layout,
                 blocks: AwbcTableRange::new(block_start.0, block_len),
                 entry_block: block_start,
@@ -859,7 +869,9 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 kind,
                 signature,
                 type_context: None,
-                input_ownership: vec![AwbcFunctionInputOwnership::default(); captures.len()],
+                input_ownership: (0..captures.len())
+                    .map(|position| AwbcFunctionInputOwnership::capture(table_index(position)))
+                    .collect(),
                 frame_layout: layout,
                 blocks: body.blocks,
                 entry_block: body.entry_block,
@@ -979,6 +991,11 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
     fn lower_flow(&mut self, flow: &RuntimeFlow) -> AwbcFunctionId {
         let mut frame = FrameBuilder::new();
         let public_name = flow_public_id(&flow.id);
+        let schema = self
+            .plan
+            .flow_schemas()
+            .iter()
+            .find(|schema| schema.flow == flow.id);
         let canonical_name = flow.id.canonical_label();
         let owner = self
             .inventory
@@ -1026,6 +1043,23 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         if body.has_dynamic_target {
             flags.push(AwbcFunctionFlag::HasDynamicTarget);
         }
+        let input_ownership = match schema {
+            Some(schema) if schema.parameters.len() == flow.params.len() => schema
+                .parameters
+                .iter()
+                .enumerate()
+                .map(|(position, input)| {
+                    AwbcFunctionInputOwnership::parameter(table_index(position), input.passing)
+                })
+                .collect(),
+            _ => {
+                self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                    &public_name,
+                    "Flow input schema is absent or has different arity",
+                ));
+                Vec::new()
+            }
+        };
         let function = self.inventory.replace_flow_function(
             &flow.id,
             owner,
@@ -1035,7 +1069,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 kind: AwbcFunctionKind::Flow,
                 signature,
                 type_context: None,
-                input_ownership: vec![AwbcFunctionInputOwnership::default(); flow.params.len()],
+                input_ownership,
                 frame_layout: layout,
                 blocks: body.blocks,
                 entry_block: body.entry_block,

@@ -132,7 +132,16 @@ fn context_fixture(receiver: ContextReceiver, defaulted: bool) -> ContextFixture
         result: Some(target_result),
         effects: AwbcEffectSetId(0),
     };
-    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::default(); 2];
+    program.functions[0].input_ownership = vec![
+        AwbcFunctionInputOwnership::parameter(
+            0,
+            crate::plan::RuntimeFunctionParameterPassing::Value,
+        ),
+        AwbcFunctionInputOwnership::parameter(
+            1,
+            crate::plan::RuntimeFunctionParameterPassing::Affine,
+        ),
+    ];
     program.frame_layouts[0].slots = vec![
         AwbcFrameSlot {
             name: None,
@@ -208,10 +217,13 @@ fn context_fixture(receiver: ContextReceiver, defaulted: bool) -> ContextFixture
         kind: AwbcFunctionKind::Ordinary,
         signature: AwbcSignatureId(1),
         type_context: None,
-        input_ownership: vec![
-            AwbcFunctionInputOwnership::default();
-            program.signatures[AwbcSignatureId(1).index()].params.len()
-        ],
+        input_ownership: (0..program.signatures[AwbcSignatureId(1).index()].params.len())
+            .map(|position| {
+                AwbcFunctionInputOwnership::capture(
+                    u32::try_from(position).expect("fixture input ordinal"),
+                )
+            })
+            .collect(),
         frame_layout: AwbcFrameLayoutId(1),
         blocks: AwbcTableRange::new(1, 1),
         entry_block: AwbcBlockId(1),
@@ -861,10 +873,13 @@ fn formatter_context_fixture() -> ContextFixture {
             kind: AwbcFunctionKind::Synthetic,
             signature: AwbcSignatureId(2),
             type_context: None,
-            input_ownership: vec![
-                AwbcFunctionInputOwnership::default();
-                program.signatures[AwbcSignatureId(2).index()].params.len()
-            ],
+            input_ownership: (0..program.signatures[AwbcSignatureId(2).index()].params.len())
+                .map(|position| {
+                    AwbcFunctionInputOwnership::capture(
+                        u32::try_from(position).expect("fixture input ordinal"),
+                    )
+                })
+                .collect(),
             frame_layout: AwbcFrameLayoutId(2),
             blocks: AwbcTableRange::new(2, 1),
             entry_block: AwbcBlockId(2),
@@ -876,10 +891,13 @@ fn formatter_context_fixture() -> ContextFixture {
             kind: AwbcFunctionKind::Synthetic,
             signature: AwbcSignatureId(3),
             type_context: None,
-            input_ownership: vec![
-                AwbcFunctionInputOwnership::default();
-                program.signatures[AwbcSignatureId(3).index()].params.len()
-            ],
+            input_ownership: (0..program.signatures[AwbcSignatureId(3).index()].params.len())
+                .map(|position| {
+                    AwbcFunctionInputOwnership::capture(
+                        u32::try_from(position).expect("fixture input ordinal"),
+                    )
+                })
+                .collect(),
             frame_layout: AwbcFrameLayoutId(3),
             blocks: AwbcTableRange::new(3, 1),
             entry_block: AwbcBlockId(3),

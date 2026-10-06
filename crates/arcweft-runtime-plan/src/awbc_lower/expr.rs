@@ -1061,7 +1061,11 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                         kind: AwbcFunctionKind::Ordinary,
                         signature,
                         type_context: None,
-                        input_ownership: vec![AwbcFunctionInputOwnership::default(); inputs.len()],
+                        input_ownership: (0..inputs.len())
+                            .map(|position| {
+                                AwbcFunctionInputOwnership::capture(table_index(position))
+                            })
+                            .collect(),
                         frame_layout: layout,
                         blocks: AwbcTableRange::new(
                             block.0,
@@ -1189,10 +1193,11 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                         kind: AwbcFunctionKind::Synthetic,
                         signature,
                         type_context: None,
-                        input_ownership: vec![
-                            AwbcFunctionInputOwnership::default();
-                            captures.len()
-                        ],
+                        input_ownership: (0..captures.len())
+                            .map(|position| {
+                                AwbcFunctionInputOwnership::capture(table_index(position))
+                            })
+                            .collect(),
                         frame_layout: layout,
                         blocks: AwbcTableRange::new(block.0, block_len),
                         entry_block: block,

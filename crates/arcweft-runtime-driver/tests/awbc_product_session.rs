@@ -1959,7 +1959,9 @@ fn minimal_awbc_program(entry: &str) -> AwbcProgram {
                 kind: AwbcFunctionKind::Synthetic,
                 signature: AwbcSignatureId(1),
                 type_context: None,
-                input_ownership: vec![Default::default()],
+                input_ownership: vec![
+                    arcweft_core::awbc::schema::AwbcFunctionInputOwnership::capture(0),
+                ],
                 frame_layout: AwbcFrameLayoutId(1),
                 blocks: AwbcTableRange::new(1, 1),
                 entry_block: AwbcBlockId(1),

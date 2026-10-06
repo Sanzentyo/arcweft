@@ -5,7 +5,10 @@ fn canonical_or_patterns_reject_bad_arity_cycles_and_binding_inventories() {
     let mut program = minimal_program();
     program.runtime_types = vec![runtime_type(1, AwbcRuntimeTypeShape::Bool)];
     program.signatures[0].params = vec![AwbcTypeId(0)];
-    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::default()];
+    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::parameter(
+        0,
+        crate::plan::RuntimeFunctionParameterPassing::Value,
+    )];
     program.frame_layouts[0].slots = (0..3)
         .map(|index| AwbcFrameSlot {
             name: None,

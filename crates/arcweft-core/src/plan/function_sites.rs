@@ -70,6 +70,15 @@ pub enum RuntimeFunctionParameterPassing {
 }
 
 impl RuntimeFunctionParameterPassing {
+    pub const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        match tag {
+            0 => Some(Self::Value),
+            1 => Some(Self::Shared),
+            2 => Some(Self::Affine),
+            _ => None,
+        }
+    }
+
     #[must_use]
     pub const fn semantic_tag(self) -> u8 {
         match self {
@@ -88,7 +97,8 @@ pub enum RuntimeFunctionSiteBodyKind {
 }
 
 /// Origin of one function-site input row in the closed call ABI.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
 pub enum RuntimeFunctionInputSource {
     Capture {
         position: u32,

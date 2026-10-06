@@ -6389,7 +6389,10 @@ mod tests {
         program.signatures[0].params.push(AwbcTypeId(0));
         program.functions[0]
             .input_ownership
-            .push(AwbcFunctionInputOwnership::default());
+            .push(AwbcFunctionInputOwnership::parameter(
+                0,
+                crate::plan::RuntimeFunctionParameterPassing::Value,
+            ));
         program.frame_layouts[0].slots.push(AwbcFrameSlot {
             name: None,
             ty: AwbcTypeId(0),
@@ -6445,7 +6448,7 @@ mod tests {
                 kind: AwbcFunctionKind::Synthetic,
                 signature: AwbcSignatureId(signature_id),
                 type_context: None,
-                input_ownership: vec![AwbcFunctionInputOwnership::default()],
+                input_ownership: vec![AwbcFunctionInputOwnership::capture(0)],
                 frame_layout: AwbcFrameLayoutId(1),
                 blocks: AwbcTableRange::new(function_id, 1),
                 entry_block: AwbcBlockId(function_id),

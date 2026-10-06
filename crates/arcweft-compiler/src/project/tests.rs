@@ -2984,6 +2984,40 @@ fn function_sites_preserve_accepted_parameter_passing_separately_from_ingress() 
         closures, 2,
         "explicit and implicit formals retain their accepted mode"
     );
+    let runtime = compiled.runtime_plan();
+    let lowered = arcweft_runtime_plan::awbc_lower::AwbcLowerer::new(
+        &runtime.plan,
+        &runtime.dialogue_content_catalog,
+        "formal_transport.arcw",
+    )
+    .lower()
+    .expect("accepted input sources lower and verify");
+    let mut expected = plan
+        .function_sites()
+        .iter()
+        .flat_map(|site| site.inputs())
+        .map(|input| input.source())
+        .collect::<Vec<_>>();
+    let mut actual = lowered
+        .program
+        .functions
+        .iter()
+        .flat_map(|function| &function.input_ownership)
+        .map(|input| input.source)
+        .collect::<Vec<_>>();
+    expected.sort();
+    actual.sort();
+    assert_eq!(
+        actual, expected,
+        "complete source and static passing survive physical lowering"
+    );
+    let bytes = lowered.program.encode_canonical().unwrap();
+    let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+        &bytes,
+        arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+    )
+    .unwrap();
+    assert_eq!(decoded, lowered.program);
 }
 
 #[test]

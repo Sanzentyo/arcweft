@@ -263,7 +263,7 @@ fn format_content_program() -> AwbcProgram {
         kind: AwbcFunctionKind::Synthetic,
         signature: AwbcSignatureId(1),
         type_context: None,
-        input_ownership: vec![AwbcFunctionInputOwnership::default(); 1],
+        input_ownership: vec![AwbcFunctionInputOwnership::capture(0)],
         frame_layout: AwbcFrameLayoutId(1),
         blocks: AwbcTableRange::new(1, 1),
         entry_block: AwbcBlockId(1),
@@ -1126,7 +1126,10 @@ fn sequence_next_moves_affine_item_and_initializes_only_nonempty_edge() {
         ),
     ];
     program.signatures[0].params = vec![sequence];
-    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::default()];
+    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::parameter(
+        0,
+        crate::plan::RuntimeFunctionParameterPassing::Affine,
+    )];
     program.functions[0].blocks = AwbcTableRange::new(0, 3);
     program.frame_layouts[0].slots = vec![
         AwbcFrameSlot {
@@ -2192,7 +2195,18 @@ fn project_call_retained_program() -> AwbcProgram {
         kind: AwbcFunctionKind::Ordinary,
         signature: AwbcSignatureId(1),
         type_context: None,
-        input_ownership: vec![AwbcFunctionInputOwnership::default(); 2],
+        input_ownership: vec![
+            AwbcFunctionInputOwnership::owned(
+                crate::plan::RuntimeFunctionInputSource::CapturedParameter {
+                    position: 0,
+                    passing: crate::plan::RuntimeFunctionParameterPassing::Value,
+                },
+            ),
+            AwbcFunctionInputOwnership::parameter(
+                0,
+                crate::plan::RuntimeFunctionParameterPassing::Value,
+            ),
+        ],
         frame_layout: AwbcFrameLayoutId(1),
         blocks: AwbcTableRange::new(4, 1),
         entry_block: AwbcBlockId(4),
@@ -2527,7 +2541,12 @@ fn project_call_default_program() -> AwbcProgram {
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(2),
             type_context: None,
-            input_ownership: vec![AwbcFunctionInputOwnership::default(); 1],
+            input_ownership: vec![AwbcFunctionInputOwnership::owned(
+                crate::plan::RuntimeFunctionInputSource::CapturedParameter {
+                    position: 0,
+                    passing: crate::plan::RuntimeFunctionParameterPassing::Value,
+                },
+            )],
             frame_layout: AwbcFrameLayoutId(2),
             blocks: AwbcTableRange::new(3, 1),
             entry_block: AwbcBlockId(3),
@@ -4851,7 +4870,10 @@ fn verifier_rejects_duplicate_binding_targets_across_pattern_rest() {
         runtime_type(2, AwbcRuntimeTypeShape::Bool),
     ];
     program.signatures[0].params = vec![AwbcTypeId(0)];
-    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::default()];
+    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::parameter(
+        0,
+        crate::plan::RuntimeFunctionParameterPassing::Affine,
+    )];
     program.frame_layouts[0] = AwbcFrameLayout {
         scopes: Vec::new(),
         slots: vec![
@@ -4908,7 +4930,10 @@ fn verifier_tracks_dynamic_record_children_before_the_rest_binding() {
     let mut program = minimal_program();
     program.runtime_types = vec![runtime_type(1, AwbcRuntimeTypeShape::Dynamic)];
     program.signatures[0].params = vec![AwbcTypeId(0)];
-    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::default()];
+    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::parameter(
+        0,
+        crate::plan::RuntimeFunctionParameterPassing::Affine,
+    )];
     program.functions[0].input_ownership[0].requirement =
         RuntimeFunctionInputOwnershipRequirement::Unrestricted;
     program.frame_layouts[0] = AwbcFrameLayout {
@@ -4992,7 +5017,10 @@ fn verifier_rejects_incorrect_agent_field_destination_type() {
         runtime_type(2, AwbcRuntimeTypeShape::String),
     ];
     program.signatures[0].params = vec![AwbcTypeId(0)];
-    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::default()];
+    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::parameter(
+        0,
+        crate::plan::RuntimeFunctionParameterPassing::Affine,
+    )];
     program.frame_layouts[0] = AwbcFrameLayout {
         scopes: Vec::new(),
         slots: vec![
@@ -5029,7 +5057,11 @@ fn verifier_rejects_incorrect_agent_field_destination_type() {
     );
 }
 
-fn optional_string_field_program(owner: AwbcRuntimeTypeShape, label: &str) -> AwbcProgram {
+fn optional_string_field_program(
+    owner: AwbcRuntimeTypeShape,
+    label: &str,
+    passing: crate::plan::RuntimeFunctionParameterPassing,
+) -> AwbcProgram {
     let mut program = minimal_program();
     program
         .strings
@@ -5060,7 +5092,7 @@ fn optional_string_field_program(owner: AwbcRuntimeTypeShape, label: &str) -> Aw
         runtime_type(5, AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(1)])),
     ];
     program.signatures[0].params = vec![AwbcTypeId(0)];
-    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::default()];
+    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::parameter(0, passing)];
     program.frame_layouts[0] = AwbcFrameLayout {
         scopes: Vec::new(),
         slots: vec![
@@ -5096,6 +5128,7 @@ fn verifier_requires_option_destination_for_optional_agent_fields() {
             RuntimeAgentOperationalType::ObservedObject,
         )),
         "parent_id",
+        crate::plan::RuntimeFunctionParameterPassing::Affine,
     );
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
@@ -5114,7 +5147,11 @@ fn verifier_requires_option_destination_for_optional_agent_fields() {
 
 #[test]
 fn progress_label_projects_through_the_registered_option_payload() {
-    let program = optional_string_field_program(AwbcRuntimeTypeShape::Progress, "label");
+    let program = optional_string_field_program(
+        AwbcRuntimeTypeShape::Progress,
+        "label",
+        crate::plan::RuntimeFunctionParameterPassing::Value,
+    );
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .unwrap();
@@ -5164,7 +5201,16 @@ fn verifier_rejects_agent_operands_that_can_only_fail_at_runtime() {
         ),
     ];
     viewport.signatures[0].params = vec![AwbcTypeId(0), AwbcTypeId(0)];
-    viewport.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::default(); 2];
+    viewport.functions[0].input_ownership = vec![
+        AwbcFunctionInputOwnership::parameter(
+            0,
+            crate::plan::RuntimeFunctionParameterPassing::Affine,
+        ),
+        AwbcFunctionInputOwnership::parameter(
+            1,
+            crate::plan::RuntimeFunctionParameterPassing::Affine,
+        ),
+    ];
     viewport.frame_layouts[0] = AwbcFrameLayout {
         scopes: Vec::new(),
         slots: vec![
@@ -5221,7 +5267,10 @@ fn verifier_rejects_agent_operands_that_can_only_fail_at_runtime() {
         ),
     ];
     all.signatures[0].params = vec![AwbcTypeId(1)];
-    all.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::default()];
+    all.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::parameter(
+        0,
+        crate::plan::RuntimeFunctionParameterPassing::Value,
+    )];
     all.frame_layouts[0] = AwbcFrameLayout {
         scopes: Vec::new(),
         slots: vec![
@@ -6239,7 +6288,10 @@ fn reduction_unchanged_materializes_one_reference_layer_without_widening_other_o
         kind: AwbcFunctionKind::Ordinary,
         signature: AwbcSignatureId(1),
         type_context: None,
-        input_ownership: vec![AwbcFunctionInputOwnership::default(); 1],
+        input_ownership: vec![AwbcFunctionInputOwnership::parameter(
+            0,
+            crate::plan::RuntimeFunctionParameterPassing::Value,
+        )],
         frame_layout: AwbcFrameLayoutId(1),
         blocks: AwbcTableRange::new(1, 1),
         entry_block: AwbcBlockId(1),
@@ -6373,7 +6425,10 @@ fn stateful_entry_with_function_site_callables() -> AwbcProgram {
         ),
     ];
     program.signatures[0].params = vec![AwbcTypeId(0)];
-    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::default()];
+    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::parameter(
+        0,
+        crate::plan::RuntimeFunctionParameterPassing::Value,
+    )];
     program.frame_layouts[0].slots.push(AwbcFrameSlot {
         name: None,
         ty: AwbcTypeId(0),
@@ -6440,7 +6495,16 @@ fn stateful_entry_with_function_site_callables() -> AwbcProgram {
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(2),
             type_context: None,
-            input_ownership: vec![AwbcFunctionInputOwnership::default(); 2],
+            input_ownership: vec![
+                AwbcFunctionInputOwnership::parameter(
+                    0,
+                    crate::plan::RuntimeFunctionParameterPassing::Affine,
+                ),
+                AwbcFunctionInputOwnership::parameter(
+                    1,
+                    crate::plan::RuntimeFunctionParameterPassing::Value,
+                ),
+            ],
             frame_layout: AwbcFrameLayoutId(2),
             blocks: AwbcTableRange::new(2, 1),
             entry_block: AwbcBlockId(2),
@@ -7289,7 +7353,7 @@ fn callable_instructions_capture_and_apply_program_owned_state() {
                 kind: AwbcFunctionKind::Synthetic,
                 signature: AwbcSignatureId(1),
                 type_context: None,
-                input_ownership: vec![AwbcFunctionInputOwnership::default(); 1],
+                input_ownership: vec![AwbcFunctionInputOwnership::capture(0)],
                 frame_layout: AwbcFrameLayoutId(1),
                 blocks: AwbcTableRange::new(1, 1),
                 entry_block: AwbcBlockId(1),
@@ -7706,7 +7770,16 @@ fn expression_apply_keeps_partial_application_as_a_value_operation() {
     ];
     program.signatures[0].result = Some(AwbcTypeId(3));
     program.signatures[1].params = vec![AwbcTypeId(0), AwbcTypeId(0)];
-    program.functions[1].input_ownership = vec![AwbcFunctionInputOwnership::default(); 2];
+    program.functions[1].input_ownership = vec![
+        AwbcFunctionInputOwnership::parameter(
+            0,
+            crate::plan::RuntimeFunctionParameterPassing::Value,
+        ),
+        AwbcFunctionInputOwnership::parameter(
+            1,
+            crate::plan::RuntimeFunctionParameterPassing::Value,
+        ),
+    ];
     program.frame_layouts[0].slots[0].ty = AwbcTypeId(2);
     program.frame_layouts[0].slots[1].ty = AwbcTypeId(3);
     program.frame_layouts[0].slots.push(AwbcFrameSlot {
@@ -8037,4 +8110,46 @@ fn nested_return_restores_caller_resume_and_destination() {
             .expect("return register"),
         &returned
     );
+}
+
+#[test]
+fn verifier_rejects_noncanonical_function_input_sources_before_execution() {
+    use crate::plan::{RuntimeFunctionInputSource, RuntimeFunctionParameterPassing};
+    let base = project_call_retained_program();
+    base.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .unwrap();
+    for sources in [
+        [
+            RuntimeFunctionInputSource::CapturedParameter {
+                position: 1,
+                passing: RuntimeFunctionParameterPassing::Value,
+            },
+            RuntimeFunctionInputSource::Parameter {
+                position: 0,
+                passing: RuntimeFunctionParameterPassing::Value,
+            },
+        ],
+        [
+            RuntimeFunctionInputSource::Parameter {
+                position: 0,
+                passing: RuntimeFunctionParameterPassing::Value,
+            },
+            RuntimeFunctionInputSource::Capture { position: 0 },
+        ],
+        [
+            RuntimeFunctionInputSource::Capture { position: 0 },
+            RuntimeFunctionInputSource::Capture { position: 0 },
+        ],
+    ] {
+        let mut program = base.clone();
+        for (row, source) in program.functions[1].input_ownership.iter_mut().zip(sources) {
+            row.source = source;
+        }
+        let error = program
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .unwrap_err();
+        assert!(
+            matches!(error, AwbcVerifyError::InvalidInvariant { ref message, .. } if message.contains("noncanonical source role or ordinal"))
+        );
+    }
 }
