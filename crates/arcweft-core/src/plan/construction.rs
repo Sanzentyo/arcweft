@@ -54,7 +54,8 @@ pub use seed::{
     RuntimePureHelperSeed, RuntimePureHelperSeedId, RuntimePureProgramBindingSeed,
     RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed, RuntimeScheduledCaptureSeed,
     RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed, RuntimeStreamPlanSeed,
-    RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
+    RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodInputSeed, RuntimeTraitMethodSeed,
+    RuntimeTraitMethodSeedId,
 };
 
 use crate::entry::{
@@ -653,8 +654,7 @@ struct ReservedPureHelper {
 struct ReservedTraitMethod {
     identity: super::RuntimeTraitMethodIdentity,
     receiver: super::RuntimeReceiverMode,
-    input_locals: Box<[RuntimeLocalDeclarationId]>,
-    input_abi: Vec<super::RuntimePureInputType>,
+    inputs: Box<[super::RuntimeTraitMethodInput]>,
     output_abi: super::RuntimePureOutputType,
     body: Option<crate::value::RuntimeExpr>,
 }
@@ -2350,7 +2350,6 @@ impl RuntimePlanBuilder {
             identity: seed.identity,
             receiver: seed.receiver,
             inputs: seed.inputs,
-            input_abi: seed.input_abi,
             result,
             output_abi: seed.output_abi,
         })?;
@@ -2374,19 +2373,28 @@ impl RuntimePlanBuilder {
         &mut self,
         seed: RuntimeTraitMethodDeclarationSeed,
     ) -> Result<RuntimeTraitMethodSeedId, RuntimePlanBuildError> {
-        let inputs = self.resolve_function_locals(seed.inputs)?;
+        let inputs =
+            self.resolve_function_locals(seed.inputs.iter().map(|input| input.local.clone()))?;
         if inputs.is_empty() {
             return Err(RuntimePlanBuildError::MissingTraitMethodReceiver);
         }
-        self.validate_callable_input_abi("trait method", &inputs, &seed.input_abi)?;
+        let input_abi = seed
+            .inputs
+            .iter()
+            .map(|input| input.abi)
+            .collect::<Vec<_>>();
+        self.validate_callable_input_abi("trait method", &inputs, &input_abi)?;
         let input_types = inputs
             .iter()
             .map(|(_, ty)| *ty)
             .collect::<Vec<_>>()
             .into_boxed_slice();
-        let input_locals = inputs
+        let inputs = inputs
             .into_iter()
-            .map(|(local, _)| local)
+            .zip(seed.inputs)
+            .map(|((local, _), input)| {
+                super::RuntimeTraitMethodInput::new(local, input.passing, input.abi)
+            })
             .collect::<Vec<_>>()
             .into_boxed_slice();
         let result = self.resolve_seed_type("trait method result", seed.result)?;
@@ -2400,8 +2408,7 @@ impl RuntimePlanBuilder {
         self.trait_methods.push(ReservedTraitMethod {
             identity: seed.identity,
             receiver: seed.receiver,
-            input_locals,
-            input_abi: seed.input_abi,
+            inputs,
             output_abi: seed.output_abi,
             body: None,
         });
@@ -2444,7 +2451,11 @@ impl RuntimePlanBuilder {
                 method: method_id,
             });
         }
-        let inputs = reserved.input_locals.clone();
+        let inputs = reserved
+            .inputs
+            .iter()
+            .map(|input| input.local())
+            .collect::<Vec<_>>();
         let body = self.lower_expression(body)?;
         require_reserved_result("trait method result", result, body.ty())?;
         self.validate_callable_body_locals(&body, &inputs, &[])?;
@@ -2609,8 +2620,7 @@ impl RuntimePlanBuilder {
                     id: super::RuntimeTraitMethodId(index),
                     identity: method.identity,
                     receiver: method.receiver,
-                    input_locals: method.input_locals,
-                    input_types: method.input_abi,
+                    inputs: method.inputs,
                     output_type: method.output_abi,
                     body,
                 }

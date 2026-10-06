@@ -1,5 +1,8 @@
 use arcweft_compiler::source::compile_source;
-use arcweft_core::plan::{FlowOp, RuntimeIteratorEvidence, RuntimeIteratorWitnessExecutable};
+use arcweft_core::plan::{
+    FlowOp, RuntimeFunctionParameterPassing, RuntimeIteratorEvidence,
+    RuntimeIteratorWitnessExecutable, RuntimePureInputType, RuntimeReceiverMode,
+};
 
 #[test]
 fn source_iterator_witness_lowers_trait_methods_and_for_evidence() {
@@ -14,6 +17,20 @@ fn source_iterator_witness_lowers_trait_methods_and_for_evidence() {
         2,
         "only the exact witnessed into_iter and next methods are lowered"
     );
+    for method in plan.trait_methods() {
+        let [receiver] = method.inputs.as_ref() else {
+            panic!("witnessed method has one complete receiver formal")
+        };
+        assert_eq!(receiver.abi(), RuntimePureInputType::Value);
+        assert_eq!(
+            receiver.passing(),
+            match method.receiver {
+                RuntimeReceiverMode::Owned => RuntimeFunctionParameterPassing::Value,
+                RuntimeReceiverMode::MutRef => RuntimeFunctionParameterPassing::Affine,
+                RuntimeReceiverMode::SharedRef => panic!("fixture has no shared receiver"),
+            }
+        );
+    }
     let method_local_domain = plan
         .nominal_record_domains()
         .domains()

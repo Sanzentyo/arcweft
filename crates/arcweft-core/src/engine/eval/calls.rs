@@ -400,7 +400,7 @@ impl Engine {
             .trait_methods
             .get(callable.0)
             .ok_or(RuntimeEvalError::UnknownTraitMethod(callable.0))?;
-        let expected_args = method.input_locals.len().saturating_sub(1);
+        let expected_args = method.inputs.len().saturating_sub(1);
         if expected_args != arg_values.len() {
             return Err(RuntimeEvalError::TraitMethodArgumentCount {
                 method: method.identity.method_name.clone(),
@@ -409,29 +409,29 @@ impl Engine {
             });
         }
 
-        let receiver_local = method.input_locals.first().copied().ok_or_else(|| {
-            RuntimeEvalError::InvalidTraitReceiverUpdate {
+        let receiver_local = method
+            .inputs
+            .first()
+            .map(|input| input.local())
+            .ok_or_else(|| RuntimeEvalError::InvalidTraitReceiverUpdate {
                 method: method.identity.method_name.clone(),
                 receiver: method.identity.self_type.clone(),
-            }
-        })?;
+            })?;
         self.validate_local_value(receiver_local, &receiver_value)?;
-        for (&local, value) in method.input_locals.iter().skip(1).zip(&arg_values) {
-            self.validate_local_value(local, value)?;
+        for (input, value) in method.inputs.iter().skip(1).zip(&arg_values) {
+            self.validate_local_value(input.local(), value)?;
         }
-        self.fiber
-            .env
-            .push_scope_with_capacity(method.input_locals.len());
+        self.fiber.env.push_scope_with_capacity(method.inputs.len());
         self.fiber.env.set(receiver_local, receiver_value);
-        for (&local, value) in method.input_locals.iter().skip(1).zip(arg_values) {
-            self.fiber.env.set(local, value);
+        for (input, value) in method.inputs.iter().skip(1).zip(arg_values) {
+            self.fiber.env.set(input.local(), value);
         }
         let value = self.evaluate_expr_with_backend(&method.body, pure_backend);
         let updated_receiver = if receiver_mode == RuntimeReceiverMode::MutRef {
             method
-                .input_locals
+                .inputs
                 .first()
-                .and_then(|&local| self.fiber.env.take(local))
+                .and_then(|input| self.fiber.env.take(input.local()))
         } else {
             None
         };

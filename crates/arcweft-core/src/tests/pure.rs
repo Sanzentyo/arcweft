@@ -226,8 +226,11 @@ fn pure_format_content_uses_selected_ambient_locale() {
                 monomorph_label: "I64::display_text".to_owned(),
             },
             receiver: RuntimeReceiverMode::Owned,
-            inputs: Box::new([receiver_local.clone()]),
-            input_abi: vec![RuntimePureInputType::I64],
+            inputs: Box::new([crate::plan::RuntimeTraitMethodInputSeed {
+                local: receiver_local.clone(),
+                passing: crate::plan::RuntimeFunctionParameterPassing::Value,
+                abi: RuntimePureInputType::I64,
+            }]),
             output_abi: RuntimePureOutputType::Value,
             body: RuntimeExprSeed::format_content(
                 content_type,
@@ -1617,8 +1620,14 @@ fn owned_pure_trait_call_evaluates_receiver_and_source_arguments_once() {
                 monomorph_label: "I64::display_text".to_owned(),
             },
             receiver: RuntimeReceiverMode::Owned,
-            inputs: vec![receiver.clone(), first.clone(), second.clone()].into_boxed_slice(),
-            input_abi: vec![RuntimePureInputType::I64; 3],
+            inputs: [receiver.clone(), first.clone(), second.clone()]
+                .into_iter()
+                .map(|local| crate::plan::RuntimeTraitMethodInputSeed {
+                    local,
+                    passing: crate::plan::RuntimeFunctionParameterPassing::Value,
+                    abi: RuntimePureInputType::I64,
+                })
+                .collect(),
             output_abi: RuntimePureOutputType::I64,
             body: i64_binary(
                 i64_local(receiver),
@@ -1707,8 +1716,21 @@ fn simple_trait_call_plan(
                 monomorph_label: "I64::render".to_owned(),
             },
             receiver: receiver_mode,
-            inputs: Box::new([receiver]),
-            input_abi: vec![RuntimePureInputType::I64],
+            inputs: Box::new([crate::plan::RuntimeTraitMethodInputSeed {
+                local: receiver,
+                passing: match receiver_mode {
+                    RuntimeReceiverMode::Owned => {
+                        crate::plan::RuntimeFunctionParameterPassing::Value
+                    }
+                    RuntimeReceiverMode::SharedRef => {
+                        crate::plan::RuntimeFunctionParameterPassing::Shared
+                    }
+                    RuntimeReceiverMode::MutRef => {
+                        crate::plan::RuntimeFunctionParameterPassing::Affine
+                    }
+                },
+                abi: RuntimePureInputType::I64,
+            }]),
             output_abi: RuntimePureOutputType::I64,
             body,
         })
@@ -1769,8 +1791,13 @@ fn pure_trait_call_checks_selected_method_and_sealed_abi() {
     );
 
     let mut wrong_abi = Arc::new((*base).clone());
-    Arc::get_mut(&mut wrong_abi).unwrap().trait_methods[0].input_types[0] =
-        RuntimePureInputType::F64;
+    let input = wrong_abi.trait_methods()[0].inputs[0];
+    Arc::get_mut(&mut wrong_abi).unwrap().trait_methods[0].inputs[0] =
+        crate::plan::RuntimeTraitMethodInput::new(
+            input.local(),
+            input.passing(),
+            RuntimePureInputType::F64,
+        );
     let request =
         PureFunctionRequest::try_new(Arc::clone(&wrong_abi), wrong_abi.pure_helpers()[0].id, [])
             .expect("wrong method ABI request");

@@ -2267,22 +2267,25 @@ impl<'a> PureEvaluator<'a> {
                     .filter(|method| method.id == method_id)
                     .cloned()
                     .ok_or(RuntimeEvalError::UnknownTraitMethod(method_id.0))?;
-                let [receiver_local, context_local] = method.input_locals.as_ref() else {
+                let [receiver_input, context_input] = method.inputs.as_ref() else {
                     return Err(RuntimeEvalError::DialogueContentConstruction(
                         "project DisplayText method must have receiver and context".to_owned(),
                     ));
                 };
+
+                let receiver_local = receiver_input.local();
+                let context_local = context_input.local();
                 let receiver_ty = self
                     .plan
                     .local_declarations()
-                    .get(*receiver_local)
-                    .ok_or(RuntimeEvalError::UnknownLocal(*receiver_local))?
+                    .get(receiver_local)
+                    .ok_or(RuntimeEvalError::UnknownLocal(receiver_local))?
                     .ty();
                 let context_ty = self
                     .plan
                     .local_declarations()
-                    .get(*context_local)
-                    .ok_or(RuntimeEvalError::UnknownLocal(*context_local))?
+                    .get(context_local)
+                    .ok_or(RuntimeEvalError::UnknownLocal(context_local))?
                     .ty();
                 let context_layout = crate::value::project_display_layout(self.plan, context_ty)
                     .map_err(|error| {
@@ -2647,18 +2650,15 @@ impl<'a> PureEvaluator<'a> {
                 "only owned receiver methods can run in pure evaluation",
             );
         }
-        let Some(&receiver_local) = method.input_locals.first() else {
+        let Some(receiver_local) = method.inputs.first().map(|input| input.local()) else {
             return Err(RuntimeEvalError::InvalidTraitReceiverUpdate {
                 method: method.identity.method_name,
                 receiver: method.identity.self_type,
             });
         };
-        if method.input_locals.len() != method.input_types.len() {
-            return Self::unsupported_pure_trait_operation(
-                "input local and ABI type counts differ",
-            );
-        }
-        for (&local, &input_type) in method.input_locals.iter().zip(&method.input_types) {
+        for input in &method.inputs {
+            let local = input.local();
+            let input_type = input.abi();
             let declaration = self
                 .plan
                 .local_declarations()
@@ -2693,17 +2693,17 @@ impl<'a> PureEvaluator<'a> {
             let receiver_value = self.evaluate_expr(receiver)?;
             let mut values = vec![receiver_value];
             values.extend(self.evaluate_call_args(args)?);
-            if values.len() != method.input_locals.len() {
+            if values.len() != method.inputs.len() {
                 return Err(RuntimeEvalError::TraitMethodArgumentCount {
                     method: method.identity.method_name.clone(),
-                    expected: method.input_locals.len() - 1,
+                    expected: method.inputs.len() - 1,
                     found: values.len() - 1,
                 });
             }
             let bindings = method
-                .input_locals
+                .inputs
                 .iter()
-                .copied()
+                .map(|input| input.local())
                 .zip(values)
                 .map(|(local, value)| {
                     let declaration = self

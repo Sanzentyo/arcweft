@@ -1056,6 +1056,30 @@ flow main(number: Route<i32>, word: Route<String>) {
         })
         .collect::<Vec<_>>();
     assert_eq!(methods.len(), 2);
+    let runtime_methods = compiled.runtime_plan().plan.trait_methods();
+    assert_eq!(runtime_methods.len(), methods.len());
+    for (runtime, accepted) in runtime_methods.iter().zip(&methods) {
+        assert_eq!(
+            runtime.inputs.len(),
+            accepted.definition().parameters().len()
+        );
+        for (input, formal) in runtime
+            .inputs
+            .iter()
+            .zip(accepted.definition().parameters())
+        {
+            assert_eq!(input.passing(), formal.passing());
+            assert_eq!(input.abi(), arcweft_core::plan::RuntimePureInputType::Value);
+            assert!(
+                compiled
+                    .runtime_plan()
+                    .plan
+                    .local_declarations()
+                    .get(input.local())
+                    .is_some()
+            );
+        }
+    }
     assert_eq!(methods[0].declaration(), methods[1].declaration());
     assert_ne!(methods[0].key(), methods[1].key());
     assert_eq!(

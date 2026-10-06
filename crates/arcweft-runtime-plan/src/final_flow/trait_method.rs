@@ -76,13 +76,19 @@ fn trait_method_declaration(
         .ok_or_else(|| RuntimePlanLowerError::new("runtime trait method has no resolved name"))?;
     let mut receiver = None;
     let mut inputs = Vec::new();
-    let mut input_abi = Vec::new();
-    for parameter in function
+    let formals = checked.definition().parameters();
+    let parameters = function
         .parameter_groups()
         .iter()
         .flat_map(HirMethodParameterGroup::parameters)
-    {
-        let (local, abi) = match parameter {
+        .collect::<Vec<_>>();
+    if parameters.len() != formals.len() {
+        return Err(RuntimePlanLowerError::new(
+            "trait method formal count disagrees with accepted definition",
+        ));
+    }
+    for (parameter, formal) in parameters.into_iter().zip(formals) {
+        let (local, pattern, abi) = match parameter {
             HirMethodParameter::Receiver(parameter) => {
                 if receiver.is_some() {
                     return Err(RuntimePlanLowerError::new(
@@ -94,7 +100,12 @@ fn trait_method_declaration(
                     HirMethodReceiverKind::SharedReference => RuntimeReceiverMode::SharedRef,
                     HirMethodReceiverKind::MutableReference => RuntimeReceiverMode::MutRef,
                 });
-                (parameter.locals()[0], RuntimePureInputType::Value)
+                let [local] = parameter.locals() else {
+                    return Err(RuntimePlanLowerError::new(
+                        "runtime trait receiver requires one binding",
+                    ));
+                };
+                (*local, parameter.pattern(), RuntimePureInputType::Value)
             }
             HirMethodParameter::Typed(parameter) => {
                 if parameter.kind() != HirParameterKind::Fixed
@@ -114,16 +125,26 @@ fn trait_method_declaration(
                 .ok_or_else(|| {
                     RuntimePlanLowerError::new("runtime trait parameter type fact is missing")
                 })?;
-                (parameter.locals()[0], runtime_input_type(ty.shape()))
+                (
+                    parameter.locals()[0],
+                    parameter.pattern(),
+                    runtime_input_type(ty.shape()),
+                )
             }
         };
-        inputs.push(
-            locals
+        if formal.pattern() != Some(pattern) || formal.bindings() != [local] {
+            return Err(RuntimePlanLowerError::new(
+                "trait method local disagrees with accepted whole formal",
+            ));
+        }
+        inputs.push(RuntimeTraitMethodInputSeed {
+            local: locals
                 .get(&local)
                 .cloned()
                 .ok_or_else(|| RuntimePlanLowerError::new("trait method local is not admitted"))?,
-        );
-        input_abi.push(abi);
+            passing: formal.passing(),
+            abi,
+        });
     }
     let receiver = receiver
         .ok_or_else(|| RuntimePlanLowerError::new("runtime trait method requires a receiver"))?;
@@ -170,7 +191,6 @@ fn trait_method_declaration(
         },
         receiver,
         inputs: inputs.into_boxed_slice(),
-        input_abi,
         result: result.identity(),
         output_abi,
     })

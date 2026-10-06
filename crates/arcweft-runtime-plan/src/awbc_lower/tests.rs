@@ -1146,8 +1146,11 @@ fn invalid_local_seeds_cannot_produce_an_awbc_plan() {
                 monomorph_label: "invalid_local".to_owned(),
             },
             receiver: RuntimeReceiverMode::Owned,
-            inputs: vec![receiver].into_boxed_slice(),
-            input_abi: vec![RuntimePureInputType::Value],
+            inputs: Box::new([arcweft_core::plan::RuntimeTraitMethodInputSeed {
+                local: receiver,
+                passing: arcweft_core::plan::RuntimeFunctionParameterPassing::Value,
+                abi: RuntimePureInputType::Value
+            }]),
             output_abi: RuntimePureOutputType::Value,
             body: invalid_let_expression(foreign),
         }),

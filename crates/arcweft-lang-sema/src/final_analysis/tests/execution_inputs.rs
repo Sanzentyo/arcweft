@@ -275,6 +275,64 @@ fn parameter_passing_is_static_and_keeps_ingress_guarantees_separate() {
 }
 
 #[test]
+fn method_receiver_passing_retains_borrow_kind_with_value_storage_type() {
+    use arcweft_core::plan::RuntimeFunctionParameterPassing;
+    let world = fixture(
+        r#"
+struct Counter { value: i64 }
+impl Counter {
+    fn owned(self) -> i64 { self.value }
+    fn shared(&self) -> i64 { self.value }
+    fn exclusive(&mut self) -> i64 { self.value }
+}
+"#,
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let mut storage_type = None;
+    for (name, passing) in [
+        ("owned", RuntimeFunctionParameterPassing::Value),
+        ("shared", RuntimeFunctionParameterPassing::Shared),
+        ("exclusive", RuntimeFunctionParameterPassing::Affine),
+    ] {
+        let declaration = world
+            .symbols
+            .callable_symbols()
+            .find_map(|symbol| match symbol.declaration() {
+                arcweft_lang_hir::symbol::CallableDeclarationKey::ImplMethod(method)
+                    if method.method().as_str() == name =>
+                {
+                    Some(symbol.declaration().clone())
+                }
+                _ => None,
+            })
+            .expect("fixture method declaration");
+        let source = CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
+            declaration,
+            role: HirDeclarationBodyRootRole::ImplFunctionBody,
+        });
+        let context = report
+            .checked_execution_context(
+                world.project.analysis_view().unwrap(),
+                &world.symbols,
+                source.clone(),
+                None,
+            )
+            .unwrap();
+        let abi = context.checked_execution_input_abi(source).unwrap();
+        let [receiver] = abi.parameters() else {
+            panic!("one receiver formal")
+        };
+        assert_eq!(receiver.passing(), passing);
+        assert_eq!(receiver.bindings().len(), 1);
+        match &storage_type {
+            Some(ty) => assert_eq!(receiver.ty(), ty),
+            None => storage_type = Some(receiver.ty().clone()),
+        }
+    }
+}
+
+#[test]
 fn body_parameters_keep_unused_arity_and_destructuring() {
     let world = fixture(
         "fn root((left, right): (i64, i64), unused: i64) -> i64 { left + right }",

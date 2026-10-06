@@ -68,7 +68,7 @@ pub use construction::{
     RuntimePureHelperSeedId, RuntimePureProgramBindingSeed, RuntimeRecordFieldSeedId,
     RuntimeRecordPatternFieldSeed, RuntimeScheduledCaptureSeed, RuntimeStreamMatchArmSeed,
     RuntimeStreamOpSeed, RuntimeStreamPlanSeed, RuntimeTraitMethodDeclarationSeed,
-    RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
+    RuntimeTraitMethodInputSeed, RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
 };
 pub use construction::{RuntimeControlEffectContractSeed, RuntimeControlEffectContractSeedId};
 pub use control_effect::{
@@ -1046,10 +1046,42 @@ pub struct RuntimeTraitMethod {
     pub id: RuntimeTraitMethodId,
     pub identity: RuntimeTraitMethodIdentity,
     pub receiver: RuntimeReceiverMode,
-    pub input_locals: Box<[RuntimeLocalDeclarationId]>,
-    pub input_types: Vec<RuntimePureInputType>,
+    pub inputs: Box<[RuntimeTraitMethodInput]>,
     pub output_type: RuntimePureOutputType,
     pub body: RuntimeExpr,
+}
+
+/// One method input keeps its frame local, static whole-formal passing class
+/// and physical value representation together. The receiver is the first row.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RuntimeTraitMethodInput {
+    local: RuntimeLocalDeclarationId,
+    passing: RuntimeFunctionParameterPassing,
+    abi: RuntimePureInputType,
+}
+
+impl RuntimeTraitMethodInput {
+    pub(crate) const fn new(
+        local: RuntimeLocalDeclarationId,
+        passing: RuntimeFunctionParameterPassing,
+        abi: RuntimePureInputType,
+    ) -> Self {
+        Self {
+            local,
+            passing,
+            abi,
+        }
+    }
+
+    pub const fn local(self) -> RuntimeLocalDeclarationId {
+        self.local
+    }
+    pub const fn passing(self) -> RuntimeFunctionParameterPassing {
+        self.passing
+    }
+    pub const fn abi(self) -> RuntimePureInputType {
+        self.abi
+    }
 }
 
 /// Runtime pure helper input representation.

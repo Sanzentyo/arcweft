@@ -91,8 +91,11 @@ fn iterator_plan(copy_receiver: bool) -> RuntimePlan {
                 monomorph_label: "Vec<Need<i64>>::next".to_owned(),
             },
             receiver: RuntimeReceiverMode::MutRef,
-            inputs: Box::new([receiver]),
-            input_abi: vec![RuntimePureInputType::Value],
+            inputs: Box::new([crate::plan::RuntimeTraitMethodInputSeed {
+                local: receiver,
+                passing: crate::plan::RuntimeFunctionParameterPassing::Affine,
+                abi: RuntimePureInputType::Value,
+            }]),
             output_abi: RuntimePureOutputType::Value,
             body,
         })

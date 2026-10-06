@@ -1884,8 +1884,7 @@ pub struct RuntimePureProgramBindingSeed {
 pub struct RuntimeTraitMethodSeed {
     pub identity: RuntimeTraitMethodIdentity,
     pub receiver: RuntimeReceiverMode,
-    pub inputs: Box<[RuntimeLocalSeedId]>,
-    pub input_abi: Vec<RuntimePureInputType>,
+    pub inputs: Box<[RuntimeTraitMethodInputSeed]>,
     pub output_abi: RuntimePureOutputType,
     pub body: RuntimeExprSeed,
 }
@@ -1895,10 +1894,17 @@ pub struct RuntimeTraitMethodSeed {
 pub struct RuntimeTraitMethodDeclarationSeed {
     pub identity: RuntimeTraitMethodIdentity,
     pub receiver: RuntimeReceiverMode,
-    pub inputs: Box<[RuntimeLocalSeedId]>,
-    pub input_abi: Vec<RuntimePureInputType>,
+    pub inputs: Box<[RuntimeTraitMethodInputSeed]>,
     pub result: RuntimeSemanticTypeId,
     pub output_abi: RuntimePureOutputType,
+}
+
+/// One checked method formal before its local enters the plan-local domain.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeTraitMethodInputSeed {
+    pub local: RuntimeLocalSeedId,
+    pub passing: super::super::RuntimeFunctionParameterPassing,
+    pub abi: RuntimePureInputType,
 }
 
 /// Construction-only structured function-site body family.

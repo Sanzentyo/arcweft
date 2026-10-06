@@ -539,16 +539,19 @@ impl Engine {
                     .filter(|method| method.id == method_id)
                     .cloned()
                     .ok_or(RuntimeEvalError::UnknownTraitMethod(method_id.0))?;
-                let [receiver_local, context_local] = method.input_locals.as_ref() else {
+                let [receiver_input, context_input] = method.inputs.as_ref() else {
                     return Err(RuntimeEvalError::DialogueContentConstruction(
                         "project DisplayText method must have receiver and context".to_owned(),
                     ));
                 };
+
+                let receiver_local = receiver_input.local();
+                let context_local = context_input.local();
                 let context_ty = self
                     .plan
                     .local_declarations()
-                    .get(*context_local)
-                    .ok_or(RuntimeEvalError::UnknownLocal(*context_local))?
+                    .get(context_local)
+                    .ok_or(RuntimeEvalError::UnknownLocal(context_local))?
                     .ty();
                 let context_layout = crate::value::project_display_layout(&self.plan, context_ty)
                     .map_err(|error| {
@@ -602,8 +605,8 @@ impl Engine {
                     let receiver_ty = self
                         .plan
                         .local_declarations()
-                        .get(*receiver_local)
-                        .ok_or(RuntimeEvalError::UnknownLocal(*receiver_local))?
+                        .get(receiver_local)
+                        .ok_or(RuntimeEvalError::UnknownLocal(receiver_local))?
                         .ty();
                     if !self.fiber.env.value_matches_type(
                         self.plan.as_ref(),

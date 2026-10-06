@@ -254,9 +254,15 @@ impl super::super::CheckedClosedExecutionContext<'_> {
                             formal_bindings.remove(&key).unwrap_or_default(),
                             &coordinates,
                         )?;
+                        let passing = self.declaration_parameter_passing(
+                            declaration_view.body(),
+                            position,
+                            &ty,
+                        )?;
                         parameters.push(self.execution_parameter(
                             CheckedExecutionParameterOrigin::Declaration(position),
                             ty,
+                            passing,
                             Some(pattern),
                             bindings,
                             coordinate,
@@ -270,6 +276,9 @@ impl super::super::CheckedClosedExecutionContext<'_> {
                     parameters.push(self.execution_parameter(
                         CheckedExecutionParameterOrigin::AttachedContent,
                         self.instantiate_type(attached.abi_type())?,
+                        self.execution_parameter_passing(
+                            &self.instantiate_type(attached.abi_type())?,
+                        )?,
                         None,
                         Box::new([attached.binding()]),
                         coordinate,
@@ -288,6 +297,9 @@ impl super::super::CheckedClosedExecutionContext<'_> {
                         parameters.push(self.execution_parameter(
                             CheckedExecutionParameterOrigin::Implicit(callable.identity()),
                             self.instantiate_type(callable.parameter())?,
+                            self.execution_parameter_passing(
+                                &self.instantiate_type(callable.parameter())?,
+                            )?,
                             None,
                             Box::new([]),
                             coordinate,
@@ -354,11 +366,13 @@ impl super::super::CheckedClosedExecutionContext<'_> {
                                 formal_bindings.remove(&parameter_index).unwrap_or_default(),
                                 &coordinates,
                             )?;
+                            let passing = self.execution_parameter_passing(&ty)?;
                             parameters.push(self.execution_parameter(
                                 CheckedExecutionParameterOrigin::Closure {
                                     parameter: parameter_index,
                                 },
                                 ty,
+                                passing,
                                 Some(pattern),
                                 bindings,
                                 coordinate,
@@ -375,17 +389,88 @@ impl super::super::CheckedClosedExecutionContext<'_> {
         Ok(parameters.into_boxed_slice())
     }
 
-    fn execution_parameter(
+    fn declaration_parameter_passing(
         &self,
-        origin: CheckedExecutionParameterOrigin,
-        ty: TypeKind,
-        pattern: Option<PatternId>,
-        bindings: Box<[LocalId]>,
-        coordinate: &super::CheckedExecutionCoordinate,
-    ) -> Result<CheckedExecutionParameter, super::super::CheckedExecutionContextError> {
+        body: &arcweft_lang_hir::project::HirDeclarationBodyTopology,
+        position: crate::callable::CallableParameterCoordinate,
+        ty: &TypeKind,
+    ) -> Result<
+        arcweft_core::plan::RuntimeFunctionParameterPassing,
+        super::super::CheckedExecutionContextError,
+    > {
+        use arcweft_core::plan::RuntimeFunctionParameterPassing;
+        use arcweft_lang_hir::{
+            item::{
+                HirImplMember, HirItemKind, HirMethodParameter, HirMethodReceiverKind,
+                HirTraitMember,
+            },
+            source_index::HirCallableSourceOwner,
+        };
+        let owner = body.source_owner();
+        if !matches!(
+            owner,
+            HirCallableSourceOwner::ImplFunction { .. }
+                | HirCallableSourceOwner::TraitFunction { .. }
+        ) {
+            return self.execution_parameter_passing(ty);
+        }
+        let module = self
+            .project()
+            .modules()
+            .find_map(|(_, module)| {
+                (module.module_id() == body.source_item().module()).then_some(module)
+            })
+            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+        let item = module
+            .resolve_item(body.source_item())
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        let groups = match (owner, item.kind()) {
+            (HirCallableSourceOwner::ImplFunction { member }, HirItemKind::Impl(value)) => {
+                let Some(HirImplMember::Function(function)) =
+                    value.members().get(usize::from(member))
+                else {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into());
+                };
+                function.parameter_groups()
+            }
+            (HirCallableSourceOwner::TraitFunction { member }, HirItemKind::Trait(value)) => {
+                let Some(HirTraitMember::Function(function)) =
+                    value.members().get(usize::from(member))
+                else {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into());
+                };
+                function.parameter_groups()
+            }
+            _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into()),
+        };
+        let parameter = groups
+            .get(position.group().get())
+            .and_then(|group| group.parameters().get(position.parameter().get()))
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        match parameter {
+            HirMethodParameter::Receiver(receiver) => match receiver.kind() {
+                HirMethodReceiverKind::Owned => self.execution_parameter_passing(ty),
+                HirMethodReceiverKind::SharedReference => {
+                    Ok(RuntimeFunctionParameterPassing::Shared)
+                }
+                HirMethodReceiverKind::MutableReference => {
+                    Ok(RuntimeFunctionParameterPassing::Affine)
+                }
+            },
+            HirMethodParameter::Typed(_) => self.execution_parameter_passing(ty),
+        }
+    }
+
+    fn execution_parameter_passing(
+        &self,
+        ty: &TypeKind,
+    ) -> Result<
+        arcweft_core::plan::RuntimeFunctionParameterPassing,
+        super::super::CheckedExecutionContextError,
+    > {
         use super::super::CheckedTypeCopyCapability;
         use arcweft_core::plan::RuntimeFunctionParameterPassing;
-        let passing = match &ty {
+        Ok(match ty {
             TypeKind::BorrowRef {
                 kind: arcweft_lang_syntax::reference::BorrowKind::Shared,
                 ..
@@ -393,13 +478,24 @@ impl super::super::CheckedClosedExecutionContext<'_> {
             | TypeKind::Shared(_) => RuntimeFunctionParameterPassing::Shared,
             _ => match self
                 .analysis()
-                .type_copy_capability(&ty, &self.environment().type_scope())?
+                .type_copy_capability(ty, &self.environment().type_scope())?
             {
                 CheckedTypeCopyCapability::Unrestricted => RuntimeFunctionParameterPassing::Value,
                 CheckedTypeCopyCapability::ValueDependent
                 | CheckedTypeCopyCapability::Unavailable => RuntimeFunctionParameterPassing::Affine,
             },
-        };
+        })
+    }
+
+    fn execution_parameter(
+        &self,
+        origin: CheckedExecutionParameterOrigin,
+        ty: TypeKind,
+        passing: arcweft_core::plan::RuntimeFunctionParameterPassing,
+        pattern: Option<PatternId>,
+        bindings: Box<[LocalId]>,
+        coordinate: &super::CheckedExecutionCoordinate,
+    ) -> Result<CheckedExecutionParameter, super::super::CheckedExecutionContextError> {
         CheckedExecutionParameter::new(
             origin,
             ty,

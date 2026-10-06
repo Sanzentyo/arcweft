@@ -52,7 +52,8 @@ use arcweft_core::plan::{
     RuntimeProjectCallOperandSeed, RuntimeProjectCallOrdinaryMaterializationSeed,
     RuntimeProjectCallPlanSeed, RuntimeProjectCallRestMaterializationSeed, RuntimePureInputType,
     RuntimePureOutputType, RuntimePureProgramBindingSeed, RuntimeReceiverMode,
-    RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodIdentity, RuntimeTraitMethodSeedId,
+    RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodIdentity, RuntimeTraitMethodInputSeed,
+    RuntimeTraitMethodSeedId,
 };
 use arcweft_core::runtime_id::RuntimeDeferSiteId;
 use arcweft_core::value::{

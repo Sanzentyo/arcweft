@@ -44,10 +44,10 @@ impl<'a, 'plan> AwbcTraitMethodLowerer<'a, 'plan> {
         let public_label = trait_method_label(method);
         let owner = self.inventory.reserve_function_slot();
         let mut frame = FrameBuilder::new();
-        let mut parameters = Vec::with_capacity(method.input_locals.len());
-        for input in &method.input_locals {
-            let ty = admitted_local_type(self.inventory, self.plan, *input);
-            frame.parameter(*input, ty);
+        let mut parameters = Vec::with_capacity(method.inputs.len());
+        for input in &method.inputs {
+            let ty = admitted_local_type(self.inventory, self.plan, input.local());
+            frame.parameter(input.local(), ty);
             parameters.push(ty);
         }
 
@@ -77,10 +77,7 @@ impl<'a, 'plan> AwbcTraitMethodLowerer<'a, 'plan> {
                 kind: AwbcFunctionKind::TraitMethod,
                 signature,
                 type_context: None,
-                input_ownership: vec![
-                    AwbcFunctionInputOwnership::default();
-                    method.input_locals.len()
-                ],
+                input_ownership: vec![AwbcFunctionInputOwnership::default(); method.inputs.len()],
                 frame_layout: layout,
                 blocks: body.blocks,
                 entry_block: body.entry_block,
