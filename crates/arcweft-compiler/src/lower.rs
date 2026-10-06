@@ -7659,6 +7659,7 @@ fn build_runtime_project_function_instance(
         selection,
         instance_solution,
         &parameters,
+        project,
         symbols,
         world,
         analysis,
@@ -8721,6 +8722,7 @@ fn runtime_project_attached_default(
     selection: &ProjectInstanceSelection,
     instance_solution: ProjectInstanceTypes<'_>,
     parameters: &[RuntimeProjectFunctionParameterAbi],
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
@@ -8750,6 +8752,26 @@ fn runtime_project_attached_default(
         return Err(origin
             .error("attached default executable identity disagrees with its callable descriptor"));
     }
+    let source = arcweft_lang_sema::final_analysis::CheckedExecutionSource::EvaluateValue(
+        checked_default.source(),
+    );
+    let context = analysis
+        .checked_execution_context(
+            project,
+            symbols,
+            source.clone(),
+            Some(CheckedLocalUseInstantiation::ProjectFunction(
+                instance_solution.function_solution().ok_or_else(|| {
+                    origin.error("attached default has no frozen function solution")
+                })?,
+            )),
+        )
+        .map_err(|reason| origin.error(reason.to_string()))?;
+    let definition = Arc::new(
+        context
+            .checked_execution_input_abi(source)
+            .map_err(|reason| origin.error(reason.to_string()))?,
+    );
     let mut captures = Vec::with_capacity(checked_default.captures().len());
     for checked_capture in checked_default.captures() {
         let parameter_index = u32::try_from(checked_capture.parameter().parameter().get())
@@ -8827,12 +8849,10 @@ fn runtime_project_attached_default(
         ) => RuntimeProjectFunctionExecution::ExecutableFunctionSite,
     };
     RuntimeProjectAttachedDefaultFunctionFact::try_new(
-        checked_default.source(),
+        definition,
         checked_default.coordinate().clone(),
         checked_default.expression(),
         result,
-        checked_default.suspension(),
-        checked_default.control(),
         execution,
         effects.iter().cloned().collect(),
         captures.into_boxed_slice(),

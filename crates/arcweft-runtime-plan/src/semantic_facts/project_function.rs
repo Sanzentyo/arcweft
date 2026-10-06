@@ -702,14 +702,12 @@ impl RuntimeProjectAttachedDefaultCapture {
 /// Closed executable default function owned atomically by one terminal
 /// project-function instance. Its capture sources address that ProjectCall's
 /// logical prefix/current values.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct RuntimeProjectAttachedDefaultFunctionFact {
-    source: ExprId,
+    definition: std::sync::Arc<arcweft_lang_sema::final_analysis::CheckedExecutionInputAbi>,
     coordinate: arcweft_lang_sema::semantic_coordinate::StableCheckedValueCoordinate,
     digest: arcweft_lang_sema::callable::CheckedDeclarationDefaultExpressionDigest,
     result: RuntimeNormalizedType,
-    suspension: arcweft_lang_sema::final_analysis::CheckedSuspensionRole,
-    control: arcweft_lang_sema::final_analysis::CheckedExecutableControlRole,
     execution: RuntimeProjectFunctionExecution,
     effects: Box<[EffectId]>,
     captures: Box<[RuntimeProjectAttachedDefaultCapture]>,
@@ -717,17 +715,27 @@ pub struct RuntimeProjectAttachedDefaultFunctionFact {
 
 impl RuntimeProjectAttachedDefaultFunctionFact {
     pub fn try_new(
-        source: ExprId,
+        definition: std::sync::Arc<arcweft_lang_sema::final_analysis::CheckedExecutionInputAbi>,
         coordinate: arcweft_lang_sema::semantic_coordinate::StableCheckedValueCoordinate,
         digest: arcweft_lang_sema::callable::CheckedDeclarationDefaultExpressionDigest,
         result: RuntimeNormalizedType,
-        suspension: arcweft_lang_sema::final_analysis::CheckedSuspensionRole,
-        control: arcweft_lang_sema::final_analysis::CheckedExecutableControlRole,
         execution: RuntimeProjectFunctionExecution,
         effects: Box<[EffectId]>,
         captures: Box<[RuntimeProjectAttachedDefaultCapture]>,
     ) -> Result<Self, RuntimeProjectFunctionFactError> {
-        let expected_execution = match (suspension, effects.is_empty(), control) {
+        use arcweft_lang_sema::final_analysis::{
+            CheckedExecutionCoordinate, CheckedExecutionSource,
+        };
+        if !matches!(
+            definition.source(),
+            CheckedExecutionSource::EvaluateValue(_)
+        ) || !matches!((&coordinate, definition.coordinate()),
+                (arcweft_lang_sema::semantic_coordinate::StableCheckedValueCoordinate::Expression(expected),
+                CheckedExecutionCoordinate::Value(actual)) if expected == actual)
+        {
+            return Err(RuntimeProjectFunctionFactError::InvalidAttachedDefaultFunction);
+        }
+        let expected_execution = match (definition.suspension(), effects.is_empty(), definition.control()) {
             (
                 arcweft_lang_sema::final_analysis::CheckedSuspensionRole::NonSuspending,
                 true,
@@ -774,20 +782,35 @@ impl RuntimeProjectAttachedDefaultFunctionFact {
             return Err(RuntimeProjectFunctionFactError::InvalidAttachedDefaultFunction);
         }
         Ok(Self {
-            source,
+            definition,
             coordinate,
             digest,
             result,
-            suspension,
-            control,
             execution,
             effects,
             captures,
         })
     }
 
-    pub const fn source(&self) -> ExprId {
-        self.source
+    pub fn source(&self) -> ExprId {
+        let arcweft_lang_sema::final_analysis::CheckedExecutionSource::EvaluateValue(source) =
+            self.definition.source()
+        else {
+            unreachable!("validated default expression authority")
+        };
+        *source
+    }
+
+    pub const fn definition(
+        &self,
+    ) -> &std::sync::Arc<arcweft_lang_sema::final_analysis::CheckedExecutionInputAbi> {
+        &self.definition
+    }
+
+    pub fn definition_identity(
+        &self,
+    ) -> arcweft_lang_sema::final_analysis::CheckedExecutionDefinitionIdentity {
+        self.definition.definition_identity()
     }
 
     pub const fn coordinate(
@@ -806,12 +829,12 @@ impl RuntimeProjectAttachedDefaultFunctionFact {
         &self.result
     }
 
-    pub const fn suspension(&self) -> arcweft_lang_sema::final_analysis::CheckedSuspensionRole {
-        self.suspension
+    pub fn suspension(&self) -> arcweft_lang_sema::final_analysis::CheckedSuspensionRole {
+        self.definition.suspension()
     }
 
-    pub const fn control(&self) -> arcweft_lang_sema::final_analysis::CheckedExecutableControlRole {
-        self.control
+    pub fn control(&self) -> arcweft_lang_sema::final_analysis::CheckedExecutableControlRole {
+        self.definition.control()
     }
 
     pub const fn execution(&self) -> RuntimeProjectFunctionExecution {
@@ -2605,6 +2628,8 @@ impl RuntimeProjectFunctionInstanceFact {
         ) {
             (Some(expected), Some(default))
                 if expected.source() == default.source()
+                    && default.definition().environment().local_uses()
+                        == semantics.local_uses()
                     && expected.coordinate() == default.coordinate()
                     && expected.digest() == default.digest()
                     && callable

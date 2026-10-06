@@ -1017,6 +1017,63 @@ fn assert_attached_default_formal_authority(compiled: &CompiledProject) {
         let Some(default) = instance.attached_default() else {
             continue;
         };
+        assert_ne!(
+            default.definition_identity(),
+            instance.definition_identity()
+        );
+        assert!(matches!(
+            RuntimeProjectAttachedDefaultFunctionFact::try_new(
+                instance.definition().clone(),
+                default.coordinate().clone(),
+                default.digest(),
+                default.result().clone(),
+                default.execution(),
+                default.effects().into(),
+                default.captures().into()
+            ),
+            Err(RuntimeProjectFunctionFactError::InvalidAttachedDefaultFunction)
+        ));
+        let admit_default = |default| {
+            RuntimeProjectFunctionInstanceFact::try_new(
+                instance.key().clone(),
+                instance.definition().clone(),
+                instance.callable().clone(),
+                instance.suspension(),
+                instance.control(),
+                instance.execution(),
+                instance.callable_type().clone(),
+                instance.parameters().into(),
+                instance.effects().into(),
+                Some(default),
+                instance.body().clone(),
+                instance.semantics().clone(),
+            )
+        };
+        if let Some(other) = instances
+            .iter()
+            .filter_map(|other| other.attached_default())
+            .find(|other| {
+                other.source() == default.source()
+                    && other.definition().environment().local_uses()
+                        != default.definition().environment().local_uses()
+            })
+        {
+            assert_eq!(other.definition_identity(), default.definition_identity());
+            let foreign_body = RuntimeProjectAttachedDefaultFunctionFact::try_new(
+                other.definition().clone(),
+                default.coordinate().clone(),
+                default.digest(),
+                default.result().clone(),
+                default.execution(),
+                default.effects().into(),
+                default.captures().into(),
+            )
+            .unwrap();
+            assert!(matches!(
+                admit_default(foreign_body),
+                Err(RuntimeProjectFunctionFactError::InvalidAttachedDefaultFunction)
+            ));
+        }
         for capture in default.captures() {
             checked += 1;
             let parameter = instance
@@ -1068,32 +1125,17 @@ fn assert_attached_default_formal_authority(compiled: &CompiledProject) {
                 })
                 .collect();
             let forged = RuntimeProjectAttachedDefaultFunctionFact::try_new(
-                default.source(),
+                default.definition().clone(),
                 default.coordinate().clone(),
                 default.digest(),
                 default.result().clone(),
-                default.suspension(),
-                default.control(),
                 default.execution(),
                 default.effects().into(),
                 captures,
             )
             .unwrap();
             assert!(matches!(
-                RuntimeProjectFunctionInstanceFact::try_new(
-                    instance.key().clone(),
-                    instance.definition().clone(),
-                    instance.callable().clone(),
-                    instance.suspension(),
-                    instance.control(),
-                    instance.execution(),
-                    instance.callable_type().clone(),
-                    instance.parameters().into(),
-                    instance.effects().into(),
-                    Some(forged),
-                    instance.body().clone(),
-                    instance.semantics().clone()
-                ),
+                admit_default(forged),
                 Err(RuntimeProjectFunctionFactError::InvalidAttachedDefaultFunction)
             ));
             rejected_foreign += 1;
