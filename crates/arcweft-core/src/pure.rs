@@ -836,15 +836,16 @@ impl PureFunctionRequest {
         let args = args.into_iter().collect::<Vec<_>>();
         let declaration = resolve_pure_helper(&plan, helper)?;
         validate_pure_helper_contract(&plan, declaration)?;
-        if args.len() != declaration.input_locals.len() {
+        if args.len() != declaration.inputs.len() {
             return Err(RuntimeEvalError::TooManyPureArgs {
                 helper: declaration.name.clone(),
-                max: declaration.input_locals.len(),
+                max: declaration.inputs.len(),
                 found: args.len(),
             });
         }
         let mut bindings = Vec::with_capacity(args.len());
-        for (&local, value) in declaration.input_locals.iter().zip(args) {
+        for (input, value) in declaration.inputs.iter().zip(args) {
+            let local = input.local();
             let local_declaration = plan
                 .local_declarations()
                 .get(local)
@@ -912,13 +913,9 @@ fn validate_pure_helper_contract(
     plan: &RuntimePlan,
     helper: &RuntimePureHelper,
 ) -> Result<(), RuntimeEvalError> {
-    if helper.input_locals.len() != helper.input_types.len() {
-        return Err(RuntimeEvalError::UnsupportedPure {
-            name: helper.name.clone(),
-            reason: "input local and ABI type counts differ".to_owned(),
-        });
-    }
-    for (&local, &input_type) in helper.input_locals.iter().zip(&helper.input_types) {
+    for input in &helper.inputs {
+        let local = input.local();
+        let input_type = input.abi();
         let declaration = plan
             .local_declarations()
             .get(local)
@@ -1175,7 +1172,7 @@ impl VmPureFunctionScratch {
                 .map(RuntimePureScalar::into_runtime_value),
         )?;
         if helper.scalar_eval_supported {
-            let mut evaluator = PureScalarEvaluator::new_exact(&helper.input_locals, args);
+            let mut evaluator = PureScalarEvaluator::new_exact(&helper.inputs, args);
             return validate_helper_result(
                 plan,
                 helper,
@@ -1327,9 +1324,9 @@ fn prepare_helper_bindings(
     let values = values.into_iter().collect::<Vec<_>>();
     validate_helper_arguments(plan, helper, &values)?;
     Ok(helper
-        .input_locals
+        .inputs
         .iter()
-        .copied()
+        .map(|input| input.local())
         .zip(values)
         .map(|(local, value)| RuntimeLocalBinding { local, value })
         .collect())
@@ -1340,17 +1337,17 @@ fn validate_helper_arguments(
     helper: &RuntimePureHelper,
     values: &[RuntimeValue],
 ) -> Result<(), RuntimeEvalError> {
-    if values.len() != helper.input_locals.len() {
+    if values.len() != helper.inputs.len() {
         return Err(RuntimeEvalError::TooManyPureArgs {
             helper: helper.name.clone(),
-            max: helper.input_locals.len(),
+            max: helper.inputs.len(),
             found: values.len(),
         });
     }
     helper
-        .input_locals
+        .inputs
         .iter()
-        .copied()
+        .map(|input| input.local())
         .zip(values)
         .try_for_each(|(local, value)| {
             let declaration = plan
@@ -1754,7 +1751,7 @@ fn evaluate_scalar_numeric<T: crate::value::RuntimeDeterministicNumeric>(
 }
 
 struct PureScalarEvaluator<'a, T> {
-    input_locals: &'a [RuntimeLocalDeclarationId],
+    inputs: &'a [crate::plan::RuntimeCallableParameter],
     args: &'a [T],
     locals: Vec<(RuntimeLocalDeclarationId, RuntimePureScalar)>,
     scopes: Vec<PureScalarScopeFrame>,
@@ -1766,9 +1763,9 @@ struct PureScalarScopeFrame {
 }
 
 impl<'a, T: RuntimePureScalarInteger> PureScalarEvaluator<'a, T> {
-    fn new_exact(input_locals: &'a [RuntimeLocalDeclarationId], args: &'a [T]) -> Self {
+    fn new_exact(inputs: &'a [crate::plan::RuntimeCallableParameter], args: &'a [T]) -> Self {
         Self {
-            input_locals,
+            inputs,
             args,
             locals: Vec::new(),
             scopes: Vec::new(),
@@ -1860,12 +1857,11 @@ impl<'a, T: RuntimePureScalarInteger> PureScalarEvaluator<'a, T> {
             .rev()
             .find_map(|(candidate, value)| (*candidate == local).then_some(*value))
             .or_else(|| {
-                self.input_locals
-                    .iter()
-                    .zip(self.args.iter().copied())
-                    .find_map(|(input_local, value)| {
-                        (*input_local == local).then_some(value.into_pure_scalar())
-                    })
+                self.inputs.iter().zip(self.args.iter().copied()).find_map(
+                    |(input_local, value)| {
+                        (input_local.local() == local).then_some(value.into_pure_scalar())
+                    },
+                )
             })
     }
 }

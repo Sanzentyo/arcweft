@@ -688,11 +688,10 @@ fn helper_native_kind(helper: RuntimePureHelperRef<'_>) -> Option<RuntimePureNat
         RuntimePureOutputType::F64 => RuntimePureNativeKind::F64,
         RuntimePureOutputType::Bool | RuntimePureOutputType::Value => return None,
     };
-    (helper.input_locals.len() == helper.input_types.len()
-        && helper
-            .input_types
-            .iter()
-            .all(|input_type| *input_type == kind.input_type()))
+    (helper
+        .inputs
+        .iter()
+        .all(|input_type| input_type.abi() == kind.input_type()))
     .then_some(kind)
 }
 

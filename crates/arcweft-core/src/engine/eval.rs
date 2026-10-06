@@ -1382,8 +1382,7 @@ fn pure_helper_has_only_inputs(
     helper: &crate::plan::RuntimePureHelper,
     expected: RuntimePureInputType,
 ) -> bool {
-    helper.input_locals.len() == helper.input_types.len()
-        && helper.input_types.iter().all(|ty| *ty == expected)
+    helper.inputs.iter().all(|input| input.abi() == expected)
 }
 
 fn spread_runtime_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, RuntimeEvalError> {

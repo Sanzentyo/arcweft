@@ -357,7 +357,7 @@ trait/impl method の実行 fact は、受理済みの `ImplFunctionBody` invoca
 一致しなければならない。同じ宣言の別 instance から証拠を流用せず、monomorphic
 method でも受理済みの宣言 owner と解析世代を検査する。
 
-Core の method 入力は、receiver を含む各 formal の Local、静的な passing 区分、
+Core の pure helper と method 入力は、receiver を含む各 formal の Local、静的な passing 区分、
 物理 ABI を一つの行で保持する。passing は受理済みの complete formal から渡し、
 receiver mode や scalar の格納形式から推測しない。入力の行数と ABI の行数が
 別々に変わる表現は持たない。

@@ -201,10 +201,12 @@ impl AdmittedHelper {
         PureFunctionRequest::try_new(Arc::clone(&self.plan), self.helper, args)
             .expect("well-typed helper request")
     }
-    fn input_locals(&self) -> &[RuntimeLocalDeclarationId] {
+    fn input_locals(&self) -> Vec<RuntimeLocalDeclarationId> {
         self.plan.pure_helpers()[self.helper.0]
-            .input_locals
-            .as_ref()
+            .inputs
+            .iter()
+            .map(|input| input.local())
+            .collect()
     }
 }
 
@@ -228,8 +230,19 @@ fn admit(
     builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
             name: name.to_owned(),
-            inputs: admission.local_ids()[..inputs].to_vec().into_boxed_slice(),
-            input_abi: vec![scalar.input_abi(); inputs],
+            inputs: admission.local_ids()[..inputs]
+                .to_vec()
+                .into_boxed_slice()
+                .into_iter()
+                .zip(vec![scalar.input_abi(); inputs])
+                .map(
+                    |(local, abi)| arcweft_core::plan::RuntimeCallableParameterSeed {
+                        local,
+                        passing: arcweft_core::plan::RuntimeFunctionParameterPassing::Value,
+                        abi,
+                    },
+                )
+                .collect(),
             output_abi: scalar.output_abi(),
             body: body(admission.local_ids()),
             scalar_eval_supported: true,

@@ -1064,8 +1064,20 @@ fn plan_with_local() -> (
     builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
             name: "local".to_owned(),
-            inputs: admission.local_ids().to_vec().into_boxed_slice(),
-            input_abi: vec![RuntimePureInputType::Value],
+            inputs: admission
+                .local_ids()
+                .to_vec()
+                .into_boxed_slice()
+                .into_iter()
+                .zip(vec![RuntimePureInputType::Value])
+                .map(
+                    |(local, abi)| arcweft_core::plan::RuntimeCallableParameterSeed {
+                        local,
+                        passing: arcweft_core::plan::RuntimeFunctionParameterPassing::Value,
+                        abi,
+                    },
+                )
+                .collect(),
             output_abi: RuntimePureOutputType::Value,
             body: string_expr("ok"),
             scalar_eval_supported: false,
@@ -1073,7 +1085,7 @@ fn plan_with_local() -> (
         })
         .expect("local helper admission");
     let plan = builder.finish().expect("local plan seals");
-    let local = plan.pure_helpers()[0].input_locals[0];
+    let local = plan.pure_helpers()[0].inputs[0].local();
     (plan, local)
 }
 
@@ -1123,7 +1135,6 @@ fn invalid_local_seeds_cannot_produce_an_awbc_plan() {
         pure_builder.push_pure_helper_seed(RuntimePureHelperSeed {
             name: "invalid.local".to_owned(),
             inputs: Box::new([]),
-            input_abi: Vec::new(),
             output_abi: RuntimePureOutputType::Value,
             body: invalid_let_expression(foreign.clone()),
             scalar_eval_supported: false,
@@ -1146,7 +1157,7 @@ fn invalid_local_seeds_cannot_produce_an_awbc_plan() {
                 monomorph_label: "invalid_local".to_owned(),
             },
             receiver: RuntimeReceiverMode::Owned,
-            inputs: Box::new([arcweft_core::plan::RuntimeTraitMethodInputSeed {
+            inputs: Box::new([arcweft_core::plan::RuntimeCallableParameterSeed {
                 local: receiver,
                 passing: arcweft_core::plan::RuntimeFunctionParameterPassing::Value,
                 abi: RuntimePureInputType::Value

@@ -137,7 +137,7 @@ fn trait_method_declaration(
                 "trait method local disagrees with accepted whole formal",
             ));
         }
-        inputs.push(RuntimeTraitMethodInputSeed {
+        inputs.push(RuntimeCallableParameterSeed {
             local: locals
                 .get(&local)
                 .cloned()

@@ -1849,8 +1849,7 @@ impl Eq for RuntimeTraitMethodSeedId {}
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimePureHelperSeed {
     pub name: String,
-    pub inputs: Box<[RuntimeLocalSeedId]>,
-    pub input_abi: Vec<RuntimePureInputType>,
+    pub inputs: Box<[RuntimeCallableParameterSeed]>,
     pub output_abi: RuntimePureOutputType,
     pub body: RuntimeExprSeed,
     pub scalar_eval_supported: bool,
@@ -1862,8 +1861,7 @@ pub struct RuntimePureHelperSeed {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimePureHelperDeclarationSeed {
     pub name: String,
-    pub inputs: Box<[RuntimeLocalSeedId]>,
-    pub input_abi: Vec<RuntimePureInputType>,
+    pub inputs: Box<[RuntimeCallableParameterSeed]>,
     pub result: RuntimeSemanticTypeId,
     pub output_abi: RuntimePureOutputType,
     pub scalar_eval_supported: bool,
@@ -1884,7 +1882,7 @@ pub struct RuntimePureProgramBindingSeed {
 pub struct RuntimeTraitMethodSeed {
     pub identity: RuntimeTraitMethodIdentity,
     pub receiver: RuntimeReceiverMode,
-    pub inputs: Box<[RuntimeTraitMethodInputSeed]>,
+    pub inputs: Box<[RuntimeCallableParameterSeed]>,
     pub output_abi: RuntimePureOutputType,
     pub body: RuntimeExprSeed,
 }
@@ -1894,14 +1892,14 @@ pub struct RuntimeTraitMethodSeed {
 pub struct RuntimeTraitMethodDeclarationSeed {
     pub identity: RuntimeTraitMethodIdentity,
     pub receiver: RuntimeReceiverMode,
-    pub inputs: Box<[RuntimeTraitMethodInputSeed]>,
+    pub inputs: Box<[RuntimeCallableParameterSeed]>,
     pub result: RuntimeSemanticTypeId,
     pub output_abi: RuntimePureOutputType,
 }
 
-/// One checked method formal before its local enters the plan-local domain.
+/// One directly bound formal before its local enters the plan-local domain.
 #[derive(Clone, Debug, PartialEq)]
-pub struct RuntimeTraitMethodInputSeed {
+pub struct RuntimeCallableParameterSeed {
     pub local: RuntimeLocalSeedId,
     pub passing: super::super::RuntimeFunctionParameterPassing,
     pub abi: RuntimePureInputType,

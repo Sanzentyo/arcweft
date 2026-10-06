@@ -173,23 +173,22 @@ pub(super) fn validate_exact_int_flat_batch_shape<T: RuntimePureScalarInteger>(
         });
     }
     if helper.output_type != T::OUTPUT_TYPE
-        || helper.input_types.len() != helper.input_locals.len()
         || !helper
-            .input_types
+            .inputs
             .iter()
-            .all(|input| *input == T::INPUT_TYPE)
+            .all(|input| input.abi() == T::INPUT_TYPE)
     {
         return Err(RuntimeEvalError::UnsupportedPure {
             name: helper.name.clone(),
             reason: "exact integer batch type does not match helper signature".to_owned(),
         });
     }
-    if arity != helper.input_locals.len() {
+    if arity != helper.inputs.len() {
         return Err(RuntimeEvalError::UnsupportedPure {
             name: helper.name.clone(),
             reason: format!(
                 "pure batch arity expected {} input value(s), got {arity}",
-                helper.input_locals.len()
+                helper.inputs.len()
             ),
         });
     }
@@ -218,23 +217,22 @@ pub(super) fn validate_exact_int_slice_shape<T: RuntimePureScalarInteger>(
         });
     }
     if helper.output_type != T::OUTPUT_TYPE
-        || helper.input_types.len() != helper.input_locals.len()
         || !helper
-            .input_types
+            .inputs
             .iter()
-            .all(|input| *input == T::INPUT_TYPE)
+            .all(|input| input.abi() == T::INPUT_TYPE)
     {
         return Err(RuntimeEvalError::UnsupportedPure {
             name: helper.name.clone(),
             reason: "exact integer slice type does not match helper signature".to_owned(),
         });
     }
-    if arg_len != helper.input_locals.len() {
+    if arg_len != helper.inputs.len() {
         return Err(RuntimeEvalError::UnsupportedPure {
             name: helper.name.clone(),
             reason: format!(
                 "pure slice expected {} input value(s), got {arg_len}",
-                helper.input_locals.len()
+                helper.inputs.len()
             ),
         });
     }
@@ -258,8 +256,7 @@ pub(super) fn validate_float_flat_batch_shape(
         });
     }
     if helper.output_type != output_type
-        || helper.input_types.len() != helper.input_locals.len()
-        || !helper.input_types.iter().all(|input| *input == input_type)
+        || !helper.inputs.iter().all(|input| input.abi() == input_type)
     {
         return Err(RuntimeEvalError::UnsupportedPure {
             name: helper.name.clone(),
@@ -356,7 +353,7 @@ pub(super) fn compile_native_jit(
         return None;
     }
 
-    let input_names = || helper.input_locals.iter().copied();
+    let input_names = || helper.inputs.iter().map(|input| input.local());
     compile_signed_native_jit(kind, request, input_names(), stats)
         .or_else(|| compile_unsigned_native_jit(kind, request, input_names(), stats))
         .or_else(|| compile_float_native_jit(kind, request, input_names(), stats))
@@ -532,7 +529,7 @@ pub(super) fn compile_aot_i64(
     let compiled = (helper_native_kind(helper) == Some(RuntimePureNativeKind::I64))
         .then(|| {
             AotPureFunctionBackend::new()
-                .compile_i64_with_inputs(request, helper.input_locals.iter().copied())
+                .compile_i64_with_inputs(request, helper.inputs.iter().map(|input| input.local()))
                 .map(RuntimePureAotPlan::I64)
                 .ok()
         })
@@ -556,7 +553,7 @@ pub(super) fn compile_aot_scalar(
     let compiled = AotPureFunctionBackend::new()
         .compile_scalar_with_inputs(
             request,
-            helper.input_locals.iter().copied(),
+            helper.inputs.iter().map(|input| input.local()),
             input_type,
             output_type,
         )
@@ -592,14 +589,18 @@ pub(super) fn record_aot_object_artifact_bundle(
                 plan.clone(),
                 helper.id,
                 helper
-                    .input_types
+                    .inputs
                     .iter()
-                    .map(|input| scalar_zero_for_input(*input)()),
+                    .map(|input| scalar_zero_for_input(input.abi())()),
             )
             .ok()?;
             let helper = request.helper_ref().ok()?;
             let kind = helper_native_kind(helper)?;
-            let input_locals = helper.input_locals.to_vec();
+            let input_locals = helper
+                .inputs
+                .iter()
+                .map(|input| input.local())
+                .collect::<Vec<_>>();
             Some((kind, request, input_locals))
         })
         .collect::<Vec<_>>();
@@ -641,16 +642,14 @@ pub(super) fn record_aot_object_artifact_bundle(
 pub(super) fn helper_scalar_aot_input_type(
     helper: RuntimePureHelperRef<'_>,
 ) -> Option<RuntimePureInputType> {
-    if helper.input_locals.len() != helper.input_types.len()
-        || matches!(helper.output_type, RuntimePureOutputType::Value)
-    {
+    if matches!(helper.output_type, RuntimePureOutputType::Value) {
         return None;
     }
     let expected = scalar_input_type_for_output(helper.output_type)?;
     helper
-        .input_types
+        .inputs
         .iter()
-        .all(|input| *input == expected)
+        .all(|input| input.abi() == expected)
         .then_some(expected)
 }
 
@@ -1649,7 +1648,7 @@ pub(super) fn compile_request(
     PureFunctionRequest::try_new(
         helper.plan().clone(),
         helper.id(),
-        helper.input_locals.iter().map(|_| zero()),
+        helper.inputs.iter().map(|_| zero()),
     )
     .expect("runtime plan admitted a malformed pure helper")
 }

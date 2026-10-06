@@ -785,13 +785,13 @@ fn validate_input_abi(
         .get(local)
         .ok_or(RuntimeEvalError::UnknownLocal(local))?;
     let Some(position) = helper
-        .input_locals
+        .inputs
         .iter()
-        .position(|candidate| *candidate == local)
+        .position(|candidate| candidate.local() == local)
     else {
         return Err(RuntimeEvalError::InvalidExpressionType(declaration.ty()));
     };
-    if helper.input_types.get(position).copied() == Some(expected) {
+    if helper.inputs.get(position).map(|input| input.abi()) == Some(expected) {
         Ok(())
     } else {
         Err(RuntimeEvalError::InvalidExpressionType(declaration.ty()))

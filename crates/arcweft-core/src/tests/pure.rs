@@ -45,8 +45,15 @@ fn pure_value_backend_moves_an_affine_need_argument_into_its_result() {
     builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
             name: "move_need".to_owned(),
-            inputs: Box::new([input.clone()]),
-            input_abi: vec![RuntimePureInputType::Value],
+            inputs: Box::new([input.clone()])
+                .into_iter()
+                .zip(vec![RuntimePureInputType::Value])
+                .map(|(local, abi)| crate::plan::RuntimeCallableParameterSeed {
+                    local,
+                    passing: crate::plan::RuntimeFunctionParameterPassing::Affine,
+                    abi,
+                })
+                .collect(),
             output_abi: RuntimePureOutputType::Value,
             body: RuntimeExprSeed::new(
                 need,
@@ -62,6 +69,11 @@ fn pure_value_backend_moves_an_affine_need_argument_into_its_result() {
     let plan = Arc::new(builder.finish().expect("sealed pure helper"));
     let helper =
         RuntimePureHelperRef::resolve(&plan, plan.pure_helpers()[0].id).expect("helper reference");
+    assert_eq!(helper.inputs[0].abi(), RuntimePureInputType::Value);
+    assert_eq!(
+        helper.inputs[0].passing(),
+        crate::plan::RuntimeFunctionParameterPassing::Affine
+    );
     let value = RuntimeValue::NeedHandle(crate::tests::reusable_need("need.pure.affine"));
     assert!(!value.ownership().permits_copy());
     let mut backend = VmRuntimePureCallBackend::default();
@@ -99,8 +111,15 @@ fn pure_collect_intrinsic_moves_affine_sequence_items() {
     builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
             name: "collect_affine".to_owned(),
-            inputs: Box::new([input.clone()]),
-            input_abi: vec![RuntimePureInputType::Value],
+            inputs: Box::new([input.clone()])
+                .into_iter()
+                .zip(vec![RuntimePureInputType::Value])
+                .map(|(local, abi)| crate::plan::RuntimeCallableParameterSeed {
+                    local,
+                    passing: crate::plan::RuntimeFunctionParameterPassing::Affine,
+                    abi,
+                })
+                .collect(),
             output_abi: RuntimePureOutputType::Value,
             body: RuntimeExprSeed::new(
                 vector,
@@ -226,7 +245,7 @@ fn pure_format_content_uses_selected_ambient_locale() {
                 monomorph_label: "I64::display_text".to_owned(),
             },
             receiver: RuntimeReceiverMode::Owned,
-            inputs: Box::new([crate::plan::RuntimeTraitMethodInputSeed {
+            inputs: Box::new([crate::plan::RuntimeCallableParameterSeed {
                 local: receiver_local.clone(),
                 passing: crate::plan::RuntimeFunctionParameterPassing::Value,
                 abi: RuntimePureInputType::I64,
@@ -264,7 +283,6 @@ fn pure_format_content_uses_selected_ambient_locale() {
         .push_pure_helper_seed(RuntimePureHelperSeed {
             name: "localized_number".to_owned(),
             inputs: Box::new([]),
-            input_abi: vec![],
             output_abi: RuntimePureOutputType::Value,
             body,
             scalar_eval_supported: false,
@@ -275,7 +293,6 @@ fn pure_format_content_uses_selected_ambient_locale() {
         .push_pure_helper_seed(RuntimePureHelperSeed {
             name: "localized_number_via_trait".to_owned(),
             inputs: Box::new([]),
-            input_abi: vec![],
             output_abi: RuntimePureOutputType::Value,
             body: RuntimeExprSeed::new(
                 content_type,
@@ -653,7 +670,6 @@ fn standard_map_pure_plan() -> (Arc<RuntimePlan>, Vec<StandardMapPureCase>) {
             .push_pure_helper_seed(RuntimePureHelperSeed {
                 name: format!("standard_map_{index}"),
                 inputs: Box::new([]),
-                input_abi: Vec::new(),
                 output_abi: RuntimePureOutputType::Value,
                 body: standard_map_seed(
                     family,
@@ -712,8 +728,18 @@ fn admit_i64_helper(
     builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
             name: name.to_owned(),
-            inputs: admission.local_ids().to_vec().into_boxed_slice(),
-            input_abi: vec![RuntimePureInputType::I64; arity],
+            inputs: admission
+                .local_ids()
+                .to_vec()
+                .into_boxed_slice()
+                .into_iter()
+                .zip(vec![RuntimePureInputType::I64; arity])
+                .map(|(local, abi)| crate::plan::RuntimeCallableParameterSeed {
+                    local,
+                    passing: crate::plan::RuntimeFunctionParameterPassing::Value,
+                    abi,
+                })
+                .collect(),
             output_abi: RuntimePureOutputType::I64,
             body: body(admission.local_ids()),
             scalar_eval_supported: true,
@@ -748,7 +774,11 @@ fn pure_request_is_qualified_by_the_admitted_plan_and_helper() {
             .iter()
             .map(|binding| binding.local)
             .collect::<Vec<_>>(),
-        helper.plan.pure_helpers()[0].input_locals.as_ref()
+        helper.plan.pure_helpers()[0]
+            .inputs
+            .iter()
+            .map(|input| input.local())
+            .collect::<Vec<_>>()
     );
 
     let result = VmPureFunctionBackend
@@ -762,7 +792,7 @@ fn pure_request_is_qualified_by_the_admitted_plan_and_helper() {
 #[test]
 fn pure_request_rejects_a_value_outside_the_input_local_type() {
     let helper = admitted_add_helper();
-    let input = helper.plan.pure_helpers()[0].input_locals[0];
+    let input = helper.plan.pure_helpers()[0].inputs[0].local();
     let input_ty = helper
         .plan
         .local_declarations()
@@ -842,7 +872,11 @@ fn vm_scratch_rebinds_plan_local_inputs_between_calls() {
 fn aot_plan_uses_the_helpers_plan_local_input_coordinates() {
     let helper = admitted_add_helper();
     let request = helper.request([RuntimeValue::i64(0), RuntimeValue::i64(0)]);
-    let input_locals = helper.plan.pure_helpers()[0].input_locals.clone();
+    let input_locals = helper.plan.pure_helpers()[0]
+        .inputs
+        .iter()
+        .map(|input| input.local())
+        .collect::<Vec<_>>();
     let plan = AotPureFunctionBackend::new()
         .compile_i64_with_inputs(&request, input_locals.iter().copied())
         .expect("typed AOT compilation");
@@ -867,7 +901,11 @@ fn aot_rejects_a_consuming_local_read_that_vm_executes() {
         )
     });
     let request = helper.request([RuntimeValue::i64(9)]);
-    let input_locals = helper.plan.pure_helpers()[0].input_locals.clone();
+    let input_locals = helper.plan.pure_helpers()[0]
+        .inputs
+        .iter()
+        .map(|input| input.local())
+        .collect::<Vec<_>>();
 
     assert!(
         AotPureFunctionBackend::new()
@@ -1052,8 +1090,15 @@ fn structured_closure_captures_the_exact_owning_plan() {
     builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
             name: "captured_add".to_owned(),
-            inputs: Box::new([captured]),
-            input_abi: vec![RuntimePureInputType::I64],
+            inputs: Box::new([captured])
+                .into_iter()
+                .zip(vec![RuntimePureInputType::I64])
+                .map(|(local, abi)| crate::plan::RuntimeCallableParameterSeed {
+                    local,
+                    passing: crate::plan::RuntimeFunctionParameterPassing::Value,
+                    abi,
+                })
+                .collect(),
             output_abi: RuntimePureOutputType::I64,
             body: RuntimeExprSeed::new(
                 i64_semantic_type(),
@@ -1186,7 +1231,6 @@ fn structured_function_input_tuple_pattern_binds_body_locals() {
         .push_pure_helper_seed(RuntimePureHelperSeed {
             name: "tuple_pattern_add".to_owned(),
             inputs: Box::new([]),
-            input_abi: vec![],
             output_abi: RuntimePureOutputType::I64,
             body: RuntimeExprSeed::new(
                 i64_semantic_type(),
@@ -1316,7 +1360,6 @@ fn structured_function_input_sequence_rest_binds_one_logical_tail() {
         .push_pure_helper_seed(RuntimePureHelperSeed {
             name: "sequence_rest_select".to_owned(),
             inputs: Box::new([]),
-            input_abi: vec![],
             output_abi: RuntimePureOutputType::I64,
             body: RuntimeExprSeed::new(
                 i64_semantic_type(),
@@ -1439,7 +1482,6 @@ fn structured_function_input_record_pattern_binds_by_declared_field_coordinate()
         .push_pure_helper_seed(RuntimePureHelperSeed {
             name: "record_pattern_select".to_owned(),
             inputs: Box::new([]),
-            input_abi: vec![],
             output_abi: RuntimePureOutputType::I64,
             body: RuntimeExprSeed::new(
                 i64_semantic_type(),
@@ -1568,7 +1610,6 @@ fn structured_apply_reorders_source_arguments_to_the_checked_abi() {
         .push_pure_helper_seed(RuntimePureHelperSeed {
             name: "positioned_apply".to_owned(),
             inputs: Box::new([]),
-            input_abi: vec![],
             output_abi: RuntimePureOutputType::I64,
             body: RuntimeExprSeed::new(
                 i64_semantic_type(),
@@ -1622,7 +1663,7 @@ fn owned_pure_trait_call_evaluates_receiver_and_source_arguments_once() {
             receiver: RuntimeReceiverMode::Owned,
             inputs: [receiver.clone(), first.clone(), second.clone()]
                 .into_iter()
-                .map(|local| crate::plan::RuntimeTraitMethodInputSeed {
+                .map(|local| crate::plan::RuntimeCallableParameterSeed {
                     local,
                     passing: crate::plan::RuntimeFunctionParameterPassing::Value,
                     abi: RuntimePureInputType::I64,
@@ -1640,7 +1681,6 @@ fn owned_pure_trait_call_evaluates_receiver_and_source_arguments_once() {
         .push_pure_helper_seed(RuntimePureHelperSeed {
             name: "owned_trait_call".to_owned(),
             inputs: Box::new([]),
-            input_abi: vec![],
             output_abi: RuntimePureOutputType::I64,
             body: RuntimeExprSeed::new(
                 i64_semantic_type(),
@@ -1716,7 +1756,7 @@ fn simple_trait_call_plan(
                 monomorph_label: "I64::render".to_owned(),
             },
             receiver: receiver_mode,
-            inputs: Box::new([crate::plan::RuntimeTraitMethodInputSeed {
+            inputs: Box::new([crate::plan::RuntimeCallableParameterSeed {
                 local: receiver,
                 passing: match receiver_mode {
                     RuntimeReceiverMode::Owned => {
@@ -1739,7 +1779,6 @@ fn simple_trait_call_plan(
         .push_pure_helper_seed(RuntimePureHelperSeed {
             name: "trait_call".to_owned(),
             inputs: Box::new([]),
-            input_abi: vec![],
             output_abi: RuntimePureOutputType::I64,
             body: RuntimeExprSeed::new(
                 i64_semantic_type(),
@@ -1793,7 +1832,7 @@ fn pure_trait_call_checks_selected_method_and_sealed_abi() {
     let mut wrong_abi = Arc::new((*base).clone());
     let input = wrong_abi.trait_methods()[0].inputs[0];
     Arc::get_mut(&mut wrong_abi).unwrap().trait_methods[0].inputs[0] =
-        crate::plan::RuntimeTraitMethodInput::new(
+        crate::plan::RuntimeCallableParameter::new(
             input.local(),
             input.passing(),
             RuntimePureInputType::F64,

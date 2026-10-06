@@ -40,7 +40,7 @@ pub use construction::{
     RuntimeAgentExprSeed, RuntimeAssignmentSeed, RuntimeAudioCommandSeed,
     RuntimeAwaitManyTargetSeed, RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed,
     RuntimeBorrowedLocalSeed, RuntimeBuiltinIteratorEvidenceSeed, RuntimeCallArgumentSeed,
-    RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode,
+    RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode, RuntimeCallableParameterSeed,
     RuntimeCallableSpecializationSeed, RuntimeCallableSpecializationSeedId,
     RuntimeCallableStateSeed, RuntimeCallableStateSeedId, RuntimeChoiceOptionSeed,
     RuntimeDialogueContentEffectBindingSeed, RuntimeDialogueContentEffectSlotSeed,
@@ -68,7 +68,7 @@ pub use construction::{
     RuntimePureHelperSeedId, RuntimePureProgramBindingSeed, RuntimeRecordFieldSeedId,
     RuntimeRecordPatternFieldSeed, RuntimeScheduledCaptureSeed, RuntimeStreamMatchArmSeed,
     RuntimeStreamOpSeed, RuntimeStreamPlanSeed, RuntimeTraitMethodDeclarationSeed,
-    RuntimeTraitMethodInputSeed, RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
+    RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
 };
 pub use construction::{RuntimeControlEffectContractSeed, RuntimeControlEffectContractSeedId};
 pub use control_effect::{
@@ -949,8 +949,7 @@ pub struct RuntimePureHelperId(pub usize);
 pub struct RuntimePureHelper {
     pub id: RuntimePureHelperId,
     pub name: String,
-    pub input_locals: Box<[RuntimeLocalDeclarationId]>,
-    pub input_types: Vec<RuntimePureInputType>,
+    pub inputs: Box<[RuntimeCallableParameter]>,
     pub output_type: RuntimePureOutputType,
     pub expr: RuntimeExpr,
     pub scalar_eval_supported: bool,
@@ -1046,21 +1045,21 @@ pub struct RuntimeTraitMethod {
     pub id: RuntimeTraitMethodId,
     pub identity: RuntimeTraitMethodIdentity,
     pub receiver: RuntimeReceiverMode,
-    pub inputs: Box<[RuntimeTraitMethodInput]>,
+    pub inputs: Box<[RuntimeCallableParameter]>,
     pub output_type: RuntimePureOutputType,
     pub body: RuntimeExpr,
 }
 
-/// One method input keeps its frame local, static whole-formal passing class
-/// and physical value representation together. The receiver is the first row.
+/// One directly bound callable formal keeps its frame local, static passing
+/// and physical representation together. A method receiver is its first row.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct RuntimeTraitMethodInput {
+pub struct RuntimeCallableParameter {
     local: RuntimeLocalDeclarationId,
     passing: RuntimeFunctionParameterPassing,
     abi: RuntimePureInputType,
 }
 
-impl RuntimeTraitMethodInput {
+impl RuntimeCallableParameter {
     pub(crate) const fn new(
         local: RuntimeLocalDeclarationId,
         passing: RuntimeFunctionParameterPassing,

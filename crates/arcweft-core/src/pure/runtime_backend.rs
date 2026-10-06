@@ -384,12 +384,11 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
             });
         }
         if helper.declaration().output_type != T::OUTPUT_TYPE
-            || helper.declaration().input_types.len() != helper.declaration().input_locals.len()
             || !helper
                 .declaration()
-                .input_types
+                .inputs
                 .iter()
-                .all(|input| *input == T::INPUT_TYPE)
+                .all(|input| input.abi() == T::INPUT_TYPE)
         {
             return Err(RuntimeEvalError::UnsupportedPure {
                 name: helper.declaration().name.clone(),
@@ -897,10 +896,10 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
         helper: RuntimePureHelperRef<'_>,
         args: Vec<RuntimeValue>,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        if args.len() != helper.declaration().input_locals.len() {
+        if args.len() != helper.declaration().inputs.len() {
             return Err(RuntimeEvalError::TooManyPureArgs {
                 helper: helper.declaration().name.clone(),
-                max: helper.declaration().input_locals.len(),
+                max: helper.declaration().inputs.len(),
                 found: args.len(),
             });
         }
@@ -1077,12 +1076,11 @@ fn validate_exact_int_flat_batch_shape<T: RuntimePureScalarInteger>(
         });
     }
     if helper.declaration().output_type != T::OUTPUT_TYPE
-        || helper.declaration().input_types.len() != helper.declaration().input_locals.len()
         || !helper
             .declaration()
-            .input_types
+            .inputs
             .iter()
-            .all(|input| *input == T::INPUT_TYPE)
+            .all(|input| input.abi() == T::INPUT_TYPE)
     {
         return Err(RuntimeEvalError::UnsupportedPure {
             name: helper.declaration().name.clone(),
@@ -1119,12 +1117,11 @@ fn validate_float_flat_batch_shape(
         });
     }
     if helper.declaration().output_type != output_type
-        || helper.declaration().input_types.len() != helper.declaration().input_locals.len()
         || !helper
             .declaration()
-            .input_types
+            .inputs
             .iter()
-            .all(|input| *input == input_type)
+            .all(|input| input.abi() == input_type)
     {
         return Err(RuntimeEvalError::UnsupportedPure {
             name: helper.declaration().name.clone(),

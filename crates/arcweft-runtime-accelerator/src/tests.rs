@@ -72,10 +72,9 @@ impl AdmittedHelper {
 
     fn from_plan(plan: Arc<RuntimePlan>, id: RuntimePureHelperId) -> Self {
         let args = plan.pure_helpers()[id.0]
-            .input_types
+            .inputs
             .iter()
-            .copied()
-            .map(default_helper_input)
+            .map(|input| default_helper_input(input.abi()))
             .collect::<Vec<_>>();
         let request = PureFunctionRequest::try_new(plan, id, args)
             .expect("admitted helper request has well-typed default inputs");
@@ -275,8 +274,20 @@ fn admit_helper(
     builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
             name: name.to_owned(),
-            inputs: admission.local_ids().to_vec().into_boxed_slice(),
-            input_abi,
+            inputs: admission
+                .local_ids()
+                .to_vec()
+                .into_boxed_slice()
+                .into_iter()
+                .zip(input_abi)
+                .map(
+                    |(local, abi)| arcweft_core::plan::RuntimeCallableParameterSeed {
+                        local,
+                        passing: arcweft_core::plan::RuntimeFunctionParameterPassing::Value,
+                        abi,
+                    },
+                )
+                .collect(),
             output_abi,
             body: body(admission.local_ids(), helper_type_identity(output_input)),
             scalar_eval_supported,
@@ -398,8 +409,19 @@ fn admit_add_helpers(
             builder
                 .push_pure_helper_seed(RuntimePureHelperSeed {
                     name: (*name).to_owned(),
-                    inputs: inputs.to_vec().into_boxed_slice(),
-                    input_abi: vec![*input_type; 2],
+                    inputs: inputs
+                        .to_vec()
+                        .into_boxed_slice()
+                        .into_iter()
+                        .zip(vec![*input_type; 2])
+                        .map(
+                            |(local, abi)| arcweft_core::plan::RuntimeCallableParameterSeed {
+                                local,
+                                passing: arcweft_core::plan::RuntimeFunctionParameterPassing::Value,
+                                abi,
+                            },
+                        )
+                        .collect(),
                     output_abi: *output_type,
                     body: binary_expr(
                         helper_type_identity(output_input_abi(*output_type)),
@@ -1993,8 +2015,18 @@ fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
     let helper = builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
             name: "u32_flow_score".to_owned(),
-            inputs: vec![locals[1].clone(), locals[2].clone()].into_boxed_slice(),
-            input_abi: vec![RuntimePureInputType::U32, RuntimePureInputType::U32],
+            inputs: vec![locals[1].clone(), locals[2].clone()]
+                .into_boxed_slice()
+                .into_iter()
+                .zip(vec![RuntimePureInputType::U32, RuntimePureInputType::U32])
+                .map(
+                    |(local, abi)| arcweft_core::plan::RuntimeCallableParameterSeed {
+                        local,
+                        passing: arcweft_core::plan::RuntimeFunctionParameterPassing::Value,
+                        abi,
+                    },
+                )
+                .collect(),
             output_abi: RuntimePureOutputType::U32,
             body: binary_expr(
                 u32_ty,

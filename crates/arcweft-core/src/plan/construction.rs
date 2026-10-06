@@ -30,11 +30,12 @@ pub use seed::{
     RuntimeAgentExprSeed, RuntimeAssignmentSeed, RuntimeAudioCommandSeed,
     RuntimeAwaitManyTargetSeed, RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed,
     RuntimeBorrowedLocalSeed, RuntimeBuiltinIteratorEvidenceSeed, RuntimeCallArgumentSeed,
-    RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode, RuntimeChoiceOptionSeed,
-    RuntimeDialogueContentEffectBindingSeed, RuntimeDialogueContentEffectSlotSeed,
-    RuntimeDialogueContentPlanSeed, RuntimeDialogueContentPlanSeedId,
-    RuntimeDialogueContentSlotSeed, RuntimeDialogueContentTemplateManifestSeed,
-    RuntimeDialogueEffectSiteSeed, RuntimeDialogueMarkSeedId, RuntimeDialogueResultTargetSeed,
+    RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode, RuntimeCallableParameterSeed,
+    RuntimeChoiceOptionSeed, RuntimeDialogueContentEffectBindingSeed,
+    RuntimeDialogueContentEffectSlotSeed, RuntimeDialogueContentPlanSeed,
+    RuntimeDialogueContentPlanSeedId, RuntimeDialogueContentSlotSeed,
+    RuntimeDialogueContentTemplateManifestSeed, RuntimeDialogueEffectSiteSeed,
+    RuntimeDialogueMarkSeedId, RuntimeDialogueResultTargetSeed,
     RuntimeDialogueResultTargetSeedError, RuntimeDialogueValueSiteSeed, RuntimeDropPolicySeed,
     RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed, RuntimeExecutableBodySeed,
     RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed,
@@ -54,8 +55,7 @@ pub use seed::{
     RuntimePureHelperSeed, RuntimePureHelperSeedId, RuntimePureProgramBindingSeed,
     RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed, RuntimeScheduledCaptureSeed,
     RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed, RuntimeStreamPlanSeed,
-    RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodInputSeed, RuntimeTraitMethodSeed,
-    RuntimeTraitMethodSeedId,
+    RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
 };
 
 use crate::entry::{
@@ -642,8 +642,7 @@ struct ReservedFunctionSite {
 #[derive(Debug)]
 struct ReservedPureHelper {
     name: String,
-    input_locals: Box<[RuntimeLocalDeclarationId]>,
-    input_abi: Vec<super::RuntimePureInputType>,
+    inputs: Box<[super::RuntimeCallableParameter]>,
     output_abi: super::RuntimePureOutputType,
     scalar_eval_supported: bool,
     origin: super::RuntimePureHelperOrigin,
@@ -654,7 +653,7 @@ struct ReservedPureHelper {
 struct ReservedTraitMethod {
     identity: super::RuntimeTraitMethodIdentity,
     receiver: super::RuntimeReceiverMode,
-    inputs: Box<[super::RuntimeTraitMethodInput]>,
+    inputs: Box<[super::RuntimeCallableParameter]>,
     output_abi: super::RuntimePureOutputType,
     body: Option<crate::value::RuntimeExpr>,
 }
@@ -2171,7 +2170,6 @@ impl RuntimePlanBuilder {
         let helper = self.reserve_pure_helper_seed(RuntimePureHelperDeclarationSeed {
             name: seed.name,
             inputs: seed.inputs,
-            input_abi: seed.input_abi,
             result,
             output_abi: seed.output_abi,
             scalar_eval_supported: seed.scalar_eval_supported,
@@ -2277,16 +2275,25 @@ impl RuntimePlanBuilder {
         &mut self,
         seed: RuntimePureHelperDeclarationSeed,
     ) -> Result<RuntimePureHelperSeedId, RuntimePlanBuildError> {
-        let inputs = self.resolve_function_locals(seed.inputs)?;
-        self.validate_callable_input_abi("pure helper", &inputs, &seed.input_abi)?;
+        let inputs =
+            self.resolve_function_locals(seed.inputs.iter().map(|input| input.local.clone()))?;
+        let input_abi = seed
+            .inputs
+            .iter()
+            .map(|input| input.abi)
+            .collect::<Vec<_>>();
+        self.validate_callable_input_abi("pure helper", &inputs, &input_abi)?;
         let input_types = inputs
             .iter()
             .map(|(_, ty)| *ty)
             .collect::<Vec<_>>()
             .into_boxed_slice();
-        let input_locals = inputs
+        let inputs = inputs
             .into_iter()
-            .map(|(local, _)| local)
+            .zip(seed.inputs)
+            .map(|((local, _), input)| {
+                super::RuntimeCallableParameter::new(local, input.passing, input.abi)
+            })
             .collect::<Vec<_>>()
             .into_boxed_slice();
         let result = self.resolve_seed_type("pure helper result", seed.result)?;
@@ -2299,8 +2306,7 @@ impl RuntimePlanBuilder {
         }
         self.pure_helpers.push(ReservedPureHelper {
             name: seed.name,
-            input_locals,
-            input_abi: seed.input_abi,
+            inputs,
             output_abi: seed.output_abi,
             scalar_eval_supported: seed.scalar_eval_supported,
             origin: seed.origin,
@@ -2342,7 +2348,11 @@ impl RuntimePlanBuilder {
         if reserved.body.is_some() {
             return Err(RuntimePlanBuildError::DuplicatePureHelperDefinition { helper: helper_id });
         }
-        let inputs = reserved.input_locals.clone();
+        let inputs = reserved
+            .inputs
+            .iter()
+            .map(|input| input.local())
+            .collect::<Vec<_>>();
         let body = self.lower_expression(body)?;
         require_reserved_result("pure helper result", result, body.ty())?;
         self.validate_callable_body_locals(&body, &inputs, &[])?;
@@ -2403,7 +2413,7 @@ impl RuntimePlanBuilder {
             .into_iter()
             .zip(seed.inputs)
             .map(|((local, _), input)| {
-                super::RuntimeTraitMethodInput::new(local, input.passing, input.abi)
+                super::RuntimeCallableParameter::new(local, input.passing, input.abi)
             })
             .collect::<Vec<_>>()
             .into_boxed_slice();
@@ -2609,8 +2619,7 @@ impl RuntimePlanBuilder {
                 RuntimePureHelper {
                     id: super::RuntimePureHelperId(index),
                     name: helper.name,
-                    input_locals: helper.input_locals,
-                    input_types: helper.input_abi,
+                    inputs: helper.inputs,
                     output_type: helper.output_abi,
                     expr,
                     scalar_eval_supported: helper.scalar_eval_supported,

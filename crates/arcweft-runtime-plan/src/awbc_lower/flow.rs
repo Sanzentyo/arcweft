@@ -385,10 +385,10 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
 
         let owner = self.inventory.reserve_function_slot();
         let mut frame = FrameBuilder::new();
-        let mut parameter_types = Vec::with_capacity(helper.input_locals.len());
-        for input in &helper.input_locals {
-            let ty = admitted_local_type(self.inventory, self.plan, *input);
-            frame.parameter(*input, ty);
+        let mut parameter_types = Vec::with_capacity(helper.inputs.len());
+        for input in &helper.inputs {
+            let ty = admitted_local_type(self.inventory, self.plan, input.local());
+            frame.parameter(input.local(), ty);
             parameter_types.push(ty);
         }
         let block_start = self
@@ -428,10 +428,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 kind: AwbcFunctionKind::PureHelper,
                 signature,
                 type_context: None,
-                input_ownership: vec![
-                    AwbcFunctionInputOwnership::default();
-                    helper.input_locals.len()
-                ],
+                input_ownership: vec![AwbcFunctionInputOwnership::default(); helper.inputs.len()],
                 frame_layout: layout,
                 blocks: AwbcTableRange::new(block_start.0, block_len),
                 entry_block: block_start,

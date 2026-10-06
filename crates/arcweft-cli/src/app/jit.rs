@@ -408,7 +408,7 @@ pub(in crate::app) fn run_jit_check(
     options: &JitCheckOptions,
     target: &JitCheckTarget,
 ) -> Result<JitCheckReport, ExitCode> {
-    let first_inputs = jit_check_inputs(options.input_seed, 0, 0, target.input_locals().len());
+    let first_inputs = jit_check_inputs(options.input_seed, 0, 0, target.inputs().len());
     let request = target.request_with_inputs(&first_inputs)?;
     let conformance = collect_jit_check_conformance(&request)?;
     let compiled = compile_jit_check_helpers(&request, target)?;
@@ -446,11 +446,11 @@ fn jit_check_report(
         workload: JitCheckWorkloadReport {
             case: target.name.clone(),
             loop_kind: "deterministic_input_series".to_owned(),
-            inputs_per_iteration: target.input_locals().len(),
+            inputs_per_iteration: target.inputs().len(),
             batch_iterations: options.iterations,
         },
         input_bindings: target.input_labels.clone(),
-        dynamic_inputs: !target.input_locals().is_empty(),
+        dynamic_inputs: !target.inputs().is_empty(),
         input_seed: options.input_seed,
         host_system: host_system_info(),
         vm_backend: backend_label(conformance.vm.backend).to_owned(),
@@ -659,7 +659,7 @@ fn compile_jit_check_helpers(
 ) -> Result<JitCheckCompiledHelpers, ExitCode> {
     let aot_started = Instant::now();
     let aot = AotPureFunctionBackend::new()
-        .compile_i64_with_inputs(request, target.input_locals().iter().copied())
+        .compile_i64_with_inputs(request, target.inputs().iter().map(|input| input.local()))
         .map_err(|error| {
             eprintln!("error: failed to compile AOT helper: {error}");
             ExitCode::FAILURE
@@ -668,7 +668,7 @@ fn compile_jit_check_helpers(
 
     let jit_started = Instant::now();
     let jit = CraneliftPureFunctionBackend
-        .compile_i64_with_inputs(request, target.input_locals().iter().copied())
+        .compile_i64_with_inputs(request, target.inputs().iter().map(|input| input.local()))
         .map_err(|error| {
             eprintln!("error: failed to compile JIT helper: {error}");
             ExitCode::FAILURE
@@ -677,7 +677,7 @@ fn compile_jit_check_helpers(
 
     let jit_batch_started = Instant::now();
     let jit_batch = CraneliftPureFunctionBackend
-        .compile_i64_batch(request, target.input_locals().iter().copied())
+        .compile_i64_batch(request, target.inputs().iter().map(|input| input.local()))
         .map_err(|error| {
             eprintln!("error: failed to compile JIT batch helper: {error}");
             ExitCode::FAILURE
@@ -702,7 +702,7 @@ fn measure_jit_check_helpers(
     warmup_jit_check_jit(&compiled.jit, options.warmup, options.input_seed);
     warmup_jit_check_aot(
         &compiled.aot,
-        target.input_locals().len(),
+        target.inputs().len(),
         options.warmup,
         options.input_seed,
     )?;
@@ -711,7 +711,7 @@ fn measure_jit_check_helpers(
     Ok(JitCheckMeasurements {
         aot: measure_jit_check_aot(
             &compiled.aot,
-            target.input_locals().len(),
+            target.inputs().len(),
             options.samples,
             options.iterations,
             options.input_seed,
@@ -918,11 +918,11 @@ impl JitCheckTarget {
         candidate: &RuntimePureHelper,
         source_compiler: Option<JitCheckSourceCompilerReport>,
     ) -> Result<Self, ExitCode> {
-        if candidate.input_locals.len() > 4 {
+        if candidate.inputs.len() > 4 {
             eprintln!(
                 "error: pure helper `{}` has {} input(s); current JIT check supports at most 4",
                 candidate.name,
-                candidate.input_locals.len()
+                candidate.inputs.len()
             );
             return Err(ExitCode::from(2));
         }
@@ -931,7 +931,7 @@ impl JitCheckTarget {
             source: JitCheckHelperSource::Source,
             source_compiler,
             input_labels: candidate
-                .input_locals
+                .inputs
                 .iter()
                 .enumerate()
                 .map(|(index, _)| format!("arg{index}"))
@@ -967,8 +967,19 @@ impl JitCheckTarget {
         builder
             .push_pure_helper_seed(RuntimePureHelperSeed {
                 name: name.to_owned(),
-                inputs: admission.local_ids()[..N].to_vec().into_boxed_slice(),
-                input_abi: vec![RuntimePureInputType::I64; N],
+                inputs: admission.local_ids()[..N]
+                    .to_vec()
+                    .into_boxed_slice()
+                    .into_iter()
+                    .zip(vec![RuntimePureInputType::I64; N])
+                    .map(
+                        |(local, abi)| arcweft_core::plan::RuntimeCallableParameterSeed {
+                            local,
+                            passing: arcweft_core::plan::RuntimeFunctionParameterPassing::Value,
+                            abi,
+                        },
+                    )
+                    .collect(),
                 output_abi: RuntimePureOutputType::I64,
                 body: body(admission.local_ids()),
                 scalar_eval_supported: true,
@@ -1006,8 +1017,8 @@ impl JitCheckTarget {
             .expect("JIT target retains an admitted helper")
     }
 
-    fn input_locals(&self) -> &[RuntimeLocalDeclarationId] {
-        &self.helper().input_locals
+    fn inputs(&self) -> &[arcweft_core::plan::RuntimeCallableParameter] {
+        &self.helper().inputs
     }
 }
 
@@ -1245,12 +1256,12 @@ fn warmup_jit_check_vm(
 ) -> Result<(), ExitCode> {
     let mut scratch = VmPureFunctionScratch::default();
     for index in 0..warmup {
-        let inputs = jit_check_input_array(input_seed, 0, index, target.input_locals().len());
+        let inputs = jit_check_input_array(input_seed, 0, index, target.inputs().len());
         let _ = scratch
             .evaluate_i64_slice(
                 &target.plan,
                 target.helper,
-                &inputs[..target.input_locals().len()],
+                &inputs[..target.inputs().len()],
             )
             .map_err(|error| {
                 eprintln!("error: VM warmup failed: {error}");
@@ -1268,12 +1279,12 @@ fn measure_jit_check_vm(
 ) -> Result<JitRepeatedMeasurement, ExitCode> {
     let mut scratch = VmPureFunctionScratch::default();
     measure_repeated(samples, iterations, |sample, index| {
-        let inputs = jit_check_input_array(input_seed, sample, index, target.input_locals().len());
+        let inputs = jit_check_input_array(input_seed, sample, index, target.inputs().len());
         let value = scratch
             .evaluate_i64_slice(
                 &target.plan,
                 target.helper,
-                &inputs[..target.input_locals().len()],
+                &inputs[..target.inputs().len()],
             )
             .map_err(|error| {
                 eprintln!("error: VM evaluation failed: {error}");
@@ -1371,18 +1382,14 @@ fn julia_benchmark_source(
             eprintln!("error: {message}");
             ExitCode::from(2)
         })?;
-    let expr = julia_i64_expr(
-        &target.helper().expr,
-        target.input_locals(),
-        &target.input_labels,
-    )
-    .map_err(|message| {
-        eprintln!(
-            "error: Julia baseline cannot lower helper `{}`: {message}",
-            target.name
-        );
-        ExitCode::from(2)
-    })?;
+    let expr = julia_i64_expr(&target.helper().expr, target.inputs(), &target.input_labels)
+        .map_err(|message| {
+            eprintln!(
+                "error: Julia baseline cannot lower helper `{}`: {message}",
+                target.name
+            );
+            ExitCode::from(2)
+        })?;
     let call_args = (1..=params.len())
         .map(|index| format!("arcweft_input(seed, sample, iteration, {index})"))
         .collect::<Vec<_>>()
@@ -1446,7 +1453,7 @@ println("max_ns\t", elapsed[end])
 
 fn julia_i64_expr(
     expr: &RuntimeExpr,
-    inputs: &[RuntimeLocalDeclarationId],
+    inputs: &[arcweft_core::plan::RuntimeCallableParameter],
     input_labels: &[String],
 ) -> Result<String, String> {
     match expr.kind() {
@@ -1517,7 +1524,7 @@ fn julia_i64_expr(
 
 fn julia_bool_expr(
     expr: &RuntimeExpr,
-    inputs: &[RuntimeLocalDeclarationId],
+    inputs: &[arcweft_core::plan::RuntimeCallableParameter],
     input_labels: &[String],
 ) -> Result<String, String> {
     match expr.kind() {
@@ -1545,12 +1552,12 @@ fn julia_bool_expr(
 
 fn julia_local_identifier(
     local: RuntimeLocalDeclarationId,
-    inputs: &[RuntimeLocalDeclarationId],
+    inputs: &[arcweft_core::plan::RuntimeCallableParameter],
     input_labels: &[String],
 ) -> Result<String, String> {
     inputs
         .iter()
-        .position(|candidate| *candidate == local)
+        .position(|candidate| candidate.local() == local)
         .map_or_else(
             || Ok(format!("arcweft_local_{}", local.get().get())),
             |index| julia_identifier(&input_labels[index]),
