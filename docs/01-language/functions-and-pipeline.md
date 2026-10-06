@@ -366,6 +366,10 @@ structured function-site の parameter 入力は、受理済み formal の passi
 明示的に保持する。引数位置や pattern の展開で区分を失わず、frame ingress の
 `Owned`／`Unrestricted` 保証から区分を推測しない。
 
+継続の先行引数と attached default の parameter 入力は、捕捉した whole formal
+として区分を保持する。capture packet で値を運ぶことと、formal の静的な
+passing 区分は独立しており、一般の lexical capture へ置き換えて区分を落とさない。
+
 ## 部分適用
 
 ```arcw

@@ -58,7 +58,12 @@ fn prepare_program_inputs(
         .iter()
         .zip(inputs)
         .filter_map(|(input, value)| {
-            matches!(input.source(), RuntimeFunctionInputSource::Capture { .. }).then_some(*value)
+            matches!(
+                input.source(),
+                RuntimeFunctionInputSource::Capture { .. }
+                    | RuntimeFunctionInputSource::CapturedParameter { .. }
+            )
+            .then_some(*value)
         })
         .collect::<Vec<_>>();
     let parameters = declaration
@@ -161,7 +166,8 @@ impl Engine {
             .zip(inputs)
         {
             match input.source() {
-                RuntimeFunctionInputSource::Capture { .. } => captures.push(value),
+                RuntimeFunctionInputSource::Capture { .. }
+                | RuntimeFunctionInputSource::CapturedParameter { .. } => captures.push(value),
                 RuntimeFunctionInputSource::Parameter { .. } => parameters.push(value),
             }
         }

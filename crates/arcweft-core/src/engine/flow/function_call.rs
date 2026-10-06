@@ -54,7 +54,10 @@ impl Engine {
             let mut staged = Vec::new();
             for input in &inputs {
                 let (values, position) = match input.source() {
-                    RuntimeFunctionInputSource::Capture { position } => (&mut captures, position),
+                    RuntimeFunctionInputSource::Capture { position }
+                    | RuntimeFunctionInputSource::CapturedParameter { position, .. } => {
+                        (&mut captures, position)
+                    }
                     RuntimeFunctionInputSource::Parameter { position, .. } => (&mut args, position),
                 };
                 let value = values

@@ -721,7 +721,10 @@ impl RuntimeCallableState {
         }
         for input in body.inputs() {
             let (values, position) = match input.source() {
-                super::RuntimeFunctionInputSource::Capture { position } => (captures, position),
+                super::RuntimeFunctionInputSource::Capture { position }
+                | super::RuntimeFunctionInputSource::CapturedParameter { position, .. } => {
+                    (captures, position)
+                }
                 super::RuntimeFunctionInputSource::Parameter { position, .. } => {
                     (arguments, position)
                 }

@@ -329,7 +329,8 @@ impl RuntimePlanBuilder {
             .iter()
             .zip(input_types)
             .filter_map(|(source, ty)| match source {
-                RuntimeFunctionInputSource::Capture { position } => {
+                RuntimeFunctionInputSource::Capture { position }
+                | RuntimeFunctionInputSource::CapturedParameter { position, .. } => {
                     Some(RuntimeCallableRetainedInput {
                         role: RuntimeCallableRetainedRole::Capture {
                             position: *position,
@@ -355,7 +356,8 @@ impl RuntimePlanBuilder {
                         binding_ty: *ty,
                     })
                 }
-                RuntimeFunctionInputSource::Capture { .. } => None,
+                RuntimeFunctionInputSource::Capture { .. }
+                | RuntimeFunctionInputSource::CapturedParameter { .. } => None,
             })
             .collect();
         let captures = (0..retained.len())

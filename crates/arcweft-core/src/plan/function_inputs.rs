@@ -92,7 +92,8 @@ impl RuntimePlan {
             .iter()
             .map(|input| {
                 let (values, index) = match input.source() {
-                    RuntimeFunctionInputSource::Capture { position } => {
+                    RuntimeFunctionInputSource::Capture { position }
+                    | RuntimeFunctionInputSource::CapturedParameter { position, .. } => {
                         (captures, position as usize)
                     }
                     RuntimeFunctionInputSource::Parameter { position, .. } => {
@@ -127,7 +128,10 @@ impl RuntimePlan {
                 .ok_or(RuntimeFunctionApplyError::UnknownStructuredLocal { site, local })?
                 .ty();
             let (values, index) = match input.source() {
-                RuntimeFunctionInputSource::Capture { position } => (captures, position as usize),
+                RuntimeFunctionInputSource::Capture { position }
+                | RuntimeFunctionInputSource::CapturedParameter { position, .. } => {
+                    (captures, position as usize)
+                }
                 RuntimeFunctionInputSource::Parameter { position, .. } => {
                     (arguments, position as usize)
                 }
@@ -141,7 +145,8 @@ impl RuntimePlan {
             };
             if !matches {
                 return Err(match input.source() {
-                    RuntimeFunctionInputSource::Capture { .. } => {
+                    RuntimeFunctionInputSource::Capture { .. }
+                    | RuntimeFunctionInputSource::CapturedParameter { .. } => {
                         RuntimeFunctionApplyError::CaptureTypeMismatch {
                             site,
                             index,

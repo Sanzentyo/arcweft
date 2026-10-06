@@ -2987,6 +2987,45 @@ fn function_sites_preserve_accepted_parameter_passing_separately_from_ingress() 
 }
 
 #[test]
+fn continuation_captured_parameters_retain_accepted_passing() {
+    use arcweft_core::plan::{RuntimeFunctionInputSource, RuntimeFunctionParameterPassing};
+    use arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionParameterSource;
+    let (project, context) = removed_role_project(
+        "fn keep<T>(first: T)(second: i64) -> i64 { second }\nflow main() -> i64 { let scalar = keep(1i64); let first = scalar(0i64); let affine = keep(Vec<Need<i64>>::with_capacity(0usize)); return affine(42i64) }",
+    );
+    let (mut session, parsed) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed, &context).unwrap();
+    let mut accepted = compiled
+        .runtime_facts()
+        .project_function_instances()
+        .flat_map(|instance| instance.parameters())
+        .filter(|parameter| {
+            matches!(
+                parameter.source(),
+                RuntimeProjectFunctionParameterSource::ContinuationPrefix { .. }
+            )
+        })
+        .map(|parameter| parameter.passing())
+        .collect::<Vec<_>>();
+    let mut actual = compiled
+        .runtime_plan()
+        .plan
+        .function_sites()
+        .iter()
+        .flat_map(|site| site.inputs())
+        .filter_map(|input| match input.source() {
+            RuntimeFunctionInputSource::CapturedParameter { passing, .. } => Some(passing),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    accepted.sort();
+    actual.sort();
+    assert_eq!(actual, accepted);
+    assert!(actual.contains(&RuntimeFunctionParameterPassing::Value));
+    assert!(actual.contains(&RuntimeFunctionParameterPassing::Affine));
+}
+
+#[test]
 fn flow_facts_retain_the_accepted_body_and_complete_formals() {
     use arcweft_core::plan::RuntimeFunctionParameterPassing;
     use arcweft_lang_sema::final_analysis::{CheckedExecutionBodyOwner, CheckedExecutionSource};

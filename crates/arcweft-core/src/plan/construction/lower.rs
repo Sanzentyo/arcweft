@@ -620,8 +620,12 @@ impl RuntimePlanBodyConstruction<'_> {
                         .iter()
                         .zip(input_types)
                         .filter_map(|(source, ty)| {
-                            matches!(source, RuntimeFunctionInputSource::Capture { .. })
-                                .then_some(*ty)
+                            matches!(
+                                source,
+                                RuntimeFunctionInputSource::Capture { .. }
+                                    | RuntimeFunctionInputSource::CapturedParameter { .. }
+                            )
+                            .then_some(*ty)
                         })
                         .collect::<Vec<_>>();
                     if capture_types != expected.capture_types() {
@@ -1049,7 +1053,12 @@ impl RuntimePlanBodyConstruction<'_> {
                     .iter()
                     .zip(input_types)
                     .filter_map(|(source, ty)| {
-                        matches!(source, RuntimeFunctionInputSource::Capture { .. }).then_some(*ty)
+                        matches!(
+                            source,
+                            RuntimeFunctionInputSource::Capture { .. }
+                                | RuntimeFunctionInputSource::CapturedParameter { .. }
+                        )
+                        .then_some(*ty)
                     })
                     .collect::<Vec<_>>();
                 if captures.len() != capture_types.len() {

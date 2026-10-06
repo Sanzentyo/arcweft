@@ -1478,7 +1478,12 @@ impl RuntimePlanBuilder {
                 .iter()
                 .zip(input_types)
                 .filter_map(|(source, ty)| {
-                    matches!(source, RuntimeFunctionInputSource::Capture { .. }).then_some(*ty)
+                    matches!(
+                        source,
+                        RuntimeFunctionInputSource::Capture { .. }
+                            | RuntimeFunctionInputSource::CapturedParameter { .. }
+                    )
+                    .then_some(*ty)
                 })
                 .collect::<Vec<_>>();
             if value.captures.len() != capture_types.len() {
@@ -1599,7 +1604,12 @@ impl RuntimePlanBuilder {
                 .iter()
                 .zip(input_types)
                 .filter_map(|(source, ty)| {
-                    matches!(source, RuntimeFunctionInputSource::Capture { .. }).then_some(*ty)
+                    matches!(
+                        source,
+                        RuntimeFunctionInputSource::Capture { .. }
+                            | RuntimeFunctionInputSource::CapturedParameter { .. }
+                    )
+                    .then_some(*ty)
                 })
                 .collect::<Vec<_>>();
             if capture_types != slot.capture_types() {
@@ -2988,6 +2998,7 @@ fn validate_function_input_bindings(
         }
         match input.source() {
             RuntimeFunctionInputSource::Capture { position }
+            | RuntimeFunctionInputSource::CapturedParameter { position, .. }
                 if !parameter_phase && position == captures =>
             {
                 captures = captures
@@ -3001,6 +3012,7 @@ fn validate_function_input_bindings(
                     .ok_or(RuntimePlanBuildError::InvalidFunctionInputSource { index })?;
             }
             RuntimeFunctionInputSource::Capture { .. }
+            | RuntimeFunctionInputSource::CapturedParameter { .. }
             | RuntimeFunctionInputSource::Parameter { .. } => {
                 return Err(RuntimePlanBuildError::InvalidFunctionInputSource { index });
             }

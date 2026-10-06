@@ -2833,7 +2833,10 @@ fn reserve_project_function_sites<'facts>(
             };
             let source = match parameter.source() {
                 RuntimeProjectFunctionParameterSource::ContinuationPrefix { position } => {
-                    RuntimeFunctionInputSource::Capture { position }
+                    RuntimeFunctionInputSource::CapturedParameter {
+                        position,
+                        passing: parameter.passing(),
+                    }
                 }
                 RuntimeProjectFunctionParameterSource::CurrentGroup { position } => {
                     RuntimeFunctionInputSource::Parameter {
@@ -3082,7 +3085,7 @@ fn reserve_project_default_function_sites<'facts>(
                 Ok(RuntimeFunctionInputBindingSeed {
                     ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
                     unrestricted_bindings: Box::new([]),
-                    source: RuntimeFunctionInputSource::Capture { position },
+                    source: RuntimeFunctionInputSource::CapturedParameter { position, passing: capture.formal().passing() },
                     input_local,
                     pattern,
                 })

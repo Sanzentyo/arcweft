@@ -93,6 +93,12 @@ pub enum RuntimeFunctionInputSource {
     Capture {
         position: u32,
     },
+    /// A whole formal retained by a continuation or parameter default. Its
+    /// value enters through the capture packet without losing formal passing.
+    CapturedParameter {
+        position: u32,
+        passing: RuntimeFunctionParameterPassing,
+    },
     Parameter {
         position: u32,
         passing: RuntimeFunctionParameterPassing,
@@ -238,14 +244,18 @@ impl RuntimeFunctionSite {
         &self.inputs
     }
 
-    /// Returns capture-input rows in their checked ABI order.
+    /// Returns the retained packet's capture and captured-parameter rows in ABI order.
     pub fn capture_inputs(&self) -> impl Iterator<Item = &RuntimeFunctionInputBinding> {
-        self.inputs
-            .iter()
-            .filter(|input| matches!(input.source(), RuntimeFunctionInputSource::Capture { .. }))
+        self.inputs.iter().filter(|input| {
+            matches!(
+                input.source(),
+                RuntimeFunctionInputSource::Capture { .. }
+                    | RuntimeFunctionInputSource::CapturedParameter { .. }
+            )
+        })
     }
 
-    /// Returns logical parameter-input rows in their checked ABI order.
+    /// Returns parameters supplied at this invocation in their checked ABI order.
     pub fn parameter_inputs(&self) -> impl Iterator<Item = &RuntimeFunctionInputBinding> {
         self.inputs
             .iter()
