@@ -8786,21 +8786,19 @@ fn runtime_project_attached_default(
                 origin.error("attached default capture disagrees with its logical parameter ABI")
             );
         }
-        captures.push(RuntimeProjectAttachedDefaultCapture::new(
-            checked_capture.parameter().group(),
-            parameter_index,
-            parameter.source(),
-            checked_capture.pattern(),
-            checked_capture.pattern_digest(),
-            checked_capture.bindings().to_vec().into_boxed_slice(),
-            checked_capture
-                .used_locals()
-                .iter()
-                .map(|local| local.local())
-                .collect::<Vec<_>>()
-                .into_boxed_slice(),
-            binding_type,
-        ));
+        captures.push(
+            RuntimeProjectAttachedDefaultCapture::try_new(
+                parameter.clone(),
+                checked_capture.pattern_digest(),
+                checked_capture
+                    .used_locals()
+                    .iter()
+                    .map(|local| local.local())
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+            )
+            .map_err(|reason| origin.error(reason.to_string()))?,
+        );
     }
     let result = callable
         .attached_content_abi()

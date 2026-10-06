@@ -981,6 +981,131 @@ entry cli @entry.main { goto @flow.main }
     .expect("the typed Color argument lowers to verified AWBC");
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "one actual-project fixture joins closed generic default captures and proves foreign-instance admission rejects atomically"
+)]
+fn assert_attached_default_formal_authority(compiled: &CompiledProject) {
+    use arcweft_runtime_plan::semantic_facts::{
+        RuntimeProjectAttachedDefaultCapture, RuntimeProjectAttachedDefaultFunctionFact,
+        RuntimeProjectFunctionFactError, RuntimeProjectFunctionInstanceFact,
+    };
+    let lease = compiled.analysis_lease();
+    let project = lease.hir_project().analysis_view().unwrap();
+    let owners = project_runtime_reachability(
+        project,
+        lease.project_symbols(),
+        lease.final_analysis(),
+        lease.checked_entries(),
+        RuntimeEmissionMode::CheckAll,
+    )
+    .unwrap();
+    let (facts, _) = project_runtime_semantic_facts(
+        project,
+        lease.project_symbols(),
+        lease.registered_world(),
+        lease.final_analysis(),
+        &owners,
+        Some(compiled.dialogue_profile()),
+        &arcweft_compiler::lower::ProjectInstantiationControl::default(),
+    )
+    .unwrap();
+    let instances = facts.project_function_instances().collect::<Vec<_>>();
+    let mut checked = 0;
+    let mut rejected_foreign = 0;
+    for instance in &instances {
+        let Some(default) = instance.attached_default() else {
+            continue;
+        };
+        for capture in default.captures() {
+            checked += 1;
+            let parameter = instance
+                .parameters()
+                .iter()
+                .find(|parameter| parameter.identity() == capture.formal().identity())
+                .unwrap();
+            assert_eq!(parameter, capture.formal());
+            assert!(matches!(
+                RuntimeProjectAttachedDefaultCapture::try_new(
+                    parameter.clone(),
+                    capture.pattern_digest(),
+                    Box::new([])
+                ),
+                Err(RuntimeProjectFunctionFactError::InvalidAttachedDefaultFunction)
+            ));
+            let local = capture.used_locals()[0];
+            assert!(matches!(
+                RuntimeProjectAttachedDefaultCapture::try_new(
+                    parameter.clone(),
+                    capture.pattern_digest(),
+                    Box::new([local, local])
+                ),
+                Err(RuntimeProjectFunctionFactError::InvalidAttachedDefaultFunction)
+            ));
+            let foreign = instances
+                .iter()
+                .flat_map(|other| other.parameters())
+                .find(|other| {
+                    other.identity() == parameter.identity()
+                        && other.binding_ty() != parameter.binding_ty()
+                });
+            let Some(foreign) = foreign else { continue };
+            let replacement = RuntimeProjectAttachedDefaultCapture::try_new(
+                foreign.clone(),
+                capture.pattern_digest(),
+                capture.used_locals().to_vec().into_boxed_slice(),
+            )
+            .unwrap();
+            let captures = default
+                .captures()
+                .iter()
+                .map(|row| {
+                    if row.formal().identity() == parameter.identity() {
+                        replacement.clone()
+                    } else {
+                        row.clone()
+                    }
+                })
+                .collect();
+            let forged = RuntimeProjectAttachedDefaultFunctionFact::try_new(
+                default.source(),
+                default.coordinate().clone(),
+                default.digest(),
+                default.result().clone(),
+                default.suspension(),
+                default.control(),
+                default.execution(),
+                default.effects().into(),
+                captures,
+            )
+            .unwrap();
+            assert!(matches!(
+                RuntimeProjectFunctionInstanceFact::try_new(
+                    instance.key().clone(),
+                    instance.definition().clone(),
+                    instance.callable().clone(),
+                    instance.suspension(),
+                    instance.control(),
+                    instance.execution(),
+                    instance.callable_type().clone(),
+                    instance.parameters().into(),
+                    instance.effects().into(),
+                    Some(forged),
+                    instance.body().clone(),
+                    instance.semantics().clone()
+                ),
+                Err(RuntimeProjectFunctionFactError::InvalidAttachedDefaultFunction)
+            ));
+            rejected_foreign += 1;
+        }
+    }
+    assert!(checked >= 2, "actual defaults capture logical parameters");
+    assert!(
+        rejected_foreign >= 2,
+        "distinct generic instances cannot exchange their captured formals"
+    );
+}
+
 #[test]
 fn recursive_generic_closure_in_attached_default_reaches_verified_awbc() {
     let source = r#"
@@ -1014,6 +1139,7 @@ entry cli @entry.main { goto @flow.main }
     let compiled = compile_attached_dialogue_project(source).expect(
         "recursive generic default closure retains its lexical capture and content partition",
     );
+    assert_attached_default_formal_authority(&compiled);
     let runtime = compiled.runtime_plan();
     let report = AwbcLowerer::new(
         &runtime.plan,

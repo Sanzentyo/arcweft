@@ -633,53 +633,51 @@ impl RuntimeProjectFunctionParameterAbi {
 /// logical product, never from the caller environment.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeProjectAttachedDefaultCapture {
-    group: CallableGroupIndex,
-    parameter: u32,
-    source: RuntimeProjectFunctionParameterSource,
-    pattern: PatternId,
+    parameter: RuntimeProjectFunctionParameterAbi,
     pattern_digest: arcweft_lang_sema::final_analysis::CheckedPatternSemanticDigest,
-    bindings: Box<[LocalId]>,
     used_locals: Box<[LocalId]>,
-    binding_ty: RuntimeNormalizedType,
 }
 
 impl RuntimeProjectAttachedDefaultCapture {
-    pub fn new(
-        group: CallableGroupIndex,
-        parameter: u32,
-        source: RuntimeProjectFunctionParameterSource,
-        pattern: PatternId,
+    pub fn try_new(
+        parameter: RuntimeProjectFunctionParameterAbi,
         pattern_digest: arcweft_lang_sema::final_analysis::CheckedPatternSemanticDigest,
-        bindings: Box<[LocalId]>,
         used_locals: Box<[LocalId]>,
-        binding_ty: RuntimeNormalizedType,
-    ) -> Self {
-        Self {
-            group,
-            parameter,
-            source,
-            pattern,
-            pattern_digest,
-            bindings,
-            used_locals,
-            binding_ty,
+    ) -> Result<Self, RuntimeProjectFunctionFactError> {
+        let used = used_locals.iter().copied().collect::<BTreeSet<_>>();
+        if used.is_empty()
+            || used.len() != used_locals.len()
+            || used
+                .iter()
+                .any(|local| !parameter.bindings().contains(local))
+        {
+            return Err(RuntimeProjectFunctionFactError::InvalidAttachedDefaultFunction);
         }
+        Ok(Self {
+            parameter,
+            pattern_digest,
+            used_locals,
+        })
     }
 
-    pub const fn group(&self) -> CallableGroupIndex {
-        self.group
+    pub fn group(&self) -> CallableGroupIndex {
+        self.parameter.group()
     }
 
-    pub const fn parameter(&self) -> u32 {
-        self.parameter
+    pub fn parameter(&self) -> u32 {
+        self.parameter.parameter()
     }
 
     pub const fn source(&self) -> RuntimeProjectFunctionParameterSource {
-        self.source
+        self.parameter.source()
     }
 
-    pub const fn pattern(&self) -> PatternId {
-        self.pattern
+    pub fn pattern(&self) -> PatternId {
+        self.parameter.pattern()
+    }
+
+    pub const fn formal(&self) -> &RuntimeProjectFunctionParameterAbi {
+        &self.parameter
     }
 
     pub const fn pattern_digest(
@@ -689,7 +687,7 @@ impl RuntimeProjectAttachedDefaultCapture {
     }
 
     pub const fn bindings(&self) -> &[LocalId] {
-        &self.bindings
+        self.parameter.bindings()
     }
 
     pub const fn used_locals(&self) -> &[LocalId] {
@@ -697,7 +695,7 @@ impl RuntimeProjectAttachedDefaultCapture {
     }
 
     pub const fn binding_ty(&self) -> &RuntimeNormalizedType {
-        &self.binding_ty
+        self.parameter.binding_ty()
     }
 }
 
@@ -2626,11 +2624,7 @@ impl RuntimeProjectFunctionInstanceFact {
                             RuntimeProjectFunctionFactError::InvalidAttachedDefaultFunction,
                         );
                     };
-                    if parameter.source() != capture.source()
-                        || parameter.pattern() != capture.pattern()
-                        || parameter.bindings() != capture.bindings()
-                        || parameter.binding_ty() != capture.binding_ty()
-                    {
+                    if parameter != capture.formal() {
                         return Err(
                             RuntimeProjectFunctionFactError::InvalidAttachedDefaultFunction,
                         );
