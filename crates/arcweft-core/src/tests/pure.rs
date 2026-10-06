@@ -52,6 +52,9 @@ fn pure_value_backend_moves_an_affine_need_argument_into_its_result() {
                 .into_iter()
                 .zip(vec![RuntimePureInputType::Value])
                 .map(|(local, abi)| crate::plan::RuntimeCallableParameterSeed {
+                    identity: crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+                        [91; 32],
+                    ),
                     local,
                     passing: crate::plan::RuntimeFunctionParameterPassing::Affine,
                     abi,
@@ -122,6 +125,9 @@ fn pure_collect_intrinsic_moves_affine_sequence_items() {
                 .into_iter()
                 .zip(vec![RuntimePureInputType::Value])
                 .map(|(local, abi)| crate::plan::RuntimeCallableParameterSeed {
+                    identity: crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+                        [91; 32],
+                    ),
                     local,
                     passing: crate::plan::RuntimeFunctionParameterPassing::Affine,
                     abi,
@@ -256,6 +262,9 @@ fn pure_format_content_uses_selected_ambient_locale() {
             },
             receiver: RuntimeReceiverMode::Owned,
             inputs: Box::new([crate::plan::RuntimeCallableParameterSeed {
+                identity: crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+                    [91; 32],
+                ),
                 local: receiver_local.clone(),
                 passing: crate::plan::RuntimeFunctionParameterPassing::Value,
                 abi: RuntimePureInputType::I64,
@@ -569,7 +578,11 @@ fn standard_map_pure_plan() -> (Arc<RuntimePlan>, Vec<StandardMapPureCase>) {
                     ),
                     crate::plan::RuntimeFunctionSemanticRole::Closure,
                     [RuntimeFunctionInputBindingSeed {
-                        origin: crate::plan::RuntimeFunctionInputOrigin::Parameter([81; 32]),
+                        origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
+                            crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+                                [81; 32],
+                            ),
+                        ),
                         ownership: Default::default(),
                         unrestricted_bindings: Box::new([]),
                         source: RuntimeFunctionInputSource::Parameter {
@@ -761,6 +774,9 @@ fn admit_i64_helper(
                 .into_iter()
                 .zip(vec![RuntimePureInputType::I64; arity])
                 .map(|(local, abi)| crate::plan::RuntimeCallableParameterSeed {
+                    identity: crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+                        [91; 32],
+                    ),
                     local,
                     passing: crate::plan::RuntimeFunctionParameterPassing::Value,
                     abi,
@@ -1068,7 +1084,11 @@ fn structured_closure_captures_the_exact_owning_plan() {
                     ),
                 },
                 RuntimeFunctionInputBindingSeed {
-                    origin: crate::plan::RuntimeFunctionInputOrigin::Parameter([81; 32]),
+                    origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
+                        crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+                            [81; 32],
+                        ),
+                    ),
                     ownership: Default::default(),
                     unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Parameter {
@@ -1126,6 +1146,9 @@ fn structured_closure_captures_the_exact_owning_plan() {
                 .into_iter()
                 .zip(vec![RuntimePureInputType::I64])
                 .map(|(local, abi)| crate::plan::RuntimeCallableParameterSeed {
+                    identity: crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+                        [91; 32],
+                    ),
                     local,
                     passing: crate::plan::RuntimeFunctionParameterPassing::Value,
                     abi,
@@ -1200,7 +1223,9 @@ fn structured_function_input_tuple_pattern_binds_body_locals() {
             crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             crate::plan::RuntimeFunctionSemanticRole::Closure,
             [RuntimeFunctionInputBindingSeed {
-                origin: crate::plan::RuntimeFunctionInputOrigin::Parameter([81; 32]),
+                origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
+                    crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity([81; 32]),
+                ),
                 ownership: Default::default(),
                 unrestricted_bindings: Box::new([]),
                 source: RuntimeFunctionInputSource::Parameter {
@@ -1333,7 +1358,9 @@ fn structured_function_input_sequence_rest_binds_one_logical_tail() {
             crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             crate::plan::RuntimeFunctionSemanticRole::Closure,
             [RuntimeFunctionInputBindingSeed {
-                origin: crate::plan::RuntimeFunctionInputOrigin::Parameter([81; 32]),
+                origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
+                    crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity([81; 32]),
+                ),
                 ownership: Default::default(),
                 unrestricted_bindings: Box::new([]),
                 source: RuntimeFunctionInputSource::Parameter {
@@ -1465,7 +1492,9 @@ fn structured_function_input_record_pattern_binds_by_declared_field_coordinate()
             crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             crate::plan::RuntimeFunctionSemanticRole::Closure,
             [RuntimeFunctionInputBindingSeed {
-                origin: crate::plan::RuntimeFunctionInputOrigin::Parameter([81; 32]),
+                origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
+                    crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity([81; 32]),
+                ),
                 ownership: Default::default(),
                 unrestricted_bindings: Box::new([]),
                 source: RuntimeFunctionInputSource::Parameter {
@@ -1589,7 +1618,11 @@ fn structured_apply_reorders_source_arguments_to_the_checked_abi() {
             crate::plan::RuntimeFunctionSemanticRole::Closure,
             [
                 RuntimeFunctionInputBindingSeed {
-                    origin: crate::plan::RuntimeFunctionInputOrigin::Parameter([81; 32]),
+                    origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
+                        crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+                            [81; 32],
+                        ),
+                    ),
                     ownership: Default::default(),
                     unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Parameter {
@@ -1606,7 +1639,11 @@ fn structured_apply_reorders_source_arguments_to_the_checked_abi() {
                     ),
                 },
                 RuntimeFunctionInputBindingSeed {
-                    origin: crate::plan::RuntimeFunctionInputOrigin::Parameter([81; 32]),
+                    origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
+                        crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+                            [81; 32],
+                        ),
+                    ),
                     ownership: Default::default(),
                     unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Parameter {
@@ -1720,6 +1757,9 @@ fn owned_pure_trait_call_evaluates_receiver_and_source_arguments_once() {
             inputs: [receiver.clone(), first.clone(), second.clone()]
                 .into_iter()
                 .map(|local| crate::plan::RuntimeCallableParameterSeed {
+                    identity: crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+                        [91; 32],
+                    ),
                     local,
                     passing: crate::plan::RuntimeFunctionParameterPassing::Value,
                     abi: RuntimePureInputType::I64,
@@ -1819,6 +1859,9 @@ fn simple_trait_call_plan(
             },
             receiver: receiver_mode,
             inputs: Box::new([crate::plan::RuntimeCallableParameterSeed {
+                identity: crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+                    [91; 32],
+                ),
                 local: receiver,
                 passing: match receiver_mode {
                     RuntimeReceiverMode::Owned => {
@@ -1898,6 +1941,7 @@ fn pure_trait_call_checks_selected_method_and_sealed_abi() {
     let input = wrong_abi.trait_methods()[0].inputs[0];
     Arc::get_mut(&mut wrong_abi).unwrap().trait_methods[0].inputs[0] =
         crate::plan::RuntimeCallableParameter::new(
+            input.identity(),
             input.local(),
             input.passing(),
             RuntimePureInputType::F64,

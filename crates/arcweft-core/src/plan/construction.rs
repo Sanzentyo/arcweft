@@ -2301,7 +2301,12 @@ impl RuntimePlanBuilder {
             .into_iter()
             .zip(seed.inputs)
             .map(|((local, _), input)| {
-                super::RuntimeCallableParameter::new(local, input.passing, input.abi)
+                super::RuntimeCallableParameter::new(
+                    input.identity,
+                    local,
+                    input.passing,
+                    input.abi,
+                )
             })
             .collect::<Vec<_>>()
             .into_boxed_slice();
@@ -2424,7 +2429,12 @@ impl RuntimePlanBuilder {
             .into_iter()
             .zip(seed.inputs)
             .map(|((local, _), input)| {
-                super::RuntimeCallableParameter::new(local, input.passing, input.abi)
+                super::RuntimeCallableParameter::new(
+                    input.identity,
+                    local,
+                    input.passing,
+                    input.abi,
+                )
             })
             .collect::<Vec<_>>()
             .into_boxed_slice();
@@ -3547,7 +3557,9 @@ mod tests {
         for (source, origin) in [
             (
                 RuntimeFunctionInputSource::Capture { position: 0 },
-                super::super::RuntimeFunctionInputOrigin::Parameter([1; 32]),
+                super::super::RuntimeFunctionInputOrigin::Parameter(
+                    crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity([1; 32]),
+                ),
             ),
             (
                 RuntimeFunctionInputSource::CapturedParameter {
@@ -3635,7 +3647,11 @@ mod tests {
                 crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
                 crate::plan::RuntimeFunctionSemanticRole::Ordinary,
                 [RuntimeFunctionInputBindingSeed {
-                    origin: crate::plan::RuntimeFunctionInputOrigin::Parameter([81; 32]),
+                    origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
+                        crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+                            [81; 32]
+                        )
+                    ),
                     ownership: Default::default(),
                     unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Parameter {

@@ -1909,6 +1909,7 @@ pub struct RuntimeTraitMethodDeclarationSeed {
 /// One directly bound formal before its local enters the plan-local domain.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeCallableParameterSeed {
+    pub identity: crate::plan::RuntimeFunctionParameterIdentity,
     pub local: RuntimeLocalSeedId,
     pub passing: super::super::RuntimeFunctionParameterPassing,
     pub abi: RuntimePureInputType,

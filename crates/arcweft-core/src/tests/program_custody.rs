@@ -193,7 +193,9 @@ fn identity_program_plan(
         .enumerate()
         .map(
             |(position, ((ty, passing), local))| RuntimeFunctionInputBindingSeed {
-                origin: crate::plan::RuntimeFunctionInputOrigin::Parameter([81; 32]),
+                origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
+                    crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity([81; 32]),
+                ),
                 source: RuntimeFunctionInputSource::Parameter {
                     position: u32::try_from(position).unwrap(),
                     passing: *passing,

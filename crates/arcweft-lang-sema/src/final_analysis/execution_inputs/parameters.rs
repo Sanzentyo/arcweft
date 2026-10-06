@@ -87,6 +87,10 @@ impl CheckedExecutionParameterIdentity {
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
+
+    pub const fn runtime_identity(&self) -> arcweft_core::plan::RuntimeFunctionParameterIdentity {
+        arcweft_core::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(self.0)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -129,7 +133,7 @@ impl CheckedExecutionParameter {
         self.identity
     }
     pub const fn runtime_input_origin(&self) -> arcweft_core::plan::RuntimeFunctionInputOrigin {
-        arcweft_core::plan::RuntimeFunctionInputOrigin::Parameter(*self.identity.as_bytes())
+        arcweft_core::plan::RuntimeFunctionInputOrigin::Parameter(self.identity.runtime_identity())
     }
     pub const fn definition_identity(&self) -> super::CheckedExecutionDefinitionIdentity {
         self.definition

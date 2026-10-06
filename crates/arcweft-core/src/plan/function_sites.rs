@@ -30,12 +30,29 @@ impl RuntimeFunctionDefinitionIdentity {
     }
 }
 
+/// Accepted whole-formal identity, independent of its frame local and ABI.
+/// These bytes transport semantic identity; they do not prove body admission.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RuntimeFunctionParameterIdentity([u8; 32]);
+
+impl RuntimeFunctionParameterIdentity {
+    #[must_use]
+    pub const fn from_accepted_identity(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
 /// Stable semantic origin of a whole input, separate from its frame ordinal.
 /// Binding coordinates and whole-formal identities retain distinct domains.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeFunctionInputOrigin {
     Binding([u8; 32]),
-    Parameter([u8; 32]),
+    Parameter(RuntimeFunctionParameterIdentity),
     EvaluatedResult(RuntimeFunctionDefinitionIdentity),
 }
 

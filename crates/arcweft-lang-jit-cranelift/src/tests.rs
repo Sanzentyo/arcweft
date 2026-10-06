@@ -241,6 +241,7 @@ fn admit(
                 .zip(vec![scalar.input_abi(); inputs])
                 .map(
                     |(local, abi)| arcweft_core::plan::RuntimeCallableParameterSeed {
+                        identity: arcweft_core::plan::RuntimeFunctionParameterIdentity::from_accepted_identity([91; 32]),
                         local,
                         passing: arcweft_core::plan::RuntimeFunctionParameterPassing::Value,
                         abi,

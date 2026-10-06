@@ -1093,6 +1093,7 @@ fn plan_with_local() -> (
                 .zip(vec![RuntimePureInputType::Value])
                 .map(
                     |(local, abi)| arcweft_core::plan::RuntimeCallableParameterSeed {
+                        identity: arcweft_core::plan::RuntimeFunctionParameterIdentity::from_accepted_identity([91; 32]),
                         local,
                         passing: arcweft_core::plan::RuntimeFunctionParameterPassing::Value,
                         abi,
@@ -1188,6 +1189,10 @@ fn invalid_local_seeds_cannot_produce_an_awbc_plan() {
             },
             receiver: RuntimeReceiverMode::Owned,
             inputs: Box::new([arcweft_core::plan::RuntimeCallableParameterSeed {
+                identity:
+                    arcweft_core::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+                        [91; 32]
+                    ),
                 local: receiver,
                 passing: arcweft_core::plan::RuntimeFunctionParameterPassing::Value,
                 abi: RuntimePureInputType::Value

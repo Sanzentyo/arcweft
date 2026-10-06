@@ -138,6 +138,7 @@ fn trait_method_declaration(
             ));
         }
         inputs.push(RuntimeCallableParameterSeed {
+            identity: formal.identity().runtime_identity(),
             local: locals
                 .get(&local)
                 .cloned()

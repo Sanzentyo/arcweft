@@ -96,9 +96,9 @@ pub use format_attempt::{
 pub use function_sites::{
     RuntimeFunctionDefinitionIdentity, RuntimeFunctionInputBinding, RuntimeFunctionInputOrigin,
     RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionInputSource,
-    RuntimeFunctionParameterPassing, RuntimeFunctionSemanticRole, RuntimeFunctionSite,
-    RuntimeFunctionSiteBody, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteError,
-    RuntimeFunctionSiteTable,
+    RuntimeFunctionParameterIdentity, RuntimeFunctionParameterPassing, RuntimeFunctionSemanticRole,
+    RuntimeFunctionSite, RuntimeFunctionSiteBody, RuntimeFunctionSiteBodyKind,
+    RuntimeFunctionSiteError, RuntimeFunctionSiteTable,
 };
 pub use generation_contract::{
     CharacterDialogueRuntimeCustomFieldDigest, RuntimeCharacterCatalogDigest,
@@ -1058,6 +1058,7 @@ pub struct RuntimeTraitMethod {
 /// and physical representation together. A method receiver is its first row.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RuntimeCallableParameter {
+    identity: RuntimeFunctionParameterIdentity,
     local: RuntimeLocalDeclarationId,
     passing: RuntimeFunctionParameterPassing,
     abi: RuntimePureInputType,
@@ -1065,17 +1066,22 @@ pub struct RuntimeCallableParameter {
 
 impl RuntimeCallableParameter {
     pub(crate) const fn new(
+        identity: RuntimeFunctionParameterIdentity,
         local: RuntimeLocalDeclarationId,
         passing: RuntimeFunctionParameterPassing,
         abi: RuntimePureInputType,
     ) -> Self {
         Self {
+            identity,
             local,
             passing,
             abi,
         }
     }
 
+    pub const fn identity(self) -> RuntimeFunctionParameterIdentity {
+        self.identity
+    }
     pub const fn local(self) -> RuntimeLocalDeclarationId {
         self.local
     }

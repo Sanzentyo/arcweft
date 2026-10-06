@@ -1103,6 +1103,7 @@ flow main(number: Route<i32>, word: Route<String>) {
             .iter()
             .zip(accepted.definition().parameters())
         {
+            assert_eq!(input.identity(), formal.identity().runtime_identity());
             assert_eq!(input.passing(), formal.passing());
             assert_eq!(input.abi(), arcweft_core::plan::RuntimePureInputType::Value);
             assert!(

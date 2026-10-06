@@ -71,6 +71,19 @@ pub(in crate::app) enum JitBuiltinCase {
 }
 
 impl JitBuiltinCase {
+    fn parameter_identity(
+        self,
+        position: u32,
+    ) -> arcweft_core::plan::RuntimeFunctionParameterIdentity {
+        let mut hash = blake3::Hasher::new();
+        hash.update(b"arcweft.cli.jit-builtin-parameter.v1\0");
+        hash.update(self.definition_identity().as_bytes());
+        hash.update(&position.to_le_bytes());
+        arcweft_core::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+            *hash.finalize().as_bytes(),
+        )
+    }
+
     fn definition_identity(self) -> arcweft_core::plan::RuntimeFunctionDefinitionIdentity {
         let tag = match self {
             Self::Score => 0,
@@ -1021,13 +1034,17 @@ impl JitCheckTarget {
                     .into_boxed_slice()
                     .into_iter()
                     .zip(vec![RuntimePureInputType::I64; N])
-                    .map(
-                        |(local, abi)| arcweft_core::plan::RuntimeCallableParameterSeed {
+                    .enumerate()
+                    .map(|(position, (local, abi))| {
+                        arcweft_core::plan::RuntimeCallableParameterSeed {
+                            identity: definition.parameter_identity(
+                                u32::try_from(position).expect("builtin parameter count fits u32"),
+                            ),
                             local,
                             passing: arcweft_core::plan::RuntimeFunctionParameterPassing::Value,
                             abi,
-                        },
-                    )
+                        }
+                    })
                     .collect(),
                 output_abi: RuntimePureOutputType::I64,
                 body: body(admission.local_ids()),

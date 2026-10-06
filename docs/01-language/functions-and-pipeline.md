@@ -389,6 +389,10 @@ Core の入力行は ordinal と別に stable origin を必須で保持する。
 合成 dialogue 値の入力は評価済み callback の定義で識別する。取得元種別と origin の
 種別が一致しない行は、function の予約を公開する前に拒否する。
 
+whole-formal identity は Core の専用型でも保持し、structured function-site と
+direct callable の両方で同じ identity domain を使う。pure helper と trait method の
+各入力行は、受理済み formal の identity・local・passing・physical ABI を一緒に保持する。
+
 AWBC の各入力行も取得元を必須で保持し、parameter と captured parameter は
 静的な passing 区分を codec の往復後も保持する。retained 入力を先行させ、
 retained と現在の parameter の ordinal をそれぞれ連続した順序で検証する。

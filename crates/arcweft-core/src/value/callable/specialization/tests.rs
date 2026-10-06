@@ -128,7 +128,11 @@ fn plan() -> RuntimePlan {
                         ),
                     },
                     RuntimeFunctionInputBindingSeed {
-                        origin: crate::plan::RuntimeFunctionInputOrigin::Parameter([81; 32]),
+                        origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
+                            crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+                                [81; 32],
+                            ),
+                        ),
                         ownership: Default::default(),
                         unrestricted_bindings: Box::new([]),
                         source: RuntimeFunctionInputSource::Parameter {

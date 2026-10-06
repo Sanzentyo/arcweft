@@ -95,6 +95,9 @@ fn iterator_plan(copy_receiver: bool) -> RuntimePlan {
             },
             receiver: RuntimeReceiverMode::MutRef,
             inputs: Box::new([crate::plan::RuntimeCallableParameterSeed {
+                identity: crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+                    [91; 32],
+                ),
                 local: receiver,
                 passing: crate::plan::RuntimeFunctionParameterPassing::Affine,
                 abi: RuntimePureInputType::Value,
