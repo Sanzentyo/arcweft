@@ -345,6 +345,12 @@ callee が受け取る container 型で判定する。
 分解 pattern にも whole formal の区分を保持し、leaf local の個数や使用回数
 から区分を推測しない。
 
+whole formal の証拠は、その実行定義の identity と、同じ閉じた環境の
+local-use authority を保持する。ordinary function、明示的 closure、
+`_` abstraction の実行側は、この証拠を直接保持して source role と環境の
+一致を検査する。型や安定した source identity が同じでも、別の実行 instance
+または解析世代の formal 証拠を流用しない。
+
 ## 部分適用
 
 ```arcw

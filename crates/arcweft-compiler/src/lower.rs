@@ -1298,10 +1298,20 @@ fn project_runtime_semantic_fact_inventories(
             CheckedExpressionResolution::ImplicitCallable(_) => {
                 let callable_view = execution_projection.implicit_callable(owner)?;
                 let placeholders = callable_view.placeholders().collect::<Box<[_]>>();
+                let mut formals = RuntimeExecutableInstantiation::Global
+                    .formal_parameters(project, symbols, analysis, owner)?
+                    .into_vec();
+                if formals.len() != 1 {
+                    return Err(RuntimeSemanticProjectionError::Call {
+                        owner,
+                        reason: "implicit body must own one accepted formal".to_owned(),
+                    });
+                }
                 input.push_implicit_callable(
                     owner,
                     RuntimeImplicitCallableFact::try_new(
                         callable_view.definition().clone(),
+                        formals.remove(0),
                         runtime_type(callable_view.parameter(), symbols, world, analysis)?,
                         runtime_type(callable_view.result(), symbols, world, analysis)?,
                         placeholders,
@@ -1839,6 +1849,41 @@ enum RuntimeExecutableInstantiation<'a> {
 }
 
 impl<'a> RuntimeExecutableInstantiation<'a> {
+    fn formal_parameters(
+        self,
+        project: HirAnalysisProjectView<'_>,
+        symbols: &ProjectSymbolTable,
+        analysis: &FinalSemanticAnalysis,
+        owner: ExprId,
+    ) -> Result<
+        Box<[arcweft_lang_sema::final_analysis::CheckedExecutionParameter]>,
+        RuntimeSemanticProjectionError,
+    > {
+        let error = |reason: String| RuntimeSemanticProjectionError::Call { owner, reason };
+        let instance = match self {
+            Self::Global => None,
+            Self::Program { environment, .. } => environment.instantiation(),
+            Self::Project { solution, .. } => Some(CheckedLocalUseInstantiation::ProjectFunction(
+                solution
+                    .function_solution()
+                    .ok_or_else(|| error("project formal has no frozen solution".to_owned()))?,
+            )),
+            Self::Display { conformance, .. } => {
+                Some(CheckedLocalUseInstantiation::DisplayText(conformance))
+            }
+        };
+        let source = arcweft_lang_sema::final_analysis::CheckedExecutionSource::InvokeBody(
+            arcweft_lang_sema::final_analysis::CheckedExecutionBodyOwner::CallableValue(owner),
+        );
+        let context = analysis
+            .checked_execution_context(project, symbols, source.clone(), instance)
+            .map_err(|reason| error(reason.to_string()))?;
+        let abi = context
+            .checked_execution_input_abi(source)
+            .map_err(|reason| error(reason.to_string()))?;
+        Ok(abi.parameters().into())
+    }
+
     fn local_uses(
         self,
         project: HirAnalysisProjectView<'_>,
@@ -8147,8 +8192,15 @@ fn runtime_executable_semantic_facts<'abi>(
             }
             CheckedExecutableRuntimeExpressionFactFamily::ImplicitCallable => {
                 let view = execution.implicit_callable(owner)?;
+                let mut formals = lexical
+                    .formal_parameters(project, symbols, analysis, owner)?
+                    .into_vec();
+                if formals.len() != 1 {
+                    return Err(error(owner, "implicit body must own one accepted formal"));
+                }
                 let callable = RuntimeImplicitCallableFact::try_new(
                     view.definition().clone(),
+                    formals.remove(0),
                     runtime_type_under(
                         view.parameter(),
                         lexical.types(),
@@ -8614,21 +8666,30 @@ fn runtime_closure_instance_fact(
         world,
         analysis,
     )?;
+    let formals = lexical.formal_parameters(project, symbols, analysis, owner)?;
+    if formals.len() != closure.parameters().len() {
+        return Err(error(
+            "closure accepted formal arity disagrees with its source",
+        ));
+    }
     let parameters = closure
         .parameters()
         .iter()
+        .zip(formals.iter())
         .enumerate()
-        .map(|(position, parameter)| {
+        .map(|(position, (parameter, formal))| {
             let position = u32::try_from(position)
                 .map_err(|_| error("closure parameter position exceeds u32"))?;
             let ty = analysis
                 .pattern(parameter.pattern())
                 .ok_or_else(|| error("closure parameter has no checked pattern type"))?;
-            Ok(RuntimeClosureParameterFact::new(
-                position,
-                parameter.pattern(),
+            if formal.pattern() != Some(parameter.pattern()) || !matches!(formal.origin(), arcweft_lang_sema::final_analysis::CheckedExecutionParameterOrigin::Closure { parameter } if *parameter == position) {
+                return Err(error("closure formal role disagrees with its source"));
+            }
+            RuntimeClosureParameterFact::try_new(
+                formal.clone(),
                 lexical.runtime_type(ty.ty(), symbols, world, analysis)?,
-            ))
+            ).map_err(|reason| error(&reason.to_string()))
         })
         .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
 

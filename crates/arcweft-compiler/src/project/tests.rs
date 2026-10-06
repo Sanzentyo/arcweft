@@ -520,6 +520,21 @@ flow main() -> i64 {
             definition.definition_identity()
         );
         assert_eq!(capture.origin(), definition.captures()[0].origin());
+        let [formal] = closure.parameters() else {
+            panic!("one complete closure formal")
+        };
+        assert_eq!(
+            formal.definition().definition_identity(),
+            closure.definition_identity()
+        );
+        assert_eq!(
+            formal.definition().authority(),
+            closure.semantics().local_uses()
+        );
+        assert_eq!(
+            formal.passing(),
+            arcweft_core::plan::RuntimeFunctionParameterPassing::Value
+        );
         assert!(matches!(
             arcweft_runtime_plan::semantic_facts::RuntimeClosureInstanceFact::try_new(
                 closure.key().clone(), definition, closure.owner(), closure.function_type().clone(),
@@ -595,6 +610,27 @@ flow main() -> i64 {
         })
         .unwrap();
     assert_eq!(copy.captures()[0].source(), moved.captures()[0].source());
+    let foreign_formal =
+        arcweft_runtime_plan::semantic_facts::RuntimeClosureParameterFact::try_new(
+            moved.parameters()[0].definition().clone(),
+            copy.parameters()[0].ty().clone(),
+        )
+        .unwrap();
+    assert_eq!(
+        foreign_formal.definition().identity(),
+        copy.parameters()[0].definition().identity()
+    );
+    assert_ne!(
+        foreign_formal.definition().authority(),
+        copy.parameters()[0].definition().authority()
+    );
+    assert!(matches!(arcweft_runtime_plan::semantic_facts::RuntimeClosureInstanceFact::try_new(
+        copy.key().clone(), copy.definition().clone(), copy.owner(), copy.function_type().clone(),
+        copy.suspension(), copy.control(), copy.execution(), copy.effects().into(),
+        copy.scope(), copy.body(), Box::new([foreign_formal]), copy.captures().into(),
+        copy.semantics().clone(),
+    ), Err(arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionFactError::InvalidClosureInstance)),
+        "an equal source and Unit type cannot substitute another closed formal authority");
     let foreign_transfer =
         arcweft_runtime_plan::semantic_facts::RuntimeClosureCaptureFact::try_new(
             copy.definition().captures()[0].clone(),
@@ -2588,6 +2624,23 @@ fn generic_implicit_callable_instances_share_the_accepted_definition_and_capture
         panic!("two closed implicit callable instances")
     };
     assert_eq!(first.definition_identity(), second.definition_identity());
+    assert_eq!(
+        first.formal().definition_identity(),
+        first.definition_identity()
+    );
+    assert_eq!(first.formal().identity(), second.formal().identity());
+    assert!(
+        arcweft_runtime_plan::semantic_facts::RuntimeImplicitCallableFact::try_new(
+            first.definition().clone(),
+            second.formal().clone(),
+            first.parameter().clone(),
+            first.result().clone(),
+            first.placeholders().into(),
+            first.formal().authority(),
+        )
+        .is_err(),
+        "a valid foreign formal cannot reuse the target's closed authority"
+    );
     assert_eq!(first.definition().owner(), second.definition().owner());
     let [first_capture] = first.captures() else {
         panic!("one captured offset")
@@ -2662,6 +2715,7 @@ fn closed_implicit_callable_definition_cannot_be_rebound_to_another_expression()
         RuntimeProjectFunctionExpressionPayload::ImplicitCallable {
             callable: RuntimeImplicitCallableFact::try_new(
                 second.definition().clone(),
+                second.formal().clone(),
                 first.parameter().clone(),
                 first.result().clone(),
                 first.placeholders().into(),
@@ -2733,10 +2787,11 @@ fn implicit_capture_transfer_is_selected_per_closed_instance() {
     // A fact legitimately issued by the other closed instance must not be
     // accepted under this owner's closed transfer authority.
     let foreign = arcweft_runtime_plan::semantic_facts::RuntimeImplicitCallableFact::try_new(
-        first.definition().clone(),
-        first.parameter().clone(),
-        first.result().clone(),
-        first.placeholders().into(),
+        second.definition().clone(),
+        second.formal().clone(),
+        second.parameter().clone(),
+        second.result().clone(),
+        second.placeholders().into(),
         second_semantics.local_uses(),
     )
     .unwrap();

@@ -1254,26 +1254,49 @@ impl RuntimeClosureInstanceKey {
 /// One logical closure parameter and its closed binding type.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeClosureParameterFact {
-    position: u32,
-    pattern: PatternId,
+    definition: arcweft_lang_sema::final_analysis::CheckedExecutionParameter,
     ty: RuntimeNormalizedType,
 }
 
 impl RuntimeClosureParameterFact {
-    pub const fn new(position: u32, pattern: PatternId, ty: RuntimeNormalizedType) -> Self {
-        Self {
-            position,
-            pattern,
-            ty,
+    pub fn try_new(
+        definition: arcweft_lang_sema::final_analysis::CheckedExecutionParameter,
+        ty: RuntimeNormalizedType,
+    ) -> Result<Self, RuntimeProjectFunctionFactError> {
+        if !matches!(
+            definition.origin(),
+            arcweft_lang_sema::final_analysis::CheckedExecutionParameterOrigin::Closure { .. }
+        ) || definition.pattern().is_none()
+        {
+            return Err(RuntimeProjectFunctionFactError::InvalidClosureInstance);
         }
+        Ok(Self { definition, ty })
     }
 
-    pub const fn position(&self) -> u32 {
-        self.position
+    pub fn position(&self) -> u32 {
+        let arcweft_lang_sema::final_analysis::CheckedExecutionParameterOrigin::Closure {
+            parameter,
+        } = self.definition.origin()
+        else {
+            unreachable!("validated closure formal")
+        };
+        *parameter
     }
 
-    pub const fn pattern(&self) -> PatternId {
-        self.pattern
+    pub fn pattern(&self) -> PatternId {
+        self.definition
+            .pattern()
+            .expect("validated closure formal pattern")
+    }
+
+    pub const fn definition(
+        &self,
+    ) -> &arcweft_lang_sema::final_analysis::CheckedExecutionParameter {
+        &self.definition
+    }
+
+    pub const fn passing(&self) -> arcweft_core::plan::RuntimeFunctionParameterPassing {
+        self.definition.passing()
     }
 
     pub const fn ty(&self) -> &RuntimeNormalizedType {
@@ -1407,6 +1430,9 @@ impl RuntimeClosureInstanceFact {
         if parameters.len() != function_parameters.len()
             || parameters.iter().enumerate().any(|(position, parameter)| {
                 u32::try_from(position).ok() != Some(parameter.position())
+                    || parameter.definition().definition_identity()
+                        != definition.definition_identity()
+                    || parameter.definition().authority() != semantics.local_uses()
                     || function_parameters.get(position) != Some(parameter.ty())
                     || semantics.pattern_type(parameter.pattern()) != Some(parameter.ty())
             })
@@ -1635,6 +1661,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
             if let RuntimeProjectFunctionExpressionPayload::ImplicitCallable { callable, .. } =
                 expression.payload()
                 && (callable.definition().owner() != expression.owner()
+                    || callable.formal().authority() != &local_uses
                     || callable.captures().iter().any(|capture| {
                         local_uses
                             .value_transfer_at(

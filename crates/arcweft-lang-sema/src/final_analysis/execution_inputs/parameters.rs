@@ -93,6 +93,8 @@ impl CheckedExecutionParameterIdentity {
 pub struct CheckedExecutionParameter {
     origin: CheckedExecutionParameterOrigin,
     identity: CheckedExecutionParameterIdentity,
+    definition: super::CheckedExecutionDefinitionIdentity,
+    authority: super::super::CheckedLocalUseAuthority,
     ty: TypeKind,
     passing: arcweft_core::plan::RuntimeFunctionParameterPassing,
     pattern: Option<PatternId>,
@@ -107,11 +109,15 @@ impl CheckedExecutionParameter {
         pattern: Option<PatternId>,
         bindings: Box<[LocalId]>,
         coordinate: &super::CheckedExecutionCoordinate,
-    ) -> Result<Self, FinalSemanticAnalysisError> {
+        authority: super::super::CheckedLocalUseAuthority,
+    ) -> Result<Self, super::super::CheckedExecutionContextError> {
         let identity = CheckedExecutionParameterIdentity::from_coordinate(coordinate, &origin)?;
+        let definition = super::CheckedExecutionDefinitionIdentity::from_coordinate(coordinate)?;
         Ok(Self {
             origin,
             identity,
+            definition,
+            authority,
             ty,
             passing,
             pattern,
@@ -121,6 +127,12 @@ impl CheckedExecutionParameter {
 
     pub const fn identity(&self) -> CheckedExecutionParameterIdentity {
         self.identity
+    }
+    pub const fn definition_identity(&self) -> super::CheckedExecutionDefinitionIdentity {
+        self.definition
+    }
+    pub const fn authority(&self) -> &super::super::CheckedLocalUseAuthority {
+        &self.authority
     }
     pub const fn origin(&self) -> &CheckedExecutionParameterOrigin {
         &self.origin
@@ -388,9 +400,15 @@ impl super::super::CheckedClosedExecutionContext<'_> {
                 | CheckedTypeCopyCapability::Unavailable => RuntimeFunctionParameterPassing::Affine,
             },
         };
-        Ok(CheckedExecutionParameter::new(
-            origin, ty, passing, pattern, bindings, coordinate,
-        )?)
+        CheckedExecutionParameter::new(
+            origin,
+            ty,
+            passing,
+            pattern,
+            bindings,
+            coordinate,
+            self.environment().local_uses().clone(),
+        )
     }
 
     fn ordered_parameter_bindings(

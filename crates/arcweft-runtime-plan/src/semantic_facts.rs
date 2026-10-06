@@ -1764,6 +1764,7 @@ pub struct RuntimeTryFact {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeImplicitCallableFact {
     definition: arcweft_lang_sema::final_analysis::FinalAnalysisImplicitCallableDefinition,
+    formal: arcweft_lang_sema::final_analysis::CheckedExecutionParameter,
     captures: Box<[RuntimeImplicitCallableCaptureFact]>,
     parameter: RuntimeNormalizedType,
     result: RuntimeNormalizedType,
@@ -1773,11 +1774,20 @@ pub struct RuntimeImplicitCallableFact {
 impl RuntimeImplicitCallableFact {
     pub fn try_new(
         definition: arcweft_lang_sema::final_analysis::FinalAnalysisImplicitCallableDefinition,
+        formal: arcweft_lang_sema::final_analysis::CheckedExecutionParameter,
         parameter: RuntimeNormalizedType,
         result: RuntimeNormalizedType,
         placeholders: Box<[ExprId]>,
         authority: &CheckedLocalUseAuthority,
-    ) -> Result<Self, RuntimeImplicitCallableCaptureError> {
+    ) -> Result<Self, RuntimeImplicitCallableAuthorityError> {
+        if !matches!(formal.origin(), arcweft_lang_sema::final_analysis::CheckedExecutionParameterOrigin::Implicit(identity) if *identity == definition.identity())
+            || formal.authority() != authority
+            || formal.definition_identity() != definition.definition_identity()
+            || formal.pattern().is_some()
+            || !formal.bindings().is_empty()
+        {
+            return Err(RuntimeImplicitCallableAuthorityError);
+        }
         let captures = definition
             .captures()
             .iter()
@@ -1789,13 +1799,13 @@ impl RuntimeImplicitCallableFact {
                             local: origin.local(),
                         },
                     )
-                    .ok_or(RuntimeImplicitCallableCaptureError)?;
+                    .ok_or(RuntimeImplicitCallableAuthorityError)?;
                 if transfer.local() != origin.local()
                     || !transfer.fields().is_empty()
                     || transfer.mode()
                         == arcweft_lang_sema::final_analysis::CheckedLocalReadMode::Borrow
                 {
-                    return Err(RuntimeImplicitCallableCaptureError);
+                    return Err(RuntimeImplicitCallableAuthorityError);
                 }
                 Ok(RuntimeImplicitCallableCaptureFact {
                     origin: origin.clone(),
@@ -1805,6 +1815,7 @@ impl RuntimeImplicitCallableFact {
             .collect::<Result<Box<[_]>, _>>()?;
         Ok(Self {
             definition,
+            formal,
             captures,
             parameter,
             result,
@@ -1824,6 +1835,10 @@ impl RuntimeImplicitCallableFact {
 
     pub const fn parameter(&self) -> &RuntimeNormalizedType {
         &self.parameter
+    }
+
+    pub const fn formal(&self) -> &arcweft_lang_sema::final_analysis::CheckedExecutionParameter {
+        &self.formal
     }
 
     pub const fn result(&self) -> &RuntimeNormalizedType {
@@ -1872,8 +1887,8 @@ impl RuntimeImplicitCallableCaptureFact {
     }
 }
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
-#[error("implicit callable capture lacks an accepted whole-value transfer")]
-pub struct RuntimeImplicitCallableCaptureError;
+#[error("implicit callable formal or capture lacks its accepted execution authority")]
+pub struct RuntimeImplicitCallableAuthorityError;
 
 /// Generation-bound once-only pipeline and its checked `^` uses.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -7997,6 +8012,8 @@ impl RuntimePlanSemanticFacts {
                 || fact.placeholders().is_empty()
                 || !all_unique(fact.placeholders())
                 || fact.definition().owner() != *expression
+                || !matches!(fact.formal().authority(), CheckedLocalUseAuthority::Global(catalog)
+                    if input.checked_local_uses.as_ref() == Some(catalog))
             {
                 return Err(RuntimeSemanticFactsError::InvalidImplicitCallableFact {
                     expression: *expression,
