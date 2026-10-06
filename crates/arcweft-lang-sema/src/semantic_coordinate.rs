@@ -1186,6 +1186,24 @@ impl CheckedControlTransferEvidence {
     }
 }
 
+/// Opaque v1 digest of one accepted binding coordinate. Issued only by its
+/// canonical coordinate owner; it is not an execution or task-seal proof.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StableCheckedBindingDigest([u8; 32]);
+
+impl StableCheckedBindingDigest {
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+#[derive(Debug, Error)]
+#[error("checked binding coordinate encoding failed: {source}")]
+pub struct StableCheckedBindingDigestError {
+    #[source]
+    source: SemanticCoordinateEncodingError,
+}
+
 /// Stable coordinate for one accepted checked binding.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct StableCheckedBindingCoordinate {
@@ -1193,6 +1211,19 @@ pub struct StableCheckedBindingCoordinate {
 }
 
 impl StableCheckedBindingCoordinate {
+    /// Commits the accepted root and complete typed binding path. This is
+    /// coordinate metadata, not a body digest or task-seal proof.
+    pub fn semantic_digest(
+        &self,
+    ) -> Result<StableCheckedBindingDigest, StableCheckedBindingDigestError> {
+        let bytes = self
+            .canonical_bytes()
+            .map_err(|source| StableCheckedBindingDigestError { source })?;
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"arcweft.lang.checked-binding-coordinate.v1\0");
+        hasher.update(&bytes);
+        Ok(StableCheckedBindingDigest(*hasher.finalize().as_bytes()))
+    }
     pub(crate) fn new(path: CheckedSemanticPath) -> Self {
         Self { path }
     }
@@ -2117,6 +2148,29 @@ pub(crate) enum SemanticCoordinateEncodingError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn binding_digest_commits_the_accepted_root_family() {
+        let declaration = StableCheckedBindingCoordinate::new(CheckedSemanticPath::new(
+            AcceptedSemanticRoot::Declaration(AcceptedDeclarationSemanticId::from_bytes(
+                [0xa5; 32],
+            )),
+            [],
+        ));
+        let item = StableCheckedBindingCoordinate::new(CheckedSemanticPath::new(
+            AcceptedSemanticRoot::Item(AcceptedItemSemanticId::from_bytes([0xa5; 32])),
+            [],
+        ));
+        assert_eq!(declaration.root().as_bytes(), item.root().as_bytes());
+        assert_ne!(
+            declaration.semantic_digest().unwrap(),
+            item.semantic_digest().unwrap()
+        );
+        assert_eq!(
+            declaration.semantic_digest().unwrap(),
+            declaration.clone().semantic_digest().unwrap()
+        );
+    }
 
     #[test]
     fn roots_with_the_same_digest_keep_distinct_canonical_tags() {

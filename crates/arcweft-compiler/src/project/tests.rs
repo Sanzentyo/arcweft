@@ -645,6 +645,14 @@ fn closure_definition_and_capture_origins_survive_source_revisions() {
         original.captures()[0].origin(),
         original.captures()[1].origin()
     );
+    assert_eq!(
+        original.captures()[0].origin().semantic_digest().unwrap(),
+        revised.captures()[0].origin().semantic_digest().unwrap()
+    );
+    assert_ne!(
+        original.captures()[0].origin().semantic_digest().unwrap(),
+        original.captures()[1].origin().semantic_digest().unwrap()
+    );
     assert!(matches!(
         arcweft_runtime_plan::semantic_facts::RuntimeClosureCaptureFact::try_new(
             original.definition().captures()[0].clone(),
@@ -2553,6 +2561,10 @@ fn implicit_callable_definition_and_capture_origins_survive_source_revisions() {
     };
     assert_eq!(capture.position(), 0);
     assert_eq!(capture.origin(), revised_capture.origin());
+    assert_eq!(
+        capture.origin().semantic_digest().unwrap(),
+        revised_capture.origin().semantic_digest().unwrap()
+    );
     assert_ne!(capture.local(), revised_capture.local());
     assert_ne!(
         original.definition_identity(),
@@ -2585,6 +2597,10 @@ fn generic_implicit_callable_instances_share_the_accepted_definition_and_capture
     };
     assert_eq!(first_capture.position(), 0);
     assert_eq!(first_capture.origin(), second_capture.origin());
+    assert_eq!(
+        first_capture.origin().semantic_digest().unwrap(),
+        second_capture.origin().semantic_digest().unwrap()
+    );
 }
 #[test]
 fn closed_implicit_callable_definition_cannot_be_rebound_to_another_expression() {
