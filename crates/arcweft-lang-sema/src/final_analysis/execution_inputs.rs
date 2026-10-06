@@ -46,6 +46,7 @@ pub enum CheckedExecutionCoordinate {
     CallableBody(CheckedSemanticPath),
     MutationBody(CheckedSemanticPath),
     DeclarationBody(StableCheckedBodyCoordinate),
+    DeclarationMutationBody(StableCheckedBodyCoordinate),
 }
 
 impl CheckedExecutionCoordinate {
@@ -57,8 +58,42 @@ impl CheckedExecutionCoordinate {
             | Self::MatchSelection(path)
             | Self::CallableBody(path)
             | Self::MutationBody(path) => path,
-            Self::DeclarationBody(body) => body.path(),
+            Self::DeclarationBody(body) | Self::DeclarationMutationBody(body) => body.path(),
         }
+    }
+}
+
+/// Stable identity of an admitted execution definition and its selected intent.
+/// This identifies a lexical definition, not its body contents or a closed
+/// instance. Only the accepted execution-input authority can issue these bytes.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedExecutionDefinitionIdentity([u8; 32]);
+
+impl CheckedExecutionDefinitionIdentity {
+    fn from_coordinate(
+        coordinate: &CheckedExecutionCoordinate,
+    ) -> Result<Self, crate::semantic_coordinate::SemanticCoordinateEncodingError> {
+        let (tag, bytes) = match coordinate {
+            CheckedExecutionCoordinate::Value(path) => (0u8, path.canonical_bytes()?),
+            CheckedExecutionCoordinate::Binding(path) => (1, path.canonical_bytes()?),
+            CheckedExecutionCoordinate::Iteration(path) => (2, path.canonical_bytes()?),
+            CheckedExecutionCoordinate::MatchSelection(path) => (3, path.canonical_bytes()?),
+            CheckedExecutionCoordinate::CallableBody(path) => (4, path.canonical_bytes()?),
+            CheckedExecutionCoordinate::MutationBody(path) => (5, path.canonical_bytes()?),
+            CheckedExecutionCoordinate::DeclarationBody(body) => (6, body.canonical_bytes()?),
+            CheckedExecutionCoordinate::DeclarationMutationBody(body) => {
+                (7, body.canonical_bytes()?)
+            }
+        };
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"arcweft.lang.checked-execution-definition.v1\0");
+        hasher.update(&[tag]);
+        hasher.update(&bytes);
+        Ok(Self(*hasher.finalize().as_bytes()))
+    }
+
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
     }
 }
 
@@ -195,6 +230,7 @@ pub struct CheckedExecutionInputAbi {
     environment: std::sync::Arc<super::CheckedExecutionEnvironment>,
     source: CheckedExecutionSource,
     coordinate: CheckedExecutionCoordinate,
+    definition_identity: CheckedExecutionDefinitionIdentity,
     execution: CheckedExecutionRegion,
     result: crate::callable::CallableResultSchema,
     effects: EffectSet,
@@ -281,6 +317,10 @@ impl CheckedExecutionInputAbi {
 
     pub const fn coordinate(&self) -> &CheckedExecutionCoordinate {
         &self.coordinate
+    }
+
+    pub const fn definition_identity(&self) -> CheckedExecutionDefinitionIdentity {
+        self.definition_identity
     }
 
     pub fn expressions(&self) -> &[ExprId] {
@@ -683,7 +723,11 @@ impl super::CheckedClosedExecutionContext<'_> {
                             }
                         };
                         (
-                            CheckedExecutionCoordinate::DeclarationBody(body.clone()),
+                            if matches!(source, CheckedExecutionSource::ExportMutation(_)) {
+                                CheckedExecutionCoordinate::DeclarationMutationBody(body.clone())
+                            } else {
+                                CheckedExecutionCoordinate::DeclarationBody(body.clone())
+                            },
                             body.path().clone(),
                             result,
                         )
@@ -917,11 +961,13 @@ impl super::CheckedClosedExecutionContext<'_> {
         {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into());
         }
+        let definition_identity = CheckedExecutionDefinitionIdentity::from_coordinate(&coordinate)?;
         Ok(CheckedExecutionInputAbi {
             topology: std::sync::Arc::clone(analysis.hir_topology()),
             environment: std::sync::Arc::clone(self.environment()),
             source,
             coordinate,
+            definition_identity,
             execution,
             result,
             effects,

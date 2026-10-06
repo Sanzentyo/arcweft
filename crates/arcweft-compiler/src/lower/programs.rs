@@ -556,6 +556,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(fact.free_inputs().count(), 0);
+        assert_eq!(
+            fact.definition_identity(),
+            admission.input_abi().definition_identity()
+        );
         assert_eq!(fact.parameters().count(), 2);
         assert_eq!(fact.parameters().next().unwrap().0.bindings().len(), 2);
         assert_eq!(fact.parameters().nth(1).unwrap().0.bindings().len(), 1);

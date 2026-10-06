@@ -40,6 +40,8 @@ impl From<ExprId> for CheckedExecutionSource {
 
 #[derive(Debug, thiserror::Error)]
 pub enum CheckedExecutionContextError {
+    #[error(transparent)]
+    CoordinateEncoding(#[from] crate::semantic_coordinate::SemanticCoordinateEncodingError),
     #[error("callable {declaration:?} is outside the execution environment's lexical owner")]
     ForeignCallableOwner {
         declaration: Box<crate::callable::CheckedCallableDeclaration>,

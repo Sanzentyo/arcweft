@@ -5020,6 +5020,14 @@ pub struct RuntimePureProgramFact {
 }
 
 impl RuntimePureProgramFact {
+    /// Uses the admitted definition authority; runtime program IDs remain
+    /// generation-local joins and do not identify a stable lexical definition.
+    pub fn definition_identity(
+        &self,
+    ) -> arcweft_lang_sema::final_analysis::CheckedExecutionDefinitionIdentity {
+        self.admission.input_abi().definition_identity()
+    }
+
     /// Retains the accepted lexical body role even when lowering promotes an
     /// expression body to control-transfer execution.
     pub fn semantic_role(&self) -> arcweft_core::plan::RuntimeFunctionSemanticRole {

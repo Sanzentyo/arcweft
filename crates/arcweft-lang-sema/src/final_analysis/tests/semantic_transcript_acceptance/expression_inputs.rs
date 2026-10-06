@@ -352,3 +352,33 @@ fn expression_input_abi_rejects_a_foreign_generation_owner() {
         )
     ));
 }
+
+#[test]
+fn execution_definition_identity_tracks_accepted_origin_across_body_edits() {
+    fn observe(source: &str) -> crate::final_analysis::CheckedExecutionInputAbi {
+        let world = super::fixture(source, None);
+        let report = super::analyze(&world).unwrap();
+        let default = report
+            .checked_callables()
+            .records()
+            .find_map(|facts| facts.parameter_defaults().values().next())
+            .unwrap();
+        input_abi(&report, &world, default.source()).unwrap()
+    }
+
+    let source = "view Main(first: i64, value: i64 = first + 1) { Text(value) }";
+    let original = observe(source);
+    let revised = observe(&format!(
+        "fn unrelated() -> i64 {{ 99i64 }}\n{}",
+        source.replace("first + 1", "first  +  2")
+    ));
+    assert_ne!(original.source(), revised.source());
+    assert_eq!(
+        original.definition_identity(),
+        revised.definition_identity()
+    );
+    assert_ne!(
+        original.definition_identity(),
+        observe(&source.replace("view Main", "view Other")).definition_identity()
+    );
+}

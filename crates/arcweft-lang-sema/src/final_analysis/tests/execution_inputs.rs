@@ -59,6 +59,18 @@ fn empty_body_has_an_authenticated_root_without_an_expression_anchor() {
         abi.operations(),
         [CheckedExecutionOperation::Body(_)]
     ));
+    let CheckedExecutionSource::InvokeBody(body) = source.clone() else {
+        unreachable!()
+    };
+    let mutation = context
+        .checked_execution_input_abi(CheckedExecutionSource::ExportMutation(body))
+        .unwrap();
+    assert_eq!(abi.coordinate().path(), mutation.coordinate().path());
+    assert!(matches!(
+        mutation.coordinate(),
+        CheckedExecutionCoordinate::DeclarationMutationBody(_)
+    ));
+    assert_ne!(abi.definition_identity(), mutation.definition_identity());
     assert!(matches!(
         context.checked_execution_input_abi(declaration_body(&report, "other")),
         Err(CheckedExecutionContextError::ScopeMismatch { .. })
@@ -1086,12 +1098,19 @@ fn mutation_body_exports_checked_free_roots_without_admitting_value_extraction_w
         context.checked_deterministic_program(source),
         Err(CheckedProgramAdmissionError::ExternalPlace { .. })
     ));
+    let invoked = context
+        .checked_execution_input_abi(CheckedExecutionSource::InvokeBody(
+            CheckedExecutionBodyOwner::CallableValue(owner),
+        ))
+        .unwrap();
     let admission = context
         .checked_deterministic_program(CheckedExecutionSource::ExportMutation(
             CheckedExecutionBodyOwner::CallableValue(owner),
         ))
         .unwrap();
     let abi = admission.input_abi();
+    assert_eq!(invoked.coordinate().path(), abi.coordinate().path());
+    assert_ne!(invoked.definition_identity(), abi.definition_identity());
     assert!(matches!(
         abi.coordinate(),
         CheckedExecutionCoordinate::MutationBody(_)
