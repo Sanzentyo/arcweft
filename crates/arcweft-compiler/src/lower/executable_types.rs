@@ -82,9 +82,12 @@ impl RuntimeExecutableInstantiation<'_> {
             let checked = analysis
                 .local(*owner)
                 .ok_or_else(|| origin.error("runtime local has no checked semantic fact"))?;
-            projection.push(RuntimeProjectFunctionTypeProjection::value(
-                RuntimeProjectFunctionTypeOwner::Local(*owner),
+            projection.push(RuntimeProjectFunctionTypeProjection::local(
+                *owner,
                 self.runtime_type(checked.ty(), symbols, world, analysis)?,
+                analysis.local_binding_origin(*owner).map_err(|_| {
+                    origin.error("runtime local has no accepted lexical binding origin")
+                })?,
             ));
         }
         for owner in partition.types() {

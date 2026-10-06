@@ -1250,10 +1250,29 @@ impl CheckedLocalBindingOrigin {
                 .is_ok()
     }
 
+    pub fn validate_authority(
+        &self,
+        authority: &crate::final_analysis::CheckedLocalUseAuthority,
+        local: LocalId,
+    ) -> bool {
+        self.local == local
+            && std::sync::Arc::ptr_eq(self.topology.generation(), authority.generation())
+    }
+
     pub const fn coordinate(&self) -> &StableCheckedBindingCoordinate {
         &self.coordinate
     }
 }
+
+impl PartialEq for CheckedLocalBindingOrigin {
+    fn eq(&self, other: &Self) -> bool {
+        self.local == other.local
+            && std::sync::Arc::ptr_eq(self.topology.generation(), other.topology.generation())
+            && self.coordinate == other.coordinate
+    }
+}
+
+impl Eq for CheckedLocalBindingOrigin {}
 
 impl StableCheckedBindingCoordinate {
     /// Projects this accepted coordinate into the runtime input origin domain.

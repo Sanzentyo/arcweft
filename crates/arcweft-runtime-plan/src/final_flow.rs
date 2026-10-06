@@ -398,9 +398,8 @@ impl ProjectFunctionFrameLocals {
             .type_projection()
             .iter()
             .filter_map(|projection| match projection {
-                RuntimeProjectFunctionTypeProjection::Value {
-                    owner: RuntimeProjectFunctionTypeOwner::Local(local),
-                    ty,
+                RuntimeProjectFunctionTypeProjection::Local {
+                    owner: local, ty, ..
                 } => Some((ProjectFunctionFrameLocal::Hir(*local), declaration(ty))),
                 _ => None,
             })
@@ -945,9 +944,9 @@ pub fn lower_runtime_plan_with_stats(
                 .type_projection()
                 .iter()
                 .filter_map(|projection| match projection {
-                    RuntimeProjectFunctionTypeProjection::Value {
-                        owner: RuntimeProjectFunctionTypeOwner::Local(local),
-                        ty,
+                    RuntimeProjectFunctionTypeProjection::Local {
+                        owner: local,
+                        ty, ..
                     } => Some((ProjectFunctionFrameLocal::Hir(*local), ty.identity())),
                     RuntimeProjectFunctionTypeProjection::Value { .. }
                     | RuntimeProjectFunctionTypeProjection::SemanticOnlyExpression { .. } => None,
@@ -1018,8 +1017,8 @@ pub fn lower_runtime_plan_with_stats(
         .map(|(key, semantics)| -> Result<_, RuntimePlanLowerError> {
             let mut rows = semantics.type_projection().iter().filter_map(|projection| {
                 match projection {
-                    RuntimeProjectFunctionTypeProjection::Value {
-                        owner: RuntimeProjectFunctionTypeOwner::Local(local), ty,
+                    RuntimeProjectFunctionTypeProjection::Local {
+                        owner: local, ty, ..
                     } => Some((ProjectFunctionFrameLocal::Hir(*local), ty.identity())),
                     _ => None,
                 }
@@ -1062,14 +1061,15 @@ pub fn lower_runtime_plan_with_stats(
                 .type_projection()
                 .iter()
                 .filter_map(|projection| match projection {
-                    RuntimeProjectFunctionTypeProjection::Value {
-                        owner: RuntimeProjectFunctionTypeOwner::Local(local),
-                        ty,
+                    RuntimeProjectFunctionTypeProjection::Local {
+                        owner: local,
+                        ty, ..
                     } if !captured.contains(local) => Some((
                         ClosureFrameLocal::Hir(*local),
                         ty.identity(),
                     )),
-                    RuntimeProjectFunctionTypeProjection::Value { .. }
+                    RuntimeProjectFunctionTypeProjection::Local { .. }
+                    | RuntimeProjectFunctionTypeProjection::Value { .. }
                     | RuntimeProjectFunctionTypeProjection::SemanticOnlyExpression { .. } => None,
                 })
                 .collect::<Vec<_>>();

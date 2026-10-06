@@ -4736,6 +4736,7 @@ impl RuntimeTriggerAdmission {
 pub struct RuntimeCheckedCapture {
     projection: arcweft_lang_hir::project::HirSelectedCapture,
     ty: RuntimeNormalizedType,
+    origin: arcweft_lang_sema::semantic_coordinate::CheckedLocalBindingOrigin,
 }
 
 /// One executable dialogue application projected from checked semantics.
@@ -5078,8 +5079,13 @@ impl RuntimeCheckedCapture {
     pub const fn new(
         projection: arcweft_lang_hir::project::HirSelectedCapture,
         ty: RuntimeNormalizedType,
+        origin: arcweft_lang_sema::semantic_coordinate::CheckedLocalBindingOrigin,
     ) -> Self {
-        Self { projection, ty }
+        Self {
+            projection,
+            ty,
+            origin,
+        }
     }
 
     pub const fn capture(&self) -> CaptureId {
@@ -5092,6 +5098,12 @@ impl RuntimeCheckedCapture {
 
     pub const fn source(&self) -> LocalId {
         self.projection.local()
+    }
+
+    pub const fn origin(
+        &self,
+    ) -> &arcweft_lang_sema::semantic_coordinate::StableCheckedBindingCoordinate {
+        self.origin.coordinate()
     }
 
     pub const fn ty(&self) -> &RuntimeNormalizedType {
@@ -6116,6 +6128,14 @@ impl<'facts> RuntimeScopedExecutableSemanticFactView<'facts> {
         self.facts.local_type(owner)
     }
 
+    pub fn local_origin(
+        self,
+        owner: LocalId,
+    ) -> Option<&'facts arcweft_lang_sema::semantic_coordinate::StableCheckedBindingCoordinate>
+    {
+        self.facts.local_origin(owner)
+    }
+
     pub fn checked_local_value_transfer(
         self,
         site: arcweft_lang_sema::final_analysis::CheckedLocalUseSite,
@@ -6410,6 +6430,17 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
         match self {
             Self::Global(facts) => facts.local_type(owner),
             Self::ProjectInstance(facts) => facts.local_type(owner),
+        }
+    }
+
+    pub fn local_origin(
+        self,
+        owner: LocalId,
+    ) -> Option<&'facts arcweft_lang_sema::semantic_coordinate::StableCheckedBindingCoordinate>
+    {
+        match self {
+            Self::Global(facts) => facts.local_origin(owner),
+            Self::ProjectInstance(facts) => facts.local_origin(owner),
         }
     }
 
@@ -8716,6 +8747,9 @@ impl RuntimePlanSemanticFacts {
                     local: capture.local(),
                 })?;
             require_runtime_local_reference(runtime_owners, capture.local())?;
+            if !checked.origin.validate_owner(project, checked.source()) {
+                return Err(RuntimeSemanticFactsError::InvalidCaptureProjection { capture: id });
+            }
             validate_normalized_type(&modules, checked.ty())?;
             if captures.insert(id, checked).is_some() {
                 return Err(RuntimeSemanticFactsError::DuplicateFact {

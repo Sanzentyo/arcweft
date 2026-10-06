@@ -403,6 +403,9 @@ capture の転送モードは作成時の証拠から保持し、入場時の Ow
 runtime-domain local の semantic fact は、Sema が発行した binding coordinate を
 型・scope と同じ行で保持する。発行元の local と受理済み HIR allocation を受理時に
 照合し、別 binding や別 generation の座標を混ぜた入力を公開前に拒否する。
+閉じた callable instance でも local の型投影はこの証拠を必須で持ち、instance の
+local-use authority と照合する。型だけの local 投影や別 generation の証拠は
+instance semantic fact の公開前に拒否する。
 
 AWBC の各入力行も取得元を必須で保持し、parameter と captured parameter は
 静的な passing 区分を codec の往復後も保持する。retained 入力を先行させ、

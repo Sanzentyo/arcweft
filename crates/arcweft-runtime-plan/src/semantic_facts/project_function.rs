@@ -910,6 +910,11 @@ impl RuntimeProjectFunctionTypeOwner {
 /// always own a normalized value type.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeProjectFunctionTypeProjection {
+    Local {
+        owner: LocalId,
+        ty: RuntimeNormalizedType,
+        origin: arcweft_lang_sema::semantic_coordinate::CheckedLocalBindingOrigin,
+    },
     Value {
         owner: RuntimeProjectFunctionTypeOwner,
         ty: RuntimeNormalizedType,
@@ -1189,6 +1194,14 @@ impl RuntimeProjectFunctionStatementSemanticFact {
 }
 
 impl RuntimeProjectFunctionTypeProjection {
+    pub const fn local(
+        owner: LocalId,
+        ty: RuntimeNormalizedType,
+        origin: arcweft_lang_sema::semantic_coordinate::CheckedLocalBindingOrigin,
+    ) -> Self {
+        Self::Local { owner, ty, origin }
+    }
+
     pub const fn value(owner: RuntimeProjectFunctionTypeOwner, ty: RuntimeNormalizedType) -> Self {
         Self::Value { owner, ty }
     }
@@ -1199,6 +1212,7 @@ impl RuntimeProjectFunctionTypeProjection {
 
     pub const fn owner(&self) -> RuntimeProjectFunctionTypeOwner {
         match self {
+            Self::Local { owner, .. } => RuntimeProjectFunctionTypeOwner::Local(*owner),
             Self::Value { owner, .. } => *owner,
             Self::SemanticOnlyExpression { owner } => {
                 RuntimeProjectFunctionTypeOwner::Expression(*owner)
@@ -1208,7 +1222,7 @@ impl RuntimeProjectFunctionTypeProjection {
 
     pub const fn ty(&self) -> Option<&RuntimeNormalizedType> {
         match self {
-            Self::Value { ty, .. } => Some(ty),
+            Self::Local { ty, .. } | Self::Value { ty, .. } => Some(ty),
             Self::SemanticOnlyExpression { .. } => None,
         }
     }
@@ -1588,6 +1602,18 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         {
             return Err(RuntimeProjectFunctionFactError::NonCanonicalTypeProjection);
         }
+        if type_projection.iter().any(|row| match row {
+            RuntimeProjectFunctionTypeProjection::Local { owner, origin, .. } => {
+                !origin.validate_authority(&local_uses, *owner)
+            }
+            RuntimeProjectFunctionTypeProjection::Value {
+                owner: RuntimeProjectFunctionTypeOwner::Local(_),
+                ..
+            } => true,
+            _ => false,
+        }) {
+            return Err(RuntimeProjectFunctionFactError::NonCanonicalTypeProjection);
+        }
         if partition.expressions().len() != expressions.len()
             || partition
                 .expressions()
@@ -1710,6 +1736,9 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         if captures.iter().any(|capture| {
             partition.locals().contains(&capture.source())
                 || !captured_locals.insert(capture.source())
+                || !capture
+                    .origin
+                    .validate_authority(&local_uses, capture.source())
         }) {
             return Err(RuntimeProjectFunctionFactError::NonCanonicalSemanticFacts);
         }
@@ -1897,6 +1926,34 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                 .iter()
                 .find(|capture| capture.source() == owner)
                 .map(RuntimeCheckedCapture::ty)
+        }
+    }
+
+    pub fn local_origin(
+        &self,
+        owner: LocalId,
+    ) -> Option<&arcweft_lang_sema::semantic_coordinate::StableCheckedBindingCoordinate> {
+        if self.partition.locals().binary_search(&owner).is_ok()
+            || self.partition.input_locals().binary_search(&owner).is_ok()
+        {
+            let index = self
+                .type_projection
+                .binary_search_by_key(
+                    &RuntimeProjectFunctionTypeOwner::Local(owner),
+                    RuntimeProjectFunctionTypeProjection::owner,
+                )
+                .ok()?;
+            match &self.type_projection[index] {
+                RuntimeProjectFunctionTypeProjection::Local { origin, .. } => {
+                    Some(origin.coordinate())
+                }
+                _ => None,
+            }
+        } else {
+            self.captures
+                .iter()
+                .find(|capture| capture.source() == owner)
+                .map(RuntimeCheckedCapture::origin)
         }
     }
 

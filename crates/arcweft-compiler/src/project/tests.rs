@@ -394,6 +394,77 @@ flow main() -> i64 {
         .collect::<Vec<_>>();
     assert_eq!(instances.len(), 2);
     assert_ne!(instances[0].key(), instances[1].key());
+    use arcweft_runtime_plan::semantic_facts::{
+        RuntimeProjectFunctionFactError, RuntimeProjectFunctionInstanceSemanticFacts,
+        RuntimeProjectFunctionTypeOwner, RuntimeProjectFunctionTypeProjection,
+    };
+    let analysis = compiled.analysis_lease().final_analysis();
+    let expected_origin = analysis.local_binding_origin(parameter_local).unwrap();
+    for instance in &instances {
+        let local = instance
+            .semantics()
+            .type_projection()
+            .iter()
+            .find(|row| row.owner() == RuntimeProjectFunctionTypeOwner::Local(parameter_local))
+            .unwrap();
+        let RuntimeProjectFunctionTypeProjection::Local { origin, .. } = local else {
+            panic!("local type projection retains accepted origin evidence")
+        };
+        assert_eq!(origin, &expected_origin);
+    }
+    let semantics = instances[0].semantics();
+    let mut missing_origin = semantics.type_projection().to_vec();
+    let local = missing_origin
+        .iter_mut()
+        .find(|row| row.owner() == RuntimeProjectFunctionTypeOwner::Local(parameter_local))
+        .unwrap();
+    *local =
+        RuntimeProjectFunctionTypeProjection::value(local.owner(), local.ty().unwrap().clone());
+    let rebuild = |projection| {
+        RuntimeProjectFunctionInstanceSemanticFacts::try_new(
+            semantics.partition().clone(),
+            semantics.local_uses().clone(),
+            projection,
+            semantics.expressions().into(),
+            semantics.patterns().into(),
+            semantics.statements().into(),
+            semantics.captures().into(),
+        )
+    };
+    assert!(matches!(
+        rebuild(missing_origin.into_boxed_slice()),
+        Err(RuntimeProjectFunctionFactError::NonCanonicalTypeProjection)
+    ));
+    let (mut foreign_session, foreign_sources) = compilation_state(&project);
+    let foreign =
+        compile_project(&mut foreign_session, &project, &foreign_sources, &context).unwrap();
+    let foreign_origin = foreign
+        .runtime_facts()
+        .project_function_instances()
+        .flat_map(|instance| instance.semantics().type_projection())
+        .find_map(|row| match row {
+            RuntimeProjectFunctionTypeProjection::Local { origin, .. }
+                if origin.coordinate() == expected_origin.coordinate() =>
+            {
+                Some(origin.clone())
+            }
+            _ => None,
+        })
+        .unwrap();
+    assert_ne!(foreign_origin, expected_origin);
+    let mut foreign_generation = semantics.type_projection().to_vec();
+    let RuntimeProjectFunctionTypeProjection::Local { origin, .. } = foreign_generation
+        .iter_mut()
+        .find(|row| row.owner() == RuntimeProjectFunctionTypeOwner::Local(parameter_local))
+        .unwrap()
+    else {
+        panic!("local projection")
+    };
+    *origin = foreign_origin;
+    assert!(matches!(
+        rebuild(foreign_generation.into_boxed_slice()),
+        Err(RuntimeProjectFunctionFactError::NonCanonicalTypeProjection)
+    ));
     let mut closed = instances
         .iter()
         .map(|instance| {
@@ -520,6 +591,14 @@ flow main() -> i64 {
             definition.definition_identity()
         );
         assert_eq!(capture.origin(), definition.captures()[0].origin());
+        assert_eq!(
+            closure.semantics().local_origin(capture.source()),
+            Some(capture.origin())
+        );
+        assert_eq!(
+            instance.semantics().local_origin(capture.source()),
+            Some(capture.origin())
+        );
         let [formal] = closure.parameters() else {
             panic!("one complete closure formal")
         };

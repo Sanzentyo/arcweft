@@ -1601,13 +1601,21 @@ fn project_runtime_semantic_fact_inventories(
         if closed_instance_capture_owners.contains(&owner) {
             continue;
         }
+        let selected = *analysis.selected_capture(owner).ok_or_else(|| {
+            RuntimeSemanticProjectionError::Facts(Box::new(
+                RuntimeSemanticFactsError::InvalidCaptureProjection { capture: owner },
+            ))
+        })?;
         input.push_capture(RuntimeCheckedCapture::new(
-            *analysis.selected_capture(owner).ok_or_else(|| {
-                RuntimeSemanticProjectionError::Facts(Box::new(
-                    RuntimeSemanticFactsError::InvalidCaptureProjection { capture: owner },
-                ))
-            })?,
+            selected,
             runtime_type(capture.ty(), symbols, world, analysis)?,
+            analysis
+                .local_binding_origin(selected.local())
+                .map_err(
+                    |_| RuntimeSemanticProjectionError::MissingLocalSemanticFact {
+                        local: selected.local(),
+                    },
+                )?,
         ));
     }
 
@@ -8608,11 +8616,17 @@ fn runtime_executable_semantic_facts<'abi>(
             let checked = analysis
                 .capture(*owner)
                 .ok_or_else(|| origin.error("instance capture has no checked semantic fact"))?;
+            let selected = *analysis.selected_capture(*owner).ok_or_else(|| {
+                origin.error("instance capture has no selected lexical projection")
+            })?;
             Ok(RuntimeCheckedCapture::new(
-                *analysis.selected_capture(*owner).ok_or_else(|| {
-                    origin.error("instance capture has no selected lexical projection")
-                })?,
+                selected,
                 lexical.runtime_type(checked.ty(), symbols, world, analysis)?,
+                analysis
+                    .local_binding_origin(selected.local())
+                    .map_err(|_| {
+                        origin.error("instance capture has no accepted lexical binding origin")
+                    })?,
             ))
         })
         .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
