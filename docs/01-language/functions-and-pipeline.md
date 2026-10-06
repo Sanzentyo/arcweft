@@ -407,8 +407,11 @@ runtime-domain local の semantic fact は、Sema が発行した binding coordi
 local-use authority と照合する。型だけの local 投影や別 generation の証拠は
 instance semantic fact の公開前に拒否する。
 
-AWBC の各入力行も取得元を必須で保持し、parameter と captured parameter は
-静的な passing 区分を codec の往復後も保持する。retained 入力を先行させ、
+AWBC の各入力行も取得元と作成時の転送方式を必須で保持し、parameter と
+captured parameter は静的な passing 区分を codec の往復後も保持する。
+function site は受理済みの転送証拠を渡し、formatter operand は選択済みの
+Copy／Move を、Line は共有 packet の SnapshotClone と scheduled packet の Move を
+保持する。retained 入力を先行させ、
 retained と現在の parameter の ordinal をそれぞれ連続した順序で検証する。
 入力取得元や passing の欠落・未知タグは拒否し、frame ingress の保証は別に検証する。
 

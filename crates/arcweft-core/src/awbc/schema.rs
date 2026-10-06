@@ -1285,6 +1285,8 @@ pub struct AwbcFunction {
 pub struct AwbcFunctionInputOwnership {
     /// Exact semantic source, including mandatory static passing for a formal.
     pub source: crate::plan::RuntimeFunctionInputSource,
+    /// Exact retained-value creation operation, separate from frame ingress.
+    pub transfer: crate::plan::RuntimeFunctionInputTransfer,
     pub requirement: RuntimeFunctionInputOwnershipRequirement,
     pub pattern: Option<AwbcPatternId>,
     pub unrestricted_bindings: Vec<AwbcRegisterId>,
@@ -1292,19 +1294,29 @@ pub struct AwbcFunctionInputOwnership {
 
 impl AwbcFunctionInputOwnership {
     /// Direct value ingress with an explicit source; Copy guarantees stay separate.
-    pub fn owned(source: crate::plan::RuntimeFunctionInputSource) -> Self {
+    pub fn owned(
+        source: crate::plan::RuntimeFunctionInputSource,
+        transfer: crate::plan::RuntimeFunctionInputTransfer,
+    ) -> Self {
         Self {
             source,
+            transfer,
             requirement: RuntimeFunctionInputOwnershipRequirement::Owned,
             pattern: None,
             unrestricted_bindings: Vec::new(),
         }
     }
     pub fn parameter(position: u32, passing: crate::plan::RuntimeFunctionParameterPassing) -> Self {
-        Self::owned(crate::plan::RuntimeFunctionInputSource::Parameter { position, passing })
+        Self::owned(
+            crate::plan::RuntimeFunctionInputSource::Parameter { position, passing },
+            crate::plan::RuntimeFunctionInputTransfer::Formal,
+        )
     }
-    pub fn capture(position: u32) -> Self {
-        Self::owned(crate::plan::RuntimeFunctionInputSource::Capture { position })
+    pub fn capture(position: u32, mode: crate::plan::RuntimeFunctionCaptureMode) -> Self {
+        Self::owned(
+            crate::plan::RuntimeFunctionInputSource::Capture { position },
+            crate::plan::RuntimeFunctionInputTransfer::Transferred(mode),
+        )
     }
 }
 

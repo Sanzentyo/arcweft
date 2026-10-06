@@ -263,7 +263,10 @@ fn format_content_program() -> AwbcProgram {
         kind: AwbcFunctionKind::Synthetic,
         signature: AwbcSignatureId(1),
         type_context: None,
-        input_ownership: vec![AwbcFunctionInputOwnership::capture(0)],
+        input_ownership: vec![AwbcFunctionInputOwnership::capture(
+            0,
+            crate::plan::RuntimeFunctionCaptureMode::Move,
+        )],
         frame_layout: AwbcFrameLayoutId(1),
         blocks: AwbcTableRange::new(1, 1),
         entry_block: AwbcBlockId(1),
@@ -2201,6 +2204,7 @@ fn project_call_retained_program() -> AwbcProgram {
                     position: 0,
                     passing: crate::plan::RuntimeFunctionParameterPassing::Value,
                 },
+                crate::plan::RuntimeFunctionInputTransfer::Formal,
             ),
             AwbcFunctionInputOwnership::parameter(
                 0,
@@ -2546,6 +2550,7 @@ fn project_call_default_program() -> AwbcProgram {
                     position: 0,
                     passing: crate::plan::RuntimeFunctionParameterPassing::Value,
                 },
+                crate::plan::RuntimeFunctionInputTransfer::Formal,
             )],
             frame_layout: AwbcFrameLayoutId(2),
             blocks: AwbcTableRange::new(3, 1),
@@ -7353,7 +7358,10 @@ fn callable_instructions_capture_and_apply_program_owned_state() {
                 kind: AwbcFunctionKind::Synthetic,
                 signature: AwbcSignatureId(1),
                 type_context: None,
-                input_ownership: vec![AwbcFunctionInputOwnership::capture(0)],
+                input_ownership: vec![AwbcFunctionInputOwnership::capture(
+                    0,
+                    crate::plan::RuntimeFunctionCaptureMode::Move,
+                )],
                 frame_layout: AwbcFrameLayoutId(1),
                 blocks: AwbcTableRange::new(1, 1),
                 entry_block: AwbcBlockId(1),
@@ -8144,12 +8152,59 @@ fn verifier_rejects_noncanonical_function_input_sources_before_execution() {
         let mut program = base.clone();
         for (row, source) in program.functions[1].input_ownership.iter_mut().zip(sources) {
             row.source = source;
+            row.transfer = match source {
+                RuntimeFunctionInputSource::Capture { .. } => {
+                    crate::plan::RuntimeFunctionInputTransfer::Transferred(
+                        crate::plan::RuntimeFunctionCaptureMode::Move,
+                    )
+                }
+                _ => crate::plan::RuntimeFunctionInputTransfer::Formal,
+            };
         }
         let error = program
             .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
             .unwrap_err();
         assert!(
             matches!(error, AwbcVerifyError::InvalidInvariant { ref message, .. } if message.contains("noncanonical source role or ordinal"))
+        );
+    }
+}
+
+#[test]
+fn verifier_rejects_function_input_transfer_source_mismatch_before_execution() {
+    use crate::plan::{
+        RuntimeFunctionCaptureMode as Mode, RuntimeFunctionInputSource as Source,
+        RuntimeFunctionInputTransfer as Transfer, RuntimeFunctionParameterPassing as Passing,
+    };
+    let base = project_call_retained_program();
+    base.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .unwrap();
+    for (source, transfer) in [
+        (Source::Capture { position: 0 }, Transfer::Formal),
+        (
+            Source::Parameter {
+                position: 0,
+                passing: Passing::Value,
+            },
+            Transfer::Transferred(Mode::Move),
+        ),
+        (
+            Source::CapturedParameter {
+                position: 0,
+                passing: Passing::Value,
+            },
+            Transfer::ExternalBinding,
+        ),
+    ] {
+        let mut program = base.clone();
+        let row = &mut program.functions[1].input_ownership[0];
+        row.source = source;
+        row.transfer = transfer;
+        let error = program
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .unwrap_err();
+        assert!(
+            matches!(error, AwbcVerifyError::InvalidInvariant { ref message, .. } if message.contains("transfer does not match its source role"))
         );
     }
 }

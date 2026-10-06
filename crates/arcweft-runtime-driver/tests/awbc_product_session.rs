@@ -1965,7 +1965,10 @@ fn minimal_awbc_program(entry: &str) -> AwbcProgram {
                 signature: AwbcSignatureId(1),
                 type_context: None,
                 input_ownership: vec![
-                    arcweft_core::awbc::schema::AwbcFunctionInputOwnership::capture(0),
+                    arcweft_core::awbc::schema::AwbcFunctionInputOwnership::capture(
+                        0,
+                        arcweft_core::plan::RuntimeFunctionCaptureMode::Move,
+                    ),
                 ],
                 frame_layout: AwbcFrameLayoutId(1),
                 blocks: AwbcTableRange::new(1, 1),

@@ -3014,18 +3014,7 @@ fn validate_function_input_bindings(
     let mut parameter_phase = false;
     let mut locals = BTreeSet::new();
     for (index, input) in inputs.iter().enumerate() {
-        if !matches!(
-            (input.source(), input.transfer()),
-            (
-                RuntimeFunctionInputSource::Capture { .. },
-                super::RuntimeFunctionInputTransfer::Transferred(_)
-                    | super::RuntimeFunctionInputTransfer::ExternalBinding
-            ) | (
-                RuntimeFunctionInputSource::Parameter { .. }
-                    | RuntimeFunctionInputSource::CapturedParameter { .. },
-                super::RuntimeFunctionInputTransfer::Formal
-            )
-        ) {
+        if !input.source().accepts_transfer(input.transfer()) {
             return Err(RuntimePlanBuildError::InvalidFunctionInputSource { index });
         }
         if !matches!(

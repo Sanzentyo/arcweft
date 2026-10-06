@@ -843,6 +843,12 @@ fn root_closure_capture_transfer_proof_drives_creation_and_ingress() {
             )
         );
         assert_eq!(site.capture_inputs().next().unwrap().ownership(), ownership);
+        assert_awbc_capture_transfer(
+            &compiled,
+            site.role(),
+            site.capture_inputs().next().unwrap().transfer(),
+            false,
+        );
         let mut creation_reads = Vec::new();
         plan.try_visit_flow_ops(&mut |operation| {
             if let FlowOp::Let { expr, .. } = operation
@@ -860,6 +866,51 @@ fn root_closure_capture_transfer_proof_drives_creation_and_ingress() {
         .unwrap();
         assert_eq!(creation_reads, vec![read_mode]);
     }
+}
+
+fn assert_awbc_capture_transfer(
+    compiled: &super::CompiledProject,
+    role: arcweft_core::plan::RuntimeFunctionSemanticRole,
+    expected: arcweft_core::plan::RuntimeFunctionInputTransfer,
+    rejects_affine_line_capture: bool,
+) {
+    let runtime = compiled.runtime_plan();
+    let lowered = arcweft_runtime_plan::awbc_lower::AwbcLowerer::new(
+        &runtime.plan,
+        &runtime.dialogue_content_catalog,
+        "capture-transfer.arcw",
+    )
+    .lower();
+    if rejects_affine_line_capture {
+        let error = lowered.unwrap_err();
+        assert!(
+            matches!(error, arcweft_runtime_plan::awbc_lower::AwbcLowerError::Verify(arcweft_core::awbc::verify::AwbcVerifyError::InvalidInvariant { ref message, .. })
+            if message == "line task group capture ABI must be exact and recursively unrestricted"),
+            "{error:?}"
+        );
+        return;
+    }
+    let report = lowered.expect("accepted capture lowers to verified AWBC");
+    let bytes = report.program.encode_canonical().unwrap();
+    let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+        &bytes,
+        arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+    )
+    .unwrap();
+    let transfers = decoded
+        .functions
+        .iter()
+        .filter(|function| function.semantic_role == role)
+        .flat_map(|function| &function.input_ownership)
+        .filter(|input| {
+            matches!(
+                input.source,
+                arcweft_core::plan::RuntimeFunctionInputSource::Capture { .. }
+            )
+        })
+        .map(|input| input.transfer)
+        .collect::<Vec<_>>();
+    assert_eq!(transfers, vec![expected]);
 }
 
 #[test]
@@ -3064,6 +3115,12 @@ fn root_implicit_capture_transfer_drives_creation_and_ingress() {
             )
         );
         assert_eq!(site.capture_inputs().next().unwrap().ownership(), ownership);
+        assert_awbc_capture_transfer(
+            &compiled,
+            site.role(),
+            site.capture_inputs().next().unwrap().transfer(),
+            false,
+        );
         let mut reads = Vec::new();
         plan.try_visit_flow_ops(&mut |op| {
             if let FlowOp::Let { expr, .. } = op
@@ -3664,6 +3721,12 @@ fn defer_capture_transfer_drives_registration_and_ingress() {
         );
         let input = site.capture_inputs().next().unwrap();
         assert_eq!(input.ownership(), ownership);
+        assert_awbc_capture_transfer(
+            &compiled,
+            site.role(),
+            input.transfer(),
+            mode == CheckedLocalReadMode::Move,
+        );
         assert_eq!(
             input.unrestricted_bindings().len(),
             usize::from(mode == CheckedLocalReadMode::Copy)
@@ -3750,6 +3813,7 @@ fn dialogue_effect_capture_transfer_drives_creation_and_ingress() {
         );
         let input = site.capture_inputs().next().unwrap();
         assert_eq!(input.ownership(), ownership);
+        assert_awbc_capture_transfer(&compiled, site.role(), input.transfer(), false);
         assert_eq!(
             input.unrestricted_bindings().len(),
             usize::from(mode == CheckedLocalReadMode::Copy)

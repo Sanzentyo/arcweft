@@ -6448,7 +6448,10 @@ mod tests {
                 kind: AwbcFunctionKind::Synthetic,
                 signature: AwbcSignatureId(signature_id),
                 type_context: None,
-                input_ownership: vec![AwbcFunctionInputOwnership::capture(0)],
+                input_ownership: vec![AwbcFunctionInputOwnership::capture(
+                    0,
+                    crate::plan::RuntimeFunctionCaptureMode::Move,
+                )],
                 frame_layout: AwbcFrameLayoutId(1),
                 blocks: AwbcTableRange::new(function_id, 1),
                 entry_block: AwbcBlockId(function_id),

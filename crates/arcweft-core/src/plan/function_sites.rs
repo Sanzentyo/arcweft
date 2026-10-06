@@ -176,6 +176,23 @@ pub enum RuntimeFunctionInputSource {
     },
 }
 
+impl RuntimeFunctionInputSource {
+    /// Valid creation operations for this semantic input role.
+    pub const fn accepts_transfer(self, transfer: RuntimeFunctionInputTransfer) -> bool {
+        matches!(
+            (self, transfer),
+            (
+                Self::Capture { .. },
+                RuntimeFunctionInputTransfer::Transferred(_)
+                    | RuntimeFunctionInputTransfer::ExternalBinding
+            ) | (
+                Self::Parameter { .. } | Self::CapturedParameter { .. },
+                RuntimeFunctionInputTransfer::Formal
+            )
+        )
+    }
+}
+
 /// The live value guarantee required when an input enters a function frame.
 /// Function types do not imply this guarantee; the selected caller supplies it.
 #[derive(

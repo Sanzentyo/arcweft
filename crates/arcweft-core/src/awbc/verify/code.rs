@@ -495,6 +495,12 @@ fn validate_function_input_ownership(
     let mut parameter_phase = false;
     for (position, (row, parameter)) in function.input_ownership.iter().zip(parameters).enumerate()
     {
+        if !row.source.accepts_transfer(row.transfer) {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at: at.clone(),
+                message: format!("input {position} transfer does not match its source role"),
+            });
+        }
         match row.source {
             crate::plan::RuntimeFunctionInputSource::Capture { position: ordinal }
             | crate::plan::RuntimeFunctionInputSource::CapturedParameter {

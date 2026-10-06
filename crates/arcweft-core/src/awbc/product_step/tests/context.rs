@@ -332,6 +332,7 @@ fn context_program() -> AwbcContextFixture {
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
                         u32::try_from(position).expect("fixture input ordinal"),
+                        crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
                 })
                 .collect(),

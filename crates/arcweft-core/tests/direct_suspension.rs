@@ -774,7 +774,10 @@ fn direct_suspension_functions() -> Vec<AwbcFunction> {
             kind: AwbcFunctionKind::Synthetic,
             signature: AwbcSignatureId(1),
             type_context: None,
-            input_ownership: vec![AwbcFunctionInputOwnership::capture(0)],
+            input_ownership: vec![AwbcFunctionInputOwnership::capture(
+                0,
+                arcweft_core::plan::RuntimeFunctionCaptureMode::Move,
+            )],
             frame_layout: AwbcFrameLayoutId(1),
             blocks: AwbcTableRange::new(2, 2),
             entry_block: AwbcBlockId(2),

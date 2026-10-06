@@ -365,6 +365,7 @@ impl Wire for AwbcFunction {
 impl Wire for crate::awbc::schema::AwbcFunctionInputOwnership {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.source.write_wire(writer)?;
+        self.transfer.write_wire(writer)?;
         self.requirement.write_wire(writer)?;
         self.pattern.write_wire(writer)?;
         self.unrestricted_bindings.write_wire(writer)
@@ -373,10 +374,71 @@ impl Wire for crate::awbc::schema::AwbcFunctionInputOwnership {
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
             source: crate::plan::RuntimeFunctionInputSource::read_wire(reader)?,
+            transfer: crate::plan::RuntimeFunctionInputTransfer::read_wire(reader)?,
             requirement: crate::plan::RuntimeFunctionInputOwnershipRequirement::read_wire(reader)?,
             pattern: Option::<crate::awbc::schema::AwbcPatternId>::read_wire(reader)?,
             unrestricted_bindings: Vec::read_wire(reader)?,
         })
+    }
+}
+
+impl Wire for crate::plan::RuntimeFunctionInputTransfer {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::Transferred(mode) => {
+                writer.write_u8(0);
+                mode.write_wire(writer)
+            }
+            Self::ExternalBinding => {
+                writer.write_u8(1);
+                Ok(())
+            }
+            Self::Formal => {
+                writer.write_u8(2);
+                Ok(())
+            }
+        }
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => Ok(Self::Transferred(
+                crate::plan::RuntimeFunctionCaptureMode::read_wire(reader)?,
+            )),
+            1 => Ok(Self::ExternalBinding),
+            2 => Ok(Self::Formal),
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "function input transfer",
+                tag,
+                offset,
+            }),
+        }
+    }
+}
+
+impl Wire for crate::plan::RuntimeFunctionCaptureMode {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(match self {
+            Self::Copy => 0,
+            Self::SnapshotClone => 1,
+            Self::Move => 2,
+        });
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => Ok(Self::Copy),
+            1 => Ok(Self::SnapshotClone),
+            2 => Ok(Self::Move),
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "function capture mode",
+                tag,
+                offset,
+            }),
+        }
     }
 }
 
@@ -2525,6 +2587,66 @@ mod function_input_source_wire_tests {
     use crate::plan::{RuntimeFunctionInputSource, RuntimeFunctionParameterPassing};
 
     #[test]
+    fn mandatory_transfer_operations_round_trip_and_reject_unknown_tags() {
+        use crate::plan::{
+            RuntimeFunctionCaptureMode as Mode, RuntimeFunctionInputTransfer as Transfer,
+        };
+        for transfer in [
+            Transfer::Transferred(Mode::Copy),
+            Transfer::Transferred(Mode::SnapshotClone),
+            Transfer::Transferred(Mode::Move),
+            Transfer::ExternalBinding,
+            Transfer::Formal,
+        ] {
+            let source = if transfer == Transfer::Formal {
+                RuntimeFunctionInputSource::Parameter {
+                    position: 0,
+                    passing: RuntimeFunctionParameterPassing::Value,
+                }
+            } else {
+                RuntimeFunctionInputSource::Capture { position: 0 }
+            };
+            let row = AwbcFunctionInputOwnership::owned(source, transfer);
+            let mut writer = Writer::with_capacity(32);
+            row.write_wire(&mut writer).unwrap();
+            let bytes = writer.into_bytes();
+            let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+            assert_eq!(
+                AwbcFunctionInputOwnership::read_wire(&mut reader).unwrap(),
+                row
+            );
+            reader.finish().unwrap();
+            let mut json = serde_json::to_value(&row).unwrap();
+            assert_eq!(
+                serde_json::from_value::<AwbcFunctionInputOwnership>(json.clone()).unwrap(),
+                row
+            );
+            json.as_object_mut().unwrap().remove("transfer");
+            assert!(serde_json::from_value::<AwbcFunctionInputOwnership>(json).is_err());
+        }
+        for tag in 3..=u8::MAX {
+            let bytes = [tag];
+            let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+            assert!(matches!(
+                Transfer::read_wire(&mut reader),
+                Err(AwbcCodecError::UnknownTag {
+                    kind: "function input transfer",
+                    ..
+                })
+            ));
+            let bytes = [0, tag];
+            let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+            assert!(matches!(
+                Transfer::read_wire(&mut reader),
+                Err(AwbcCodecError::UnknownTag {
+                    kind: "function capture mode",
+                    ..
+                })
+            ));
+        }
+    }
+
+    #[test]
     fn mandatory_input_sources_and_all_passing_classes_round_trip() {
         let mut sources = vec![RuntimeFunctionInputSource::Capture { position: 7 }];
         for passing in [
@@ -2544,7 +2666,17 @@ mod function_input_source_wire_tests {
             ]);
         }
         for source in sources {
-            let row = AwbcFunctionInputOwnership::owned(source);
+            let row = AwbcFunctionInputOwnership::owned(
+                source,
+                match source {
+                    RuntimeFunctionInputSource::Capture { .. } => {
+                        crate::plan::RuntimeFunctionInputTransfer::Transferred(
+                            crate::plan::RuntimeFunctionCaptureMode::Move,
+                        )
+                    }
+                    _ => crate::plan::RuntimeFunctionInputTransfer::Formal,
+                },
+            );
             let mut writer = Writer::with_capacity(32);
             row.write_wire(&mut writer).unwrap();
             let bytes = writer.into_bytes();

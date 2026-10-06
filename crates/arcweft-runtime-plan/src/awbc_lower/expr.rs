@@ -279,7 +279,10 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                         self.inventory
                             .push_pending_closure(PendingAwbcClosure::FormatOperand {
                                 function,
-                                captures: captures.iter().map(|capture| capture.local).collect(),
+                                captures: captures
+                                    .iter()
+                                    .map(|capture| (capture.local, capture.mode))
+                                    .collect(),
                                 result: expression.ty(),
                                 expression: expression.clone(),
                                 path: format!("{}.fmt.{}", self.path, function.0),
@@ -1063,7 +1066,10 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                         type_context: None,
                         input_ownership: (0..inputs.len())
                             .map(|position| {
-                                AwbcFunctionInputOwnership::capture(table_index(position))
+                                AwbcFunctionInputOwnership::capture(
+                                    table_index(position),
+                                    arcweft_core::plan::RuntimeFunctionCaptureMode::Copy,
+                                )
                             })
                             .collect(),
                         frame_layout: layout,
@@ -1165,7 +1171,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                 path,
             } => {
                 let mut frame = FrameBuilder::new();
-                for local in &captures {
+                for (local, _) in &captures {
                     let name = inventory.local_name(*local);
                     frame.named_parameter(
                         *local,
@@ -1180,7 +1186,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                 let block_len = table_range_len(block.0, inventory.program.blocks.len());
                 let params = captures
                     .iter()
-                    .map(|local| admitted_plan_type(inventory, plan, local_type(plan, *local)))
+                    .map(|(local, _)| admitted_plan_type(inventory, plan, local_type(plan, *local)))
                     .collect();
                 let result = admitted_plan_type(inventory, plan, result);
                 let signature =
@@ -1193,9 +1199,21 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                         kind: AwbcFunctionKind::Synthetic,
                         signature,
                         type_context: None,
-                        input_ownership: (0..captures.len())
-                            .map(|position| {
-                                AwbcFunctionInputOwnership::capture(table_index(position))
+                        input_ownership: captures
+                            .iter()
+                            .enumerate()
+                            .map(|(position, (_, mode))| {
+                                AwbcFunctionInputOwnership::capture(
+                                    table_index(position),
+                                    match mode {
+                                        RuntimeLocalReadMode::Copy => {
+                                            arcweft_core::plan::RuntimeFunctionCaptureMode::Copy
+                                        }
+                                        RuntimeLocalReadMode::Move => {
+                                            arcweft_core::plan::RuntimeFunctionCaptureMode::Move
+                                        }
+                                    },
+                                )
                             })
                             .collect(),
                         frame_layout: layout,

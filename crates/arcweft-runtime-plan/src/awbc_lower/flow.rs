@@ -529,6 +529,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 completed,
                 "line_task.cleanup.completed",
                 AwbcFunctionKind::LineTask,
+                arcweft_core::plan::RuntimeFunctionCaptureMode::SnapshotClone,
             )
         });
         let cancelled = group
@@ -540,6 +541,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 cancelled,
                 "line_task.cleanup.cancelled",
                 AwbcFunctionKind::LineTask,
+                arcweft_core::plan::RuntimeFunctionCaptureMode::SnapshotClone,
             )
         });
         let failed = group
@@ -551,6 +553,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 failed,
                 "line_task.cleanup.failed",
                 AwbcFunctionKind::LineTask,
+                arcweft_core::plan::RuntimeFunctionCaptureMode::SnapshotClone,
             )
         });
         let handle_sites = group
@@ -657,6 +660,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             ops,
             path,
             AwbcFunctionKind::LineActivation,
+            arcweft_core::plan::RuntimeFunctionCaptureMode::SnapshotClone,
         );
         let layout = self
             .inventory
@@ -761,6 +765,11 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                         ops,
                         &path,
                         group.result_type(),
+                        if scheduled_action_inputs.contains_key(&node_ids[index]) {
+                            arcweft_core::plan::RuntimeFunctionCaptureMode::Move
+                        } else {
+                            arcweft_core::plan::RuntimeFunctionCaptureMode::SnapshotClone
+                        },
                     ),
                 ),
             };
@@ -774,12 +783,19 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         ops: &[FlowOp],
         path: &str,
         result_type: arcweft_core::runtime_id::RuntimePlanTypeId,
+        capture_mode: arcweft_core::plan::RuntimeFunctionCaptureMode,
     ) -> AwbcFunctionId {
         let result_type_awbc = admitted_plan_type(self.inventory, self.plan, result_type);
         let previous = self
             .line_result_selector
             .replace((result_type, result_type_awbc));
-        let function = self.lower_line_function(captures, ops, path, AwbcFunctionKind::LineTask);
+        let function = self.lower_line_function(
+            captures,
+            ops,
+            path,
+            AwbcFunctionKind::LineTask,
+            capture_mode,
+        );
         self.line_result_selector = previous;
         function
     }
@@ -803,6 +819,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             ops,
             path,
             AwbcFunctionKind::LineCancellationHandler,
+            arcweft_core::plan::RuntimeFunctionCaptureMode::SnapshotClone,
         );
         self.cancellation_handler_result = previous;
         self.line_result_selector = previous_selector;
@@ -815,8 +832,9 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         ops: &[FlowOp],
         path: &str,
         kind: AwbcFunctionKind,
+        capture_mode: arcweft_core::plan::RuntimeFunctionCaptureMode,
     ) -> AwbcFunctionId {
-        self.lower_line_function_with_capture_slots(captures, ops, path, kind)
+        self.lower_line_function_with_capture_slots(captures, ops, path, kind, capture_mode)
             .0
     }
 
@@ -826,6 +844,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         ops: &[FlowOp],
         path: &str,
         kind: AwbcFunctionKind,
+        capture_mode: arcweft_core::plan::RuntimeFunctionCaptureMode,
     ) -> (
         AwbcFunctionId,
         Vec<crate::awbc_lower::frame::FrameCaptureSlot>,
@@ -870,7 +889,9 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 signature,
                 type_context: None,
                 input_ownership: (0..captures.len())
-                    .map(|position| AwbcFunctionInputOwnership::capture(table_index(position)))
+                    .map(|position| {
+                        AwbcFunctionInputOwnership::capture(table_index(position), capture_mode)
+                    })
                     .collect(),
                 frame_layout: layout,
                 blocks: body.blocks,

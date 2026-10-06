@@ -192,7 +192,12 @@ pub(crate) enum PendingAwbcClosure {
     /// resumes this body on the same fiber and retains its source-order result.
     FormatOperand {
         function: AwbcFunctionId,
-        captures: Box<[RuntimeLocalDeclarationId]>,
+        captures: Box<
+            [(
+                RuntimeLocalDeclarationId,
+                arcweft_core::value::RuntimeLocalReadMode,
+            )],
+        >,
         result: RuntimePlanTypeId,
         expression: arcweft_core::value::RuntimeExpr,
         path: String,

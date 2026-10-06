@@ -1023,6 +1023,7 @@ fn line_activation_register_defer_commits_captures_and_cursor() {
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
                         u32::try_from(position).expect("fixture input ordinal"),
+                        crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
                 })
                 .collect(),
@@ -1041,6 +1042,7 @@ fn line_activation_register_defer_commits_captures_and_cursor() {
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
                         u32::try_from(position).expect("fixture input ordinal"),
+                        crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
                 })
                 .collect(),
@@ -2465,8 +2467,8 @@ fn scheduled_actor_look_program() -> AwbcProgram {
         signature: AwbcSignatureId(1),
         type_context: None,
         input_ownership: vec![
-            AwbcFunctionInputOwnership::capture(0),
-            AwbcFunctionInputOwnership::capture(1),
+            AwbcFunctionInputOwnership::capture(0, crate::plan::RuntimeFunctionCaptureMode::Move),
+            AwbcFunctionInputOwnership::capture(1, crate::plan::RuntimeFunctionCaptureMode::Move),
         ],
         frame_layout: AwbcFrameLayoutId(2),
         blocks: AwbcTableRange::new(2, 1),
@@ -3094,6 +3096,7 @@ fn mark_selector_program(
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
                         u32::try_from(position).expect("fixture input ordinal"),
+                        crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
                 })
                 .collect(),
@@ -3112,6 +3115,7 @@ fn mark_selector_program(
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
                         u32::try_from(position).expect("fixture input ordinal"),
+                        crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
                 })
                 .collect(),
@@ -3130,6 +3134,7 @@ fn mark_selector_program(
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
                         u32::try_from(position).expect("fixture input ordinal"),
+                        crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
                 })
                 .collect(),
@@ -3456,6 +3461,7 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
                         u32::try_from(position).expect("fixture input ordinal"),
+                        crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
                 })
                 .collect(),
@@ -3474,6 +3480,7 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
                         u32::try_from(position).expect("fixture input ordinal"),
+                        crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
                 })
                 .collect(),
@@ -3736,6 +3743,7 @@ fn defer_host_call_program() -> AwbcProgram {
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
                         u32::try_from(position).expect("fixture input ordinal"),
+                        crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
                 })
                 .collect(),
@@ -3754,6 +3762,7 @@ fn defer_host_call_program() -> AwbcProgram {
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
                         u32::try_from(position).expect("fixture input ordinal"),
+                        crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
                 })
                 .collect(),
@@ -5845,6 +5854,7 @@ fn await_many_product_program() -> AwbcProgram {
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
                         u32::try_from(position).expect("fixture input ordinal"),
+                        crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
                 })
                 .collect(),

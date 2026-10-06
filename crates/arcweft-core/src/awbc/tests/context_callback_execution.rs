@@ -221,6 +221,7 @@ fn context_fixture(receiver: ContextReceiver, defaulted: bool) -> ContextFixture
             .map(|position| {
                 AwbcFunctionInputOwnership::capture(
                     u32::try_from(position).expect("fixture input ordinal"),
+                    crate::plan::RuntimeFunctionCaptureMode::Move,
                 )
             })
             .collect(),
@@ -877,6 +878,7 @@ fn formatter_context_fixture() -> ContextFixture {
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
                         u32::try_from(position).expect("fixture input ordinal"),
+                        crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
                 })
                 .collect(),
@@ -895,6 +897,7 @@ fn formatter_context_fixture() -> ContextFixture {
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
                         u32::try_from(position).expect("fixture input ordinal"),
+                        crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
                 })
                 .collect(),
