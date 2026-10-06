@@ -1058,40 +1058,63 @@ impl RuntimeAgentExpr {
     /// carries its accepted identity directly and therefore has no authored
     /// runtime operand.
     #[must_use]
-    pub fn operands(&self) -> Vec<&RuntimeExpr> {
+    pub fn operands(&self) -> impl Iterator<Item = &RuntimeExpr> {
+        let mut ordinal = 0;
+        std::iter::from_fn(move || {
+            let operand = self.operand(ordinal);
+            if operand.is_some() {
+                ordinal += 1;
+            }
+            operand
+        })
+    }
+
+    pub(crate) fn operand(&self, ordinal: usize) -> Option<&RuntimeExpr> {
         match self {
             Self::ChoiceAction { .. }
             | Self::Target(RuntimeAgentTargetExpr::Viewport)
-            | Self::Probe(RuntimeAgentProbeExpr::Diagnostics) => Vec::new(),
+            | Self::Probe(RuntimeAgentProbeExpr::Diagnostics) => None,
             Self::Target(
                 RuntimeAgentTargetExpr::Layer { target }
                 | RuntimeAgentTargetExpr::Object { target },
             )
             | Self::Predicate(RuntimeAgentPredicateExpr::ActionEnabled { target }) => {
-                vec![target]
+                (ordinal == 0).then_some(target.as_ref())
             }
             Self::Path(
                 RuntimeAgentPathExpr::State { path } | RuntimeAgentPathExpr::Observation { path },
             )
             | Self::Probe(
                 RuntimeAgentProbeExpr::State { path } | RuntimeAgentProbeExpr::Observation { path },
-            ) => vec![path],
+            ) => (ordinal == 0).then_some(path.as_ref()),
             Self::Probe(
                 RuntimeAgentProbeExpr::Signal { target } | RuntimeAgentProbeExpr::Metric { target },
-            ) => vec![target],
-            Self::Predicate(RuntimeAgentPredicateExpr::Exists { probe }) => vec![probe],
-            Self::Predicate(RuntimeAgentPredicateExpr::DiagnosticsHasError { diagnostics }) => {
-                vec![diagnostics]
+            ) => (ordinal == 0).then_some(target.as_ref()),
+            Self::Predicate(RuntimeAgentPredicateExpr::Exists { probe }) => {
+                (ordinal == 0).then_some(probe.as_ref())
             }
-            Self::Predicate(RuntimeAgentPredicateExpr::Not { predicate }) => vec![predicate],
+            Self::Predicate(RuntimeAgentPredicateExpr::DiagnosticsHasError { diagnostics }) => {
+                (ordinal == 0).then_some(diagnostics.as_ref())
+            }
+            Self::Predicate(RuntimeAgentPredicateExpr::Not { predicate }) => {
+                (ordinal == 0).then_some(predicate.as_ref())
+            }
             Self::Predicate(
                 RuntimeAgentPredicateExpr::All { predicates }
                 | RuntimeAgentPredicateExpr::Any { predicates },
-            ) => predicates.iter().collect(),
+            ) => predicates.as_slice().get(ordinal),
             Self::Predicate(RuntimeAgentPredicateExpr::Compare { probe, value, .. }) => {
-                vec![probe, value]
+                match ordinal {
+                    0 => Some(probe),
+                    1 => Some(value),
+                    _ => None,
+                }
             }
-            Self::ViewportPoint { x, y } => vec![x, y],
+            Self::ViewportPoint { x, y } => match ordinal {
+                0 => Some(x),
+                1 => Some(y),
+                _ => None,
+            },
         }
     }
 

@@ -40,6 +40,7 @@ mod env;
 pub(crate) use env::RuntimeEnvRollbackImage;
 mod expression_literals;
 mod expression_locals;
+mod expression_tree;
 mod format_content;
 mod integer;
 mod nesting;
@@ -114,6 +115,9 @@ pub use character_dialogue::RuntimeCharacterDialogueProducerId;
 pub use color::RuntimeColor;
 pub use data_shape::{RuntimeDataShape, RuntimeDataShapeError};
 pub use expression_locals::RuntimeExprFreeLocalError;
+pub use expression_tree::{
+    RuntimeExpressionChildRole, RuntimeExpressionChildren, RuntimeExpressionNode,
+};
 pub(crate) use format_content::project_display_layout;
 pub use format_content::{
     RuntimeFormatAttemptError, RuntimeFormatContext, RuntimeFormatDataIdentity,

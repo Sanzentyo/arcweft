@@ -151,7 +151,7 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
             }
             RuntimeExprKind::Agent(agent) => {
                 let mut operands = Vec::with_capacity(
-                    agent.operands().len() + usize::from(agent.choice().is_some()),
+                    agent.operands().count() + usize::from(agent.choice().is_some()),
                 );
                 if let Some(choice) = agent.choice() {
                     let entity_ty = self.inventory.intern_type(AwbcRuntimeTypeShape::String);

@@ -105,7 +105,7 @@ fn choice_identity_is_an_abi_operand_without_an_authored_expression() {
         panic!("Agent expression")
     };
     assert_eq!(expression.choice(), Some(&choice));
-    assert!(expression.operands().is_empty());
+    assert!(expression.operands().next().is_none());
     assert_eq!(
         expression.constructor(),
         RuntimeAgentConstructor::ChoiceAction
