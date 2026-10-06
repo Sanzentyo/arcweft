@@ -37,6 +37,44 @@ mod tests {
             .collect()
     }
 
+    #[test]
+    fn nested_content_apostrophes_preserve_typed_bodies_and_lossless_source() {
+        for content in [
+            "#layout(.vertical_rl)[天O'K人][p]",
+            "#outer()[\"]\"][p]",
+            "#outer()[#inner()[O'K]][p]",
+            "#outer()[#[\"a]b\"]][p]",
+            "#outer()[[signal .warning note='a]b']][p]",
+            "#raw()[O'K #unfinished(][p]",
+            "#outer()[#raw()[O'K #unfinished(]][p]",
+            "#outer()[#inner()[O'K] #[\"a]b\"] [signal .warning note='a]b']][p]",
+        ] {
+            let source = format!("flow opening {{\n    alice: {content}\n}}\n");
+            let built =
+                parse_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
+            assert!(
+                built.diagnostics().is_empty(),
+                "{content}: {:?}",
+                built.diagnostics()
+            );
+            assert_eq!(built.green().to_string(), source);
+            let nested = applications(&built);
+            assert!(nested.len() >= 2);
+            assert!(nested.iter().all(|application| !matches!(
+                application.content(),
+                SyntaxDialogueContentProjection::Missing { .. }
+            )));
+            if content == "#raw()[O'K #unfinished(][p]"
+                || content == "#outer()[#raw()[O'K #unfinished(]][p]"
+            {
+                assert!(nested.iter().any(|application| matches!(
+                    application.content(), SyntaxDialogueContentProjection::RawLiteral(literal)
+                        if literal.value() == "O'K #unfinished("
+                )));
+            }
+        }
+    }
+
     fn callback_call_projections(
         built: &crate::grammar::build::GrammarBuild,
     ) -> Vec<&PendingExpressionProjection> {

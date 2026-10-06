@@ -352,13 +352,13 @@ struct LogicalTokenRange {
 fn logical_token_ranges(source: &str, tokens: &[LexToken]) -> Vec<LogicalTokenRange> {
     let mut ranges = Vec::new();
     let mut start = 0;
-    let mut delimiter_depth = 0_usize;
+    let mut delimiters = DocumentDelimiterStack::default();
     for (index, token) in tokens.iter().enumerate() {
-        delimiter_depth = delimiter_depth_after(source, token.kind, token.range, delimiter_depth);
+        delimiters.observe(source, token.kind, token.range);
         let header_angle_open = token.kind == SyntaxKind::NewlineToken
-            && delimiter_depth == 0
+            && delimiters.is_empty()
             && declaration_header_angle_is_open(source, &tokens[start..=index]);
-        let nested_delimiter_open = delimiter_depth != 0 || header_angle_open;
+        let nested_delimiter_open = !delimiters.is_empty() || header_angle_open;
         let recovery_sync = token.kind == SyntaxKind::NewlineToken
             && nested_delimiter_open
             && begins_unindented_declaration(source, tokens, index + 1);
@@ -369,7 +369,7 @@ fn logical_token_ranges(source: &str, tokens: &[LexToken]) -> Vec<LogicalTokenRa
             });
             start = index + 1;
             if recovery_sync {
-                delimiter_depth = 0;
+                delimiters.clear();
             }
         }
     }
@@ -405,10 +405,10 @@ fn begins_unindented_declaration(source: &str, tokens: &[LexToken], start: usize
 }
 
 fn recovery_logical_line_end(source: &str, tokens: &[LexToken], start: usize) -> usize {
-    let mut delimiter_depth = 0_usize;
+    let mut delimiters = DocumentDelimiterStack::default();
     for (relative, token) in tokens[start..].iter().enumerate() {
-        delimiter_depth = delimiter_depth_after(source, token.kind, token.range, delimiter_depth);
-        if token.kind == SyntaxKind::NewlineToken && delimiter_depth == 0 {
+        delimiters.observe(source, token.kind, token.range);
+        if token.kind == SyntaxKind::NewlineToken && delimiters.is_empty() {
             return start + relative + 1;
         }
     }
@@ -676,7 +676,7 @@ fn wrap_declaration_logical_lines(source: &str, item_start: usize, events: &mut 
     let mut line_open = false;
     let mut line_ordinal = 0_u32;
     let mut nested_depth = 0_usize;
-    let mut delimiter_depth = 0_usize;
+    let mut delimiters = DocumentDelimiterStack::default();
     let mut header_angle_depth = 0_usize;
     let mut in_declaration_header = true;
     let mut pending_boundary = false;
@@ -733,10 +733,10 @@ fn wrap_declaration_logical_lines(source: &str, item_start: usize, events: &mut 
                     }
                 }
                 if *kind == SyntaxKind::PunctuationToken {
-                    delimiter_depth = delimiter_depth_after(source, *kind, *range, delimiter_depth);
+                    delimiters.observe(source, *kind, *range);
                 }
                 if *kind == SyntaxKind::NewlineToken
-                    && delimiter_depth == 0
+                    && delimiters.is_empty()
                     && header_angle_depth == 0
                 {
                     pending_boundary = true;
@@ -889,19 +889,43 @@ fn budget_failure(budget: &GrammarBudget) -> Result<(), GrammarBuildError> {
         .map_or(Ok(()), |limit| Err(GrammarBuildError::LimitExceeded(limit)))
 }
 
-fn delimiter_depth_after(
-    source: &str,
-    kind: SyntaxKind,
-    range: SourceRange,
-    depth: usize,
-) -> usize {
-    if kind != SyntaxKind::PunctuationToken {
-        return depth;
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum DocumentDelimiter {
+    Parenthesis,
+    Bracket,
+    Brace,
+}
+
+/// A closing delimiter cannot consume an unrelated enclosing declaration.
+/// Typed child grammars diagnose unmatched tokens inside their own interval.
+#[derive(Default)]
+struct DocumentDelimiterStack(Vec<DocumentDelimiter>);
+
+impl DocumentDelimiterStack {
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
-    match &source[range.as_range()] {
-        "(" | "[" | "{" => depth + 1,
-        ")" | "]" | "}" => depth.saturating_sub(1),
-        _ => depth,
+    fn clear(&mut self) {
+        self.0.clear();
+    }
+    fn observe(&mut self, source: &str, kind: SyntaxKind, range: SourceRange) {
+        if kind != SyntaxKind::PunctuationToken {
+            return;
+        }
+        let (delimiter, opening) = match &source[range.as_range()] {
+            "(" => (DocumentDelimiter::Parenthesis, true),
+            "[" => (DocumentDelimiter::Bracket, true),
+            "{" => (DocumentDelimiter::Brace, true),
+            ")" => (DocumentDelimiter::Parenthesis, false),
+            "]" => (DocumentDelimiter::Bracket, false),
+            "}" => (DocumentDelimiter::Brace, false),
+            _ => return,
+        };
+        if opening {
+            self.0.push(delimiter);
+        } else if self.0.last() == Some(&delimiter) {
+            self.0.pop();
+        }
     }
 }
 

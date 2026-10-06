@@ -1083,12 +1083,7 @@ fn is_raw_content_target(
     target: super::expression::CompletedNode,
     callee: &ScannedContentApplicationCallee,
 ) -> bool {
-    let ScannedContentApplicationCallee::ImplicitRoot(name) = callee else {
-        return false;
-    };
-    let raw = crate::name::SyntaxName::try_new("raw")
-        .expect("the built-in raw content callable has a valid syntax name");
-    if name != &raw {
+    if !matches!(callee, ScannedContentApplicationCallee::RawLiteral) {
         return false;
     }
     let Some(range) = parser.completed_range(target.start_event) else {

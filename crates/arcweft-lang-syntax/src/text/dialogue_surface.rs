@@ -72,6 +72,8 @@ pub(crate) enum ScannedDialogueSurfaceKind {
 pub(crate) enum ScannedContentApplicationCallee {
     ImplicitRoot(crate::name::SyntaxName),
     Qualified,
+    /// Reserved no-parse body grammar; call validity remains Pratt-owned.
+    RawLiteral,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -284,7 +286,7 @@ fn scan_content_application(source: &str, start: usize) -> Option<ScannedDialogu
     let hash_end = start.checked_add('#'.len_utf8())?;
     let (head_end, has_call, callee) = scan_content_expression_head(source, hash_end)?;
     let body = has_call
-        .then(|| scan_content_application_body(source, head_end))
+        .then(|| scan_content_application_body(source, head_end, &callee))
         .flatten();
     let end = body.map_or(head_end, ScannedContentApplicationBody::end);
     (hash_end < end).then_some(scanned(
@@ -303,10 +305,16 @@ fn scan_content_application(source: &str, start: usize) -> Option<ScannedDialogu
 fn scan_content_application_body(
     source: &str,
     start: usize,
+    callee: &ScannedContentApplicationCallee,
 ) -> Option<ScannedContentApplicationBody> {
     let open_end = start.checked_add('['.len_utf8())?;
     source.get(start..)?.starts_with('[').then_some(())?;
-    let close = balanced_close(source, open_end, '[', ']').and_then(|start| {
+    let close = match callee {
+        ScannedContentApplicationCallee::RawLiteral => balanced_close(source, open_end, '[', ']'),
+        ScannedContentApplicationCallee::ImplicitRoot(_)
+        | ScannedContentApplicationCallee::Qualified => content_bracket_close(source, open_end),
+    }
+    .and_then(|start| {
         let end = start.checked_add(']'.len_utf8())?;
         Some(TextRange::new(start, end))
     });
@@ -319,8 +327,8 @@ fn scan_content_application_body(
 }
 
 /// Finds the deterministic lexical boundary handed to the ordinary Pratt
-/// parser for a `#` escape. This deliberately does not classify callee names:
-/// every identifier/path and every parenthesized call uses the same rule.
+/// parser for a `#` escape. All heads use the same expression boundary rule;
+/// the reserved raw callee retains its distinct no-parse body grammar.
 fn scan_content_expression_head(
     source: &str,
     start: usize,
@@ -378,6 +386,8 @@ fn scan_content_expression_head(
     }
     let callee = if qualified {
         ScannedContentApplicationCallee::Qualified
+    } else if source.get(start..first_end)? == "raw" {
+        ScannedContentApplicationCallee::RawLiteral
     } else {
         ScannedContentApplicationCallee::ImplicitRoot(
             crate::name::SyntaxName::try_new(source.get(start..first_end)?).ok()?,
@@ -386,6 +396,8 @@ fn scan_content_expression_head(
     Some((cursor, has_call, callee))
 }
 
+/// Ordinary expression strings use double quotes; an apostrophe introduces
+/// a lifetime and must not hide an expression's closing delimiter.
 fn balanced_close(source: &str, start: usize, open: char, close: char) -> Option<usize> {
     let mut depth = 1_u32;
     let mut quote = None;
@@ -401,7 +413,7 @@ fn balanced_close(source: &str, start: usize, open: char, close: char) -> Option
             }
             continue;
         }
-        if matches!(character, '"' | '\'') {
+        if character == '"' {
             quote = Some(character);
             continue;
         }
@@ -417,10 +429,127 @@ fn balanced_close(source: &str, start: usize, open: char, close: char) -> Option
     None
 }
 
+#[derive(Clone, Copy)]
+enum ContentBracketRegion {
+    Content,
+    PointHead,
+}
+
+/// Content apostrophes are text. Nested point heads own quoted argument values,
+/// while hash heads and interpolations own ordinary expression delimiters.
+/// The explicit region stack keeps deeply nested bodies off the Rust stack.
+fn content_bracket_close(source: &str, start: usize) -> Option<usize> {
+    let mut regions = vec![ContentBracketRegion::Content];
+    let mut cursor = start;
+    let mut quote = None;
+    let mut escaped = false;
+    while let Some(character) = source.get(cursor..)?.chars().next() {
+        let width = character.len_utf8();
+        if escaped {
+            escaped = false;
+            cursor += width;
+            continue;
+        }
+        if character == '\\' {
+            escaped = true;
+            cursor += width;
+            continue;
+        }
+        if let Some(active) = quote {
+            if character == active {
+                quote = None;
+            }
+            cursor += width;
+            continue;
+        }
+        match (regions.last()?, character) {
+            (ContentBracketRegion::Content, '"') => quote = Some(character),
+            (ContentBracketRegion::PointHead, '"' | '\'') => quote = Some(character),
+            (_, '[') => regions.push(ContentBracketRegion::PointHead),
+            (_, ']') => {
+                regions.pop();
+                if regions.is_empty() {
+                    return Some(cursor);
+                }
+            }
+            (ContentBracketRegion::Content, '#') => {
+                let after_hash = cursor.checked_add(width)?;
+                if source.get(after_hash..)?.starts_with('[') {
+                    cursor = balanced_close(source, after_hash + 1, '[', ']')?.checked_add(1)?;
+                    continue;
+                }
+                if let Some((end, has_call, callee)) =
+                    scan_content_expression_head(source, after_hash)
+                {
+                    cursor = end;
+                    if has_call && source.get(cursor..)?.starts_with('[') {
+                        if matches!(callee, ScannedContentApplicationCallee::RawLiteral) {
+                            cursor =
+                                balanced_close(source, cursor + 1, '[', ']')?.checked_add(1)?;
+                            continue;
+                        }
+                        regions.push(ContentBracketRegion::Content);
+                        cursor += 1;
+                    }
+                    continue;
+                }
+            }
+            _ => {}
+        }
+        cursor += width;
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::{ScannedDialogueSurfaceKind, ScannedInterpolationForm, scan_dialogue_surface};
     use crate::ast::common::TextRange;
+
+    #[test]
+    fn content_boundaries_distinguish_text_expression_and_point_head_quotes() {
+        for source in [
+            "#wrap()[O'K]tail",
+            "#wrap()[\"O'K\"]tail",
+            "#wrap()[\"]\"]tail",
+            "#wrap('scope)[O'K]tail",
+            "#wrap()[#nested()[O'K] #[\"a]b\"] [signal note='a]b'] \\[text\\]]tail",
+            "#raw()[a[b[c]d]e]tail",
+            "#raw()[O'K #unfinished(]tail",
+            "#wrap()[#raw()[O'K #unfinished(]]tail",
+        ] {
+            let expected_end = source.len() - "tail".len();
+            let surface = scan_dialogue_surface(source, 0, source.len()).expect(source);
+            assert_eq!(surface.end(), expected_end, "{source}");
+            let ScannedDialogueSurfaceKind::ContentApplication { body, .. } = surface.kind() else {
+                panic!("content application")
+            };
+            let body = body.expect("body");
+            assert_eq!(
+                body.close(),
+                Some(TextRange::new(expected_end - 1, expected_end))
+            );
+        }
+    }
+
+    #[test]
+    fn hash_interpolation_lifetime_does_not_hide_its_close() {
+        let source = "#['scope]tail";
+        let surface = scan_dialogue_surface(source, 0, source.len()).unwrap();
+        assert_eq!(surface.end(), source.len() - "tail".len());
+        assert!(matches!(
+            surface.kind(),
+            ScannedDialogueSurfaceKind::Interpolation { .. }
+        ));
+    }
+
+    #[test]
+    fn content_boundary_scan_is_iterative_for_deep_hash_bodies() {
+        let depth = 20_000;
+        let source = format!("{}O'K{}tail", "#wrap()[".repeat(depth), "]".repeat(depth));
+        let surface = scan_dialogue_surface(&source, 0, source.len()).unwrap();
+        assert_eq!(surface.end(), source.len() - "tail".len());
+    }
 
     #[test]
     fn scans_retained_surfaces_and_canonical_content_calls() {

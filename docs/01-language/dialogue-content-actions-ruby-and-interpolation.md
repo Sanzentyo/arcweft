@@ -52,6 +52,13 @@ declared content type is dialogue/rich text, are point controls, host actions,
 typed `#name(args)[content]` calls, and `#[...]` interpreted as dialogue markup.
 In normal typed code, brackets keep their normal meaning.
 
+Apostrophes in dialogue body text are ordinary text. Double-quoted source
+ranges retain their text and protect enclosed delimiters.
+Quoted argument values belong to point-action heads, and string literals belong
+to expression heads and interpolations. Those nested grammars retain their own
+delimiter rules; for example, `#layout(.vertical_rl)[天O'K人][p]` keeps the
+apostrophe inside the content body.
+
 Historical flat-fence imports treat a physical text line beginning with `===`
 as a fence. In stable source, use canonical dialogue calls such as
 `alice()[...]`; tooling migrations escape literal text that begins with
