@@ -8482,7 +8482,7 @@ fn runtime_closure_instance_fact(
     let checked = analysis
         .expression(owner)
         .ok_or_else(|| error("closure-instance has no checked expression fact"))?;
-    let CheckedExpressionResolution::Closure(checked_closure) = checked.resolution() else {
+    let CheckedExpressionResolution::Closure(_) = checked.resolution() else {
         return Err(error(
             "closure-instance owner has no checked closure authority",
         ));
@@ -8528,20 +8528,15 @@ fn runtime_closure_instance_fact(
             ))
         })
         .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
-    let captures = checked_closure
+    let captures = checked_execution
         .captures()
         .iter()
-        .enumerate()
-        .map(|(position, capture)| {
-            let position = u32::try_from(position)
-                .map_err(|_| error("closure capture position exceeds u32"))?;
+        .map(|capture| {
             let checked = analysis
                 .capture(capture.capture())
                 .ok_or_else(|| error("closure capture has no checked type"))?;
             Ok(RuntimeClosureCaptureFact::new(
-                position,
-                capture.capture(),
-                capture.local(),
+                capture.clone(),
                 lexical.runtime_type(checked.ty(), symbols, world, analysis)?,
             ))
         })
@@ -8587,6 +8582,7 @@ fn runtime_closure_instance_fact(
             },
             checked_execution.id().clone(),
         ),
+        checked_execution.clone(),
         owner,
         function_type,
         checked_execution.suspension(),

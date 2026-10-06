@@ -65,12 +65,12 @@ impl CheckedExecutionCoordinate {
 
 /// Stable identity of an admitted execution definition and its selected intent.
 /// This identifies a lexical definition, not its body contents or a closed
-/// instance. Only the accepted execution-input authority can issue these bytes.
+/// instance. Only accepted final-analysis execution projections issue these bytes.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CheckedExecutionDefinitionIdentity([u8; 32]);
 
 impl CheckedExecutionDefinitionIdentity {
-    fn from_coordinate(
+    pub(in crate::final_analysis) fn from_coordinate(
         coordinate: &CheckedExecutionCoordinate,
     ) -> Result<Self, crate::semantic_coordinate::SemanticCoordinateEncodingError> {
         let (tag, bytes) = match coordinate {

@@ -242,11 +242,12 @@ pub use recovery_diagnostics::{
     project_callable_tail_recovery_diagnostics,
 };
 pub use report::{
-    CheckedCallExecutionCallee, CheckedExecutableRuntimeExpressionFactFamily,
-    CheckedExecutableRuntimeExpressionFactOwner, CheckedExecutableRuntimeFactPartition,
-    CheckedExecutableRuntimePatternFactFamily, CheckedExecutableRuntimePatternFactOwner,
-    CheckedExecutableRuntimeStatementFactFamily, CheckedExecutableRuntimeStatementFactOwner,
-    CheckedExpressionExecution, FinalAnalysisClosureExecution, FinalAnalysisExecutionProjection,
+    CheckedCallExecutionCallee, CheckedClosureCaptureOrigin,
+    CheckedExecutableRuntimeExpressionFactFamily, CheckedExecutableRuntimeExpressionFactOwner,
+    CheckedExecutableRuntimeFactPartition, CheckedExecutableRuntimePatternFactFamily,
+    CheckedExecutableRuntimePatternFactOwner, CheckedExecutableRuntimeStatementFactFamily,
+    CheckedExecutableRuntimeStatementFactOwner, CheckedExpressionExecution,
+    FinalAnalysisClosureExecution, FinalAnalysisExecutionProjection,
     FinalAnalysisExecutionProjectionError, FinalAnalysisImplicitCallableBody,
     FinalAnalysisImplicitCallableView, FinalAnalysisPipeView, FinalAnalysisTryView,
     FinalSemanticAnalysis,

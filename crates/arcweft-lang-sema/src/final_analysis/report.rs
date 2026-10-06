@@ -135,13 +135,53 @@ pub enum CheckedCallExecutionCallee {
 /// Exact checked execution row for one explicit closure producer.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FinalAnalysisClosureExecution {
+    owner: ExprId,
+    definition_identity: super::CheckedExecutionDefinitionIdentity,
+    captures: Box<[CheckedClosureCaptureOrigin]>,
     id: crate::callable::CheckedClosureId,
     effects: crate::effect_row::EffectRow,
     suspension: super::CheckedSuspensionRole,
     control: super::CheckedExecutableControlRole,
 }
 
+/// Accepted stable origin and exact generation-local join of one closure
+/// capture. Only the final closure execution projection issues these rows.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedClosureCaptureOrigin {
+    position: u32,
+    capture: CaptureId,
+    source: LocalId,
+    origin: crate::semantic_coordinate::StableCheckedBindingCoordinate,
+}
+
+impl CheckedClosureCaptureOrigin {
+    pub const fn position(&self) -> u32 {
+        self.position
+    }
+    pub const fn capture(&self) -> CaptureId {
+        self.capture
+    }
+    pub const fn source(&self) -> LocalId {
+        self.source
+    }
+    pub const fn origin(&self) -> &crate::semantic_coordinate::StableCheckedBindingCoordinate {
+        &self.origin
+    }
+}
+
 impl FinalAnalysisClosureExecution {
+    pub const fn owner(&self) -> ExprId {
+        self.owner
+    }
+
+    pub const fn definition_identity(&self) -> super::CheckedExecutionDefinitionIdentity {
+        self.definition_identity
+    }
+
+    pub const fn captures(&self) -> &[CheckedClosureCaptureOrigin] {
+        &self.captures
+    }
+
     pub const fn id(&self) -> &crate::callable::CheckedClosureId {
         &self.id
     }
@@ -196,6 +236,10 @@ pub enum FinalAnalysisExecutionProjectionError {
     },
     #[error("checked closure expression {owner:?} has no exact source/execution authority")]
     MissingClosureExecution { owner: ExprId },
+    #[error(
+        "checked closure expression {owner:?} has invalid accepted definition/capture coordinates"
+    )]
+    InvalidClosureCoordinates { owner: ExprId },
     #[error("checked constructor call {owner:?} has no exact instantiated variant authority")]
     InvalidVariantConstructor { owner: ExprId },
 }
@@ -435,12 +479,9 @@ impl FinalAnalysisExecutionProjection<'_> {
             .analysis
             .expression(owner)
             .ok_or(FinalAnalysisExecutionProjectionError::MissingExpression { owner })?;
-        if !matches!(
-            expression.resolution(),
-            CheckedExpressionResolution::Closure(_)
-        ) {
+        let CheckedExpressionResolution::Closure(closure) = expression.resolution() else {
             return Err(FinalAnalysisExecutionProjectionError::WrongExpressionKind { owner });
-        }
+        };
         let module = reachability
             .project()
             .modules()
@@ -468,7 +509,35 @@ impl FinalAnalysisExecutionProjection<'_> {
             .map_err(
                 |_| FinalAnalysisExecutionProjectionError::MissingClosureExecution { owner },
             )?;
+        let coordinates = crate::semantic_coordinate::SemanticCoordinateIndex::new(
+            self.analysis.accepted_root_catalog(),
+            self.analysis,
+        );
+        let invalid = || FinalAnalysisExecutionProjectionError::InvalidClosureCoordinates { owner };
+        let path = coordinates.expression(owner).map_err(|_| invalid())?;
+        let definition_identity = super::CheckedExecutionDefinitionIdentity::from_coordinate(
+            &super::CheckedExecutionCoordinate::CallableBody(path),
+        )
+        .map_err(|_| invalid())?;
+        let captures = closure
+            .captures()
+            .iter()
+            .enumerate()
+            .map(|(position, capture)| {
+                Ok(CheckedClosureCaptureOrigin {
+                    position: u32::try_from(position).map_err(|_| invalid())?,
+                    capture: capture.capture(),
+                    source: capture.local(),
+                    origin: coordinates
+                        .binding(capture.local())
+                        .map_err(|_| invalid())?,
+                })
+            })
+            .collect::<Result<Box<[_]>, FinalAnalysisExecutionProjectionError>>()?;
         Ok(FinalAnalysisClosureExecution {
+            owner,
+            definition_identity,
+            captures,
             id: id.clone(),
             effects: execution.effects().clone(),
             suspension: execution.suspension(),

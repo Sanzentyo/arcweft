@@ -1236,37 +1236,34 @@ impl RuntimeClosureParameterFact {
 /// HIR capture row consumed by the nested executable partition.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeClosureCaptureFact {
-    position: u32,
-    capture: CaptureId,
-    source: LocalId,
+    origin: arcweft_lang_sema::final_analysis::CheckedClosureCaptureOrigin,
     ty: RuntimeNormalizedType,
 }
 
 impl RuntimeClosureCaptureFact {
     pub const fn new(
-        position: u32,
-        capture: CaptureId,
-        source: LocalId,
+        origin: arcweft_lang_sema::final_analysis::CheckedClosureCaptureOrigin,
         ty: RuntimeNormalizedType,
     ) -> Self {
-        Self {
-            position,
-            capture,
-            source,
-            ty,
-        }
+        Self { origin, ty }
     }
 
     pub const fn position(&self) -> u32 {
-        self.position
+        self.origin.position()
     }
 
     pub const fn capture(&self) -> CaptureId {
-        self.capture
+        self.origin.capture()
     }
 
     pub const fn source(&self) -> LocalId {
-        self.source
+        self.origin.source()
+    }
+
+    pub const fn origin(
+        &self,
+    ) -> &arcweft_lang_sema::semantic_coordinate::StableCheckedBindingCoordinate {
+        self.origin.origin()
     }
 
     pub const fn ty(&self) -> &RuntimeNormalizedType {
@@ -1279,6 +1276,7 @@ impl RuntimeClosureCaptureFact {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeClosureInstanceFact {
     key: RuntimeClosureInstanceKey,
+    definition: arcweft_lang_sema::final_analysis::FinalAnalysisClosureExecution,
     owner: ExprId,
     function_type: RuntimeNormalizedType,
     suspension: arcweft_lang_sema::final_analysis::CheckedSuspensionRole,
@@ -1299,6 +1297,7 @@ impl RuntimeClosureInstanceFact {
     )]
     pub fn try_new(
         key: RuntimeClosureInstanceKey,
+        definition: arcweft_lang_sema::final_analysis::FinalAnalysisClosureExecution,
         owner: ExprId,
         function_type: RuntimeNormalizedType,
         suspension: arcweft_lang_sema::final_analysis::CheckedSuspensionRole,
@@ -1319,7 +1318,16 @@ impl RuntimeClosureInstanceFact {
         else {
             return Err(RuntimeProjectFunctionFactError::InvalidFunctionType);
         };
-        if scope.module() != owner.module()
+        if definition.owner() != owner
+            || definition.id() != key.closure()
+            || definition.suspension() != suspension
+            || definition.control() != control
+            || definition.captures().len() != captures.len()
+            || captures
+                .iter()
+                .zip(definition.captures())
+                .any(|(capture, origin)| &capture.origin != origin)
+            || scope.module() != owner.module()
             || body.module() != owner.module()
             || semantics.partition().executable()
                 != &arcweft_lang_hir::project::HirRuntimeExecutableOwner::CallableBody(owner)
@@ -1359,6 +1367,7 @@ impl RuntimeClosureInstanceFact {
         }
         Ok(Self {
             key,
+            definition,
             owner,
             function_type,
             suspension,
@@ -1375,6 +1384,12 @@ impl RuntimeClosureInstanceFact {
 
     pub const fn key(&self) -> &RuntimeClosureInstanceKey {
         &self.key
+    }
+
+    pub const fn definition_identity(
+        &self,
+    ) -> arcweft_lang_sema::final_analysis::CheckedExecutionDefinitionIdentity {
+        self.definition.definition_identity()
     }
 
     pub const fn owner(&self) -> ExprId {

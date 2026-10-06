@@ -467,7 +467,17 @@ flow main() -> i64 {
         .collect::<Vec<_>>();
     assert_eq!(instances.len(), 2);
     let mut closure_owner = None;
+    let mut definition_origins = BTreeSet::new();
     let mut capture_types = Vec::new();
+    let analysis = compiled.analysis_lease().final_analysis();
+    let reachability = crate::lower::project_runtime_reachability(
+        executable,
+        compiled.analysis_lease().project_symbols(),
+        analysis,
+        analysis.checked_entries(),
+        crate::lower::RuntimeEmissionMode::CheckAll,
+    )
+    .unwrap();
     for instance in instances {
         let closure = instance
             .semantics()
@@ -495,6 +505,25 @@ flow main() -> i64 {
         let [capture] = closure.captures() else {
             panic!("closure captures the generic parameter once")
         };
+        definition_origins.insert((closure.definition_identity(), capture.origin().clone()));
+        let definition = analysis
+            .execution_projection()
+            .closure_execution(&reachability, closure.owner())
+            .unwrap();
+        assert_eq!(
+            closure.definition_identity(),
+            definition.definition_identity()
+        );
+        assert_eq!(capture.origin(), definition.captures()[0].origin());
+        assert!(matches!(
+            arcweft_runtime_plan::semantic_facts::RuntimeClosureInstanceFact::try_new(
+                closure.key().clone(), definition, closure.owner(), closure.function_type().clone(),
+                closure.suspension(), closure.control(), closure.execution(), closure.effects().into(),
+                closure.scope(), closure.body(), closure.parameters().into(), Box::new([]),
+                closure.semantics().clone(),
+            ),
+            Err(arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionFactError::InvalidClosureInstance)
+        ), "an otherwise valid instance cannot omit an accepted capture row");
         assert_eq!(
             closure.semantics().ty(
                 arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionTypeOwner::Local(
@@ -527,11 +556,56 @@ flow main() -> i64 {
         capture_types.push(capture.ty().identity());
     }
     capture_types.sort();
+    assert_eq!(
+        definition_origins.len(),
+        1,
+        "generic instances share one accepted lexical definition and capture origin"
+    );
     capture_types.dedup();
     assert_eq!(
         capture_types.len(),
         2,
         "i64 and String captures stay closed"
+    );
+}
+
+#[test]
+fn closure_definition_and_capture_origins_survive_source_revisions() {
+    fn observe(source: &str) -> arcweft_runtime_plan::semantic_facts::RuntimeClosureInstanceFact {
+        let (project, context) = removed_role_project(source);
+        let (mut session, parsed_sources) = compilation_state(&project);
+        let compiled = compile_project(&mut session, &project, &parsed_sources, &context).unwrap();
+        let closures = compiled.runtime_facts().root_closures().collect::<Vec<_>>();
+        assert_eq!(closures.len(), 1);
+        closures[0].clone()
+    }
+    let source = "flow main() -> i64 { let first = 20i64; let second = 22i64; let callback = || first + second; return callback() }";
+    let original = observe(source);
+    let revised = observe(&format!(
+        "fn unrelated() -> i64 {{ 99i64 }}\n{}",
+        source.replace("first + second", "first + second + 1i64")
+    ));
+    assert_ne!(original.key(), revised.key());
+    assert_eq!(
+        original.definition_identity(),
+        revised.definition_identity()
+    );
+    let origins = |closure: &arcweft_runtime_plan::semantic_facts::RuntimeClosureInstanceFact| {
+        closure
+            .captures()
+            .iter()
+            .map(|capture| (capture.position(), capture.origin().clone()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(origins(&original), origins(&revised));
+    assert_eq!(original.captures().len(), 2);
+    assert_ne!(
+        original.captures()[0].origin(),
+        original.captures()[1].origin()
+    );
+    assert_ne!(
+        original.definition_identity(),
+        observe(&source.replace("flow main", "flow other")).definition_identity()
     );
 }
 
