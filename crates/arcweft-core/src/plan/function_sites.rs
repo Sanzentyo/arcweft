@@ -32,7 +32,8 @@ impl RuntimeFunctionDefinitionIdentity {
 
 /// Accepted whole-formal identity, independent of its frame local and ABI.
 /// These bytes transport semantic identity; they do not prove body admission.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
 pub struct RuntimeFunctionParameterIdentity([u8; 32]);
 
 impl RuntimeFunctionParameterIdentity {

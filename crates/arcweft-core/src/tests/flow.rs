@@ -1917,6 +1917,9 @@ fn await_progress_runs_only_the_first_matching_observer() {
         .push_flow_schema(RuntimeFlowSchema {
             flow: entry.clone(),
             parameters: vec![crate::entry::RuntimeFlowExecutableParameter {
+                identity: crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+                    [92; 32],
+                ),
                 coordinate: crate::entry::FlowParameterCoordinate::from_position(0),
                 name: "pending".to_owned(),
                 mode: crate::entry::RuntimeFlowParameterMode::Owned,

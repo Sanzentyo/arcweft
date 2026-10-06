@@ -392,6 +392,8 @@ Core の入力行は ordinal と別に stable origin を必須で保持する。
 whole-formal identity は Core の専用型でも保持し、structured function-site と
 direct callable の両方で同じ identity domain を使う。pure helper と trait method の
 各入力行は、受理済み formal の identity・local・passing・physical ABI を一緒に保持する。
+Flow の invocation schema も whole-formal identity を必須で保持し、Entry の
+投影・通常 Flow の生成・保存後の復元で同じ受理済み identity を維持する。
 
 AWBC の各入力行も取得元を必須で保持し、parameter と captured parameter は
 静的な passing 区分を codec の往復後も保持する。retained 入力を先行させ、

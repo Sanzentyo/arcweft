@@ -3178,6 +3178,7 @@ fn flow_facts_retain_the_accepted_body_and_complete_formals() {
         .unwrap();
     assert_eq!(schema.parameters.len(), 3);
     for (parameter, formal) in schema.parameters.iter().zip(fact.definition().parameters()) {
+        assert_eq!(parameter.identity, formal.identity().runtime_identity());
         assert_eq!(parameter.passing, formal.passing());
         assert_eq!(
             parameter.mode,
@@ -3188,6 +3189,15 @@ fn flow_facts_retain_the_accepted_body_and_complete_formals() {
     assert_eq!(
         serde_json::from_value::<arcweft_core::entry::RuntimeFlowSchema>(encoded.clone()).unwrap(),
         *schema
+    );
+    let mut missing_identity = encoded.clone();
+    missing_identity["parameters"][2]
+        .as_object_mut()
+        .unwrap()
+        .remove("identity");
+    assert!(
+        serde_json::from_value::<arcweft_core::entry::RuntimeFlowSchema>(missing_identity).is_err(),
+        "restored Flow input must retain its accepted whole-formal identity"
     );
     let mut omitted = encoded;
     omitted["parameters"][2]

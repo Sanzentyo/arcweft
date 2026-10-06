@@ -2160,6 +2160,7 @@ fn flow_invocation_schema(
                     )));
                 }
                 Ok(RuntimeFlowExecutableParameter {
+                    identity: formal.identity().runtime_identity(),
                     coordinate: FlowParameterCoordinate::try_from_index(index)
                         .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
                     name: name.as_str().to_owned(),

@@ -113,6 +113,9 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
         .push_flow_schema(RuntimeFlowSchema {
             flow: entry.clone(),
             parameters: vec![crate::entry::RuntimeFlowExecutableParameter {
+                identity: crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+                    [92; 32],
+                ),
                 coordinate: crate::entry::FlowParameterCoordinate::from_position(0),
                 name: "pending".to_owned(),
                 mode: crate::entry::RuntimeFlowParameterMode::Owned,

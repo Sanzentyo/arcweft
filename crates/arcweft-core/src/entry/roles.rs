@@ -170,6 +170,7 @@ pub enum FlowParameterCoordinateError {
 /// Exact executable flow parameter metadata used by entry verification.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RuntimeFlowExecutableParameter {
+    pub identity: crate::plan::RuntimeFunctionParameterIdentity,
     pub coordinate: FlowParameterCoordinate,
     pub name: String,
     pub mode: RuntimeFlowParameterMode,

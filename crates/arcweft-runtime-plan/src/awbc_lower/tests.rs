@@ -2054,6 +2054,10 @@ fn await_observers_lower_to_progress_dispatch_and_rewait_backedge() {
         .push_flow_schema(RuntimeFlowSchema {
             flow: main.clone(),
             parameters: vec![arcweft_core::entry::RuntimeFlowExecutableParameter {
+                identity:
+                    arcweft_core::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+                        [92; 32],
+                    ),
                 coordinate: arcweft_core::entry::FlowParameterCoordinate::from_position(0),
                 name: "pending".to_owned(),
                 mode: arcweft_core::entry::RuntimeFlowParameterMode::Owned,

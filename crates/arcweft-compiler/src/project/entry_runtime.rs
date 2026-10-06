@@ -225,6 +225,7 @@ fn project_stateful_entry(
         RuntimeFlowSchema {
             flow: initial_flow.flow.clone(),
             parameters: vec![RuntimeFlowExecutableParameter {
+                identity: state_formal.identity().runtime_identity(),
                 coordinate: arcweft_core::entry::FlowParameterCoordinate::from_position(0),
                 name: checked.initial_flow().state_parameter_name().to_owned(),
                 mode: RuntimeFlowParameterMode::Owned,
@@ -366,6 +367,7 @@ fn runtime_entry_flow(
             .iter()
             .zip(definition.definition().parameters())
             .map(|(parameter, formal)| RuntimeFlowExecutableParameter {
+                identity: formal.identity().runtime_identity(),
                 coordinate: parameter.coordinate(),
                 name: parameter.name().as_str().to_owned(),
                 mode: RuntimeFlowParameterMode::Owned,
