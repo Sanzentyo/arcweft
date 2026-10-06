@@ -361,7 +361,10 @@ pub(crate) fn validate_presentation_runtime_status(
     status: &FlowFiberStatus,
 ) -> Result<(), BundleSessionSaveError> {
     match status {
-        FlowFiberStatus::Dialogue(activation) => {
+        FlowFiberStatus::Dialogue(dialogue_status)
+            if dialogue_status.waiting_presentation_activation().is_some() =>
+        {
+            let activation = dialogue_status.activation();
             let mut waiting = snapshot.dialogue.waiting_entries();
             let Some((presentation, dialogue)) = waiting.next() else {
                 return Err(BundleSessionSaveError::Presentation {

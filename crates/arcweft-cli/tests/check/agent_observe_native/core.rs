@@ -1221,3 +1221,14 @@ flow main {
             .any(|event| event["event"]["kind"] == "voice")
     );
 }
+#[test]
+fn agent_observe_native_dialogue_initialization_has_no_missing_presentation_diagnostic() {
+    let (path, entry) = temp_main_cli_fixture(
+        "agent-observe-native-dialogue-initialization",
+        "pub character alice { display = \"Alice\" }\nflow main { alice: Hello[p] }\n",
+    );
+    let report = observe_native_rich_text_layer_report_at_entry(&path, &entry);
+    fs::remove_file(path).expect("remove dialogue initialization fixture");
+    assert_eq!(report["diagnostics"], serde_json::json!([]));
+    assert_native_rich_text_layer_image_has_content(&report);
+}

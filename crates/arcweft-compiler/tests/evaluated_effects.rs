@@ -179,7 +179,19 @@ fn assert_single_dialogue_execution(
             }
         }
         match &status {
-            FlowFiberStatus::Running | FlowFiberStatus::Dialogue(_) => {}
+            FlowFiberStatus::Running => {}
+            FlowFiberStatus::Dialogue(dialogue) => {
+                if let Some(activation) = dialogue.waiting_presentation_activation() {
+                    assert_eq!(seen, 1, "presentation wait follows its reveal event");
+                    assert_eq!(activation, dialogue.activation());
+                } else if seen == 0 {
+                    assert_eq!(
+                        dialogue.phase(),
+                        arcweft_core::engine::DialogueRuntimePhase::Activating,
+                        "pre-reveal suspension retains execution without a presentation wait"
+                    );
+                }
+            }
             FlowFiberStatus::Done(exit) => {
                 assert_eq!(*exit, FlowExit::Done);
                 assert_eq!(seen, 1, "the selected line executes once");

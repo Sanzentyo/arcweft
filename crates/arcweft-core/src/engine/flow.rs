@@ -3,7 +3,7 @@ mod format_attempt;
 mod function_call;
 pub(super) mod match_guard;
 
-use super::dialogue::{DialogueActivationFrame, DialogueLineTaskState, DialogueRuntimePhase};
+use super::dialogue::{DialogueActivationFrame, DialogueLineTaskState};
 use super::{
     ChoiceState, Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowCursor, FlowEvent,
     FlowFiberStatus, FlowOp, FlowScopeCleanup, HostCallState, RuntimeDiagnostic, RuntimeEvalError,
@@ -299,7 +299,7 @@ impl Engine {
                     locals,
                     line_task: DialogueLineTaskState::NotStarted,
                     elapsed: LogicalDuration::default(),
-                    phase: DialogueRuntimePhase::Activating,
+                    phase: super::DialogueRuntimePhase::Activating,
                     result_target: result,
                     voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
                     values: values.into_boxed_slice(),
@@ -318,7 +318,10 @@ impl Engine {
                     self.fiber.status = FlowFiberStatus::Failed(error.to_string());
                     return;
                 }
-                self.fiber.status = FlowFiberStatus::Dialogue(activation);
+                self.fiber.status = FlowFiberStatus::Dialogue(super::DialogueExecutionStatus::new(
+                    activation,
+                    super::DialogueRuntimePhase::Activating,
+                ));
             }
             FlowOp::Choice { id, options } => {
                 output.flow_events.push(FlowEvent::ChoicePresented {

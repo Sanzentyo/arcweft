@@ -1,4 +1,5 @@
-use super::dialogue::{DialogueLineTaskState, DialogueRuntimePhase};
+use super::DialogueRuntimePhase;
+use super::dialogue::DialogueLineTaskState;
 use super::{
     AwaitItemType, AwaitManyInFlight, AwaitManyState, AwaitState, CancelScopeId, ChoiceState,
     Engine, FlowEvent, FlowExit, FlowFiberStatus, HostCallState, LineEffectRequest,
@@ -60,13 +61,14 @@ impl Engine {
         let status = std::mem::replace(&mut self.fiber.status, FlowFiberStatus::Running);
         match status {
             FlowFiberStatus::Dialogue(activation) => {
-                let transaction = match self.begin_dialogue_activation_transaction(&activation) {
-                    Ok(transaction) => transaction,
-                    Err(error) => {
-                        self.fail_eval(error, output);
-                        return true;
-                    }
-                };
+                let transaction =
+                    match self.begin_dialogue_activation_transaction(activation.activation()) {
+                        Ok(transaction) => transaction,
+                        Err(error) => {
+                            self.fail_eval(error, output);
+                            return true;
+                        }
+                    };
                 self.resume_dialogue_state(
                     transaction,
                     input.dialogue_input_actions.as_slice(),

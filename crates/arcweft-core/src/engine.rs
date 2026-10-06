@@ -1025,11 +1025,54 @@ impl RootCallableEvaluator for StructuredRootEvaluator<'_> {
     }
 }
 
+/// Execution phase of the sole dialogue activation owner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DialogueRuntimePhase {
+    Activating,
+    Ready,
+    Closing,
+    Publishing,
+}
+
+/// Published projection of a suspended dialogue activation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DialogueExecutionStatus {
+    activation: DialogueActivationId,
+    phase: DialogueRuntimePhase,
+}
+
+impl DialogueExecutionStatus {
+    pub(crate) const fn new(activation: DialogueActivationId, phase: DialogueRuntimePhase) -> Self {
+        Self { activation, phase }
+    }
+
+    #[must_use]
+    pub const fn activation(&self) -> &DialogueActivationId {
+        &self.activation
+    }
+
+    #[must_use]
+    pub const fn phase(&self) -> DialogueRuntimePhase {
+        self.phase
+    }
+
+    /// Only the reveal phase accepts presentation progression.
+    #[must_use]
+    pub const fn waiting_presentation_activation(&self) -> Option<&DialogueActivationId> {
+        match self.phase {
+            DialogueRuntimePhase::Ready => Some(&self.activation),
+            DialogueRuntimePhase::Activating
+            | DialogueRuntimePhase::Closing
+            | DialogueRuntimePhase::Publishing => None,
+        }
+    }
+}
+
 /// High-level flow status for the minimal runtime spine.
 #[derive(Debug, PartialEq)]
 pub enum FlowFiberStatus {
     Running,
-    Dialogue(DialogueActivationId),
+    Dialogue(DialogueExecutionStatus),
     NeedWaiting(Box<AwaitState>),
     WaitingMany(WaitingManyStatus),
     HostCall(HostCallState),
@@ -1041,7 +1084,7 @@ pub enum FlowFiberStatus {
 #[derive(Clone, Debug, PartialEq)]
 enum FlowFiberStatusRollbackImage {
     Running,
-    Dialogue(DialogueActivationId),
+    Dialogue(DialogueExecutionStatus),
     NeedWaiting(Box<AwaitStateRollbackImage>),
     WaitingManyNative(Box<AwaitManyStateRollbackImage>),
     WaitingManyObserved(AwaitManyProgress),
@@ -2420,7 +2463,7 @@ impl Engine {
                 if let Some(activation) = activation.filter(|activation| {
                     matches!(
                         &self.fiber.status,
-                        FlowFiberStatus::Dialogue(current) if current == activation
+                        FlowFiberStatus::Dialogue(current) if current.activation() == activation
                     )
                 }) {
                     match self.begin_dialogue_activation_transaction(&activation) {
@@ -3616,7 +3659,8 @@ impl Engine {
             return Err(crate::line_task::LineRuntimeError::InvalidDeferredTransition.into());
         };
         match &self.fiber.status {
-            FlowFiberStatus::Dialogue(activation) if activation == tag.activation_id() => {}
+            FlowFiberStatus::Dialogue(activation)
+                if activation.activation() == tag.activation_id() => {}
             _ => return Err(crate::line_task::LineRuntimeError::StaleCommandOutcome.into()),
         }
         let mut transaction = self
@@ -3679,7 +3723,8 @@ impl Engine {
             .cloned()
             .ok_or(crate::line_task::LineRuntimeError::UnknownTaskGroup)?;
         match &self.fiber.status {
-            FlowFiberStatus::Dialogue(activation) if activation == tag.activation_id() => {}
+            FlowFiberStatus::Dialogue(activation)
+                if activation.activation() == tag.activation_id() => {}
             _ => return Err(crate::line_task::LineRuntimeError::StaleCommandOutcome.into()),
         }
         let mut transaction = self

@@ -11,12 +11,12 @@ mod store;
 pub(in crate::engine) use store::{
     DialogueActivationFrame, DialogueActivationScope, DialogueActivationStore,
     DialogueActivationStoreRollbackImage, DialogueActivationTransaction, DialogueCommitDisposition,
-    DialogueLineTaskState, DialogueRuntimePhase, PendingActivationHostCall, PendingLineOperation,
+    DialogueLineTaskState, PendingActivationHostCall, PendingLineOperation,
 };
 
 use super::{
-    Engine, RuntimeDiagnostic, RuntimeEvalError, RuntimeLocalBinding, RuntimeStepOutput,
-    RuntimeValue,
+    DialogueExecutionStatus, DialogueRuntimePhase, Engine, RuntimeDiagnostic, RuntimeEvalError,
+    RuntimeLocalBinding, RuntimeStepOutput, RuntimeValue,
 };
 use crate::effect::{
     LineEffectRequest, RuntimeDropPolicy, RuntimeDropPolicyExpr, RuntimeEffectExpr,
@@ -172,6 +172,7 @@ impl Engine {
         step: DialogueActivationStep,
     ) {
         let activation = transaction.activation().clone();
+        let phase = transaction.frame().phase;
         let (start, deferred_batch, host_call, effect) = match step {
             DialogueActivationStep::Continue => (None, None, None, None),
             DialogueActivationStep::Reveal(start) => (Some(start), None, None, None),
@@ -258,7 +259,10 @@ impl Engine {
         };
         match committed {
             Ok(()) => {
-                self.fiber.status = super::FlowFiberStatus::Dialogue(activation.clone());
+                self.fiber.status = super::FlowFiberStatus::Dialogue(DialogueExecutionStatus::new(
+                    activation.clone(),
+                    phase,
+                ));
             }
             Err(error) => {
                 self.fail_eval(error, output);
@@ -386,7 +390,11 @@ impl Engine {
                     ActivationScopeStep::Waiting => {
                         match self.commit_dialogue_activation_transaction(transaction, output) {
                             Ok(()) => {
-                                self.fiber.status = super::FlowFiberStatus::Dialogue(activation_id);
+                                self.fiber.status =
+                                    super::FlowFiberStatus::Dialogue(DialogueExecutionStatus::new(
+                                        activation_id,
+                                        DialogueRuntimePhase::Closing,
+                                    ));
                             }
                             Err(error) => self.fail_eval(error, output),
                         }
@@ -395,7 +403,11 @@ impl Engine {
                     ActivationScopeStep::Deferred(batch) => {
                         match self.commit_dialogue_activation_transaction(transaction, output) {
                             Ok(()) => {
-                                self.fiber.status = super::FlowFiberStatus::Dialogue(activation_id);
+                                self.fiber.status =
+                                    super::FlowFiberStatus::Dialogue(DialogueExecutionStatus::new(
+                                        activation_id,
+                                        DialogueRuntimePhase::Closing,
+                                    ));
                                 self.commit_line_task_execution_batch(batch);
                             }
                             Err(error) => self.fail_eval(error, output),
@@ -415,7 +427,11 @@ impl Engine {
             if let Some(batch) = batch {
                 match self.commit_dialogue_activation_transaction(transaction, output) {
                     Ok(()) => {
-                        self.fiber.status = super::FlowFiberStatus::Dialogue(activation_id);
+                        self.fiber.status =
+                            super::FlowFiberStatus::Dialogue(DialogueExecutionStatus::new(
+                                activation_id,
+                                DialogueRuntimePhase::Closing,
+                            ));
                         self.commit_line_task_execution_batch(batch);
                     }
                     Err(error) => self.fail_eval(error, output),
@@ -469,9 +485,12 @@ impl Engine {
             self.apply_dialogue_commit_disposition(disposition);
         } else {
             let activation = transaction.activation().clone();
+            let phase = transaction.frame().phase;
             match self.commit_dialogue_activation_transaction(transaction, output) {
                 Ok(()) => {
-                    self.fiber.status = super::FlowFiberStatus::Dialogue(activation);
+                    self.fiber.status = super::FlowFiberStatus::Dialogue(
+                        DialogueExecutionStatus::new(activation, phase),
+                    );
                 }
                 Err(error) => self.fail_eval(error, output),
             }
@@ -498,7 +517,11 @@ impl Engine {
             if let Some(batch) = batch {
                 match self.commit_dialogue_activation_transaction(transaction, output) {
                     Ok(()) => {
-                        self.fiber.status = super::FlowFiberStatus::Dialogue(activation_id);
+                        self.fiber.status =
+                            super::FlowFiberStatus::Dialogue(DialogueExecutionStatus::new(
+                                activation_id,
+                                DialogueRuntimePhase::Closing,
+                            ));
                         self.commit_line_task_execution_batch(batch);
                     }
                     Err(error) => self.fail_eval(error, output),
@@ -521,9 +544,12 @@ impl Engine {
             self.resume_dialogue_publication_with_transaction(transaction, output);
         } else {
             let activation = transaction.activation().clone();
+            let phase = transaction.frame().phase;
             match self.commit_dialogue_activation_transaction(transaction, output) {
                 Ok(()) => {
-                    self.fiber.status = super::FlowFiberStatus::Dialogue(activation);
+                    self.fiber.status = super::FlowFiberStatus::Dialogue(
+                        DialogueExecutionStatus::new(activation, phase),
+                    );
                 }
                 Err(error) => self.fail_eval(error, output),
             }
@@ -2303,9 +2329,12 @@ impl Engine {
         match self.try_publish_dialogue_result(&activation_id, &mut transaction) {
             Ok(DialoguePublicationOutcome::Pending) => {
                 let activation = transaction.activation().clone();
+                let phase = transaction.frame().phase;
                 match self.commit_dialogue_activation_transaction(transaction, output) {
                     Ok(()) => {
-                        self.fiber.status = super::FlowFiberStatus::Dialogue(activation);
+                        self.fiber.status = super::FlowFiberStatus::Dialogue(
+                            DialogueExecutionStatus::new(activation, phase),
+                        );
                     }
                     Err(error) => self.fail_eval(error, output),
                 }

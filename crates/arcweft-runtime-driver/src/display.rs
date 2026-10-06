@@ -692,7 +692,7 @@ fn waiting_dialogue_activation(
     status: &FlowFiberStatus,
 ) -> Option<&arcweft_core::runtime_id::DialogueActivationId> {
     match status {
-        FlowFiberStatus::Dialogue(activation) => Some(activation),
+        FlowFiberStatus::Dialogue(status) => status.waiting_presentation_activation(),
         _ => None,
     }
 }

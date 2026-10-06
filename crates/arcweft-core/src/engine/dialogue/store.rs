@@ -1,5 +1,6 @@
 #[cfg(test)]
 use crate::effect::RuntimeDropPolicy;
+use crate::engine::DialogueRuntimePhase;
 use crate::line_task::{
     LineRuntimeError, LineTaskLiveState, RuntimeDialogueAbandonedCommitProof,
     RuntimeDialogueActivationRegistry, RuntimeDialogueActivationState,
@@ -582,16 +583,9 @@ pub(crate) enum PendingLineOperation {
     },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum DialogueRuntimePhase {
-    Activating,
-    Ready,
-    Closing,
-    Publishing,
-}
-
 /// Sole engine execution owner of dialogue frames and their line-runtime
-/// transaction state. Fiber suspension retains only the activation key.
+/// transaction state. Fiber suspension retains only the activation identity
+/// and its published execution phase, never the activation's values.
 #[derive(Debug, Default, PartialEq)]
 pub(crate) struct DialogueActivationStore {
     registry: RuntimeDialogueActivationRegistry<EngineDialogueActivationFrame, RuntimePlanTypeId>,
