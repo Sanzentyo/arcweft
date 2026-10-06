@@ -836,7 +836,7 @@ fn observe_native_jlreq_paragraph_class_mix_fixture(
     writing_mode: &str,
     strictness: &str,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-jlreq-paragraph-class-mix-{strictness}"),
         &format!(
             r#"
@@ -848,7 +848,7 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report(&path);
+    let json = observe_native_rich_text_layer_report_at_entry(&path, &entry);
     fs::remove_file(&path).expect("remove temp JLREQ paragraph class-mix source");
     json
 }
@@ -857,7 +857,7 @@ fn assert_native_strict_jlreq_paragraph_class_mix_raw_crop(writing_mode: &str, c
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-strict-jlreq-paragraph-class-mix-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -878,6 +878,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -996,7 +997,7 @@ fn assert_native_published_jlreq_plain_western_word_class_mix_geometry(writing_m
 fn observe_native_published_jlreq_plain_western_word_class_mix_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-plain-western-word-class-mix"
         ),
@@ -1010,8 +1011,9 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ plain Western word class-mix source");
@@ -1025,7 +1027,7 @@ fn assert_native_published_jlreq_plain_western_word_class_mix_raw_crop(
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-plain-western-word-class-mix-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -1046,6 +1048,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -1183,7 +1186,7 @@ fn assert_native_published_jlreq_western_word_class_mix_geometry(writing_mode: &
 fn observe_native_published_jlreq_western_word_class_mix_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-published-jlreq-western-word-class-mix"),
         &format!(
             r#"
@@ -1195,8 +1198,9 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp published JLREQ Western word class-mix source");
     json
@@ -1209,7 +1213,7 @@ fn assert_native_published_jlreq_western_word_class_mix_raw_crop(
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-western-word-class-mix-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -1230,6 +1234,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -1403,7 +1408,7 @@ fn observe_native_published_jlreq_apostrophe_western_word_class_mix_fixture(
     writing_mode: &str,
     case: NativeApostropheWesternWordClassMixCase,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-apostrophe-western-word-class-mix-{}",
             case.label
@@ -1419,8 +1424,9 @@ flow @flow.main main {{
             case.text
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ apostrophe Western word class-mix source");
@@ -1449,7 +1455,7 @@ fn assert_native_published_jlreq_apostrophe_western_word_class_mix_case_raw_crop
         "agent-observe-native-{writing_mode}-published-jlreq-apostrophe-western-word-class-mix-{}-{capture_kind}",
         case.label
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -1472,6 +1478,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -1700,7 +1707,7 @@ fn assert_native_published_jlreq_accented_latin_word_class_mix_geometry(writing_
 fn observe_native_published_jlreq_accented_latin_word_class_mix_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-accented-latin-word-class-mix"
         ),
@@ -1714,8 +1721,9 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ accented Latin word class-mix source");
@@ -1729,7 +1737,7 @@ fn assert_native_published_jlreq_accented_latin_word_class_mix_raw_crop(
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-accented-latin-word-class-mix-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -1750,6 +1758,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -1917,7 +1926,7 @@ fn observe_native_published_jlreq_decomposed_accented_latin_word_class_mix_fixtu
     writing_mode: &str,
 ) -> serde_json::Value {
     let text = "天地春夏秋冬cafe\u{301}人。「川」あっいおーえ―中・外………終";
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-decomposed-accented-latin-word-class-mix"
         ),
@@ -1931,8 +1940,9 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ decomposed accented Latin word class-mix source");
@@ -1947,7 +1957,7 @@ fn assert_native_published_jlreq_decomposed_accented_latin_word_class_mix_raw_cr
         "agent-observe-native-{writing_mode}-published-jlreq-decomposed-accented-latin-word-class-mix-{capture_kind}"
     );
     let text = "天地春夏秋冬cafe\u{301}人。「川」あっいおーえ―中・外………終";
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -1968,6 +1978,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -2099,7 +2110,7 @@ fn assert_native_zwj_grapheme_strict_class_mix_geometry(writing_mode: &str) {
 
 fn observe_native_zwj_grapheme_strict_class_mix_fixture(writing_mode: &str) -> serde_json::Value {
     let text = "天地春夏秋冬👩‍💻人。「川」あっいおーえ―中・外………終";
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-zwj-grapheme-strict-class-mix"),
         &format!(
             r#"
@@ -2111,8 +2122,9 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp ZWJ grapheme strict class-mix source");
     json
@@ -2122,7 +2134,7 @@ fn assert_native_zwj_grapheme_strict_class_mix_raw_crop(writing_mode: &str, capt
     let fixture_name =
         format!("agent-observe-native-{writing_mode}-zwj-grapheme-strict-class-mix-{capture_kind}");
     let text = "天地春夏秋冬👩‍💻人。「川」あっいおーえ―中・外………終";
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -2143,6 +2155,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -2268,7 +2281,7 @@ fn observe_native_decomposed_kana_strict_class_mix_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
     let text = "天地春夏秋冬か\u{3099}人。「川」あっいおーえ―中・外………終";
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-decomposed-kana-strict-class-mix"),
         &format!(
             r#"
@@ -2280,8 +2293,9 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp decomposed kana strict class-mix source");
     json
@@ -2292,7 +2306,7 @@ fn assert_native_decomposed_kana_strict_class_mix_raw_crop(writing_mode: &str, c
         "agent-observe-native-{writing_mode}-decomposed-kana-strict-class-mix-{capture_kind}"
     );
     let text = "天地春夏秋冬か\u{3099}人。「川」あっいおーえ―中・外………終";
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -2313,6 +2327,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -2438,7 +2453,7 @@ fn observe_native_variation_selector_strict_class_mix_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
     let text = "天地春夏秋冬漢\u{fe00}人。「川」あっいおーえ―中・外………終";
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-variation-selector-strict-class-mix"),
         &format!(
             r#"
@@ -2450,8 +2465,9 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp variation selector strict class-mix source");
     json
@@ -2465,7 +2481,7 @@ fn assert_native_variation_selector_strict_class_mix_raw_crop(
         "agent-observe-native-{writing_mode}-variation-selector-strict-class-mix-{capture_kind}"
     );
     let text = "天地春夏秋冬漢\u{fe00}人。「川」あっいおーえ―中・外………終";
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -2486,6 +2502,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -2610,7 +2627,7 @@ fn assert_native_emoji_modifier_strict_class_mix_geometry(writing_mode: &str) {
 
 fn observe_native_emoji_modifier_strict_class_mix_fixture(writing_mode: &str) -> serde_json::Value {
     let text = "天地春夏秋冬👍🏽人。「川」あっいおーえ―中・外………終";
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-emoji-modifier-strict-class-mix"),
         &format!(
             r#"
@@ -2622,8 +2639,9 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp emoji modifier strict class-mix source");
     json
@@ -2634,7 +2652,7 @@ fn assert_native_emoji_modifier_strict_class_mix_raw_crop(writing_mode: &str, ca
         "agent-observe-native-{writing_mode}-emoji-modifier-strict-class-mix-{capture_kind}"
     );
     let text = "天地春夏秋冬👍🏽人。「川」あっいおーえ―中・外………終";
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -2655,6 +2673,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -2780,7 +2799,7 @@ fn observe_native_regional_indicator_strict_class_mix_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
     let text = "天地春夏秋冬🇯🇵人。「川」あっいおーえ―中・外………終";
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-regional-indicator-strict-class-mix"),
         &format!(
             r#"
@@ -2792,8 +2811,9 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp regional indicator strict class-mix source");
     json
@@ -2807,7 +2827,7 @@ fn assert_native_regional_indicator_strict_class_mix_raw_crop(
         "agent-observe-native-{writing_mode}-regional-indicator-strict-class-mix-{capture_kind}"
     );
     let text = "天地春夏秋冬🇯🇵人。「川」あっいおーえ―中・外………終";
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -2828,6 +2848,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -2952,7 +2973,7 @@ fn assert_native_keycap_strict_class_mix_geometry(writing_mode: &str) {
 
 fn observe_native_keycap_strict_class_mix_fixture(writing_mode: &str) -> serde_json::Value {
     let text = "天地春夏秋冬1️⃣人。「川」あっいおーえ―中・外………終";
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-keycap-strict-class-mix"),
         &format!(
             r#"
@@ -2964,8 +2985,9 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp keycap strict class-mix source");
     json
@@ -2975,7 +2997,7 @@ fn assert_native_keycap_strict_class_mix_raw_crop(writing_mode: &str, capture_ki
     let fixture_name =
         format!("agent-observe-native-{writing_mode}-keycap-strict-class-mix-{capture_kind}");
     let text = "天地春夏秋冬1️⃣人。「川」あっいおーえ―中・外………終";
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -2996,6 +3018,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -3123,7 +3146,7 @@ fn observe_native_published_jlreq_unit_symbol_class_mix_fixture(
     writing_mode: &str,
     case: NativeUnitSymbolClassMixCase,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-unit-symbol-class-mix-{}",
             case.label
@@ -3139,8 +3162,9 @@ flow @flow.main main {{
             case.text
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp published JLREQ unit symbol class-mix source");
     json
@@ -3168,7 +3192,7 @@ fn assert_native_published_jlreq_unit_symbol_class_mix_case_raw_crop(
         "agent-observe-native-{writing_mode}-published-jlreq-unit-symbol-class-mix-{}-{capture_kind}",
         case.label
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -3191,6 +3215,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -3399,7 +3424,7 @@ fn observe_native_published_jlreq_numeric_unit_class_mix_fixture(
     writing_mode: &str,
     case: NativeNumericUnitClassMixCase,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-numeric-unit-class-mix-{}",
             case.label
@@ -3415,8 +3440,9 @@ flow @flow.main main {{
             case.text
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp published JLREQ numeric unit class-mix source");
     json
@@ -3444,7 +3470,7 @@ fn assert_native_published_jlreq_numeric_unit_class_mix_case_raw_crop(
         "agent-observe-native-{writing_mode}-published-jlreq-numeric-unit-class-mix-{}-{capture_kind}",
         case.label
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -3467,6 +3493,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -3678,7 +3705,7 @@ fn assert_native_published_jlreq_numeric_separator_class_mix_geometry(writing_mo
 fn observe_native_published_jlreq_numeric_separator_class_mix_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-published-jlreq-numeric-separator-class-mix"),
         &format!(
             r#"
@@ -3690,8 +3717,9 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp published JLREQ numeric separator class-mix source");
     json
@@ -3704,7 +3732,7 @@ fn assert_native_published_jlreq_numeric_separator_class_mix_raw_crop(
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-numeric-separator-class-mix-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -3725,6 +3753,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -3883,7 +3912,7 @@ fn assert_native_published_jlreq_prefixed_abbreviation_class_mix_geometry(writin
 fn observe_native_published_jlreq_prefixed_abbreviation_class_mix_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-prefixed-abbreviation-class-mix"
         ),
@@ -3897,8 +3926,9 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ prefixed abbreviation class-mix source");
@@ -3912,7 +3942,7 @@ fn assert_native_published_jlreq_prefixed_abbreviation_class_mix_raw_crop(
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-prefixed-abbreviation-class-mix-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -3933,6 +3963,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -4049,7 +4080,7 @@ fn assert_native_published_jlreq_cent_prefixed_abbreviation_class_mix_geometry(w
 fn observe_native_published_jlreq_cent_prefixed_abbreviation_class_mix_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-cent-prefixed-abbreviation-class-mix"
         ),
@@ -4063,8 +4094,9 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ cent-prefixed abbreviation class-mix source");
@@ -4078,7 +4110,7 @@ fn assert_native_published_jlreq_cent_prefixed_abbreviation_class_mix_raw_crop(
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-cent-prefixed-abbreviation-class-mix-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -4099,6 +4131,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -4227,7 +4260,7 @@ fn observe_native_published_jlreq_yen_prefixed_abbreviation_class_mix_fixture(
     label: &str,
 ) -> serde_json::Value {
     let text = native_published_jlreq_yen_prefixed_abbreviation_class_mix_text(label);
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-{label}-abbreviation-class-mix"
         ),
@@ -4241,8 +4274,9 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ yen-prefixed abbreviation class-mix source");
@@ -4259,7 +4293,7 @@ fn assert_native_published_jlreq_yen_prefixed_abbreviation_class_mix_raw_crop(
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-{label}-class-mix-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -4280,6 +4314,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -4423,7 +4458,7 @@ fn assert_native_published_jlreq_postfixed_abbreviation_class_mix_geometry(writi
 fn observe_native_published_jlreq_postfixed_abbreviation_class_mix_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-postfixed-abbreviation-class-mix"
         ),
@@ -4437,8 +4472,9 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ postfixed abbreviation class-mix source");
@@ -4452,7 +4488,7 @@ fn assert_native_published_jlreq_postfixed_abbreviation_class_mix_raw_crop(
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-postfixed-abbreviation-class-mix-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -4473,6 +4509,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -4599,7 +4636,7 @@ fn observe_native_published_jlreq_ideographic_abbreviation_class_mix_fixture(
     label: &str,
 ) -> serde_json::Value {
     let text = native_published_jlreq_ideographic_abbreviation_class_mix_text(label);
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-{label}-abbreviation-class-mix"
         ),
@@ -4613,8 +4650,9 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ ideographic abbreviation class-mix source");
@@ -4631,7 +4669,7 @@ fn assert_native_published_jlreq_ideographic_abbreviation_class_mix_raw_crop(
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-{label}-class-mix-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -4652,6 +4690,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -4795,7 +4834,7 @@ fn assert_native_published_jlreq_reference_mark_class_mix_geometry(writing_mode:
 fn observe_native_published_jlreq_reference_mark_class_mix_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-published-jlreq-reference-mark-class-mix"),
         &format!(
             r#"
@@ -4807,8 +4846,9 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp published JLREQ reference mark class-mix source");
     json
@@ -4821,7 +4861,7 @@ fn assert_native_published_jlreq_reference_mark_class_mix_raw_crop(
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-reference-mark-class-mix-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -4842,6 +4882,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -5026,7 +5067,7 @@ fn assert_native_published_jlreq_parenthesized_reference_mark_class_mix_geometry
 fn observe_native_published_jlreq_parenthesized_reference_mark_class_mix_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-parenthesized-reference-mark-class-mix"
         ),
@@ -5040,8 +5081,9 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ parenthesized reference mark class-mix source");
@@ -5055,7 +5097,7 @@ fn assert_native_published_jlreq_parenthesized_reference_mark_class_mix_raw_crop
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-parenthesized-reference-mark-class-mix-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -5076,6 +5118,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -5235,7 +5278,7 @@ fn assert_native_published_jlreq_temperature_suffix_class_mix_geometry(writing_m
 fn observe_native_published_jlreq_temperature_suffix_class_mix_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-temperature-suffix-class-mix"
         ),
@@ -5249,8 +5292,9 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ temperature suffix class-mix source");
@@ -5264,7 +5308,7 @@ fn assert_native_published_jlreq_temperature_suffix_class_mix_raw_crop(
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-temperature-suffix-class-mix-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -5285,6 +5329,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -5399,7 +5444,7 @@ fn assert_native_published_jlreq_decomposed_temperature_class_mix_geometry(writi
 fn observe_native_published_jlreq_decomposed_temperature_class_mix_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-decomposed-temperature-class-mix"
         ),
@@ -5413,8 +5458,9 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ decomposed temperature class-mix source");
@@ -5428,7 +5474,7 @@ fn assert_native_published_jlreq_decomposed_temperature_class_mix_raw_crop(
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-decomposed-temperature-class-mix-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -5449,6 +5495,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -5573,7 +5620,7 @@ fn assert_native_published_jlreq_subscript_object_class_mix_geometry(writing_mod
 fn observe_native_published_jlreq_subscript_object_class_mix_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-published-jlreq-subscript-object-class-mix"),
         &format!(
             r#"
@@ -5585,8 +5632,9 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp published JLREQ subscript object class-mix source");
     json
@@ -5599,7 +5647,7 @@ fn assert_native_published_jlreq_subscript_object_class_mix_raw_crop(
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-subscript-object-class-mix-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -5620,6 +5668,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -5781,7 +5830,7 @@ fn assert_native_published_jlreq_greek_subscript_object_class_mix_geometry(writi
 fn observe_native_published_jlreq_greek_subscript_object_class_mix_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-greek-subscript-object-class-mix"
         ),
@@ -5795,8 +5844,9 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ Greek subscript object class-mix source");
@@ -5810,7 +5860,7 @@ fn assert_native_published_jlreq_greek_subscript_object_class_mix_raw_crop(
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-greek-subscript-object-class-mix-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -5831,6 +5881,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -5951,7 +6002,7 @@ fn assert_native_published_jlreq_greek_superscript_object_class_mix_geometry(wri
 fn observe_native_published_jlreq_greek_superscript_object_class_mix_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-greek-superscript-object-class-mix"
         ),
@@ -5965,8 +6016,9 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ Greek superscript object class-mix source");
@@ -5980,7 +6032,7 @@ fn assert_native_published_jlreq_greek_superscript_object_class_mix_raw_crop(
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-greek-superscript-object-class-mix-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -6001,6 +6053,7 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")

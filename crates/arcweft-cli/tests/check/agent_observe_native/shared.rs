@@ -7,6 +7,15 @@ fn imq_is_available() -> bool {
         .is_ok_and(|status| status.success())
 }
 
+/// Authors the launch contract for fixtures whose declared target is flow.main.
+/// The caller supplies that fixture contract; no source inspection selects it.
+fn temp_main_cli_fixture(name: &str, source: &str) -> (PathBuf, EntryRuntimeId) {
+    let entry = EntryRuntimeId::from_source_entity_body("entry.native_test")
+        .expect("native fixture entry ID");
+    let source = format!("entry cli @entry.native_test {{ goto @flow.main }}\n{source}");
+    (temp_arcw(name, &source), entry)
+}
+
 fn capture_native_png_report(
     source_path: &Path,
     entry: &EntryRuntimeId,
@@ -104,7 +113,16 @@ fn observe_native_rich_text_layer_report_at_entry(
     source_path: &Path,
     entry: &EntryRuntimeId,
 ) -> serde_json::Value {
-    let mut command = native_rich_text_layer_observe_command(source_path, 1280, 720);
+    observe_native_rich_text_layer_report_at_entry_with_viewport(source_path, entry, 1280, 720)
+}
+
+fn observe_native_rich_text_layer_report_at_entry_with_viewport(
+    source_path: &Path,
+    entry: &EntryRuntimeId,
+    viewport_width: u32,
+    viewport_height: u32,
+) -> serde_json::Value {
+    let mut command = native_rich_text_layer_observe_command(source_path, viewport_width, viewport_height);
     command
         .arg("--entry")
         .arg(entry.public_label().into_string());

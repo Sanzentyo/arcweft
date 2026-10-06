@@ -13,7 +13,7 @@ fn assert_native_strict_jlreq_style_split_geometry(writing_mode: &str) {
 }
 
 fn observe_native_strict_jlreq_style_split_fixture(writing_mode: &str) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-strict-jlreq-style-split"),
         &format!(
             r##"
@@ -25,7 +25,7 @@ flow main {{
 "##
         ),
     );
-    let json = observe_native_rich_text_layer_report(&path);
+    let json = observe_native_rich_text_layer_report_at_entry(&path, &entry);
     fs::remove_file(&path).expect("remove temp strict JLREQ style-split source");
     json
 }
@@ -33,7 +33,7 @@ flow main {{
 fn assert_native_strict_jlreq_style_split_raw_crop(writing_mode: &str, capture_kind: &str) {
     let fixture_name =
         format!("agent-observe-native-{writing_mode}-strict-jlreq-style-split-{capture_kind}");
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r##"
@@ -54,6 +54,7 @@ flow main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -163,7 +164,7 @@ fn assert_native_published_jlreq_european_numeral_sequence_geometry(
 fn observe_native_published_jlreq_european_numeral_sequence_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-published-jlreq-european-numerals"),
         &format!(
             r#"
@@ -175,7 +176,7 @@ flow main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report(&path);
+    let json = observe_native_rich_text_layer_report_at_entry(&path, &entry);
     fs::remove_file(&path).expect("remove temp published JLREQ European numeral source");
     json
 }
@@ -188,7 +189,7 @@ fn assert_native_published_jlreq_european_numeral_sequence_raw_crop(
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-european-numerals-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -209,6 +210,7 @@ flow main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -368,7 +370,7 @@ fn observe_native_published_jlreq_numeric_separator_fixture(
     writing_mode: &str,
     case: NativeNumericSeparatorCase,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-numeric-separator-{}",
             case.label
@@ -384,7 +386,7 @@ flow main {{
             case.text
         ),
     );
-    let json = observe_native_rich_text_layer_report(&path);
+    let json = observe_native_rich_text_layer_report_at_entry(&path, &entry);
     fs::remove_file(&path).expect("remove temp published JLREQ numeric separator source");
     json
 }
@@ -404,6 +406,10 @@ fn assert_native_published_jlreq_numeric_separator_raw_crop(
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "one parameterized crop case owns its authored launch, geometry assertions, attachment pixel proof and cleanup"
+)]
 fn assert_native_published_jlreq_numeric_separator_case_raw_crop(
     writing_mode: &str,
     next_column_moves_right: bool,
@@ -414,7 +420,7 @@ fn assert_native_published_jlreq_numeric_separator_case_raw_crop(
         "agent-observe-native-{writing_mode}-published-jlreq-numeric-separator-{}-{capture_kind}",
         case.label
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -437,6 +443,7 @@ flow main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -800,7 +807,7 @@ fn observe_native_published_jlreq_numeric_abbreviation_fixture(
     label: &str,
 ) -> serde_json::Value {
     let text = native_published_jlreq_numeric_abbreviation_text(label);
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-numeric-abbreviation-{label}"
         ),
@@ -814,7 +821,7 @@ flow main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report(&path);
+    let json = observe_native_rich_text_layer_report_at_entry(&path, &entry);
     fs::remove_file(&path).expect("remove temp published JLREQ numeric abbreviation source");
     json
 }
@@ -831,7 +838,7 @@ fn assert_native_published_jlreq_numeric_abbreviation_raw_crop(
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-numeric-abbreviation-{label}-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -852,6 +859,7 @@ flow main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -1302,7 +1310,7 @@ fn assert_native_published_jlreq_reference_mark_geometry(writing_mode: &str) {
 }
 
 fn observe_native_published_jlreq_reference_mark_fixture(writing_mode: &str) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-published-jlreq-reference-mark"),
         &format!(
             r#"
@@ -1314,7 +1322,7 @@ flow main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report(&path);
+    let json = observe_native_rich_text_layer_report_at_entry(&path, &entry);
     fs::remove_file(&path).expect("remove temp published JLREQ reference mark source");
     json
 }
@@ -1338,7 +1346,7 @@ fn assert_native_published_jlreq_reference_mark_target_raw_crop(
         "agent-observe-native-{writing_mode}-published-jlreq-reference-mark-{}-{capture_kind}",
         target.label
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -1360,6 +1368,7 @@ flow main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -1544,7 +1553,7 @@ fn assert_native_published_jlreq_parenthesized_reference_mark_geometry(
 fn observe_native_published_jlreq_parenthesized_reference_mark_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-parenthesized-reference-mark"
         ),
@@ -1558,7 +1567,7 @@ flow main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report(&path);
+    let json = observe_native_rich_text_layer_report_at_entry(&path, &entry);
     fs::remove_file(&path)
         .expect("remove temp published JLREQ parenthesized reference mark source");
     json
@@ -1579,6 +1588,10 @@ fn assert_native_published_jlreq_parenthesized_reference_mark_raw_crop(
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "one parameterized crop case owns its authored launch, geometry assertions, attachment pixel proof and cleanup"
+)]
 fn assert_native_published_jlreq_parenthesized_reference_mark_target_raw_crop(
     writing_mode: &str,
     next_column_moves_right: bool,
@@ -1589,7 +1602,7 @@ fn assert_native_published_jlreq_parenthesized_reference_mark_target_raw_crop(
         "agent-observe-native-{writing_mode}-published-jlreq-parenthesized-reference-mark-{}-{capture_kind}",
         target.label
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -1611,6 +1624,7 @@ flow main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -1808,7 +1822,7 @@ fn assert_native_published_jlreq_latin_unit_geometry(
 }
 
 fn observe_native_published_jlreq_latin_unit_fixture(writing_mode: &str) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-published-jlreq-latin-unit"),
         &format!(
             r#"
@@ -1820,7 +1834,7 @@ flow main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report(&path);
+    let json = observe_native_rich_text_layer_report_at_entry(&path, &entry);
     fs::remove_file(&path).expect("remove temp published JLREQ Latin unit source");
     json
 }
@@ -1832,7 +1846,7 @@ fn assert_native_published_jlreq_latin_unit_raw_crop(
 ) {
     let fixture_name =
         format!("agent-observe-native-{writing_mode}-published-jlreq-latin-unit-{capture_kind}");
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -1853,6 +1867,7 @@ flow main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -1977,7 +1992,7 @@ fn assert_native_published_jlreq_western_word_geometry(
 }
 
 fn observe_native_published_jlreq_western_word_fixture(writing_mode: &str) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-published-jlreq-western-word"),
         &format!(
             r#"
@@ -1989,7 +2004,7 @@ flow main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report(&path);
+    let json = observe_native_rich_text_layer_report_at_entry(&path, &entry);
     fs::remove_file(&path).expect("remove temp published JLREQ Western word source");
     json
 }
@@ -2001,7 +2016,7 @@ fn assert_native_published_jlreq_western_word_raw_crop(
 ) {
     let fixture_name =
         format!("agent-observe-native-{writing_mode}-published-jlreq-western-word-{capture_kind}");
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -2022,6 +2037,7 @@ flow main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -2158,7 +2174,7 @@ fn observe_native_published_jlreq_numeric_unit_fixture(
     writing_mode: &str,
     case: NativeNumericUnitCase,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-numeric-unit-{}",
             case.label
@@ -2174,7 +2190,7 @@ flow main {{
             case.text
         ),
     );
-    let json = observe_native_rich_text_layer_report(&path);
+    let json = observe_native_rich_text_layer_report_at_entry(&path, &entry);
     fs::remove_file(&path).expect("remove temp published JLREQ numeric unit source");
     json
 }
@@ -2204,7 +2220,7 @@ fn assert_native_published_jlreq_numeric_unit_case_raw_crop(
         "agent-observe-native-{writing_mode}-published-jlreq-numeric-unit-{}-{capture_kind}",
         case.label
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -2227,6 +2243,7 @@ flow main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -2430,7 +2447,7 @@ fn assert_native_published_jlreq_hyphenated_western_word_geometry(
 fn observe_native_published_jlreq_hyphenated_western_word_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-published-jlreq-hyphenated-western-word"),
         &format!(
             r#"
@@ -2442,8 +2459,9 @@ flow main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 900,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp published JLREQ hyphenated Western word source");
     json
@@ -2457,7 +2475,7 @@ fn assert_native_published_jlreq_hyphenated_western_word_raw_crop(
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-hyphenated-western-word-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -2478,6 +2496,7 @@ flow main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -2650,7 +2669,7 @@ fn observe_native_published_jlreq_apostrophe_western_word_fixture(
     writing_mode: &str,
     case: NativeApostropheWesternWordCase,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-apostrophe-western-word-{}",
             case.label
@@ -2666,7 +2685,7 @@ flow main {{
             case.text
         ),
     );
-    let json = observe_native_rich_text_layer_report(&path);
+    let json = observe_native_rich_text_layer_report_at_entry(&path, &entry);
     fs::remove_file(&path).expect("remove temp published JLREQ apostrophe Western word source");
     json
 }
@@ -2696,7 +2715,7 @@ fn assert_native_published_jlreq_apostrophe_western_word_case_raw_crop(
         "agent-observe-native-{writing_mode}-published-jlreq-apostrophe-western-word-{}-{capture_kind}",
         case.label
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -2719,6 +2738,7 @@ flow main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -2905,7 +2925,7 @@ fn assert_native_published_jlreq_accented_latin_word_geometry(writing_mode: &str
 fn observe_native_published_jlreq_accented_latin_word_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-published-jlreq-accented-latin-word"),
         &format!(
             r#"
@@ -2917,8 +2937,9 @@ flow main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport(
-        &path, 1280, 720,
+    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
+        &path,
+        &entry, 1280, 720,
     );
     fs::remove_file(&path).expect("remove temp published JLREQ accented Latin word source");
     json
@@ -2931,7 +2952,7 @@ fn assert_native_published_jlreq_accented_latin_word_raw_crop(
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-accented-latin-word-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -2952,6 +2973,7 @@ flow main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -3078,7 +3100,7 @@ fn assert_native_published_jlreq_greek_latin_unit_geometry(writing_mode: &str) {
 fn observe_native_published_jlreq_greek_latin_unit_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-published-jlreq-greek-latin-unit"),
         &format!(
             r#"
@@ -3090,7 +3112,7 @@ flow main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report(&path);
+    let json = observe_native_rich_text_layer_report_at_entry(&path, &entry);
     fs::remove_file(&path).expect("remove temp published JLREQ Greek+Latin unit source");
     json
 }
@@ -3099,7 +3121,7 @@ fn assert_native_published_jlreq_greek_latin_unit_raw_crop(writing_mode: &str, c
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-greek-latin-unit-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -3120,6 +3142,7 @@ flow main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -3251,7 +3274,7 @@ fn observe_native_published_jlreq_subscript_object_fixture(
     writing_mode: &str,
     case: NativeSubscriptObjectCase,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-subscript-object-{}",
             case.label
@@ -3267,7 +3290,7 @@ flow main {{
             case.text
         ),
     );
-    let json = observe_native_rich_text_layer_report(&path);
+    let json = observe_native_rich_text_layer_report_at_entry(&path, &entry);
     fs::remove_file(&path).expect("remove temp published JLREQ subscript object source");
     json
 }
@@ -3297,7 +3320,7 @@ fn assert_native_published_jlreq_subscript_object_case_raw_crop(
         "agent-observe-native-{writing_mode}-published-jlreq-subscript-object-{}-{capture_kind}",
         case.label
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -3320,6 +3343,7 @@ flow main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -3518,7 +3542,7 @@ fn assert_native_strict_jlreq_ruby_text_combine_geometry(writing_mode: &str, rub
 }
 
 fn observe_native_strict_jlreq_ruby_text_combine_fixture(writing_mode: &str) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-strict-jlreq-ruby-text-combine"),
         &format!(
             r#"
@@ -3530,7 +3554,7 @@ flow main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report(&path);
+    let json = observe_native_rich_text_layer_report_at_entry(&path, &entry);
     fs::remove_file(&path).expect("remove temp strict JLREQ ruby/text-combine source");
     json
 }
@@ -3539,7 +3563,7 @@ fn assert_native_strict_jlreq_ruby_text_combine_raw_crop(writing_mode: &str, cap
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-strict-jlreq-ruby-text-combine-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -3560,6 +3584,7 @@ flow main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -3686,7 +3711,7 @@ fn assert_native_strict_jlreq_hard_break_segment_geometry(
     writing_mode: &str,
     next_column_moves_right: bool,
 ) {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-strict-jlreq-hard-break-segment"),
         &format!(
             r#"
@@ -3698,7 +3723,7 @@ flow main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report(&path);
+    let json = observe_native_rich_text_layer_report_at_entry(&path, &entry);
     fs::remove_file(&path).expect("remove temp strict JLREQ hard-break segment source");
     assert_native_rich_text_layer_image_has_content(&json);
     assert_eq!(
@@ -3720,7 +3745,7 @@ fn assert_native_strict_jlreq_hard_break_segment_raw_crop(
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-strict-jlreq-hard-break-segment-{capture_kind}"
     );
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -3741,6 +3766,7 @@ flow main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -4075,7 +4101,7 @@ fn observe_native_jlreq_closing_opening_fixture(
     writing_mode: &str,
     strictness: &str,
 ) -> serde_json::Value {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-jlreq-closing-opening-{strictness}"),
         &format!(
             r#"
@@ -4087,13 +4113,13 @@ flow main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report(&path);
+    let json = observe_native_rich_text_layer_report_at_entry(&path, &entry);
     fs::remove_file(&path).expect("remove temp closing/opening JLREQ source");
     json
 }
 
 fn assert_native_strict_jlreq_closing_opening_raw_crop(writing_mode: &str, capture_kind: &str) {
-    let path = temp_arcw(
+    let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-strict-jlreq-closing-opening-{capture_kind}"),
         &format!(
             r#"
@@ -4116,6 +4142,7 @@ flow main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .args(["--entry", entry.public_label().as_str()])
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
