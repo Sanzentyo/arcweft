@@ -362,6 +362,12 @@ Core の pure helper と method 入力は、receiver を含む各 formal の Loc
 receiver mode や scalar の格納形式から推測しない。入力の行数と ABI の行数が
 別々に変わる表現は持たない。
 
+structured function site は受理済みの lexical definition identity を必須で保持する。
+同じ定義の閉じた instance や body の変更で、この identity を作り直さない。
+合成 dialogue 値 callback と Rust field default wrapper は、受理済みの意味論 owner が
+それぞれ authored slot と checked callable から識別し、plan の割当番号を使わない。
+definition identity は body digest や runtime image の seal 証拠とは別に扱う。
+
 structured function-site の parameter 入力は、受理済み formal の passing 区分を
 明示的に保持する。引数位置や pattern の展開で区分を失わず、frame ingress の
 `Owned`／`Unrestricted` 保証から区分を推測しない。

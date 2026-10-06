@@ -469,6 +469,26 @@ impl RuntimeContentFragmentFact {
         &self.values
     }
 
+    /// Identifies the identity callback for one exact authored slot in this fragment.
+    /// Template allocation and the closed source type do not identify the definition.
+    pub fn value_callback_definition(
+        &self,
+        value: &RuntimeDialogueValueExpression,
+    ) -> Option<arcweft_core::plan::RuntimeFunctionDefinitionIdentity> {
+        if self.values.get(value.slot().index()) != Some(value) {
+            return None;
+        }
+        let mut hash = blake3::Hasher::new();
+        hash.update(b"arcweft.lang.dialogue-value-callback-definition.v1\0");
+        hash.update(self.id.as_bytes());
+        hash.update(&(value.slot().get().get() - 1).to_le_bytes());
+        Some(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                *hash.finalize().as_bytes(),
+            ),
+        )
+    }
+
     pub const fn effects(&self) -> &[RuntimeDialogueEffectProgramFact] {
         &self.effects
     }

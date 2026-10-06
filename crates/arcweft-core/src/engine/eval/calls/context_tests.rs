@@ -180,6 +180,9 @@ fn context_plan(with_proof: bool, with_callback: bool) -> ContextPlan {
     if with_callback {
         let site = builder
             .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+                definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [41; 32],
+                ),
                 role: crate::plan::RuntimeFunctionSemanticRole::Closure,
                 function_type: None,
                 inputs: Box::new([]),

@@ -2120,6 +2120,7 @@ fn function_semantic_roles_survive_expression_and_executable_awbc_lowering() {
         for &role in RuntimeFunctionSemanticRole::ALL {
             let site = builder
                 .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+                    definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
                     role,
                     function_type: None,
                     inputs: Box::new([]),

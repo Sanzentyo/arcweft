@@ -206,6 +206,7 @@ fn standard_map_awbc_plan() -> (Arc<RuntimePlan>, Vec<AwbcStandardMapCase>) {
     let callback_local = admission.local_ids()[1].clone();
     let callback_site = builder
         .push_function_site_seed(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             arcweft_core::plan::RuntimeFunctionSemanticRole::Closure,
             [RuntimeFunctionInputBindingSeed {
                 source: RuntimeFunctionInputSource::Parameter {
@@ -329,6 +330,9 @@ fn standard_map_awbc_plan() -> (Arc<RuntimePlan>, Vec<AwbcStandardMapCase>) {
     {
         let site = builder
             .push_function_site_seed(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [41; 32],
+                ),
                 arcweft_core::plan::RuntimeFunctionSemanticRole::Closure,
                 [],
                 standard_map_seed(
@@ -601,6 +605,7 @@ fn owned_program_root_retains_affine_inputs_and_result_across_save_restore() {
     };
     let site = builder
         .push_function_site_seed(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
             [input],
             RuntimeExprSeed::new(
@@ -697,6 +702,7 @@ fn owned_unit_program_retains_its_typed_result_across_save_restore() {
         .unwrap();
     let site = builder
         .push_function_site_seed(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
             [],
             RuntimeExprSeed::new(unit, RuntimeExprSeedKind::Value(RuntimeValue::Unit)),

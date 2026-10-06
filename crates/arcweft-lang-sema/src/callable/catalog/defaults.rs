@@ -174,6 +174,16 @@ impl RegisteredRustFieldDefaultProgram {
 }
 
 impl CheckedRustFieldDefaultProgram {
+    /// Stable wrapper definition derived from the exact checked callable owner.
+    pub fn definition_identity(&self) -> arcweft_core::plan::RuntimeFunctionDefinitionIdentity {
+        let mut hash = blake3::Hasher::new();
+        hash.update(b"arcweft.lang.rust-field-default-definition.v1\0");
+        hash.update(&self.checked.semantic_digest().into_bytes());
+        arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+            *hash.finalize().as_bytes(),
+        )
+    }
+
     pub const fn program(&self) -> RuntimePureProgramId {
         self.registered.program
     }

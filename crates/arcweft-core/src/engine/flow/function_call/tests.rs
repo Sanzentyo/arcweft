@@ -57,6 +57,9 @@ fn active_effect_frame_rollback_rejects_a_missing_frame_binding() {
         .unwrap();
     let site = builder
         .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [41; 32],
+            ),
             role: crate::plan::RuntimeFunctionSemanticRole::Closure,
             function_type: Some(header),
             inputs: Box::new([]),
@@ -411,6 +414,7 @@ fn program_return_preserves_typed_result_and_rollback_custody() {
         .unwrap();
     let site = builder
         .push_function_site_seed(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             [],
             RuntimeExprSeed::new(ty, RuntimeExprSeedKind::Value(RuntimeValue::Bool(true))),
@@ -512,6 +516,7 @@ fn owned_program_moves_affine_input_and_returns_it_once() {
     };
     let site = builder
         .push_function_site_seed(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             [input],
             RuntimeExprSeed::new(

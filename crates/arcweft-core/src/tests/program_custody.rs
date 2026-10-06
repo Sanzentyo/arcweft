@@ -212,6 +212,7 @@ fn identity_program_plan(
         .collect::<Vec<_>>();
     let site = builder
         .push_function_site_seed(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             inputs,
             RuntimeExprSeed::new(

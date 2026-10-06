@@ -548,6 +548,9 @@ fn standard_map_pure_plan() -> (Arc<RuntimePlan>, Vec<StandardMapPureCase>) {
         .map(|local| {
             builder
                 .push_function_site_seed(
+                    crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                        [41; 32],
+                    ),
                     crate::plan::RuntimeFunctionSemanticRole::Closure,
                     [RuntimeFunctionInputBindingSeed {
                         ownership: Default::default(),
@@ -1024,6 +1027,7 @@ fn structured_closure_captures_the_exact_owning_plan() {
     let parameter_input = admission.local_ids()[4].clone();
     let site = builder
         .push_function_site_seed(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             crate::plan::RuntimeFunctionSemanticRole::Closure,
             [
                 RuntimeFunctionInputBindingSeed {
@@ -1165,6 +1169,7 @@ fn structured_function_input_tuple_pattern_binds_body_locals() {
     let second = admission.local_ids()[3].clone();
     let site = builder
         .push_function_site_seed(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             crate::plan::RuntimeFunctionSemanticRole::Closure,
             [RuntimeFunctionInputBindingSeed {
                 ownership: Default::default(),
@@ -1293,6 +1298,7 @@ fn structured_function_input_sequence_rest_binds_one_logical_tail() {
     let tail = admission.local_ids()[3].clone();
     let site = builder
         .push_function_site_seed(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             crate::plan::RuntimeFunctionSemanticRole::Closure,
             [RuntimeFunctionInputBindingSeed {
                 ownership: Default::default(),
@@ -1420,6 +1426,7 @@ fn structured_function_input_record_pattern_binds_by_declared_field_coordinate()
     let selected = admission.local_ids()[2].clone();
     let site = builder
         .push_function_site_seed(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             crate::plan::RuntimeFunctionSemanticRole::Closure,
             [RuntimeFunctionInputBindingSeed {
                 ownership: Default::default(),
@@ -1538,6 +1545,7 @@ fn structured_apply_reorders_source_arguments_to_the_checked_abi() {
     let parameter_one = admission.local_ids()[4].clone();
     let site = builder
         .push_function_site_seed(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             crate::plan::RuntimeFunctionSemanticRole::Closure,
             [
                 RuntimeFunctionInputBindingSeed {

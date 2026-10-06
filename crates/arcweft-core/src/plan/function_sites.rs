@@ -12,6 +12,24 @@ use crate::runtime_id::RuntimePlanTypeId;
 use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLocalDeclarationId};
 use crate::value::RuntimeExpr;
 
+/// Stable lexical definition identity transported from its semantic owner.
+/// These bytes identify a definition; they do not prove body admission or sealing.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RuntimeFunctionDefinitionIdentity([u8; 32]);
+
+impl RuntimeFunctionDefinitionIdentity {
+    /// Projects an identity already issued by the accepted semantic owner.
+    #[must_use]
+    pub const fn from_accepted_identity(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
 /// Semantic purpose of an accepted function definition, independent of its
 /// expression or control-transfer execution body.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -227,6 +245,7 @@ impl RuntimeFunctionSiteBody {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeFunctionSite {
+    definition: RuntimeFunctionDefinitionIdentity,
     role: RuntimeFunctionSemanticRole,
     function_type: Option<RuntimePlanTypeId>,
     inputs: Box<[RuntimeFunctionInputBinding]>,
@@ -235,6 +254,11 @@ pub struct RuntimeFunctionSite {
 }
 
 impl RuntimeFunctionSite {
+    #[must_use]
+    pub const fn definition(&self) -> RuntimeFunctionDefinitionIdentity {
+        self.definition
+    }
+
     #[must_use]
     pub const fn role(&self) -> RuntimeFunctionSemanticRole {
         self.role
@@ -326,6 +350,7 @@ impl RuntimeFunctionSiteTableBuilder {
 
     pub(crate) fn push(
         &mut self,
+        definition: RuntimeFunctionDefinitionIdentity,
         role: RuntimeFunctionSemanticRole,
         function_type: Option<RuntimePlanTypeId>,
         inputs: Box<[RuntimeFunctionInputBinding]>,
@@ -340,6 +365,7 @@ impl RuntimeFunctionSiteTableBuilder {
             .and_then(NonZeroU32::new)
             .ok_or(RuntimeFunctionSiteError::IdentityExhausted)?;
         self.sites.push(RuntimeFunctionSite {
+            definition,
             role,
             function_type,
             inputs,

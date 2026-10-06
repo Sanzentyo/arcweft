@@ -2040,6 +2040,7 @@ fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
         .expect("u32 flow helper is admitted");
     let mapping = builder
         .push_function_site_seed(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             arcweft_core::plan::RuntimeFunctionSemanticRole::Closure,
             [RuntimeFunctionInputBindingSeed {
                 source: RuntimeFunctionInputSource::Parameter {

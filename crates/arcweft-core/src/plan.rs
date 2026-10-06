@@ -94,10 +94,11 @@ pub use format_attempt::{
     RuntimeFormatAttempt, RuntimeFormatAttemptOperand, RuntimeFormatAttemptTable,
 };
 pub use function_sites::{
-    RuntimeFunctionInputBinding, RuntimeFunctionInputOwnershipRequirement,
-    RuntimeFunctionInputSource, RuntimeFunctionParameterPassing, RuntimeFunctionSemanticRole,
-    RuntimeFunctionSite, RuntimeFunctionSiteBody, RuntimeFunctionSiteBodyKind,
-    RuntimeFunctionSiteError, RuntimeFunctionSiteTable,
+    RuntimeFunctionDefinitionIdentity, RuntimeFunctionInputBinding,
+    RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionInputSource,
+    RuntimeFunctionParameterPassing, RuntimeFunctionSemanticRole, RuntimeFunctionSite,
+    RuntimeFunctionSiteBody, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteError,
+    RuntimeFunctionSiteTable,
 };
 pub use generation_contract::{
     CharacterDialogueRuntimeCustomFieldDigest, RuntimeCharacterCatalogDigest,

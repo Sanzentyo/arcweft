@@ -416,6 +416,7 @@ fn native_project_call_direct_continue_publishes_one_catalog_site() {
         .expect("project-call continuation types admit");
     let target_site = builder
         .push_function_site_seed(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             [],
             unit_value(),
@@ -555,6 +556,7 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
         .expect("target parameter local admits");
     let default_site = builder
         .push_function_site_seed(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             [],
             unit_value(),
@@ -562,6 +564,7 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
         .expect("default function-site admits");
     let target_site = builder
         .push_function_site_seed(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             [RuntimeFunctionInputBindingSeed {
                 ownership: Default::default(),
@@ -699,6 +702,7 @@ fn native_project_call_rest_materialization_accepts_empty_and_source_ordered_val
             .expect("rest target parameter local admits");
         let target_site = builder
             .push_function_site_seed(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
                 crate::plan::RuntimeFunctionSemanticRole::Ordinary,
                 [RuntimeFunctionInputBindingSeed {
                     ownership: Default::default(),
@@ -877,6 +881,7 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
     let target_input = admission.local_ids()[1].clone();
     let target_site = builder
         .push_function_site_seed(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             [RuntimeFunctionInputBindingSeed {
                 ownership: Default::default(),
@@ -1060,6 +1065,9 @@ fn native_project_call_executable_target_explicit_return_rejoins_catalog_site() 
         .expect("project-call return type admits");
     let target_site = builder
         .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [41; 32],
+            ),
             role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             function_type: None,
             inputs: Box::new([]),
@@ -1148,6 +1156,9 @@ fn native_project_call_target_goto_unwinds_the_catalog_return_boundary() {
         .expect("goto project-call type admits");
     let target_site = builder
         .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [41; 32],
+            ),
             role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             function_type: None,
             inputs: Box::new([]),
@@ -1251,6 +1262,9 @@ fn native_project_call_executable_target_fallthrough_fails_closed() {
         .expect("fallthrough type admits");
     let target_site = builder
         .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [41; 32],
+            ),
             role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             function_type: None,
             inputs: Box::new([]),

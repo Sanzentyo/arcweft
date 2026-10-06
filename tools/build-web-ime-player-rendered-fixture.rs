@@ -455,7 +455,14 @@ fn minimal_awbc_program() -> AwbcProgram {
             )])),
         );
         let site = builder
-            .push_function_site_seed(RuntimeFunctionSemanticRole::Closure, [], body)
+            .push_function_site_seed(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    handler.program().as_bytes(),
+                ),
+                RuntimeFunctionSemanticRole::Closure,
+                [],
+                body,
+            )
             .expect("fixture callback admits");
         builder
             .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed {

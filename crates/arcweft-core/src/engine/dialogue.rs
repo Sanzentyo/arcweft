@@ -2883,6 +2883,9 @@ mod tests {
             .expect("unit type");
         let function = builder
             .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+                definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [41; 32],
+                ),
                 role: crate::plan::RuntimeFunctionSemanticRole::Effect,
                 function_type: None,
                 inputs: Box::new([]),

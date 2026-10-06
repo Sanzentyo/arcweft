@@ -630,6 +630,7 @@ pub enum RuntimePlanBuildError {
 
 #[derive(Debug)]
 struct ReservedFunctionSite {
+    definition: super::RuntimeFunctionDefinitionIdentity,
     role: super::RuntimeFunctionSemanticRole,
     function_type: Option<RuntimePlanTypeId>,
     inputs: Box<[RuntimeFunctionInputBinding]>,
@@ -899,12 +900,14 @@ impl RuntimePlanBuilder {
 
     pub fn push_function_site_seed(
         &mut self,
+        definition: super::RuntimeFunctionDefinitionIdentity,
         role: super::RuntimeFunctionSemanticRole,
         inputs: impl IntoIterator<Item = RuntimeFunctionInputBindingSeed>,
         body: RuntimeExprSeed,
     ) -> Result<RuntimeFunctionSiteSeedId, RuntimePlanBuildError> {
         let result = body.ty();
         let site = self.reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            definition,
             role,
             function_type: None,
             inputs: inputs.into_iter().collect(),
@@ -1009,6 +1012,7 @@ impl RuntimePlanBuilder {
             .ok_or(RuntimeFunctionSiteError::IdentityExhausted)?;
         let site = crate::runtime_id::RuntimeFunctionSiteId::from_accepted_ordinal(ordinal);
         self.function_sites.push(ReservedFunctionSite {
+            definition: seed.definition,
             role: seed.role,
             function_type,
             inputs: inputs.into_boxed_slice(),
@@ -2601,6 +2605,7 @@ impl RuntimePlanBuilder {
                 unreachable!("incomplete function sites returned before materialization")
             };
             function_site_builder.push(
+                site.definition,
                 site.role,
                 site.function_type,
                 site.inputs,
@@ -3452,6 +3457,9 @@ mod tests {
         ] {
             builder
                 .push_function_site_seed(
+                    crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                        [41; 32],
+                    ),
                     role,
                     [],
                     RuntimeExprSeed::new(unit, RuntimeExprSeedKind::Value(RuntimeValue::Unit)),
@@ -3462,6 +3470,8 @@ mod tests {
         let sites = plan.function_sites().iter().collect::<Vec<_>>();
         assert_eq!(sites[0].role(), RuntimeFunctionSemanticRole::Ordinary);
         assert_eq!(sites[1].role(), RuntimeFunctionSemanticRole::Closure);
+        assert_eq!(sites[0].definition().as_bytes(), &[41; 32]);
+        assert_eq!(sites[0].definition(), sites[1].definition());
         assert_eq!(sites[0].body(), sites[1].body());
         assert_ne!(sites[0], sites[1]);
         assert_eq!(sites[0].role().semantic_tag(), 0);
@@ -3534,6 +3544,7 @@ mod tests {
 
         assert_eq!(
             second.push_function_site_seed(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
                 crate::plan::RuntimeFunctionSemanticRole::Ordinary,
                 [RuntimeFunctionInputBindingSeed {
                     ownership: Default::default(),

@@ -95,6 +95,11 @@ impl CheckedExecutionDefinitionIdentity {
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
+
+    /// Carries the accepted definition identity without hashing it again.
+    pub const fn runtime_identity(&self) -> arcweft_core::plan::RuntimeFunctionDefinitionIdentity {
+        arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(self.0)
+    }
 }
 
 mod parameters;

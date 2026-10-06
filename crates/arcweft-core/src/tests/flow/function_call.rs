@@ -39,6 +39,9 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
     let need_argument = admission.local_ids()[3].clone();
     let site = builder
         .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [41; 32],
+            ),
             role: crate::plan::RuntimeFunctionSemanticRole::Closure,
             function_type: None,
             inputs: Box::new([

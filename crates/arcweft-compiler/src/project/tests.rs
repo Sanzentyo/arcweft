@@ -749,6 +749,10 @@ fn root_closure_capture_transfer_proof_drives_creation_and_ingress() {
         let [site] = sites.as_slice() else {
             panic!("one capturing function site")
         };
+        assert_eq!(
+            site.definition(),
+            closure.definition_identity().runtime_identity()
+        );
         assert_eq!(site.capture_inputs().next().unwrap().ownership(), ownership);
         let mut creation_reads = Vec::new();
         plan.try_visit_flow_ops(&mut |operation| {
@@ -820,6 +824,7 @@ flow main() {
     );
     let mut templates = Vec::new();
     let mut slot_types = Vec::new();
+    let mut callback_definitions = Vec::new();
     for instance in instances {
         let mut applications = 0_usize;
         instance.visit_dialogue_applications(&mut |_, owner, application| {
@@ -837,6 +842,18 @@ flow main() {
             };
             templates.push(fragment.template().id());
             slot_types.push(slot.ty().identity());
+            let definition = fragment.value_callback_definition(slot).unwrap();
+            callback_definitions.push(definition);
+            assert!(
+                compiled
+                    .runtime_plan()
+                    .plan
+                    .function_sites()
+                    .iter()
+                    .any(|site| site.role()
+                        == arcweft_core::plan::RuntimeFunctionSemanticRole::Dialogue
+                        && site.definition() == definition)
+            );
         });
         assert_eq!(applications, 1);
     }
@@ -844,6 +861,13 @@ flow main() {
     templates.dedup();
     slot_types.sort();
     slot_types.dedup();
+    callback_definitions.sort();
+    callback_definitions.dedup();
+    assert_eq!(
+        callback_definitions.len(),
+        1,
+        "closed types and template allocation preserve the lexical callback definition"
+    );
     assert_eq!(templates.len(), 2, "template identities are plan-unique");
     assert_eq!(
         slot_types.len(),
@@ -2918,6 +2942,10 @@ fn root_implicit_capture_transfer_drives_creation_and_ingress() {
         let [site] = sites.as_slice() else {
             panic!("one capturing site")
         };
+        assert_eq!(
+            site.definition(),
+            callable.definition_identity().runtime_identity()
+        );
         assert_eq!(site.capture_inputs().next().unwrap().ownership(), ownership);
         let mut reads = Vec::new();
         plan.try_visit_flow_ops(&mut |op| {
@@ -3029,6 +3057,24 @@ fn continuation_captured_parameters_retain_accepted_passing() {
     );
     let (mut session, parsed) = compilation_state(&project);
     let compiled = compile_project(&mut session, &project, &parsed, &context).unwrap();
+    let mut accepted_definitions = compiled
+        .runtime_facts()
+        .project_function_instances()
+        .map(|instance| instance.definition_identity().runtime_identity())
+        .collect::<Vec<_>>();
+    let mut actual_definitions = compiled
+        .runtime_plan()
+        .plan
+        .function_sites()
+        .iter()
+        .map(|site| site.definition())
+        .collect::<Vec<_>>();
+    accepted_definitions.sort();
+    actual_definitions.sort();
+    assert_eq!(
+        actual_definitions, accepted_definitions,
+        "every closed instance preserves its accepted lexical definition"
+    );
     let mut accepted = compiled
         .runtime_facts()
         .project_function_instances()
@@ -3187,6 +3233,14 @@ fn ordinary_function_formals_retain_accepted_whole_parameter_coordinates() {
         assert_eq!(pair.definition(), &instance.definition().parameters()[0]);
         assert_eq!(unused.definition(), &instance.definition().parameters()[1]);
         assert_ne!(pair.identity(), unused.identity());
+        assert!(
+            compiled
+                .runtime_plan()
+                .plan
+                .function_sites()
+                .iter()
+                .any(|site| site.definition() == instance.definition_identity().runtime_identity())
+        );
         (
             instance.definition_identity(),
             pair.identity(),
@@ -3456,6 +3510,10 @@ fn defer_capture_transfer_drives_registration_and_ingress() {
         assert_eq!(capture.transfer().mode(), mode);
         let plan = &compiled.runtime_plan().plan;
         let site = plan.function_sites().get(plan.defer_sites()[0]).unwrap();
+        assert_eq!(
+            site.definition(),
+            defer.definition_identity().runtime_identity()
+        );
         let input = site.capture_inputs().next().unwrap();
         assert_eq!(input.ownership(), ownership);
         assert_eq!(
@@ -3528,6 +3586,10 @@ fn dialogue_effect_capture_transfer_drives_creation_and_ingress() {
         let [site] = sites.as_slice() else {
             panic!("one effect function")
         };
+        assert_eq!(
+            site.definition(),
+            effect.definition_identity().runtime_identity()
+        );
         let input = site.capture_inputs().next().unwrap();
         assert_eq!(input.ownership(), ownership);
         assert_eq!(

@@ -49,6 +49,9 @@ pub(crate) fn returning_function_plan(body_kind: RuntimeFunctionSiteBodyKind) ->
         .expect("nested function types admit");
     let inner_site = builder
         .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [41; 32],
+            ),
             role: crate::plan::RuntimeFunctionSemanticRole::Closure,
             function_type: None,
             inputs: Box::new([RuntimeFunctionInputBindingSeed {
@@ -77,6 +80,9 @@ pub(crate) fn returning_function_plan(body_kind: RuntimeFunctionSiteBodyKind) ->
         .expect("inner function defines");
     let outer_site = builder
         .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [41; 32],
+            ),
             role: crate::plan::RuntimeFunctionSemanticRole::Closure,
             function_type: None,
             inputs: Box::new([]),
