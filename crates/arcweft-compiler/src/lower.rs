@@ -934,9 +934,12 @@ fn project_runtime_semantic_fact_inventories(
                 (runtime_type(local.ty(), symbols, world, analysis)?, None)
             }
         };
+        let origin = analysis.local_binding_origin(owner).map_err(|_| {
+            RuntimeSemanticProjectionError::MissingLocalSemanticFact { local: owner }
+        })?;
         match context {
-            Some(context) => input.push_contextual_local_declaration(owner, ty, context),
-            None => input.push_local_declaration(owner, ty),
+            Some(context) => input.push_contextual_local_declaration(owner, ty, context, origin),
+            None => input.push_local_declaration(owner, ty, origin),
         }
     }
 

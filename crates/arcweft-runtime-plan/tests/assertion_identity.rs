@@ -631,6 +631,7 @@ fn lower_assertion_project(
                 },
             )
             .expect("runtime semantic reachability");
+    let local_analysis = accepted_analysis_fixture(project);
     for owner in runtime_owners.locals() {
         input.push_local_declaration(
             owner,
@@ -638,6 +639,7 @@ fn lower_assertion_project(
                 RuntimeSemanticTypeId::from_bytes([0x11; 32]),
                 RuntimeTypeShape::Unit,
             ),
+            local_analysis.local_binding_origin(owner).unwrap(),
         );
     }
     for owner in runtime_owners.patterns() {
@@ -771,6 +773,40 @@ fn project_fixture(label: &str, source: &str) -> HirProject {
         .insert_module(project_module)
         .expect("module insertion");
     builder.finish().expect("fixture project")
+}
+
+fn accepted_analysis_fixture(
+    project: &HirProject,
+) -> arcweft_lang_sema::final_analysis::FinalSemanticAnalysis {
+    use arcweft_lang_sema::{final_analysis::*, registration::*};
+    let executable = project.analysis_view().unwrap();
+    let documents = executable
+        .modules()
+        .map(|(_, module)| Arc::clone(module.provenance().document()))
+        .collect::<Vec<_>>();
+    let world = ProjectSymbolWorldId::try_new(
+        executable.package().clone(),
+        documents[0].identity().id().clone(),
+        "runtime-plan-assertion-test",
+    )
+    .unwrap();
+    let registration =
+        ProjectRegistrationFacts::try_new(world, documents, vec![], vec![], vec![]).unwrap();
+    let registered = CharacterRegistrar::register(CharacterRegistrationRequest::new(
+        Arc::new(arcweft_lang_sema::env::TypeCheckEnv::standard()),
+        project.view(),
+        &registration,
+        None,
+    ))
+    .unwrap();
+    let cancellation = std::sync::atomic::AtomicBool::new(false);
+    analyze_final_project(
+        executable,
+        registered.symbols(),
+        FinalSemanticCatalogs::production(&registered),
+        FinalSemanticAnalysisControl::new(&cancellation),
+    )
+    .unwrap()
 }
 
 fn accepted_flow_fixture(

@@ -1210,6 +1210,51 @@ pub struct StableCheckedBindingCoordinate {
     path: CheckedSemanticPath,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+#[error("local {local:?} has no accepted lexical binding coordinate")]
+pub struct CheckedLocalBindingOriginError {
+    pub local: LocalId,
+}
+
+/// Accepted local origin with its exact issuing HIR allocation retained for admission.
+#[derive(Clone, Debug)]
+pub struct CheckedLocalBindingOrigin {
+    local: LocalId,
+    topology: std::sync::Arc<arcweft_lang_hir::project::HirProjectEvaluationTopology>,
+    coordinate: StableCheckedBindingCoordinate,
+}
+
+impl CheckedLocalBindingOrigin {
+    pub(crate) fn new(
+        local: LocalId,
+        topology: std::sync::Arc<arcweft_lang_hir::project::HirProjectEvaluationTopology>,
+        coordinate: StableCheckedBindingCoordinate,
+    ) -> Self {
+        Self {
+            local,
+            topology,
+            coordinate,
+        }
+    }
+
+    pub fn validate_owner(
+        &self,
+        project: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
+        local: LocalId,
+    ) -> bool {
+        self.local == local
+            && self
+                .topology
+                .generation()
+                .validate_analysis_lease(project)
+                .is_ok()
+    }
+
+    pub const fn coordinate(&self) -> &StableCheckedBindingCoordinate {
+        &self.coordinate
+    }
+}
+
 impl StableCheckedBindingCoordinate {
     /// Projects this accepted coordinate into the runtime input origin domain.
     pub fn runtime_input_origin(

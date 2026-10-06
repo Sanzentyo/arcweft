@@ -185,6 +185,7 @@ fn runtime_projection_emits_stable_diagnostic_without_message_parsing() {
             Some((item.id(), *statement, *conditions.first()?))
         })
         .expect("typed assertion statement");
+    let local_analysis = accepted_analysis_fixture(&project);
     let mut input = RuntimePlanSemanticFactInput::new();
     for (_, module) in executable.modules() {
         for (owner, _) in module.locals() {
@@ -194,6 +195,7 @@ fn runtime_projection_emits_stable_diagnostic_without_message_parsing() {
                     RuntimeSemanticTypeId::from_bytes([0x11; 32]),
                     RuntimeTypeShape::Unit,
                 ),
+                local_analysis.local_binding_origin(owner).unwrap(),
             );
         }
         for (owner, _) in module.expressions() {
@@ -342,6 +344,40 @@ fn runtime_projection_emits_stable_diagnostic_without_message_parsing() {
         Some(RUNTIME_ASSERTION_FAILED_CODE)
     );
     assert_eq!(shared.labels().len(), 2);
+}
+
+fn accepted_analysis_fixture(
+    project: &arcweft_lang_hir::project::HirProject,
+) -> arcweft_lang_sema::final_analysis::FinalSemanticAnalysis {
+    use arcweft_lang_sema::{final_analysis::*, registration::*};
+    let executable = project.analysis_view().unwrap();
+    let documents = executable
+        .modules()
+        .map(|(_, module)| Arc::clone(module.provenance().document()))
+        .collect::<Vec<_>>();
+    let world = ProjectSymbolWorldId::try_new(
+        executable.package().clone(),
+        documents[0].identity().id().clone(),
+        "tooling-runtime-assertion-test",
+    )
+    .unwrap();
+    let registration =
+        ProjectRegistrationFacts::try_new(world, documents, vec![], vec![], vec![]).unwrap();
+    let registered = CharacterRegistrar::register(CharacterRegistrationRequest::new(
+        Arc::new(arcweft_lang_sema::env::TypeCheckEnv::standard()),
+        project.view(),
+        &registration,
+        None,
+    ))
+    .unwrap();
+    let cancellation = std::sync::atomic::AtomicBool::new(false);
+    analyze_final_project(
+        executable,
+        registered.symbols(),
+        FinalSemanticCatalogs::production(&registered),
+        FinalSemanticAnalysisControl::new(&cancellation),
+    )
+    .unwrap()
 }
 
 fn accepted_flow_fixture(

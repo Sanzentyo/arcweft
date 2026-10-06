@@ -574,8 +574,14 @@ fn project_fixture(label: &str, source: &str) -> HirProject {
         .expect("fixture package");
     let path = CanonicalModulePath::crate_root();
     let source_name = SourceName::path(format!("runtime-plan-semantic-facts-{label}.arcw"));
-    let source =
-        format!("{source}\nflow __runtime_plan_test_root {{ __runtime_plan_test_probe() }}\n");
+    let probe = if source.contains("fn __runtime_plan_test_probe(") {
+        ""
+    } else {
+        "fn __runtime_plan_test_probe() -> Unit { () }\n"
+    };
+    let source = format!(
+        "{source}\n{probe}flow __runtime_plan_test_root {{ __runtime_plan_test_probe() }}\n"
+    );
     let document = Arc::new(
         SourceDocument::try_new(
             SourceDocumentId::try_new(format!("arcweft-test://runtime-plan/{label}"))
@@ -928,11 +934,20 @@ fn result_cases(
     ])
 }
 
+pub(crate) fn fixture_local_origin(
+    project: &HirProject,
+    local: arcweft_lang_hir::identity::LocalId,
+) -> arcweft_lang_sema::semantic_coordinate::CheckedLocalBindingOrigin {
+    analyze_identity_fixture(project)
+        .local_binding_origin(local)
+        .unwrap()
+}
+
 fn complete_type_input(project: &HirProject) -> RuntimePlanSemanticFactInput {
     let mut input = RuntimePlanSemanticFactInput::new();
     let runtime_owners = runtime_reachability(project);
     for owner in runtime_owners.locals() {
-        input.push_local_declaration(owner, unit_type());
+        input.push_local_declaration(owner, unit_type(), fixture_local_origin(&project, owner));
     }
     for owner in runtime_owners.patterns() {
         input.push_pattern_type(owner, unit_type());
@@ -944,6 +959,29 @@ fn complete_type_input(project: &HirProject) -> RuntimePlanSemanticFactInput {
         input.push_expression_type(owner, unit_type());
     }
     input
+}
+
+#[test]
+fn local_origins_reject_another_binding_and_hir_allocation_before_publication() {
+    let source = "fn root(first: bool, second: bool) -> bool { first }\n";
+    let project = project_fixture("local-origin-admission", source);
+    let mut wrong_local = complete_type_input(&project);
+    let target = wrong_local.local_declarations[0].0;
+    wrong_local.local_declarations[0].1.origin = wrong_local.local_declarations[1].1.origin.clone();
+    assert_eq!(
+        runtime_facts(&project, wrong_local).unwrap_err(),
+        RuntimeSemanticFactsError::InvalidLocalOrigin { local: target }
+    );
+
+    let foreign = project_fixture("local-origin-admission", source);
+    let mut wrong_generation = complete_type_input(&project);
+    let foreign_input = complete_type_input(&foreign);
+    wrong_generation.local_declarations[0].1.origin =
+        foreign_input.local_declarations[0].1.origin.clone();
+    assert_eq!(
+        runtime_facts(&project, wrong_generation).unwrap_err(),
+        RuntimeSemanticFactsError::InvalidLocalOrigin { local: target }
+    );
 }
 
 fn assignment_fact_fixture(
@@ -1223,7 +1261,7 @@ fn local_owners(project: &HirProject) -> Vec<arcweft_lang_hir::identity::LocalId
 fn local_declarations_use_one_complete_contiguous_canonical_projection() {
     let project = project_fixture(
         "local-declaration-order",
-        "fn root(first: bool, second: bool) { let third = first; second }\n",
+        "fn root(first: bool, second: bool) -> bool { let third = first; second }\n",
     );
     let owners = local_owners(&project);
     assert!(
@@ -1233,6 +1271,13 @@ fn local_declarations_use_one_complete_contiguous_canonical_projection() {
 
     let facts = runtime_facts(&project, complete_type_input(&project))
         .expect("complete canonical local projection");
+    let analysis = analyze_identity_fixture(&project);
+    for (owner, _) in facts.local_declarations() {
+        assert_eq!(
+            facts.local_origin(owner),
+            Some(analysis.local_binding_origin(owner).unwrap().coordinate())
+        );
+    }
 
     let locals = facts.local_declarations().collect::<Vec<_>>();
     assert_eq!(locals.len(), owners.len());
@@ -1377,16 +1422,16 @@ fn presentation_owned_facts_are_inactive_and_filtered_local_ids_remain_contiguou
     let project = project_fixture(
         "presentation-owner-domain",
         concat!(
-            "fn before(first: bool) { let second: bool = first; second }\n",
+            "fn before(first: bool) -> bool { let second: bool = first; second }\n",
             "#[tool.flag(1)]\n",
             "view Card(dialogue: DialogueView, count: i64 = 1i64) { Text(\"x\") }\n",
             "#[tool.flag(2)]\n",
             "style Theme {\n",
-            "    token color.text: Color = white\n",
-            "    Button { color = rgba(10, 20, 30, 255) }\n",
-            "    when environment(color-scheme == dark) { Button { color = red } }\n",
+            "    token spacing.gap: i64 = 1i64\n",
+            "    Button { gap = 2i64 }\n",
+            "    when environment(text-scale >= 100%) { Button { gap = 3i64 } }\n",
             "}\n",
-            "fn after(third: bool) { third }\n",
+            "fn after(third: bool) -> bool { third }\n",
         ),
     );
     let executable = project.analysis_view().expect("executable fixture");
@@ -1443,7 +1488,11 @@ fn presentation_owned_facts_are_inactive_and_filtered_local_ids_remain_contiguou
         .expect("retained local path");
 
     let mut input = complete_type_input(&project);
-    input.push_local_declaration(presentation_local, unit_type());
+    input.push_local_declaration(
+        presentation_local,
+        unit_type(),
+        fixture_local_origin(&project, presentation_local),
+    );
     assert_eq!(
         runtime_facts(&project, input)
             .expect_err("a presentation local cannot extend the runtime domain"),
@@ -1513,7 +1562,7 @@ fn presentation_owned_facts_are_inactive_and_filtered_local_ids_remain_contiguou
 fn missing_extra_duplicate_and_reordered_local_projections_are_rejected() {
     let project = project_fixture(
         "invalid-local-declarations",
-        "fn root(first: bool, second: bool) { first }\n",
+        "fn root(first: bool, second: bool) -> bool { first }\n",
     );
     let owners = local_owners(&project);
     assert!(owners.len() >= 2, "fixture retains both parameters");
@@ -1533,7 +1582,11 @@ fn missing_extra_duplicate_and_reordered_local_projections_are_rejected() {
     let foreign = project_fixture("extra-local-declaration", "fn foreign(value: bool) {}\n");
     let foreign_owner = local_owners(&foreign)[0];
     let mut extra = complete_type_input(&project);
-    extra.push_local_declaration(foreign_owner, unit_type());
+    extra.push_local_declaration(
+        foreign_owner,
+        unit_type(),
+        fixture_local_origin(&foreign, foreign_owner),
+    );
     assert_eq!(
         runtime_facts(&project, extra).expect_err("a foreign local cannot extend the plan domain"),
         RuntimeSemanticFactsError::ExtraLocalDeclaration {
@@ -1542,7 +1595,11 @@ fn missing_extra_duplicate_and_reordered_local_projections_are_rejected() {
     );
 
     let mut duplicate = complete_type_input(&project);
-    duplicate.push_local_declaration(owners[0], unit_type());
+    duplicate.push_local_declaration(
+        owners[0],
+        unit_type(),
+        fixture_local_origin(&project, owners[0]),
+    );
     assert_eq!(
         runtime_facts(&project, duplicate)
             .expect_err("one HIR local cannot receive two plan identities"),
@@ -1680,7 +1737,7 @@ fn wrong_expression_family_is_not_reinterpreted() {
 fn dialogue_line_fact_owns_the_checked_path_only_runtime_identity() {
     let project = project_fixture(
         "dialogue-line",
-        "fn root() {\n    let line: Ref<DialogueLine> = @say.story.greeting\n}\n",
+        "fn root() -> Ref<DialogueLine> {\n    @say.story.greeting\n}\n",
     );
     let owner = entity_reference(&project);
     let line = RuntimeLineId::from_source_entity_body("say.story.greeting")
@@ -1716,7 +1773,7 @@ fn duplicate_facts_are_rejected_before_publication() {
 fn accepted_expression_and_pattern_types_are_complete_and_exact() {
     let project = project_fixture(
         "complete-types",
-        "fn root(value: bool) {\n    match value { true => (), false => () }\n}\n",
+        "fn root(value: bool) -> Unit {\n    match value { true => (), false => () }\n}\n",
     );
     let input = complete_type_input(&project);
     let facts = runtime_facts(&project, input).expect("complete type facts");
@@ -1979,12 +2036,12 @@ fn missing_expression_type_is_rejected_before_publication() {
 fn missing_pattern_type_is_rejected_before_publication() {
     let project = project_fixture(
         "missing-pattern-type",
-        "fn root(value: bool) {\n    match value { true => (), false => () }\n}\n",
+        "fn root(value: bool) -> Unit {\n    match value { true => (), false => () }\n}\n",
     );
     let mut input = RuntimePlanSemanticFactInput::new();
     let runtime_owners = runtime_reachability(&project);
     for owner in runtime_owners.locals() {
-        input.push_local_declaration(owner, unit_type());
+        input.push_local_declaration(owner, unit_type(), fixture_local_origin(&project, owner));
     }
     for owner in runtime_owners
         .selected_expression_type_owners()
@@ -2555,7 +2612,10 @@ fn affine_snapshot_only_opaque_shape_preserves_owner_through_plan_projection() {
 
 #[test]
 fn nested_operational_expression_type_is_retained_without_reconstruction() {
-    let project = project_fixture("nested-operational-type", "fn root(value: bool) { true }\n");
+    let project = project_fixture(
+        "nested-operational-type",
+        "fn root(value: bool) -> bool { true }\n",
+    );
     let owner = boolean_literal(&project);
     let leaf = super::RuntimeNormalizedType::new(
         RuntimeSemanticTypeId::from_bytes([0x22; 32]),
@@ -2576,7 +2636,7 @@ fn nested_operational_expression_type_is_retained_without_reconstruction() {
     let mut input = RuntimePlanSemanticFactInput::new();
     let runtime_owners = runtime_reachability(&project);
     for local in runtime_owners.locals() {
-        input.push_local_declaration(local, nested.clone());
+        input.push_local_declaration(local, nested.clone(), fixture_local_origin(&project, local));
     }
     for pattern in runtime_owners.patterns() {
         input.push_pattern_type(pattern, nested.clone());
@@ -2614,7 +2674,7 @@ fn nested_operational_expression_type_is_retained_without_reconstruction() {
 fn postfix_type_completeness_keeps_only_the_selected_candidate_expression_tree() {
     let project = project_fixture(
         "postfix-selected-types",
-        "fn root(items: Vec<i64>, subject: i64) {\n    items[{ match subject { value => value }; 0 }]\n}\n",
+        "fn root(items: Vec<i64>, subject: i64) -> i64 {\n    items[{ match subject { value => value }; 0i64 }]\n}\n",
     );
     let executable = project.analysis_view().expect("executable fixture");
     let modules = executable
@@ -2661,7 +2721,7 @@ fn postfix_type_completeness_keeps_only_the_selected_candidate_expression_tree()
     let complete_selected_input = || {
         let mut input = RuntimePlanSemanticFactInput::new();
         for owner in runtime_owners.locals() {
-            input.push_local_declaration(owner, unit_type());
+            input.push_local_declaration(owner, unit_type(), fixture_local_origin(&project, owner));
         }
         for owner in &accepted {
             input.push_expression_type(*owner, unit_type());

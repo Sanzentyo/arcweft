@@ -9944,6 +9944,7 @@ mod tests {
                     RuntimeSemanticTypeId::from_bytes([0x11; 32]),
                     RuntimeTypeShape::Unit,
                 ),
+                super::super::semantic_facts::tests::fixture_local_origin(project, owner),
             );
         }
         for owner in runtime_owners.patterns() {

@@ -400,6 +400,10 @@ structured input の転送行は、作成時の受理済み Copy／SnapshotClone
 capture の転送モードは作成時の証拠から保持し、入場時の Owned／Unrestricted
 保証から推測しない。取得元に合わない転送行は予約の公開前に拒否する。
 
+runtime-domain local の semantic fact は、Sema が発行した binding coordinate を
+型・scope と同じ行で保持する。発行元の local と受理済み HIR allocation を受理時に
+照合し、別 binding や別 generation の座標を混ぜた入力を公開前に拒否する。
+
 AWBC の各入力行も取得元を必須で保持し、parameter と captured parameter は
 静的な passing 区分を codec の往復後も保持する。retained 入力を先行させ、
 retained と現在の parameter の ordinal をそれぞれ連続した順序で検証する。

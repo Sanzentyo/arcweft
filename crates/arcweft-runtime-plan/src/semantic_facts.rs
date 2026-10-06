@@ -5101,6 +5101,7 @@ impl RuntimeCheckedCapture {
 
 #[derive(Clone, Debug)]
 struct RuntimeLocalDeclarationFact {
+    origin: arcweft_lang_sema::semantic_coordinate::CheckedLocalBindingOrigin,
     ty: RuntimeNormalizedType,
     context: Option<RuntimeNormalizedType>,
 }
@@ -5432,9 +5433,20 @@ impl RuntimePlanSemanticFactInput {
     /// Appends one runtime-domain HIR local and its exact normalized type in
     /// canonical project order. Final plan-local identity issuance belongs
     /// exclusively to [`arcweft_core::plan::RuntimePlanBuilder`].
-    pub fn push_local_declaration(&mut self, owner: LocalId, ty: RuntimeNormalizedType) {
-        self.local_declarations
-            .push((owner, RuntimeLocalDeclarationFact { ty, context: None }));
+    pub fn push_local_declaration(
+        &mut self,
+        owner: LocalId,
+        ty: RuntimeNormalizedType,
+        origin: arcweft_lang_sema::semantic_coordinate::CheckedLocalBindingOrigin,
+    ) {
+        self.local_declarations.push((
+            owner,
+            RuntimeLocalDeclarationFact {
+                ty,
+                context: None,
+                origin,
+            },
+        ));
     }
 
     /// Publishes a local together with the function-shaped scope that owns it.
@@ -5443,10 +5455,12 @@ impl RuntimePlanSemanticFactInput {
         owner: LocalId,
         ty: RuntimeNormalizedType,
         context: RuntimeNormalizedType,
+        origin: arcweft_lang_sema::semantic_coordinate::CheckedLocalBindingOrigin,
     ) {
         self.local_declarations.push((
             owner,
             RuntimeLocalDeclarationFact {
+                origin,
                 ty,
                 context: Some(context),
             },
@@ -7310,6 +7324,9 @@ impl RuntimePlanSemanticFacts {
                         actual: *owner,
                     },
                 );
+            }
+            if !ty.origin.validate_owner(project, *owner) {
+                return Err(RuntimeSemanticFactsError::InvalidLocalOrigin { local: *owner });
             }
             validate_normalized_type(&modules, &ty.ty)?;
             let valid = match &ty.context {
@@ -9309,6 +9326,15 @@ impl RuntimePlanSemanticFacts {
             .and_then(|fact| fact.context.as_ref())
     }
 
+    pub fn local_origin(
+        &self,
+        local: LocalId,
+    ) -> Option<&arcweft_lang_sema::semantic_coordinate::StableCheckedBindingCoordinate> {
+        self.local_declarations
+            .get(&local)
+            .map(|fact| fact.origin.coordinate())
+    }
+
     /// Runtime-domain locals in canonical final-HIR inventory order.
     ///
     /// # Panics
@@ -10133,6 +10159,8 @@ fn validate_pure_programs(
 }
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeSemanticFactsError {
+    #[error("local {local:?} origin belongs to another owner or HIR allocation")]
+    InvalidLocalOrigin { local: LocalId },
     #[error("Flow {item:?} definition does not belong to its exact accepted owner")]
     InvalidFlowDefinition { item: ItemId },
     #[error("producer definition does not belong to its exact expression and local-use authority")]
@@ -14031,7 +14059,7 @@ fn validate_trait_method(
 
 #[cfg(test)]
 #[path = "semantic_facts/tests.rs"]
-mod tests;
+pub(crate) mod tests;
 
 #[cfg(test)]
 #[path = "semantic_facts/variant_selection_tests.rs"]
