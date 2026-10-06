@@ -372,6 +372,10 @@ pure helper、trait method、Flow の完成した実行行も、definition ident
 trait method と Flow は受理済み body の証拠から投影し、Entry controller の Flow wrapper は
 選択された root instance の定義を保持する。built-in helper はその種類の owner が識別する。
 
+Line group の definition identity は受理済み content occurrence の owner が発行し、
+group の完成時まで必須で保持する。group の割当位置や closed な result type は
+lexical definition identity の入力に含めない。
+
 structured function-site の parameter 入力は、受理済み formal の passing 区分を
 明示的に保持する。引数位置や pattern の展開で区分を失わず、frame ingress の
 `Owned`／`Unrestricted` 保証から区分を推測しない。

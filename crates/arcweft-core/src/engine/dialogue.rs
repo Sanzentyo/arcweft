@@ -2834,6 +2834,7 @@ mod tests {
             .arm_due_schedules(deadline)
             .expect("running packet");
         let group = LineTaskGroup::new(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([71; 32]),
             Box::new([]),
             Box::new([]),
             Box::new([]),

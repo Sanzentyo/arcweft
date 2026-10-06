@@ -469,6 +469,16 @@ impl RuntimeContentFragmentFact {
         &self.values
     }
 
+    /// The line execution group belongs to this accepted lexical content occurrence.
+    pub fn line_group_definition(&self) -> arcweft_core::plan::RuntimeFunctionDefinitionIdentity {
+        let mut hash = blake3::Hasher::new();
+        hash.update(b"arcweft.lang.dialogue-line-group-definition.v1\0");
+        hash.update(self.id.as_bytes());
+        arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+            *hash.finalize().as_bytes(),
+        )
+    }
+
     /// Identifies the identity callback for one exact authored slot in this fragment.
     /// Template allocation and the closed source type do not identify the definition.
     pub fn value_callback_definition(

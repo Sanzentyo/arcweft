@@ -220,7 +220,14 @@ pub(super) fn lower_dialogue_line_plan<'a, 'project, 'data>(
                 }));
         }
     }
-    lowerer.finish(application.line_result())
+    let fragment = scope
+        .dialogue_content_fragment_for_source(owner)
+        .ok_or_else(|| {
+            RuntimePlanLowerError::new(
+                "dialogue line execution group has no accepted content occurrence",
+            )
+        })?;
+    lowerer.finish(fragment.line_group_definition(), application.line_result())
 }
 
 impl LinePlanLowerer<'_, '_> {
@@ -1111,6 +1118,7 @@ impl LinePlanLowerer<'_, '_> {
 
     fn finish(
         self,
+        definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity,
         result: &RuntimeNormalizedType,
     ) -> Result<(RuntimeLineTaskGroupSeed, Vec<RuntimeAssertionSite>), RuntimePlanLowerError> {
         let root = NodeDraft::Sequence(vec![NodeDraft::Start(self.root_children)]);
@@ -1192,6 +1200,7 @@ impl LinePlanLowerer<'_, '_> {
             .map(&resolve_flow)
             .collect::<Result<Vec<_>, _>>()?;
         let group = RuntimeLineTaskGroupSeed {
+            definition,
             activation_ops,
             result_type: result.identity(),
             handle_sites,

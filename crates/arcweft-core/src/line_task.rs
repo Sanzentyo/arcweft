@@ -65,6 +65,7 @@ pub enum ScopeExit {
 /// exports, or a scheduled child's explicit capture packet.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LineTaskGroup {
+    definition: crate::plan::RuntimeFunctionDefinitionIdentity,
     captures: Box<[RuntimeLocalDeclarationId]>,
     activation_exports: Box<[RuntimeLocalDeclarationId]>,
     activation_ops: Box<[FlowOp]>,
@@ -78,6 +79,7 @@ pub struct LineTaskGroup {
 
 impl LineTaskGroup {
     pub(crate) fn new(
+        definition: crate::plan::RuntimeFunctionDefinitionIdentity,
         captures: Box<[RuntimeLocalDeclarationId]>,
         activation_exports: Box<[RuntimeLocalDeclarationId]>,
         activation_ops: Box<[FlowOp]>,
@@ -89,6 +91,7 @@ impl LineTaskGroup {
         cleanup: LineTaskCleanup,
     ) -> Self {
         Self {
+            definition,
             captures,
             activation_exports,
             activation_ops,
@@ -99,6 +102,11 @@ impl LineTaskGroup {
             cancel_rules,
             cleanup,
         }
+    }
+
+    #[must_use]
+    pub const fn definition(&self) -> crate::plan::RuntimeFunctionDefinitionIdentity {
+        self.definition
     }
 
     #[must_use]

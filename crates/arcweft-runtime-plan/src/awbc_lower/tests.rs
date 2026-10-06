@@ -543,6 +543,10 @@ fn awbc_cancellation_result_selection_uses_typed_terminal_and_fallthrough_keeps_
         .expect("dialogue content seed admits");
     let group = builder
         .push_line_task_group_seed(RuntimeLineTaskGroupSeed {
+            definition:
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [71; 32],
+                ),
             activation_ops: vec![RuntimeFlowOpSeed::CommitDialogueResult {
                 value: string_expr("normal"),
             }],
@@ -701,6 +705,10 @@ fn line_activation_local_is_exported_only_to_post_reveal_work() {
         .expect("content admits");
     let group = builder
         .push_line_task_group_seed(RuntimeLineTaskGroupSeed {
+            definition:
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [71; 32],
+                ),
             activation_ops: vec![
                 RuntimeFlowOpSeed::Let {
                     pattern: RuntimePatternSeed::new(

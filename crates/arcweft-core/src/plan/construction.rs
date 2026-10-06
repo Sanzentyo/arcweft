@@ -1835,6 +1835,7 @@ impl RuntimePlanBuilder {
             },
         )?;
         self.line_task_groups.push(LineTaskGroup::new(
+            seed.definition,
             captures.into_boxed_slice(),
             activation_exports.into_boxed_slice(),
             activation_ops.into_boxed_slice(),

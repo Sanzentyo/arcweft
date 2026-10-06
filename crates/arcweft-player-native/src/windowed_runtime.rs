@@ -1051,6 +1051,10 @@ mod tests {
             .expect("dialogue content admits");
         let line_task_group = builder
             .push_line_task_group_seed(arcweft_core::plan::RuntimeLineTaskGroupSeed {
+                definition:
+                    arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                        [71; 32],
+                    ),
                 activation_ops: vec![RuntimeFlowOpSeed::CommitDialogueResult {
                     value: arcweft_core::plan::RuntimeExprSeed::new(
                         unit_result.ty(),

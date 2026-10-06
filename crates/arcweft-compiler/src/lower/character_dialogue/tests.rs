@@ -357,6 +357,10 @@ flow main() -> String {
         .line_task_groups()
         .get(content.line_task_group().expect("line task group").index())
         .expect("published line task group");
+    let [fragment] = compiled.runtime_facts().dialogue_content_fragments() else {
+        panic!("one accepted content occurrence");
+    };
+    assert_eq!(group.definition(), fragment.line_group_definition());
     let fades = group
         .activation_ops()
         .iter()
