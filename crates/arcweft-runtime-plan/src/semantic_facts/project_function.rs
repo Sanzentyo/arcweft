@@ -1556,6 +1556,12 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         }
 
         for expression in &expressions {
+            if let RuntimeProjectFunctionExpressionPayload::ImplicitCallable { callable, .. } =
+                expression.payload()
+                && callable.definition().owner() != expression.owner()
+            {
+                return Err(RuntimeProjectFunctionFactError::NonCanonicalSemanticFacts);
+            }
             let host = matches!(expression.payload(), RuntimeProjectFunctionExpressionPayload::Call(call) if matches!(call.dispatch(), super::RuntimeResolvedCallDispatch::Static(super::RuntimeResolvedStaticCallTarget::Host(_))));
             match expression.producer() {
                 Some(producer)

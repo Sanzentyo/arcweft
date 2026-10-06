@@ -1153,23 +1153,15 @@ pub fn lower_runtime_plan_with_stats(
     let implicit_capture_input_local_specs = implicit_callable_facts
         .iter()
         .flat_map(|(key, scope, owner, callable)| {
-            callable
-                .captures()
-                .iter()
-                .enumerate()
-                .map(move |(position, capture)| {
-                    let position = u32::try_from(position).map_err(|_| {
-                        RuntimePlanLowerError::new(format!(
-                            "implicit callable {owner:?} capture position exceeds checked limits"
-                        ))
-                    })?;
-                    let ty = scope.local_type(*capture).ok_or_else(|| {
-                        RuntimePlanLowerError::new(format!(
-                            "implicit callable {owner:?} capture {capture:?} has no accepted type"
-                        ))
-                    })?;
-                    Ok(((key.clone(), position), ty.identity()))
-                })
+            callable.captures().iter().map(move |capture| {
+                let position = capture.position();
+                let ty = scope.local_type(capture.local()).ok_or_else(|| {
+                    RuntimePlanLowerError::new(format!(
+                        "implicit callable {owner:?} capture {capture:?} has no accepted type"
+                    ))
+                })?;
+                Ok(((key.clone(), position), ty.identity()))
+            })
         })
         .collect::<Result<Vec<_>, RuntimePlanLowerError>>()
         .map_err(|error| vec![error])?;
@@ -2406,14 +2398,11 @@ fn reserve_implicit_function_sites<'facts>(
         let captures = callable
             .captures()
             .iter()
-            .enumerate()
-            .map(|(position, capture)| -> Result<_, String> {
-                let binding = selected_locals.get(capture).cloned().ok_or_else(|| {
+            .map(|capture| -> Result<_, String> {
+                let binding = selected_locals.get(&capture.local()).cloned().ok_or_else(|| {
                     format!("implicit callable {owner:?} capture {capture:?} is absent")
                 })?;
-                let position = u32::try_from(position).map_err(|_| {
-                    format!("implicit callable {owner:?} capture position exceeds checked limits")
-                })?;
+                let position = capture.position();
                 let input_local = implicit_capture_input_locals
                     .get(&(key.clone(), position))
                     .cloned()
@@ -2422,7 +2411,7 @@ fn reserve_implicit_function_sites<'facts>(
                             "implicit callable {owner:?} capture has no admitted synthetic input local"
                         )
                     })?;
-                let ty = scope.local_type(*capture).ok_or_else(|| {
+                let ty = scope.local_type(capture.local()).ok_or_else(|| {
                     format!("implicit callable {owner:?} capture {capture:?} has no accepted type")
                 })?;
                 Ok(RuntimeFunctionInputBindingSeed {

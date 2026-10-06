@@ -247,8 +247,9 @@ pub use report::{
     CheckedExecutableRuntimeFactPartition, CheckedExecutableRuntimePatternFactFamily,
     CheckedExecutableRuntimePatternFactOwner, CheckedExecutableRuntimeStatementFactFamily,
     CheckedExecutableRuntimeStatementFactOwner, CheckedExpressionExecution,
-    FinalAnalysisClosureExecution, FinalAnalysisExecutionProjection,
-    FinalAnalysisExecutionProjectionError, FinalAnalysisImplicitCallableBody,
+    CheckedImplicitCallableCaptureOrigin, FinalAnalysisClosureExecution,
+    FinalAnalysisExecutionProjection, FinalAnalysisExecutionProjectionError,
+    FinalAnalysisImplicitCallableBody, FinalAnalysisImplicitCallableDefinition,
     FinalAnalysisImplicitCallableView, FinalAnalysisPipeView, FinalAnalysisTryView,
     FinalSemanticAnalysis,
 };

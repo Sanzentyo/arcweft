@@ -144,6 +144,54 @@ pub struct FinalAnalysisClosureExecution {
     control: super::CheckedExecutableControlRole,
 }
 
+/// Accepted lexical definition of an implicit callable, independent of a
+/// closed generic instance's types and capture transfer modes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FinalAnalysisImplicitCallableDefinition {
+    owner: ExprId,
+    identity: CheckedImplicitCallableIdentity,
+    definition_identity: super::CheckedExecutionDefinitionIdentity,
+    control: super::CheckedExecutableControlRole,
+    captures: Box<[CheckedImplicitCallableCaptureOrigin]>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedImplicitCallableCaptureOrigin {
+    position: u32,
+    local: LocalId,
+    origin: crate::semantic_coordinate::StableCheckedBindingCoordinate,
+}
+
+impl CheckedImplicitCallableCaptureOrigin {
+    pub const fn position(&self) -> u32 {
+        self.position
+    }
+    pub const fn local(&self) -> LocalId {
+        self.local
+    }
+    pub const fn origin(&self) -> &crate::semantic_coordinate::StableCheckedBindingCoordinate {
+        &self.origin
+    }
+}
+
+impl FinalAnalysisImplicitCallableDefinition {
+    pub const fn owner(&self) -> ExprId {
+        self.owner
+    }
+    pub const fn identity(&self) -> CheckedImplicitCallableIdentity {
+        self.identity
+    }
+    pub const fn definition_identity(&self) -> super::CheckedExecutionDefinitionIdentity {
+        self.definition_identity
+    }
+    pub const fn control(&self) -> super::CheckedExecutableControlRole {
+        self.control
+    }
+    pub const fn captures(&self) -> &[CheckedImplicitCallableCaptureOrigin] {
+        &self.captures
+    }
+}
+
 /// Accepted stable origin and exact generation-local join of one closure
 /// capture. Only the final closure execution projection issues these rows.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -237,9 +285,9 @@ pub enum FinalAnalysisExecutionProjectionError {
     #[error("checked closure expression {owner:?} has no exact source/execution authority")]
     MissingClosureExecution { owner: ExprId },
     #[error(
-        "checked closure expression {owner:?} has invalid accepted definition/capture coordinates"
+        "checked callable expression {owner:?} has invalid accepted definition/capture coordinates"
     )]
-    InvalidClosureCoordinates { owner: ExprId },
+    InvalidCallableCoordinates { owner: ExprId },
     #[error("checked constructor call {owner:?} has no exact instantiated variant authority")]
     InvalidVariantConstructor { owner: ExprId },
 }
@@ -513,7 +561,8 @@ impl FinalAnalysisExecutionProjection<'_> {
             self.analysis.accepted_root_catalog(),
             self.analysis,
         );
-        let invalid = || FinalAnalysisExecutionProjectionError::InvalidClosureCoordinates { owner };
+        let invalid =
+            || FinalAnalysisExecutionProjectionError::InvalidCallableCoordinates { owner };
         let path = coordinates.expression(owner).map_err(|_| invalid())?;
         let definition_identity = super::CheckedExecutionDefinitionIdentity::from_coordinate(
             &super::CheckedExecutionCoordinate::CallableBody(path),
@@ -927,7 +976,49 @@ impl FinalAnalysisExecutionProjection<'_> {
         else {
             return Err(FinalAnalysisExecutionProjectionError::WrongExpressionKind { owner });
         };
-        Ok(FinalAnalysisImplicitCallableView { callable })
+        let coordinates = crate::semantic_coordinate::SemanticCoordinateIndex::new(
+            self.analysis.accepted_root_catalog(),
+            self.analysis,
+        );
+        let invalid =
+            || FinalAnalysisExecutionProjectionError::InvalidCallableCoordinates { owner };
+        let definition_identity = super::CheckedExecutionDefinitionIdentity::from_coordinate(
+            &super::CheckedExecutionCoordinate::CallableBody(
+                coordinates.expression(owner).map_err(|_| invalid())?,
+            ),
+        )
+        .map_err(|_| invalid())?;
+        let control = self
+            .analysis
+            .callable_body_control(owner)
+            .ok_or_else(invalid)?;
+        let mut captured_locals = BTreeSet::new();
+        let captures = callable
+            .captures()
+            .iter()
+            .enumerate()
+            .map(|(position, capture)| {
+                let local = capture.lookup_local();
+                if !captured_locals.insert(local) {
+                    return Err(invalid());
+                }
+                Ok(CheckedImplicitCallableCaptureOrigin {
+                    position: u32::try_from(position).map_err(|_| invalid())?,
+                    local,
+                    origin: capture.origin().clone(),
+                })
+            })
+            .collect::<Result<Box<[_]>, FinalAnalysisExecutionProjectionError>>()?;
+        Ok(FinalAnalysisImplicitCallableView {
+            callable,
+            definition: FinalAnalysisImplicitCallableDefinition {
+                owner,
+                identity: callable.identity(),
+                definition_identity,
+                control,
+                captures,
+            },
+        })
     }
 
     /// Borrows the accepted once-only pipe execution view for `owner`.
@@ -964,9 +1055,13 @@ impl FinalAnalysisExecutionProjection<'_> {
 /// Typed execution view of one checked implicit callable.
 pub struct FinalAnalysisImplicitCallableView<'analysis> {
     callable: &'analysis CheckedImplicitCallable,
+    definition: FinalAnalysisImplicitCallableDefinition,
 }
 
 impl FinalAnalysisImplicitCallableView<'_> {
+    pub const fn definition(&self) -> &FinalAnalysisImplicitCallableDefinition {
+        &self.definition
+    }
     pub const fn identity(&self) -> CheckedImplicitCallableIdentity {
         self.callable.identity()
     }

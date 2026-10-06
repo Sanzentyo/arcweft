@@ -2519,3 +2519,151 @@ fn agent_project_graph_preserves_canonical_public_flow_ids_across_modules() {
             .all(|entity| { entity.public_id.as_str() != "flow.opening" })
     );
 }
+#[test]
+fn implicit_callable_definition_and_capture_origins_survive_source_revisions() {
+    fn observe(source: &str) -> arcweft_runtime_plan::semantic_facts::RuntimeImplicitCallableFact {
+        let (project, context) = removed_role_project(source);
+        let (mut session, parsed_sources) = compilation_state(&project);
+        let compiled = compile_project(&mut session, &project, &parsed_sources, &context).unwrap();
+        let facts = compiled
+            .runtime_facts()
+            .implicit_callables()
+            .collect::<Vec<_>>();
+        let [(_, fact)] = facts.as_slice() else {
+            panic!("one implicit callable")
+        };
+        (*fact).clone()
+    }
+    let source = "fn apply(handler: i64 -> i64 effects {}, value: i64) -> i64 { handler(value) }\nflow main() -> i64 { let offset = 1i64; return apply(_ + offset, 41i64) }";
+    let original = observe(source);
+    let revised = observe(&format!(
+        "fn unrelated() -> i64 {{ 99i64 }}\n{}",
+        source.replace("1i64;", "2i64;")
+    ));
+    assert_ne!(original.definition().owner(), revised.definition().owner());
+    assert_eq!(
+        original.definition_identity(),
+        revised.definition_identity()
+    );
+    let [capture] = original.captures() else {
+        panic!("one captured offset")
+    };
+    let [revised_capture] = revised.captures() else {
+        panic!("one captured offset")
+    };
+    assert_eq!(capture.position(), 0);
+    assert_eq!(capture.origin(), revised_capture.origin());
+    assert_ne!(capture.local(), revised_capture.local());
+    assert_ne!(
+        original.definition_identity(),
+        observe(&source.replace("flow main", "flow other")).definition_identity()
+    );
+}
+#[test]
+fn generic_implicit_callable_instances_share_the_accepted_definition_and_capture_origin() {
+    let (project, context) = removed_role_project(
+        "fn make<T>(tag: T, offset: i64) -> (i64 -> i64 effects {}) { _ + offset }\nflow main() -> i64 { let number = make(1i64, 2i64); let text = make(\"tag\", 3i64); return number(40i64) + text(0i64) }",
+    );
+    let (mut session, parsed_sources) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed_sources, &context).unwrap();
+    let callables = compiled.runtime_facts().project_function_instances().flat_map(|instance| {
+        instance.semantics().expressions().iter().filter_map(|expression| match expression.payload() {
+            arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionExpressionPayload::ImplicitCallable { callable, .. } => Some(callable),
+            _ => None,
+        })
+    }).collect::<Vec<_>>();
+    let [first, second] = callables.as_slice() else {
+        panic!("two closed implicit callable instances")
+    };
+    assert_eq!(first.definition_identity(), second.definition_identity());
+    assert_eq!(first.definition().owner(), second.definition().owner());
+    let [first_capture] = first.captures() else {
+        panic!("one captured offset")
+    };
+    let [second_capture] = second.captures() else {
+        panic!("one captured offset")
+    };
+    assert_eq!(first_capture.position(), 0);
+    assert_eq!(first_capture.origin(), second_capture.origin());
+}
+#[test]
+fn closed_implicit_callable_definition_cannot_be_rebound_to_another_expression() {
+    use arcweft_runtime_plan::semantic_facts::{
+        RuntimeImplicitCallableFact, RuntimeProjectFunctionExpressionPayload,
+        RuntimeProjectFunctionExpressionSemanticFact, RuntimeProjectFunctionFactError,
+        RuntimeProjectFunctionInstanceSemanticFacts,
+    };
+    let (project, context) = removed_role_project(
+        "fn apply(handler: i64 -> i64 effects {}, value: i64) -> i64 { handler(value) }\nfn choose<T>(tag: T, offset: i64) -> i64 { let first = apply(_ + offset, 1i64); let second = apply(_ + offset, 2i64); first + second }\nflow main() -> i64 { return choose(0i64, 40i64) }",
+    );
+    let (mut session, parsed_sources) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed_sources, &context).unwrap();
+    let semantics = compiled
+        .runtime_facts()
+        .project_function_instances()
+        .map(|instance| instance.semantics())
+        .find(|semantics| {
+            semantics
+                .expressions()
+                .iter()
+                .filter(|row| {
+                    matches!(
+                        row.payload(),
+                        RuntimeProjectFunctionExpressionPayload::ImplicitCallable { .. }
+                    )
+                })
+                .count()
+                == 2
+        })
+        .expect("one closed owner of two implicit callables");
+    let callables = semantics
+        .expressions()
+        .iter()
+        .filter_map(|row| match row.payload() {
+            RuntimeProjectFunctionExpressionPayload::ImplicitCallable { callable, .. } => {
+                Some(callable)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let [first, second] = callables.as_slice() else {
+        panic!("two callable definitions")
+    };
+    assert_ne!(first.definition_identity(), second.definition_identity());
+    let mut rows = semantics.expressions().to_vec();
+    let row = rows
+        .iter_mut()
+        .find(|row| row.owner() == first.definition().owner())
+        .unwrap();
+    let RuntimeProjectFunctionExpressionPayload::ImplicitCallable { tried, pipe, .. } =
+        row.payload()
+    else {
+        panic!("implicit payload")
+    };
+    *row = RuntimeProjectFunctionExpressionSemanticFact::new(
+        row.owner(),
+        row.children().into(),
+        RuntimeProjectFunctionExpressionPayload::ImplicitCallable {
+            callable: RuntimeImplicitCallableFact::new(
+                second.definition().clone(),
+                first.parameter().clone(),
+                first.result().clone(),
+                first.placeholders().into(),
+            ),
+            tried: tried.clone(),
+            pipe: pipe.clone(),
+        },
+    );
+    assert!(matches!(
+        RuntimeProjectFunctionInstanceSemanticFacts::try_new(
+            semantics.partition().clone(),
+            semantics.local_uses().clone(),
+            semantics.type_projection().into(),
+            rows.into_boxed_slice(),
+            semantics.patterns().into(),
+            semantics.statements().into(),
+            semantics.captures().into(),
+        ),
+        Err(RuntimeProjectFunctionFactError::NonCanonicalSemanticFacts)
+    ));
+}

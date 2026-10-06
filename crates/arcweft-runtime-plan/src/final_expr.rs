@@ -551,9 +551,9 @@ impl<'hir> FinalExprLowerer<'hir> {
                             self.lower_local_capture(
                                 CheckedLocalUseSite::Capture {
                                     owner: id,
-                                    local: *local,
+                                    local: local.local(),
                                 },
-                                *local,
+                                local.local(),
                             )
                         })
                         .collect::<Result<Vec<_>, _>>()?

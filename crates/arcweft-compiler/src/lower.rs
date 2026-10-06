@@ -1299,20 +1299,13 @@ fn project_runtime_semantic_fact_inventories(
             CheckedExpressionResolution::ImplicitCallable(_) => {
                 let callable_view = execution_projection.implicit_callable(owner)?;
                 let placeholders = callable_view.placeholders().collect::<Box<[_]>>();
-                let captures = callable_view.captures().collect::<Box<[_]>>();
                 input.push_implicit_callable(
                     owner,
                     RuntimeImplicitCallableFact::new(
-                        callable_view.identity(),
+                        callable_view.definition().clone(),
                         runtime_type(callable_view.parameter(), symbols, world, analysis)?,
                         runtime_type(callable_view.result(), symbols, world, analysis)?,
                         placeholders,
-                        captures,
-                        analysis.callable_body_control(owner).ok_or_else(|| {
-                            RuntimeSemanticProjectionError::Generation(Box::new(
-                                FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
-                            ))
-                        })?,
                     ),
                 );
                 match callable_view.body() {
@@ -8007,7 +8000,7 @@ fn runtime_executable_semantic_facts<'abi>(
             CheckedExecutableRuntimeExpressionFactFamily::ImplicitCallable => {
                 let view = execution.implicit_callable(owner)?;
                 let callable = RuntimeImplicitCallableFact::new(
-                    view.identity(),
+                    view.definition().clone(),
                     runtime_type_under(
                         view.parameter(),
                         lexical.types(),
@@ -8017,12 +8010,6 @@ fn runtime_executable_semantic_facts<'abi>(
                     )?,
                     runtime_type_under(view.result(), lexical.types(), symbols, world, analysis)?,
                     view.placeholders().collect(),
-                    view.captures().collect(),
-                    analysis.callable_body_control(owner).ok_or_else(|| {
-                        RuntimeSemanticProjectionError::Generation(Box::new(
-                            FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
-                        ))
-                    })?,
                 );
                 let (tried, pipe) = match view.body() {
                     FinalAnalysisImplicitCallableBody::Plain(_) => (None, None),

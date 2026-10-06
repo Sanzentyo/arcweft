@@ -1762,41 +1762,35 @@ pub struct RuntimeTryFact {
 /// Generation-bound implicit callable projection for one `_` abstraction.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeImplicitCallableFact {
-    control: arcweft_lang_sema::final_analysis::CheckedExecutableControlRole,
-    identity: arcweft_lang_sema::final_analysis::CheckedImplicitCallableIdentity,
+    definition: arcweft_lang_sema::final_analysis::FinalAnalysisImplicitCallableDefinition,
     parameter: RuntimeNormalizedType,
     result: RuntimeNormalizedType,
     placeholders: Box<[ExprId]>,
-    captures: Box<[LocalId]>,
 }
 
 impl RuntimeImplicitCallableFact {
     pub const fn new(
-        identity: arcweft_lang_sema::final_analysis::CheckedImplicitCallableIdentity,
+        definition: arcweft_lang_sema::final_analysis::FinalAnalysisImplicitCallableDefinition,
         parameter: RuntimeNormalizedType,
         result: RuntimeNormalizedType,
         placeholders: Box<[ExprId]>,
-        captures: Box<[LocalId]>,
-        control: arcweft_lang_sema::final_analysis::CheckedExecutableControlRole,
     ) -> Self {
         Self {
-            identity,
+            definition,
             parameter,
             result,
             placeholders,
-            captures,
-            control,
         }
     }
 
     pub const fn identity(
         &self,
     ) -> arcweft_lang_sema::final_analysis::CheckedImplicitCallableIdentity {
-        self.identity
+        self.definition.identity()
     }
 
     pub const fn control(&self) -> arcweft_lang_sema::final_analysis::CheckedExecutableControlRole {
-        self.control
+        self.definition.control()
     }
 
     pub const fn parameter(&self) -> &RuntimeNormalizedType {
@@ -1811,8 +1805,20 @@ impl RuntimeImplicitCallableFact {
         &self.placeholders
     }
 
-    pub const fn captures(&self) -> &[LocalId] {
-        &self.captures
+    pub const fn definition(
+        &self,
+    ) -> &arcweft_lang_sema::final_analysis::FinalAnalysisImplicitCallableDefinition {
+        &self.definition
+    }
+    pub const fn definition_identity(
+        &self,
+    ) -> arcweft_lang_sema::final_analysis::CheckedExecutionDefinitionIdentity {
+        self.definition.definition_identity()
+    }
+    pub const fn captures(
+        &self,
+    ) -> &[arcweft_lang_sema::final_analysis::CheckedImplicitCallableCaptureOrigin] {
+        self.definition.captures()
     }
 }
 
@@ -7937,7 +7943,7 @@ impl RuntimePlanSemanticFacts {
                 || result.as_ref() != fact.result()
                 || fact.placeholders().is_empty()
                 || !all_unique(fact.placeholders())
-                || !all_unique(fact.captures())
+                || fact.definition().owner() != *expression
             {
                 return Err(RuntimeSemanticFactsError::InvalidImplicitCallableFact {
                     expression: *expression,
@@ -7962,7 +7968,7 @@ impl RuntimePlanSemanticFacts {
                 }
             }
             for capture in fact.captures() {
-                if !local_declarations.contains_key(capture) {
+                if !local_declarations.contains_key(&capture.local()) {
                     return Err(RuntimeSemanticFactsError::InvalidImplicitCallableFact {
                         expression: *expression,
                     });
@@ -12691,7 +12697,7 @@ fn validate_project_function_semantic_catalog(
                     || fact
                         .captures()
                         .iter()
-                        .any(|capture| !local_types.contains_key(capture))
+                        .any(|capture| !local_types.contains_key(&capture.local()))
                     || tried
                         .as_ref()
                         .is_some_and(|tried| !try_boundary_type_matches(tried))
