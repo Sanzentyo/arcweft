@@ -967,6 +967,7 @@ impl RuntimePlanBuilder {
             input_types.push(input_type);
             input_sources.push(input.source);
             inputs.push(RuntimeFunctionInputBinding::new(
+                input.transfer,
                 input.origin,
                 input.source,
                 input_local,
@@ -3014,6 +3015,20 @@ fn validate_function_input_bindings(
     let mut locals = BTreeSet::new();
     for (index, input) in inputs.iter().enumerate() {
         if !matches!(
+            (input.source(), input.transfer()),
+            (
+                RuntimeFunctionInputSource::Capture { .. },
+                super::RuntimeFunctionInputTransfer::Transferred(_)
+                    | super::RuntimeFunctionInputTransfer::ExternalBinding
+            ) | (
+                RuntimeFunctionInputSource::Parameter { .. }
+                    | RuntimeFunctionInputSource::CapturedParameter { .. },
+                super::RuntimeFunctionInputTransfer::Formal
+            )
+        ) {
+            return Err(RuntimePlanBuildError::InvalidFunctionInputSource { index });
+        }
+        if !matches!(
             (input.source(), input.origin()),
             (
                 RuntimeFunctionInputSource::Capture { .. },
@@ -3554,12 +3569,13 @@ mod tests {
 
     #[test]
     fn function_input_origin_rejects_an_unrelated_semantic_role_atomically() {
-        for (source, origin) in [
+        for (source, origin, transfer) in [
             (
                 RuntimeFunctionInputSource::Capture { position: 0 },
                 super::super::RuntimeFunctionInputOrigin::Parameter(
                     crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity([1; 32]),
                 ),
+                crate::plan::RuntimeFunctionInputTransfer::ExternalBinding,
             ),
             (
                 RuntimeFunctionInputSource::CapturedParameter {
@@ -3567,6 +3583,7 @@ mod tests {
                     passing: super::super::RuntimeFunctionParameterPassing::Value,
                 },
                 super::super::RuntimeFunctionInputOrigin::Binding([1; 32]),
+                crate::plan::RuntimeFunctionInputTransfer::Formal,
             ),
             (
                 RuntimeFunctionInputSource::Parameter {
@@ -3577,6 +3594,24 @@ mod tests {
                     super::super::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
                         [1; 32],
                     ),
+                ),
+                crate::plan::RuntimeFunctionInputTransfer::Formal,
+            ),
+            (
+                RuntimeFunctionInputSource::Capture { position: 0 },
+                super::super::RuntimeFunctionInputOrigin::Binding([1; 32]),
+                crate::plan::RuntimeFunctionInputTransfer::Formal,
+            ),
+            (
+                RuntimeFunctionInputSource::Parameter {
+                    position: 0,
+                    passing: crate::plan::RuntimeFunctionParameterPassing::Value,
+                },
+                super::super::RuntimeFunctionInputOrigin::Parameter(
+                    crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity([1; 32]),
+                ),
+                crate::plan::RuntimeFunctionInputTransfer::Transferred(
+                    crate::plan::RuntimeFunctionCaptureMode::Copy,
                 ),
             ),
         ] {
@@ -3597,6 +3632,7 @@ mod tests {
                 role: super::super::RuntimeFunctionSemanticRole::Ordinary,
                 function_type: None,
                 inputs: Box::new([RuntimeFunctionInputBindingSeed {
+                    transfer,
                     origin,
                     source,
                     input_local: admitted.local_ids()[0].clone(),
@@ -3647,6 +3683,7 @@ mod tests {
                 crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
                 crate::plan::RuntimeFunctionSemanticRole::Ordinary,
                 [RuntimeFunctionInputBindingSeed {
+                    transfer: crate::plan::RuntimeFunctionInputTransfer::Formal,
                     origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
                         crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
                             [81; 32]

@@ -46,6 +46,9 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
             function_type: None,
             inputs: Box::new([
                 RuntimeFunctionInputBindingSeed {
+                    transfer: crate::plan::RuntimeFunctionInputTransfer::Transferred(
+                        crate::plan::RuntimeFunctionCaptureMode::Move,
+                    ),
                     origin: crate::plan::RuntimeFunctionInputOrigin::Binding([81; 32]),
                     ownership: Default::default(),
                     unrestricted_bindings: Box::new([]),
@@ -60,6 +63,9 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
                     ),
                 },
                 RuntimeFunctionInputBindingSeed {
+                    transfer: crate::plan::RuntimeFunctionInputTransfer::Transferred(
+                        crate::plan::RuntimeFunctionCaptureMode::Move,
+                    ),
                     origin: crate::plan::RuntimeFunctionInputOrigin::Binding([81; 32]),
                     ownership: Default::default(),
                     unrestricted_bindings: Box::new([]),

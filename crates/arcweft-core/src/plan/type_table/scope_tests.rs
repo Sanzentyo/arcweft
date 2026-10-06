@@ -257,6 +257,7 @@ fn quantified_function_frame_retains_its_header_through_pattern_and_body_admissi
             role: crate::plan::RuntimeFunctionSemanticRole::Closure,
             function_type: Some(identity(2)),
             inputs: Box::new([RuntimeFunctionInputBindingSeed {
+                transfer: crate::plan::RuntimeFunctionInputTransfer::Formal,
                 origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
                     crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity([81; 32]),
                 ),

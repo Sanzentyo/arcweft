@@ -193,6 +193,7 @@ fn identity_program_plan(
         .enumerate()
         .map(
             |(position, ((ty, passing), local))| RuntimeFunctionInputBindingSeed {
+                transfer: crate::plan::RuntimeFunctionInputTransfer::Formal,
                 origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
                     crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity([81; 32]),
                 ),

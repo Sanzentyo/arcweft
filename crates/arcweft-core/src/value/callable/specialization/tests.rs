@@ -114,6 +114,9 @@ fn plan() -> RuntimePlan {
                 crate::plan::RuntimeFunctionSemanticRole::Ordinary,
                 [
                     RuntimeFunctionInputBindingSeed {
+                        transfer: crate::plan::RuntimeFunctionInputTransfer::Transferred(
+                            crate::plan::RuntimeFunctionCaptureMode::Move,
+                        ),
                         origin: crate::plan::RuntimeFunctionInputOrigin::Binding([81; 32]),
                         ownership: Default::default(),
                         unrestricted_bindings: Box::new([]),
@@ -128,6 +131,7 @@ fn plan() -> RuntimePlan {
                         ),
                     },
                     RuntimeFunctionInputBindingSeed {
+                        transfer: crate::plan::RuntimeFunctionInputTransfer::Formal,
                         origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
                             crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
                                 [81; 32],

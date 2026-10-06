@@ -79,6 +79,12 @@ pub(super) fn reserve_global_defer_sites(
                         RuntimePlanLowerError::new("defer capture position exceeds checked limits")
                     })?;
                     Ok(RuntimeFunctionInputBindingSeed {
+                        transfer: arcweft_core::plan::RuntimeFunctionInputTransfer::Transferred(
+                            capture
+                                .transfer()
+                                .runtime_capture_mode()
+                                .expect("accepted defer capture is a value transfer"),
+                        ),
                         origin: capture
                             .origin()
                             .runtime_input_origin()

@@ -56,6 +56,9 @@ fn captured_identity_plan() -> RuntimePlan {
             function_type: None,
             inputs: Box::new([
                 RuntimeFunctionInputBindingSeed {
+                    transfer: crate::plan::RuntimeFunctionInputTransfer::Transferred(
+                        crate::plan::RuntimeFunctionCaptureMode::Move,
+                    ),
                     origin: crate::plan::RuntimeFunctionInputOrigin::Binding([81; 32]),
                     ownership: Default::default(),
                     unrestricted_bindings: Box::new([]),
@@ -70,6 +73,7 @@ fn captured_identity_plan() -> RuntimePlan {
                     ),
                 },
                 RuntimeFunctionInputBindingSeed {
+                    transfer: crate::plan::RuntimeFunctionInputTransfer::Formal,
                     origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
                         crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
                             [81; 32],
@@ -239,6 +243,7 @@ fn checked_partial_application_seals_retained_parameter_coordinates() {
                 .into_iter()
                 .enumerate()
                 .map(|(position, ty)| RuntimeFunctionInputBindingSeed {
+                    transfer: crate::plan::RuntimeFunctionInputTransfer::Formal,
                     origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
                         crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
                             [81; 32],
@@ -384,6 +389,7 @@ fn rest_partial_plan(
                 .into_iter()
                 .enumerate()
                 .map(|(position, ty)| RuntimeFunctionInputBindingSeed {
+                    transfer: crate::plan::RuntimeFunctionInputTransfer::Formal,
                     origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
                         crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
                             [81; 32],
@@ -609,6 +615,7 @@ fn defaulted_attached_plan_builder(flatten_attached_into_arrow: bool) -> Runtime
             crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             [RuntimeFunctionInputBindingSeed {
+                transfer: crate::plan::RuntimeFunctionInputTransfer::Formal,
                 origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
                     crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity([81; 32]),
                 ),

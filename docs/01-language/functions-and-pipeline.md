@@ -395,6 +395,11 @@ direct callable の両方で同じ identity domain を使う。pure helper と t
 Flow の invocation schema も whole-formal identity を必須で保持し、Entry の
 投影・通常 Flow の生成・保存後の復元で同じ受理済み identity を維持する。
 
+structured input の転送行は、作成時の受理済み Copy／SnapshotClone／Move と、
+抽出された実行 body の external binding、whole formal を型で区別する。
+capture の転送モードは作成時の証拠から保持し、入場時の Owned／Unrestricted
+保証から推測しない。取得元に合わない転送行は予約の公開前に拒否する。
+
 AWBC の各入力行も取得元を必須で保持し、parameter と captured parameter は
 静的な passing 区分を codec の往復後も保持する。retained 入力を先行させ、
 retained と現在の parameter の ordinal をそれぞれ連続した順序で検証する。

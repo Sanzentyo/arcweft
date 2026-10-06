@@ -2055,6 +2055,7 @@ fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
             arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             arcweft_core::plan::RuntimeFunctionSemanticRole::Closure,
             [RuntimeFunctionInputBindingSeed {
+                transfer: arcweft_core::plan::RuntimeFunctionInputTransfer::Formal,
                 origin: arcweft_core::plan::RuntimeFunctionInputOrigin::Parameter(
                     arcweft_core::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
                         [81; 32],

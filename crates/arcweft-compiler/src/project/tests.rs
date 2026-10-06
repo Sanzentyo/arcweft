@@ -757,6 +757,12 @@ fn root_closure_capture_transfer_proof_drives_creation_and_ingress() {
             site.capture_inputs().next().unwrap().origin(),
             capture.origin().runtime_input_origin().unwrap()
         );
+        assert_eq!(
+            site.capture_inputs().next().unwrap().transfer(),
+            arcweft_core::plan::RuntimeFunctionInputTransfer::Transferred(
+                capture.transfer().runtime_capture_mode().unwrap()
+            )
+        );
         assert_eq!(site.capture_inputs().next().unwrap().ownership(), ownership);
         let mut creation_reads = Vec::new();
         plan.try_visit_flow_ops(&mut |operation| {
@@ -2969,6 +2975,15 @@ fn root_implicit_capture_transfer_drives_creation_and_ingress() {
             site.parameter_inputs().next().unwrap().origin(),
             callable.formal().runtime_input_origin()
         );
+        assert_eq!(
+            site.capture_inputs().next().unwrap().transfer(),
+            arcweft_core::plan::RuntimeFunctionInputTransfer::Transferred(
+                callable.captures()[0]
+                    .transfer()
+                    .runtime_capture_mode()
+                    .unwrap()
+            )
+        );
         assert_eq!(site.capture_inputs().next().unwrap().ownership(), ownership);
         let mut reads = Vec::new();
         plan.try_visit_flow_ops(&mut |op| {
@@ -3562,6 +3577,12 @@ fn defer_capture_transfer_drives_registration_and_ingress() {
             site.capture_inputs().next().unwrap().origin(),
             capture.origin().runtime_input_origin().unwrap()
         );
+        assert_eq!(
+            site.capture_inputs().next().unwrap().transfer(),
+            arcweft_core::plan::RuntimeFunctionInputTransfer::Transferred(
+                capture.transfer().runtime_capture_mode().unwrap()
+            )
+        );
         let input = site.capture_inputs().next().unwrap();
         assert_eq!(input.ownership(), ownership);
         assert_eq!(
@@ -3641,6 +3662,12 @@ fn dialogue_effect_capture_transfer_drives_creation_and_ingress() {
         assert_eq!(
             site.capture_inputs().next().unwrap().origin(),
             capture.origin().runtime_input_origin().unwrap()
+        );
+        assert_eq!(
+            site.capture_inputs().next().unwrap().transfer(),
+            arcweft_core::plan::RuntimeFunctionInputTransfer::Transferred(
+                capture.transfer().runtime_capture_mode().unwrap()
+            )
         );
         let input = site.capture_inputs().next().unwrap();
         assert_eq!(input.ownership(), ownership);

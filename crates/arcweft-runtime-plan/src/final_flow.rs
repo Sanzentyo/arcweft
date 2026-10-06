@@ -2443,6 +2443,7 @@ fn reserve_implicit_function_sites<'facts>(
                     format!("implicit callable {owner:?} capture {capture:?} has no accepted type")
                 })?;
                 Ok(RuntimeFunctionInputBindingSeed {
+                    transfer: arcweft_core::plan::RuntimeFunctionInputTransfer::Transferred(capture.transfer().runtime_capture_mode().expect("accepted capture is a value transfer")),
                     origin: capture.origin().runtime_input_origin().map_err(|error| error.to_string())?,
                     ownership: match capture.transfer().mode() { arcweft_lang_sema::final_analysis::CheckedLocalReadMode::Copy => RuntimeFunctionInputOwnershipRequirement::Unrestricted, arcweft_lang_sema::final_analysis::CheckedLocalReadMode::Move => RuntimeFunctionInputOwnershipRequirement::Owned, arcweft_lang_sema::final_analysis::CheckedLocalReadMode::Borrow => unreachable!("accepted implicit capture is a value transfer") },
                     unrestricted_bindings: Box::new([]),
@@ -2459,6 +2460,7 @@ fn reserve_implicit_function_sites<'facts>(
             })
             .collect::<Result<Vec<_>, _>>();
         let parameter_input = RuntimeFunctionInputBindingSeed {
+            transfer: arcweft_core::plan::RuntimeFunctionInputTransfer::Formal,
             origin: callable.formal().runtime_input_origin(),
             ownership: parameter_ownership,
             unrestricted_bindings: Box::new([]),
@@ -2614,6 +2616,7 @@ fn reserve_closure_sites<'facts>(
                     }
                 };
                 Ok(RuntimeFunctionInputBindingSeed {
+                    transfer: arcweft_core::plan::RuntimeFunctionInputTransfer::Transferred(capture.transfer().runtime_capture_mode().expect("accepted capture is a value transfer")),
                     origin: capture.origin().runtime_input_origin().map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
                     ownership,
                     unrestricted_bindings: Box::new([]),
@@ -2690,6 +2693,7 @@ fn reserve_closure_sites<'facts>(
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(RuntimeFunctionInputBindingSeed {
+                    transfer: arcweft_core::plan::RuntimeFunctionInputTransfer::Formal,
                     origin: parameter.definition().runtime_input_origin(),
                     ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
                     unrestricted_bindings: unrestricted_bindings.into_boxed_slice(),
@@ -2896,6 +2900,7 @@ fn reserve_project_function_sites<'facts>(
                 unrestricted_bindings.push(seed);
             }
             inputs.push(RuntimeFunctionInputBindingSeed {
+                transfer: arcweft_core::plan::RuntimeFunctionInputTransfer::Formal,
                 origin: parameter.definition().runtime_input_origin(),
                 ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
                 unrestricted_bindings: unrestricted_bindings.into_boxed_slice(),
@@ -2954,6 +2959,7 @@ fn reserve_project_function_sites<'facts>(
                 continue;
             };
             inputs.push(RuntimeFunctionInputBindingSeed {
+                transfer: arcweft_core::plan::RuntimeFunctionInputTransfer::Formal,
                 origin: formal.runtime_input_origin(),
                 ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
                 unrestricted_bindings,
@@ -3097,6 +3103,7 @@ fn reserve_project_default_function_sites<'facts>(
                     )));
                 }
                 Ok(RuntimeFunctionInputBindingSeed {
+                    transfer: arcweft_core::plan::RuntimeFunctionInputTransfer::Formal,
                     origin: capture.formal().definition().runtime_input_origin(),
                     ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
                     unrestricted_bindings: Box::new([]),
@@ -3199,6 +3206,7 @@ fn reserve_pure_programs<'facts>(
                     RuntimePlanLowerError::new("pure program input position exceeds u32")
                 })?;
                 Ok(RuntimeFunctionInputBindingSeed {
+                    transfer: arcweft_core::plan::RuntimeFunctionInputTransfer::ExternalBinding,
                     origin: input
                         .binding()
                         .origin()
@@ -3293,6 +3301,7 @@ fn reserve_pure_programs<'facts>(
                     RuntimeFunctionInputOwnershipRequirement::Unrestricted
                 } else { RuntimeFunctionInputOwnershipRequirement::Owned };
                 Ok(RuntimeFunctionInputBindingSeed {
+                    transfer: arcweft_core::plan::RuntimeFunctionInputTransfer::Formal,
                     origin: parameter.runtime_input_origin(),
                     source: RuntimeFunctionInputSource::Parameter {
                         position: u32::try_from(position).map_err(|_| {
@@ -4631,7 +4640,7 @@ fn reserve_dialogue_effect_sites<'facts>(
                             effect.site()
                         ));
                     }
-                    Ok((local, input_local, capture.ty().identity(), capture.input_ownership(), capture.origin().runtime_input_origin().map_err(|error| error.to_string())?))
+                    Ok((local, input_local, capture.ty().identity(), capture.input_ownership(), capture.origin().runtime_input_origin().map_err(|error| error.to_string())?, arcweft_core::plan::RuntimeFunctionInputTransfer::Transferred(capture.transfer().runtime_capture_mode().expect("accepted effect capture is a value transfer"))))
                 })
                 .collect::<Result<Vec<_>, _>>();
             let result = effect.operation().result().clone();
@@ -4650,12 +4659,13 @@ fn reserve_dialogue_effect_sites<'facts>(
                 captures
                     .into_iter()
                     .enumerate()
-                    .map(|(position, (binding, input_local, ty, ownership, origin))| {
+                    .map(|(position, (binding, input_local, ty, ownership, origin, transfer))| {
                         let position = u32::try_from(position).map_err(|_| {
                             "dialogue content effect capture position exceeds checked limits"
                                 .to_owned()
                         })?;
                         Ok(RuntimeFunctionInputBindingSeed {
+                            transfer,
                             origin,
                             ownership,
                             unrestricted_bindings: if matches!(ownership, RuntimeFunctionInputOwnershipRequirement::Unrestricted) {
@@ -4957,6 +4967,9 @@ fn lower_dialogue_application<'facts>(
             continue;
         };
         let capture_inputs = [RuntimeFunctionInputBindingSeed {
+            transfer: arcweft_core::plan::RuntimeFunctionInputTransfer::Transferred(
+                arcweft_core::plan::RuntimeFunctionCaptureMode::Move,
+            ),
             origin: arcweft_core::plan::RuntimeFunctionInputOrigin::EvaluatedResult(
                 fragment
                     .value_callback_definition(value)

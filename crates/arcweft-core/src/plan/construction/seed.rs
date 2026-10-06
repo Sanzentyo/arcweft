@@ -1940,6 +1940,7 @@ impl From<RuntimeExprSeed> for RuntimeFunctionSiteBodySeed {
 /// the checked pattern owns all body-local bindings.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeFunctionInputBindingSeed {
+    pub transfer: crate::plan::RuntimeFunctionInputTransfer,
     pub origin: crate::plan::RuntimeFunctionInputOrigin,
     pub source: RuntimeFunctionInputSource,
     pub input_local: RuntimeLocalSeedId,

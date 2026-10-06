@@ -141,6 +141,22 @@ pub enum RuntimeFunctionSiteBodyKind {
     Executable,
 }
 
+/// Selected value operation when a retained packet is created.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub enum RuntimeFunctionCaptureMode {
+    Copy,
+    SnapshotClone,
+    Move,
+}
+
+/// Retained value creation is distinct from an extracted body's external binding.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub enum RuntimeFunctionInputTransfer {
+    Transferred(RuntimeFunctionCaptureMode),
+    ExternalBinding,
+    Formal,
+}
+
 /// Origin of one function-site input row in the closed call ABI.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -179,6 +195,7 @@ pub enum RuntimeFunctionInputOwnershipRequirement {
 /// rest patterns in the same binder used by ordinary flow operations.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeFunctionInputBinding {
+    transfer: RuntimeFunctionInputTransfer,
     origin: RuntimeFunctionInputOrigin,
     source: RuntimeFunctionInputSource,
     input_local: RuntimeLocalDeclarationId,
@@ -189,6 +206,7 @@ pub struct RuntimeFunctionInputBinding {
 
 impl RuntimeFunctionInputBinding {
     pub(crate) const fn new(
+        transfer: RuntimeFunctionInputTransfer,
         origin: RuntimeFunctionInputOrigin,
         source: RuntimeFunctionInputSource,
         input_local: RuntimeLocalDeclarationId,
@@ -197,6 +215,7 @@ impl RuntimeFunctionInputBinding {
         unrestricted_bindings: Box<[RuntimeLocalDeclarationId]>,
     ) -> Self {
         Self {
+            transfer,
             origin,
             source,
             input_local,
@@ -204,6 +223,11 @@ impl RuntimeFunctionInputBinding {
             ownership,
             unrestricted_bindings,
         }
+    }
+
+    #[must_use]
+    pub const fn transfer(&self) -> RuntimeFunctionInputTransfer {
+        self.transfer
     }
 
     #[must_use]

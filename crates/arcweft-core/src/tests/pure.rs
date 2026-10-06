@@ -578,6 +578,7 @@ fn standard_map_pure_plan() -> (Arc<RuntimePlan>, Vec<StandardMapPureCase>) {
                     ),
                     crate::plan::RuntimeFunctionSemanticRole::Closure,
                     [RuntimeFunctionInputBindingSeed {
+                        transfer: crate::plan::RuntimeFunctionInputTransfer::Formal,
                         origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
                             crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
                                 [81; 32],
@@ -1070,6 +1071,9 @@ fn structured_closure_captures_the_exact_owning_plan() {
             crate::plan::RuntimeFunctionSemanticRole::Closure,
             [
                 RuntimeFunctionInputBindingSeed {
+                    transfer: crate::plan::RuntimeFunctionInputTransfer::Transferred(
+                        crate::plan::RuntimeFunctionCaptureMode::Move,
+                    ),
                     origin: crate::plan::RuntimeFunctionInputOrigin::Binding([81; 32]),
                     ownership: Default::default(),
                     unrestricted_bindings: Box::new([]),
@@ -1084,6 +1088,7 @@ fn structured_closure_captures_the_exact_owning_plan() {
                     ),
                 },
                 RuntimeFunctionInputBindingSeed {
+                    transfer: crate::plan::RuntimeFunctionInputTransfer::Formal,
                     origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
                         crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
                             [81; 32],
@@ -1223,6 +1228,7 @@ fn structured_function_input_tuple_pattern_binds_body_locals() {
             crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             crate::plan::RuntimeFunctionSemanticRole::Closure,
             [RuntimeFunctionInputBindingSeed {
+                transfer: crate::plan::RuntimeFunctionInputTransfer::Formal,
                 origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
                     crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity([81; 32]),
                 ),
@@ -1358,6 +1364,7 @@ fn structured_function_input_sequence_rest_binds_one_logical_tail() {
             crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             crate::plan::RuntimeFunctionSemanticRole::Closure,
             [RuntimeFunctionInputBindingSeed {
+                transfer: crate::plan::RuntimeFunctionInputTransfer::Formal,
                 origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
                     crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity([81; 32]),
                 ),
@@ -1492,6 +1499,7 @@ fn structured_function_input_record_pattern_binds_by_declared_field_coordinate()
             crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
             crate::plan::RuntimeFunctionSemanticRole::Closure,
             [RuntimeFunctionInputBindingSeed {
+                transfer: crate::plan::RuntimeFunctionInputTransfer::Formal,
                 origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
                     crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity([81; 32]),
                 ),
@@ -1618,6 +1626,7 @@ fn structured_apply_reorders_source_arguments_to_the_checked_abi() {
             crate::plan::RuntimeFunctionSemanticRole::Closure,
             [
                 RuntimeFunctionInputBindingSeed {
+                    transfer: crate::plan::RuntimeFunctionInputTransfer::Formal,
                     origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
                         crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
                             [81; 32],
@@ -1639,6 +1648,7 @@ fn structured_apply_reorders_source_arguments_to_the_checked_abi() {
                     ),
                 },
                 RuntimeFunctionInputBindingSeed {
+                    transfer: crate::plan::RuntimeFunctionInputTransfer::Formal,
                     origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
                         crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
                             [81; 32],

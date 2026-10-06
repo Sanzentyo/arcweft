@@ -220,6 +220,21 @@ impl CheckedLocalCopyEvidence {
 }
 
 impl CheckedLocalValueTransfer {
+    /// Projects the selected creation transfer without consulting ingress guarantees.
+    pub const fn runtime_capture_mode(
+        &self,
+    ) -> Option<arcweft_core::plan::RuntimeFunctionCaptureMode> {
+        match self.mode {
+            CheckedLocalReadMode::Copy => {
+                Some(arcweft_core::plan::RuntimeFunctionCaptureMode::Copy)
+            }
+            CheckedLocalReadMode::Move => {
+                Some(arcweft_core::plan::RuntimeFunctionCaptureMode::Move)
+            }
+            CheckedLocalReadMode::Borrow => None,
+        }
+    }
+
     pub const fn local(&self) -> LocalId {
         self.local
     }
