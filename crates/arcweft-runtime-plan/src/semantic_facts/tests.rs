@@ -3331,16 +3331,20 @@ fn iterator_reachability_with_edges<'project>(
 }
 
 fn iterator_method_fact(
+    project: &HirProject,
     method: &IteratorMethodFixture,
     trait_identity: RuntimeTraitIdentity,
 ) -> RuntimeTraitMethodFact {
-    RuntimeTraitMethodFact::new(
+    let definition = iterator_method_definition(project, method);
+    RuntimeTraitMethodFact::try_new(
         method.declaration.clone(),
         method.implementation,
         method.member,
         trait_identity,
         unit_type(),
+        definition,
     )
+    .unwrap()
 }
 
 fn identity_iterator_fact(method: &IteratorMethodFixture) -> RuntimeIteratorFact {
@@ -3412,6 +3416,7 @@ fn iterator_witness_method_edges_are_exact_and_fail_closed() {
             "    type Item = i64\n",
             "    fn next(&mut self) -> Option<i64> { None }\n",
             "}\n",
+            "fn __runtime_plan_test_probe() -> Unit { () }\n",
             "flow iterator_edge_root() {\n",
             "    let counter = Counter { end: 1 }\n",
             "    for value in counter { value }\n",
@@ -3444,8 +3449,12 @@ fn iterator_witness_method_edges_are_exact_and_fail_closed() {
             &into_iter,
         )
     };
-    let into_fact = iterator_method_fact(&into_iter, RuntimeTraitIdentity::StandardIntoIterator);
-    let next_fact = iterator_method_fact(&next, RuntimeTraitIdentity::StandardIterator);
+    let into_fact = iterator_method_fact(
+        &project,
+        &into_iter,
+        RuntimeTraitIdentity::StandardIntoIterator,
+    );
+    let next_fact = iterator_method_fact(&project, &next, RuntimeTraitIdentity::StandardIterator);
     let methods = BTreeMap::from([
         (into_fact.key().clone(), into_fact),
         (next_fact.key().clone(), next_fact),
@@ -3544,13 +3553,15 @@ fn iterator_witness_method_edges_are_exact_and_fail_closed() {
     );
 
     let mut wrong_implementation = methods.clone();
-    let wrong = RuntimeTraitMethodFact::new(
+    let wrong = RuntimeTraitMethodFact::try_new(
         next.declaration.clone(),
         other_next.implementation,
         next.member,
         RuntimeTraitIdentity::StandardIterator,
         unit_type(),
-    );
+        iterator_method_definition(&project, &next),
+    )
+    .unwrap();
     wrong_implementation.insert(wrong.key().clone(), wrong);
     assert_eq!(
         iterator_edge_error(
@@ -3566,7 +3577,7 @@ fn iterator_witness_method_edges_are_exact_and_fail_closed() {
         }
     );
     let mut wrong_member = methods.clone();
-    let wrong = RuntimeTraitMethodFact::new(
+    let wrong = RuntimeTraitMethodFact::try_new(
         next.declaration.clone(),
         next.implementation,
         next.member
@@ -3574,7 +3585,9 @@ fn iterator_witness_method_edges_are_exact_and_fail_closed() {
             .expect("fixture member coordinate"),
         RuntimeTraitIdentity::StandardIterator,
         unit_type(),
-    );
+        iterator_method_definition(&project, &next),
+    )
+    .unwrap();
     wrong_member.insert(wrong.key().clone(), wrong);
     assert_eq!(
         iterator_edge_error(
@@ -3590,7 +3603,7 @@ fn iterator_witness_method_edges_are_exact_and_fail_closed() {
         }
     );
     let mut wrong_trait = methods;
-    let wrong = iterator_method_fact(&next, RuntimeTraitIdentity::StandardIntoIterator);
+    let wrong = iterator_method_fact(&project, &next, RuntimeTraitIdentity::StandardIntoIterator);
     wrong_trait.insert(wrong.key().clone(), wrong);
     assert_eq!(
         iterator_edge_error(
@@ -3647,4 +3660,46 @@ fn accepted_flow_fixture(
             .unwrap(),
     );
     crate::semantic_facts::RuntimeFlowFact::try_new(identity, definition).unwrap()
+}
+
+fn iterator_method_definition(
+    project: &HirProject,
+    method: &IteratorMethodFixture,
+) -> Arc<arcweft_lang_sema::final_analysis::CheckedExecutionInputAbi> {
+    use arcweft_lang_sema::{final_analysis::*, registration::*};
+    let executable = project.analysis_view().unwrap();
+    let registration = ProjectRegistrationFacts::try_new(
+        iterator_fixture_symbols(project).world().clone(),
+        executable
+            .modules()
+            .map(|(_, module)| Arc::clone(module.provenance().document()))
+            .collect(),
+        vec![],
+        vec![],
+        vec![],
+    )
+    .unwrap();
+    let registered = CharacterRegistrar::register(CharacterRegistrationRequest::new(
+        Arc::new(arcweft_lang_sema::env::TypeCheckEnv::standard()),
+        project.view(),
+        &registration,
+        None,
+    ))
+    .unwrap();
+    let cancellation = std::sync::atomic::AtomicBool::new(false);
+    let analysis = analyze_final_project(
+        executable,
+        registered.symbols(),
+        FinalSemanticCatalogs::production(&registered),
+        FinalSemanticAnalysisControl::new(&cancellation),
+    )
+    .unwrap();
+    let source = CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
+        declaration: CallableDeclarationKey::ImplMethod(method.declaration.clone()),
+        role: arcweft_lang_hir::project::HirDeclarationBodyRootRole::ImplFunctionBody,
+    });
+    let context = analysis
+        .checked_execution_context(executable, registered.symbols(), source.clone(), None)
+        .unwrap();
+    Arc::new(context.checked_execution_input_abi(source).unwrap())
 }

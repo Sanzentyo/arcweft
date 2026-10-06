@@ -1058,10 +1058,42 @@ flow main(number: Route<i32>, word: Route<String>) {
     assert_eq!(methods.len(), 2);
     assert_eq!(methods[0].declaration(), methods[1].declaration());
     assert_ne!(methods[0].key(), methods[1].key());
+    assert_eq!(
+        methods[0].definition().definition_identity(),
+        methods[1].definition().definition_identity()
+    );
+    assert_eq!(
+        methods[0].definition().parameters()[0].identity(),
+        methods[1].definition().parameters()[0].identity()
+    );
+    let foreign = arcweft_runtime_plan::semantic_facts::RuntimeTraitMethodFact::try_new_closed(
+        methods[0].declaration().clone(),
+        methods[0].implementation(),
+        methods[0].member(),
+        methods[0].trait_identity().clone(),
+        methods[0].self_type().clone(),
+        Arc::clone(methods[1].definition()),
+        methods[0].closed_callable().unwrap().clone(),
+        methods[0].closed_semantics().unwrap().clone(),
+        methods[0].instance_uses().into(),
+    );
+    assert!(matches!(foreign, Err(arcweft_runtime_plan::semantic_facts::RuntimeSemanticFactsError::InvalidTraitMethodIdentity)));
     for method in methods {
         let semantics = method
             .closed_semantics()
             .expect("generic method body is closed");
+        assert_eq!(
+            method.definition().environment().local_uses(),
+            semantics.local_uses()
+        );
+        assert_eq!(method.definition().parameters().len(), 2);
+        for formal in method.definition().parameters() {
+            assert_eq!(
+                formal.definition_identity(),
+                method.definition().definition_identity()
+            );
+            assert_eq!(formal.bindings().len(), 1);
+        }
         assert!(semantics.partition().locals().len() >= 2);
         assert!(semantics.partition().expressions().len() >= 2);
         let closure = semantics

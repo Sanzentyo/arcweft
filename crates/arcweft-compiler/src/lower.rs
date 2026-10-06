@@ -945,13 +945,31 @@ fn project_runtime_semantic_fact_inventories(
     for (conformance, self_type) in &iteration_methods {
         let declaration = conformance.declaration().clone();
         method_declarations.insert(conformance.clone(), declaration.clone());
-        input.push_trait_method(RuntimeTraitMethodFact::new(
-            declaration,
-            conformance.implementation(),
-            conformance.method(),
-            runtime_trait_identity(conformance.trait_identity()),
-            runtime_type(self_type, symbols, world, analysis)?,
-        ));
+        let source = arcweft_lang_sema::final_analysis::CheckedExecutionSource::InvokeBody(
+            arcweft_lang_sema::final_analysis::CheckedExecutionBodyOwner::Declaration {
+                declaration: CallableDeclarationKey::ImplMethod(declaration.clone()),
+                role: arcweft_lang_hir::project::HirDeclarationBodyRootRole::ImplFunctionBody,
+            },
+        );
+        let context = analysis
+            .checked_execution_context(project, symbols, source.clone(), None)
+            .map_err(Box::new)?;
+        let definition = Arc::new(
+            context
+                .checked_execution_input_abi(source)
+                .map_err(Box::new)?,
+        );
+        input.push_trait_method(
+            RuntimeTraitMethodFact::try_new(
+                declaration,
+                conformance.implementation(),
+                conformance.method(),
+                runtime_trait_identity(conformance.trait_identity()),
+                runtime_type(self_type, symbols, world, analysis)?,
+                definition,
+            )
+            .map_err(|error| RuntimeSemanticProjectionError::Facts(Box::new(error)))?,
+        );
     }
 
     for (owner, item) in analysis.items() {

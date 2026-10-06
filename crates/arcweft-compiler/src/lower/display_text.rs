@@ -320,7 +320,7 @@ pub(super) fn materialize_runtime_display_methods(
         }
         complete.push(method);
     }
-    Ok(complete
+    complete
         .into_iter()
         .map(|method| {
             let uses = selected
@@ -330,12 +330,13 @@ pub(super) fn materialize_runtime_display_methods(
                 .iter()
                 .cloned()
                 .collect();
-            RuntimeTraitMethodFact::new_closed(
+            RuntimeTraitMethodFact::try_new_closed(
                 method.declaration().clone(),
                 method.implementation(),
                 method.member(),
                 RuntimeTraitIdentity::StandardDisplayText,
                 method.self_type().clone(),
+                Arc::clone(method.definition()),
                 method
                     .closed_callable()
                     .expect("closed method callable")
@@ -346,8 +347,9 @@ pub(super) fn materialize_runtime_display_methods(
                     .clone(),
                 uses,
             )
+            .map_err(|error| RuntimeSemanticProjectionError::Facts(Box::new(error)))
         })
-        .collect())
+        .collect()
 }
 
 #[allow(
@@ -415,6 +417,27 @@ fn build_runtime_display_method(
         conformance,
         selected: &selected,
     };
+    let source = arcweft_lang_sema::final_analysis::CheckedExecutionSource::InvokeBody(
+        arcweft_lang_sema::final_analysis::CheckedExecutionBodyOwner::Declaration {
+            declaration: CallableDeclarationKey::ImplMethod(
+                conformance.method_declaration().clone(),
+            ),
+            role: arcweft_lang_hir::project::HirDeclarationBodyRootRole::ImplFunctionBody,
+        },
+    );
+    let context = analysis
+        .checked_execution_context(
+            project,
+            symbols,
+            source.clone(),
+            Some(CheckedLocalUseInstantiation::DisplayText(conformance)),
+        )
+        .map_err(Box::new)?;
+    let definition = Arc::new(
+        context
+            .checked_execution_input_abi(source)
+            .map_err(Box::new)?,
+    );
     let semantics = runtime_executable_semantic_facts(
         origin,
         lexical,
@@ -444,14 +467,16 @@ fn build_runtime_display_method(
     let callable = arcweft_core::entry::RuntimeCallableId::from_checked_digest(
         checked.id().semantic_digest().into_bytes(),
     );
-    Ok(RuntimeTraitMethodFact::new_closed(
+    RuntimeTraitMethodFact::try_new_closed(
         conformance.method_declaration().clone(),
         owner,
         conformance.method_ordinal(),
         RuntimeTraitIdentity::StandardDisplayText,
         self_type,
+        definition,
         callable,
         semantics,
         uses.into_iter().collect(),
-    ))
+    )
+    .map_err(|error| RuntimeSemanticProjectionError::Facts(Box::new(error)))
 }

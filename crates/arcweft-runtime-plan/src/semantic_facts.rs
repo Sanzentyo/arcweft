@@ -4957,60 +4957,78 @@ impl RuntimeTraitMethodInstanceKey {
 /// the ordered set of checked conformances. The implementation/member pair is
 /// the sole body owner; no detached method catalog or source lookup is
 /// retained.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct RuntimeTraitMethodFact {
     key: RuntimeTraitMethodInstanceKey,
     implementation: ItemId,
     member: u16,
     trait_identity: RuntimeTraitIdentity,
     self_type: RuntimeNormalizedType,
+    definition: Arc<arcweft_lang_sema::final_analysis::CheckedExecutionInputAbi>,
     closed_callable: Option<RuntimeCallableId>,
     closed_semantics: Option<RuntimeProjectFunctionInstanceSemanticFacts>,
     instance_uses: Box<[RuntimeTraitMethodInstanceUse]>,
 }
 
 impl RuntimeTraitMethodFact {
-    pub fn new(
+    pub fn try_new(
         declaration: ImplMethodDeclarationId,
         implementation: ItemId,
         member: u16,
         trait_identity: RuntimeTraitIdentity,
         self_type: RuntimeNormalizedType,
-    ) -> Self {
-        Self {
+        definition: Arc<arcweft_lang_sema::final_analysis::CheckedExecutionInputAbi>,
+    ) -> Result<Self, RuntimeSemanticFactsError> {
+        if !matches!(definition.source(),
+            arcweft_lang_sema::final_analysis::CheckedExecutionSource::InvokeBody(
+                arcweft_lang_sema::final_analysis::CheckedExecutionBodyOwner::Declaration {
+                    declaration: CallableDeclarationKey::ImplMethod(actual),
+                    role: arcweft_lang_hir::project::HirDeclarationBodyRootRole::ImplFunctionBody,
+                }
+            ) if actual == &declaration)
+        {
+            return Err(RuntimeSemanticFactsError::InvalidTraitMethodIdentity);
+        }
+        Ok(Self {
             key: RuntimeTraitMethodInstanceKey::new(declaration, self_type.identity()),
             implementation,
             member,
             trait_identity,
             self_type,
+            definition,
             closed_callable: None,
             closed_semantics: None,
             instance_uses: Box::new([]),
-        }
+        })
     }
 
     /// Compiler-owned closed body projection for one generic impl instance.
-    pub fn new_closed(
+    pub fn try_new_closed(
         declaration: ImplMethodDeclarationId,
         implementation: ItemId,
         member: u16,
         trait_identity: RuntimeTraitIdentity,
         self_type: RuntimeNormalizedType,
+        definition: Arc<arcweft_lang_sema::final_analysis::CheckedExecutionInputAbi>,
         callable: RuntimeCallableId,
         semantics: RuntimeProjectFunctionInstanceSemanticFacts,
         instance_uses: Box<[RuntimeTraitMethodInstanceUse]>,
-    ) -> Self {
-        let mut value = Self::new(
+    ) -> Result<Self, RuntimeSemanticFactsError> {
+        if definition.environment().local_uses() != semantics.local_uses() {
+            return Err(RuntimeSemanticFactsError::InvalidTraitMethodIdentity);
+        }
+        let mut value = Self::try_new(
             declaration,
             implementation,
             member,
             trait_identity,
             self_type,
-        );
+            definition,
+        )?;
         value.closed_callable = Some(callable);
         value.closed_semantics = Some(semantics);
         value.instance_uses = instance_uses;
-        value
+        Ok(value)
     }
 
     pub const fn key(&self) -> &RuntimeTraitMethodInstanceKey {
@@ -5035,6 +5053,12 @@ impl RuntimeTraitMethodFact {
 
     pub const fn self_type(&self) -> &RuntimeNormalizedType {
         &self.self_type
+    }
+
+    pub const fn definition(
+        &self,
+    ) -> &Arc<arcweft_lang_sema::final_analysis::CheckedExecutionInputAbi> {
+        &self.definition
     }
 
     pub const fn closed_semantics(&self) -> Option<&RuntimeProjectFunctionInstanceSemanticFacts> {
@@ -8340,6 +8364,9 @@ impl RuntimePlanSemanticFacts {
         )?;
         for method in trait_methods.values() {
             validate_trait_method(&modules, method)?;
+            if method.definition().validate_project(project).is_err() {
+                return Err(RuntimeSemanticFactsError::InvalidTraitMethodIdentity);
+            }
             let owner = HirRuntimeExecutableOwner::ImplMethod(method.declaration().clone());
             if !runtime_owners.contains_runtime_owner(&owner) && method.instance_uses().is_empty() {
                 return Err(RuntimeSemanticFactsError::OwnerOutsideReachability { owner });
@@ -8391,7 +8418,15 @@ impl RuntimePlanSemanticFacts {
                         validate_normalized_type(&modules, ty)?;
                     }
                 }
-            } else if method.closed_callable().is_some() {
+            } else if method.closed_callable().is_some()
+                || method.definition().instance_identity().is_some()
+                || !matches!(method.definition().environment().local_uses(),
+                    CheckedLocalUseAuthority::Global(catalog)
+                        if input.checked_local_uses.as_ref().is_none_or(|selected| selected == catalog)
+                            && catalog.generation().symbol_world() == runtime_owners.runtime.identity().symbol_world()
+                            && catalog.generation().symbol_revision() == runtime_owners.runtime.identity().symbol_revision()
+                )
+            {
                 return Err(RuntimeSemanticFactsError::InvalidTraitMethodIdentity);
             }
         }
