@@ -87,8 +87,8 @@ fn observe_native_dialogue_view_object_raw_report(
         "native dialogue_view object {capture_kind} capture should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let json: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("native dialogue_view object raw report is JSON");
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native dialogue_view object raw report is JSON");
     let width = json["images"][0]["width"]
         .as_u64()
         .expect("native dialogue_view object raw width is reported");
@@ -122,7 +122,8 @@ fn observe_native_rich_text_layer_report_at_entry_with_viewport(
     viewport_width: u32,
     viewport_height: u32,
 ) -> serde_json::Value {
-    let mut command = native_rich_text_layer_observe_command(source_path, viewport_width, viewport_height);
+    let mut command =
+        native_rich_text_layer_observe_command(source_path, viewport_width, viewport_height);
     command
         .arg("--entry")
         .arg(entry.public_label().into_string());
@@ -222,7 +223,9 @@ fn observed_object_rich_text_frame(object: &serde_json::Value) -> &serde_json::V
 fn rich_text_text_runs(dialogue_view: &serde_json::Value) -> &[serde_json::Value] {
     observed_object_rich_text_frame(dialogue_view)["display_map"]["text_runs"]
         .as_array()
-        .unwrap_or_else(|| panic!("dialogue_view display_map should expose text_runs: {dialogue_view}"))
+        .unwrap_or_else(|| {
+            panic!("dialogue_view display_map should expose text_runs: {dialogue_view}")
+        })
 }
 
 fn rich_text_text_run_has_effect(dialogue_view: &serde_json::Value, id: &str) -> bool {
@@ -564,9 +567,7 @@ fn assert_full_grammar_typed_text_object_proxy(source_path: &Path, json: &serde_
     assert_eq!(proxy_object["rich_text_ref"]["kind"], "text_object_proxy");
     assert_eq!(proxy_object["rich_text_ref"]["object_depth"], 4000);
     assert_agent_observe_object_capture_refs(proxy_object);
-    let proxy_object_id = proxy_object["id"]
-        .as_str()
-        .expect("typed proxy object id");
+    let proxy_object_id = proxy_object["id"].as_str().expect("typed proxy object id");
     let proxy_object_width = proxy_object["bbox"]["width"]
         .as_u64()
         .expect("typed proxy object bbox width");
@@ -929,6 +930,26 @@ fn find_rich_text_glyph_object<'a>(
                 "rich-text glyph `{text}` {range_start}..{range_end} should be observed: {report}"
             )
         })
+}
+
+fn assert_sideways_cluster_glyph_cells(cluster: &serde_json::Value, glyphs: &[&serde_json::Value]) {
+    assert_eq!(cluster["rich_text_ref"]["orientation"], "sideways_cw");
+    let mut end = cluster["rich_text_ref"]["range"]["start"]
+        .as_u64()
+        .expect("cluster source start");
+    for glyph in glyphs {
+        assert_eq!(glyph["role"], "rich_text_glyph");
+        assert_eq!(glyph["rich_text_ref"]["orientation"], "sideways_cw");
+        assert_eq!(
+            glyph["bbox"], cluster["bbox"],
+            "glyph retains its cluster cell"
+        );
+        assert_eq!(glyph["rich_text_ref"]["range"]["start"], end);
+        end = glyph["rich_text_ref"]["range"]["end"]
+            .as_u64()
+            .expect("glyph source end");
+    }
+    assert_eq!(cluster["rich_text_ref"]["range"]["end"], end);
 }
 
 fn find_rich_text_ruby_object(report: &serde_json::Value, index: u64) -> &serde_json::Value {

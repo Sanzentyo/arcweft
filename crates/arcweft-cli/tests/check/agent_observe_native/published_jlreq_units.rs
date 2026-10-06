@@ -1822,6 +1822,8 @@ fn assert_native_published_jlreq_latin_unit_geometry(
 }
 
 fn observe_native_published_jlreq_latin_unit_fixture(writing_mode: &str) -> serde_json::Value {
+    // Keep the body and whole sideways unit in one column, with the next body
+    // character outside that column's remaining extent.
     let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-published-jlreq-latin-unit"),
         &format!(
@@ -1829,7 +1831,7 @@ fn observe_native_published_jlreq_latin_unit_fixture(writing_mode: &str) -> serd
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[天kg人][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(48pt)[天kg人]][p]
 }}
 "#
         ),
@@ -1853,7 +1855,7 @@ fn assert_native_published_jlreq_latin_unit_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[天kg人][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(48pt)[天kg人]][p]
 }}
 "#
         ),
@@ -1874,7 +1876,7 @@ flow main {{
         .arg("--capture")
         .arg(capture_kind)
         .arg("--object")
-        .arg("object.dialogue.0.0.cluster.2.4.5")
+        .arg("object.dialogue.0.0.glyph.2.4.5")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -1948,21 +1950,18 @@ fn assert_native_published_jlreq_latin_unit_objects<'report>(
         "normal"
     );
     let body = find_rich_text_cluster_object(json, "天", 0, 3);
-    let unit_start = find_rich_text_cluster_object(json, "k", 3, 4);
-    let unit_end = find_rich_text_cluster_object(json, "g", 4, 5);
+    let unit = find_rich_text_cluster_object(json, "kg", 3, 5);
+    let unit_start = find_rich_text_glyph_object(json, "k", 3, 4);
+    let unit_end = find_rich_text_glyph_object(json, "g", 4, 5);
     let next_body = find_rich_text_cluster_object(json, "人", 5, 8);
+    assert_sideways_cluster_glyph_cells(unit, &[unit_start, unit_end]);
     assert_vertical_cluster_after(
         body,
-        unit_start,
+        unit,
         "published JLREQ Latin unit should start after body text",
     );
-    assert_vertical_cluster_after(
-        unit_start,
-        unit_end,
-        "published JLREQ Latin unit letters should stay together",
-    );
     assert_next_paragraph_column(
-        unit_end,
+        unit,
         next_body,
         next_column_moves_right,
         "body text after the Latin unit symbol should continue in the next column",
@@ -1992,6 +1991,7 @@ fn assert_native_published_jlreq_western_word_geometry(
 }
 
 fn observe_native_published_jlreq_western_word_fixture(writing_mode: &str) -> serde_json::Value {
+    // The explicit size exercises the no-break word before a column transition.
     let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-published-jlreq-western-word"),
         &format!(
@@ -1999,7 +1999,7 @@ fn observe_native_published_jlreq_western_word_fixture(writing_mode: &str) -> se
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[天Web人][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(32pt)[天Web人]][p]
 }}
 "#
         ),
@@ -2023,7 +2023,7 @@ fn assert_native_published_jlreq_western_word_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[天Web人][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(32pt)[天Web人]][p]
 }}
 "#
         ),
@@ -2044,7 +2044,7 @@ flow main {{
         .arg("--capture")
         .arg(capture_kind)
         .arg("--object")
-        .arg("object.dialogue.0.0.cluster.3.5.6")
+        .arg("object.dialogue.0.0.glyph.3.5.6")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -2118,27 +2118,19 @@ fn assert_native_published_jlreq_western_word_objects<'report>(
         "normal"
     );
     let body = find_rich_text_cluster_object(json, "天", 0, 3);
-    let first = find_rich_text_cluster_object(json, "W", 3, 4);
-    let second = find_rich_text_cluster_object(json, "e", 4, 5);
-    let third = find_rich_text_cluster_object(json, "b", 5, 6);
+    let word = find_rich_text_cluster_object(json, "Web", 3, 6);
+    let first = find_rich_text_glyph_object(json, "W", 3, 4);
+    let second = find_rich_text_glyph_object(json, "e", 4, 5);
+    let third = find_rich_text_glyph_object(json, "b", 5, 6);
     let next_body = find_rich_text_cluster_object(json, "人", 6, 9);
+    assert_sideways_cluster_glyph_cells(word, &[first, second, third]);
     assert_vertical_cluster_after(
         body,
-        first,
+        word,
         "published JLREQ Western word should start after body text",
     );
-    assert_vertical_cluster_after(
-        first,
-        second,
-        "published JLREQ Western word letters should stay together",
-    );
-    assert_vertical_cluster_after(
-        second,
-        third,
-        "published JLREQ Western word final letter should stay attached",
-    );
     assert_next_paragraph_column(
-        third,
+        word,
         next_body,
         next_column_moves_right,
         "body text after the Western word should continue in the next column",
@@ -2459,10 +2451,8 @@ flow main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path).expect("remove temp published JLREQ hyphenated Western word source");
     json
 }
@@ -2937,10 +2927,8 @@ flow main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 720,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 720);
     fs::remove_file(&path).expect("remove temp published JLREQ accented Latin word source");
     json
 }
