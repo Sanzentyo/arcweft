@@ -9021,6 +9021,9 @@ pub(crate) fn runtime_project_callable(
         .transpose()?;
     RuntimeProjectCallable::try_new(
         declaration.clone(),
+        analysis
+            .accepted_declaration_identity(declaration)
+            .map_err(|error| error.to_string())?,
         symbol.source_item(),
         symbol.source_owner(),
         runtime,

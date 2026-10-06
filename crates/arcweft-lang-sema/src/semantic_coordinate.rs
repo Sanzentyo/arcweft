@@ -73,6 +73,23 @@ impl AcceptedDeclarationSemanticId {
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
+
+    fn from_declaration(declaration: &arcweft_lang_hir::symbol::CallableDeclarationKey) -> Self {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"arcweft.lang.accepted-declaration-semantic.v1\0");
+        hasher.update(declaration.semantic_digest().as_bytes());
+        Self::from_bytes(*hasher.finalize().as_bytes())
+    }
+
+    /// Validates the declaration relation without issuing another accepted ID.
+    /// Generation/source evidence is authenticated by the issuing catalog;
+    /// this comparison preserves the source-independent semantic relation.
+    pub fn matches_declaration(
+        self,
+        declaration: &arcweft_lang_hir::symbol::CallableDeclarationKey,
+    ) -> bool {
+        self == Self::from_declaration(declaration)
+    }
 }
 
 /// Stable semantic identity of one accepted non-callable item root.

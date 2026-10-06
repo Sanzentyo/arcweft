@@ -2284,6 +2284,18 @@ impl FinalSemanticAnalysis {
         &self.checked_callables
     }
 
+    /// Source-independent identity from this report's sealed declaration-root
+    /// catalog. This is definition metadata, not a body or task-seal proof.
+    pub fn accepted_declaration_identity(
+        &self,
+        declaration: &arcweft_lang_hir::symbol::CallableDeclarationKey,
+    ) -> Result<
+        crate::semantic_coordinate::AcceptedDeclarationSemanticId,
+        crate::semantic_coordinate::AcceptedSemanticRootCatalogError,
+    > {
+        self.accepted_roots.declaration_for_hir(declaration)
+    }
+
     /// Sole accepted-root authority retained by this immutable report.
     pub(crate) const fn accepted_root_catalog(&self) -> &Arc<AcceptedSemanticRootCatalog> {
         &self.accepted_roots

@@ -1198,6 +1198,7 @@ impl RuntimeSequenceKind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeProjectCallable {
     declaration: CallableDeclarationKey,
+    accepted_identity: arcweft_lang_sema::semantic_coordinate::AcceptedDeclarationSemanticId,
     owner: ItemId,
     source_owner: HirCallableSourceOwner,
     runtime: RuntimeCallableId,
@@ -1207,16 +1208,21 @@ pub struct RuntimeProjectCallable {
 impl RuntimeProjectCallable {
     pub fn try_new(
         declaration: CallableDeclarationKey,
+        accepted_identity: arcweft_lang_sema::semantic_coordinate::AcceptedDeclarationSemanticId,
         owner: ItemId,
         source_owner: HirCallableSourceOwner,
         runtime: RuntimeCallableId,
         attached_content_abi: Option<RuntimeCallableAttachedContentAbi>,
-    ) -> Result<Self, RuntimeCallableAttachedContentAbiError> {
+    ) -> Result<Self, RuntimeProjectCallableError> {
+        if !accepted_identity.matches_declaration(&declaration) {
+            return Err(RuntimeProjectCallableError::DeclarationIdentityMismatch);
+        }
         if let Some(attached) = &attached_content_abi {
             attached.validate_owner(owner)?;
         }
         Ok(Self {
             declaration,
+            accepted_identity,
             owner,
             source_owner,
             runtime,
@@ -1226,6 +1232,14 @@ impl RuntimeProjectCallable {
 
     pub const fn declaration(&self) -> &CallableDeclarationKey {
         &self.declaration
+    }
+
+    /// Accepted definition identity retained independently of dispatch identity
+    /// and generation-local HIR joins. Full function/body sealing is separate.
+    pub const fn accepted_identity(
+        &self,
+    ) -> arcweft_lang_sema::semantic_coordinate::AcceptedDeclarationSemanticId {
+        self.accepted_identity
     }
 
     pub const fn owner(&self) -> ItemId {
@@ -1243,6 +1257,14 @@ impl RuntimeProjectCallable {
     pub const fn attached_content_abi(&self) -> Option<&RuntimeCallableAttachedContentAbi> {
         self.attached_content_abi.as_ref()
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum RuntimeProjectCallableError {
+    #[error("runtime project callable definition identity belongs to another declaration")]
+    DeclarationIdentityMismatch,
+    #[error(transparent)]
+    AttachedContent(#[from] RuntimeCallableAttachedContentAbiError),
 }
 
 /// Exact declaration-side ABI for one callable-owned attached-content slot.

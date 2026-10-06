@@ -38,6 +38,9 @@ fn instance() -> (RuntimeProjectFunctionInstanceKey, ProjectInstanceNode) {
         .expect("checked callable");
     let callable = RuntimeProjectCallable::try_new(
         selection.declaration().clone(),
+        analysis
+            .accepted_declaration_identity(selection.declaration())
+            .expect("accepted declaration identity"),
         function.id(),
         HirCallableSourceOwner::Item,
         RuntimeCallableId::from_checked_digest(checked.id().semantic_digest().into_bytes()),

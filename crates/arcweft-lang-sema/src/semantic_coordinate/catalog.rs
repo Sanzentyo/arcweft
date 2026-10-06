@@ -67,6 +67,8 @@ pub enum AcceptedSemanticRootCatalogError {
     DigestCollision { root: HirSemanticPathRoot },
     #[error("accepted root catalog length does not fit u32")]
     LengthOverflow,
+    #[error("accepted root catalog root has an inconsistent semantic family: {root:?}")]
+    RootFamilyMismatch { root: HirSemanticPathRoot },
     #[error("accepted root catalog HIR path lookup failed: {0}")]
     HirLookup(#[from] HirSemanticPathLookupError),
     #[error("accepted root catalog HIR body lookup failed: {0}")]
@@ -134,6 +136,27 @@ impl AcceptedSemanticRootCatalog {
                 }
             }
         }
+        // Project declarations without executable HIR bodies (for example
+        // declaration-owned factories) still have accepted semantic identity.
+        // They share this sole root authority; body/path lookup continues to
+        // require a corresponding row in the sealed evaluation topology.
+        for facts in callables.records() {
+            let crate::callable::CheckedCallableDeclaration::Project(declaration) =
+                facts.id().declaration()
+            else {
+                continue;
+            };
+            let root = HirSemanticPathRoot::Declaration(declaration.clone());
+            let accepted =
+                AcceptedSemanticRoot::Declaration(accepted_declaration_id(declaration, facts)?);
+            if let Some(retained) = roots.get(&root) {
+                if *retained != accepted {
+                    return Err(AcceptedSemanticRootCatalogError::RootFamilyMismatch { root });
+                }
+            } else {
+                insert_root(&mut roots, &mut accepted_to_hir, root, accepted)?;
+            }
+        }
         Ok(Self { topology, roots })
     }
 
@@ -148,6 +171,19 @@ impl AcceptedSemanticRootCatalog {
         self.roots
             .get(root)
             .ok_or_else(|| AcceptedSemanticRootCatalogError::MissingRoot { root: root.clone() })
+    }
+
+    pub(crate) fn declaration_for_hir(
+        &self,
+        declaration: &CallableDeclarationKey,
+    ) -> Result<AcceptedDeclarationSemanticId, AcceptedSemanticRootCatalogError> {
+        let root = HirSemanticPathRoot::Declaration(declaration.clone());
+        match self.root_for_hir(&root)? {
+            AcceptedSemanticRoot::Declaration(identity) => Ok(*identity),
+            AcceptedSemanticRoot::Item(_) => {
+                Err(AcceptedSemanticRootCatalogError::RootFamilyMismatch { root })
+            }
+        }
     }
 
     /// Returns the accepted item root for one generation-local HIR item.
@@ -226,12 +262,7 @@ fn accepted_declaration_id(
             },
         );
     }
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(b"arcweft.lang.accepted-declaration-semantic.v1\0");
-    hasher.update(declaration.semantic_digest().as_bytes());
-    Ok(AcceptedDeclarationSemanticId::from_bytes(
-        *hasher.finalize().as_bytes(),
-    ))
+    Ok(AcceptedDeclarationSemanticId::from_declaration(declaration))
 }
 
 fn accepted_item_id(

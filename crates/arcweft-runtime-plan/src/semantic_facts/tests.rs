@@ -253,8 +253,9 @@ fn call_operands_retain_source_order_and_derive_abi_order() {
 fn project_callable_attached_interface_is_consumed_only_by_its_terminal_group() {
     let project = project_fixture(
         "project-attached-interface",
-        "fn content(first: String)(second: String)[body: InlineContent] -> Unit { () }\n",
+        "fn content(first: String)(second: String)[body: DialogueContent] -> DialogueContent { body }\nfn __runtime_plan_test_probe() -> Unit { () }\n",
     );
+    let analysis = analyze_identity_fixture(&project);
     let executable = project.analysis_view().expect("clean fixture");
     let item = executable
         .items()
@@ -283,18 +284,41 @@ fn project_callable_attached_interface_is_consumed_only_by_its_terminal_group() 
     );
     let terminal =
         arcweft_lang_sema::callable::CallableGroupIndex::try_from_usize(1).expect("terminal group");
+    let content_owner = arcweft_core::value::RuntimeDialogueOpaqueRole::Content.exact_owner();
+    let content_type = super::RuntimeNormalizedType::new(
+        content_owner.semantic_identity(),
+        RuntimeTypeShape::Opaque {
+            producer: content_owner.producer().clone(),
+            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            value_class: RuntimeOpaqueValueClass::Plain,
+            persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
+            arguments: Box::new([]),
+        },
+    );
+    let string_type = super::RuntimeNormalizedType::new(
+        RuntimeSemanticTypeId::from_bytes(
+            *arcweft_lang_sema::types::TypeKind::String
+                .semantic_identity_digest()
+                .unwrap()
+                .as_bytes(),
+        ),
+        RuntimeTypeShape::String,
+    );
     let interface = RuntimeCallableAttachedContentAbi::try_new(
         terminal,
         1,
         arcweft_lang_sema::callable::CallableParameterPresence::Required,
         attached.binding(),
-        unit_type(),
-        unit_type(),
+        content_type.clone(),
+        content_type.clone(),
         None,
     )
     .expect("runtime attached interface");
     let callable = RuntimeProjectCallable::try_new(
-        declaration,
+        declaration.clone(),
+        analysis
+            .accepted_declaration_identity(&declaration)
+            .expect("accepted definition identity"),
         item.id(),
         arcweft_lang_hir::source_index::HirCallableSourceOwner::Item,
         RuntimeCallableId::try_new("content").expect("runtime callable"),
@@ -334,7 +358,7 @@ fn project_callable_attached_interface_is_consumed_only_by_its_terminal_group() 
                 slot: 0,
             },
             RuntimeResolvedCallOperandSource::Expression(source),
-            unit_type(),
+            string_type,
             RuntimeResolvedCallOperandBinding::Positional,
             RuntimeResolvedCallOperandProjection::Scalar,
             None,
@@ -343,7 +367,7 @@ fn project_callable_attached_interface_is_consumed_only_by_its_terminal_group() 
             1,
             RuntimeResolvedAttachedContent::Required {
                 source,
-                ty: unit_type(),
+                ty: content_type,
             },
         )),
         None,
@@ -362,6 +386,188 @@ fn project_callable_attached_interface_is_consumed_only_by_its_terminal_group() 
         .expect_err("terminal group cannot omit its attached ABI row"),
         RuntimeResolvedCallError::AttachedContentInterfaceMismatch
     );
+}
+
+fn analyze_identity_fixture(
+    project: &HirProject,
+) -> arcweft_lang_sema::final_analysis::FinalSemanticAnalysis {
+    let document = Arc::clone(
+        project
+            .view()
+            .modules()
+            .next()
+            .unwrap()
+            .1
+            .provenance()
+            .document(),
+    );
+    let world = ProjectSymbolWorldId::try_new(
+        project.package().clone(),
+        document.identity().id().clone(),
+        "accepted-callable-identity",
+    )
+    .unwrap();
+    let registrations = arcweft_lang_sema::registration::ProjectRegistrationFacts::try_new(
+        world,
+        vec![document],
+        vec![],
+        vec![],
+        vec![],
+    )
+    .unwrap();
+    let registered = arcweft_lang_sema::registration::CharacterRegistrar::register(
+        arcweft_lang_sema::registration::CharacterRegistrationRequest::new(
+            Arc::new(arcweft_lang_sema::env::TypeCheckEnv::standard()),
+            project.view(),
+            &registrations,
+            None,
+        ),
+    )
+    .unwrap();
+    let cancelled = std::sync::atomic::AtomicBool::new(false);
+    arcweft_lang_sema::final_analysis::analyze_final_project(
+        project.analysis_view().unwrap(),
+        registered.symbols(),
+        arcweft_lang_sema::final_analysis::FinalSemanticCatalogs::production(&registered),
+        arcweft_lang_sema::final_analysis::FinalSemanticAnalysisControl::new(&cancelled),
+    )
+    .unwrap()
+}
+
+#[test]
+fn project_callable_keeps_stable_definition_metadata_across_body_and_source_revisions() {
+    let build = |source: &str| {
+        let project = project_fixture("definition-stability", source);
+        let analysis = analyze_identity_fixture(&project);
+        let executable = project.analysis_view().unwrap();
+        let item = executable
+            .items()
+            .find(|item| {
+                matches!(item.item().kind(), HirItemKind::Function(function)
+                if function.name().resolved().is_some_and(|name| name.as_str() == "target"))
+            })
+            .unwrap();
+        let declaration = CallableDeclarationKey::Existing(
+            CallableDeclarationId::try_new(
+                executable.package().clone(),
+                item.module_path().clone(),
+                CallableDeclarationOwner::Function,
+                "target",
+            )
+            .unwrap(),
+        );
+        let checked = analysis
+            .checked_callables()
+            .project_callable(&declaration)
+            .unwrap();
+        let definition = analysis
+            .accepted_declaration_identity(&declaration)
+            .unwrap();
+        RuntimeProjectCallable::try_new(
+            declaration,
+            definition,
+            item.id(),
+            arcweft_lang_hir::source_index::HirCallableSourceOwner::Item,
+            RuntimeCallableId::from_checked_digest(checked.id().semantic_digest().into_bytes()),
+            None,
+        )
+        .unwrap()
+    };
+    let before =
+        build("fn target() -> i64 { 1i64 }\nfn __runtime_plan_test_probe() -> Unit { () }\n");
+    let after = build(
+        "\n\n// moved source offsets and changed body\nfn target() -> i64 { 2i64 }\nfn __runtime_plan_test_probe() -> Unit { () }\n",
+    );
+    assert_eq!(before.accepted_identity(), after.accepted_identity());
+    assert_ne!(before.runtime(), after.runtime());
+}
+
+#[test]
+fn project_callable_rejects_an_accepted_identity_from_another_declaration() {
+    let project = project_fixture(
+        "definition-relation",
+        "fn first() -> Unit { () }\nfn second() -> Unit { () }\nfn __runtime_plan_test_probe() -> Unit { () }\n",
+    );
+    let analysis = analyze_identity_fixture(&project);
+    let executable = project.analysis_view().unwrap();
+    let mut declarations =
+        analysis
+            .checked_callables()
+            .records()
+            .filter_map(|facts| match facts.id().declaration() {
+                arcweft_lang_sema::callable::CheckedCallableDeclaration::Project(declaration)
+                    if declaration.owner() == CallableDeclarationOwner::Function =>
+                {
+                    Some(declaration.clone())
+                }
+                _ => None,
+            });
+    let first = declarations.next().unwrap();
+    let second = declarations.next().unwrap();
+    let wrong = analysis.accepted_declaration_identity(&second).unwrap();
+    let owner = executable.items().next().unwrap().id();
+    assert!(matches!(
+        RuntimeProjectCallable::try_new(
+            first,
+            wrong,
+            owner,
+            arcweft_lang_hir::source_index::HirCallableSourceOwner::Item,
+            RuntimeCallableId::try_new("fixture").unwrap(),
+            None,
+        ),
+        Err(super::RuntimeProjectCallableError::DeclarationIdentityMismatch)
+    ));
+}
+
+#[test]
+fn project_callable_identity_catalog_covers_bodyless_trait_requirements_and_rejects_missing_declarations()
+ {
+    let project = project_fixture(
+        "bodyless-definition",
+        "pub trait Named { fn name(self) -> String }\nfn __runtime_plan_test_probe() -> Unit { () }\n",
+    );
+    let analysis = analyze_identity_fixture(&project);
+    let executable = project.analysis_view().unwrap();
+    assert!(executable.items().any(|item| {
+        matches!(item.item().kind(), HirItemKind::Trait(trait_item)
+        if trait_item.members().iter().any(|member| {
+            matches!(member, arcweft_lang_hir::item::HirTraitMember::Function(function)
+                if function.body().is_none())
+        }))
+    }));
+    let declaration = analysis
+        .checked_callables()
+        .records()
+        .find_map(|facts| match facts.id().declaration() {
+            arcweft_lang_sema::callable::CheckedCallableDeclaration::Project(declaration)
+                if declaration.owner() == CallableDeclarationOwner::TraitRequirement =>
+            {
+                Some(declaration)
+            }
+            _ => None,
+        })
+        .unwrap();
+    assert!(
+        analysis
+            .accepted_declaration_identity(declaration)
+            .unwrap()
+            .matches_declaration(declaration)
+    );
+    let missing = CallableDeclarationKey::Existing(
+        CallableDeclarationId::try_new(
+            executable.package().clone(),
+            CanonicalModulePath::crate_root(),
+            CallableDeclarationOwner::Function,
+            "missing",
+        )
+        .unwrap(),
+    );
+    assert!(matches!(
+        analysis.accepted_declaration_identity(&missing),
+        Err(
+            arcweft_lang_sema::semantic_coordinate::AcceptedSemanticRootCatalogError::MissingRoot { .. }
+        )
+    ));
 }
 
 fn project_fixture(label: &str, source: &str) -> HirProject {
