@@ -237,6 +237,7 @@ fn context_program() -> AwbcContextFixture {
         ],
         functions: vec![
             AwbcFunction {
+                semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
                 public_id: Some(AwbcStringId(0)),
                 kind: AwbcFunctionKind::Ordinary,
                 signature: AwbcSignatureId(0),
@@ -248,6 +249,7 @@ fn context_program() -> AwbcContextFixture {
                 flags: Default::default(),
             },
             AwbcFunction {
+                semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
                 public_id: None,
                 kind: AwbcFunctionKind::Ordinary,
                 signature: AwbcSignatureId(1),
@@ -312,6 +314,7 @@ fn context_program() -> AwbcContextFixture {
             source_map: None,
         });
         program.functions.push(AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature,

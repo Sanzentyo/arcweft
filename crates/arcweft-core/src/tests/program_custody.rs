@@ -320,6 +320,7 @@ pub(crate) fn awbc_handle_program(
         max_scope_depth: 0,
     }];
     program.functions = vec![AwbcFunction {
+        semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Ordinary,
         signature: AwbcSignatureId(0),

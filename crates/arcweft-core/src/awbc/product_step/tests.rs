@@ -1014,6 +1014,7 @@ fn line_activation_register_defer_commits_captures_and_cursor() {
     let defer_body = AwbcFunctionId(2);
     program.functions.extend([
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::LineActivation,
             signature: AwbcSignatureId(1),
@@ -1028,6 +1029,7 @@ fn line_activation_register_defer_commits_captures_and_cursor() {
             flags: AwbcFunctionFlags::default(),
         },
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(2),
@@ -2276,6 +2278,7 @@ fn actor_look_program() -> AwbcProgram {
     program.functions[0].blocks = AwbcTableRange::new(0, 1);
     program.functions[0].entry_block = AwbcBlockId(0);
     program.functions.push(AwbcFunction {
+        semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::LineActivation,
         signature: AwbcSignatureId(0),
@@ -2450,6 +2453,7 @@ fn scheduled_actor_look_program() -> AwbcProgram {
         max_scope_depth: 0,
     });
     program.functions.push(AwbcFunction {
+        semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::LineTask,
         signature: AwbcSignatureId(1),
@@ -3072,6 +3076,7 @@ fn mark_selector_program(
     });
     program.functions.extend([
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::LineActivation,
             signature: AwbcSignatureId(0),
@@ -3086,6 +3091,7 @@ fn mark_selector_program(
             flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         },
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::LineTask,
             signature: AwbcSignatureId(0),
@@ -3100,6 +3106,7 @@ fn mark_selector_program(
             flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         },
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::LineCancellationHandler,
             signature: AwbcSignatureId(0),
@@ -3422,6 +3429,7 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
     }];
     program.functions.extend([
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::LineActivation,
             signature: AwbcSignatureId(4),
@@ -3436,6 +3444,7 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
             flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::MaySuspend),
         },
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(2),
@@ -3694,6 +3703,7 @@ fn defer_host_call_program() -> AwbcProgram {
     ];
     program.functions.extend([
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::LineActivation,
             signature: AwbcSignatureId(1),
@@ -3708,6 +3718,7 @@ fn defer_host_call_program() -> AwbcProgram {
             flags: AwbcFunctionFlags::default(),
         },
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(2),
@@ -4938,6 +4949,7 @@ fn trap_program(code: AwbcTrapCode, message: &str) -> AwbcProgram {
             source_map: None,
         }],
         functions: vec![AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
@@ -5009,6 +5021,7 @@ fn content_ensure_program() -> AwbcProgram {
             source_map: None,
         }],
         functions: vec![AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
@@ -5110,6 +5123,7 @@ fn host_call_program() -> AwbcProgram {
             },
         ],
         functions: vec![AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
@@ -5306,6 +5320,7 @@ fn direct_need_program() -> AwbcProgram {
             },
         ],
         functions: vec![AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
@@ -5471,6 +5486,7 @@ fn need_producer_program(restart: AwbcTaskRestartPolicy) -> AwbcProgram {
             },
         ],
         functions: vec![AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
@@ -5665,6 +5681,7 @@ fn await_many_product_program() -> AwbcProgram {
             },
         ],
         functions: vec![AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
@@ -5783,6 +5800,7 @@ fn await_many_product_program() -> AwbcProgram {
             source_map: None,
         });
         program.functions.push(AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(signature),

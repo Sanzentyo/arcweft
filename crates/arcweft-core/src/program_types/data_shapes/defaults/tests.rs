@@ -105,6 +105,7 @@ fn programs() -> (RuntimePlan, AwbcProgram) {
             max_scope_depth: 0,
         }],
         functions: vec![AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(0),

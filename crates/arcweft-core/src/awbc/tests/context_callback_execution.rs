@@ -203,6 +203,7 @@ fn context_fixture(receiver: ContextReceiver, defaulted: bool) -> ContextFixture
         source_map: None,
     });
     program.functions.push(AwbcFunction {
+        semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Ordinary,
         signature: AwbcSignatureId(1),
@@ -242,6 +243,7 @@ fn context_fixture(receiver: ContextReceiver, defaulted: bool) -> ContextFixture
             source_map: None,
         });
         program.functions.push(AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(2),
@@ -854,6 +856,7 @@ fn formatter_context_fixture() -> ContextFixture {
     });
     program.functions.extend([
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
             signature: AwbcSignatureId(2),
@@ -868,6 +871,7 @@ fn formatter_context_fixture() -> ContextFixture {
             flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         },
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
             signature: AwbcSignatureId(3),

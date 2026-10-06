@@ -180,6 +180,7 @@ pub(crate) enum PendingAwbcClosure {
     /// authority; each row's synthetic input local is bound to the body
     /// pattern before the site body executes.
     FunctionSite {
+        role: arcweft_core::plan::RuntimeFunctionSemanticRole,
         function: AwbcFunctionId,
         function_type: Option<arcweft_core::runtime_id::RuntimePlanTypeId>,
         inputs: Box<[RuntimeFunctionInputBinding]>,
@@ -1471,6 +1472,7 @@ impl AwbcInventory {
     pub fn reserve_function_slot(&mut self) -> AwbcFunctionId {
         let id = AwbcFunctionId(table_index(self.program.functions.len()));
         self.program.functions.push(AwbcFunction {
+            semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
             signature: AwbcSignatureId::default(),
@@ -2240,6 +2242,7 @@ impl AwbcInventory {
         let signature = self.intern_unit_signature();
         let public_id = Some(self.intern_string(name));
         self.push_function(AwbcFunction {
+            semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id,
             kind,
             signature,

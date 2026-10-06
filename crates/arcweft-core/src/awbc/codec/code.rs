@@ -316,8 +316,25 @@ impl<T: Wire> Wire for CharacterDialoguePatchField<T> {
     }
 }
 
+impl Wire for crate::plan::RuntimeFunctionSemanticRole {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.semantic_tag());
+        Ok(())
+    }
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_semantic_tag(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "function semantic role",
+            tag,
+            offset,
+        })
+    }
+}
+
 impl Wire for AwbcFunction {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.semantic_role.write_wire(writer)?;
         self.public_id.write_wire(writer)?;
         self.kind.write_wire(writer)?;
         self.signature.write_wire(writer)?;
@@ -331,6 +348,7 @@ impl Wire for AwbcFunction {
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::read_wire(reader)?,
             public_id: Option::<AwbcStringId>::read_wire(reader)?,
             kind: AwbcFunctionKind::read_wire(reader)?,
             signature: AwbcSignatureId::read_wire(reader)?,
@@ -2382,5 +2400,59 @@ mod format_content_wire_tests {
             }))
             .is_err()
         );
+    }
+}
+
+#[cfg(test)]
+mod function_semantic_role_wire_tests {
+    use super::*;
+    use crate::awbc::codec::AwbcDecodeBudget;
+    use crate::plan::RuntimeFunctionSemanticRole;
+    #[test]
+    fn all_function_semantic_roles_round_trip_independently_of_execution_kind() {
+        for &role in RuntimeFunctionSemanticRole::ALL {
+            let function = AwbcFunction {
+                semantic_role: role,
+                public_id: None,
+                kind: AwbcFunctionKind::Ordinary,
+                signature: AwbcSignatureId(0),
+                type_context: None,
+                input_ownership: Vec::new(),
+                frame_layout: AwbcFrameLayoutId(0),
+                blocks: AwbcTableRange::new(0, 0),
+                entry_block: AwbcBlockId(0),
+                flags: AwbcFunctionFlags::empty(),
+            };
+            let mut writer = Writer::with_capacity(64);
+            function.write_wire(&mut writer).unwrap();
+            let bytes = writer.into_bytes();
+            assert_eq!(bytes[0], role.semantic_tag());
+            let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+            assert_eq!(AwbcFunction::read_wire(&mut reader).unwrap(), function);
+            reader.finish().unwrap();
+            let json = serde_json::to_value(&function).unwrap();
+            assert_eq!(
+                serde_json::from_value::<AwbcFunction>(json.clone()).unwrap(),
+                function
+            );
+            let mut missing = json;
+            missing.as_object_mut().unwrap().remove("semantic_role");
+            assert!(serde_json::from_value::<AwbcFunction>(missing).is_err());
+        }
+    }
+    #[test]
+    fn function_semantic_role_decoder_rejects_every_unassigned_tag() {
+        for tag in 6..=u8::MAX {
+            let bytes = [tag];
+            let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+            assert_eq!(
+                AwbcFunction::read_wire(&mut reader).unwrap_err(),
+                AwbcCodecError::UnknownTag {
+                    kind: "function semantic role",
+                    tag,
+                    offset: 0
+                }
+            );
+        }
     }
 }

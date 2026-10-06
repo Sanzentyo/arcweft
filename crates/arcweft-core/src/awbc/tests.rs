@@ -118,6 +118,7 @@ fn minimal_program() -> AwbcProgram {
             max_scope_depth: 0,
         }],
         functions: vec![AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
@@ -257,6 +258,7 @@ fn format_content_program() -> AwbcProgram {
         max_scope_depth: 0,
     });
     program.functions.push(AwbcFunction {
+        semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Synthetic,
         signature: AwbcSignatureId(1),
@@ -1409,6 +1411,7 @@ fn explicit_dialogue_selector_roundtrips_executes_and_restores_distinctly() {
     });
     program.functions.extend([
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::LineActivation,
             signature: AwbcSignatureId(0),
@@ -1420,6 +1423,7 @@ fn explicit_dialogue_selector_roundtrips_executes_and_restores_distinctly() {
             flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         },
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::LineTask,
             signature: AwbcSignatureId(0),
@@ -1806,6 +1810,7 @@ fn project_call_invoke_program() -> AwbcProgram {
     });
     program.functions[0].blocks = AwbcTableRange::new(0, 2);
     program.functions.push(AwbcFunction {
+        semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Ordinary,
         signature: AwbcSignatureId(1),
@@ -1895,6 +1900,7 @@ fn ordinary_returning_call_program() -> AwbcProgram {
     });
     program.functions[0].blocks = AwbcTableRange::new(0, 2);
     program.functions.push(AwbcFunction {
+        semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Ordinary,
         signature: AwbcSignatureId(1),
@@ -2181,6 +2187,7 @@ fn project_call_retained_program() -> AwbcProgram {
     });
     program.functions[0].blocks = AwbcTableRange::new(0, 4);
     program.functions.push(AwbcFunction {
+        semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Ordinary,
         signature: AwbcSignatureId(1),
@@ -2503,6 +2510,7 @@ fn project_call_default_program() -> AwbcProgram {
     program.functions[0].blocks = AwbcTableRange::new(0, 2);
     program.functions.extend([
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(1),
@@ -2514,6 +2522,7 @@ fn project_call_default_program() -> AwbcProgram {
             flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         },
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(2),
@@ -2672,6 +2681,7 @@ fn goto_unwind_program(dynamic: bool) -> AwbcProgram {
     program.functions[0].frame_layout = AwbcFrameLayoutId(0);
     program.functions.extend([
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(0),
@@ -2683,6 +2693,7 @@ fn goto_unwind_program(dynamic: bool) -> AwbcProgram {
             flags: inner_flags,
         },
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
@@ -2760,6 +2771,7 @@ fn project_call_target_goto_program(dynamic: bool) -> AwbcProgram {
         }
     };
     program.functions.push(AwbcFunction {
+        semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Flow,
         signature: AwbcSignatureId(0),
@@ -2791,6 +2803,7 @@ fn project_call_default_goto_program() -> AwbcProgram {
         args: Vec::new(),
     };
     program.functions.push(AwbcFunction {
+        semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Flow,
         signature: AwbcSignatureId(0),
@@ -5517,6 +5530,7 @@ fn expression_apply_frame_layouts() -> Vec<AwbcFrameLayout> {
 fn expression_apply_functions(synthetic_len: u32) -> Vec<AwbcFunction> {
     vec![
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
@@ -5528,6 +5542,7 @@ fn expression_apply_functions(synthetic_len: u32) -> Vec<AwbcFunction> {
             flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         },
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
             signature: AwbcSignatureId(1),
@@ -6219,6 +6234,7 @@ fn reduction_unchanged_materializes_one_reference_layer_without_widening_other_o
         max_scope_depth: 0,
     });
     program.functions.push(AwbcFunction {
+        semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Ordinary,
         signature: AwbcSignatureId(1),
@@ -6407,6 +6423,7 @@ fn stateful_entry_with_function_site_callables() -> AwbcProgram {
     };
     program.functions.extend([
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(1),
@@ -6418,6 +6435,7 @@ fn stateful_entry_with_function_site_callables() -> AwbcProgram {
             flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         },
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(2),
@@ -7254,6 +7272,7 @@ fn callable_instructions_capture_and_apply_program_owned_state() {
         }],
         functions: vec![
             AwbcFunction {
+                semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
                 public_id: Some(AwbcStringId(1)),
                 kind: AwbcFunctionKind::Flow,
                 signature: AwbcSignatureId(0),
@@ -7265,6 +7284,7 @@ fn callable_instructions_capture_and_apply_program_owned_state() {
                 flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
             },
             AwbcFunction {
+                semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
                 public_id: None,
                 kind: AwbcFunctionKind::Synthetic,
                 signature: AwbcSignatureId(1),
@@ -7948,6 +7968,7 @@ fn nested_return_restores_caller_resume_and_destination() {
     });
     program.functions[0].blocks = AwbcTableRange::new(0, 2);
     program.functions.push(AwbcFunction {
+        semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Synthetic,
         signature: AwbcSignatureId(1),

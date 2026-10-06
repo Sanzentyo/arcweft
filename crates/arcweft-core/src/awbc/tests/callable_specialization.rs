@@ -101,6 +101,7 @@ fn specialization_program() -> AwbcProgram {
     let deterministic = AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic);
     program.functions = vec![
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
@@ -112,6 +113,7 @@ fn specialization_program() -> AwbcProgram {
             flags: deterministic,
         },
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(1),

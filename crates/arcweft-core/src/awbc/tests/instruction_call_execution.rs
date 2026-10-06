@@ -94,6 +94,7 @@ fn mut_trait_program(receiver_out: AwbcRegisterId) -> std::sync::Arc<AwbcProgram
         source_map: None,
     });
     program.functions.push(AwbcFunction {
+        semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::TraitMethod,
         signature: AwbcSignatureId(1),

@@ -1942,6 +1942,7 @@ fn minimal_awbc_program(entry: &str) -> AwbcProgram {
         ],
         functions: vec![
             AwbcFunction {
+                semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
                 public_id: Some(AwbcStringId(1)),
                 kind: AwbcFunctionKind::Flow,
                 signature: AwbcSignatureId(0),
@@ -1953,6 +1954,7 @@ fn minimal_awbc_program(entry: &str) -> AwbcProgram {
                 flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
             },
             AwbcFunction {
+                semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
                 public_id: None,
                 kind: AwbcFunctionKind::Synthetic,
                 signature: AwbcSignatureId(1),

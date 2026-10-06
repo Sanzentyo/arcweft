@@ -1056,6 +1056,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                 inventory.replace_function(
                     function,
                     AwbcFunction {
+                        semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
                         public_id: None,
                         kind: AwbcFunctionKind::Ordinary,
                         signature,
@@ -1072,6 +1073,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                 );
             }
             PendingAwbcClosure::FunctionSite {
+                role,
                 function,
                 function_type,
                 inputs,
@@ -1081,6 +1083,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
             } => {
                 super::flow::AwbcFlowLowerer::new(inventory, plan).lower_executable_function_site(
                     function,
+                    role,
                     function_type,
                     &inputs,
                     result,
@@ -1089,6 +1092,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                 );
             }
             PendingAwbcClosure::FunctionSite {
+                role,
                 function,
                 function_type,
                 inputs,
@@ -1136,6 +1140,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                 inventory.replace_function(
                     function,
                     AwbcFunction {
+                        semantic_role: role,
                         public_id: None,
                         kind: AwbcFunctionKind::Ordinary,
                         signature,
@@ -1179,6 +1184,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                 inventory.replace_function(
                     function,
                     AwbcFunction {
+                        semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
                         public_id: None,
                         kind: AwbcFunctionKind::Synthetic,
                         signature,
@@ -1215,6 +1221,7 @@ fn ensure_function_site(
     let function = inventory.reserve_function_site_slot(site);
     if !already_reserved {
         inventory.push_pending_closure(PendingAwbcClosure::FunctionSite {
+            role: declaration.role(),
             function,
             function_type: declaration.function_type(),
             inputs: declaration.inputs().to_vec().into_boxed_slice(),

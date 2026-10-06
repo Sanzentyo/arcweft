@@ -14,7 +14,7 @@ use crate::value::RuntimeExpr;
 
 /// Semantic purpose of an accepted function definition, independent of its
 /// expression or control-transfer execution body.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum RuntimeFunctionSemanticRole {
     Ordinary,
     Closure,
@@ -25,6 +25,27 @@ pub enum RuntimeFunctionSemanticRole {
 }
 
 impl RuntimeFunctionSemanticRole {
+    pub const ALL: &[Self] = &[
+        Self::Ordinary,
+        Self::Closure,
+        Self::Dialogue,
+        Self::Effect,
+        Self::Line,
+        Self::Stream,
+    ];
+
+    pub const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        match tag {
+            0 => Some(Self::Ordinary),
+            1 => Some(Self::Closure),
+            2 => Some(Self::Dialogue),
+            3 => Some(Self::Effect),
+            4 => Some(Self::Line),
+            5 => Some(Self::Stream),
+            _ => None,
+        }
+    }
+
     #[must_use]
     pub const fn semantic_tag(self) -> u8 {
         match self {

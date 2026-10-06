@@ -72,6 +72,7 @@ impl<'a, 'plan> AwbcTraitMethodLowerer<'a, 'plan> {
         let function = self.inventory.replace_function(
             owner,
             AwbcFunction {
+                semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
                 public_id: Some(public_id),
                 kind: AwbcFunctionKind::TraitMethod,
                 signature,

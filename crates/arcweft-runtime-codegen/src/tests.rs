@@ -98,6 +98,7 @@ fn program() -> AwbcProgram {
             max_scope_depth: 0,
         }],
         functions: vec![AwbcFunction {
+            semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
@@ -183,6 +184,7 @@ fn callable_project_call_program() -> AwbcProgram {
         effects: AwbcEffectSetId(0),
     });
     program.functions.push(AwbcFunction {
+        semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Ordinary,
         signature: AwbcSignatureId(1),
@@ -402,6 +404,7 @@ fn compiled_nested_return_restores_caller_and_writes_destination() {
         effects: AwbcEffectSetId(0),
     });
     program.functions.push(AwbcFunction {
+        semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Synthetic,
         signature: AwbcSignatureId(1),

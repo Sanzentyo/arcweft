@@ -6343,6 +6343,7 @@ mod tests {
             max_scope_depth: 0,
         });
         program.functions.push(AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: Default::default(),
@@ -6439,6 +6440,7 @@ mod tests {
         });
         for (function_id, signature_id) in [(1, 1), (2, 2)] {
             program.functions.push(AwbcFunction {
+                semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
                 public_id: None,
                 kind: AwbcFunctionKind::Synthetic,
                 signature: AwbcSignatureId(signature_id),

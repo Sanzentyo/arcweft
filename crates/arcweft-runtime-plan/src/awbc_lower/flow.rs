@@ -423,6 +423,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         let function = self.inventory.replace_function(
             owner,
             AwbcFunction {
+                semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
                 public_id: Some(public_id),
                 kind: AwbcFunctionKind::PureHelper,
                 signature,
@@ -856,6 +857,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         let function = self.inventory.replace_function(
             owner,
             AwbcFunction {
+                semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Line,
                 public_id,
                 kind,
                 signature,
@@ -879,6 +881,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
     pub(crate) fn lower_executable_function_site(
         &mut self,
         owner: AwbcFunctionId,
+        role: arcweft_core::plan::RuntimeFunctionSemanticRole,
         function_type: Option<arcweft_core::runtime_id::RuntimePlanTypeId>,
         inputs: &[RuntimeFunctionInputBinding],
         result: arcweft_core::runtime_id::RuntimePlanTypeId,
@@ -960,6 +963,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         self.inventory.replace_function(
             owner,
             AwbcFunction {
+                semantic_role: role,
                 public_id: None,
                 kind: AwbcFunctionKind::Ordinary,
                 signature,
@@ -1029,6 +1033,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             &flow.id,
             owner,
             AwbcFunction {
+                semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
                 public_id: Some(public_id),
                 kind: AwbcFunctionKind::Flow,
                 signature,
@@ -2010,6 +2015,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         if !already_reserved {
             self.inventory
                 .push_pending_closure(PendingAwbcClosure::FunctionSite {
+                    role: declaration.role(),
                     function,
                     function_type: declaration.function_type(),
                     inputs: declaration.inputs().to_vec().into_boxed_slice(),

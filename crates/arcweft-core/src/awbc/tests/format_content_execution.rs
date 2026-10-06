@@ -215,6 +215,7 @@ fn format_program(value_thunk: ValueThunk) -> AwbcProgram {
     ]);
     program.functions.extend([
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
             signature: AwbcSignatureId(1),
@@ -226,6 +227,7 @@ fn format_program(value_thunk: ValueThunk) -> AwbcProgram {
             flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         },
         AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
             signature: AwbcSignatureId(2),
@@ -800,6 +802,7 @@ fn project_display_program(project_success: bool) -> AwbcProgram {
         source_map: None,
     });
     program.functions.push(AwbcFunction {
+        semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::TraitMethod,
         signature: method_entry,
@@ -863,6 +866,7 @@ fn project_display_program(project_success: bool) -> AwbcProgram {
             source_map: None,
         });
         program.functions.push(AwbcFunction {
+            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
             signature: value_signature,
@@ -1077,6 +1081,7 @@ fn project_display_option_none_program() -> AwbcProgram {
         source_map: None,
     });
     program.functions.push(AwbcFunction {
+        semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Synthetic,
         signature: none_signature,
@@ -1148,6 +1153,7 @@ fn nested_format_program(call: NestedValueCall, value_thunk: ValueThunk) -> Awbc
     });
     program.frame_layouts.push(program.frame_layouts[1].clone());
     program.functions.push(AwbcFunction {
+        semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: match call {
             NestedValueCall::PureHelper => AwbcFunctionKind::PureHelper,

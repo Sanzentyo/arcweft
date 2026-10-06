@@ -2082,3 +2082,82 @@ fn await_observers_lower_to_progress_dispatch_and_rewait_backedge() {
         )
     }));
 }
+
+#[test]
+fn function_semantic_roles_survive_expression_and_executable_awbc_lowering() {
+    use arcweft_core::awbc::schema::{AwbcFunctionKind, AwbcProgram};
+    use arcweft_core::plan::{
+        RuntimeEffectSet, RuntimeExecutableBodySeed, RuntimeFunctionSemanticRole,
+        RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteBodySeed,
+        RuntimeFunctionSiteDeclarationSeed, RuntimePureProgramBindingSeed,
+    };
+    for executable in [false, true] {
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    type_id(2),
+                    RuntimePlanTypeProjection::Unit,
+                )],
+                [],
+            )
+            .unwrap();
+        for &role in RuntimeFunctionSemanticRole::ALL {
+            let site = builder
+                .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+                    role,
+                    function_type: None,
+                    inputs: Box::new([]),
+                    result: type_id(2),
+                    body_kind: if executable {
+                        RuntimeFunctionSiteBodyKind::Executable
+                    } else {
+                        RuntimeFunctionSiteBodyKind::Expression
+                    },
+                    effects: RuntimeEffectSet::empty(),
+                })
+                .unwrap();
+            let body = if executable {
+                RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                    effects: RuntimeEffectSet::empty(),
+                    ops: vec![RuntimeFlowOpSeed::ReturnExpr(unit_expr())].into_boxed_slice(),
+                })
+            } else {
+                RuntimeFunctionSiteBodySeed::Expression(unit_expr())
+            };
+            builder.define_function_site_seed(&site, body).unwrap();
+            let program = arcweft_id::runtime_program::RuntimePureProgramId::from_checked_digest(
+                [role.semantic_tag(); 32],
+            );
+            builder
+                .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed { program, site })
+                .unwrap();
+        }
+        let plan = builder.finish().unwrap();
+        let program = AwbcLowerer::new(
+            &plan,
+            &arcweft_text_model::DialogueContentCatalog::new(),
+            "semantic-role",
+        )
+        .lower()
+        .unwrap()
+        .program;
+        let encoded = program.encode_canonical().unwrap();
+        let decoded = AwbcProgram::decode_canonical(&encoded, Default::default()).unwrap();
+        assert_eq!(decoded, program);
+        for binding in &decoded.pure_programs {
+            let function = &decoded.functions[binding.function.index()];
+            assert_eq!(function.kind, AwbcFunctionKind::Ordinary);
+            assert_eq!(
+                binding.program,
+                arcweft_id::runtime_program::RuntimePureProgramId::from_checked_digest(
+                    [function.semantic_role.semantic_tag(); 32]
+                )
+            );
+        }
+        assert_eq!(
+            decoded.pure_programs.len(),
+            RuntimeFunctionSemanticRole::ALL.len()
+        );
+    }
+}

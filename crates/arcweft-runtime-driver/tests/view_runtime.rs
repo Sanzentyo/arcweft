@@ -2922,6 +2922,7 @@ fn pure_fixture_awbc(
         source_map: None,
     });
     program.functions.push(AwbcFunction {
+        semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Ordinary,
         signature: AwbcSignatureId(0),
@@ -3115,6 +3116,7 @@ fn repeat_fixture_awbc(
             source_map: None,
         });
         program.functions.push(AwbcFunction {
+            semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
             signature: AwbcSignatureId(ordinal),

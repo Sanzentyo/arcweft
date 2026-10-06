@@ -1673,6 +1673,7 @@ mod tests {
             }],
             functions: vec![
                 AwbcFunction {
+                    semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
                     public_id: Some(AwbcStringId(2)),
                     kind: AwbcFunctionKind::Flow,
                     signature: AwbcSignatureId(0),
@@ -1684,6 +1685,7 @@ mod tests {
                     flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
                 },
                 AwbcFunction {
+                    semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
                     public_id: Some(AwbcStringId(2)),
                     kind: AwbcFunctionKind::Flow,
                     signature: AwbcSignatureId(0),
