@@ -2828,6 +2828,46 @@ fn root_implicit_capture_transfer_drives_creation_and_ingress() {
 }
 
 #[test]
+fn ordinary_function_formals_retain_accepted_whole_parameter_coordinates() {
+    let source = "fn root((left, right): (i64, i64), unused: i64) -> i64 { left + right }\nflow main() -> i64 { return root((20i64, 22i64), 0i64) }";
+    let observe = |source: &str| {
+        let (project, context) = removed_role_project(source);
+        let (mut session, parsed) = compilation_state(&project);
+        let compiled = compile_project(&mut session, &project, &parsed, &context)
+            .expect("whole formal parameter roles compile");
+        let instance = compiled
+            .runtime_facts()
+            .project_function_instances()
+            .next()
+            .unwrap();
+        let [pair, unused] = instance.parameters() else {
+            panic!("complete ordinary arity")
+        };
+        assert_eq!(pair.bindings().len(), 2);
+        assert_eq!(unused.bindings().len(), 1);
+        assert_eq!(pair.definition(), &instance.definition().parameters()[0]);
+        assert_eq!(unused.definition(), &instance.definition().parameters()[1]);
+        assert_ne!(pair.identity(), unused.identity());
+        (
+            instance.definition_identity(),
+            pair.identity(),
+            unused.identity(),
+            pair.pattern(),
+        )
+    };
+    let original = observe(source);
+    let revised = observe(&format!(
+        "fn unrelated() -> i64 {{ 0i64 }}\n{}",
+        source.replace("left + right", "left + right + 1i64")
+    ));
+    assert_eq!(
+        (original.0, original.1, original.2),
+        (revised.0, revised.1, revised.2)
+    );
+    assert_ne!(original.3, revised.3);
+}
+
+#[test]
 #[expect(
     clippy::too_many_lines,
     reason = "one authored callback fixture proves definition/capture revision invariance and exact source-definition rejection"

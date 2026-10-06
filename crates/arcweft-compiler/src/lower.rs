@@ -7523,6 +7523,29 @@ fn build_runtime_project_function_instance(
         .parameter_groups()
         .get(selection.group.get())
         .ok_or_else(|| error("project-function instance group is absent"))?;
+    let definition_source = arcweft_lang_sema::final_analysis::CheckedExecutionSource::InvokeBody(
+        arcweft_lang_sema::final_analysis::CheckedExecutionBodyOwner::Declaration {
+            declaration: callable.declaration().clone(),
+            role: arcweft_lang_hir::project::HirDeclarationBodyRootRole::FunctionBody,
+        },
+    );
+    let definition_context = analysis
+        .checked_execution_context(
+            project,
+            symbols,
+            definition_source.clone(),
+            Some(CheckedLocalUseInstantiation::ProjectFunction(
+                instance_solution
+                    .function_solution()
+                    .ok_or_else(|| error("ordinary function has no frozen solution"))?,
+            )),
+        )
+        .map_err(|reason| error(&reason.to_string()))?;
+    let definition = Arc::new(
+        definition_context
+            .checked_execution_input_abi(definition_source)
+            .map_err(|reason| error(&reason.to_string()))?,
+    );
     let mut parameters = Vec::new();
     let mut prefix_position = 0_u32;
     for (group_index, group) in function
@@ -7570,17 +7593,25 @@ fn build_runtime_project_function_instance(
             } else {
                 binding_ty.clone()
             };
-            parameters.push(RuntimeProjectFunctionParameterAbi::new(
-                group_coordinate,
-                parameter_coordinate,
-                source,
-                parameter.pattern(),
-                parameter.ty(),
-                parameter.kind(),
-                parameter.locals().to_vec().into_boxed_slice(),
-                runtime_type(&abi_ty, symbols, world, analysis)?,
-                runtime_type(&binding_ty, symbols, world, analysis)?,
-            ));
+            let formal = definition.parameters().iter().find(|formal| matches!(formal.origin(), arcweft_lang_sema::final_analysis::CheckedExecutionParameterOrigin::Declaration(slot) if slot.group() == group_coordinate && slot.parameter().get() == position)).ok_or_else(|| error("ordinary parameter has no accepted formal role"))?;
+            if formal.pattern() != Some(parameter.pattern())
+                || formal.bindings() != parameter.locals()
+            {
+                return Err(error(
+                    "ordinary formal role disagrees with its accepted source bindings",
+                ));
+            }
+            parameters.push(
+                RuntimeProjectFunctionParameterAbi::try_new(
+                    formal.clone(),
+                    source,
+                    parameter.ty(),
+                    parameter.kind(),
+                    runtime_type(&abi_ty, symbols, world, analysis)?,
+                    runtime_type(&binding_ty, symbols, world, analysis)?,
+                )
+                .map_err(|reason| error(&reason.to_string()))?,
+            );
         }
     }
     let arcweft_lang_hir::item::HirFunctionBody::Block {
@@ -7649,6 +7680,7 @@ fn build_runtime_project_function_instance(
     )?;
     RuntimeProjectFunctionInstanceFact::try_new(
         key,
+        definition,
         callable,
         checked_callable.suspension(),
         checked_callable.control(),

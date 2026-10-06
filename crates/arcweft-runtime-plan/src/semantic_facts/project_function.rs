@@ -530,56 +530,69 @@ pub enum RuntimeProjectFunctionParameterSource {
 /// normalized type is the frozen instantiated ABI type.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeProjectFunctionParameterAbi {
-    group: CallableGroupIndex,
-    parameter: u32,
+    definition: arcweft_lang_sema::final_analysis::CheckedExecutionParameter,
     source: RuntimeProjectFunctionParameterSource,
-    pattern: PatternId,
     source_type: TypeId,
     kind: HirParameterKind,
-    bindings: Box<[LocalId]>,
     abi_ty: RuntimeNormalizedType,
     binding_ty: RuntimeNormalizedType,
 }
 
 impl RuntimeProjectFunctionParameterAbi {
-    pub fn new(
-        group: CallableGroupIndex,
-        parameter: u32,
+    pub fn try_new(
+        definition: arcweft_lang_sema::final_analysis::CheckedExecutionParameter,
         source: RuntimeProjectFunctionParameterSource,
-        pattern: PatternId,
         source_type: TypeId,
         kind: HirParameterKind,
-        bindings: Box<[LocalId]>,
         abi_ty: RuntimeNormalizedType,
         binding_ty: RuntimeNormalizedType,
-    ) -> Self {
-        Self {
-            group,
-            parameter,
+    ) -> Result<Self, RuntimeProjectFunctionFactError> {
+        if !matches!(
+            definition.origin(),
+            arcweft_lang_sema::final_analysis::CheckedExecutionParameterOrigin::Declaration(_)
+        ) || definition.pattern().is_none()
+        {
+            return Err(RuntimeProjectFunctionFactError::NonCanonicalParameterAbi);
+        }
+        Ok(Self {
+            definition,
             source,
-            pattern,
             source_type,
             kind,
-            bindings,
             abi_ty,
             binding_ty,
-        }
+        })
     }
 
-    pub const fn group(&self) -> CallableGroupIndex {
-        self.group
+    pub fn group(&self) -> CallableGroupIndex {
+        let arcweft_lang_sema::final_analysis::CheckedExecutionParameterOrigin::Declaration(
+            position,
+        ) = self.definition.origin()
+        else {
+            unreachable!("validated declaration parameter")
+        };
+        position.group()
     }
 
-    pub const fn parameter(&self) -> u32 {
-        self.parameter
+    pub fn parameter(&self) -> u32 {
+        let arcweft_lang_sema::final_analysis::CheckedExecutionParameterOrigin::Declaration(
+            position,
+        ) = self.definition.origin()
+        else {
+            unreachable!("validated declaration parameter")
+        };
+        u32::try_from(position.parameter().get())
+            .expect("checked parameter identity bounds its coordinate")
     }
 
     pub const fn source(&self) -> RuntimeProjectFunctionParameterSource {
         self.source
     }
 
-    pub const fn pattern(&self) -> PatternId {
-        self.pattern
+    pub fn pattern(&self) -> PatternId {
+        self.definition
+            .pattern()
+            .expect("validated declaration pattern")
     }
 
     pub const fn source_type(&self) -> TypeId {
@@ -591,7 +604,19 @@ impl RuntimeProjectFunctionParameterAbi {
     }
 
     pub const fn bindings(&self) -> &[LocalId] {
-        &self.bindings
+        self.definition.bindings()
+    }
+
+    pub const fn definition(
+        &self,
+    ) -> &arcweft_lang_sema::final_analysis::CheckedExecutionParameter {
+        &self.definition
+    }
+
+    pub const fn identity(
+        &self,
+    ) -> arcweft_lang_sema::final_analysis::CheckedExecutionParameterIdentity {
+        self.definition.identity()
     }
 
     pub const fn abi_ty(&self) -> &RuntimeNormalizedType {
@@ -2410,9 +2435,10 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
 /// type inventory is declaration-generic while this instance is closed under
 /// one checked substitution. Runtime lowering must not reopen semantic maps or
 /// adopt types from a call site's operand values.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct RuntimeProjectFunctionInstanceFact {
     key: RuntimeProjectFunctionInstanceKey,
+    definition: std::sync::Arc<arcweft_lang_sema::final_analysis::CheckedExecutionInputAbi>,
     callable: RuntimeProjectCallable,
     suspension: arcweft_lang_sema::final_analysis::CheckedSuspensionRole,
     control: arcweft_lang_sema::final_analysis::CheckedExecutableControlRole,
@@ -2432,6 +2458,7 @@ impl RuntimeProjectFunctionInstanceFact {
     )]
     pub fn try_new(
         key: RuntimeProjectFunctionInstanceKey,
+        definition: std::sync::Arc<arcweft_lang_sema::final_analysis::CheckedExecutionInputAbi>,
         callable: RuntimeProjectCallable,
         suspension: arcweft_lang_sema::final_analysis::CheckedSuspensionRole,
         control: arcweft_lang_sema::final_analysis::CheckedExecutableControlRole,
@@ -2443,6 +2470,23 @@ impl RuntimeProjectFunctionInstanceFact {
         body: RuntimeProjectFunctionBody,
         semantics: RuntimeProjectFunctionInstanceSemanticFacts,
     ) -> Result<Self, RuntimeProjectFunctionFactError> {
+        use arcweft_lang_sema::final_analysis::{
+            CheckedExecutionBodyOwner, CheckedExecutionParameterOrigin, CheckedExecutionSource,
+        };
+        if !matches!(definition.source(), CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration { declaration, role: arcweft_lang_hir::project::HirDeclarationBodyRootRole::FunctionBody }) if declaration == callable.declaration())
+            || definition.environment().local_uses() != semantics.local_uses()
+        {
+            return Err(RuntimeProjectFunctionFactError::NonCanonicalSemanticFacts);
+        }
+        let expected = definition.parameters().iter().filter(|parameter| matches!(parameter.origin(), CheckedExecutionParameterOrigin::Declaration(position) if position.group().get() <= key.group().get())).collect::<Vec<_>>();
+        if expected.len() != parameters.len()
+            || expected
+                .iter()
+                .zip(&parameters)
+                .any(|(expected, actual)| *expected != actual.definition())
+        {
+            return Err(RuntimeProjectFunctionFactError::NonCanonicalParameterAbi);
+        }
         if callable.declaration().owner()
             != arcweft_lang_hir::symbol::CallableDeclarationOwner::Function
         {
@@ -2660,6 +2704,7 @@ impl RuntimeProjectFunctionInstanceFact {
         }
         Ok(Self {
             key,
+            definition,
             callable,
             suspension,
             control,
@@ -2675,6 +2720,18 @@ impl RuntimeProjectFunctionInstanceFact {
 
     pub const fn key(&self) -> &RuntimeProjectFunctionInstanceKey {
         &self.key
+    }
+
+    pub const fn definition(
+        &self,
+    ) -> &std::sync::Arc<arcweft_lang_sema::final_analysis::CheckedExecutionInputAbi> {
+        &self.definition
+    }
+
+    pub fn definition_identity(
+        &self,
+    ) -> arcweft_lang_sema::final_analysis::CheckedExecutionDefinitionIdentity {
+        self.definition.definition_identity()
     }
 
     pub const fn callable(&self) -> &RuntimeProjectCallable {

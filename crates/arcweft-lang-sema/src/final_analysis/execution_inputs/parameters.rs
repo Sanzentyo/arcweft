@@ -26,15 +26,99 @@ pub enum CheckedExecutionParameterOrigin {
     AttachedContent,
 }
 
+/// Stable identity of the whole accepted formal role, including wildcard and
+/// destructured parameters. Leaf binding identities remain separate.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedExecutionParameterIdentity([u8; 32]);
+
+impl CheckedExecutionParameterIdentity {
+    fn from_coordinate(
+        coordinate: &super::CheckedExecutionCoordinate,
+        origin: &CheckedExecutionParameterOrigin,
+    ) -> Result<Self, FinalSemanticAnalysisError> {
+        let mut hash = blake3::Hasher::new();
+        hash.update(b"arcweft.lang.checked-execution-parameter.v1\0");
+        match coordinate {
+            super::CheckedExecutionCoordinate::DeclarationBody(body)
+            | super::CheckedExecutionCoordinate::DeclarationMutationBody(body) => {
+                let root = body.path().root();
+                hash.update(&[0, root.tag()]);
+                hash.update(root.as_bytes());
+            }
+            super::CheckedExecutionCoordinate::CallableBody(path)
+            | super::CheckedExecutionCoordinate::MutationBody(path) => {
+                hash.update(&[1]);
+                hash.update(
+                    &path
+                        .canonical_bytes()
+                        .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?,
+                );
+            }
+            _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
+        }
+        match origin {
+            CheckedExecutionParameterOrigin::Declaration(position) => {
+                hash.update(&[0]);
+                hash.update(
+                    &u32::try_from(position.group().get())
+                        .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?
+                        .to_le_bytes(),
+                );
+                hash.update(
+                    &u32::try_from(position.parameter().get())
+                        .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?
+                        .to_le_bytes(),
+                );
+            }
+            CheckedExecutionParameterOrigin::Closure { parameter } => {
+                hash.update(&[1]);
+                hash.update(&parameter.to_le_bytes());
+            }
+            CheckedExecutionParameterOrigin::Implicit(_) => {
+                hash.update(&[2]);
+            }
+            CheckedExecutionParameterOrigin::AttachedContent => {
+                hash.update(&[3]);
+            }
+        }
+        Ok(Self(*hash.finalize().as_bytes()))
+    }
+
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedExecutionParameter {
     origin: CheckedExecutionParameterOrigin,
+    identity: CheckedExecutionParameterIdentity,
     ty: TypeKind,
     pattern: Option<PatternId>,
     bindings: Box<[LocalId]>,
 }
 
 impl CheckedExecutionParameter {
+    fn new(
+        origin: CheckedExecutionParameterOrigin,
+        ty: TypeKind,
+        pattern: Option<PatternId>,
+        bindings: Box<[LocalId]>,
+        coordinate: &super::CheckedExecutionCoordinate,
+    ) -> Result<Self, FinalSemanticAnalysisError> {
+        let identity = CheckedExecutionParameterIdentity::from_coordinate(coordinate, &origin)?;
+        Ok(Self {
+            origin,
+            identity,
+            ty,
+            pattern,
+            bindings,
+        })
+    }
+
+    pub const fn identity(&self) -> CheckedExecutionParameterIdentity {
+        self.identity
+    }
     pub const fn origin(&self) -> &CheckedExecutionParameterOrigin {
         &self.origin
     }
@@ -55,6 +139,7 @@ impl super::super::CheckedClosedExecutionContext<'_> {
     pub(super) fn execution_parameters(
         &self,
         source: &CheckedExecutionSource,
+        coordinate: &super::CheckedExecutionCoordinate,
     ) -> Result<Box<[CheckedExecutionParameter]>, super::super::CheckedExecutionContextError> {
         let analysis = self.analysis();
         let coordinates = SemanticCoordinateIndex::new(analysis.accepted_root_catalog(), analysis);
@@ -140,7 +225,10 @@ impl super::super::CheckedClosedExecutionContext<'_> {
                             .pattern(pattern)
                             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?
                             .ty();
-                        let ty = self.instantiate_type(ty)?;
+                        let ty = parameter
+                            .passing()
+                            .value_binding_type(self.instantiate_type(ty)?)
+                            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
                         if !ty.accepts(&self.instantiate_type(pattern_ty)?) {
                             return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into());
                         }
@@ -148,24 +236,26 @@ impl super::super::CheckedClosedExecutionContext<'_> {
                             formal_bindings.remove(&key).unwrap_or_default(),
                             &coordinates,
                         )?;
-                        parameters.push(CheckedExecutionParameter {
-                            origin: CheckedExecutionParameterOrigin::Declaration(position),
+                        parameters.push(CheckedExecutionParameter::new(
+                            CheckedExecutionParameterOrigin::Declaration(position),
                             ty,
-                            pattern: Some(pattern),
+                            Some(pattern),
                             bindings,
-                        });
+                            coordinate,
+                        )?);
                     }
                 }
                 if !patterns.is_empty() || !formal_bindings.is_empty() {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into());
                 }
                 if let Some(attached) = checked.attached_content() {
-                    parameters.push(CheckedExecutionParameter {
-                        origin: CheckedExecutionParameterOrigin::AttachedContent,
-                        ty: self.instantiate_type(attached.abi_type())?,
-                        pattern: None,
-                        bindings: Box::new([attached.binding()]),
-                    });
+                    parameters.push(CheckedExecutionParameter::new(
+                        CheckedExecutionParameterOrigin::AttachedContent,
+                        self.instantiate_type(attached.abi_type())?,
+                        None,
+                        Box::new([attached.binding()]),
+                        coordinate,
+                    )?);
                 }
             }
             CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(owner))
@@ -177,12 +267,13 @@ impl super::super::CheckedClosedExecutionContext<'_> {
                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
                 match expression.resolution() {
                     CheckedExpressionResolution::ImplicitCallable(callable) => {
-                        parameters.push(CheckedExecutionParameter {
-                            origin: CheckedExecutionParameterOrigin::Implicit(callable.identity()),
-                            ty: self.instantiate_type(callable.parameter())?,
-                            pattern: None,
-                            bindings: Box::new([]),
-                        });
+                        parameters.push(CheckedExecutionParameter::new(
+                            CheckedExecutionParameterOrigin::Implicit(callable.identity()),
+                            self.instantiate_type(callable.parameter())?,
+                            None,
+                            Box::new([]),
+                            coordinate,
+                        )?);
                     }
                     CheckedExpressionResolution::Closure(_) => {
                         let module = self
@@ -245,14 +336,15 @@ impl super::super::CheckedClosedExecutionContext<'_> {
                                 formal_bindings.remove(&parameter_index).unwrap_or_default(),
                                 &coordinates,
                             )?;
-                            parameters.push(CheckedExecutionParameter {
-                                origin: CheckedExecutionParameterOrigin::Closure {
+                            parameters.push(CheckedExecutionParameter::new(
+                                CheckedExecutionParameterOrigin::Closure {
                                     parameter: parameter_index,
                                 },
                                 ty,
-                                pattern: Some(pattern),
+                                Some(pattern),
                                 bindings,
-                            });
+                                coordinate,
+                            )?);
                         }
                         if !formal_bindings.is_empty() {
                             return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into());

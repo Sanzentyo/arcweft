@@ -100,6 +100,140 @@ fn empty_body_has_an_authenticated_root_without_an_expression_anchor() {
 }
 
 #[test]
+fn formal_parameter_identities_preserve_whole_roles_across_body_and_source_revisions() {
+    let observe = |text: &str, name: &str| {
+        let world = fixture(text, None);
+        let report = analyze(&world).unwrap();
+        let source = declaration_body(&report, name);
+        let context = report
+            .checked_execution_context(
+                world.project.analysis_view().unwrap(),
+                &world.symbols,
+                source.clone(),
+                None,
+            )
+            .unwrap();
+        let invoked = context.checked_execution_input_abi(source.clone()).unwrap();
+        let CheckedExecutionSource::InvokeBody(body) = source else {
+            unreachable!()
+        };
+        let mutation = context
+            .checked_execution_input_abi(CheckedExecutionSource::ExportMutation(body))
+            .unwrap();
+        assert_eq!(
+            invoked
+                .parameters()
+                .iter()
+                .map(|row| row.identity())
+                .collect::<Vec<_>>(),
+            mutation
+                .parameters()
+                .iter()
+                .map(|row| row.identity())
+                .collect::<Vec<_>>(),
+            "execution intent does not rename the formal's accepted origin"
+        );
+        assert_eq!(invoked.parameters().len(), 3);
+        assert_eq!(invoked.parameters()[0].bindings().len(), 2);
+        assert!(invoked.parameters()[1].bindings().is_empty());
+        assert_eq!(invoked.parameters()[2].bindings().len(), 1);
+        invoked
+            .parameters()
+            .iter()
+            .map(|row| (row.identity(), row.pattern().unwrap()))
+            .collect::<Vec<_>>()
+    };
+    let source = "fn root((left, right): (i64, i64), _: i64, unused: i64) -> i64 { left + right }";
+    let original = observe(source, "root");
+    let revised = observe(
+        &format!(
+            "fn unrelated() -> i64 {{ 0i64 }}\n{}",
+            source.replace("left + right", "left + right + 1i64")
+        ),
+        "root",
+    );
+    assert_eq!(
+        original.iter().map(|row| row.0).collect::<Vec<_>>(),
+        revised.iter().map(|row| row.0).collect::<Vec<_>>()
+    );
+    assert_ne!(original[0].1, revised[0].1);
+    assert_ne!(original[0].0, original[1].0);
+    assert_ne!(original[1].0, original[2].0);
+    let other = observe(&source.replace("fn root", "fn other"), "other");
+    assert!(
+        original
+            .iter()
+            .zip(&other)
+            .all(|(left, right)| left.0 != right.0)
+    );
+}
+
+#[test]
+fn view_formal_identity_is_shared_across_statement_body_roots() {
+    let world = fixture(
+        "view Main(value: i64) { Text(\"first\")\nText(\"second\") }",
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let body = report
+        .hir_topology()
+        .modules()
+        .iter()
+        .flat_map(|module| module.entries())
+        .filter_map(|entry| entry.body())
+        .find(|body| body.declaration().name() == "Main")
+        .unwrap();
+    assert_eq!(body.roots().len(), 2);
+    let identities = body
+        .roots()
+        .iter()
+        .map(|root| {
+            let source =
+                CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
+                    declaration: body.declaration().clone(),
+                    role: root.role(),
+                });
+            let context = report
+                .checked_execution_context(
+                    world.project.analysis_view().unwrap(),
+                    &world.symbols,
+                    source.clone(),
+                    None,
+                )
+                .unwrap();
+            let abi = context.checked_execution_input_abi(source).unwrap();
+            assert_eq!(abi.parameters().len(), 1);
+            abi.parameters()[0].identity()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(identities[0], identities[1]);
+}
+
+#[test]
+fn rest_formal_uses_the_materialized_container_type() {
+    let world = fixture("fn collect(head: i64, tail: ...i64) -> i64 { head }", None);
+    let report = analyze(&world).unwrap();
+    let source = declaration_body(&report, "collect");
+    let context = report
+        .checked_execution_context(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            source.clone(),
+            None,
+        )
+        .unwrap();
+    let abi = context.checked_execution_input_abi(source).unwrap();
+    assert_eq!(
+        abi.parameters()[1].ty(),
+        &TypeKind::Vec(Box::new(TypeKind::I64))
+    );
+    assert_ne!(
+        abi.parameters()[0].identity(),
+        abi.parameters()[1].identity()
+    );
+}
+
+#[test]
 fn body_parameters_keep_unused_arity_and_destructuring() {
     let world = fixture(
         "fn root((left, right): (i64, i64), unused: i64) -> i64 { left + right }",
@@ -146,6 +280,7 @@ fn body_parameters_keep_unused_arity_and_destructuring() {
             .all(|input| !input.uses().is_empty())
     );
     assert_eq!(abi.result().value_type(), Some(&TypeKind::I64));
+    assert_ne!(pair.identity(), unused.identity());
 }
 
 #[test]
@@ -319,6 +454,7 @@ fn declaration_body_inputs_close_under_the_same_instance_as_value_transfers() {
         .into_iter()
         .map(|selection| selection.close_instance(None).unwrap())
         .collect::<Vec<_>>();
+    let mut identities = Vec::new();
     for instance in &instances {
         let context = report
             .checked_execution_context(
@@ -333,6 +469,7 @@ fn declaration_body_inputs_close_under_the_same_instance_as_value_transfers() {
         let [parameter] = abi.parameters() else {
             panic!("one full formal")
         };
+        identities.push(parameter.identity());
         let [input] = abi.inputs() else {
             panic!("one formal binding")
         };
@@ -350,6 +487,8 @@ fn declaration_body_inputs_close_under_the_same_instance_as_value_transfers() {
             }
         );
     }
+    assert_eq!(identities.len(), 2);
+    assert_eq!(identities[0], identities[1]);
 }
 
 #[test]

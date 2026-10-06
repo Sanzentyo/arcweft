@@ -126,8 +126,8 @@ pub use execution_context::{
 pub use execution_inputs::{
     CheckedExecutionCoordinate, CheckedExecutionDefinitionIdentity, CheckedExecutionInput,
     CheckedExecutionInputAbi, CheckedExecutionInputRole, CheckedExecutionInputUse,
-    CheckedExecutionMatchSelection, CheckedExecutionParameter, CheckedExecutionParameterOrigin,
-    CheckedExecutionSyntheticUse,
+    CheckedExecutionMatchSelection, CheckedExecutionParameter, CheckedExecutionParameterIdentity,
+    CheckedExecutionParameterOrigin, CheckedExecutionSyntheticUse,
 };
 pub use fx_application::{
     CheckedContentFxApplication, CheckedContentFxBinding, CheckedFxApplicationOrdinal,

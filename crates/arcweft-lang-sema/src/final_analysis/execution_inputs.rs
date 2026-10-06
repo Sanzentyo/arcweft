@@ -98,7 +98,9 @@ impl CheckedExecutionDefinitionIdentity {
 }
 
 mod parameters;
-pub use parameters::{CheckedExecutionParameter, CheckedExecutionParameterOrigin};
+pub use parameters::{
+    CheckedExecutionParameter, CheckedExecutionParameterIdentity, CheckedExecutionParameterOrigin,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedExecutionInputRole {
@@ -736,7 +738,7 @@ impl super::CheckedClosedExecutionContext<'_> {
                 (execution, coordinate, input_scope, result, effects)
             }
         };
-        let parameters = self.execution_parameters(&source)?;
+        let parameters = self.execution_parameters(&source, &coordinate)?;
         let parameter_roles = parameters
             .iter()
             .flat_map(|parameter| {
