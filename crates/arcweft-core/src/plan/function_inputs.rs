@@ -95,7 +95,7 @@ impl RuntimePlan {
                     RuntimeFunctionInputSource::Capture { position } => {
                         (captures, position as usize)
                     }
-                    RuntimeFunctionInputSource::Parameter { position } => {
+                    RuntimeFunctionInputSource::Parameter { position, .. } => {
                         (arguments, position as usize)
                     }
                 };
@@ -128,7 +128,7 @@ impl RuntimePlan {
                 .ty();
             let (values, index) = match input.source() {
                 RuntimeFunctionInputSource::Capture { position } => (captures, position as usize),
-                RuntimeFunctionInputSource::Parameter { position } => {
+                RuntimeFunctionInputSource::Parameter { position, .. } => {
                     (arguments, position as usize)
                 }
             };

@@ -2883,6 +2883,54 @@ fn root_implicit_capture_transfer_drives_creation_and_ingress() {
 }
 
 #[test]
+fn function_sites_preserve_accepted_parameter_passing_separately_from_ingress() {
+    use arcweft_core::plan::{
+        RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionInputSource,
+        RuntimeFunctionParameterPassing, RuntimeFunctionSemanticRole,
+    };
+    let (project, context) = removed_role_project(
+        "fn identity<T>(value: T) -> T { value }\nflow main() -> i64 { let number = identity(42i64); let pending = identity(Vec<Need<i64>>::with_capacity(0usize)); let explicit = |value: i64| value; let implicit = (_ + 1i64); return implicit(explicit(number)) }",
+    );
+    let (mut session, parsed) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed, &context).unwrap();
+    let plan = &compiled.runtime_plan().plan;
+    let mut ordinary = Vec::new();
+    let mut closures = 0;
+    for site in plan.function_sites().iter() {
+        for input in site.parameter_inputs() {
+            let RuntimeFunctionInputSource::Parameter { position, passing } = input.source() else {
+                unreachable!()
+            };
+            assert_eq!(position, 0);
+            assert_eq!(
+                input.ownership(),
+                RuntimeFunctionInputOwnershipRequirement::Owned
+            );
+            match site.role() {
+                RuntimeFunctionSemanticRole::Ordinary => ordinary.push(passing),
+                RuntimeFunctionSemanticRole::Closure => {
+                    assert_eq!(passing, RuntimeFunctionParameterPassing::Value);
+                    closures += 1;
+                }
+                _ => panic!("fixture only defines ordinary and closure inputs"),
+            }
+        }
+    }
+    ordinary.sort();
+    assert_eq!(
+        ordinary,
+        vec![
+            RuntimeFunctionParameterPassing::Value,
+            RuntimeFunctionParameterPassing::Affine
+        ]
+    );
+    assert_eq!(
+        closures, 2,
+        "explicit and implicit formals retain their accepted mode"
+    );
+}
+
+#[test]
 fn ordinary_function_formals_retain_accepted_whole_parameter_coordinates() {
     let source = "fn root((left, right): (i64, i64), unused: i64) -> i64 { left + right }\nflow main() -> i64 { return root((20i64, 22i64), 0i64) }";
     let observe = |source: &str| {

@@ -344,7 +344,7 @@ impl RuntimePlanBuilder {
             .iter()
             .zip(input_types)
             .filter_map(|(source, ty)| match source {
-                RuntimeFunctionInputSource::Parameter { position } => {
+                RuntimeFunctionInputSource::Parameter { position, .. } => {
                     Some(RuntimeCallableParameterInput {
                         coordinate: RuntimeCallableParameterCoordinate {
                             group: 0,

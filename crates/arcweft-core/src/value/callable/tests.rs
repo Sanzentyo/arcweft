@@ -68,7 +68,10 @@ fn captured_identity_plan() -> RuntimePlan {
                 RuntimeFunctionInputBindingSeed {
                     ownership: Default::default(),
                     unrestricted_bindings: Box::new([]),
-                    source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                    source: RuntimeFunctionInputSource::Parameter {
+                        position: 0,
+                        passing: crate::plan::RuntimeFunctionParameterPassing::Value,
+                    },
                     input_local: inputs.local_ids()[1].clone(),
                     pattern: RuntimePatternSeed::new(integer, RuntimePatternSeedKind::Discard),
                 },
@@ -230,6 +233,7 @@ fn checked_partial_application_seals_retained_parameter_coordinates() {
                     unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Parameter {
                         position: position as u32,
+                        passing: crate::plan::RuntimeFunctionParameterPassing::Value,
                     },
                     input_local: admission.local_ids()[if position == 0 { 2 } else { position }]
                         .clone(),
@@ -367,6 +371,7 @@ fn rest_partial_plan(
                     unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Parameter {
                         position: position as u32,
+                        passing: crate::plan::RuntimeFunctionParameterPassing::Value,
                     },
                     input_local: admission.local_ids()[position].clone(),
                     pattern: RuntimePatternSeed::new(ty, RuntimePatternSeedKind::Discard),
@@ -582,7 +587,10 @@ fn defaulted_attached_plan_builder(flatten_attached_into_arrow: bool) -> Runtime
             [RuntimeFunctionInputBindingSeed {
                 ownership: Default::default(),
                 unrestricted_bindings: Box::new([]),
-                source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                source: RuntimeFunctionInputSource::Parameter {
+                    position: 0,
+                    passing: crate::plan::RuntimeFunctionParameterPassing::Value,
+                },
                 input_local: admission.local_ids()[1].clone(),
                 pattern: RuntimePatternSeed::new(
                     boolean,

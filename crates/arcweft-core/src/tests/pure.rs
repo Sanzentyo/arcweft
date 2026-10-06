@@ -532,7 +532,10 @@ fn standard_map_pure_plan() -> (Arc<RuntimePlan>, Vec<StandardMapPureCase>) {
                     [RuntimeFunctionInputBindingSeed {
                         ownership: Default::default(),
                         unrestricted_bindings: Box::new([]),
-                        source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                        source: RuntimeFunctionInputSource::Parameter {
+                            position: 0,
+                            passing: crate::plan::RuntimeFunctionParameterPassing::Value,
+                        },
                         input_local: local.clone(),
                         pattern: RuntimePatternSeed::new(
                             i64_semantic_type(),
@@ -998,7 +1001,10 @@ fn structured_closure_captures_the_exact_owning_plan() {
                 RuntimeFunctionInputBindingSeed {
                     ownership: Default::default(),
                     unrestricted_bindings: Box::new([]),
-                    source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                    source: RuntimeFunctionInputSource::Parameter {
+                        position: 0,
+                        passing: crate::plan::RuntimeFunctionParameterPassing::Value,
+                    },
                     input_local: parameter_input,
                     pattern: RuntimePatternSeed::new(
                         i64_semantic_type(),
@@ -1115,7 +1121,10 @@ fn structured_function_input_tuple_pattern_binds_body_locals() {
             [RuntimeFunctionInputBindingSeed {
                 ownership: Default::default(),
                 unrestricted_bindings: Box::new([]),
-                source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                source: RuntimeFunctionInputSource::Parameter {
+                    position: 0,
+                    passing: crate::plan::RuntimeFunctionParameterPassing::Value,
+                },
                 input_local,
                 pattern: RuntimePatternSeed::new(
                     tuple_semantic_type,
@@ -1241,7 +1250,10 @@ fn structured_function_input_sequence_rest_binds_one_logical_tail() {
             [RuntimeFunctionInputBindingSeed {
                 ownership: Default::default(),
                 unrestricted_bindings: Box::new([]),
-                source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                source: RuntimeFunctionInputSource::Parameter {
+                    position: 0,
+                    passing: crate::plan::RuntimeFunctionParameterPassing::Value,
+                },
                 input_local,
                 pattern: RuntimePatternSeed::new(
                     sequence_semantic_type,
@@ -1366,7 +1378,10 @@ fn structured_function_input_record_pattern_binds_by_declared_field_coordinate()
             [RuntimeFunctionInputBindingSeed {
                 ownership: Default::default(),
                 unrestricted_bindings: Box::new([]),
-                source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                source: RuntimeFunctionInputSource::Parameter {
+                    position: 0,
+                    passing: crate::plan::RuntimeFunctionParameterPassing::Value,
+                },
                 input_local,
                 pattern: RuntimePatternSeed::new(
                     record_semantic_type,
@@ -1483,7 +1498,10 @@ fn structured_apply_reorders_source_arguments_to_the_checked_abi() {
                 RuntimeFunctionInputBindingSeed {
                     ownership: Default::default(),
                     unrestricted_bindings: Box::new([]),
-                    source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                    source: RuntimeFunctionInputSource::Parameter {
+                        position: 0,
+                        passing: crate::plan::RuntimeFunctionParameterPassing::Value,
+                    },
                     input_local: input_zero,
                     pattern: RuntimePatternSeed::new(
                         i64_semantic_type(),
@@ -1496,7 +1514,10 @@ fn structured_apply_reorders_source_arguments_to_the_checked_abi() {
                 RuntimeFunctionInputBindingSeed {
                     ownership: Default::default(),
                     unrestricted_bindings: Box::new([]),
-                    source: RuntimeFunctionInputSource::Parameter { position: 1 },
+                    source: RuntimeFunctionInputSource::Parameter {
+                        position: 1,
+                        passing: crate::plan::RuntimeFunctionParameterPassing::Value,
+                    },
                     input_local: input_one,
                     pattern: RuntimePatternSeed::new(
                         i64_semantic_type(),

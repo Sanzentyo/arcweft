@@ -722,7 +722,9 @@ impl RuntimeCallableState {
         for input in body.inputs() {
             let (values, position) = match input.source() {
                 super::RuntimeFunctionInputSource::Capture { position } => (captures, position),
-                super::RuntimeFunctionInputSource::Parameter { position } => (arguments, position),
+                super::RuntimeFunctionInputSource::Parameter { position, .. } => {
+                    (arguments, position)
+                }
             };
             let source = *values.get(position as usize).ok_or_else(invalid)?;
             let expected = plan

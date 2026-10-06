@@ -1294,7 +1294,8 @@ impl RuntimePlan {
             return false;
         }
         for (index, input) in parameters.iter().enumerate() {
-            let super::RuntimeFunctionInputSource::Parameter { position } = input.source() else {
+            let super::RuntimeFunctionInputSource::Parameter { position, .. } = input.source()
+            else {
                 return false;
             };
             if u32::try_from(index).ok() != Some(position) {

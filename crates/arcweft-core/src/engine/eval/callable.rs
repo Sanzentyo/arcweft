@@ -187,7 +187,9 @@ impl Engine {
         for input in declaration.inputs() {
             let (values, position) = match input.source() {
                 RuntimeFunctionInputSource::Capture { position } => (&mut captures, position),
-                RuntimeFunctionInputSource::Parameter { position } => (&mut arguments, position),
+                RuntimeFunctionInputSource::Parameter { position, .. } => {
+                    (&mut arguments, position)
+                }
             };
             let value = values
                 .get_mut(position as usize)

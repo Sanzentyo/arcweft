@@ -128,7 +128,10 @@ fn plan() -> RuntimePlan {
                     RuntimeFunctionInputBindingSeed {
                         ownership: Default::default(),
                         unrestricted_bindings: Box::new([]),
-                        source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                        source: RuntimeFunctionInputSource::Parameter {
+                            position: 0,
+                            passing: crate::plan::RuntimeFunctionParameterPassing::Value,
+                        },
                         input_local: locals.local_ids()[index + 1].clone(),
                         pattern: RuntimePatternSeed::new(argument, RuntimePatternSeedKind::Discard),
                     },

@@ -351,6 +351,10 @@ local-use authority を保持する。ordinary function、明示的 closure、
 一致を検査する。型や安定した source identity が同じでも、別の実行 instance
 または解析世代の formal 証拠を流用しない。
 
+structured function-site の parameter 入力は、受理済み formal の passing 区分を
+明示的に保持する。引数位置や pattern の展開で区分を失わず、frame ingress の
+`Owned`／`Unrestricted` 保証から区分を推測しない。
+
 ## 部分適用
 
 ```arcw

@@ -566,7 +566,10 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
             [RuntimeFunctionInputBindingSeed {
                 ownership: Default::default(),
                 unrestricted_bindings: Box::new([]),
-                source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                source: RuntimeFunctionInputSource::Parameter {
+                    position: 0,
+                    passing: crate::plan::RuntimeFunctionParameterPassing::Value,
+                },
                 input_local: target_input,
                 pattern: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
             }],
@@ -700,7 +703,10 @@ fn native_project_call_rest_materialization_accepts_empty_and_source_ordered_val
                 [RuntimeFunctionInputBindingSeed {
                     ownership: Default::default(),
                     unrestricted_bindings: Box::new([]),
-                    source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                    source: RuntimeFunctionInputSource::Parameter {
+                        position: 0,
+                        passing: crate::plan::RuntimeFunctionParameterPassing::Value,
+                    },
                     input_local: target_input,
                     pattern: RuntimePatternSeed::new(sequence, RuntimePatternSeedKind::Discard),
                 }],
@@ -875,7 +881,10 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
             [RuntimeFunctionInputBindingSeed {
                 ownership: Default::default(),
                 unrestricted_bindings: Box::new([]),
-                source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                source: RuntimeFunctionInputSource::Parameter {
+                    position: 0,
+                    passing: crate::plan::RuntimeFunctionParameterPassing::Value,
+                },
                 input_local: target_input,
                 pattern: RuntimePatternSeed::new(sequence, RuntimePatternSeedKind::Discard),
             }],

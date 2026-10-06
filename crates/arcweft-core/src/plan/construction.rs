@@ -2984,7 +2984,7 @@ fn validate_function_input_bindings(
                     .checked_add(1)
                     .ok_or(RuntimePlanBuildError::InvalidFunctionInputSource { index })?;
             }
-            RuntimeFunctionInputSource::Parameter { position } if position == parameters => {
+            RuntimeFunctionInputSource::Parameter { position, .. } if position == parameters => {
                 parameter_phase = true;
                 parameters = parameters
                     .checked_add(1)
@@ -3507,7 +3507,10 @@ mod tests {
                 [RuntimeFunctionInputBindingSeed {
                     ownership: Default::default(),
                     unrestricted_bindings: Box::new([]),
-                    source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                    source: RuntimeFunctionInputSource::Parameter {
+                        position: 0,
+                        passing: crate::plan::RuntimeFunctionParameterPassing::Value
+                    },
                     input_local: foreign.clone(),
                     pattern: RuntimePatternSeed::new(
                         identity(1),

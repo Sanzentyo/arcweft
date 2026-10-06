@@ -55,7 +55,7 @@ impl Engine {
             for input in &inputs {
                 let (values, position) = match input.source() {
                     RuntimeFunctionInputSource::Capture { position } => (&mut captures, position),
-                    RuntimeFunctionInputSource::Parameter { position } => (&mut args, position),
+                    RuntimeFunctionInputSource::Parameter { position, .. } => (&mut args, position),
                 };
                 let value = values
                     .get_mut(usize::try_from(position).map_err(|_| {

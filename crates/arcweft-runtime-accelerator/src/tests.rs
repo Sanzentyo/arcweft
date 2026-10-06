@@ -2010,7 +2010,10 @@ fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
         .push_function_site_seed(
             arcweft_core::plan::RuntimeFunctionSemanticRole::Closure,
             [RuntimeFunctionInputBindingSeed {
-                source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                source: RuntimeFunctionInputSource::Parameter {
+                    position: 0,
+                    passing: arcweft_core::plan::RuntimeFunctionParameterPassing::Value,
+                },
                 input_local: locals[0].clone(),
                 pattern: RuntimePatternSeed::new(
                     u32_ty,

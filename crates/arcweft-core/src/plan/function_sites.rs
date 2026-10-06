@@ -90,8 +90,13 @@ pub enum RuntimeFunctionSiteBodyKind {
 /// Origin of one function-site input row in the closed call ABI.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeFunctionInputSource {
-    Capture { position: u32 },
-    Parameter { position: u32 },
+    Capture {
+        position: u32,
+    },
+    Parameter {
+        position: u32,
+        passing: RuntimeFunctionParameterPassing,
+    },
 }
 
 /// The live value guarantee required when an input enters a function frame.

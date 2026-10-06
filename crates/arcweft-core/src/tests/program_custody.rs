@@ -100,14 +100,17 @@ pub(crate) fn issued_program_handle_with_prefix(prefix: bool) -> IssuedProgramHa
             arguments: Box::new([]),
         },
     )];
-    let mut input_types = vec![ty];
+    let mut input_types = vec![(ty, crate::plan::RuntimeFunctionParameterPassing::Affine)];
     if prefix {
         let boolean = RuntimeSemanticTypeId::from_bytes([0x52; 32]);
         types.push(RuntimePlanTypeSeed::new(
             boolean,
             RuntimePlanTypeProjection::Bool,
         ));
-        input_types.insert(0, boolean);
+        input_types.insert(
+            0,
+            (boolean, crate::plan::RuntimeFunctionParameterPassing::Value),
+        );
     }
     let plan = identity_program_plan(program, types, input_types);
     let activation = DialogueActivationId::new(
@@ -160,14 +163,17 @@ pub(crate) fn native_need_program(id: RuntimePureProgramId) -> Arc<RuntimePlan> 
             RuntimePlanTypeSeed::new(payload, RuntimePlanTypeProjection::Bool),
             RuntimePlanTypeSeed::new(need, RuntimePlanTypeProjection::Need(payload)),
         ],
-        vec![need],
+        vec![(need, crate::plan::RuntimeFunctionParameterPassing::Affine)],
     )
 }
 
 fn identity_program_plan(
     program: RuntimePureProgramId,
     types: Vec<RuntimePlanTypeSeed>,
-    input_types: Vec<RuntimeSemanticTypeId>,
+    input_types: Vec<(
+        RuntimeSemanticTypeId,
+        crate::plan::RuntimeFunctionParameterPassing,
+    )>,
 ) -> Arc<RuntimePlan> {
     let mut builder = RuntimePlanBuilder::new();
     let locals = builder
@@ -175,31 +181,34 @@ fn identity_program_plan(
             types,
             input_types
                 .iter()
-                .copied()
+                .map(|(ty, _)| *ty)
                 .map(RuntimeLocalDeclarationSeed::new),
         )
         .unwrap();
-    let ty = *input_types.last().unwrap();
+    let ty = input_types.last().unwrap().0;
     let local = locals.local_ids().last().unwrap().clone();
     let inputs = input_types
         .iter()
         .zip(locals.local_ids())
         .enumerate()
-        .map(|(position, (ty, local))| RuntimeFunctionInputBindingSeed {
-            source: RuntimeFunctionInputSource::Parameter {
-                position: u32::try_from(position).unwrap(),
-            },
-            input_local: local.clone(),
-            pattern: RuntimePatternSeed::new(
-                *ty,
-                RuntimePatternSeedKind::Bind {
-                    mutable: false,
-                    local: local.clone(),
+        .map(
+            |(position, ((ty, passing), local))| RuntimeFunctionInputBindingSeed {
+                source: RuntimeFunctionInputSource::Parameter {
+                    position: u32::try_from(position).unwrap(),
+                    passing: *passing,
                 },
-            ),
-            ownership: Default::default(),
-            unrestricted_bindings: Box::new([]),
-        })
+                input_local: local.clone(),
+                pattern: RuntimePatternSeed::new(
+                    *ty,
+                    RuntimePatternSeedKind::Bind {
+                        mutable: false,
+                        local: local.clone(),
+                    },
+                ),
+                ownership: Default::default(),
+                unrestricted_bindings: Box::new([]),
+            },
+        )
         .collect::<Vec<_>>();
     let site = builder
         .push_function_site_seed(

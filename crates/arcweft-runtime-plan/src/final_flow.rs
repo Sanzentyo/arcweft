@@ -2432,7 +2432,10 @@ fn reserve_implicit_function_sites<'facts>(
         let parameter_input = RuntimeFunctionInputBindingSeed {
             ownership: parameter_ownership,
             unrestricted_bindings: Box::new([]),
-            source: RuntimeFunctionInputSource::Parameter { position: 0 },
+            source: RuntimeFunctionInputSource::Parameter {
+                position: 0,
+                passing: callable.formal().passing(),
+            },
             input_local: parameter.clone(),
             pattern: RuntimePatternSeed::new(
                 callable.parameter().identity(),
@@ -2659,6 +2662,7 @@ fn reserve_closure_sites<'facts>(
                     unrestricted_bindings: unrestricted_bindings.into_boxed_slice(),
                     source: RuntimeFunctionInputSource::Parameter {
                         position: parameter.position(),
+                        passing: parameter.passing(),
                     },
                     input_local,
                     pattern,
@@ -2809,7 +2813,10 @@ fn reserve_project_function_sites<'facts>(
                     RuntimeFunctionInputSource::Capture { position }
                 }
                 RuntimeProjectFunctionParameterSource::CurrentGroup { position } => {
-                    RuntimeFunctionInputSource::Parameter { position }
+                    RuntimeFunctionInputSource::Parameter {
+                        position,
+                        passing: parameter.passing(),
+                    }
                 }
             };
             let mut unrestricted_bindings = Vec::new();
@@ -2903,11 +2910,17 @@ fn reserve_project_function_sites<'facts>(
             } else {
                 Box::new([])
             };
+            let Some(formal) = instance.definition().parameters().iter().find(|parameter|
+                matches!(parameter.origin(), arcweft_lang_sema::final_analysis::CheckedExecutionParameterOrigin::AttachedContent)) else {
+                errors.push(RuntimePlanLowerError::new("attached input has no accepted whole formal"));
+                continue;
+            };
             inputs.push(RuntimeFunctionInputBindingSeed {
                 ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
                 unrestricted_bindings,
                 source: RuntimeFunctionInputSource::Parameter {
                     position: attached.abi_position(),
+                    passing: formal.passing(),
                 },
                 input_local,
                 pattern: RuntimePatternSeed::new(
@@ -3237,6 +3250,7 @@ fn reserve_pure_programs<'facts>(
                         position: u32::try_from(position).map_err(|_| {
                             RuntimePlanLowerError::new("program parameter position exceeds u32")
                         })?,
+                        passing: parameter.passing(),
                     },
                     input_local,
                     pattern,
