@@ -1763,24 +1763,52 @@ pub struct RuntimeTryFact {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeImplicitCallableFact {
     definition: arcweft_lang_sema::final_analysis::FinalAnalysisImplicitCallableDefinition,
+    captures: Box<[RuntimeImplicitCallableCaptureFact]>,
     parameter: RuntimeNormalizedType,
     result: RuntimeNormalizedType,
     placeholders: Box<[ExprId]>,
 }
 
 impl RuntimeImplicitCallableFact {
-    pub const fn new(
+    pub fn try_new(
         definition: arcweft_lang_sema::final_analysis::FinalAnalysisImplicitCallableDefinition,
         parameter: RuntimeNormalizedType,
         result: RuntimeNormalizedType,
         placeholders: Box<[ExprId]>,
-    ) -> Self {
-        Self {
+        authority: &CheckedLocalUseAuthority,
+    ) -> Result<Self, RuntimeImplicitCallableCaptureError> {
+        let captures = definition
+            .captures()
+            .iter()
+            .map(|origin| {
+                let transfer = authority
+                    .value_transfer_at(
+                        arcweft_lang_sema::final_analysis::CheckedLocalUseSite::Capture {
+                            owner: definition.owner(),
+                            local: origin.local(),
+                        },
+                    )
+                    .ok_or(RuntimeImplicitCallableCaptureError)?;
+                if transfer.local() != origin.local()
+                    || !transfer.fields().is_empty()
+                    || transfer.mode()
+                        == arcweft_lang_sema::final_analysis::CheckedLocalReadMode::Borrow
+                {
+                    return Err(RuntimeImplicitCallableCaptureError);
+                }
+                Ok(RuntimeImplicitCallableCaptureFact {
+                    origin: origin.clone(),
+                    transfer,
+                })
+            })
+            .collect::<Result<Box<[_]>, _>>()?;
+        Ok(Self {
             definition,
+            captures,
             parameter,
             result,
             placeholders,
-        }
+        })
     }
 
     pub const fn identity(
@@ -1815,12 +1843,36 @@ impl RuntimeImplicitCallableFact {
     ) -> arcweft_lang_sema::final_analysis::CheckedExecutionDefinitionIdentity {
         self.definition.definition_identity()
     }
-    pub const fn captures(
-        &self,
-    ) -> &[arcweft_lang_sema::final_analysis::CheckedImplicitCallableCaptureOrigin] {
-        self.definition.captures()
+    pub const fn captures(&self) -> &[RuntimeImplicitCallableCaptureFact] {
+        &self.captures
     }
 }
+
+/// Capture origin and closed transfer selected from the same accepted authority.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeImplicitCallableCaptureFact {
+    origin: arcweft_lang_sema::final_analysis::CheckedImplicitCallableCaptureOrigin,
+    transfer: arcweft_lang_sema::final_analysis::CheckedLocalValueTransfer,
+}
+impl RuntimeImplicitCallableCaptureFact {
+    pub const fn position(&self) -> u32 {
+        self.origin.position()
+    }
+    pub const fn local(&self) -> LocalId {
+        self.origin.local()
+    }
+    pub const fn origin(
+        &self,
+    ) -> &arcweft_lang_sema::semantic_coordinate::StableCheckedBindingCoordinate {
+        self.origin.origin()
+    }
+    pub const fn transfer(&self) -> &arcweft_lang_sema::final_analysis::CheckedLocalValueTransfer {
+        &self.transfer
+    }
+}
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[error("implicit callable capture lacks an accepted whole-value transfer")]
+pub struct RuntimeImplicitCallableCaptureError;
 
 /// Generation-bound once-only pipeline and its checked `^` uses.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -7968,7 +8020,21 @@ impl RuntimePlanSemanticFacts {
                 }
             }
             for capture in fact.captures() {
-                if !local_declarations.contains_key(&capture.local()) {
+                if !local_declarations.contains_key(&capture.local())
+                    || input
+                        .checked_local_uses
+                        .as_ref()
+                        .and_then(|catalog| {
+                            catalog.value_transfer_at(
+                                arcweft_lang_sema::final_analysis::CheckedLocalUseSite::Capture {
+                                    owner: *expression,
+                                    local: capture.local(),
+                                },
+                            )
+                        })
+                        .as_ref()
+                        != Some(capture.transfer())
+                {
                     return Err(RuntimeSemanticFactsError::InvalidImplicitCallableFact {
                         expression: *expression,
                     });

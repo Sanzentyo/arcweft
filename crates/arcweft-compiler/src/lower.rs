@@ -1301,12 +1301,19 @@ fn project_runtime_semantic_fact_inventories(
                 let placeholders = callable_view.placeholders().collect::<Box<[_]>>();
                 input.push_implicit_callable(
                     owner,
-                    RuntimeImplicitCallableFact::new(
+                    RuntimeImplicitCallableFact::try_new(
                         callable_view.definition().clone(),
                         runtime_type(callable_view.parameter(), symbols, world, analysis)?,
                         runtime_type(callable_view.result(), symbols, world, analysis)?,
                         placeholders,
-                    ),
+                        &CheckedLocalUseAuthority::Global(Arc::clone(
+                            analysis.checked_local_uses(),
+                        )),
+                    )
+                    .map_err(|error| RuntimeSemanticProjectionError::Call {
+                        owner,
+                        reason: error.to_string(),
+                    })?,
                 );
                 match callable_view.body() {
                     FinalAnalysisImplicitCallableBody::Plain(_) => {}
@@ -7602,6 +7609,38 @@ fn runtime_executable_semantic_facts<'abi>(
         .filter_map(|row| row.ty().map(|ty| (row.owner(), ty)))
         .collect::<BTreeMap<_, _>>();
     let execution = analysis.execution_projection();
+    let local_uses = match lexical {
+        RuntimeExecutableInstantiation::Program { environment, .. } => {
+            environment.local_uses().clone()
+        }
+        RuntimeExecutableInstantiation::Global => {
+            CheckedLocalUseAuthority::Global(Arc::clone(analysis.checked_local_uses()))
+        }
+        RuntimeExecutableInstantiation::Project { solution, .. } => {
+            let checked = analysis
+                .checked_local_uses_for_instance(
+                    project,
+                    symbols,
+                    CheckedLocalUseInstantiation::ProjectFunction(
+                        solution.function_solution().ok_or_else(|| {
+                            origin.error("project instance has no frozen function solution")
+                        })?,
+                    ),
+                )
+                .map_err(|error| origin.error(error.to_string()))?;
+            CheckedLocalUseAuthority::Instance(Arc::new(checked))
+        }
+        RuntimeExecutableInstantiation::Display { conformance, .. } => {
+            let checked = analysis
+                .checked_local_uses_for_instance(
+                    project,
+                    symbols,
+                    CheckedLocalUseInstantiation::DisplayText(conformance),
+                )
+                .map_err(|error| origin.error(error.to_string()))?;
+            CheckedLocalUseAuthority::Instance(Arc::new(checked))
+        }
+    };
     let mut producer_context = None;
     let mut expressions = Vec::with_capacity(partition.expressions().len());
     for expected in partition.expressions() {
@@ -7999,7 +8038,7 @@ fn runtime_executable_semantic_facts<'abi>(
             }
             CheckedExecutableRuntimeExpressionFactFamily::ImplicitCallable => {
                 let view = execution.implicit_callable(owner)?;
-                let callable = RuntimeImplicitCallableFact::new(
+                let callable = RuntimeImplicitCallableFact::try_new(
                     view.definition().clone(),
                     runtime_type_under(
                         view.parameter(),
@@ -8010,7 +8049,9 @@ fn runtime_executable_semantic_facts<'abi>(
                     )?,
                     runtime_type_under(view.result(), lexical.types(), symbols, world, analysis)?,
                     view.placeholders().collect(),
-                );
+                    &local_uses,
+                )
+                .map_err(|source| error(owner, &source.to_string()))?;
                 let (tried, pipe) = match view.body() {
                     FinalAnalysisImplicitCallableBody::Plain(_) => (None, None),
                     FinalAnalysisImplicitCallableBody::Try(tried) => (
@@ -8388,42 +8429,6 @@ fn runtime_executable_semantic_facts<'abi>(
         })
         .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
 
-    let local_uses = if let Some(context) = producer_context {
-        context.environment().local_uses().clone()
-    } else {
-        match lexical {
-            RuntimeExecutableInstantiation::Program { environment, .. } => {
-                environment.local_uses().clone()
-            }
-            RuntimeExecutableInstantiation::Global => {
-                CheckedLocalUseAuthority::Global(Arc::clone(analysis.checked_local_uses()))
-            }
-            RuntimeExecutableInstantiation::Project { solution, .. } => {
-                let checked = analysis
-                    .checked_local_uses_for_instance(
-                        project,
-                        symbols,
-                        CheckedLocalUseInstantiation::ProjectFunction(
-                            solution.function_solution().ok_or_else(|| {
-                                origin.error("project instance has no frozen function solution")
-                            })?,
-                        ),
-                    )
-                    .map_err(|error| origin.error(error.to_string()))?;
-                CheckedLocalUseAuthority::Instance(Arc::new(checked))
-            }
-            RuntimeExecutableInstantiation::Display { conformance, .. } => {
-                let checked = analysis
-                    .checked_local_uses_for_instance(
-                        project,
-                        symbols,
-                        CheckedLocalUseInstantiation::DisplayText(conformance),
-                    )
-                    .map_err(|error| origin.error(error.to_string()))?;
-                CheckedLocalUseAuthority::Instance(Arc::new(checked))
-            }
-        }
-    };
     RuntimeProjectFunctionInstanceSemanticFacts::try_new(
         partition,
         local_uses,

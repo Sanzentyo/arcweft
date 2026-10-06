@@ -2660,12 +2660,14 @@ fn closed_implicit_callable_definition_cannot_be_rebound_to_another_expression()
         row.owner(),
         row.children().into(),
         RuntimeProjectFunctionExpressionPayload::ImplicitCallable {
-            callable: RuntimeImplicitCallableFact::new(
+            callable: RuntimeImplicitCallableFact::try_new(
                 second.definition().clone(),
                 first.parameter().clone(),
                 first.result().clone(),
                 first.placeholders().into(),
-            ),
+                semantics.local_uses(),
+            )
+            .unwrap(),
             tried: tried.clone(),
             pipe: pipe.clone(),
         },
@@ -2682,4 +2684,145 @@ fn closed_implicit_callable_definition_cannot_be_rebound_to_another_expression()
         ),
         Err(RuntimeProjectFunctionFactError::NonCanonicalSemanticFacts)
     ));
+}
+
+#[test]
+fn implicit_capture_transfer_is_selected_per_closed_instance() {
+    use arcweft_lang_sema::final_analysis::CheckedLocalReadMode;
+    use arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionExpressionPayload;
+    let (project, context) = removed_role_project(
+        "fn make<T>(value: T) -> (i64 -> (i64, T) effects {}) { (_, value) }\nflow main() -> i64 { let number = make(42i64); let affine = make(Vec<Need<i64>>::with_capacity(0usize)); let (result, _) = number(42i64); let _ = affine(0i64); return result }",
+    );
+    let (mut session, parsed_sources) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed_sources, &context).unwrap();
+    let callables = compiled
+        .runtime_facts()
+        .project_function_instances()
+        .flat_map(|instance| {
+            instance
+                .semantics()
+                .expressions()
+                .iter()
+                .filter_map(|row| match row.payload() {
+                    RuntimeProjectFunctionExpressionPayload::ImplicitCallable {
+                        callable, ..
+                    } => Some((instance.semantics(), callable)),
+                    _ => None,
+                })
+        })
+        .collect::<Vec<_>>();
+    let [(first_semantics, first), (second_semantics, second)] = callables.as_slice() else {
+        panic!("two closed implicit callables")
+    };
+    assert_eq!(first.definition_identity(), second.definition_identity());
+    let [first_capture] = first.captures() else {
+        panic!("one capture")
+    };
+    let [second_capture] = second.captures() else {
+        panic!("one capture")
+    };
+    assert_eq!(first_capture.origin(), second_capture.origin());
+    assert!(matches!(
+        (
+            first_capture.transfer().mode(),
+            second_capture.transfer().mode()
+        ),
+        (CheckedLocalReadMode::Copy, CheckedLocalReadMode::Move)
+            | (CheckedLocalReadMode::Move, CheckedLocalReadMode::Copy)
+    ));
+    // A fact legitimately issued by the other closed instance must not be
+    // accepted under this owner's closed transfer authority.
+    let foreign = arcweft_runtime_plan::semantic_facts::RuntimeImplicitCallableFact::try_new(
+        first.definition().clone(),
+        first.parameter().clone(),
+        first.result().clone(),
+        first.placeholders().into(),
+        second_semantics.local_uses(),
+    )
+    .unwrap();
+    assert_ne!(foreign.captures()[0].transfer(), first_capture.transfer());
+    let mut rows = first_semantics.expressions().to_vec();
+    let row = rows
+        .iter_mut()
+        .find(|row| row.owner() == first.definition().owner())
+        .unwrap();
+    let RuntimeProjectFunctionExpressionPayload::ImplicitCallable { tried, pipe, .. } =
+        row.payload()
+    else {
+        panic!("implicit payload")
+    };
+    *row = arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionExpressionSemanticFact::new(
+        row.owner(),
+        row.children().into(),
+        RuntimeProjectFunctionExpressionPayload::ImplicitCallable {
+            callable: foreign,
+            tried: tried.clone(),
+            pipe: pipe.clone(),
+        },
+    );
+    assert!(matches!(arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionInstanceSemanticFacts::try_new(first_semantics.partition().clone(), first_semantics.local_uses().clone(), first_semantics.type_projection().into(), rows.into_boxed_slice(), first_semantics.patterns().into(), first_semantics.statements().into(), first_semantics.captures().into()), Err(arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionFactError::NonCanonicalSemanticFacts)));
+}
+
+#[test]
+fn root_implicit_capture_transfer_drives_creation_and_ingress() {
+    use arcweft_core::{
+        plan::{FlowOp, RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionSemanticRole},
+        value::{RuntimeExprKind, RuntimeLocalReadMode},
+    };
+    use arcweft_lang_sema::final_analysis::CheckedLocalReadMode;
+    for (source, mode, read, ownership) in [
+        (
+            "flow main() -> i64 { let value = 42i64; let callback: i64 -> (i64, i64) effects {} = (_, value); let (result, _) = callback(42i64); return result }",
+            CheckedLocalReadMode::Copy,
+            RuntimeLocalReadMode::Copy,
+            RuntimeFunctionInputOwnershipRequirement::Unrestricted,
+        ),
+        (
+            "flow main() -> i64 { let value = Vec<Need<i64>>::with_capacity(0usize); let callback: i64 -> (i64, Vec<Need<i64>>) effects {} = (_, value); let _ = callback(0i64); return 42i64 }",
+            CheckedLocalReadMode::Move,
+            RuntimeLocalReadMode::Move,
+            RuntimeFunctionInputOwnershipRequirement::Owned,
+        ),
+    ] {
+        let (project, context) = removed_role_project(source);
+        let (mut session, sources) = compilation_state(&project);
+        let compiled = compile_project(&mut session, &project, &sources, &context).unwrap();
+        let callables = compiled
+            .runtime_facts()
+            .implicit_callables()
+            .collect::<Vec<_>>();
+        let [(_, callable)] = callables.as_slice() else {
+            panic!("one implicit callable")
+        };
+        assert_eq!(callable.captures()[0].transfer().mode(), mode);
+        let plan = &compiled.runtime_plan().plan;
+        let sites = plan
+            .function_sites()
+            .iter()
+            .filter(|site| {
+                site.role() == RuntimeFunctionSemanticRole::Closure
+                    && site.capture_inputs().count() == 1
+            })
+            .collect::<Vec<_>>();
+        let [site] = sites.as_slice() else {
+            panic!("one capturing site")
+        };
+        assert_eq!(site.capture_inputs().next().unwrap().ownership(), ownership);
+        let mut reads = Vec::new();
+        plan.try_visit_flow_ops(&mut |op| {
+            if let FlowOp::Let { expr, .. } = op
+                && let RuntimeExprKind::MakeCallable { captures, .. } = expr.kind()
+            {
+                for capture in captures {
+                    let RuntimeExprKind::Local(local) = capture.kind() else {
+                        panic!("local capture")
+                    };
+                    reads.push(local.mode());
+                }
+            }
+            Ok::<_, std::convert::Infallible>(())
+        })
+        .unwrap();
+        assert_eq!(reads, vec![read]);
+    }
 }

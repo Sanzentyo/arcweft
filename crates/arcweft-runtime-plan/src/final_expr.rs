@@ -547,14 +547,14 @@ impl<'hir> FinalExprLowerer<'hir> {
                     captures: callable
                         .captures()
                         .iter()
-                        .map(|local| {
-                            self.lower_local_capture(
-                                CheckedLocalUseSite::Capture {
-                                    owner: id,
-                                    local: local.local(),
-                                },
-                                local.local(),
-                            )
+                        .map(|capture| -> Result<_, String> {
+                            Ok(RuntimeExprSeed::new(
+                                self.local_type(capture.local())?,
+                                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                    self.local(capture.local())?,
+                                    runtime_local_read_mode(capture.transfer().mode()),
+                                )),
+                            ))
                         })
                         .collect::<Result<Vec<_>, _>>()?
                         .into_boxed_slice(),
@@ -1894,17 +1894,6 @@ impl<'hir> FinalExprLowerer<'hir> {
         Ok(RuntimeLocalReadSeed::new(
             self.local(local)?,
             runtime_local_read_mode(checked.mode()),
-        ))
-    }
-
-    fn lower_local_capture(
-        &self,
-        site: CheckedLocalUseSite,
-        local: LocalId,
-    ) -> Result<RuntimeExprSeed, String> {
-        Ok(RuntimeExprSeed::new(
-            self.local_type(local)?,
-            RuntimeExprSeedKind::Local(self.checked_local_read(site, local)?),
         ))
     }
 

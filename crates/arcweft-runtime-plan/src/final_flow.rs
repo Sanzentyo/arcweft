@@ -2415,7 +2415,7 @@ fn reserve_implicit_function_sites<'facts>(
                     format!("implicit callable {owner:?} capture {capture:?} has no accepted type")
                 })?;
                 Ok(RuntimeFunctionInputBindingSeed {
-                    ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
+                    ownership: match capture.transfer().mode() { arcweft_lang_sema::final_analysis::CheckedLocalReadMode::Copy => RuntimeFunctionInputOwnershipRequirement::Unrestricted, arcweft_lang_sema::final_analysis::CheckedLocalReadMode::Move => RuntimeFunctionInputOwnershipRequirement::Owned, arcweft_lang_sema::final_analysis::CheckedLocalReadMode::Borrow => unreachable!("accepted implicit capture is a value transfer") },
                     unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Capture { position },
                     input_local: input_local.clone(),

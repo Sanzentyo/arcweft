@@ -1558,7 +1558,18 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         for expression in &expressions {
             if let RuntimeProjectFunctionExpressionPayload::ImplicitCallable { callable, .. } =
                 expression.payload()
-                && callable.definition().owner() != expression.owner()
+                && (callable.definition().owner() != expression.owner()
+                    || callable.captures().iter().any(|capture| {
+                        local_uses
+                            .value_transfer_at(
+                                arcweft_lang_sema::final_analysis::CheckedLocalUseSite::Capture {
+                                    owner: expression.owner(),
+                                    local: capture.local(),
+                                },
+                            )
+                            .as_ref()
+                            != Some(capture.transfer())
+                    }))
             {
                 return Err(RuntimeProjectFunctionFactError::NonCanonicalSemanticFacts);
             }
