@@ -1596,22 +1596,64 @@ fn checked_literal_fact_uses_the_qualified_expression_owner() {
 
 #[test]
 fn checked_flow_identity_uses_the_qualified_item_owner() {
-    let project = project_fixture("flow-owner", "flow opening {}\n");
+    let project = project_fixture(
+        "flow-owner",
+        "flow opening {}\nfn __runtime_plan_test_probe() -> Unit { () }\n",
+    );
     let owner = flow_item(&project);
     let identity = FlowRuntimeId::canonical("opening").expect("runtime Flow identity");
     let mut input = complete_type_input(&project);
     input.push_flow(
         owner,
-        RuntimeFlowFact::new(
-            identity.clone(),
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-        ),
+        accepted_flow_fixture(&project, owner, identity.clone()),
     );
 
     let facts = runtime_facts(&project, input).expect("Flow identity fact");
     assert_eq!(
         facts.flow(owner).map(RuntimeFlowFact::identity),
         Some(&identity)
+    );
+}
+
+#[test]
+fn flow_definition_rejects_another_owner_and_generation() {
+    let source = "flow first {}\nflow second {}\nfn __runtime_plan_test_probe() -> Unit { () }\n";
+    let project = project_fixture("flow-definition-owner", source);
+    let executable = project.analysis_view().unwrap();
+    let owners = executable
+        .items()
+        .filter_map(|item| matches!(item.item().kind(), HirItemKind::Flow(_)).then_some(item.id()))
+        .take(2)
+        .collect::<Vec<_>>();
+    let first = accepted_flow_fixture(
+        &project,
+        owners[0],
+        FlowRuntimeId::canonical("first").unwrap(),
+    );
+    let mut foreign_owner = complete_type_input(&project);
+    foreign_owner.push_flow(owners[1], first);
+    assert_eq!(
+        runtime_facts(&project, foreign_owner).unwrap_err(),
+        RuntimeSemanticFactsError::InvalidFlowDefinition { item: owners[1] }
+    );
+    let other = project_fixture("flow-definition-generation", source);
+    let other_owner = other
+        .analysis_view()
+        .unwrap()
+        .items()
+        .find(|item| matches!(item.item().kind(), HirItemKind::Flow(_)))
+        .unwrap()
+        .id();
+    let foreign = accepted_flow_fixture(
+        &other,
+        other_owner,
+        FlowRuntimeId::canonical("first").unwrap(),
+    );
+    let mut foreign_generation = complete_type_input(&project);
+    foreign_generation.push_flow(owners[0], foreign);
+    assert_eq!(
+        runtime_facts(&project, foreign_generation).unwrap_err(),
+        RuntimeSemanticFactsError::InvalidFlowDefinition { item: owners[0] }
     );
 }
 
@@ -3563,4 +3605,46 @@ fn iterator_witness_method_edges_are_exact_and_fail_closed() {
             role: HirRuntimeIteratorWitnessMethodRole::IteratorNext,
         }
     );
+}
+
+fn accepted_flow_fixture(
+    project: &arcweft_lang_hir::project::HirProject,
+    owner: arcweft_lang_hir::identity::ItemId,
+    identity: arcweft_core::plan::FlowRuntimeId,
+) -> crate::semantic_facts::RuntimeFlowFact {
+    use arcweft_lang_sema::{final_analysis::*, registration::*};
+    let executable = project.analysis_view().unwrap();
+    let documents = executable
+        .modules()
+        .map(|(_, module)| Arc::clone(module.provenance().document()))
+        .collect::<Vec<_>>();
+    let world = ProjectSymbolWorldId::try_new(
+        executable.package().clone(),
+        documents[0].identity().id().clone(),
+        "runtime-plan-semantic-facts-test",
+    )
+    .unwrap();
+    let registration =
+        ProjectRegistrationFacts::try_new(world, documents, vec![], vec![], vec![]).unwrap();
+    let registered = CharacterRegistrar::register(CharacterRegistrationRequest::new(
+        Arc::new(arcweft_lang_sema::env::TypeCheckEnv::standard()),
+        project.view(),
+        &registration,
+        None,
+    ))
+    .unwrap();
+    let cancellation = std::sync::atomic::AtomicBool::new(false);
+    let analysis = analyze_final_project(
+        executable,
+        registered.symbols(),
+        FinalSemanticCatalogs::production(&registered),
+        FinalSemanticAnalysisControl::new(&cancellation),
+    )
+    .unwrap();
+    let definition = Arc::new(
+        analysis
+            .checked_flow_execution_definition(executable, registered.symbols(), owner)
+            .unwrap(),
+    );
+    crate::semantic_facts::RuntimeFlowFact::try_new(identity, definition).unwrap()
 }

@@ -1690,6 +1690,7 @@ version = "0.1.0"
 dependencies = [
  "arcweft-core",
  "arcweft-lang-hir",
+ "arcweft-lang-sema",
  "arcweft-lang-syntax",
  "arcweft-presentation",
  "arcweft-runtime-plan",

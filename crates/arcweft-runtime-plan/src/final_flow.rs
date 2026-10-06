@@ -9331,7 +9331,6 @@ fn thread_item_matches_kind(item: &HirThreadFlowItem, kind: &HirStmtKind) -> boo
 
 #[cfg(test)]
 mod tests {
-    use arcweft_core::plan::RuntimeEffectSet;
     use std::sync::Arc;
 
     use arcweft_core::{
@@ -9387,10 +9386,7 @@ mod tests {
         let mut input = complete_type_input(&project);
         input.push_flow(
             owner,
-            crate::semantic_facts::RuntimeFlowFact::new(
-                identity.clone(),
-                RuntimeEffectSet::empty(),
-            ),
+            accepted_flow_fixture(&project, owner, identity.clone()),
         );
         let facts = runtime_facts(&project, input).expect("checked facts");
         let entry_input = RuntimeEntryLoweringInput::empty(executable);
@@ -9465,10 +9461,7 @@ mod tests {
                 );
             }
         }
-        input.push_flow(
-            owner,
-            crate::semantic_facts::RuntimeFlowFact::new(identity, RuntimeEffectSet::empty()),
-        );
+        input.push_flow(owner, accepted_flow_fixture(&project, owner, identity));
         let facts = runtime_facts(&project, input).expect("checked facts");
         let partition = analysis
             .execution_projection()
@@ -9586,7 +9579,7 @@ mod tests {
         let mut fact_input = complete_type_input(&project);
         fact_input.push_flow(
             flow_owner,
-            crate::semantic_facts::RuntimeFlowFact::new(flow.clone(), RuntimeEffectSet::empty()),
+            accepted_flow_fixture(&project, flow_owner, flow.clone()),
         );
         let facts = runtime_facts(&project, fact_input).expect("checked facts");
 
@@ -9810,6 +9803,48 @@ mod tests {
                 ),
             ))
         })
+    }
+
+    fn accepted_flow_fixture(
+        project: &arcweft_lang_hir::project::HirProject,
+        owner: arcweft_lang_hir::identity::ItemId,
+        identity: arcweft_core::plan::FlowRuntimeId,
+    ) -> crate::semantic_facts::RuntimeFlowFact {
+        use arcweft_lang_sema::{final_analysis::*, registration::*};
+        let executable = project.analysis_view().unwrap();
+        let documents = executable
+            .modules()
+            .map(|(_, module)| Arc::clone(module.provenance().document()))
+            .collect::<Vec<_>>();
+        let world = ProjectSymbolWorldId::try_new(
+            executable.package().clone(),
+            documents[0].identity().id().clone(),
+            "runtime-plan-final-flow-test",
+        )
+        .unwrap();
+        let registration =
+            ProjectRegistrationFacts::try_new(world, documents, vec![], vec![], vec![]).unwrap();
+        let registered = CharacterRegistrar::register(CharacterRegistrationRequest::new(
+            Arc::new(arcweft_lang_sema::env::TypeCheckEnv::standard()),
+            project.view(),
+            &registration,
+            None,
+        ))
+        .unwrap();
+        let cancellation = std::sync::atomic::AtomicBool::new(false);
+        let analysis = analyze_final_project(
+            executable,
+            registered.symbols(),
+            FinalSemanticCatalogs::production(&registered),
+            FinalSemanticAnalysisControl::new(&cancellation),
+        )
+        .unwrap();
+        let definition = Arc::new(
+            analysis
+                .checked_flow_execution_definition(executable, registered.symbols(), owner)
+                .unwrap(),
+        );
+        crate::semantic_facts::RuntimeFlowFact::try_new(identity, definition).unwrap()
     }
 
     fn runtime_facts(

@@ -97,6 +97,13 @@ pub flow opening(state: GameState) -> Result<FlowExit, FlowError> {
 
 Flow 内の `await` は `pending` branch 必須。
 
+Flow の実行 contract は、受理済みの body invocation と complete formal layout を
+同じ閉じた解析環境の証拠として保持する。未使用 parameter の型・passing 区分も
+保持し、local の使用箇所や frame ingress の保証から再構成しない。runtime への
+投影では、body の Flow owner と解析世代の一致を検査する。公開 effects は
+未使用 permission や scoped coverage も保持し、body の実行 effects と区別する。別の Flow の
+証拠や、mutation intent の証拠を Flow invocation として受理しない。
+
 ## View
 
 View は状態から描画仕様を作る純粋関数。

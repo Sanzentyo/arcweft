@@ -58,7 +58,9 @@ pub use execution_regions::{
 };
 mod deterministic_program;
 mod execution_inputs;
+mod flow_execution;
 pub use deterministic_program::{CheckedDeterministicProgram, CheckedProgramAdmissionError};
+pub use flow_execution::CheckedFlowExecutionDefinition;
 mod free_capture;
 pub use free_capture::CheckedLocalUseSite;
 pub(crate) use model::CheckedRecordFieldSlot;

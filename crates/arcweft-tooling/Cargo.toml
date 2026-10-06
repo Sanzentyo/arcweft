@@ -17,6 +17,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 arcweft-lang-hir = { workspace = true }
+arcweft-lang-sema = { workspace = true }
 trybuild.workspace = true
 
 [lib]

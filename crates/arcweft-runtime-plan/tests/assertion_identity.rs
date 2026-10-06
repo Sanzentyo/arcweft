@@ -668,9 +668,10 @@ fn lower_assertion_project(
     }
     input.push_flow(
         flow_owner,
-        arcweft_runtime_plan::semantic_facts::RuntimeFlowFact::new(
+        accepted_flow_fixture(
+            &project,
+            flow_owner,
             FlowRuntimeId::canonical("checks").expect("runtime Flow identity"),
-            arcweft_core::plan::RuntimeEffectSet::empty(),
         ),
     );
     for (condition, value) in conditions.iter().copied().zip(values.iter().copied()) {
@@ -770,4 +771,46 @@ fn project_fixture(label: &str, source: &str) -> HirProject {
         .insert_module(project_module)
         .expect("module insertion");
     builder.finish().expect("fixture project")
+}
+
+fn accepted_flow_fixture(
+    project: &arcweft_lang_hir::project::HirProject,
+    owner: arcweft_lang_hir::identity::ItemId,
+    identity: arcweft_core::plan::FlowRuntimeId,
+) -> arcweft_runtime_plan::semantic_facts::RuntimeFlowFact {
+    use arcweft_lang_sema::{final_analysis::*, registration::*};
+    let executable = project.analysis_view().unwrap();
+    let documents = executable
+        .modules()
+        .map(|(_, module)| Arc::clone(module.provenance().document()))
+        .collect::<Vec<_>>();
+    let world = ProjectSymbolWorldId::try_new(
+        executable.package().clone(),
+        documents[0].identity().id().clone(),
+        "runtime-plan-assertion-test",
+    )
+    .unwrap();
+    let registration =
+        ProjectRegistrationFacts::try_new(world, documents, vec![], vec![], vec![]).unwrap();
+    let registered = CharacterRegistrar::register(CharacterRegistrationRequest::new(
+        Arc::new(arcweft_lang_sema::env::TypeCheckEnv::standard()),
+        project.view(),
+        &registration,
+        None,
+    ))
+    .unwrap();
+    let cancellation = std::sync::atomic::AtomicBool::new(false);
+    let analysis = analyze_final_project(
+        executable,
+        registered.symbols(),
+        FinalSemanticCatalogs::production(&registered),
+        FinalSemanticAnalysisControl::new(&cancellation),
+    )
+    .unwrap();
+    let definition = Arc::new(
+        analysis
+            .checked_flow_execution_definition(executable, registered.symbols(), owner)
+            .unwrap(),
+    );
+    arcweft_runtime_plan::semantic_facts::RuntimeFlowFact::try_new(identity, definition).unwrap()
 }

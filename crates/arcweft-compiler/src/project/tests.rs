@@ -2931,6 +2931,84 @@ fn function_sites_preserve_accepted_parameter_passing_separately_from_ingress() 
 }
 
 #[test]
+fn flow_facts_retain_the_accepted_body_and_complete_formals() {
+    use arcweft_core::plan::RuntimeFunctionParameterPassing;
+    use arcweft_lang_sema::final_analysis::{CheckedExecutionBodyOwner, CheckedExecutionSource};
+    let (project, context) = removed_role_project(
+        "fn ordinary() -> Unit { () }\nflow root(value: i64, unused: String, pending: Vec<Need<i64>>) -> i64 effects { fs.write } { return value }\nflow other() -> i64 { return 0i64 }",
+    );
+    let (mut session, parsed) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed, &context).unwrap();
+    let executable = compiled
+        .analysis_lease()
+        .hir_project()
+        .analysis_view()
+        .unwrap();
+    let symbols = compiled.analysis_lease().project_symbols();
+    let root = executable
+        .items()
+        .find(|item| {
+            symbols
+                .flow_symbol_for_item(item.id())
+                .is_some_and(|symbol| symbol.declaration().name() == "root")
+        })
+        .unwrap();
+    let fact = compiled.runtime_facts().flow(root.id()).unwrap();
+    assert!(
+        matches!(fact.definition().source(), CheckedExecutionSource::InvokeBody(
+        CheckedExecutionBodyOwner::Declaration { declaration, .. }
+    ) if declaration == symbols.flow_symbol_for_item(root.id()).unwrap().declaration())
+    );
+    assert_eq!(fact.definition().parameters().len(), 3);
+    for (formal, passing) in fact.definition().parameters().iter().zip([
+        RuntimeFunctionParameterPassing::Value,
+        RuntimeFunctionParameterPassing::Value,
+        RuntimeFunctionParameterPassing::Affine,
+    ]) {
+        assert_eq!(formal.passing(), passing);
+        assert_eq!(formal.bindings().len(), 1);
+        assert_eq!(
+            formal.definition_identity(),
+            fact.definition().definition_identity()
+        );
+    }
+    assert_ne!(
+        fact.definition().parameters()[0].identity(),
+        fact.definition().parameters()[1].identity()
+    );
+    let CheckedExecutionSource::InvokeBody(owner) = fact.definition().source() else {
+        unreachable!()
+    };
+    let source = CheckedExecutionSource::ExportMutation(owner.clone());
+    let analysis = compiled.analysis_lease().final_analysis();
+    let context = analysis
+        .checked_execution_context(executable, symbols, source.clone(), None)
+        .unwrap();
+    let mutation = Arc::new(context.checked_execution_input_abi(source).unwrap());
+    assert_ne!(
+        mutation.definition_identity(),
+        fact.definition().definition_identity()
+    );
+    assert!(fact.definition().effects().is_empty());
+    assert_eq!(
+        fact.effects()
+            .iter()
+            .map(arcweft_id::EffectId::as_str)
+            .collect::<Vec<_>>(),
+        vec!["fs.write"]
+    );
+    let ordinary = executable
+        .items()
+        .find(|item| matches!(item.item().kind(), HirItemKind::Function(_)))
+        .unwrap();
+    assert!(
+        analysis
+            .checked_flow_execution_definition(executable, symbols, ordinary.id())
+            .is_err()
+    );
+}
+
+#[test]
 fn ordinary_function_formals_retain_accepted_whole_parameter_coordinates() {
     let source = "fn root((left, right): (i64, i64), unused: i64) -> i64 { left + right }\nflow main() -> i64 { return root((20i64, 22i64), 0i64) }";
     let observe = |source: &str| {

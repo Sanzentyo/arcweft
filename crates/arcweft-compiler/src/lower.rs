@@ -968,15 +968,19 @@ fn project_runtime_semantic_fact_inventories(
             };
             let identity = runtime_flow_identity(declaration)
                 .map_err(|_| RuntimeSemanticProjectionError::InvalidFlowIdentity { owner })?;
-            let effects = arcweft_core::plan::RuntimeEffectSet::try_from_effects(
-                item.effects().iter().cloned(),
-            )
-            .map_err(
-                |source| RuntimeSemanticProjectionError::InvalidFlowEffects { owner, source },
-            )?;
+            let definition = Arc::new(
+                analysis
+                    .checked_flow_execution_definition(project, symbols, owner)
+                    .map_err(Box::new)?,
+            );
             input.push_flow(
                 owner,
-                arcweft_runtime_plan::semantic_facts::RuntimeFlowFact::new(identity, effects),
+                arcweft_runtime_plan::semantic_facts::RuntimeFlowFact::try_new(
+                    identity, definition,
+                )
+                .map_err(|source| {
+                    RuntimeSemanticProjectionError::InvalidFlowEffects { owner, source }
+                })?,
             );
         }
     }

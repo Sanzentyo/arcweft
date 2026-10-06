@@ -7303,7 +7303,7 @@ impl RuntimePlanSemanticFacts {
         }
 
         let flows = collect_unique(input.flows, RuntimeSemanticFactFamily::FlowIdentity)?;
-        for item in flows.keys() {
+        for (item, fact) in &flows {
             let resolved = resolve_item(&modules, *item)?;
             if !matches!(resolved.kind(), HirItemKind::Flow(_)) {
                 return Err(RuntimeSemanticFactsError::WrongItemFamily {
@@ -7315,6 +7315,26 @@ impl RuntimePlanSemanticFacts {
                 return Err(RuntimeSemanticFactsError::OwnerOutsideReachability {
                     owner: HirRuntimeExecutableOwner::Item(*item),
                 });
+            }
+            if fact.owner() != *item
+                || fact.definition().validate_project(project).is_err()
+                || !matches!(fact.definition().source(),
+                    arcweft_lang_sema::final_analysis::CheckedExecutionSource::InvokeBody(
+                        arcweft_lang_sema::final_analysis::CheckedExecutionBodyOwner::Declaration {
+                            declaration,
+                            ..
+                        }
+                    ) if fact.definition().hir_topology().declaration(declaration)
+                        .is_ok_and(|view| view.body().source_item() == *item)
+                )
+                || !matches!(fact.definition().environment().local_uses(),
+                    CheckedLocalUseAuthority::Global(catalog)
+                        if catalog.generation().symbol_world() == runtime_owners.runtime.identity().symbol_world()
+                            && catalog.generation().symbol_revision() == runtime_owners.runtime.identity().symbol_revision()
+                            && input.checked_local_uses.as_ref().is_none_or(|selected| selected == catalog)
+                )
+            {
+                return Err(RuntimeSemanticFactsError::InvalidFlowDefinition { item: *item });
             }
         }
 
@@ -10078,6 +10098,8 @@ fn validate_pure_programs(
 }
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeSemanticFactsError {
+    #[error("Flow {item:?} definition does not belong to its exact accepted owner")]
+    InvalidFlowDefinition { item: ItemId },
     #[error("producer definition does not belong to its exact expression and local-use authority")]
     InvalidProducerDefinition { expression: ExprId },
     #[error("checked local use at {site:?} does not belong to the accepted HIR generation")]
