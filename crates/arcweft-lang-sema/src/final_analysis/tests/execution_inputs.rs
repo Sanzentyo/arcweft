@@ -234,6 +234,47 @@ fn rest_formal_uses_the_materialized_container_type() {
 }
 
 #[test]
+fn parameter_passing_is_static_and_keeps_ingress_guarantees_separate() {
+    use arcweft_core::plan::RuntimeFunctionParameterPassing;
+    let world = fixture(
+        "fn root(value: i64, shared: &i64, exclusive: &mut i64, resource: Need<i64>, callback: i64 -> i64 effects {}) -> i64 { callback(value) + callback(value) }",
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let source = declaration_body(&report, "root");
+    let context = report
+        .checked_execution_context(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            source.clone(),
+            None,
+        )
+        .unwrap();
+    let abi = context.checked_execution_input_abi(source).unwrap();
+    assert_eq!(
+        abi.parameters()
+            .iter()
+            .map(|parameter| parameter.passing())
+            .collect::<Vec<_>>(),
+        vec![
+            RuntimeFunctionParameterPassing::Value,
+            RuntimeFunctionParameterPassing::Shared,
+            RuntimeFunctionParameterPassing::Affine,
+            RuntimeFunctionParameterPassing::Affine,
+            RuntimeFunctionParameterPassing::Affine
+        ]
+    );
+    let callback = &abi.parameters()[4];
+    assert!(
+        context
+            .local_uses()
+            .copy_requirement(callback.bindings()[0])
+            .is_some(),
+        "value-dependent callback Copy still requires the separate exact ingress proof"
+    );
+}
+
+#[test]
 fn body_parameters_keep_unused_arity_and_destructuring() {
     let world = fixture(
         "fn root((left, right): (i64, i64), unused: i64) -> i64 { left + right }",
@@ -474,6 +515,14 @@ fn declaration_body_inputs_close_under_the_same_instance_as_value_transfers() {
             panic!("one formal binding")
         };
         assert_eq!(parameter.ty(), input.binding().ty());
+        assert_eq!(
+            parameter.passing(),
+            if parameter.ty() == &TypeKind::I64 {
+                arcweft_core::plan::RuntimeFunctionParameterPassing::Value
+            } else {
+                arcweft_core::plan::RuntimeFunctionParameterPassing::Affine
+            }
+        );
         assert_eq!(abi.result().value_type(), Some(parameter.ty()));
         let [usage] = input.uses() else {
             panic!("one use")

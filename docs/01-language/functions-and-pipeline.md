@@ -331,6 +331,20 @@ Copy・Move・place・入力の Copy 条件を保持する。別の owner や具
 実行したことにはならない。本体を呼び出す際には、実際の引数・effect・
 制御境界をその呼び出しの環境で閉じる。
 
+formal parameter の静的な所有区分は、同じ accepted 型環境から発行する。
+共有借用および明示的な `Shared<T>` carrier は `Shared`、型だけで
+unrestricted と証明できる carrier は `Value`、それ以外は `Affine` とする。
+可変借用は `Affine` に含める。ジェネリックな宣言の区分は、その型を閉じた
+実行 instance で再判定する。rest parameter は個別の引数型ではなく、
+callee が受け取る container 型で判定する。
+
+この区分は、実際に渡された値の Copy 保証とは別である。たとえば関数型は、
+捕捉した値によって Copy 可否が変わるため `Affine` のまま保持する。本体が
+その parameter を Copy する場合は、受理済みの ingress 条件が、渡された
+完全な値の unrestricted 保証を検査する。未使用 parameter、wildcard、
+分解 pattern にも whole formal の区分を保持し、leaf local の個数や使用回数
+から区分を推測しない。
+
 ## 部分適用
 
 ```arcw

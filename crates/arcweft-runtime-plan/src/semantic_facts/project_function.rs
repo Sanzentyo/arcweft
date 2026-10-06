@@ -619,6 +619,10 @@ impl RuntimeProjectFunctionParameterAbi {
         self.definition.identity()
     }
 
+    pub const fn passing(&self) -> arcweft_core::plan::RuntimeFunctionParameterPassing {
+        self.definition.passing()
+    }
+
     pub const fn abi_ty(&self) -> &RuntimeNormalizedType {
         &self.abi_ty
     }

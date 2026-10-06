@@ -94,6 +94,7 @@ pub struct CheckedExecutionParameter {
     origin: CheckedExecutionParameterOrigin,
     identity: CheckedExecutionParameterIdentity,
     ty: TypeKind,
+    passing: arcweft_core::plan::RuntimeFunctionParameterPassing,
     pattern: Option<PatternId>,
     bindings: Box<[LocalId]>,
 }
@@ -102,6 +103,7 @@ impl CheckedExecutionParameter {
     fn new(
         origin: CheckedExecutionParameterOrigin,
         ty: TypeKind,
+        passing: arcweft_core::plan::RuntimeFunctionParameterPassing,
         pattern: Option<PatternId>,
         bindings: Box<[LocalId]>,
         coordinate: &super::CheckedExecutionCoordinate,
@@ -111,6 +113,7 @@ impl CheckedExecutionParameter {
             origin,
             identity,
             ty,
+            passing,
             pattern,
             bindings,
         })
@@ -124,6 +127,9 @@ impl CheckedExecutionParameter {
     }
     pub const fn ty(&self) -> &TypeKind {
         &self.ty
+    }
+    pub const fn passing(&self) -> arcweft_core::plan::RuntimeFunctionParameterPassing {
+        self.passing
     }
     pub const fn pattern(&self) -> Option<PatternId> {
         self.pattern
@@ -236,7 +242,7 @@ impl super::super::CheckedClosedExecutionContext<'_> {
                             formal_bindings.remove(&key).unwrap_or_default(),
                             &coordinates,
                         )?;
-                        parameters.push(CheckedExecutionParameter::new(
+                        parameters.push(self.execution_parameter(
                             CheckedExecutionParameterOrigin::Declaration(position),
                             ty,
                             Some(pattern),
@@ -249,7 +255,7 @@ impl super::super::CheckedClosedExecutionContext<'_> {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into());
                 }
                 if let Some(attached) = checked.attached_content() {
-                    parameters.push(CheckedExecutionParameter::new(
+                    parameters.push(self.execution_parameter(
                         CheckedExecutionParameterOrigin::AttachedContent,
                         self.instantiate_type(attached.abi_type())?,
                         None,
@@ -267,7 +273,7 @@ impl super::super::CheckedClosedExecutionContext<'_> {
                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
                 match expression.resolution() {
                     CheckedExpressionResolution::ImplicitCallable(callable) => {
-                        parameters.push(CheckedExecutionParameter::new(
+                        parameters.push(self.execution_parameter(
                             CheckedExecutionParameterOrigin::Implicit(callable.identity()),
                             self.instantiate_type(callable.parameter())?,
                             None,
@@ -336,7 +342,7 @@ impl super::super::CheckedClosedExecutionContext<'_> {
                                 formal_bindings.remove(&parameter_index).unwrap_or_default(),
                                 &coordinates,
                             )?;
-                            parameters.push(CheckedExecutionParameter::new(
+                            parameters.push(self.execution_parameter(
                                 CheckedExecutionParameterOrigin::Closure {
                                     parameter: parameter_index,
                                 },
@@ -355,6 +361,36 @@ impl super::super::CheckedClosedExecutionContext<'_> {
             }
         }
         Ok(parameters.into_boxed_slice())
+    }
+
+    fn execution_parameter(
+        &self,
+        origin: CheckedExecutionParameterOrigin,
+        ty: TypeKind,
+        pattern: Option<PatternId>,
+        bindings: Box<[LocalId]>,
+        coordinate: &super::CheckedExecutionCoordinate,
+    ) -> Result<CheckedExecutionParameter, super::super::CheckedExecutionContextError> {
+        use super::super::CheckedTypeCopyCapability;
+        use arcweft_core::plan::RuntimeFunctionParameterPassing;
+        let passing = match &ty {
+            TypeKind::BorrowRef {
+                kind: arcweft_lang_syntax::reference::BorrowKind::Shared,
+                ..
+            }
+            | TypeKind::Shared(_) => RuntimeFunctionParameterPassing::Shared,
+            _ => match self
+                .analysis()
+                .type_copy_capability(&ty, &self.environment().type_scope())?
+            {
+                CheckedTypeCopyCapability::Unrestricted => RuntimeFunctionParameterPassing::Value,
+                CheckedTypeCopyCapability::ValueDependent
+                | CheckedTypeCopyCapability::Unavailable => RuntimeFunctionParameterPassing::Affine,
+            },
+        };
+        Ok(CheckedExecutionParameter::new(
+            origin, ty, passing, pattern, bindings, coordinate,
+        )?)
     }
 
     fn ordered_parameter_bindings(

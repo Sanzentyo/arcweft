@@ -59,6 +59,27 @@ impl RuntimeFunctionSemanticRole {
     }
 }
 
+/// Static parameter ownership class. Frame ingress guarantees are recorded
+/// independently: a value-dependent affine carrier can require a checked
+/// unrestricted supplied value without changing its declared passing class.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub enum RuntimeFunctionParameterPassing {
+    Value,
+    Shared,
+    Affine,
+}
+
+impl RuntimeFunctionParameterPassing {
+    #[must_use]
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Value => 0,
+            Self::Shared => 1,
+            Self::Affine => 2,
+        }
+    }
+}
+
 /// The body family reserved by a function-site construction handle.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeFunctionSiteBodyKind {

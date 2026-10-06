@@ -95,9 +95,9 @@ pub use format_attempt::{
 };
 pub use function_sites::{
     RuntimeFunctionInputBinding, RuntimeFunctionInputOwnershipRequirement,
-    RuntimeFunctionInputSource, RuntimeFunctionSemanticRole, RuntimeFunctionSite,
-    RuntimeFunctionSiteBody, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteError,
-    RuntimeFunctionSiteTable,
+    RuntimeFunctionInputSource, RuntimeFunctionParameterPassing, RuntimeFunctionSemanticRole,
+    RuntimeFunctionSite, RuntimeFunctionSiteBody, RuntimeFunctionSiteBodyKind,
+    RuntimeFunctionSiteError, RuntimeFunctionSiteTable,
 };
 pub use generation_contract::{
     CharacterDialogueRuntimeCustomFieldDigest, RuntimeCharacterCatalogDigest,
