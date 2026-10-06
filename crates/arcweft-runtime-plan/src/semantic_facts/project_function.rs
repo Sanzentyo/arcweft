@@ -1237,15 +1237,31 @@ impl RuntimeClosureParameterFact {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeClosureCaptureFact {
     origin: arcweft_lang_sema::final_analysis::CheckedClosureCaptureOrigin,
+    transfer: arcweft_lang_sema::final_analysis::CheckedLocalValueTransfer,
     ty: RuntimeNormalizedType,
 }
 
 impl RuntimeClosureCaptureFact {
-    pub const fn new(
+    pub fn try_new(
         origin: arcweft_lang_sema::final_analysis::CheckedClosureCaptureOrigin,
+        transfer: arcweft_lang_sema::final_analysis::CheckedLocalValueTransfer,
         ty: RuntimeNormalizedType,
-    ) -> Self {
-        Self { origin, ty }
+    ) -> Result<Self, RuntimeProjectFunctionFactError> {
+        if transfer.local() != origin.source()
+            || !transfer.fields().is_empty()
+            || transfer.mode() == arcweft_lang_sema::final_analysis::CheckedLocalReadMode::Borrow
+        {
+            return Err(RuntimeProjectFunctionFactError::InvalidClosureInstance);
+        }
+        Ok(Self {
+            origin,
+            transfer,
+            ty,
+        })
+    }
+
+    pub const fn transfer(&self) -> &arcweft_lang_sema::final_analysis::CheckedLocalValueTransfer {
+        &self.transfer
     }
 
     pub const fn position(&self) -> u32 {
@@ -1347,6 +1363,16 @@ impl RuntimeClosureInstanceFact {
             || captures.iter().enumerate().any(|(position, capture)| {
                 u32::try_from(position).ok() != Some(capture.position())
                     || semantics
+                        .local_uses()
+                        .value_transfer_at(
+                            arcweft_lang_sema::final_analysis::CheckedLocalUseSite::Capture {
+                                owner,
+                                local: capture.source(),
+                            },
+                        )
+                        .as_ref()
+                        != Some(capture.transfer())
+                    || semantics
                         .capture(capture.capture())
                         .is_none_or(|checked| checked.ty() != capture.ty())
             })
@@ -1384,6 +1410,12 @@ impl RuntimeClosureInstanceFact {
 
     pub const fn key(&self) -> &RuntimeClosureInstanceKey {
         &self.key
+    }
+
+    pub const fn definition(
+        &self,
+    ) -> &arcweft_lang_sema::final_analysis::FinalAnalysisClosureExecution {
+        &self.definition
     }
 
     pub const fn definition_identity(

@@ -2554,10 +2554,6 @@ fn reserve_closure_sites<'facts>(
         };
         let pattern_lowerer = FinalPatternLowerer::new(module, facts, &locals.hir)
             .with_project_semantics(closure.semantics());
-        let checked_captures = closure
-            .semantics()
-            .local_uses()
-            .captures_at(closure.owner());
         let captures = closure
             .captures()
             .iter()
@@ -2580,17 +2576,7 @@ fn reserve_closure_sites<'facts>(
                         capture.source()
                     ))
                 })?;
-                let ownership = match checked_captures
-                    .iter()
-                    .find(|use_row| use_row.local() == capture.source())
-                    .ok_or_else(|| {
-                        RuntimePlanLowerError::new(format!(
-                            "project closure {:?} capture source {:?} has no checked local-use row",
-                            key,
-                            capture.source()
-                        ))
-                    })?
-                    .mode()
+                let ownership = match capture.transfer().mode()
                 {
                     CheckedLocalReadMode::Copy => {
                         RuntimeFunctionInputOwnershipRequirement::Unrestricted

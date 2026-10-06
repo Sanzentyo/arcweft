@@ -8528,19 +8528,6 @@ fn runtime_closure_instance_fact(
             ))
         })
         .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
-    let captures = checked_execution
-        .captures()
-        .iter()
-        .map(|capture| {
-            let checked = analysis
-                .capture(capture.capture())
-                .ok_or_else(|| error("closure capture has no checked type"))?;
-            Ok(RuntimeClosureCaptureFact::new(
-                capture.clone(),
-                lexical.runtime_type(checked.ty(), symbols, world, analysis)?,
-            ))
-        })
-        .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
 
     let executable = HirRuntimeExecutableOwner::CallableBody(owner);
     let partition = match lexical {
@@ -8566,6 +8553,30 @@ fn runtime_closure_instance_fact(
         dialogue,
         instances,
     )?;
+    let captures = checked_execution
+        .captures()
+        .iter()
+        .map(|capture| {
+            let checked = analysis
+                .capture(capture.capture())
+                .ok_or_else(|| error("closure capture has no checked type"))?;
+            RuntimeClosureCaptureFact::try_new(
+                capture.clone(),
+                semantics
+                    .local_uses()
+                    .value_transfer_at(
+                        arcweft_lang_sema::final_analysis::CheckedLocalUseSite::Capture {
+                            owner,
+                            local: capture.source(),
+                        },
+                    )
+                    .ok_or_else(|| error("closure capture has no closed transfer proof"))?,
+                lexical.runtime_type(checked.ty(), symbols, world, analysis)?,
+            )
+            .map_err(|reason| error(&reason.to_string()))
+        })
+        .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
+
     RuntimeClosureInstanceFact::try_new(
         RuntimeClosureInstanceKey::new(
             match lexical {

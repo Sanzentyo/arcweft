@@ -436,6 +436,8 @@ flow main() -> i64 {
     let _ = number_reader(())
     let text_reader = make_reader("text")
     let _ = text_reader(())
+    let affine_reader = make_reader(Vec<Need<i64>>::with_capacity(0usize))
+    let _ = affine_reader(())
     return 0i64
 }
 "#,
@@ -465,10 +467,12 @@ flow main() -> i64 {
         .project_function_instances()
         .filter(|instance| instance.callable().owner() == function_owner)
         .collect::<Vec<_>>();
-    assert_eq!(instances.len(), 2);
+    assert_eq!(instances.len(), 3);
     let mut closure_owner = None;
     let mut definition_origins = BTreeSet::new();
     let mut capture_types = Vec::new();
+    let mut capture_modes = BTreeSet::new();
+    let mut closed_closures = Vec::new();
     let analysis = compiled.analysis_lease().final_analysis();
     let reachability = crate::lower::project_runtime_reachability(
         executable,
@@ -505,6 +509,7 @@ flow main() -> i64 {
         let [capture] = closure.captures() else {
             panic!("closure captures the generic parameter once")
         };
+        capture_modes.insert(capture.transfer().mode());
         definition_origins.insert((closure.definition_identity(), capture.origin().clone()));
         let definition = analysis
             .execution_projection()
@@ -554,6 +559,7 @@ flow main() -> i64 {
             "instance closure body must not fall back to the global semantic catalog",
         );
         capture_types.push(capture.ty().identity());
+        closed_closures.push(closure.clone());
     }
     capture_types.sort();
     assert_eq!(
@@ -564,9 +570,45 @@ flow main() -> i64 {
     capture_types.dedup();
     assert_eq!(
         capture_types.len(),
-        2,
-        "i64 and String captures stay closed"
+        3,
+        "i64, String and affine Vec<Need<i64>> captures stay closed"
     );
+    assert_eq!(
+        capture_modes,
+        BTreeSet::from([
+            arcweft_lang_sema::final_analysis::CheckedLocalReadMode::Copy,
+            arcweft_lang_sema::final_analysis::CheckedLocalReadMode::Move,
+        ])
+    );
+    let copy = closed_closures
+        .iter()
+        .find(|closure| {
+            closure.captures()[0].transfer().mode()
+                == arcweft_lang_sema::final_analysis::CheckedLocalReadMode::Copy
+        })
+        .unwrap();
+    let moved = closed_closures
+        .iter()
+        .find(|closure| {
+            closure.captures()[0].transfer().mode()
+                == arcweft_lang_sema::final_analysis::CheckedLocalReadMode::Move
+        })
+        .unwrap();
+    assert_eq!(copy.captures()[0].source(), moved.captures()[0].source());
+    let foreign_transfer =
+        arcweft_runtime_plan::semantic_facts::RuntimeClosureCaptureFact::try_new(
+            copy.definition().captures()[0].clone(),
+            moved.captures()[0].transfer().clone(),
+            copy.captures()[0].ty().clone(),
+        )
+        .unwrap();
+    assert!(matches!(arcweft_runtime_plan::semantic_facts::RuntimeClosureInstanceFact::try_new(
+        copy.key().clone(), copy.definition().clone(), copy.owner(), copy.function_type().clone(),
+        copy.suspension(), copy.control(), copy.execution(), copy.effects().into(),
+        copy.scope(), copy.body(), copy.parameters().into(), Box::new([foreign_transfer]),
+        copy.semantics().clone(),
+    ), Err(arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionFactError::InvalidClosureInstance)),
+        "an equal lexical local cannot substitute another closed instance's transfer mode");
 }
 
 #[test]
@@ -603,10 +645,84 @@ fn closure_definition_and_capture_origins_survive_source_revisions() {
         original.captures()[0].origin(),
         original.captures()[1].origin()
     );
+    assert!(matches!(
+        arcweft_runtime_plan::semantic_facts::RuntimeClosureCaptureFact::try_new(
+            original.definition().captures()[0].clone(),
+            original.captures()[1].transfer().clone(),
+            original.captures()[0].ty().clone(),
+        ),
+        Err(arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionFactError::InvalidClosureInstance)
+    ));
     assert_ne!(
         original.definition_identity(),
         observe(&source.replace("flow main", "flow other")).definition_identity()
     );
+}
+
+#[test]
+fn root_closure_capture_transfer_proof_drives_creation_and_ingress() {
+    use arcweft_core::{
+        plan::{FlowOp, RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionSemanticRole},
+        value::{RuntimeExprKind, RuntimeLocalReadMode},
+    };
+    use arcweft_lang_sema::final_analysis::CheckedLocalReadMode;
+    for (source, mode, read_mode, ownership) in [
+        (
+            "flow main() -> i64 { let value = 42i64; let callback = || value; return callback() }",
+            CheckedLocalReadMode::Copy,
+            RuntimeLocalReadMode::Copy,
+            RuntimeFunctionInputOwnershipRequirement::Unrestricted,
+        ),
+        (
+            "flow main() -> i64 { let value = Vec<Need<i64>>::with_capacity(0usize); let callback = || value; let _ = callback(); return 42i64 }",
+            CheckedLocalReadMode::Move,
+            RuntimeLocalReadMode::Move,
+            RuntimeFunctionInputOwnershipRequirement::Owned,
+        ),
+    ] {
+        let (project, context) = removed_role_project(source);
+        let (mut session, parsed_sources) = compilation_state(&project);
+        let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
+            .expect("closure retains its selected capture transfer");
+        let closure = compiled
+            .runtime_facts()
+            .root_closures()
+            .find(|closure| !closure.captures().is_empty())
+            .expect("capturing root closure");
+        let [capture] = closure.captures() else {
+            panic!("one capture")
+        };
+        assert_eq!(capture.transfer().mode(), mode);
+        let plan = &compiled.runtime_plan().plan;
+        let sites = plan
+            .function_sites()
+            .iter()
+            .filter(|site| {
+                site.role() == RuntimeFunctionSemanticRole::Closure
+                    && site.capture_inputs().count() == 1
+            })
+            .collect::<Vec<_>>();
+        let [site] = sites.as_slice() else {
+            panic!("one capturing function site")
+        };
+        assert_eq!(site.capture_inputs().next().unwrap().ownership(), ownership);
+        let mut creation_reads = Vec::new();
+        plan.try_visit_flow_ops(&mut |operation| {
+            if let FlowOp::Let { expr, .. } = operation
+                && let RuntimeExprKind::MakeCallable { captures, .. } = expr.kind()
+            {
+                for capture in captures {
+                    let RuntimeExprKind::Local(read) = capture.kind() else {
+                        panic!("capture creation uses the admitted local read")
+                    };
+                    creation_reads.push(read.mode());
+                }
+            }
+            Ok::<_, std::convert::Infallible>(())
+        })
+        .unwrap();
+        assert_eq!(creation_reads, vec![read_mode]);
+    }
 }
 
 #[test]

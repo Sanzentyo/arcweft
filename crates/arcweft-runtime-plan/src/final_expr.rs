@@ -1927,13 +1927,13 @@ impl<'hir> FinalExprLowerer<'hir> {
             .captures()
             .iter()
             .map(|capture| {
-                let value = self.lower_local_capture(
-                    CheckedLocalUseSite::Capture {
-                        owner: id,
-                        local: capture.source(),
-                    },
-                    capture.source(),
-                )?;
+                let value = RuntimeExprSeed::new(
+                    self.local_type(capture.source())?,
+                    RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                        self.local(capture.source())?,
+                        runtime_local_read_mode(capture.transfer().mode()),
+                    )),
+                );
                 if value.ty() != capture.ty().identity() {
                     return Err(format!(
                         "project closure {:?} capture {} type disagrees with its closed ABI",
