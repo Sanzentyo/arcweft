@@ -357,6 +357,7 @@ fn standard_map_awbc_plan() -> (Arc<RuntimePlan>, Vec<AwbcStandardMapCase>) {
     admit_flow_authority(&mut builder, &flow);
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),
@@ -428,6 +429,7 @@ fn plan_with_return_and_entry(value: &str, include_entry: bool) -> RuntimePlan {
     }
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),
@@ -486,6 +488,7 @@ fn plan_with_await_observer() -> RuntimePlan {
     admit_flow_authority(&mut builder, &flow);
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),

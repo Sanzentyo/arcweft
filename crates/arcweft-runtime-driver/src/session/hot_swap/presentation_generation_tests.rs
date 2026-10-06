@@ -139,6 +139,7 @@ fn bundle_with_source_note(red: u8, scheme: ColorScheme, note: &str) -> ArcweftB
     let flow = FlowRuntimeId::from_checked_declaration_digest([0x51; 32], "flow.main").unwrap();
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),

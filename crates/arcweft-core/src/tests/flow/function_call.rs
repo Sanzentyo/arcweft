@@ -121,6 +121,7 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
         .expect("caller schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             entry.clone(),
             [need_argument.clone()],
             crate::plan::RuntimeEffectSet::empty(),

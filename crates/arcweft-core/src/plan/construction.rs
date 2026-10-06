@@ -642,6 +642,7 @@ struct ReservedFunctionSite {
 
 #[derive(Debug)]
 struct ReservedPureHelper {
+    definition: super::RuntimeFunctionDefinitionIdentity,
     name: String,
     inputs: Box<[super::RuntimeCallableParameter]>,
     output_abi: super::RuntimePureOutputType,
@@ -652,6 +653,7 @@ struct ReservedPureHelper {
 
 #[derive(Debug)]
 struct ReservedTraitMethod {
+    definition: super::RuntimeFunctionDefinitionIdentity,
     identity: super::RuntimeTraitMethodIdentity,
     receiver: super::RuntimeReceiverMode,
     inputs: Box<[super::RuntimeCallableParameter]>,
@@ -2172,6 +2174,7 @@ impl RuntimePlanBuilder {
         let result = seed.body.ty();
         let body = seed.body;
         let helper = self.reserve_pure_helper_seed(RuntimePureHelperDeclarationSeed {
+            definition: seed.definition,
             name: seed.name,
             inputs: seed.inputs,
             result,
@@ -2309,6 +2312,7 @@ impl RuntimePlanBuilder {
             });
         }
         self.pure_helpers.push(ReservedPureHelper {
+            definition: seed.definition,
             name: seed.name,
             inputs,
             output_abi: seed.output_abi,
@@ -2371,6 +2375,7 @@ impl RuntimePlanBuilder {
         let result = seed.body.ty();
         let body = seed.body;
         let method = self.reserve_trait_method_seed(RuntimeTraitMethodDeclarationSeed {
+            definition: seed.definition,
             identity: seed.identity,
             receiver: seed.receiver,
             inputs: seed.inputs,
@@ -2430,6 +2435,7 @@ impl RuntimePlanBuilder {
             });
         }
         self.trait_methods.push(ReservedTraitMethod {
+            definition: seed.definition,
             identity: seed.identity,
             receiver: seed.receiver,
             inputs,
@@ -2622,6 +2628,7 @@ impl RuntimePlanBuilder {
                     unreachable!("incomplete pure helpers returned before materialization")
                 };
                 RuntimePureHelper {
+                    definition: helper.definition,
                     id: super::RuntimePureHelperId(index),
                     name: helper.name,
                     inputs: helper.inputs,
@@ -2641,6 +2648,7 @@ impl RuntimePlanBuilder {
                     unreachable!("incomplete trait methods returned before materialization")
                 };
                 RuntimeTraitMethod {
+                    definition: method.definition,
                     id: super::RuntimeTraitMethodId(index),
                     identity: method.identity,
                     receiver: method.receiver,
@@ -2794,7 +2802,7 @@ impl RuntimePlanBuilder {
     }
 
     fn try_push_flow_seed(&mut self, seed: RuntimeFlowSeed) -> Result<u32, RuntimePlanBuildError> {
-        let (id, params, body) = seed.into_parts();
+        let (definition, id, params, body) = seed.into_parts();
         let label = id.canonical_label();
         let mut unique = BTreeSet::new();
         let mut resolved = Vec::with_capacity(params.len());
@@ -2816,6 +2824,7 @@ impl RuntimePlanBuilder {
         push_row(
             &mut self.flows,
             RuntimeFlow {
+                definition,
                 id,
                 params: resolved.into_boxed_slice(),
                 body: RuntimeExecutableBody::new(body.effects, ops.into_boxed_slice()),

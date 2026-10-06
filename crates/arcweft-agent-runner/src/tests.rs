@@ -1123,6 +1123,7 @@ fn observe_checkpoint_program() -> AwbcProgram {
     let flow = flow_id("agent.observe_smoke");
     agent_controller_program_seed(
         RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),
@@ -1152,6 +1153,7 @@ fn runtime_assertion_program() -> AwbcProgram {
     let flow = flow_id("agent.runtime_assertion");
     agent_controller_program_seed(
         RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),
@@ -1313,6 +1315,7 @@ fn capture_binding_program_with_budget(budget: AgentBudget) -> AwbcProgram {
     agent_controller_program_with_builder(
         builder,
         RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),
@@ -1387,6 +1390,7 @@ fn read_resource_binding_program() -> AwbcProgram {
     agent_controller_program_with_builder(
         builder,
         RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),
@@ -1473,6 +1477,7 @@ fn single_response_field_program(request: SingleResponseFieldRequest) -> AwbcPro
     agent_controller_program_with_builder(
         builder,
         RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),
@@ -1543,6 +1548,7 @@ fn direct_observe_program() -> AwbcProgram {
     agent_controller_program_with_builder(
         builder,
         RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),

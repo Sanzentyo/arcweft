@@ -1913,6 +1913,10 @@ pub fn lower_runtime_plan_with_stats(
                     Ok(ops) => {
                         assertion_sites.extend(lowerer.into_assertion_sites());
                         flow_seeds.push(RuntimeFlowSeed::new(
+                            flow_fact
+                                .definition()
+                                .definition_identity()
+                                .runtime_identity(),
                             identity,
                             params,
                             flow_fact.effects().clone(),
@@ -5306,7 +5310,13 @@ fn lower_controller_callable(
     let effects = RuntimeEffectSet::try_from_effects(instance.effects().iter().cloned())
         .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
     Ok(LoweredControllerCallable {
-        flow: RuntimeFlowSeed::new(flow.clone(), [], effects, ops),
+        flow: RuntimeFlowSeed::new(
+            instance.definition_identity().runtime_identity(),
+            flow.clone(),
+            [],
+            effects,
+            ops,
+        ),
         flow_executable,
         executable,
         assertions: Vec::new(),

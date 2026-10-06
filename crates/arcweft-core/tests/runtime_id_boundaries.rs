@@ -65,6 +65,9 @@ fn plan_with_flows(flows: impl IntoIterator<Item = FlowRuntimeId>) -> RuntimePla
             .expect("test Flow schema admits");
         builder
             .push_flow_seed(RuntimeFlowSeed::new(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
                 flow,
                 [],
                 arcweft_core::plan::RuntimeEffectSet::empty(),

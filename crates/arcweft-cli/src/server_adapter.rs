@@ -552,6 +552,9 @@ mod tests {
             .expect("typed flow schema is admitted");
         builder
             .push_flow_seed(RuntimeFlowSeed::new(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
                 id,
                 [],
                 arcweft_core::plan::RuntimeEffectSet::empty(),

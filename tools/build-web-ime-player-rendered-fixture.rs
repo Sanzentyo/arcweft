@@ -489,6 +489,7 @@ fn minimal_awbc_program() -> AwbcProgram {
         .expect("fixture Flow metadata");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
             [],
             RuntimeEffectSet::try_from_effects([arcweft_id::EffectId::parse(

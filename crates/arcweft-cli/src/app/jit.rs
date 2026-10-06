@@ -70,6 +70,24 @@ pub(in crate::app) enum JitBuiltinCase {
     AccumulationMix,
 }
 
+impl JitBuiltinCase {
+    fn definition_identity(self) -> arcweft_core::plan::RuntimeFunctionDefinitionIdentity {
+        let tag = match self {
+            Self::Score => 0,
+            Self::BranchMix => 1,
+            Self::LetChain => 2,
+            Self::FourInputMix => 3,
+            Self::AccumulationMix => 4,
+        };
+        let mut hash = blake3::Hasher::new();
+        hash.update(b"arcweft.cli.jit-builtin-definition.v1\0");
+        hash.update(&[tag]);
+        arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+            *hash.finalize().as_bytes(),
+        )
+    }
+}
+
 #[derive(serde::Serialize)]
 pub(in crate::app) struct JitCheckReport {
     status: String,
@@ -785,21 +803,28 @@ impl JitCheckTarget {
     }
 
     fn builtin_score() -> Self {
-        Self::builtin_from_seed("score", ["base", "bonus"], 0, |locals| {
-            if_i64(
-                binary(local(&locals[0]), RuntimeBinaryOp::Ge, int(3)),
-                binary(
-                    local(&locals[0]),
-                    RuntimeBinaryOp::Mul,
-                    call_add(local(&locals[1]), int(2)),
-                ),
-                int(0),
-            )
-        })
+        Self::builtin_from_seed(
+            JitBuiltinCase::Score,
+            "score",
+            ["base", "bonus"],
+            0,
+            |locals| {
+                if_i64(
+                    binary(local(&locals[0]), RuntimeBinaryOp::Ge, int(3)),
+                    binary(
+                        local(&locals[0]),
+                        RuntimeBinaryOp::Mul,
+                        call_add(local(&locals[1]), int(2)),
+                    ),
+                    int(0),
+                )
+            },
+        )
     }
 
     fn builtin_branch_mix() -> Self {
         Self::builtin_from_seed(
+            JitBuiltinCase::BranchMix,
             "branch_mix",
             ["base", "bonus", "scale", "offset"],
             3,
@@ -826,91 +851,113 @@ impl JitCheckTarget {
     }
 
     fn builtin_let_chain() -> Self {
-        Self::builtin_from_seed("let_chain", ["a", "b", "c"], 3, |locals| {
-            let_in(
-                locals[3].clone(),
-                binary(local(&locals[0]), RuntimeBinaryOp::Mul, local(&locals[1])),
+        Self::builtin_from_seed(
+            JitBuiltinCase::LetChain,
+            "let_chain",
+            ["a", "b", "c"],
+            3,
+            |locals| {
                 let_in(
-                    locals[4].clone(),
-                    binary(local(&locals[3]), RuntimeBinaryOp::Add, local(&locals[2])),
+                    locals[3].clone(),
+                    binary(local(&locals[0]), RuntimeBinaryOp::Mul, local(&locals[1])),
                     let_in(
-                        locals[5].clone(),
-                        binary(local(&locals[4]), RuntimeBinaryOp::Sub, local(&locals[0])),
-                        if_i64(
-                            binary(local(&locals[5]), RuntimeBinaryOp::Gt, local(&locals[1])),
-                            binary(local(&locals[5]), RuntimeBinaryOp::Mul, int(3)),
-                            binary(local(&locals[5]), RuntimeBinaryOp::Add, local(&locals[1])),
+                        locals[4].clone(),
+                        binary(local(&locals[3]), RuntimeBinaryOp::Add, local(&locals[2])),
+                        let_in(
+                            locals[5].clone(),
+                            binary(local(&locals[4]), RuntimeBinaryOp::Sub, local(&locals[0])),
+                            if_i64(
+                                binary(local(&locals[5]), RuntimeBinaryOp::Gt, local(&locals[1])),
+                                binary(local(&locals[5]), RuntimeBinaryOp::Mul, int(3)),
+                                binary(local(&locals[5]), RuntimeBinaryOp::Add, local(&locals[1])),
+                            ),
                         ),
                     ),
-                ),
-            )
-        })
+                )
+            },
+        )
     }
 
     fn builtin_four_input_mix() -> Self {
-        Self::builtin_from_seed("four_input_mix", ["a", "b", "c", "d"], 2, |locals| {
-            let_in(
-                locals[4].clone(),
-                binary(
-                    binary(local(&locals[0]), RuntimeBinaryOp::Add, local(&locals[1])),
-                    RuntimeBinaryOp::Mul,
-                    binary(local(&locals[2]), RuntimeBinaryOp::Sub, local(&locals[3])),
-                ),
+        Self::builtin_from_seed(
+            JitBuiltinCase::FourInputMix,
+            "four_input_mix",
+            ["a", "b", "c", "d"],
+            2,
+            |locals| {
                 let_in(
-                    locals[5].clone(),
+                    locals[4].clone(),
                     binary(
-                        binary(local(&locals[2]), RuntimeBinaryOp::Add, int(3)),
+                        binary(local(&locals[0]), RuntimeBinaryOp::Add, local(&locals[1])),
                         RuntimeBinaryOp::Mul,
-                        binary(local(&locals[3]), RuntimeBinaryOp::Add, int(1)),
+                        binary(local(&locals[2]), RuntimeBinaryOp::Sub, local(&locals[3])),
                     ),
-                    if_i64(
-                        binary(local(&locals[4]), RuntimeBinaryOp::Ne, local(&locals[5])),
-                        binary(local(&locals[4]), RuntimeBinaryOp::Sub, local(&locals[5])),
-                        binary(local(&locals[4]), RuntimeBinaryOp::Add, local(&locals[5])),
+                    let_in(
+                        locals[5].clone(),
+                        binary(
+                            binary(local(&locals[2]), RuntimeBinaryOp::Add, int(3)),
+                            RuntimeBinaryOp::Mul,
+                            binary(local(&locals[3]), RuntimeBinaryOp::Add, int(1)),
+                        ),
+                        if_i64(
+                            binary(local(&locals[4]), RuntimeBinaryOp::Ne, local(&locals[5])),
+                            binary(local(&locals[4]), RuntimeBinaryOp::Sub, local(&locals[5])),
+                            binary(local(&locals[4]), RuntimeBinaryOp::Add, local(&locals[5])),
+                        ),
                     ),
-                ),
-            )
-        })
+                )
+            },
+        )
     }
 
     fn builtin_accumulation_mix() -> Self {
-        Self::builtin_from_seed("accumulation_mix", ["a", "b", "c", "d"], 4, |locals| {
-            let pair_ab = binary(local(&locals[0]), RuntimeBinaryOp::Mul, local(&locals[1]));
-            let pair_cd = binary(local(&locals[2]), RuntimeBinaryOp::Mul, local(&locals[3]));
-            let_in(
-                locals[4].clone(),
-                binary(pair_ab.clone(), RuntimeBinaryOp::Add, pair_cd.clone()),
+        Self::builtin_from_seed(
+            JitBuiltinCase::AccumulationMix,
+            "accumulation_mix",
+            ["a", "b", "c", "d"],
+            4,
+            |locals| {
+                let pair_ab = binary(local(&locals[0]), RuntimeBinaryOp::Mul, local(&locals[1]));
+                let pair_cd = binary(local(&locals[2]), RuntimeBinaryOp::Mul, local(&locals[3]));
                 let_in(
-                    locals[5].clone(),
-                    binary(
-                        binary(local(&locals[4]), RuntimeBinaryOp::Add, local(&locals[0])),
-                        RuntimeBinaryOp::Sub,
-                        local(&locals[3]),
-                    ),
+                    locals[4].clone(),
+                    binary(pair_ab.clone(), RuntimeBinaryOp::Add, pair_cd.clone()),
                     let_in(
-                        locals[6].clone(),
+                        locals[5].clone(),
                         binary(
-                            binary(local(&locals[5]), RuntimeBinaryOp::Mul, int(3)),
-                            RuntimeBinaryOp::Add,
-                            binary(local(&locals[1]), RuntimeBinaryOp::Mul, local(&locals[2])),
+                            binary(local(&locals[4]), RuntimeBinaryOp::Add, local(&locals[0])),
+                            RuntimeBinaryOp::Sub,
+                            local(&locals[3]),
                         ),
                         let_in(
-                            locals[7].clone(),
+                            locals[6].clone(),
                             binary(
-                                binary(local(&locals[6]), RuntimeBinaryOp::Sub, pair_ab),
+                                binary(local(&locals[5]), RuntimeBinaryOp::Mul, int(3)),
                                 RuntimeBinaryOp::Add,
-                                pair_cd,
+                                binary(local(&locals[1]), RuntimeBinaryOp::Mul, local(&locals[2])),
                             ),
-                            binary(
-                                binary(local(&locals[7]), RuntimeBinaryOp::Add, local(&locals[6])),
-                                RuntimeBinaryOp::Sub,
-                                local(&locals[5]),
+                            let_in(
+                                locals[7].clone(),
+                                binary(
+                                    binary(local(&locals[6]), RuntimeBinaryOp::Sub, pair_ab),
+                                    RuntimeBinaryOp::Add,
+                                    pair_cd,
+                                ),
+                                binary(
+                                    binary(
+                                        local(&locals[7]),
+                                        RuntimeBinaryOp::Add,
+                                        local(&locals[6]),
+                                    ),
+                                    RuntimeBinaryOp::Sub,
+                                    local(&locals[5]),
+                                ),
                             ),
                         ),
                     ),
-                ),
-            )
-        })
+                )
+            },
+        )
     }
 
     pub(in crate::app) fn from_candidate(
@@ -942,6 +989,7 @@ impl JitCheckTarget {
     }
 
     fn builtin_from_seed<const N: usize>(
+        definition: JitBuiltinCase,
         name: &str,
         input_labels: [&str; N],
         local_count: usize,
@@ -966,6 +1014,7 @@ impl JitCheckTarget {
             .expect("builtin JIT helper semantic facts admit");
         builder
             .push_pure_helper_seed(RuntimePureHelperSeed {
+                definition: definition.definition_identity(),
                 name: name.to_owned(),
                 inputs: admission.local_ids()[..N]
                     .to_vec()

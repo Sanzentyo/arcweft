@@ -189,6 +189,7 @@ fn deeply_nested_match_flow_seed_lowers_and_validates_without_recursion() {
         )
         .expect("unit type admission");
     let flow = RuntimeFlowSeed::new(
+        crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
         flow_id("deep-match"),
         Vec::new(),
         RuntimeEffectSet::empty(),
@@ -231,6 +232,7 @@ fn drain(engine: &mut Engine) -> crate::step::RuntimeStepOutput {
 fn native_flow_returns_a_typed_scalar_value() {
     let entry = flow_id("flow.return");
     let plan = finish_plan([RuntimeFlowSeed::new(
+        crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
         entry.clone(),
         [],
         crate::plan::RuntimeEffectSet::empty(),
@@ -271,6 +273,7 @@ fn named_flow_scope_binds_its_result_in_the_parent_and_keeps_aot_identity() {
         .expect("flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             entry.clone(),
             [],
             RuntimeEffectSet::empty(),
@@ -323,6 +326,7 @@ fn named_flow_scope_binds_its_result_in_the_parent_and_keeps_aot_identity() {
 fn native_flow_evaluates_a_named_expression_scope_before_its_outer_return() {
     let entry = flow_id("flow.named_expression_scope");
     let plan = finish_plan([RuntimeFlowSeed::new(
+        crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
         entry.clone(),
         [],
         RuntimeEffectSet::empty(),
@@ -355,12 +359,14 @@ fn native_goto_selects_the_targeted_typed_flow() {
     let ending = flow_id("flow.ending");
     let plan = finish_plan([
         RuntimeFlowSeed::new(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             opening.clone(),
             [],
             crate::plan::RuntimeEffectSet::empty(),
             vec![RuntimeFlowOpSeed::Goto(ending.clone())],
         ),
         RuntimeFlowSeed::new(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             ending.clone(),
             [],
             crate::plan::RuntimeEffectSet::empty(),
@@ -472,6 +478,7 @@ fn native_project_call_direct_continue_publishes_one_catalog_site() {
         .expect("project-call flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             entry.clone(),
             [],
             crate::plan::RuntimeEffectSet::empty(),
@@ -599,6 +606,7 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
         .expect("defaulted arrow-call flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             arrow_entry.clone(),
             [],
             crate::plan::RuntimeEffectSet::empty(),
@@ -617,6 +625,7 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
         .expect("defaulted project-call flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             entry.clone(),
             [],
             crate::plan::RuntimeEffectSet::empty(),
@@ -742,6 +751,7 @@ fn native_project_call_rest_materialization_accepts_empty_and_source_ordered_val
             .into_boxed_slice();
         builder
             .push_flow_seed(RuntimeFlowSeed::new(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
                 entry.clone(),
                 [],
                 crate::plan::RuntimeEffectSet::empty(),
@@ -980,6 +990,7 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
         .expect("source-once flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             entry.clone(),
             [],
             crate::plan::RuntimeEffectSet::empty(),
@@ -1098,6 +1109,7 @@ fn native_project_call_executable_target_explicit_return_rejoins_catalog_site() 
         .expect("explicit-return flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             entry.clone(),
             [],
             crate::plan::RuntimeEffectSet::empty(),
@@ -1192,6 +1204,7 @@ fn native_project_call_target_goto_unwinds_the_catalog_return_boundary() {
         .expect("goto target schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             entry.clone(),
             [],
             crate::plan::RuntimeEffectSet::empty(),
@@ -1210,6 +1223,7 @@ fn native_project_call_target_goto_unwinds_the_catalog_return_boundary() {
         .expect("goto project-call entry admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             target.clone(),
             [],
             crate::plan::RuntimeEffectSet::empty(),
@@ -1295,6 +1309,7 @@ fn native_project_call_executable_target_fallthrough_fails_closed() {
         .expect("fallthrough flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             entry.clone(),
             [],
             crate::plan::RuntimeEffectSet::empty(),
@@ -1343,6 +1358,7 @@ fn native_if_uses_the_admitted_bool_condition() {
         .expect("typed branch flow schema admission");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             entry.clone(),
             [],
             crate::plan::RuntimeEffectSet::empty(),
@@ -1441,6 +1457,7 @@ fn native_while_let_pop_front_drains_a_vec_and_handles_an_empty_vec() {
             .expect("pop_front flow schema admits");
         builder
             .push_flow_seed(RuntimeFlowSeed::new(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
                 entry.clone(),
                 [],
                 RuntimeEffectSet::empty(),
@@ -1645,6 +1662,7 @@ fn native_nominal_field_pop_front_drains_a_vec_and_handles_an_empty_field() {
             .expect("nominal field pop_front flow schema admits");
         builder
             .push_flow_seed(RuntimeFlowSeed::new(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
                 entry.clone(),
                 [],
                 RuntimeEffectSet::empty(),
@@ -1779,6 +1797,7 @@ fn native_vec_push_returns_unit_and_pop_back_moves_the_last_item() {
         .expect("Vec mutation flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             entry.clone(),
             [],
             RuntimeEffectSet::empty(),
@@ -1897,6 +1916,7 @@ fn await_progress_runs_only_the_first_matching_observer() {
         .expect("Await observer flow schema admission");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             entry.clone(),
             [need_local.clone()],
             crate::plan::RuntimeEffectSet::empty(),

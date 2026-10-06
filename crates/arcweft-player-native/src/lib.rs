@@ -409,6 +409,9 @@ mod tests {
             .expect("line-task group attaches to dialogue content");
         builder
             .push_flow_seed(RuntimeFlowSeed::new(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
                 flow.clone(),
                 [],
                 arcweft_core::plan::RuntimeEffectSet::empty(),
@@ -524,6 +527,9 @@ mod tests {
         let mut builder = RuntimePlanBuilder::new();
         builder
             .push_flow_seed(RuntimeFlowSeed::new(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
                 flow.clone(),
                 [],
                 arcweft_core::plan::RuntimeEffectSet::empty(),

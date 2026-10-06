@@ -81,6 +81,9 @@ fn iterator_plan(copy_receiver: bool) -> RuntimePlan {
     };
     builder
         .push_trait_method_seed(RuntimeTraitMethodSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [51; 32],
+            ),
             identity: RuntimeTraitMethodIdentity {
                 impl_id: 0,
                 trait_id: Some(0),

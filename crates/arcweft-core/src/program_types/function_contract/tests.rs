@@ -501,6 +501,7 @@ fn failed_value_choice_does_not_leak_callback_effect_constraints() {
         .unwrap();
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow,
             [],
             RuntimeEffectSet::empty(),

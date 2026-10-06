@@ -279,6 +279,7 @@ fn fixture_bundle_with(display_text: &str) -> ArcweftBundle {
         .expect("line-task group attaches to dialogue content");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),

@@ -1084,6 +1084,13 @@ flow main(number: Route<i32>, word: Route<String>) {
     assert_eq!(runtime_methods.len(), methods.len());
     for (runtime, accepted) in runtime_methods.iter().zip(&methods) {
         assert_eq!(
+            runtime.definition,
+            accepted
+                .definition()
+                .definition_identity()
+                .runtime_identity()
+        );
+        assert_eq!(
             runtime.inputs.len(),
             accepted.definition().parameters().len()
         );
@@ -3129,6 +3136,17 @@ fn flow_facts_retain_the_accepted_body_and_complete_formals() {
         })
         .unwrap();
     let fact = compiled.runtime_facts().flow(root.id()).unwrap();
+    let runtime_flow = compiled
+        .runtime_plan()
+        .plan
+        .flows()
+        .iter()
+        .find(|flow| &flow.id == fact.identity())
+        .unwrap();
+    assert_eq!(
+        runtime_flow.definition,
+        fact.definition().definition_identity().runtime_identity()
+    );
     assert!(
         matches!(fact.definition().source(), CheckedExecutionSource::InvokeBody(
         CheckedExecutionBodyOwner::Declaration { declaration, .. }

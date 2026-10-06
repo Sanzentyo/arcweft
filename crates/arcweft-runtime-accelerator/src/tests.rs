@@ -273,6 +273,10 @@ fn admit_helper(
         .expect("test helper semantic inputs are admitted");
     builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
+            definition:
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [51; 32],
+                ),
             name: name.to_owned(),
             inputs: admission
                 .local_ids()
@@ -408,6 +412,7 @@ fn admit_add_helpers(
             let input_ty = helper_type_identity(*input_type);
             builder
                 .push_pure_helper_seed(RuntimePureHelperSeed {
+                    definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([51; 32]),
                     name: (*name).to_owned(),
                     inputs: inputs
                         .to_vec()
@@ -2014,6 +2019,10 @@ fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
     let locals = admission.local_ids();
     let helper = builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
+            definition:
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [51; 32],
+                ),
             name: "u32_flow_score".to_owned(),
             inputs: vec![locals[1].clone(), locals[2].clone()]
                 .into_boxed_slice()
@@ -2087,6 +2096,7 @@ fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
         .expect("u32 flow schema is admitted");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow,
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),

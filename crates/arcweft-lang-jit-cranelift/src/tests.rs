@@ -229,6 +229,10 @@ fn admit(
         .expect("semantic admission");
     builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
+            definition:
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [51; 32],
+                ),
             name: name.to_owned(),
             inputs: admission.local_ids()[..inputs]
                 .to_vec()

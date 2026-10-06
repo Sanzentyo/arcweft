@@ -176,6 +176,10 @@ fn trait_method_declaration(
     let (trait_id, trait_name) = lower_runtime_trait_identity(project, checked.trait_identity())?;
     let _ = module;
     Ok(RuntimeTraitMethodDeclarationSeed {
+        definition: checked
+            .definition()
+            .definition_identity()
+            .runtime_identity(),
         identity: RuntimeTraitMethodIdentity {
             impl_id,
             trait_id,

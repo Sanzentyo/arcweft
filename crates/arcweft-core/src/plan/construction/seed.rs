@@ -79,6 +79,7 @@ impl RuntimeLocalDeclarationSeed {
 /// admission that issued their construction-only handles.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeFlowSeed {
+    definition: crate::plan::RuntimeFunctionDefinitionIdentity,
     id: FlowRuntimeId,
     params: Box<[RuntimeLocalSeedId]>,
     body: RuntimeExecutableBodySeed,
@@ -380,12 +381,14 @@ pub enum RuntimeCallableExecutableSeedCode {
 impl RuntimeFlowSeed {
     #[must_use]
     pub fn new(
+        definition: crate::plan::RuntimeFunctionDefinitionIdentity,
         id: FlowRuntimeId,
         params: impl IntoIterator<Item = RuntimeLocalSeedId>,
         effects: RuntimeEffectSet,
         ops: Vec<RuntimeFlowOpSeed>,
     ) -> Self {
         Self {
+            definition,
             id,
             params: params.into_iter().collect::<Vec<_>>().into_boxed_slice(),
             body: RuntimeExecutableBodySeed {
@@ -403,11 +406,12 @@ impl RuntimeFlowSeed {
     pub(super) fn into_parts(
         self,
     ) -> (
+        crate::plan::RuntimeFunctionDefinitionIdentity,
         FlowRuntimeId,
         Box<[RuntimeLocalSeedId]>,
         RuntimeExecutableBodySeed,
     ) {
-        (self.id, self.params, self.body)
+        (self.definition, self.id, self.params, self.body)
     }
 }
 
@@ -1848,6 +1852,7 @@ impl Eq for RuntimeTraitMethodSeedId {}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimePureHelperSeed {
+    pub definition: crate::plan::RuntimeFunctionDefinitionIdentity,
     pub name: String,
     pub inputs: Box<[RuntimeCallableParameterSeed]>,
     pub output_abi: RuntimePureOutputType,
@@ -1860,6 +1865,7 @@ pub struct RuntimePureHelperSeed {
 /// defined only after every callable handle has been issued.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimePureHelperDeclarationSeed {
+    pub definition: crate::plan::RuntimeFunctionDefinitionIdentity,
     pub name: String,
     pub inputs: Box<[RuntimeCallableParameterSeed]>,
     pub result: RuntimeSemanticTypeId,
@@ -1880,6 +1886,7 @@ pub struct RuntimePureProgramBindingSeed {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeTraitMethodSeed {
+    pub definition: crate::plan::RuntimeFunctionDefinitionIdentity,
     pub identity: RuntimeTraitMethodIdentity,
     pub receiver: RuntimeReceiverMode,
     pub inputs: Box<[RuntimeCallableParameterSeed]>,
@@ -1890,6 +1897,7 @@ pub struct RuntimeTraitMethodSeed {
 /// Signature-only reservation for one plan-owned trait method.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeTraitMethodDeclarationSeed {
+    pub definition: crate::plan::RuntimeFunctionDefinitionIdentity,
     pub identity: RuntimeTraitMethodIdentity,
     pub receiver: RuntimeReceiverMode,
     pub inputs: Box<[RuntimeCallableParameterSeed]>,

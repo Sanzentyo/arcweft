@@ -126,6 +126,7 @@ pub(crate) fn returning_function_plan(body_kind: RuntimeFunctionSiteBodyKind) ->
     );
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             entry,
             [],
             RuntimeEffectSet::empty(),

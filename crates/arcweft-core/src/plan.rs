@@ -763,6 +763,7 @@ pub struct RuntimeLineId {
 /// Lowered flow program.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeFlow {
+    pub definition: RuntimeFunctionDefinitionIdentity,
     pub id: FlowRuntimeId,
     pub params: Box<[RuntimeLocalDeclarationId]>,
     body: RuntimeExecutableBody,
@@ -948,6 +949,7 @@ pub struct RuntimePureHelperId(pub usize);
 /// Lowered deterministic pure helper callable from runtime expressions.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimePureHelper {
+    pub definition: RuntimeFunctionDefinitionIdentity,
     pub id: RuntimePureHelperId,
     pub name: String,
     pub inputs: Box<[RuntimeCallableParameter]>,
@@ -1043,6 +1045,7 @@ pub struct RuntimeTraitMethodIdentity {
 /// Lowered deterministic trait/impl method body callable by runtime dispatch.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeTraitMethod {
+    pub definition: RuntimeFunctionDefinitionIdentity,
     pub id: RuntimeTraitMethodId,
     pub identity: RuntimeTraitMethodIdentity,
     pub receiver: RuntimeReceiverMode,

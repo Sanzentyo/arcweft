@@ -44,6 +44,9 @@ fn pure_value_backend_moves_an_affine_need_argument_into_its_result() {
     let input = admission.local_ids()[0].clone();
     builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [51; 32],
+            ),
             name: "move_need".to_owned(),
             inputs: Box::new([input.clone()])
                 .into_iter()
@@ -69,6 +72,7 @@ fn pure_value_backend_moves_an_affine_need_argument_into_its_result() {
     let plan = Arc::new(builder.finish().expect("sealed pure helper"));
     let helper =
         RuntimePureHelperRef::resolve(&plan, plan.pure_helpers()[0].id).expect("helper reference");
+    assert_eq!(helper.definition.as_bytes(), &[51; 32]);
     assert_eq!(helper.inputs[0].abi(), RuntimePureInputType::Value);
     assert_eq!(
         helper.inputs[0].passing(),
@@ -110,6 +114,9 @@ fn pure_collect_intrinsic_moves_affine_sequence_items() {
     let input = admission.local_ids()[0].clone();
     builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [51; 32],
+            ),
             name: "collect_affine".to_owned(),
             inputs: Box::new([input.clone()])
                 .into_iter()
@@ -235,6 +242,9 @@ fn pure_format_content_uses_selected_ambient_locale() {
     );
     let method = builder
         .push_trait_method_seed(RuntimeTraitMethodSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [51; 32],
+            ),
             identity: RuntimeTraitMethodIdentity {
                 impl_id: 0,
                 trait_id: Some(0),
@@ -281,6 +291,9 @@ fn pure_format_content_uses_selected_ambient_locale() {
         .unwrap();
     builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [51; 32],
+            ),
             name: "localized_number".to_owned(),
             inputs: Box::new([]),
             output_abi: RuntimePureOutputType::Value,
@@ -291,6 +304,9 @@ fn pure_format_content_uses_selected_ambient_locale() {
         .unwrap();
     builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [51; 32],
+            ),
             name: "localized_number_via_trait".to_owned(),
             inputs: Box::new([]),
             output_abi: RuntimePureOutputType::Value,
@@ -671,6 +687,9 @@ fn standard_map_pure_plan() -> (Arc<RuntimePlan>, Vec<StandardMapPureCase>) {
     {
         builder
             .push_pure_helper_seed(RuntimePureHelperSeed {
+                definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [51; 32],
+                ),
                 name: format!("standard_map_{index}"),
                 inputs: Box::new([]),
                 output_abi: RuntimePureOutputType::Value,
@@ -730,6 +749,9 @@ fn admit_i64_helper(
         .expect("semantic helper inputs");
     builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [51; 32],
+            ),
             name: name.to_owned(),
             inputs: admission
                 .local_ids()
@@ -1093,6 +1115,9 @@ fn structured_closure_captures_the_exact_owning_plan() {
     );
     builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [51; 32],
+            ),
             name: "captured_add".to_owned(),
             inputs: Box::new([captured])
                 .into_iter()
@@ -1234,6 +1259,9 @@ fn structured_function_input_tuple_pattern_binds_body_locals() {
     );
     builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [51; 32],
+            ),
             name: "tuple_pattern_add".to_owned(),
             inputs: Box::new([]),
             output_abi: RuntimePureOutputType::I64,
@@ -1364,6 +1392,9 @@ fn structured_function_input_sequence_rest_binds_one_logical_tail() {
     );
     builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [51; 32],
+            ),
             name: "sequence_rest_select".to_owned(),
             inputs: Box::new([]),
             output_abi: RuntimePureOutputType::I64,
@@ -1487,6 +1518,9 @@ fn structured_function_input_record_pattern_binds_by_declared_field_coordinate()
     );
     builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [51; 32],
+            ),
             name: "record_pattern_select".to_owned(),
             inputs: Box::new([]),
             output_abi: RuntimePureOutputType::I64,
@@ -1616,6 +1650,9 @@ fn structured_apply_reorders_source_arguments_to_the_checked_abi() {
     );
     builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [51; 32],
+            ),
             name: "positioned_apply".to_owned(),
             inputs: Box::new([]),
             output_abi: RuntimePureOutputType::I64,
@@ -1659,6 +1696,9 @@ fn owned_pure_trait_call_evaluates_receiver_and_source_arguments_once() {
     let second = admission.local_ids()[2].clone();
     let method = builder
         .push_trait_method_seed(RuntimeTraitMethodSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [51; 32],
+            ),
             identity: RuntimeTraitMethodIdentity {
                 impl_id: 0,
                 trait_id: Some(0),
@@ -1687,6 +1727,9 @@ fn owned_pure_trait_call_evaluates_receiver_and_source_arguments_once() {
         .expect("owned method body");
     builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [51; 32],
+            ),
             name: "owned_trait_call".to_owned(),
             inputs: Box::new([]),
             output_abi: RuntimePureOutputType::I64,
@@ -1754,6 +1797,9 @@ fn simple_trait_call_plan(
     };
     let method = builder
         .push_trait_method_seed(RuntimeTraitMethodSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [51; 32],
+            ),
             identity: RuntimeTraitMethodIdentity {
                 impl_id: 0,
                 trait_id: None,
@@ -1785,6 +1831,9 @@ fn simple_trait_call_plan(
         .expect("trait method");
     builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [51; 32],
+            ),
             name: "trait_call".to_owned(),
             inputs: Box::new([]),
             output_abi: RuntimePureOutputType::I64,

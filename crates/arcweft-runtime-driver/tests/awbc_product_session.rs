@@ -184,6 +184,9 @@ fn entry_selection_product_bundle() -> ArcweftBundle {
             .expect("fixture checked Flow identity");
         builder
             .push_flow_seed(RuntimeFlowSeed::new(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
                 flow.clone(),
                 [],
                 arcweft_core::plan::RuntimeEffectSet::empty(),
@@ -1566,6 +1569,7 @@ fn restartable_need_awfb_bytes() -> Vec<u8> {
     .expect("producer plan admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),
@@ -1651,6 +1655,7 @@ fn assertion_product_bundle(condition: bool) -> ArcweftBundle {
         .expect("bool type admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),

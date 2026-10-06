@@ -94,6 +94,9 @@ fn build_plan(
             .expect("test flow schema admits");
         builder
             .push_flow_seed(RuntimeFlowSeed::new(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
                 id,
                 [],
                 arcweft_core::plan::RuntimeEffectSet::empty(),
@@ -150,6 +153,7 @@ fn build_bool_flow_plan(flow: FlowRuntimeId, ops: Vec<RuntimeFlowOpSeed>) -> Run
         .expect("boolean loop test flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),
@@ -239,6 +243,7 @@ fn build_while_let_plan(
         .expect("while-let test flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),
@@ -329,6 +334,7 @@ fn build_while_let_pop_front_plan() -> RuntimePlan {
         .expect("while-let pop_front flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),
@@ -423,6 +429,7 @@ fn build_vec_push_pop_plan() -> RuntimePlan {
         .expect("Vec push/pop flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),
@@ -569,6 +576,7 @@ fn awbc_cancellation_result_selection_uses_typed_terminal_and_fallthrough_keeps_
         .expect("flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),
@@ -871,6 +879,7 @@ fn option_and_result_awbc_patterns_use_exact_tuple_payload_edges() {
         .expect("payload flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),
@@ -1063,6 +1072,10 @@ fn plan_with_local() -> (
         .expect("local plan admission");
     builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
+            definition:
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [51; 32],
+                ),
             name: "local".to_owned(),
             inputs: admission
                 .local_ids()
@@ -1112,6 +1125,7 @@ fn invalid_local_seeds_cannot_produce_an_awbc_plan() {
     let mut flow_builder = RuntimePlanBuilder::new();
     assert_eq!(
         flow_builder.push_flow_seed(RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow_id("invalid_plan"),
             [foreign.clone()],
             arcweft_core::plan::RuntimeEffectSet::empty(),
@@ -1133,6 +1147,10 @@ fn invalid_local_seeds_cannot_produce_an_awbc_plan() {
         .expect("pure helper type admission");
     assert_eq!(
         pure_builder.push_pure_helper_seed(RuntimePureHelperSeed {
+            definition:
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [51; 32]
+                ),
             name: "invalid.local".to_owned(),
             inputs: Box::new([]),
             output_abi: RuntimePureOutputType::Value,
@@ -1147,6 +1165,10 @@ fn invalid_local_seeds_cannot_produce_an_awbc_plan() {
     let (mut trait_builder, receiver) = builder_with_local();
     assert_eq!(
         trait_builder.push_trait_method_seed(RuntimeTraitMethodSeed {
+            definition:
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [51; 32]
+                ),
             identity: RuntimeTraitMethodIdentity {
                 impl_id: 0,
                 trait_id: None,
@@ -1503,6 +1525,7 @@ fn loop_break_paths_initialize_one_typed_result_before_binding() {
         .expect("loop flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             main.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),
@@ -1590,6 +1613,7 @@ fn nested_loops_bind_the_nearest_break_result() {
         .expect("nested loop flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             main.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),
@@ -2027,6 +2051,7 @@ fn await_observers_lower_to_progress_dispatch_and_rewait_backedge() {
         .expect("Await observer flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             main.clone(),
             [need_local.clone()],
             arcweft_core::plan::RuntimeEffectSet::empty(),
@@ -2060,6 +2085,7 @@ fn await_observers_lower_to_progress_dispatch_and_rewait_backedge() {
         .expect("zero-argument launch flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             launch.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),

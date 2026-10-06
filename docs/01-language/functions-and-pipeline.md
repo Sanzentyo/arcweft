@@ -368,6 +368,10 @@ structured function site は受理済みの lexical definition identity を必�
 それぞれ authored slot と checked callable から識別し、plan の割当番号を使わない。
 definition identity は body digest や runtime image の seal 証拠とは別に扱う。
 
+pure helper、trait method、Flow の完成した実行行も、definition identity を必須で持つ。
+trait method と Flow は受理済み body の証拠から投影し、Entry controller の Flow wrapper は
+選択された root instance の定義を保持する。built-in helper はその種類の owner が識別する。
+
 structured function-site の parameter 入力は、受理済み formal の passing 区分を
 明示的に保持する。引数位置や pattern の展開で区分を失わず、frame ingress の
 `Owned`／`Unrestricted` 保証から区分を推測しない。

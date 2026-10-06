@@ -385,6 +385,7 @@ fn custom_echo_plan() -> RuntimePlan {
     let need_local = admitted.local_ids()[0].clone();
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),
