@@ -18,32 +18,51 @@ use super::{
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeDeferFact {
-    outcome: RuntimeDeferOutcomeFilter,
-    body: ExprId,
+    definition: arcweft_lang_sema::final_analysis::CheckedDefer,
     effects: EffectSet,
     captures: Box<[RuntimeExecutableCaptureFact]>,
 }
 
 impl RuntimeDeferFact {
-    pub fn new(
-        outcome: RuntimeDeferOutcomeFilter,
-        body: ExprId,
+    pub fn try_new(
+        definition: arcweft_lang_sema::final_analysis::CheckedDefer,
         effects: EffectSet,
         captures: impl Into<Box<[RuntimeExecutableCaptureFact]>>,
-    ) -> Self {
-        Self {
-            outcome,
-            body,
-            effects,
-            captures: captures.into(),
+    ) -> Result<Self, super::RuntimeExecutableCaptureFactError> {
+        let captures = captures.into();
+        if captures.len() != definition.captures().len()
+            || captures
+                .iter()
+                .zip(definition.captures())
+                .any(|(actual, expected)| !actual.matches_definition(expected))
+        {
+            return Err(super::RuntimeExecutableCaptureFactError::DefinitionMismatch);
         }
+        Ok(Self {
+            definition,
+            effects,
+            captures,
+        })
     }
 
     pub const fn outcome(&self) -> RuntimeDeferOutcomeFilter {
-        self.outcome
+        match self.definition.outcome() {
+            DeferOutcome::Always => RuntimeDeferOutcomeFilter::Always,
+            DeferOutcome::Completed => RuntimeDeferOutcomeFilter::Completed,
+            DeferOutcome::Cancelled => RuntimeDeferOutcomeFilter::Cancelled,
+            DeferOutcome::Failed => RuntimeDeferOutcomeFilter::Failed,
+        }
     }
     pub const fn body(&self) -> ExprId {
-        self.body
+        self.definition.body()
+    }
+    pub const fn definition(&self) -> &arcweft_lang_sema::final_analysis::CheckedDefer {
+        &self.definition
+    }
+    pub const fn definition_identity(
+        &self,
+    ) -> arcweft_lang_sema::final_analysis::CheckedExecutionDefinitionIdentity {
+        self.definition.definition_identity()
     }
     pub const fn effects(&self) -> &EffectSet {
         &self.effects
@@ -96,18 +115,19 @@ pub(super) fn validate_defer_payload<'types>(
         DeferOutcome::Cancelled => RuntimeDeferOutcomeFilter::Cancelled,
         DeferOutcome::Failed => RuntimeDeferOutcomeFilter::Failed,
     };
-    if fact.outcome != expected
-        || fact.body != *expression
-        || fact.body.module() != statement.module()
+    if fact.definition().owner() != statement
+        || fact.outcome() != expected
+        || fact.body() != *expression
+        || fact.body().module() != statement.module()
     {
         return Err(RuntimeSemanticFactsError::InvalidDeferFact { statement });
     }
-    if !matches!(resolve_expr(modules, fact.body)?, HirExprKind::Block(_)) {
+    if !matches!(resolve_expr(modules, fact.body())?, HirExprKind::Block(_)) {
         return Err(RuntimeSemanticFactsError::InvalidDeferFact { statement });
     }
     if !matches!(
         expressions
-            .get(&fact.body)
+            .get(&fact.body())
             .map(RuntimeNormalizedType::shape),
         Some(RuntimeTypeShape::Unit)
     ) {

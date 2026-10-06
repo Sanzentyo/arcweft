@@ -1677,7 +1677,20 @@ impl Analyzer<'_, '_, '_> {
         let captures =
             self.checked_dialogue_effect_captures(root, coordinates, structural_edges)?;
         Ok(CheckedDialogueEffectSite::new(
-            id, trigger, root, effects, operation, captures,
+            id,
+            trigger,
+            root,
+            crate::final_analysis::CheckedExecutionDefinitionIdentity::from_coordinate(
+                &crate::final_analysis::CheckedExecutionCoordinate::CallableBody(
+                    coordinates
+                        .expression(root)
+                        .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?,
+                ),
+            )
+            .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?,
+            effects,
+            operation,
+            captures,
         ))
     }
 

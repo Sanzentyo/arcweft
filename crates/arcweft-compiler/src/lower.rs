@@ -79,7 +79,6 @@ use arcweft_character::{
 };
 use arcweft_core::{
     entry::{RuntimeNominalRecordShape, RuntimeNominalTypeId},
-    line_task::RuntimeDeferOutcomeFilter,
     pattern::RuntimeOpaqueTypeProducerId,
     plan::{
         FlowRuntimeId, RuntimeBuiltinIteratorFamily, RuntimeDialogueValueRole, RuntimeLineId,
@@ -3612,14 +3611,18 @@ fn rebase_child_body(
     let effects = effects
         .into_iter()
         .map(|effect| {
-            Ok(RuntimeDialogueEffectProgramFact::new(
+            RuntimeDialogueEffectProgramFact::try_new(
                 rebase_effect_site(owner, effect.site(), effect_offset)?,
                 effect.trigger().clone(),
-                effect.effects().clone(),
+                effect.definition().clone(),
                 effect.callable_type().clone(),
                 effect.operation().clone(),
                 effect.captures().to_vec(),
-            ))
+            )
+            .map_err(|error| RuntimeSemanticProjectionError::Dialogue {
+                owner: Some(owner),
+                reason: error.to_string(),
+            })
         })
         .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
     let marks = marks
@@ -4846,10 +4849,10 @@ fn runtime_dialogue_effect(
             })
         })
         .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
-    Ok(RuntimeDialogueEffectProgramFact::new(
+    RuntimeDialogueEffectProgramFact::try_new(
         runtime_site,
         trigger,
-        site.effects().clone(),
+        site.clone(),
         runtime_type_under(
             &TypeKind::function_with_effects(
                 [],
@@ -4863,7 +4866,11 @@ fn runtime_dialogue_effect(
         )?,
         operation,
         captures,
-    ))
+    )
+    .map_err(|error| RuntimeSemanticProjectionError::Dialogue {
+        owner: Some(owner),
+        reason: error.to_string(),
+    })
 }
 
 fn runtime_defer(
@@ -4876,14 +4883,6 @@ fn runtime_defer(
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<RuntimeDeferFact, RuntimeSemanticProjectionError> {
-    use arcweft_lang_syntax::ast::line_plan::DeferOutcome;
-
-    let outcome = match defer.outcome() {
-        DeferOutcome::Always => RuntimeDeferOutcomeFilter::Always,
-        DeferOutcome::Completed => RuntimeDeferOutcomeFilter::Completed,
-        DeferOutcome::Cancelled => RuntimeDeferOutcomeFilter::Cancelled,
-        DeferOutcome::Failed => RuntimeDeferOutcomeFilter::Failed,
-    };
     let captures = defer
         .captures()
         .iter()
@@ -4907,12 +4906,11 @@ fn runtime_defer(
             })
         })
         .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
-    Ok(RuntimeDeferFact::new(
-        outcome,
-        defer.body(),
-        effects.clone(),
-        captures,
-    ))
+    RuntimeDeferFact::try_new(defer.clone(), effects.clone(), captures).map_err(|error| {
+        RuntimeSemanticProjectionError::Type {
+            reason: error.to_string(),
+        }
+    })
 }
 
 fn runtime_type(

@@ -2828,6 +2828,134 @@ fn root_implicit_capture_transfer_drives_creation_and_ingress() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one authored callback fixture proves definition/capture revision invariance and exact source-definition rejection"
+)]
+fn callback_definitions_and_capture_origins_survive_body_and_source_revisions() {
+    use arcweft_runtime_plan::semantic_facts::{
+        RuntimeDeferFact, RuntimeDialogueEffectProgramFact, RuntimeExecutableCaptureFactError,
+    };
+    let source = "pub character alice { display = \"Alice\" }\nfn consume<T>(value: T) { let consumed = value; }\nflow main() {\n let first = 42i64\n let second = 7i64\n alice: hello [call consume((first, second))][p]\n with:\n  defer { let result = first + second; }\n}\nentry cli @entry.main { goto @flow.main }";
+    let observe = |source: &str| {
+        let (project, context) = removed_role_dialogue_project(source);
+        let (mut session, parsed) = compilation_state(&project);
+        let compiled = compile_project(&mut session, &project, &parsed, &context)
+            .expect("accepted callback definitions compile");
+        let (_, defer) = compiled.runtime_facts().defers().next().expect("one defer");
+        let effect = &compiled.runtime_facts().dialogue_content_fragments()[0].effects()[0];
+        assert_eq!(defer.captures().len(), 2);
+        assert_eq!(effect.captures().len(), 2);
+        (defer.clone(), effect.clone())
+    };
+    let (defer, effect) = observe(source);
+    let revised = format!(
+        "fn unrelated() -> i64 {{ 1i64 }}\n{}",
+        source
+            .replace("hello", "updated")
+            .replace("first + second;", "first + second + 1i64;")
+    );
+    let (revised_defer, revised_effect) = observe(&revised);
+    assert_eq!(
+        defer.definition_identity(),
+        revised_defer.definition_identity()
+    );
+    assert_eq!(
+        effect.definition_identity(),
+        revised_effect.definition_identity()
+    );
+    assert_ne!(defer.definition_identity(), effect.definition_identity());
+    for (original, revised) in [
+        (defer.captures(), revised_defer.captures()),
+        (effect.captures(), revised_effect.captures()),
+    ] {
+        assert_ne!(original[0].local(), revised[0].local());
+        for (original, revised) in original.iter().zip(revised) {
+            assert_eq!(
+                original.origin().semantic_digest().unwrap(),
+                revised.origin().semantic_digest().unwrap()
+            );
+        }
+    }
+    let (other_defer, other_effect) = observe(
+        &source
+            .replace("flow main", "flow other")
+            .replace("@flow.main", "@flow.other"),
+    );
+    assert_ne!(
+        defer.definition_identity(),
+        other_defer.definition_identity()
+    );
+    assert_ne!(
+        effect.definition_identity(),
+        other_effect.definition_identity()
+    );
+    let (_, delayed) = observe(&source.replace(
+        "[call consume((first, second))]",
+        "[at 1ms call=consume((first, second))]",
+    ));
+    assert_eq!(
+        RuntimeDialogueEffectProgramFact::try_new(
+            effect.site(),
+            delayed.trigger().clone(),
+            effect.definition().clone(),
+            effect.callable_type().clone(),
+            effect.operation().clone(),
+            effect.captures().to_vec(),
+        )
+        .unwrap_err(),
+        RuntimeExecutableCaptureFactError::DefinitionMismatch
+    );
+    // Accepted source rows, not caller-supplied capture order, own the ABI.
+    let mut captures = defer.captures().to_vec();
+    captures.reverse();
+    assert_eq!(
+        RuntimeDeferFact::try_new(
+            defer.definition().clone(),
+            defer.effects().clone(),
+            captures
+        )
+        .unwrap_err(),
+        RuntimeExecutableCaptureFactError::DefinitionMismatch
+    );
+    assert_eq!(
+        RuntimeDeferFact::try_new(
+            defer.definition().clone(),
+            defer.effects().clone(),
+            Vec::new()
+        )
+        .unwrap_err(),
+        RuntimeExecutableCaptureFactError::DefinitionMismatch
+    );
+    let mut captures = effect.captures().to_vec();
+    captures.reverse();
+    assert_eq!(
+        RuntimeDialogueEffectProgramFact::try_new(
+            effect.site(),
+            effect.trigger().clone(),
+            effect.definition().clone(),
+            effect.callable_type().clone(),
+            effect.operation().clone(),
+            captures
+        )
+        .unwrap_err(),
+        RuntimeExecutableCaptureFactError::DefinitionMismatch
+    );
+    assert_eq!(
+        RuntimeDialogueEffectProgramFact::try_new(
+            effect.site(),
+            effect.trigger().clone(),
+            effect.definition().clone(),
+            effect.callable_type().clone(),
+            other_effect.operation().clone(),
+            effect.captures().to_vec()
+        )
+        .unwrap_err(),
+        RuntimeExecutableCaptureFactError::DefinitionMismatch
+    );
+}
+
+#[test]
 fn closed_dialogue_effect_captures_reject_foreign_transfer_authority() {
     use arcweft_lang_sema::final_analysis::CheckedLocalReadMode;
     use arcweft_runtime_plan::semantic_facts::{
@@ -2864,6 +2992,28 @@ fn closed_dialogue_effect_captures_reject_foreign_transfer_authority() {
         panic!("two closed effects")
     };
     assert_eq!(first_capture.origin(), second_capture.origin());
+    let definitions = compiled
+        .runtime_facts()
+        .project_function_instances()
+        .flat_map(|instance| {
+            instance
+                .semantics()
+                .expressions()
+                .iter()
+                .filter_map(|row| match row.payload() {
+                    RuntimeProjectFunctionExpressionPayload::DialogueApplication {
+                        fragments,
+                        ..
+                    } => Some(fragments[0].effects()[0].definition_identity()),
+                    _ => None,
+                })
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(definitions.len(), 2);
+    assert_eq!(
+        definitions[0], definitions[1],
+        "closed types and transfer modes do not rename the accepted definition"
+    );
     assert!(matches!(
         (
             first_capture.transfer().mode(),

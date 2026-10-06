@@ -628,8 +628,17 @@ impl CheckedStatementPayloadSealer for CheckedStatementSeal<'_, '_, '_> {
                     |local| self.locals.get(&local).map(|binding| binding.ty().clone()),
                 )?;
                 Ok(CheckedStatementPayload::Defer(Box::new(CheckedDefer::new(
+                    owner,
                     *outcome,
                     *expression,
+                    super::CheckedExecutionDefinitionIdentity::from_coordinate(
+                        &super::CheckedExecutionCoordinate::CallableBody(
+                            self.coordinates
+                                .expression(*expression)
+                                .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?,
+                        ),
+                    )
+                    .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?,
                     captures,
                 ))))
             }

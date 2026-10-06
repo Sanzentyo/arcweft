@@ -459,20 +459,26 @@ impl CheckedIncludeFlowTarget {
 /// Checked source defer registration and executable body capture ABI.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedDefer {
+    owner: arcweft_lang_hir::identity::StmtId,
     outcome: DeferOutcome,
     body: ExprId,
+    definition_identity: crate::final_analysis::CheckedExecutionDefinitionIdentity,
     captures: Box<[CheckedExecutableCapture]>,
 }
 
 impl CheckedDefer {
     pub(crate) fn new(
+        owner: arcweft_lang_hir::identity::StmtId,
         outcome: DeferOutcome,
         body: ExprId,
+        definition_identity: crate::final_analysis::CheckedExecutionDefinitionIdentity,
         captures: Box<[CheckedExecutableCapture]>,
     ) -> Self {
         Self {
+            owner,
             outcome,
             body,
+            definition_identity,
             captures,
         }
     }
@@ -481,8 +487,18 @@ impl CheckedDefer {
         self.outcome
     }
 
+    pub const fn owner(&self) -> arcweft_lang_hir::identity::StmtId {
+        self.owner
+    }
+
     pub const fn body(&self) -> ExprId {
         self.body
+    }
+
+    pub const fn definition_identity(
+        &self,
+    ) -> crate::final_analysis::CheckedExecutionDefinitionIdentity {
+        self.definition_identity
     }
 
     pub const fn captures(&self) -> &[CheckedExecutableCapture] {

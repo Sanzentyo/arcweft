@@ -227,6 +227,13 @@ impl RuntimeExecutableCaptureFact {
         authority.value_transfer_at(site).as_ref() == Some(&self.transfer)
     }
 
+    pub(super) fn matches_definition(
+        &self,
+        capture: &arcweft_lang_sema::final_analysis::CheckedExecutableCapture,
+    ) -> bool {
+        self.local == capture.local() && self.origin == *capture.origin()
+    }
+
     pub const fn ty(&self) -> &RuntimeNormalizedType {
         &self.ty
     }
@@ -236,6 +243,8 @@ impl RuntimeExecutableCaptureFact {
 pub enum RuntimeExecutableCaptureFactError {
     #[error("executable capture requires an exact whole-local value transfer")]
     InvalidTransfer,
+    #[error("executable captures do not match their accepted definition")]
+    DefinitionMismatch,
 }
 
 /// Closed operation family accepted for one template-local effect site.
@@ -304,29 +313,63 @@ impl RuntimeDialogueEffectOperationFact {
 pub struct RuntimeDialogueEffectProgramFact {
     site: RuntimeDialogueEffectSiteId,
     trigger: RuntimeDialogueEffectTrigger,
-    effects: EffectSet,
+    definition: arcweft_lang_sema::final_analysis::CheckedDialogueEffectSite,
     callable_type: RuntimeNormalizedType,
     operation: RuntimeDialogueEffectOperationFact,
     captures: Box<[RuntimeExecutableCaptureFact]>,
 }
 
 impl RuntimeDialogueEffectProgramFact {
-    pub fn new(
+    pub fn try_new(
         site: RuntimeDialogueEffectSiteId,
         trigger: RuntimeDialogueEffectTrigger,
-        effects: EffectSet,
+        definition: arcweft_lang_sema::final_analysis::CheckedDialogueEffectSite,
         callable_type: RuntimeNormalizedType,
         operation: RuntimeDialogueEffectOperationFact,
         captures: impl Into<Box<[RuntimeExecutableCaptureFact]>>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, RuntimeExecutableCaptureFactError> {
+        let captures = captures.into();
+        use arcweft_lang_sema::final_analysis::{
+            CheckedDialogueEffectOperation, CheckedDialogueEffectTrigger,
+        };
+        let trigger_matches = match (definition.trigger(), &trigger) {
+            (CheckedDialogueEffectTrigger::Content, RuntimeDialogueEffectTrigger::Content) => true,
+            (
+                CheckedDialogueEffectTrigger::Delay(at),
+                RuntimeDialogueEffectTrigger::Delay { duration, .. },
+            ) => at.millis.checked_mul(1_000_000) == Some(duration.as_nanos()),
+            _ => false,
+        };
+        let operation_matches = matches!(
+            (definition.operation(), &operation),
+            (
+                CheckedDialogueEffectOperation::EvaluatedEffect(_),
+                RuntimeDialogueEffectOperationFact::EvaluatedEffect(_)
+            ) | (
+                CheckedDialogueEffectOperation::Call { .. },
+                RuntimeDialogueEffectOperationFact::OrdinaryCall { .. }
+            )
+        );
+        if operation.root() != definition.root()
+            || operation.application() != definition.operation().application().raw().expression()
+            || !trigger_matches
+            || !operation_matches
+            || captures.len() != definition.captures().len()
+            || captures
+                .iter()
+                .zip(definition.captures())
+                .any(|(actual, expected)| !actual.matches_definition(expected))
+        {
+            return Err(RuntimeExecutableCaptureFactError::DefinitionMismatch);
+        }
+        Ok(Self {
             site,
             trigger,
-            effects,
+            definition,
             callable_type,
             operation,
-            captures: captures.into(),
-        }
+            captures,
+        })
     }
 
     pub const fn site(&self) -> RuntimeDialogueEffectSiteId {
@@ -338,7 +381,19 @@ impl RuntimeDialogueEffectProgramFact {
     }
 
     pub const fn effects(&self) -> &EffectSet {
-        &self.effects
+        self.definition.effects()
+    }
+
+    pub const fn definition(
+        &self,
+    ) -> &arcweft_lang_sema::final_analysis::CheckedDialogueEffectSite {
+        &self.definition
+    }
+
+    pub const fn definition_identity(
+        &self,
+    ) -> arcweft_lang_sema::final_analysis::CheckedExecutionDefinitionIdentity {
+        self.definition.definition_identity()
     }
 
     pub const fn callable_type(&self) -> &RuntimeNormalizedType {

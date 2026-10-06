@@ -87,6 +87,7 @@ pub struct CheckedDialogueEffectSite {
     id: CheckedDialogueEffectSiteOrdinal,
     trigger: CheckedDialogueEffectTrigger,
     root: ExprId,
+    definition_identity: crate::final_analysis::CheckedExecutionDefinitionIdentity,
     effects: EffectSet,
     operation: CheckedDialogueEffectOperation,
     captures: Box<[CheckedExecutableCapture]>,
@@ -97,6 +98,7 @@ impl CheckedDialogueEffectSite {
         id: CheckedDialogueEffectSiteOrdinal,
         trigger: CheckedDialogueEffectTrigger,
         root: ExprId,
+        definition_identity: crate::final_analysis::CheckedExecutionDefinitionIdentity,
         effects: EffectSet,
         operation: CheckedDialogueEffectOperation,
         captures: Box<[CheckedExecutableCapture]>,
@@ -105,6 +107,7 @@ impl CheckedDialogueEffectSite {
             id,
             trigger,
             root,
+            definition_identity,
             effects,
             operation,
             captures,
@@ -113,6 +116,12 @@ impl CheckedDialogueEffectSite {
 
     pub const fn root(&self) -> ExprId {
         self.root
+    }
+
+    pub const fn definition_identity(
+        &self,
+    ) -> crate::final_analysis::CheckedExecutionDefinitionIdentity {
+        self.definition_identity
     }
 
     pub const fn id(&self) -> CheckedDialogueEffectSiteOrdinal {
