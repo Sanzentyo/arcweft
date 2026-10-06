@@ -28,6 +28,11 @@ function staticPath(requestUrl) {
 }
 
 async function serveFile(request, response) {
+  if (new URL(request.url, "http://127.0.0.1").pathname === "/favicon.ico") {
+    response.writeHead(204);
+    response.end();
+    return;
+  }
   const fullPath = staticPath(request.url);
   if (!fullPath) {
     response.writeHead(400);
@@ -38,6 +43,7 @@ async function serveFile(request, response) {
     const file = await open(fullPath, "r");
     await file.close();
   } catch {
+    console.error(`missing sample resource: ${request.url}`);
     response.writeHead(404);
     response.end("not found");
     return;
@@ -88,10 +94,23 @@ function geometryCommands(commands) {
 }
 
 const { server, baseUrl } = await startServer();
-const browser = await chromium.launch();
+const webGpuArgs = ["--enable-unsafe-webgpu"];
+if (process.platform === "win32") {
+  webGpuArgs.push("--use-angle=d3d11");
+}
+const browser = await chromium.launch({
+  channel: process.env.ARW_PLAYWRIGHT_CHANNEL || "chrome",
+  headless: true,
+  args: webGpuArgs,
+});
 try {
   const page = await browser.newPage({ viewport: { width: 960, height: 640 } });
   const errors = [];
+  page.on("response", (response) => {
+    if (response.status() >= 400) {
+      errors.push(`HTTP ${response.status()} ${response.url()}`);
+    }
+  });
   page.on("console", (message) => {
     if (message.type() === "error") {
       errors.push(message.text());
@@ -133,6 +152,9 @@ try {
   ), null, { timeout: 15_000 });
 
   const fatal = await page.evaluate(() => window.__arcweftFatal ?? window.__arcweftImeSample?.fatal ?? null);
+  if (fatal) {
+    throw new Error(`player failed: ${JSON.stringify(fatal)}`);
+  }
   if (!webGpuAvailable) {
     console.log(JSON.stringify({
       sample: "web-ime-player-rendered-smoke",
@@ -141,10 +163,8 @@ try {
       fatal,
       forbiddenActiveNodeCount: sourceShape.forbiddenActiveNodeCount,
     }));
-  } else if (fatal) {
-    throw new Error(`player failed despite an available WebGPU adapter: ${JSON.stringify(fatal)}`);
   } else {
-    await page.locator("#arcweft-canvas").click({ position: { x: 96, y: 96 } });
+    await page.locator("#arcweft-canvas").click({ position: { x: 96, y: 24 } });
     await page.waitForTimeout(250);
     await page.keyboard.type("abc");
     await page.waitForTimeout(250);
@@ -155,6 +175,10 @@ try {
       frame: window.__arcweftLastFrameObservation,
       commands: window.__arcweftImeSample?.runtimeCommands ?? [],
     }));
+    const snapshots = evidence.commands.flatMap((envelope) => envelope?.commands ?? []).map((command) => command.snapshot).filter(Boolean);
+    if (!snapshots.some((snapshot) => snapshot.target.includes("input.jp_text_field") && snapshot.text.includes("abc"))) {
+      throw new Error("Japanese TextField did not commit the typed key input");
+    }
     const geometry = geometryCommands(evidence.commands);
     const caretRects = geometry
       .map((command) => command.geometry?.caretRect ?? command.snapshot?.caretRect)
@@ -163,10 +187,15 @@ try {
     if (evidence.fallbackInstalled !== false) {
       throw new Error("sample installed a forbidden fallback");
     }
-    if (!containsControlId(evidence.frame, "input.jp_text_field")) {
-      throw new Error("frame observation did not include the Japanese text field target");
+    for (const id of ["input.jp_text_field", "input.long_latin_area", "input.secret_secure_field"]) {
+      if (!containsControlId(evidence.frame, id)) {
+        throw new Error(`frame observation did not include ${id}: ${JSON.stringify(evidence.frame)}`);
+      }
     }
-    if (caretRects.length > 0 && !caretRects.every((rect) => rect.height > 8 && rect.width >= 0)) {
+    if (JSON.stringify(evidence.frame).includes("arcweft-secret-1234")) {
+      throw new Error("frame observation exposed secure input plaintext");
+    }
+    if (caretRects.length === 0 || !caretRects.every((rect) => rect.height > 8 && rect.width >= 0)) {
       throw new Error(`invalid caret geometry evidence: ${JSON.stringify(caretRects)}`);
     }
     if (errors.length > 0) {
@@ -176,6 +205,7 @@ try {
       sample: "web-ime-player-rendered-smoke",
       status: "passed",
       owner: evidence.owner,
+      targets: [...new Set(evidence.commands.flatMap((envelope) => envelope?.commands ?? []).map((command) => command.snapshot?.target).filter(Boolean))],
       geometryCommandCount: geometry.length,
       caretRects,
     }));

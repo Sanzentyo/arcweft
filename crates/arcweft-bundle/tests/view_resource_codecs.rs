@@ -1871,3 +1871,48 @@ fn scalar_repeat_and_ordinal_input_have_no_compatibility_reader() {
     let input = serde_json::json!({"repeat_ordinal": {"view": "view.Main", "binding": "item"}});
     assert!(serde_json::from_value::<ViewValueInputSource>(input).is_err());
 }
+
+#[test]
+fn text_control_handler_owners_are_authenticated_with_the_complete_input_catalog() {
+    use arcweft_view::{ViewHandlerResult, ViewHandlerResultRole, ViewHandlerTransitionValueRole};
+    let id = ViewHandlerProgramId::from_checked_digest([0x71; 32]);
+    let mut program = ViewProgramResource {
+        handlers: vec![ViewHandlerRef {
+            program: id,
+            captures: Vec::new(),
+            result: ViewHandlerResult::new(
+                ViewHandlerResultRole::StateTransition {
+                    value: ViewHandlerTransitionValueRole::Unit,
+                    writes: Box::new([]),
+                },
+                arcweft_core::pattern::RuntimeCheckedType::Tuple(vec![
+                    arcweft_core::pattern::RuntimeCheckedType::Unit,
+                ])
+                .semantic_identity_digest(),
+            ),
+        }],
+        ..ViewProgramResource::default()
+    };
+    // A structural program candidate is serializable before ViewInput joins it;
+    // complete product admission still rejects an unowned callback.
+    program.encode_canonical_section().unwrap();
+    assert!(program.validate_handler_owners(None).is_err());
+    let mut input = fixture_input(ViewSecureInputPolicy::Plain);
+    input.options[0].change_handler = Some(id);
+    input.options[0].submit_handler = None;
+    program.validate_handler_owners(Some(&input)).unwrap();
+    input.options[0].change_handler = Some(ViewHandlerProgramId::from_checked_digest([0x72; 32]));
+    assert!(program.validate_handler_owners(Some(&input)).is_err());
+    input.options[0].change_handler = Some(id);
+    program.handlers[0].captures.push(
+        arcweft_view::ViewParameterInput::new(
+            arcweft_view::ViewParameterCoordinate::try_from_index(0).unwrap(),
+            arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest(),
+        )
+        .into(),
+    );
+    assert!(
+        program.validate_handler_owners(Some(&input)).is_err(),
+        "text write-back has no lexical capture packet"
+    );
+}

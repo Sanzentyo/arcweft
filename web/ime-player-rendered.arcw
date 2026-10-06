@@ -2,43 +2,21 @@
 //
 // This source is the authored marker for the generated product fixture
 // `web/ime-player-rendered.awfb`. The active sample is generated from typed
-// product View resources by `tools/build-web-ime-player-rendered-fixture.rs` until
-// the `.arcw` grammar grows first-class TextField/TextArea/SecureField syntax.
+// product View resources by `tools/build-web-ime-player-rendered-fixture.rs`.
+// The generator owns the explicit root View mount and callback bodies.
 //
 // Runtime controls in the generated bundle:
 // - input.jp_text_field: TextField, Japanese IME target
 // - input.long_latin_area: TextArea, long Latin/Japanese text
 // - input.secret_secure_field: SecureField, redacted diagnostics
 
-struct GameState {
-    started: bool
-}
-
-enum GameEvent {
-    Start
-}
-
-fn initial_game_state() -> GameState
-effects {}
-{
-    GameState { started = false }
-}
-
-fn reduce_game(state: &GameState, event: GameEvent)
-    -> Result<Reduction<GameState>, ReducerError>
-effects {}
-{
-    Ok(Reduction.unchanged(state))
-}
-
-entry game @entry.main {
-    state = GameState
-    initializer = initial_game_state
-    event = GameEvent
-    reducer = reduce_game
+// The fixture uses a CLI presentation entry and no game-state reducer.
+// Input changes are committed by the player text-control overlay; callbacks
+// acknowledge changes/submissions with a checked Unit transition.
+entry cli @entry.main {
     goto @flow.web_ime_player_rendered
 }
 
-flow web_ime_player_rendered(state: GameState) {
-    return "web_ime_player_rendered_fixture"
+flow web_ime_player_rendered() {
+    return
 }

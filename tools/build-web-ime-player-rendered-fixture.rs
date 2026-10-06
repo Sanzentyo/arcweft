@@ -3,31 +3,47 @@
 [dependencies]
 arcweft-bundle = { path = "../crates/arcweft-bundle" }
 arcweft-core = { path = "../crates/arcweft-core" }
-arcweft-render-text = { path = "../crates/arcweft-render-text" }
+arcweft-runtime-plan = { path = "../crates/arcweft-runtime-plan" }
+arcweft-id = { path = "../crates/arcweft-id" }
+arcweft-text-model = { path = "../crates/arcweft-text-model" }
+arcweft-view = { path = "../crates/arcweft-view" }
 arcweft-source = { path = "../crates/arcweft-source" }
 # Current nightly rejects zune-core's disabled-log statement macro in an
 # expression position. Enable the upstream logging macro through feature
 # unification; the generator itself still emits no log output.
 zune-jpeg = { version = "0.5.15", features = ["log"] }
 ---
-
 use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_bundle::resource_codec::view::{
-    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
-    ViewInputOptions, ViewInputPurpose, ViewInputResource, ViewLayoutBoundsResource,
-    ViewLogicalRect, ViewProgramResource, ViewSecureInputPolicy, ViewSemanticTarget,
-    ViewTextResource, ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextSourceKind,
-    ViewTextSourceRecord, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
+    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewElementKind,
+    ViewInputKind, ViewInputOptions, ViewInputPurpose, ViewInputResource, ViewLayoutBoundsResource,
+    ViewLogicalRect, ViewProgramInstruction, ViewProgramResource, ViewSecureInputPolicy,
+    ViewSemanticTarget, ViewTextResource, ViewTextSelectionPolicy, ViewTextShortcutPolicy,
+    ViewTextSourceKind, ViewTextSourceRecord, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
+};
+use arcweft_bundle::resource_codec::view::{
+    ViewDefinitionRef, ViewDefinitionResource, ViewHandlerRef, ViewInstructionSpan, ViewProgramId,
 };
 use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary};
-use arcweft_core::awbc::schema::{
-    AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
-    AwbcFlowBinding, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlag,
-    AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcSafePointKind,
-    AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
+use arcweft_core::awbc::schema::AwbcProgram;
+use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
+use arcweft_core::entry::{
+    EntryBindingIdentity, FlowContractHash, RuntimeEntryRoles, RuntimeFlowExecutable,
 };
-use arcweft_render_text::LineDisplayCatalog;
+use arcweft_core::pattern::RuntimeCheckedType;
+use arcweft_core::plan::{
+    EntryRuntimeId, FlowRuntimeId, RuntimeEffectSet, RuntimeEntryKind, RuntimeEntrySpec,
+    RuntimeEntryTarget, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSchema,
+    RuntimeFlowSeed, RuntimeFunctionSemanticRole, RuntimeLineEffectSeed, RuntimePlanBuilder,
+    RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimePureProgramBindingSeed,
+};
+use arcweft_core::value::RuntimeValue;
+use arcweft_id::runtime_program::RuntimePureProgramId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_text_model::DialogueContentCatalog;
+use arcweft_view::{
+    ViewHandlerResult, ViewHandlerResultRole, ViewHandlerTransitionValueRole, ViewId,
+};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -73,10 +89,17 @@ fn output_path() -> Result<PathBuf, String> {
 }
 
 fn web_ime_player_rendered_bundle() -> ArcweftBundle {
-    minimal_bundle()
-        .with_view_text(view_text())
+    let mut bundle = minimal_bundle();
+    let mut text = bundle
+        .view_text
+        .take()
+        .expect("standard View text inventory");
+    text.sources.extend(view_text().sources);
+    bundle
+        .with_view_text(text)
         .with_view_input(view_input())
-        .with_view_program(view_program())
+        .with_view_resources(Some(view_program()), None)
+        .expect("authored View links with the standard View library")
 }
 
 fn minimal_bundle() -> ArcweftBundle {
@@ -88,38 +111,108 @@ fn minimal_bundle() -> ArcweftBundle {
     .expect("source document");
     let source_map = SourceMapSection::try_from_documents(&[&source]).expect("source map");
 
+    let program = minimal_awbc_program();
+    let instruction_count = program.instructions.len();
     ArcweftBundle::try_new(
         BundleManifest {
             profile_id: Some("sample.web_ime_player_rendered".to_owned()),
             profile_kind: None,
             entry: Some("entry.main".to_owned()),
             adapter: None,
+            locale: Default::default(),
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
                 artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
-                entry_flow: Some("entry.main".to_owned()),
+                entry_flow: Some("flow.web_ime_player_rendered".to_owned()),
                 flows: 1,
-                bytecode_instructions: 0,
+                bytecode_instructions: instruction_count,
                 line_task_groups: 0,
                 stream_plans: 0,
             },
         },
         source_map,
-        minimal_awbc_program(),
-        LineDisplayCatalog::default(),
+        program,
+        DialogueContentCatalog::new(),
     )
     .expect("standard dialogue source joins source map")
 }
 
 fn view_program() -> ViewProgramResource {
+    let mut instructions = Vec::new();
+    for (element, target, semantic, label) in [
+        (
+            ViewElementKind::TextField,
+            "input.jp_text_field",
+            "target.jp_text_field",
+            "text.label.jp_text_field",
+        ),
+        (
+            ViewElementKind::TextArea,
+            "input.long_latin_area",
+            "target.long_latin_area",
+            "text.label.long_latin_area",
+        ),
+        (
+            ViewElementKind::SecureField,
+            "input.secret_secure_field",
+            "target.secret_secure_field",
+            "text.label.secret_secure_field",
+        ),
+    ] {
+        instructions.extend([
+            ViewProgramInstruction::OpenElement {
+                element,
+                target: Some(target.to_owned()),
+                styles: Vec::new(),
+                part: None,
+                key: None,
+                source: None,
+            },
+            ViewProgramInstruction::AttachSemantic {
+                target: semantic.to_owned(),
+                label_text_source: Some(label.to_owned()),
+                source: None,
+            },
+            ViewProgramInstruction::CloseElement,
+        ]);
+    }
+    let body = ViewInstructionSpan::new(
+        0,
+        u32::try_from(instructions.len()).expect("fixture body range"),
+    );
     ViewProgramResource {
-        program_id: "view.program.web_ime_player_rendered".to_owned(),
-        root_view: "view.root.web_ime_player_rendered".to_owned(),
-        instructions: Vec::new(),
-        child_spans: Vec::new(),
-        handlers: Vec::new(),
-        state_schema_hashes: Vec::new(),
+        program_id: ViewProgramId::try_new("view.program.web_ime_player_rendered")
+            .expect("fixture program identity"),
+        source_refs: Vec::new(),
+        definitions: vec![ViewDefinitionResource {
+            public_id: ViewDefinitionRef::new(
+                ViewId::try_new("view.root.web_ime_player_rendered")
+                    .expect("fixture View identity"),
+            ),
+            body,
+            styles: Vec::new(),
+            parameters: Vec::new(),
+            parameter_contract: None,
+            state_schema_hash: 1,
+        }],
+        value_programs: Vec::new(),
+        value_inputs: Vec::new(),
+        instructions,
+        handlers: FixtureHandler::ALL
+            .iter()
+            .map(|handler| ViewHandlerRef {
+                program: handler.program(),
+                captures: Vec::new(),
+                result: ViewHandlerResult::new(
+                    ViewHandlerResultRole::StateTransition {
+                        value: ViewHandlerTransitionValueRole::Unit,
+                        writes: Box::new([]),
+                    },
+                    handler_result_type(),
+                ),
+            })
+            .collect(),
         exported_parts: Vec::new(),
         semantic_targets: vec![
             semantic(
@@ -183,7 +276,7 @@ fn semantic(public_id: &str, target: &str, label_text_source: &str) -> ViewSeman
     ViewSemanticTarget {
         public_id: public_id.to_owned(),
         target: target.to_owned(),
-        view: None,
+        view: Some("view.root.web_ime_player_rendered".to_owned()),
         label_text_source: Some(label_text_source.to_owned()),
         source: None,
     }
@@ -208,7 +301,9 @@ fn view_text() -> ViewTextResource {
             literal("text.placeholder.secret_secure_field", "secret"),
             literal("text.label.secret_secure_field", "SecureField"),
         ],
-        display_frame_refs: Vec::new(),
+        localized: Vec::new(),
+        rich_text_documents: Vec::new(),
+        display_frames: Vec::new(),
         source_ranges: Vec::new(),
         reveal_policies: Vec::new(),
         cursor_policies: Vec::new(),
@@ -236,8 +331,8 @@ fn view_input() -> ViewInputResource {
                 Some("text.placeholder.jp_text_field"),
                 ViewInputPurpose::Text,
                 ViewSecureInputPolicy::Plain,
-                Some("handler.jp_text_field.change"),
-                Some("handler.jp_text_field.submit"),
+                Some(FixtureHandler::JapaneseChange),
+                Some(FixtureHandler::JapaneseSubmit),
             ),
             input_option(
                 "input.long_latin_area",
@@ -246,7 +341,7 @@ fn view_input() -> ViewInputResource {
                 Some("text.placeholder.long_latin_area"),
                 ViewInputPurpose::Text,
                 ViewSecureInputPolicy::Plain,
-                Some("handler.long_latin_area.change"),
+                Some(FixtureHandler::MultilineChange),
                 None,
             ),
             input_option(
@@ -256,8 +351,8 @@ fn view_input() -> ViewInputResource {
                 Some("text.placeholder.secret_secure_field"),
                 ViewInputPurpose::Password,
                 ViewSecureInputPolicy::Password,
-                Some("handler.secret_secure_field.change"),
-                Some("handler.secret_secure_field.submit"),
+                Some(FixtureHandler::SecureChange),
+                Some(FixtureHandler::SecureSubmit),
             ),
         ],
         adapter_requirements: Vec::new(),
@@ -271,12 +366,12 @@ fn input_option(
     placeholder_text_source: Option<&str>,
     purpose: ViewInputPurpose,
     secure_policy: ViewSecureInputPolicy,
-    change_handler: Option<&str>,
-    submit_handler: Option<&str>,
+    change_handler: Option<FixtureHandler>,
+    submit_handler: Option<FixtureHandler>,
 ) -> ViewInputOptions {
     ViewInputOptions {
         public_id: public_id.to_owned(),
-        view: None,
+        view: Some("view.root.web_ime_player_rendered".to_owned()),
         containing_scroll_region: None,
         kind,
         value_text_source: value_text_source.to_owned(),
@@ -297,55 +392,137 @@ fn input_option(
         vertical_navigation_policy: ViewTextVerticalNavigationPolicy::LogicalLine,
         secure_policy,
         composition_on_blur: CompositionOnBlurPolicy::Commit,
-        submit_handler: submit_handler.map(ToOwned::to_owned),
-        change_handler: change_handler.map(ToOwned::to_owned),
+        submit_handler: submit_handler.map(FixtureHandler::program),
+        change_handler: change_handler.map(FixtureHandler::program),
         adapter_requirements: Vec::new(),
     }
 }
 
-fn minimal_awbc_program() -> AwbcProgram {
-    AwbcProgram {
-        strings: vec!["entry.main".to_owned()],
-        signatures: vec![AwbcSignature {
-            params: Vec::new(),
-            result: None,
-            effects: AwbcEffectSetId(0),
-        }],
-        frame_layouts: vec![AwbcFrameLayout {
-            slots: Vec::new(),
-            max_scope_depth: 0,
-        }],
-        functions: vec![AwbcFunction {
-            semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
-            public_id: Some(AwbcStringId(0)),
-            kind: AwbcFunctionKind::Flow,
-            signature: AwbcSignatureId(0),
-            frame_layout: AwbcFrameLayoutId(0),
-            blocks: AwbcTableRange::new(0, 1),
-            entry_block: AwbcBlockId(0),
-            flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
-        }],
-        flow_bindings: vec![AwbcFlowBinding {
-            flow: arcweft_core::plan::FlowRuntimeId::from_checked_declaration_digest(
-                [0x31; 32],
-                "flow.main",
-            )
-            .expect("fixture checked Flow identity"),
-            function: AwbcFunctionId(0),
-        }],
-        blocks: vec![AwbcBlock {
-            owner: AwbcFunctionId(0),
-            instructions: AwbcTableRange::new(0, 0),
-            terminator: AwbcTerminator::Return { value: None },
-            safe_point: AwbcSafePointKind::FlowEntry,
-            source_map: None,
-        }],
-        entries: vec![AwbcEntry {
-            public_id: AwbcStringId(0),
-            kind: AwbcEntryKind::Game,
-            signature: AwbcSignatureId(0),
-            target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
-        }],
-        ..AwbcProgram::default()
+// These domain-owned fixture programs acknowledge callbacks after the player
+// writes the typed edit into its runtime overlay. They do not capture secrets.
+#[derive(Clone, Copy)]
+enum FixtureHandler {
+    JapaneseChange,
+    JapaneseSubmit,
+    MultilineChange,
+    SecureChange,
+    SecureSubmit,
+}
+impl FixtureHandler {
+    const ALL: &[Self] = &[
+        Self::JapaneseChange,
+        Self::JapaneseSubmit,
+        Self::MultilineChange,
+        Self::SecureChange,
+        Self::SecureSubmit,
+    ];
+    const fn program(self) -> RuntimePureProgramId {
+        let tag = match self {
+            Self::JapaneseChange => 0x61,
+            Self::JapaneseSubmit => 0x62,
+            Self::MultilineChange => 0x63,
+            Self::SecureChange => 0x64,
+            Self::SecureSubmit => 0x65,
+        };
+        RuntimePureProgramId::from_checked_digest([tag; 32])
     }
+}
+fn handler_result_type() -> arcweft_id::RuntimeSemanticTypeId {
+    RuntimeCheckedType::Tuple(vec![RuntimeCheckedType::Unit]).semantic_identity_digest()
+}
+fn minimal_awbc_program() -> AwbcProgram {
+    let unit = RuntimeCheckedType::Unit.semantic_identity_digest();
+    let result = handler_result_type();
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+                RuntimePlanTypeSeed::new(
+                    result,
+                    RuntimePlanTypeProjection::Tuple(Box::new([unit])),
+                ),
+            ],
+            [],
+        )
+        .expect("fixture callback types admit");
+    for &handler in FixtureHandler::ALL {
+        let body = RuntimeExprSeed::new(
+            result,
+            RuntimeExprSeedKind::Tuple(Box::new([RuntimeExprSeed::new(
+                unit,
+                RuntimeExprSeedKind::Value(RuntimeValue::Unit),
+            )])),
+        );
+        let site = builder
+            .push_function_site_seed(RuntimeFunctionSemanticRole::Closure, [], body)
+            .expect("fixture callback admits");
+        builder
+            .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed {
+                program: handler.program(),
+                site,
+            })
+            .expect("fixture callback identity binds to its exact body");
+    }
+    let flow =
+        FlowRuntimeId::from_checked_declaration_digest([0x31; 32], "flow.web_ime_player_rendered")
+            .expect("fixture Flow identity");
+    builder
+        .push_flow_schema(RuntimeFlowSchema {
+            flow: flow.clone(),
+            parameters: Vec::new(),
+        })
+        .expect("fixture Flow schema");
+    builder
+        .push_flow_executable(RuntimeFlowExecutable {
+            flow: flow.clone(),
+            contract: FlowContractHash::from_bytes([0x32; 32]),
+            controller: None,
+        })
+        .expect("fixture Flow metadata");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            flow.clone(),
+            [],
+            RuntimeEffectSet::try_from_effects([arcweft_id::EffectId::parse(
+                "presentation.handle.create",
+            )
+            .expect("fixture mount capability")])
+            .expect("fixture mount effect row"),
+            vec![
+                RuntimeFlowOpSeed::Effect(RuntimeLineEffectSeed::Static(LineEffectRequest::Call(
+                    RuntimeCall {
+                        callee: "presentation.handle.create".to_owned(),
+                        args: vec![
+                            "handle = @handle.web_ime_player_rendered".to_owned(),
+                            "kind = \"view\"".to_owned(),
+                            "resource = @view.root.web_ime_player_rendered".to_owned(),
+                        ],
+                    },
+                ))),
+                RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                    unit,
+                    RuntimeExprSeedKind::Value(RuntimeValue::Unit),
+                )),
+            ],
+        ))
+        .expect("fixture Flow body");
+    builder
+        .push_entry(RuntimeEntrySpec {
+            id: EntryRuntimeId::from_source_entity_body("entry.main").expect("fixture Entry"),
+            kind: RuntimeEntryKind::Cli,
+            binding: EntryBindingIdentity::from_bytes([0x33; 32]),
+            target: RuntimeEntryTarget::Flow(flow),
+            roles: RuntimeEntryRoles::None,
+        })
+        .expect("fixture CLI Entry");
+    let plan = builder.finish().expect("fixture complete plan seals");
+    arcweft_runtime_plan::awbc_lower::AwbcLowerer::new(
+        &plan,
+        &DialogueContentCatalog::new(),
+        "web/ime-player-rendered.arcw",
+    )
+    .lower()
+    .expect("fixture typed plan lowers to verified AWBC")
+    .program
 }

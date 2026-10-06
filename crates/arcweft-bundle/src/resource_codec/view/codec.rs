@@ -1647,7 +1647,54 @@ impl ViewProgramResource {
         Ok(())
     }
 
-    fn validate_handlers(&self) -> Result<(), SectionCodecError> {
+    /// Authenticates every handler owner after the complete input catalog is
+    /// available. Standalone program codecs validate scoped element bindings;
+    /// capture-free text-control callbacks are owned by ViewInput references.
+    pub fn validate_handler_owners(
+        &self,
+        input: Option<&super::model::ViewInputResource>,
+    ) -> Result<(), SectionCodecError> {
+        let mut referenced = self.validate_handlers()?;
+        let handlers = self
+            .handlers
+            .iter()
+            .map(|handler| (handler.program, handler))
+            .collect::<BTreeMap<_, _>>();
+        for option in input.into_iter().flat_map(|input| &input.options) {
+            for program in option
+                .change_handler
+                .into_iter()
+                .chain(option.submit_handler)
+            {
+                let handler =
+                    handlers
+                        .get(&program)
+                        .ok_or(SectionCodecError::NonCanonicalTable(
+                            "view_input_handler_owner",
+                        ))?;
+                // Text write-back transports the program identity, with no
+                // lexical capture packet. Accept exactly that invocation ABI.
+                if !handler.captures.is_empty()
+                    || !handler.result.writes_are_canonical(&handler.captures)
+                {
+                    return Err(SectionCodecError::NonCanonicalTable(
+                        "view_input_handler_captures",
+                    ));
+                }
+                referenced.insert(program);
+            }
+        }
+        if referenced.len() != handlers.len() {
+            return Err(SectionCodecError::NonCanonicalTable(
+                "view_handler_bindings",
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_handlers(
+        &self,
+    ) -> Result<BTreeSet<arcweft_view::ViewHandlerProgramId>, SectionCodecError> {
         let invalid = || SectionCodecError::NonCanonicalTable("view_handler_bindings");
         let handlers = self
             .handlers
@@ -1756,10 +1803,7 @@ impl ViewProgramResource {
                 }
             }
         }
-        if referenced.len() != handlers.len() {
-            return Err(invalid());
-        }
-        Ok(())
+        Ok(referenced)
     }
 
     fn validate_surfaces(&self) -> Result<(), SectionCodecError> {

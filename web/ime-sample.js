@@ -1,8 +1,8 @@
 const DEFAULT_BUNDLE_URL = "./ime-player-rendered.awfb";
-const DEFAULT_FONT_URL = "./assets/arcweft-demo.ttf";
 const params = new URLSearchParams(window.location.search);
 const bundleUrl = params.get("bundle") || DEFAULT_BUNDLE_URL;
-const fontUrl = params.get("font") || DEFAULT_FONT_URL;
+// Preserve an explicit override; otherwise use the player's ordered project-font inventory.
+const fontUrl = params.get("font") || undefined;
 
 const diagnostic = {
   sample: "web-ime-player-rendered",

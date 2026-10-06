@@ -511,6 +511,14 @@ scope を出ても値を失わない。入力 snapshot が変われば新しい 
 View 全体の invariant は compiler/test が retained tree と action inventory を
 直接検査し、global callback を挟まない。
 
+Text-control の change/submit callback は ViewInput の型付き program 参照が所有する。
+program section 単体の codec は通常イベントの lexical binding を検証し、完全な
+bundle の受理時に ViewInput と合わせて全 handler の owner と AWBC の入力・結果 ABI
+を認証する。owner のない handler と実行本体のない参照は拒否する。現在の text
+write-back packet は lexical capture を運ばないため、この経路の callback は
+capture-free でなければならない。入力値の更新は runtime text-control overlay が
+所有し、callback の Unit 応答は編集値を保持・複製する意味を持たない。
+
 Handler の結果は Unit または言語所有の DialogueAction とし、選択済み call slot の
 解決済み型と effect 証拠で検証する。retained state を変更する callback は、通常の
 値抽出とは異なる owned mutation body として同じ checked execution ABI へ接続する。

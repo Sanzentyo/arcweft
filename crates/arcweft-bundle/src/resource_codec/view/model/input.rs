@@ -227,6 +227,13 @@ pub struct ViewRuntimeTextControlOptions {
     pub composition_on_blur: CompositionOnBlurPolicy,
 }
 impl ViewInputResource {
+    /// Whether text write-back references require a complete executable View owner.
+    pub fn requires_program_runtime(&self) -> bool {
+        self.options
+            .iter()
+            .any(|option| option.change_handler.is_some() || option.submit_handler.is_some())
+    }
+
     pub fn runtime_text_controls(
         &self,
         text: Option<&ViewTextResource>,
