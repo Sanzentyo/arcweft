@@ -3896,11 +3896,10 @@ fn iterator_witness_method_edges_are_exact_and_fail_closed() {
     );
 }
 
-fn accepted_flow_fixture(
+fn accepted_flow_definition_fixture(
     project: &arcweft_lang_hir::project::HirProject,
     owner: arcweft_lang_hir::identity::ItemId,
-    identity: arcweft_core::plan::FlowRuntimeId,
-) -> crate::semantic_facts::RuntimeFlowFact {
+) -> Arc<arcweft_lang_sema::final_analysis::CheckedFlowExecutionDefinition> {
     use arcweft_lang_sema::{final_analysis::*, registration::*};
     let executable = project.analysis_view().unwrap();
     let documents = executable
@@ -3930,12 +3929,38 @@ fn accepted_flow_fixture(
         FinalSemanticAnalysisControl::new(&cancellation),
     )
     .unwrap();
-    let definition = Arc::new(
+    Arc::new(
         analysis
             .checked_flow_execution_definition(executable, registered.symbols(), owner)
             .unwrap(),
-    );
-    crate::semantic_facts::RuntimeFlowFact::try_new(identity, definition).unwrap()
+    )
+}
+
+fn accepted_flow_fixture(
+    project: &arcweft_lang_hir::project::HirProject,
+    owner: arcweft_lang_hir::identity::ItemId,
+    identity: arcweft_core::plan::FlowRuntimeId,
+) -> crate::semantic_facts::RuntimeFlowFact {
+    let definition = accepted_flow_definition_fixture(project, owner);
+    {
+        assert!(definition.body().parameters().is_empty());
+        assert!(definition.body().inputs().is_empty());
+        let unit = crate::semantic_facts::RuntimeNormalizedType::new(
+            crate::semantic_facts::RuntimeSemanticTypeId::from_bytes([0x11; 32]),
+            crate::semantic_facts::RuntimeTypeShape::Unit,
+        );
+        let signature = crate::semantic_facts::RuntimeNormalizedType::new(
+            crate::semantic_facts::RuntimeSemanticTypeId::from_bytes([0x70; 32]),
+            crate::semantic_facts::RuntimeTypeShape::Function {
+                contract: arcweft_core::plan::RuntimeFunctionTypeContract::monomorphic(
+                    definition.effects().clone(),
+                ),
+                parameters: Box::new([]),
+                result: Box::new(unit),
+            },
+        );
+        crate::semantic_facts::RuntimeFlowFact::try_new(identity, definition, signature).unwrap()
+    }
 }
 
 fn iterator_method_definition(
@@ -4034,4 +4059,37 @@ fn call_operand_request_role_presence_is_checked_before_publication() {
         admitted.operands()[0].request_role_identity(),
         Some(identity)
     );
+}
+
+#[test]
+fn flow_invocation_projection_rejects_nonfunction_and_incomplete_arity() {
+    use super::{RuntimeFlowFactError, RuntimeNormalizedType, RuntimeTypeShape};
+    let project = project_fixture(
+        "flow-invocation-contract",
+        "flow root {}\nfn __runtime_plan_test_probe() -> Unit { () }\n",
+    );
+    let owner = flow_item(&project);
+    let definition = accepted_flow_definition_fixture(&project, owner);
+    let identity = FlowRuntimeId::canonical("root").unwrap();
+    assert!(matches!(
+        RuntimeFlowFact::try_new(identity.clone(), Arc::clone(&definition), unit_type()),
+        Err(RuntimeFlowFactError::NotFunction)
+    ));
+    let extra_input = RuntimeNormalizedType::new(
+        RuntimeSemanticTypeId::from_bytes([0x71; 32]),
+        RuntimeTypeShape::Function {
+            contract: arcweft_core::plan::RuntimeFunctionTypeContract::monomorphic(
+                definition.effects().clone(),
+            ),
+            parameters: Box::new([unit_type()]),
+            result: Box::new(unit_type()),
+        },
+    );
+    assert!(matches!(
+        RuntimeFlowFact::try_new(identity, definition, extra_input),
+        Err(RuntimeFlowFactError::InputArity {
+            expected: 0,
+            actual: 1
+        })
+    ));
 }

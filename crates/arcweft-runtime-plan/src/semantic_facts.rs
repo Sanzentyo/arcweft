@@ -126,7 +126,7 @@ pub use evaluated_effect::{
     RuntimeDropFadeFact, RuntimeDropPolicyFact, RuntimeEffectFieldFact, RuntimeEvaluatedEffect,
     RuntimeEvaluatedEffectFact, RuntimeEvaluatedEffectOperandFact, RuntimeLogLevel,
 };
-pub use flow::RuntimeFlowFact;
+pub use flow::{RuntimeFlowFact, RuntimeFlowFactError};
 pub use project_function::{
     RuntimeClosureCaptureFact, RuntimeClosureInstanceFact, RuntimeClosureInstanceKey,
     RuntimeClosureLexicalOwner, RuntimeClosureParameterFact, RuntimeProjectAttachedDefaultCapture,
@@ -9706,6 +9706,7 @@ impl RuntimePlanSemanticFacts {
         );
         roots.extend(self.pattern_types.values());
         roots.extend(self.types.values());
+        roots.extend(self.flows.values().map(RuntimeFlowFact::function_type));
         roots.extend(self.value_contract_types.iter());
         for scope in self
             .expression_scopes

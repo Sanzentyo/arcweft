@@ -423,5 +423,22 @@ fn accepted_flow_fixture(
             .checked_flow_execution_definition(executable, registered.symbols(), owner)
             .unwrap(),
     );
-    arcweft_runtime_plan::semantic_facts::RuntimeFlowFact::try_new(identity, definition).unwrap()
+    assert!(definition.body().parameters().is_empty());
+    assert!(definition.body().inputs().is_empty());
+    let unit = arcweft_runtime_plan::semantic_facts::RuntimeNormalizedType::new(
+        arcweft_runtime_plan::semantic_facts::RuntimeSemanticTypeId::from_bytes([0x11; 32]),
+        arcweft_runtime_plan::semantic_facts::RuntimeTypeShape::Unit,
+    );
+    let signature = arcweft_runtime_plan::semantic_facts::RuntimeNormalizedType::new(
+        arcweft_runtime_plan::semantic_facts::RuntimeSemanticTypeId::from_bytes([0x70; 32]),
+        arcweft_runtime_plan::semantic_facts::RuntimeTypeShape::Function {
+            contract: arcweft_core::plan::RuntimeFunctionTypeContract::monomorphic(
+                definition.effects().clone(),
+            ),
+            parameters: Box::new([]),
+            result: Box::new(unit),
+        },
+    );
+    arcweft_runtime_plan::semantic_facts::RuntimeFlowFact::try_new(identity, definition, signature)
+        .unwrap()
 }

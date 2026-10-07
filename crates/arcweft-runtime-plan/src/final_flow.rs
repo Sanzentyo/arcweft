@@ -10032,7 +10032,26 @@ mod tests {
                 .checked_flow_execution_definition(executable, registered.symbols(), owner)
                 .unwrap(),
         );
-        crate::semantic_facts::RuntimeFlowFact::try_new(identity, definition).unwrap()
+        {
+            assert!(definition.body().parameters().is_empty());
+            assert!(definition.body().inputs().is_empty());
+            let unit = crate::semantic_facts::RuntimeNormalizedType::new(
+                crate::semantic_facts::RuntimeSemanticTypeId::from_bytes([0x11; 32]),
+                crate::semantic_facts::RuntimeTypeShape::Unit,
+            );
+            let signature = crate::semantic_facts::RuntimeNormalizedType::new(
+                crate::semantic_facts::RuntimeSemanticTypeId::from_bytes([0x70; 32]),
+                crate::semantic_facts::RuntimeTypeShape::Function {
+                    contract: arcweft_core::plan::RuntimeFunctionTypeContract::monomorphic(
+                        definition.effects().clone(),
+                    ),
+                    parameters: Box::new([]),
+                    result: Box::new(unit),
+                },
+            );
+            crate::semantic_facts::RuntimeFlowFact::try_new(identity, definition, signature)
+                .unwrap()
+        }
     }
 
     fn runtime_facts(

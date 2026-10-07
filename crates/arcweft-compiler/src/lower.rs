@@ -395,10 +395,10 @@ pub enum RuntimeSemanticProjectionError {
     },
     #[error("flow item {owner:?} has no executable absolute or named identity")]
     InvalidFlowIdentity { owner: ItemId },
-    #[error("flow item {owner:?} has an invalid closed effect set: {source}")]
-    InvalidFlowEffects {
+    #[error("flow item {owner:?} has an invalid invocation contract: {source}")]
+    InvalidFlowContract {
         owner: ItemId,
-        source: arcweft_core::plan::RuntimeEffectSetError,
+        source: arcweft_runtime_plan::semantic_facts::RuntimeFlowFactError,
     },
     #[error("expression literal {owner:?} has no exact runtime value: {reason}")]
     ExpressionLiteral { owner: ExprId, reason: String },
@@ -994,13 +994,24 @@ fn project_runtime_semantic_fact_inventories(
                     .checked_flow_execution_definition(project, symbols, owner)
                     .map_err(Box::new)?,
             );
+            let signature =
+                definition
+                    .function_type()
+                    .ok_or_else(|| RuntimeSemanticProjectionError::Type {
+                        reason: format!(
+                            "accepted Flow {owner:?} has no value invocation signature"
+                        ),
+                    })?;
+            let function_type = runtime_type(&signature, symbols, world, analysis)?;
             input.push_flow(
                 owner,
                 arcweft_runtime_plan::semantic_facts::RuntimeFlowFact::try_new(
-                    identity, definition,
+                    identity,
+                    definition,
+                    function_type,
                 )
                 .map_err(|source| {
-                    RuntimeSemanticProjectionError::InvalidFlowEffects { owner, source }
+                    RuntimeSemanticProjectionError::InvalidFlowContract { owner, source }
                 })?,
             );
         }

@@ -8081,3 +8081,111 @@ failures and GPU/Tier2 work remain unresolved. Goal active/incomplete. Astra
 one-shot consumed (4b076ec754b45a86a28a6fa185131ccd9ef49136); never repeat.
 Main only, no branch/worktree/delegation. Review explicit staged paths at the
 validated coherent cut and normal commit/push; then continue the same goal.
+
+
+### 2026-10-07 — Complete accepted Flow invocation signature
+
+Previous goal turn made authoritative progress: MakeNeed role transport, builder
+arity rejection and private Q joined all consumers; final nextest5,093 passed,
+GPU16 excluded, and main was normally pushed at
+6c605b4eb18c09003416ac98e8723e61de6bd519. Current start was clean main/origin0/0.
+No live old Cargo handle. Astra one-shot consumed; never repeat; no agents.
+
+Actual source investigation found the next required owner join: task rows need
+a producer_function site, but current Root Flow stores its own body/locals and
+no complete function-site signature. Do not manufacture an ID, infer a result
+from operations, copy a body into a second authority or publish a partial final
+task schema. The accepted CheckedFlowExecutionDefinition already owns the full
+body ABI plus separate declared permissions. Normalize that actual signature
+first, then connect the Root Flow body/signature to the existing function owner.
+
+Current WIP: CheckedFlowExecutionDefinition.function_type projects its accepted
+ABI and declared permissions, preserving distinct body execution effects.
+RuntimeFlowFact now requires the compiler-normalized whole function type; its
+owner grammar rejects nonfunction shape and incomplete accepted input arity.
+Compiler projects that actual signature through the existing runtime type
+normalizer; the same fact dependency visitor admits it into the actual Core
+type graph. No duplicate normalizer, default production signature or source
+reconstruction. This final source fact remains necessary after the Root body
+owner migration; it does not publish a task candidate/table or final seal.
+
+All5 manual accepted-Flow fixture factories now explicitly declare their
+zero-input Unit signatures/accepted effects, asserting the fixture source has
+no formals/free inputs. Actual compiler regression compares3 complete formals,
+result i64 and the admitted Core signature; unused fs.write declaration
+permission remains distinct from body execution. Typed constructor negatives
+use the same real checked Flow fixture to reject nonfunction/extra-input rows.
+
+Initial workspace check68353 terminated101: missed assertion fixtures in
+runtime-plan/tooling; repository-wide lookup also found AgentRepl fixture.
+All3 consumers migrated after terminal. Final check42473 passed14.80s before
+the added negative test/refactored test factory. No required check failure is
+hidden. Formatter18686 and final formatting phases passed. Focus list78390 is
+live (compiler Flow actual ABI + runtime-plan admission/owner-generation/
+empty Flow/Thread/Entry tests, allfeatures/locked). Poll original handle; do not
+edit Rust or start another source-sensitive build until it is terminal.
+
+Need: exact focused inventory/run, final workspace check/Clippy, fresh full
+metadata+inverse owner union and actual consumer coverage, focused fixture
+assertion consumers, ownership review/fmt/diff. Then continue Root Flow's
+actual function-site body/signature owner join and task candidate/E/common-seal
+protected switch. All original C3/C5/T01/T06, retained UI1.4, nominal C1-C6,
+scheduler/restore A-F, CLI277 baseline and GPU/Tier2 acceptance stay required.
+Goal active/incomplete; main only; no branch/worktree/delegation.
+
+Focused list78390 terminal0:7 selected actual cases; run terminal0:7/7pass.
+Workspace Clippy3784 terminal0 in44.28s. New test factory let-and-return lint
+was repaired after terminal; that runtime-plan test file is the only subsequent
+Rust edit, so other lint owners reuse the original source evidence. Fresh
+metadata/all-target inversion terminal0: changed owner union Sema,RuntimePlan,
+compiler,tooling,AgentRepl is22 packages. Full21 nonCLI discovery thenexecution
+61150 is live; source10Rustpaths SHA256 snapshot saved after formatter reached
+build phase. No CLI phase started yet. Need terminal original handle, exact
+case inventory/run receipts, CLIlib/bins+affected integrations, final affected
+lint/fmt/diff/structure review and then actual Root function owner migration.
+
+Final producer/signature coverage: full21 nonCLI61150 terminated0. Fresh
+discovery/build4m44s:95 binaries,21 runnable packages,2,873 selected cases;
+run2,873/2,873pass,0skip,221.624s. Exact selected/executed IDs match with no
+omission, unexpected case or duplicate. Focus7 cases overlap this broad run
+and are not double counted. Full CLI33024 (lib/bins,check,six affected
+integrations) list0/build1m26s; run100:597 selected cases,320pass/277fail/
+23ignored,218.627s. Failed IDs exactly equal the original observed
+arcweft-1007-awbc-input-origins-rdeps.log baseline277, new0/resolved0.
+The old grouped1006 report contains338 distinct older failures and is not the
+current baseline authority. Nextest repeats failed rows in its footer; receipt
+comparison deduplicates by binary+case ID, preserving all597 unique results.
+No missing/extra selected IDs. This run is not called green; all277 failures
+remain required full-goal repairs. All195 scoped CLI cases passed in this run.
+
+Final fmt check0; final affected runtime-plan Clippy16606 terminal0 in15.76s
+after the test-only lint cleanup. Original workspace Clippy44.28s is reused
+only for unchanged other owners. Scanner0/no blocking findings. Final10-Rust
+SHA256 snapshot unchanged across executed tests. No Cargo edge, codec/schema
+marker, profile, jobs, timeout, assertions, ignore policy or OS settings changed.
+No source-sensitive process remains. Receipts use TEMP/arcweft-1007-flow-
+signature-: focus-inventory/focus, check/check-final, metadata/inverse/closure,
+rdeps-inventory/rdeps-receipt/rdeps, cli-inventory/cli-comparison/cli,
+clippy/clippy-final, fmt-check, structure and source-snapshot.
+
+Ownership review:80LOC/2,905bytes Sema Flow definition owns the accepted
+permission/body join;86/2,844 RuntimeFlowFact owns the normalized projection
+and arity grammar; the existing type dependency owner consumes it directly.
+No separate type normalizer, candidate table, body clone or fallback. Compiler
+lower9,993/425,106 and facts facade14,277/557,618 retain their existing cohesion
+dispositions: changed code is projection/type-root admission only. FinalFlow
+10,103/429,594 changes only its explicit manual fixture. Actual compiler
+regression is one cohesive accepted-source/formal/result/effect/Core-admission
+proof (183-line test), not unrelated state or I/O. Compiler tests4,177/155,580;
+RuntimePlan fact tests4,095/148,061; assertion fixtures870/31,484,444/17,498,
+464/18,198. The normalized source signature is a final prerequisite used by
+the next Root Flow function-site join; no temporary public task row is exposed.
+
+All11 changed paths at this validated component cut are explicitly reviewed
+and staged for normal commit/push. Full goal unchanged and active/incomplete.
+Next necessary work is the actual Root Flow body/signature ownership join to
+RuntimeFunctionSite, followed by real task candidates, E15/common atomic seal
+and the complete protected public switch. Do not infer a return type from ops
+or synthesize semantic IDs from table ordinals. Preserve declared permissions
+and body effects separately, and all accepted formal/capture/ownership evidence.
+Astra one-shot consumed; no second consultation, no delegation, main only.

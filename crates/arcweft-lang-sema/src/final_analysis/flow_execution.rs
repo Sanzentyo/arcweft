@@ -35,6 +35,17 @@ impl CheckedFlowExecutionDefinition {
     pub const fn effects(&self) -> &EffectSet {
         &self.effects
     }
+
+    /// Complete Flow invocation signature. Declared permissions remain distinct
+    /// from the narrower execution effects retained by the body ABI.
+    pub fn function_type(&self) -> Option<crate::types::TypeKind> {
+        let mut signature = self.body.function_type()?;
+        let crate::types::TypeKind::Function { effects, .. } = &mut signature else {
+            unreachable!("the accepted execution ABI issues a function signature")
+        };
+        *effects = crate::effect_row::EffectRow::closed(self.effects.clone());
+        Some(signature)
+    }
 }
 
 impl FinalSemanticAnalysis {

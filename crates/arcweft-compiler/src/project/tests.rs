@@ -3464,6 +3464,65 @@ fn flow_facts_retain_the_accepted_body_and_complete_formals() {
         .find(|schema| &schema.flow == fact.identity())
         .unwrap();
     assert_eq!(schema.parameters.len(), 3);
+    let arcweft_runtime_plan::semantic_facts::RuntimeTypeShape::Function {
+        contract,
+        parameters,
+        result,
+    } = fact.function_type().shape()
+    else {
+        panic!("accepted Flow publishes its complete normalized function signature");
+    };
+    assert_eq!(parameters.len(), 3);
+    assert!(matches!(
+        result.shape(),
+        arcweft_runtime_plan::semantic_facts::RuntimeTypeShape::Signed(
+            arcweft_core::value::RuntimeSignedIntWidth::I64
+        )
+    ));
+    assert!(
+        fact.effects()
+            .iter()
+            .any(|effect| effect.as_str() == "fs.write")
+    );
+    assert!(
+        !fact
+            .definition()
+            .effects()
+            .iter()
+            .any(|effect| effect.as_str() == "fs.write")
+    );
+    let plan_types = compiled.runtime_plan().plan.type_table();
+    let signature_row = plan_types
+        .get(
+            plan_types
+                .id_for_semantic(fact.function_type().identity())
+                .unwrap(),
+        )
+        .unwrap();
+    let arcweft_core::plan::RuntimePlanTypeProjection::Function {
+        contract: actual_contract,
+        parameters: actual_parameters,
+        result: actual_result,
+    } = signature_row.projection()
+    else {
+        panic!("the actual plan type graph must admit the Flow function signature");
+    };
+    assert_eq!(actual_contract, contract);
+    assert_eq!(
+        plan_types.get(*actual_result).unwrap().semantic_identity(),
+        result.identity()
+    );
+    for ((actual, parameter), formal) in actual_parameters
+        .iter()
+        .zip(parameters)
+        .zip(&schema.parameters)
+    {
+        assert_eq!(
+            plan_types.get(*actual).unwrap().semantic_identity(),
+            parameter.identity()
+        );
+        assert_eq!(parameter.identity(), formal.semantic_identity);
+    }
     for (parameter, formal) in schema.parameters.iter().zip(fact.definition().parameters()) {
         assert_eq!(parameter.identity, formal.identity().runtime_identity());
         assert_eq!(parameter.passing, formal.passing());
