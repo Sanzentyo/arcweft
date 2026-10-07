@@ -412,24 +412,43 @@ mod tests {
             .attach_line_task_group_seed(&content, &line_task_group)
             .expect("line-task group attaches to dialogue content");
         builder
-            .push_flow_seed(RuntimeFlowSeed::new(
-                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
-                    [61; 32],
-                ),
-                flow.clone(),
+            .admit_type_batch(
+                [arcweft_core::plan::RuntimePlanTypeSeed::new(
+                    arcweft_core::pattern::RuntimeCheckedType::String.semantic_identity_digest(),
+                    arcweft_core::plan::RuntimePlanTypeProjection::String,
+                )],
                 [],
-                arcweft_core::plan::RuntimeEffectSet::empty(),
-                vec![
-                    RuntimeFlowOpSeed::Dialogue {
-                        target: arcweft_core::plan::RuntimeExprSeed::new(
-                            dialogue_target_type.runtime_semantic_identity(),
-                            arcweft_core::plan::RuntimeExprSeedKind::Value(dialogue_target_value),
-                        ),
-                        content,
-                        result: unit_result,
-                    },
-                    RuntimeFlowOpSeed::Return("done".to_owned()),
-                ],
+            )
+            .expect("Flow result type admits");
+        builder
+            .push_flow_seed(RuntimeFlowSeed::new(
+                flow.clone(),
+                arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                    arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                        [61; 32],
+                    ),
+                    None,
+                    Box::new([]),
+                    arcweft_core::pattern::RuntimeCheckedType::String.semantic_identity_digest(),
+                    arcweft_core::plan::RuntimeEffectSet::empty(),
+                ),
+                arcweft_core::plan::RuntimeExecutableBodySeed {
+                    effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                    ops: (vec![
+                        RuntimeFlowOpSeed::Dialogue {
+                            target: arcweft_core::plan::RuntimeExprSeed::new(
+                                dialogue_target_type.runtime_semantic_identity(),
+                                arcweft_core::plan::RuntimeExprSeedKind::Value(
+                                    dialogue_target_value,
+                                ),
+                            ),
+                            content,
+                            result: unit_result,
+                        },
+                        RuntimeFlowOpSeed::Return("done".to_owned()),
+                    ])
+                    .into_boxed_slice(),
+                },
             ))
             .expect("flow admits");
         builder
@@ -530,14 +549,30 @@ mod tests {
         let flow = FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id");
         let mut builder = RuntimePlanBuilder::new();
         builder
-            .push_flow_seed(RuntimeFlowSeed::new(
-                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
-                    [61; 32],
-                ),
-                flow.clone(),
+            .admit_type_batch(
+                [arcweft_core::plan::RuntimePlanTypeSeed::new(
+                    arcweft_core::pattern::RuntimeCheckedType::String.semantic_identity_digest(),
+                    arcweft_core::plan::RuntimePlanTypeProjection::String,
+                )],
                 [],
-                arcweft_core::plan::RuntimeEffectSet::empty(),
-                vec![RuntimeFlowOpSeed::Return("done".to_owned())],
+            )
+            .expect("Flow result type admits");
+        builder
+            .push_flow_seed(RuntimeFlowSeed::new(
+                flow.clone(),
+                arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                    arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                        [61; 32],
+                    ),
+                    None,
+                    Box::new([]),
+                    arcweft_core::pattern::RuntimeCheckedType::String.semantic_identity_digest(),
+                    arcweft_core::plan::RuntimeEffectSet::empty(),
+                ),
+                arcweft_core::plan::RuntimeExecutableBodySeed {
+                    effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                    ops: (vec![RuntimeFlowOpSeed::Return("done".to_owned())]).into_boxed_slice(),
+                },
             ))
             .expect("flow admits");
         builder

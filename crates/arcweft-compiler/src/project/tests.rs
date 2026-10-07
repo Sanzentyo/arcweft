@@ -3372,6 +3372,16 @@ fn continuation_captured_parameters_retain_accepted_passing() {
         .project_function_instances()
         .map(|instance| instance.definition_identity().runtime_identity())
         .collect::<Vec<_>>();
+    accepted_definitions.extend(
+        compiled
+            .analysis_lease()
+            .hir_project()
+            .analysis_view()
+            .unwrap()
+            .items()
+            .filter_map(|item| compiled.runtime_facts().flow(item.id()))
+            .map(|flow| flow.definition().definition_identity().runtime_identity()),
+    );
     let mut actual_definitions = compiled
         .runtime_plan()
         .plan
@@ -3446,8 +3456,27 @@ fn flow_facts_retain_the_accepted_body_and_complete_formals() {
         .iter()
         .find(|flow| &flow.id == fact.identity())
         .unwrap();
+    let function = compiled
+        .runtime_plan()
+        .plan
+        .function_sites()
+        .get(runtime_flow.function_site())
+        .unwrap();
+    assert!(std::ptr::eq(runtime_flow.function(), function));
     assert_eq!(
-        runtime_flow.definition,
+        function.role(),
+        arcweft_core::plan::RuntimeFunctionSemanticRole::Flow
+    );
+    assert_eq!(
+        function.function_type(),
+        compiled
+            .runtime_plan()
+            .plan
+            .type_table()
+            .id_for_semantic(fact.function_type().identity())
+    );
+    assert_eq!(
+        runtime_flow.definition(),
         fact.definition().definition_identity().runtime_identity()
     );
     assert!(
@@ -3531,6 +3560,69 @@ fn flow_facts_retain_the_accepted_body_and_complete_formals() {
             arcweft_core::entry::RuntimeFlowParameterMode::Owned
         );
     }
+    for (input, formal) in function.inputs().iter().zip(&schema.parameters) {
+        assert_eq!(
+            input.origin(),
+            arcweft_core::plan::RuntimeFunctionInputOrigin::Parameter(formal.identity)
+        );
+        assert_eq!(
+            input.source(),
+            arcweft_core::plan::RuntimeFunctionInputSource::Parameter {
+                position: formal.coordinate.position(),
+                passing: formal.passing
+            }
+        );
+    }
+    let awbc = arcweft_runtime_plan::awbc_lower::AwbcLowerer::new(
+        &compiled.runtime_plan().plan,
+        &compiled.runtime_plan().dialogue_content_catalog,
+        "flow-owner.arcw",
+    )
+    .lower()
+    .unwrap()
+    .program;
+    let root_code = awbc.flow_function(&runtime_flow.id).unwrap();
+    let code = &awbc.functions[root_code.index()];
+    assert!(
+        function
+            .invocation_effects()
+            .iter()
+            .any(|effect| effect.as_str() == "fs.write")
+    );
+    assert!(function.body().executable().unwrap().effects().is_empty());
+    assert!(
+        awbc.effect_sets[awbc.signatures[code.signature.index()].effects.index()]
+            .effects
+            .iter()
+            .any(|effect| awbc.strings[effect.index()] == "fs.write")
+    );
+    assert_eq!(code.definition, function.definition());
+    assert_eq!(code.semantic_role, function.role());
+    assert_eq!(
+        awbc.functions
+            .iter()
+            .filter(|row| row.definition == function.definition())
+            .count(),
+        1
+    );
+    assert_eq!(awbc.signatures[code.signature.index()].params.len(), 3);
+    assert_eq!(
+        awbc.runtime_types[awbc.signatures[code.signature.index()]
+            .result
+            .unwrap()
+            .index()]
+        .semantic_identity(),
+        result.identity()
+    );
+    let bytes = awbc.encode_canonical().unwrap();
+    assert_eq!(
+        arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+            &bytes,
+            arcweft_core::awbc::codec::AwbcDecodeBudget::default()
+        )
+        .unwrap(),
+        awbc
+    );
     let encoded = serde_json::to_value(schema).unwrap();
     assert_eq!(
         serde_json::from_value::<arcweft_core::entry::RuntimeFlowSchema>(encoded.clone()).unwrap(),

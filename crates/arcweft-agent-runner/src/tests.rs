@@ -633,6 +633,9 @@ fn agent_controller_program_seed(
     };
     let mut builder = RuntimePlanBuilder::new();
     builder
+        .admit_type_batch(controller_agent_types(), [])
+        .expect("controller signature types admit");
+    builder
         .push_flow_seed(flow)
         .expect("test controller flow admits");
     builder
@@ -700,6 +703,9 @@ fn agent_controller_program_with_builder(
             .expect("test controller identity is valid"),
         contract,
     };
+    builder
+        .admit_type_batch(controller_agent_types(), [])
+        .expect("controller signature types admit");
     builder
         .push_flow_seed(flow)
         .expect("test Agent controller flow admits");
@@ -1135,25 +1141,35 @@ fn observe_checkpoint_program() -> AwbcProgram {
     let flow = flow_id("agent.observe_smoke");
     agent_controller_program_seed(
         RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
-            [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::Effect(arcweft_core::plan::RuntimeLineEffectSeed::Static(
-                    LineEffectRequest::Call(RuntimeCall {
-                        callee: "observe".to_owned(),
-                        args: vec!["include_objects = true".to_owned()],
-                    }),
-                )),
-                RuntimeFlowOpSeed::Effect(arcweft_core::plan::RuntimeLineEffectSeed::Static(
-                    LineEffectRequest::Call(RuntimeCall {
-                        callee: "checkpoint".to_owned(),
-                        args: vec!["\"after-observe\"".to_owned()],
-                    }),
-                )),
-                RuntimeFlowOpSeed::Return("done".to_owned()),
-            ],
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                controller_type(STRING_TY),
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::Effect(arcweft_core::plan::RuntimeLineEffectSeed::Static(
+                        LineEffectRequest::Call(RuntimeCall {
+                            callee: "observe".to_owned(),
+                            args: vec!["include_objects = true".to_owned()],
+                        }),
+                    )),
+                    RuntimeFlowOpSeed::Effect(arcweft_core::plan::RuntimeLineEffectSeed::Static(
+                        LineEffectRequest::Call(RuntimeCall {
+                            callee: "checkpoint".to_owned(),
+                            args: vec!["\"after-observe\"".to_owned()],
+                        }),
+                    )),
+                    RuntimeFlowOpSeed::Return("done".to_owned()),
+                ])
+                .into_boxed_slice(),
+            },
         ),
         flow,
         "agent.observe_smoke",
@@ -1165,22 +1181,32 @@ fn runtime_assertion_program() -> AwbcProgram {
     let flow = flow_id("agent.runtime_assertion");
     agent_controller_program_seed(
         RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
-            [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::Effect(arcweft_core::plan::RuntimeLineEffectSeed::Static(
-                    LineEffectRequest::Assert(RuntimeAssertion::new(
-                        RuntimeAssertionGuardId::try_from_bytes([0x61; 16])
-                            .expect("fixture runtime assertion guard"),
-                        "ready".to_owned(),
-                        "runtime condition failed".to_owned(),
-                        RuntimeAssertionProfile::Always,
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                controller_type(STRING_TY),
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::Effect(arcweft_core::plan::RuntimeLineEffectSeed::Static(
+                        LineEffectRequest::Assert(RuntimeAssertion::new(
+                            RuntimeAssertionGuardId::try_from_bytes([0x61; 16])
+                                .expect("fixture runtime assertion guard"),
+                            "ready".to_owned(),
+                            "runtime condition failed".to_owned(),
+                            RuntimeAssertionProfile::Always,
+                        )),
                     )),
-                )),
-                RuntimeFlowOpSeed::Return("done".to_owned()),
-            ],
+                    RuntimeFlowOpSeed::Return("done".to_owned()),
+                ])
+                .into_boxed_slice(),
+            },
         ),
         flow,
         "agent.runtime_assertion",
@@ -1332,57 +1358,67 @@ fn capture_binding_program_with_budget(budget: AgentBudget) -> AwbcProgram {
     agent_controller_program_with_builder(
         builder,
         RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
-            [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::StartNeedProducer {
-                    binding: RuntimePatternSeed::new(
-                        need_ty,
-                        RuntimePatternSeedKind::Bind {
-                            mutable: false,
-                            local: need.clone(),
-                        },
-                    ),
-                    target: RuntimeNeedProducerStartTargetSeed {
-                        plan: producer_plan,
-                        arguments: producer_arguments,
-                    },
-                },
-                RuntimeFlowOpSeed::Await {
-                    binding: Some(response_result_binding_pattern(
-                        CAPTURE_RESULT_TY,
-                        CAPTURE_REFERENCE_TY,
-                        shot.clone(),
-                    )),
-                    target: RuntimeAwaitTargetSeed {
-                        source: RuntimeExprSeed::new(
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                controller_type(STRING_TY),
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::StartNeedProducer {
+                        binding: RuntimePatternSeed::new(
                             need_ty,
-                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                                need,
-                                RuntimeLocalReadMode::Move,
-                            )),
+                            RuntimePatternSeedKind::Bind {
+                                mutable: false,
+                                local: need.clone(),
+                            },
                         ),
+                        target: RuntimeNeedProducerStartTargetSeed {
+                            plan: producer_plan,
+                            arguments: producer_arguments,
+                        },
                     },
-                    observers: Vec::new(),
-                },
-                RuntimeFlowOpSeed::ReturnExpr(controller_expr(
-                    STRING_TY,
-                    RuntimeExprSeedKind::Field {
-                        target: Box::new(controller_expr(
+                    RuntimeFlowOpSeed::Await {
+                        binding: Some(response_result_binding_pattern(
+                            CAPTURE_RESULT_TY,
                             CAPTURE_REFERENCE_TY,
-                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                                shot,
-                                RuntimeLocalReadMode::Move,
-                            )),
+                            shot.clone(),
                         )),
-                        field: RuntimeFieldProjectionSeed::Agent(
-                            RuntimeAgentField::CaptureReferenceUri,
-                        ),
+                        target: RuntimeAwaitTargetSeed {
+                            source: RuntimeExprSeed::new(
+                                need_ty,
+                                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                    need,
+                                    RuntimeLocalReadMode::Move,
+                                )),
+                            ),
+                        },
+                        observers: Vec::new(),
                     },
-                )),
-            ],
+                    RuntimeFlowOpSeed::ReturnExpr(controller_expr(
+                        STRING_TY,
+                        RuntimeExprSeedKind::Field {
+                            target: Box::new(controller_expr(
+                                CAPTURE_REFERENCE_TY,
+                                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                    shot,
+                                    RuntimeLocalReadMode::Move,
+                                )),
+                            )),
+                            field: RuntimeFieldProjectionSeed::Agent(
+                                RuntimeAgentField::CaptureReferenceUri,
+                            ),
+                        },
+                    )),
+                ])
+                .into_boxed_slice(),
+            },
         ),
         flow,
         "agent.capture_binding",
@@ -1412,55 +1448,67 @@ fn read_resource_binding_program() -> AwbcProgram {
     agent_controller_program_with_builder(
         builder,
         RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
-            [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::StartNeedProducer {
-                    binding: RuntimePatternSeed::new(
-                        need_ty,
-                        RuntimePatternSeedKind::Bind {
-                            mutable: false,
-                            local: need.clone(),
-                        },
-                    ),
-                    target: RuntimeNeedProducerStartTargetSeed {
-                        plan: producer_plan,
-                        arguments: producer_arguments,
-                    },
-                },
-                RuntimeFlowOpSeed::Await {
-                    binding: Some(response_result_binding_pattern(
-                        RESOURCE_RESULT_TY,
-                        RESOURCE_TY,
-                        resource.clone(),
-                    )),
-                    target: RuntimeAwaitTargetSeed {
-                        source: RuntimeExprSeed::new(
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                controller_type(RESOURCE_BODY_TY),
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::StartNeedProducer {
+                        binding: RuntimePatternSeed::new(
                             need_ty,
-                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                                need,
-                                RuntimeLocalReadMode::Move,
-                            )),
+                            RuntimePatternSeedKind::Bind {
+                                mutable: false,
+                                local: need.clone(),
+                            },
                         ),
+                        target: RuntimeNeedProducerStartTargetSeed {
+                            plan: producer_plan,
+                            arguments: producer_arguments,
+                        },
                     },
-                    observers: Vec::new(),
-                },
-                RuntimeFlowOpSeed::ReturnExpr(controller_expr(
-                    RESOURCE_BODY_TY,
-                    RuntimeExprSeedKind::Field {
-                        target: Box::new(controller_expr(
+                    RuntimeFlowOpSeed::Await {
+                        binding: Some(response_result_binding_pattern(
+                            RESOURCE_RESULT_TY,
                             RESOURCE_TY,
-                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                                resource,
-                                RuntimeLocalReadMode::Move,
-                            )),
+                            resource.clone(),
                         )),
-                        field: RuntimeFieldProjectionSeed::Agent(RuntimeAgentField::ResourceBody),
+                        target: RuntimeAwaitTargetSeed {
+                            source: RuntimeExprSeed::new(
+                                need_ty,
+                                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                    need,
+                                    RuntimeLocalReadMode::Move,
+                                )),
+                            ),
+                        },
+                        observers: Vec::new(),
                     },
-                )),
-            ],
+                    RuntimeFlowOpSeed::ReturnExpr(controller_expr(
+                        RESOURCE_BODY_TY,
+                        RuntimeExprSeedKind::Field {
+                            target: Box::new(controller_expr(
+                                RESOURCE_TY,
+                                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                    resource,
+                                    RuntimeLocalReadMode::Move,
+                                )),
+                            )),
+                            field: RuntimeFieldProjectionSeed::Agent(
+                                RuntimeAgentField::ResourceBody,
+                            ),
+                        },
+                    )),
+                ])
+                .into_boxed_slice(),
+            },
         ),
         flow,
         "agent.read_resource_binding",
@@ -1499,55 +1547,65 @@ fn single_response_field_program(request: SingleResponseFieldRequest) -> AwbcPro
     agent_controller_program_with_builder(
         builder,
         RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
-            [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::StartNeedProducer {
-                    binding: RuntimePatternSeed::new(
-                        need_ty,
-                        RuntimePatternSeedKind::Bind {
-                            mutable: false,
-                            local: need.clone(),
-                        },
-                    ),
-                    target: RuntimeNeedProducerStartTargetSeed {
-                        plan: producer_plan,
-                        arguments: producer_arguments,
-                    },
-                },
-                RuntimeFlowOpSeed::Await {
-                    binding: Some(response_result_binding_pattern(
-                        response_result_ty,
-                        response_ty,
-                        response.clone(),
-                    )),
-                    target: RuntimeAwaitTargetSeed {
-                        source: RuntimeExprSeed::new(
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                controller_type(result_ty),
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::StartNeedProducer {
+                        binding: RuntimePatternSeed::new(
                             need_ty,
-                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                                need,
-                                RuntimeLocalReadMode::Move,
-                            )),
+                            RuntimePatternSeedKind::Bind {
+                                mutable: false,
+                                local: need.clone(),
+                            },
                         ),
+                        target: RuntimeNeedProducerStartTargetSeed {
+                            plan: producer_plan,
+                            arguments: producer_arguments,
+                        },
                     },
-                    observers: Vec::new(),
-                },
-                RuntimeFlowOpSeed::ReturnExpr(controller_expr(
-                    result_ty,
-                    RuntimeExprSeedKind::Field {
-                        target: Box::new(controller_expr(
+                    RuntimeFlowOpSeed::Await {
+                        binding: Some(response_result_binding_pattern(
+                            response_result_ty,
                             response_ty,
-                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                                response,
-                                RuntimeLocalReadMode::Move,
-                            )),
+                            response.clone(),
                         )),
-                        field: RuntimeFieldProjectionSeed::Agent(field),
+                        target: RuntimeAwaitTargetSeed {
+                            source: RuntimeExprSeed::new(
+                                need_ty,
+                                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                    need,
+                                    RuntimeLocalReadMode::Move,
+                                )),
+                            ),
+                        },
+                        observers: Vec::new(),
                     },
-                )),
-            ],
+                    RuntimeFlowOpSeed::ReturnExpr(controller_expr(
+                        result_ty,
+                        RuntimeExprSeedKind::Field {
+                            target: Box::new(controller_expr(
+                                response_ty,
+                                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                    response,
+                                    RuntimeLocalReadMode::Move,
+                                )),
+                            )),
+                            field: RuntimeFieldProjectionSeed::Agent(field),
+                        },
+                    )),
+                ])
+                .into_boxed_slice(),
+            },
         ),
         flow,
         agent_id,
@@ -1573,40 +1631,55 @@ fn direct_observe_program() -> AwbcProgram {
     agent_controller_program_with_builder(
         builder,
         RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
-            [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::HostCall {
-                    binding: Some(response_result_binding_pattern(
-                        OBSERVATION_RESULT_TY,
-                        OBSERVATION_TY,
-                        observation,
-                    )),
-                    target: RuntimeHostCallTargetSeed {
-                        producer: arcweft_core::task::HostCallProducerDefinition {
-                            contract: arcweft_core::task::NeedProducerContractDigest::from_bytes(
-                                [1; 32],
-                            ),
-                            plan: arcweft_core::task::TaskPlanSemanticDigest::from_bytes([2; 32]),
-                            site: arcweft_core::task::NeedProducerSiteDigest::from_bytes([3; 32]),
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                controller_type(STRING_TY),
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::HostCall {
+                        binding: Some(response_result_binding_pattern(
+                            OBSERVATION_RESULT_TY,
+                            OBSERVATION_TY,
+                            observation,
+                        )),
+                        target: RuntimeHostCallTargetSeed {
+                            producer: arcweft_core::task::HostCallProducerDefinition {
+                                contract:
+                                    arcweft_core::task::NeedProducerContractDigest::from_bytes(
+                                        [1; 32],
+                                    ),
+                                plan: arcweft_core::task::TaskPlanSemanticDigest::from_bytes(
+                                    [2; 32],
+                                ),
+                                site: arcweft_core::task::NeedProducerSiteDigest::from_bytes(
+                                    [3; 32],
+                                ),
+                            },
+                            public_id: "agent.observe".to_owned(),
+                            capability: "agent".to_owned(),
+                            operation: "observe".to_owned(),
+                            contract: None,
+                            args: Vec::new(),
+                            result: controller_type(OBSERVATION_RESULT_TY),
+                            mode: RuntimeHostCallMode::Suspend,
+                            deterministic: false,
                         },
-                        public_id: "agent.observe".to_owned(),
-                        capability: "agent".to_owned(),
-                        operation: "observe".to_owned(),
-                        contract: None,
-                        args: Vec::new(),
-                        result: controller_type(OBSERVATION_RESULT_TY),
-                        mode: RuntimeHostCallMode::Suspend,
-                        deterministic: false,
                     },
-                },
-                RuntimeFlowOpSeed::ReturnExpr(controller_expr(
-                    STRING_TY,
-                    RuntimeExprSeedKind::Value(RuntimeValue::String("resumed".to_owned())),
-                )),
-            ],
+                    RuntimeFlowOpSeed::ReturnExpr(controller_expr(
+                        STRING_TY,
+                        RuntimeExprSeedKind::Value(RuntimeValue::String("resumed".to_owned())),
+                    )),
+                ])
+                .into_boxed_slice(),
+            },
         ),
         flow,
         "agent.direct_observe",

@@ -172,11 +172,20 @@ fn counter_plan(return_when: IteratorReturn) -> RuntimePlan {
     }
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             main.clone(),
-            [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            ops,
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                item_type,
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (ops).into_boxed_slice(),
+            },
         ))
         .expect("typed flow seed admits");
     builder

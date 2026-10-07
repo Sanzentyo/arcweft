@@ -173,6 +173,11 @@ impl RuntimeBodySemanticContext<'_> {
                 ordinal: function.get().get() as usize - 1,
             }
         })?;
+        encoder.count(site.invocation_effects().len());
+        for effect in site.invocation_effects().iter() {
+            encoder.enter_element();
+            encoder.string(effect.as_str());
+        }
         encoder.tag(u8::from(site.function_type().is_some()));
         if let Some(ty) = site.function_type() {
             self.write_type(encoder, ty)?;

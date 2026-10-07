@@ -485,18 +485,26 @@ fn flow_plan(reverse: bool, branch: bool) -> RuntimePlan {
         .unwrap();
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            RuntimeFunctionDefinitionIdentity::from_accepted_identity([70; 32]),
             crate::plan::FlowRuntimeId::canonical("body").unwrap(),
-            [],
-            RuntimeEffectSet::empty(),
-            vec![Op::If {
-                condition: RuntimeExprSeed::new(
-                    boolean,
-                    RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(true)),
-                ),
-                then_ops: if branch { body.clone() } else { vec![] },
-                else_ops: if branch { vec![] } else { body },
-            }],
+            crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                RuntimeFunctionDefinitionIdentity::from_accepted_identity([70; 32]),
+                None,
+                Box::new([]),
+                boolean,
+                RuntimeEffectSet::empty(),
+            ),
+            crate::plan::RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::empty(),
+                ops: (vec![Op::If {
+                    condition: RuntimeExprSeed::new(
+                        boolean,
+                        RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(true)),
+                    ),
+                    then_ops: if branch { body.clone() } else { vec![] },
+                    else_ops: if branch { vec![] } else { body },
+                }])
+                .into_boxed_slice(),
+            },
         ))
         .unwrap();
     builder.finish().unwrap()
@@ -774,6 +782,60 @@ fn producer_expression_plan(
         )
         .unwrap();
     let owner = builder.task_coordinate_owner(0);
+    if role == crate::plan::RuntimeFunctionSemanticRole::Flow {
+        if padding {
+            builder
+                .push_function_site_seed(
+                    crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                        [99; 32],
+                    ),
+                    crate::plan::RuntimeFunctionSemanticRole::Ordinary,
+                    [],
+                    crate::plan::RuntimeExprSeed::new(
+                        boolean,
+                        crate::plan::RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(
+                            false,
+                        )),
+                    ),
+                )
+                .unwrap();
+        }
+        let flow = crate::plan::FlowRuntimeId::canonical("producer_root").unwrap();
+        builder
+            .push_flow_schema(crate::entry::RuntimeFlowSchema {
+                flow: flow.clone(),
+                parameters: vec![],
+            })
+            .unwrap();
+        builder
+            .push_flow_seed(crate::plan::RuntimeFlowSeed::new(
+                flow,
+                crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                    crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                        [71; 32],
+                    ),
+                    None,
+                    Box::new([]),
+                    boolean,
+                    crate::plan::RuntimeEffectSet::empty(),
+                ),
+                crate::plan::RuntimeExecutableBodySeed {
+                    effects: crate::plan::RuntimeEffectSet::empty(),
+                    ops: Box::new([crate::plan::RuntimeFlowOpSeed::ReturnExpr(
+                        crate::plan::RuntimeExprSeed::new(
+                            boolean,
+                            crate::plan::RuntimeExprSeedKind::Value(
+                                crate::value::RuntimeValue::Bool(value),
+                            ),
+                        ),
+                    )]),
+                },
+            ))
+            .unwrap();
+        let plan = builder.finish().unwrap();
+        let site = plan.flows()[0].function_site();
+        return (plan, owner, site);
+    }
     if padding {
         builder
             .push_function_site_seed(
@@ -1891,4 +1953,19 @@ fn make_need_target_rejects_binding_mismatch_and_spread() {
             )
         ));
     }
+}
+
+#[test]
+fn flow_owner_reuses_the_table_row_and_rejects_an_independent_equal_body() {
+    let mut plan = flow_plan(false, true);
+    let flow = &plan.flows()[0];
+    let row = plan.function_sites().get(flow.function_site()).unwrap();
+    assert!(std::ptr::eq(flow.function(), row));
+    let cloned = plan.clone();
+    assert!(std::ptr::eq(cloned.flows()[0].function(), row));
+    plan.flows[0].function = std::sync::Arc::new(plan.flows[0].function.as_ref().clone());
+    assert!(matches!(
+        plan.verify(),
+        Err(crate::plan::RuntimePlanError::InvalidFlowFunctionOwner { .. })
+    ));
 }

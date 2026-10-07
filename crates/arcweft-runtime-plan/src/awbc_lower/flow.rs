@@ -317,8 +317,10 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .iter()
             .filter(|flow| selected_flows.contains(&flow.id))
         {
-            self.inventory
-                .reserve_flow_function_slot(&flow.id, flow.definition);
+            let function = self
+                .inventory
+                .reserve_function_site_slot(flow.function_site(), flow.definition());
+            self.inventory.bind_flow_function(&flow.id, function);
         }
         self.lower_defer_sites();
         for flow in self
@@ -950,14 +952,18 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
     pub(crate) fn lower_executable_function_site(
         &mut self,
         owner: AwbcFunctionId,
-        definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity,
-        role: arcweft_core::plan::RuntimeFunctionSemanticRole,
-        function_type: Option<arcweft_core::runtime_id::RuntimePlanTypeId>,
-        inputs: &[RuntimeFunctionInputBinding],
-        result: arcweft_core::runtime_id::RuntimePlanTypeId,
-        executable: &RuntimeExecutableBody,
+        site: &arcweft_core::plan::RuntimeFunctionSite,
         path: &str,
     ) -> AwbcFunctionId {
+        let definition = site.definition();
+        let role = site.role();
+        let function_type = site.function_type();
+        let inputs = site.inputs();
+        let result = site.result();
+        let executable = site
+            .body()
+            .executable()
+            .expect("executable function site lowering");
         let mut frame = FrameBuilder::new();
         let mut abi_parameters = Vec::with_capacity(inputs.len());
         for (position, input) in inputs.iter().enumerate() {
@@ -966,8 +972,12 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             let name = self.inventory.local_name(input_local);
             abi_parameters.push(frame.abi_parameter(position, ty, name));
         }
-        let mut body =
-            FlowBodyBuilder::new(self.inventory, owner, AwbcSafePointKind::CallableBoundary);
+        let boundary = if role == arcweft_core::plan::RuntimeFunctionSemanticRole::Flow {
+            AwbcSafePointKind::FlowEntry
+        } else {
+            AwbcSafePointKind::CallableBoundary
+        };
+        let mut body = FlowBodyBuilder::new(self.inventory, owner, boundary);
         let mut input_ownership = Vec::with_capacity(inputs.len());
         for (input, value) in inputs.iter().zip(abi_parameters) {
             let pattern = lower_pattern(self.inventory, self.plan, &mut frame, input.pattern());
@@ -993,7 +1003,28 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             self.plan.checked_type(result),
             Ok(Some(arcweft_core::pattern::RuntimeCheckedType::Unit))
         );
-        if unit_result && !body.terminated {
+        let never_result = matches!(
+            self.plan.checked_type(result),
+            Ok(Some(arcweft_core::pattern::RuntimeCheckedType::Never))
+        );
+        if role == arcweft_core::plan::RuntimeFunctionSemanticRole::Flow
+            && unit_result
+            && !body.terminated
+        {
+            self.close_active_scopes_for_terminator(&mut frame);
+            body.terminate(
+                self.inventory,
+                AwbcTerminator::Complete,
+                AwbcSafePointKind::Return,
+            );
+        } else if never_result && !body.terminated {
+            self.close_active_scopes_for_terminator(&mut frame);
+            body.terminate(
+                self.inventory,
+                AwbcTerminator::Unreachable,
+                AwbcSafePointKind::Return,
+            );
+        } else if unit_result && !body.terminated {
             // Ordinary callable transitions always carry their declared result,
             // including Unit. Effect-only bodies synthesize that final value.
             let value = frame.return_value(result_type);
@@ -1008,8 +1039,15 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 AwbcTerminator::Return { value: Some(value) },
                 AwbcSafePointKind::Return,
             );
-        } else if body.needs_value_fallthrough() {
-            self.terminate_value_fallthrough(&mut frame, &mut body);
+        } else if !body.terminated {
+            // A non-Unit signature has no implicit result value. Any residual
+            // continuation is unreachable; an invalid manual body traps.
+            self.close_active_scopes_for_terminator(&mut frame);
+            body.terminate(
+                self.inventory,
+                AwbcTerminator::Unreachable,
+                AwbcSafePointKind::Return,
+            );
         }
         let body = body.finish(self.inventory);
         let layout = self
@@ -1024,12 +1062,18 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .iter()
             .map(|input| self.local_type(input.input_local()))
             .collect();
-        let effects = self.inventory.intern_effect_set(executable.effects());
+        let effects = self.inventory.intern_effect_set(site.invocation_effects());
         let signature = self
             .inventory
             .intern_signature(params, Some(result_type), effects);
         let type_context =
             function_type.map(|ty| admitted_plan_type(self.inventory, self.plan, ty));
+        let mut flags = AwbcFunctionFlags::empty()
+            .with(AwbcFunctionFlag::Deterministic)
+            .with(AwbcFunctionFlag::MaySuspend);
+        if body.has_dynamic_target {
+            flags = flags.with(AwbcFunctionFlag::HasDynamicTarget);
+        }
         self.inventory.replace_function(
             owner,
             AwbcFunction {
@@ -1043,110 +1087,27 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 frame_layout: layout,
                 blocks: body.blocks,
                 entry_block: body.entry_block,
-                flags: AwbcFunctionFlags::empty()
-                    .with(AwbcFunctionFlag::Deterministic)
-                    .with(AwbcFunctionFlag::MaySuspend),
+                flags,
             },
         )
     }
 
-    fn lower_flow(&mut self, flow: &RuntimeFlow) -> AwbcFunctionId {
-        let mut frame = FrameBuilder::new();
-        let public_name = flow_public_id(&flow.id);
-        let schema = self
-            .plan
-            .flow_schemas()
-            .iter()
-            .find(|schema| schema.flow == flow.id);
-        let canonical_name = flow.id.canonical_label();
-        let owner = self.inventory.flow_function(&flow.id).unwrap_or_else(|| {
-            self.inventory
-                .reserve_flow_function_slot(&flow.id, flow.definition)
-        });
-        for parameter in &flow.params {
-            let ty = self.local_type(*parameter);
-            frame.parameter(*parameter, ty);
-        }
-        let mut body = FlowBodyBuilder::new(self.inventory, owner, AwbcSafePointKind::FlowEntry);
-        let previous_effect_set = self
-            .active_effect_set
-            .replace(flow.body().effects().clone());
-        self.lower_ops(&mut frame, &mut body, flow.body().ops(), &public_name);
-        self.active_effect_set = previous_effect_set;
-        if body.needs_value_fallthrough() {
-            self.terminate_value_fallthrough(&mut frame, &mut body);
-        }
-        let body = body.finish(self.inventory);
-        let layout = self
+    pub(crate) fn lower_flow(&mut self, flow: &RuntimeFlow) -> AwbcFunctionId {
+        let function = flow.function();
+        let owner = self
             .inventory
-            .intern_frame_layout(format!("flow:{canonical_name}"), frame.finish());
-        for resume in body.resume_points {
-            if let Some(point) = self.inventory.program.resume_points.get_mut(resume.index()) {
-                point.frame_layout = layout;
-            }
+            .reserve_function_site_slot(flow.function_site(), function.definition());
+        self.inventory.bind_flow_function(&flow.id, owner);
+        if self.inventory.program.functions[owner.index()].blocks.len != 0 {
+            return owner;
         }
-        let params = flow
-            .params
-            .iter()
-            .map(|parameter| self.local_type(*parameter))
-            .collect();
-        let effects = self.inventory.intern_effect_set(flow.body().effects());
-        let signature = if body.returns_value {
-            self.inventory
-                .intern_signature(params, Some(self.inventory.dynamic_ty()), effects)
-        } else {
-            self.inventory.intern_signature(params, None, effects)
-        };
+        let public_name = flow_public_id(&flow.id);
+        let emitted = self.lower_executable_function_site(owner, function, &public_name);
         let public_id = self.inventory.intern_string(&public_name);
-        let mut flags = vec![
-            AwbcFunctionFlag::Deterministic,
-            AwbcFunctionFlag::MaySuspend,
-        ];
-        if body.has_dynamic_target {
-            flags.push(AwbcFunctionFlag::HasDynamicTarget);
-        }
-        let input_ownership = match schema {
-            Some(schema) if schema.parameters.len() == flow.params.len() => schema
-                .parameters
-                .iter()
-                .enumerate()
-                .map(|(position, input)| {
-                    AwbcFunctionInputOwnership::parameter(
-                        input.identity,
-                        table_index(position),
-                        input.passing,
-                    )
-                })
-                .collect(),
-            _ => {
-                self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                    &public_name,
-                    "Flow input schema is absent or has different arity",
-                ));
-                Vec::new()
-            }
-        };
-        let function = self.inventory.replace_flow_function(
-            &flow.id,
-            owner,
-            AwbcFunction {
-                definition: flow.definition,
-                semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
-                public_id: Some(public_id),
-                kind: AwbcFunctionKind::Flow,
-                signature,
-                type_context: None,
-                input_ownership,
-                frame_layout: layout,
-                blocks: body.blocks,
-                entry_block: body.entry_block,
-                flags: flags
-                    .into_iter()
-                    .fold(AwbcFunctionFlags::empty(), AwbcFunctionFlags::with),
-            },
-        );
-        debug_assert_eq!(function, owner);
-        function
+        let row = &mut self.inventory.program.functions[emitted.index()];
+        row.kind = AwbcFunctionKind::Flow;
+        row.public_id = Some(public_id);
+        emitted
     }
 
     fn terminate_value_fallthrough(
@@ -2116,13 +2077,8 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         if !already_reserved {
             self.inventory
                 .push_pending_closure(PendingAwbcClosure::FunctionSite {
-                    definition: declaration.definition(),
-                    role: declaration.role(),
+                    site,
                     function,
-                    function_type: declaration.function_type(),
-                    inputs: declaration.inputs().to_vec().into_boxed_slice(),
-                    result: declaration.result(),
-                    body: declaration.body().clone(),
                     path: format!("{path}.function.{site}"),
                 });
         }

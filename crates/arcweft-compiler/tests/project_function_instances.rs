@@ -437,7 +437,24 @@ flow main() -> i64 {
             .transition,
         arcweft_core::plan::RuntimeCallableTransition::Invoke { .. }
     ));
-    assert_eq!(compiled.plan.function_sites().len(), 1);
+    assert_eq!(
+        compiled
+            .plan
+            .function_sites()
+            .iter()
+            .filter(|site| site.role() == arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary)
+            .count(),
+        1
+    );
+    assert_eq!(
+        compiled
+            .plan
+            .function_sites()
+            .iter()
+            .filter(|site| site.role() == arcweft_core::plan::RuntimeFunctionSemanticRole::Flow)
+            .count(),
+        1
+    );
     assert!(compiled.plan.pure_helpers().is_empty());
 }
 

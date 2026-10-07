@@ -42,6 +42,14 @@ impl RuntimeEffectSet {
         Ok(Self(effects.into_boxed_slice()))
     }
 
+    /// Whether these declared permissions cover every required execution effect.
+    #[must_use]
+    pub fn covers(&self, required: &Self) -> bool {
+        required
+            .iter()
+            .all(|effect| self.iter().any(|permission| permission.covers(effect)))
+    }
+
     #[must_use]
     pub fn as_slice(&self) -> &[EffectId] {
         &self.0

@@ -183,14 +183,31 @@ fn entry_selection_product_bundle() -> ArcweftBundle {
         let flow = FlowRuntimeId::from_checked_declaration_digest([byte; 32], flow_label)
             .expect("fixture checked Flow identity");
         builder
-            .push_flow_seed(RuntimeFlowSeed::new(
-                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
-                    [61; 32],
-                ),
-                flow.clone(),
+            .admit_type_batch(
+                [arcweft_core::plan::RuntimePlanTypeSeed::new(
+                    arcweft_core::pattern::RuntimeCheckedType::String.semantic_identity_digest(),
+                    arcweft_core::plan::RuntimePlanTypeProjection::String,
+                )],
                 [],
-                arcweft_core::plan::RuntimeEffectSet::empty(),
-                vec![RuntimeFlowOpSeed::Return(entry_label.to_owned())],
+            )
+            .expect("Flow result type admits");
+        builder
+            .push_flow_seed(RuntimeFlowSeed::new(
+                flow.clone(),
+                arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                    arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                        [61; 32],
+                    ),
+                    None,
+                    Box::new([]),
+                    arcweft_core::pattern::RuntimeCheckedType::String.semantic_identity_digest(),
+                    arcweft_core::plan::RuntimeEffectSet::empty(),
+                ),
+                arcweft_core::plan::RuntimeExecutableBodySeed {
+                    effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                    ops: (vec![RuntimeFlowOpSeed::Return(entry_label.to_owned())])
+                        .into_boxed_slice(),
+                },
             ))
             .expect("fixture Flow admits");
         builder
@@ -1574,22 +1591,31 @@ fn restartable_need_awfb_bytes() -> Vec<u8> {
     .expect("producer plan admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
-            [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::StartNeedProducer {
-                    binding: RuntimePatternSeed::new(
-                        need_ty,
-                        RuntimePatternSeedKind::Bind {
-                            mutable: false,
-                            local: need_local.clone(),
-                        },
-                    ),
-                    target: arcweft_core::plan::RuntimeNeedProducerStartTargetSeed {
-                        plan,
-                        arguments: vec![arcweft_core::plan::RuntimeHostArgumentSeed::Positional(
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                string_ty,
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::StartNeedProducer {
+                        binding: RuntimePatternSeed::new(
+                            need_ty,
+                            RuntimePatternSeedKind::Bind {
+                                mutable: false,
+                                local: need_local.clone(),
+                            },
+                        ),
+                        target: arcweft_core::plan::RuntimeNeedProducerStartTargetSeed {
+                            plan,
+                            arguments:
+                                vec![arcweft_core::plan::RuntimeHostArgumentSeed::Positional(
                             arcweft_core::task::RuntimeRequestRoleIdentity::from_accepted_identity(
                                 [42; 32],
                             ),
@@ -1598,23 +1624,28 @@ fn restartable_need_awfb_bytes() -> Vec<u8> {
                                 RuntimeExprSeedKind::EntityRef(reference),
                             ),
                         )],
+                        },
                     },
-                },
-                RuntimeFlowOpSeed::Await {
-                    binding: None,
-                    target: arcweft_core::plan::RuntimeAwaitTargetSeed {
-                        source: RuntimeExprSeed::new(
-                            need_ty,
-                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                                need_local,
-                                RuntimeLocalReadMode::Move,
-                            )),
-                        ),
+                    RuntimeFlowOpSeed::Await {
+                        binding: None,
+                        target: arcweft_core::plan::RuntimeAwaitTargetSeed {
+                            source: RuntimeExprSeed::new(
+                                need_ty,
+                                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                    need_local,
+                                    RuntimeLocalReadMode::Move,
+                                )),
+                            ),
+                        },
+                        observers: Vec::new(),
                     },
-                    observers: Vec::new(),
-                },
-                RuntimeFlowOpSeed::Return("done".to_owned()),
-            ],
+                    RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                        string_ty,
+                        RuntimeExprSeedKind::Value(RuntimeValue::String("done".to_owned())),
+                    )),
+                ])
+                .into_boxed_slice(),
+            },
         ))
         .expect("Need flow admits");
     builder
@@ -1664,23 +1695,43 @@ fn assertion_product_bundle(condition: bool) -> ArcweftBundle {
         )
         .expect("bool type admits");
     builder
-        .push_flow_seed(RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
-            flow.clone(),
+        .admit_type_batch(
+            [arcweft_core::plan::RuntimePlanTypeSeed::new(
+                arcweft_core::pattern::RuntimeCheckedType::String.semantic_identity_digest(),
+                arcweft_core::plan::RuntimePlanTypeProjection::String,
+            )],
             [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::EvaluatedEffect(RuntimeEvaluatedEffectSeed::Assert {
-                    guard: RuntimeAssertionGuardId::try_from_bytes([7; 16]).expect("fixture guard"),
-                    condition: RuntimeExprSeed::new(
-                        bool_ty,
-                        RuntimeExprSeedKind::Value(RuntimeValue::Bool(condition)),
-                    ),
-                    message: "must be ready".to_owned(),
-                    profile: RuntimeAssertionProfile::Always,
-                }),
-                RuntimeFlowOpSeed::Return("done".to_owned()),
-            ],
+        )
+        .expect("Flow result type admits");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            flow.clone(),
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                arcweft_core::pattern::RuntimeCheckedType::String.semantic_identity_digest(),
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::EvaluatedEffect(RuntimeEvaluatedEffectSeed::Assert {
+                        guard: RuntimeAssertionGuardId::try_from_bytes([7; 16])
+                            .expect("fixture guard"),
+                        condition: RuntimeExprSeed::new(
+                            bool_ty,
+                            RuntimeExprSeedKind::Value(RuntimeValue::Bool(condition)),
+                        ),
+                        message: "must be ready".to_owned(),
+                        profile: RuntimeAssertionProfile::Always,
+                    }),
+                    RuntimeFlowOpSeed::Return("done".to_owned()),
+                ])
+                .into_boxed_slice(),
+            },
         ))
         .expect("assertion flow admits");
     builder

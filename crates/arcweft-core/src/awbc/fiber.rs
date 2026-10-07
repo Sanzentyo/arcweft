@@ -2201,6 +2201,35 @@ impl FiberState {
         generation: u64,
         budget_quantum: u64,
     ) -> Result<Self, FiberStateError> {
+        let mut fiber = Self::allocate_function_frame(
+            program,
+            root,
+            function,
+            instance,
+            generation,
+            budget_quantum,
+        )?;
+        let signature = program
+            .functions
+            .get(function.index())
+            .and_then(|row| program.signatures.get(row.signature.index()))
+            .ok_or(FiberStateError::InvalidFrame)?;
+        // Empty input packets can be bound at construction. Argument-bearing
+        // frames remain staged until their caller supplies the checked packet.
+        if signature.params.is_empty() {
+            fiber.frames[0].bind_positional_arguments(program, &[])?;
+        }
+        Ok(fiber)
+    }
+
+    fn allocate_function_frame(
+        program: &AwbcProgram,
+        root: AwbcFiberRoot,
+        function: AwbcFunctionId,
+        instance: RuntimeFiberInstanceId,
+        generation: u64,
+        budget_quantum: u64,
+    ) -> Result<Self, FiberStateError> {
         if root == AwbcFiberRoot::Empty
             || root
                 .validate(program)?
@@ -2265,7 +2294,7 @@ impl FiberState {
         budget_quantum: u64,
     ) -> Self {
         debug_assert_eq!(prepared.parameter_registers.len(), args.len());
-        let mut fiber = Self::for_function_with_instance(
+        let mut fiber = Self::allocate_function_frame(
             program,
             root,
             prepared.function,

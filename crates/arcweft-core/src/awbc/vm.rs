@@ -3029,7 +3029,12 @@ fn execute_terminator(
                 },
             )
         }
-        AwbcTerminator::Return { value } => {
+        AwbcTerminator::Return { .. } | AwbcTerminator::Complete => {
+            let value = match terminator {
+                AwbcTerminator::Return { value } => *value,
+                AwbcTerminator::Complete => None,
+                _ => unreachable!("return/completion dispatch"),
+            };
             let value = value
                 .map(|value| fiber.active_frame_mut()?.take_register(value))
                 .transpose()?;
@@ -4497,6 +4502,18 @@ pub(crate) fn runtime_value_view_matches_type(
     let Some(ty_row) = program.runtime_types.get(ty.index()) else {
         return false;
     };
+    if matches!(
+        ty_row.shape(),
+        AwbcRuntimeTypeShape::AgentValue | AwbcRuntimeTypeShape::Variant { .. }
+    ) {
+        return program
+            .validate_live_value_view(
+                ty,
+                value,
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            )
+            .is_ok();
+    }
     match (value, ty_row.shape()) {
         (RuntimeValueView::Reduction(value), AwbcRuntimeTypeShape::Opaque { arguments, .. }) => {
             program.opaque_owner(ty).ok().flatten().is_some_and(|owner| {
@@ -4579,22 +4596,6 @@ pub(crate) fn runtime_value_view_matches_type(
                 && fields.iter().enumerate().all(|(index, field)| {
                     values.get(index).is_some_and(|(_, _, value)| {
                         runtime_value_view_matches_type(program, value, field.ty, depth + 1)
-                    })
-                })
-        }
-        (
-            RuntimeValueView::Variant { owner, ordinal, name, payload , type_instantiation,},
-            AwbcRuntimeTypeShape::Variant { owner: expected_owner, cases, .. },
-        ) => {
-            runtime_variant_identity(program, ty_row.semantic_identity(), expected_owner).as_ref()
-                == Some(owner)
-                && usize::try_from(ordinal).ok().and_then(|ordinal| cases.get(ordinal)).is_some_and(|case| {
-                    program.strings.get(case.name.index()).is_some_and(|case_name| {
-                        case_name == name && match (case.payload, payload) {
-                            (None, None) => true,
-                            (Some(expected), Some(value)) => runtime_value_view_matches_type(program, value.view(), expected, depth + 1),
-                            _ => false,
-                        }
                     })
                 })
         }

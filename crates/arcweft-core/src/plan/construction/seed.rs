@@ -93,9 +93,8 @@ impl RuntimeLocalDeclarationSeed {
 /// admission that issued their construction-only handles.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeFlowSeed {
-    definition: crate::plan::RuntimeFunctionDefinitionIdentity,
     id: FlowRuntimeId,
-    params: Box<[RuntimeLocalSeedId]>,
+    declaration: RuntimeFunctionSiteDeclarationSeed,
     body: RuntimeExecutableBodySeed,
 }
 
@@ -396,20 +395,14 @@ pub enum RuntimeCallableExecutableSeedCode {
 impl RuntimeFlowSeed {
     #[must_use]
     pub fn new(
-        definition: crate::plan::RuntimeFunctionDefinitionIdentity,
         id: FlowRuntimeId,
-        params: impl IntoIterator<Item = RuntimeLocalSeedId>,
-        effects: RuntimeEffectSet,
-        ops: Vec<RuntimeFlowOpSeed>,
+        declaration: RuntimeFunctionSiteDeclarationSeed,
+        body: RuntimeExecutableBodySeed,
     ) -> Self {
         Self {
-            definition,
             id,
-            params: params.into_iter().collect::<Vec<_>>().into_boxed_slice(),
-            body: RuntimeExecutableBodySeed {
-                effects,
-                ops: ops.into_boxed_slice(),
-            },
+            declaration,
+            body,
         }
     }
 
@@ -421,12 +414,11 @@ impl RuntimeFlowSeed {
     pub(super) fn into_parts(
         self,
     ) -> (
-        crate::plan::RuntimeFunctionDefinitionIdentity,
         FlowRuntimeId,
-        Box<[RuntimeLocalSeedId]>,
+        RuntimeFunctionSiteDeclarationSeed,
         RuntimeExecutableBodySeed,
     ) {
-        (self.definition, self.id, self.params, self.body)
+        (self.id, self.declaration, self.body)
     }
 }
 
@@ -1977,6 +1969,29 @@ pub struct RuntimeFunctionSiteDeclarationSeed {
     pub result: RuntimeSemanticTypeId,
     pub body_kind: RuntimeFunctionSiteBodyKind,
     pub effects: RuntimeEffectSet,
+}
+
+impl RuntimeFunctionSiteDeclarationSeed {
+    /// Complete source declaration for an executable Flow root. Result and
+    /// input authority are required; no body-based inference is performed.
+    #[must_use]
+    pub fn flow(
+        definition: crate::plan::RuntimeFunctionDefinitionIdentity,
+        function_type: Option<RuntimeSemanticTypeId>,
+        inputs: Box<[RuntimeFunctionInputBindingSeed]>,
+        result: RuntimeSemanticTypeId,
+        effects: RuntimeEffectSet,
+    ) -> Self {
+        Self {
+            definition,
+            role: crate::plan::RuntimeFunctionSemanticRole::Flow,
+            function_type,
+            inputs,
+            result,
+            body_kind: RuntimeFunctionSiteBodyKind::Executable,
+            effects,
+        }
+    }
 }
 
 /// Zero-based field coordinate in one accepted record domain.

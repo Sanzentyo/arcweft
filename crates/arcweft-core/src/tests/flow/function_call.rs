@@ -132,45 +132,74 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
         .expect("caller schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             entry.clone(),
-            [need_argument.clone()],
-            crate::plan::RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::ApplyFunction {
-                    callee: RuntimeExprSeed::new(
-                        function,
-                        RuntimeExprSeedKind::Function {
-                            site,
-                            captures: Box::new([
-                                string_value("captured"),
-                                RuntimeExprSeed::new(
-                                    need_string,
-                                    RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                                        need_argument,
-                                        RuntimeLocalReadMode::Move,
-                                    )),
-                                ),
-                            ]),
-                        },
+            crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
+                None,
+                Box::new([crate::plan::RuntimeFunctionInputBindingSeed {
+                    transfer: crate::plan::RuntimeFunctionInputTransfer::Formal,
+                    origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
+                        crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+                            [92; 32],
+                        ),
                     ),
-                    args: Box::new([]),
-                    result: RuntimePatternSeed::new(
-                        string,
-                        RuntimePatternSeedKind::Bind {
+                    source: crate::plan::RuntimeFunctionInputSource::Parameter {
+                        position: 0,
+                        passing: crate::plan::RuntimeFunctionParameterPassing::Affine,
+                    },
+                    input_local: need_argument.clone(),
+                    pattern: crate::plan::RuntimePatternSeed::new(
+                        need_string,
+                        crate::plan::RuntimePatternSeedKind::Bind {
                             mutable: false,
-                            local: result.clone(),
+                            local: need_argument.clone(),
                         },
                     ),
-                },
-                RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
-                    string,
-                    RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                        result,
-                        RuntimeLocalReadMode::Copy,
+                    ownership: crate::plan::RuntimeFunctionInputOwnershipRequirement::Owned,
+                    unrestricted_bindings: Box::new([]),
+                }]),
+                string,
+                crate::plan::RuntimeEffectSet::empty(),
+            ),
+            crate::plan::RuntimeExecutableBodySeed {
+                effects: crate::plan::RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::ApplyFunction {
+                        callee: RuntimeExprSeed::new(
+                            function,
+                            RuntimeExprSeedKind::Function {
+                                site,
+                                captures: Box::new([
+                                    string_value("captured"),
+                                    RuntimeExprSeed::new(
+                                        need_string,
+                                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                            need_argument,
+                                            RuntimeLocalReadMode::Move,
+                                        )),
+                                    ),
+                                ]),
+                            },
+                        ),
+                        args: Box::new([]),
+                        result: RuntimePatternSeed::new(
+                            string,
+                            RuntimePatternSeedKind::Bind {
+                                mutable: false,
+                                local: result.clone(),
+                            },
+                        ),
+                    },
+                    RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                        string,
+                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                            result,
+                            RuntimeLocalReadMode::Copy,
+                        )),
                     )),
-                )),
-            ],
+                ])
+                .into_boxed_slice(),
+            },
         ))
         .expect("caller application admits");
     let plan = builder.finish().expect("callback plan seals");

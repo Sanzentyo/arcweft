@@ -1426,6 +1426,7 @@ impl Wire for AwbcInstruction {
             | AwbcOpcode::Await
             | AwbcOpcode::AwaitMany
             | AwbcOpcode::HostCall
+            | AwbcOpcode::Complete
             | AwbcOpcode::Return
             | AwbcOpcode::SelectDialogueResult
             | AwbcOpcode::SequenceNext
@@ -1744,7 +1745,7 @@ impl Wire for AwbcTerminator {
                 message.write_wire(writer)?;
             }
             Self::BudgetYield { resume } => resume.write_wire(writer)?,
-            Self::Unreachable => {}
+            Self::Complete | Self::Unreachable => {}
         }
         Ok(())
     }
@@ -1848,6 +1849,7 @@ impl Wire for AwbcTerminator {
             AwbcOpcode::BudgetYield => Self::BudgetYield {
                 resume: AwbcResumePointId::read_wire(reader)?,
             },
+            AwbcOpcode::Complete => Self::Complete,
             AwbcOpcode::Unreachable => Self::Unreachable,
             AwbcOpcode::Nop
             | AwbcOpcode::LoadConst
@@ -2637,7 +2639,7 @@ mod function_semantic_role_wire_tests {
     }
     #[test]
     fn function_semantic_role_decoder_rejects_every_unassigned_tag() {
-        for tag in 6..=u8::MAX {
+        for tag in 7..=u8::MAX {
             let bytes = [tag];
             let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
             assert_eq!(

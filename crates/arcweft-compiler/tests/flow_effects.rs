@@ -33,8 +33,8 @@ fn verify_flow_effects(compiled: &CompiledSource, expected: &[(&str, &[&str])]) 
             .find(|flow| flow.id.public_label().as_str() == format!("flow.{name}"))
             .expect("expected runtime Flow");
         assert_eq!(
-            flow.body()
-                .effects()
+            flow.function()
+                .invocation_effects()
                 .iter()
                 .map(arcweft_id::EffectId::as_str)
                 .collect::<Vec<_>>(),
@@ -142,6 +142,15 @@ fn authored_flow_permissions_keep_unused_members_and_scopes() {
          entry cli @entry.main { goto @flow.main }\n",
     )
     .expect("scoped Flow effect bound covers the unscoped operation");
+    assert_eq!(
+        compiled.plan.flows()[0]
+            .body()
+            .effects()
+            .iter()
+            .map(arcweft_id::EffectId::as_str)
+            .collect::<Vec<_>>(),
+        vec!["fs.read"]
+    );
     let program = verify_flow_effects(&compiled, &[("main", &["fs.read(save)", "fs.write"])]);
     assert_returns_42(compiled, program);
 }

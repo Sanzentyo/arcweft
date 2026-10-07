@@ -101,7 +101,7 @@ use super::variant_domains::{
     RuntimeVariantDomainTableBuilder,
 };
 use super::{
-    FlowOp, RuntimeDialogueContentEffectSlot, RuntimeDialogueContentPlan,
+    FlowOp, FlowRuntimeId, RuntimeDialogueContentEffectSlot, RuntimeDialogueContentPlan,
     RuntimeDialogueContentSlot, RuntimeDialogueContentTemplateManifest, RuntimeDialogueEffectSite,
     RuntimeDialogueMark, RuntimeDialogueValueRole, RuntimeDialogueValueSite, RuntimeEntrySpec,
     RuntimeFlow, RuntimeLineOperation, RuntimePlan, RuntimePlanTypeProjection, RuntimePureHelper,
@@ -631,6 +631,10 @@ pub enum RuntimePlanBuildError {
     },
     #[error("runtime stream `{stream}` is defined more than once")]
     DuplicateStreamDefinition { stream: String },
+    #[error("Flow {flow} requires its own executable Flow function declaration")]
+    InvalidFlowFunction { flow: String },
+    #[error("Flow {flow} parameter schema differs from its function input contract")]
+    FlowParameterContractMismatch { flow: String },
 }
 
 #[derive(Debug)]
@@ -643,6 +647,13 @@ struct ReservedFunctionSite {
     body_kind: RuntimeFunctionSiteBodyKind,
     effects: RuntimeEffectSet,
     body: Option<RuntimeFunctionSiteBody>,
+}
+
+#[derive(Debug)]
+struct ReservedFlowRoot {
+    id: FlowRuntimeId,
+    function_site: crate::runtime_id::RuntimeFunctionSiteId,
+    params: Box<[RuntimeLocalDeclarationId]>,
 }
 
 #[derive(Debug)]
@@ -732,7 +743,7 @@ pub struct RuntimePlanBuilder {
     callable_executables: Vec<RuntimeCallableExecutable>,
     flow_schemas: Vec<RuntimeFlowSchema>,
     flow_executables: Vec<RuntimeFlowExecutable>,
-    flows: Vec<RuntimeFlow>,
+    flows: Vec<ReservedFlowRoot>,
     pure_helpers: Vec<ReservedPureHelper>,
     pure_programs: Vec<RuntimePureProgramBinding>,
     trait_methods: Vec<ReservedTraitMethod>,
@@ -1136,7 +1147,7 @@ impl RuntimePlanBuilder {
             }
             RuntimeFunctionSiteBodySeed::Executable(body) => {
                 let body_effects = body.effects;
-                if body_effects != *effects {
+                if !effects.covers(&body_effects) {
                     return Err(RuntimePlanBuildError::FunctionSiteEffectSetMismatch {
                         site: site_id,
                     });
@@ -2638,14 +2649,15 @@ impl RuntimePlanBuilder {
             let Some(body) = site.body else {
                 unreachable!("incomplete function sites returned before materialization")
             };
-            function_site_builder.push(
-                site.definition,
-                site.role,
-                site.function_type,
-                site.inputs,
-                site.result,
+            function_site_builder.push(super::RuntimeFunctionSite {
+                definition: site.definition,
+                role: site.role,
+                function_type: site.function_type,
+                inputs: site.inputs,
+                result: site.result,
+                invocation_effects: site.effects,
                 body,
-            )?;
+            })?;
         }
         let pure_helpers = self
             .pure_helpers
@@ -2686,6 +2698,24 @@ impl RuntimePlanBuilder {
                 }
             })
             .collect();
+        let function_sites = function_site_builder.finish();
+        let flows = self
+            .flows
+            .into_iter()
+            .map(|flow| {
+                let function = function_sites.shared(flow.function_site).ok_or_else(|| {
+                    RuntimePlanBuildError::InvalidFlowFunction {
+                        flow: flow.id.canonical_label(),
+                    }
+                })?;
+                Ok(RuntimeFlow {
+                    id: flow.id,
+                    params: flow.params,
+                    function_site: flow.function_site,
+                    function,
+                })
+            })
+            .collect::<Result<Vec<_>, RuntimePlanBuildError>>()?;
         let type_table = self.types.finish()?;
         let mut meter = crate::task::semantic::TaskSemanticMeter::new(
             limits.max_semantic_work,
@@ -2705,19 +2735,14 @@ impl RuntimePlanBuilder {
         )?;
         let project_call_sites = self.project_call_sites.into_inner().finish();
         let local_declarations = self.locals.finish();
-        validate_flow_parameters(
-            &self.flows,
-            &self.flow_schemas,
-            &local_declarations,
-            &type_table,
-        )?;
+        validate_flow_parameters(&flows, &self.flow_schemas, &local_declarations, &type_table)?;
         let plan = RuntimePlan {
             artifact: None,
             type_table,
             local_declarations,
             nominal_record_domains: self.nominal_record_domains.finish(),
             variant_domains: self.variant_domains.finish(),
-            function_sites: function_site_builder.finish(),
+            function_sites,
             control_effect_contracts,
             defer_sites: self.defer_sites.into_boxed_slice(),
             callable_states: self.callable_states.into_inner().finish(),
@@ -2731,7 +2756,7 @@ impl RuntimePlanBuilder {
             callable_executables: self.callable_executables,
             flow_schemas: self.flow_schemas,
             flow_executables: self.flow_executables,
-            flows: self.flows,
+            flows,
             pure_helpers,
             pure_programs: self.pure_programs,
             trait_methods,
@@ -2866,32 +2891,35 @@ impl RuntimePlanBuilder {
     }
 
     fn try_push_flow_seed(&mut self, seed: RuntimeFlowSeed) -> Result<u32, RuntimePlanBuildError> {
-        let (definition, id, params, body) = seed.into_parts();
-        let label = id.canonical_label();
-        let mut unique = BTreeSet::new();
-        let mut resolved = Vec::with_capacity(params.len());
-        for param in params {
-            let (local, _) = param
-                .resolve(&self.issuer)
-                .ok_or(RuntimePlanBuildError::ForeignLocalSeed)?;
-            if !self.locals.contains(local) {
-                return Err(RuntimePlanBuildError::UnknownFlowParameter { flow: label, local });
-            }
-            if !unique.insert(local) {
-                return Err(RuntimePlanBuildError::DuplicateFlowParameter { flow: label, local });
-            }
-            resolved.push(local);
+        let (id, declaration, body) = seed.into_parts();
+        if declaration.role != super::RuntimeFunctionSemanticRole::Flow
+            || declaration.body_kind != RuntimeFunctionSiteBodyKind::Executable
+        {
+            return Err(RuntimePlanBuildError::InvalidFlowFunction {
+                flow: id.canonical_label(),
+            });
         }
-        let ops = self.lower_flow_ops(body.ops.into_vec())?;
-        let mut scope = resolved.iter().copied().collect::<BTreeSet<_>>();
-        self.validate_flow_operation_locals(&ops, &mut scope)?;
+        let site = self.reserve_function_site_seed(declaration)?;
+        let (function_site, ..) = site
+            .resolve(&self.issuer)
+            .ok_or(RuntimePlanBuildError::ForeignFunctionSiteSeed)?;
+        self.define_function_site_seed(&site, seed::RuntimeFunctionSiteBodySeed::Executable(body))?;
+        let row = self
+            .function_sites
+            .get(function_site.get().get() as usize - 1)
+            .ok_or(RuntimePlanBuildError::ForeignFunctionSiteSeed)?;
+        let params = row
+            .inputs
+            .iter()
+            .filter(|input| matches!(input.source(), RuntimeFunctionInputSource::Parameter { .. }))
+            .map(RuntimeFunctionInputBinding::input_local)
+            .collect::<Box<[_]>>();
         push_row(
             &mut self.flows,
-            RuntimeFlow {
-                definition,
+            ReservedFlowRoot {
                 id,
-                params: resolved.into_boxed_slice(),
-                body: RuntimeExecutableBody::new(body.effects, ops.into_boxed_slice()),
+                function_site,
+                params,
             },
             RuntimePlanTable::Flows,
         )
@@ -3030,6 +3058,9 @@ fn validate_flow_parameters(
                     actual,
                 });
             }
+        }
+        if !flow.matches_parameter_contract(schema) {
+            return Err(RuntimePlanBuildError::FlowParameterContractMismatch { flow: label });
         }
     }
     for schema in schemas {

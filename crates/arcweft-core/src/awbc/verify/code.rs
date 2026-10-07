@@ -2919,6 +2919,7 @@ fn apply_terminator(
                 | AwbcTerminator::Await { .. }
                 | AwbcTerminator::AwaitMany { .. }
                 | AwbcTerminator::HostCall { .. }
+                | AwbcTerminator::Complete
                 | AwbcTerminator::Return { .. }
                 | AwbcTerminator::SelectDialogueResult { .. }
         )
@@ -3532,6 +3533,24 @@ fn apply_terminator(
                 next,
             ));
         }
+        AwbcTerminator::Complete => {
+            let row = &program.functions[function];
+            let signature = &program.signatures[row.signature.index()];
+            if row.kind != AwbcFunctionKind::Flow
+                || !signature.result.is_some_and(|ty| {
+                    matches!(runtime_shape(program, ty), Some(AwbcRuntimeTypeShape::Unit))
+                })
+            {
+                return Err(AwbcVerifyError::ResultShapeMismatch { at });
+            }
+            if !state.scopes.is_empty() {
+                return Err(AwbcVerifyError::ScopeDiscipline {
+                    function,
+                    block,
+                    message: "completion leaves lexical scopes open".to_owned(),
+                });
+            }
+        }
         AwbcTerminator::Return { value } => {
             let signature = &program.signatures[program.functions[function].signature.index()];
             match (signature.result, value) {
@@ -3708,6 +3727,7 @@ fn apply_terminator_copy_and_move_effects(
         AwbcTerminator::Jump { .. }
         | AwbcTerminator::Branch { .. }
         | AwbcTerminator::SequenceNext { .. }
+        | AwbcTerminator::Complete
         | AwbcTerminator::Return { .. }
         | AwbcTerminator::SelectDialogueResult { .. }
         | AwbcTerminator::Trap { .. }

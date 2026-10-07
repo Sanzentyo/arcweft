@@ -1140,13 +1140,21 @@ fn dialogue_runtime_plan(
     push_fixture_flow(
         &mut builder,
         done,
-        vec![RuntimeFlowOpSeed::Return("done".to_owned())],
+        vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+            fixture_string_type(),
+            arcweft_core::plan::RuntimeExprSeedKind::Value(RuntimeValue::String("done".to_owned())),
+        ))],
     );
     if extra_flow {
         push_fixture_flow(
             &mut builder,
             FlowRuntimeId::from_runtime_target_value("flow.extra").expect("flow runtime id"),
-            vec![RuntimeFlowOpSeed::Return("extra".to_owned())],
+            vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                fixture_string_type(),
+                arcweft_core::plan::RuntimeExprSeedKind::Value(RuntimeValue::String(
+                    "extra".to_owned(),
+                )),
+            ))],
         );
     }
     builder
@@ -1168,7 +1176,12 @@ fn dialogue_main_ops(
     target: RuntimeExprSeed,
 ) -> Vec<RuntimeFlowOpSeed> {
     if changed_main_code {
-        return vec![RuntimeFlowOpSeed::Return("changed".to_owned())];
+        return vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+            fixture_string_type(),
+            arcweft_core::plan::RuntimeExprSeedKind::Value(RuntimeValue::String(
+                "changed".to_owned(),
+            )),
+        ))];
     }
     vec![
         RuntimeFlowOpSeed::Dialogue {
@@ -1216,11 +1229,20 @@ fn push_fixture_flow(
 ) {
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
-            [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            ops,
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                fixture_string_type(),
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (ops).into_boxed_slice(),
+            },
         ))
         .expect("fixture flow admits");
     builder
@@ -1424,7 +1446,12 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
                 },
                 observers: Vec::new(),
             },
-            RuntimeFlowOpSeed::Return("ready".to_owned()),
+            RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                fixture_string_type(),
+                arcweft_core::plan::RuntimeExprSeedKind::Value(RuntimeValue::String(
+                    "ready".to_owned(),
+                )),
+            )),
         ],
     );
     builder
@@ -1492,7 +1519,12 @@ fn await_replacement_bundle(source_label: &str, source: &str) -> ArcweftBundle {
     push_fixture_flow(
         &mut builder,
         main.clone(),
-        vec![RuntimeFlowOpSeed::Return("changed".to_owned())],
+        vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+            fixture_string_type(),
+            arcweft_core::plan::RuntimeExprSeedKind::Value(RuntimeValue::String(
+                "changed".to_owned(),
+            )),
+        ))],
     );
     builder
         .push_flow_executable(RuntimeFlowExecutable {

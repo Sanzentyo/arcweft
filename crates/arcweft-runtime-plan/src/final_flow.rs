@@ -1978,15 +1978,86 @@ pub fn lower_runtime_plan_with_stats(
                 match lowerer.lower_body(flow.body()) {
                     Ok(ops) => {
                         assertion_sites.extend(lowerer.into_assertion_sites());
+                        let RuntimeTypeShape::Function {
+                            parameters, result, ..
+                        } = flow_fact.function_type().shape()
+                        else {
+                            errors.push(RuntimePlanLowerError::new(
+                                "accepted Flow has no normalized function signature",
+                            ));
+                            continue;
+                        };
+                        if parameters.len() != params.len() {
+                            errors.push(RuntimePlanLowerError::new(
+                                "Flow invocation locals differ from its accepted input signature",
+                            ));
+                            continue;
+                        }
+                        let inputs = params
+                            .into_iter()
+                            .zip(parameters)
+                            .zip(flow_fact.definition().parameters())
+                            .enumerate()
+                            .map(|(position, ((local, ty), formal))| {
+                                Ok(RuntimeFunctionInputBindingSeed {
+                                    transfer:
+                                        arcweft_core::plan::RuntimeFunctionInputTransfer::Formal,
+                                    origin: formal.runtime_input_origin(),
+                                    source: RuntimeFunctionInputSource::Parameter {
+                                        position: u32::try_from(position).map_err(|_| {
+                                            RuntimePlanLowerError::new(
+                                                "Flow parameter index overflow",
+                                            )
+                                        })?,
+                                        passing: formal.passing(),
+                                    },
+                                    input_local: local.clone(),
+                                    pattern: RuntimePatternSeed::new(
+                                        ty.identity(),
+                                        RuntimePatternSeedKind::Bind {
+                                            mutable: false,
+                                            local: local.clone(),
+                                        },
+                                    ),
+                                    ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
+                                    unrestricted_bindings: Box::new([]),
+                                })
+                            })
+                            .collect::<Result<Box<[_]>, RuntimePlanLowerError>>();
+                        let inputs = match inputs {
+                            Ok(inputs) => inputs,
+                            Err(error) => {
+                                errors.push(error);
+                                continue;
+                            }
+                        };
+                        let body_effects = match RuntimeEffectSet::try_from_effects(
+                            flow_fact.definition().effects().iter().cloned(),
+                        ) {
+                            Ok(effects) => effects,
+                            Err(error) => {
+                                errors.push(RuntimePlanLowerError::new(error.to_string()));
+                                continue;
+                            }
+                        };
                         flow_seeds.push(RuntimeFlowSeed::new(
-                            flow_fact
-                                .definition()
-                                .definition_identity()
-                                .runtime_identity(),
                             identity,
-                            params,
-                            flow_fact.effects().clone(),
-                            ops,
+                            RuntimeFunctionSiteDeclarationSeed {
+                                definition: flow_fact
+                                    .definition()
+                                    .definition_identity()
+                                    .runtime_identity(),
+                                role: arcweft_core::plan::RuntimeFunctionSemanticRole::Flow,
+                                function_type: Some(flow_fact.function_type().identity()),
+                                inputs,
+                                result: result.identity(),
+                                body_kind: RuntimeFunctionSiteBodyKind::Executable,
+                                effects: flow_fact.effects().clone(),
+                            },
+                            arcweft_core::plan::RuntimeExecutableBodySeed {
+                                effects: body_effects,
+                                ops: (ops).into_boxed_slice(),
+                            },
                         ));
                     }
                     Err(mut item_errors) => errors.append(&mut item_errors),
@@ -5440,11 +5511,20 @@ fn lower_controller_callable(
         .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
     Ok(LoweredControllerCallable {
         flow: RuntimeFlowSeed::new(
-            instance.definition_identity().runtime_identity(),
             flow.clone(),
-            [],
-            effects,
-            ops,
+            RuntimeFunctionSiteDeclarationSeed {
+                definition: instance.definition_identity().runtime_identity(),
+                role: arcweft_core::plan::RuntimeFunctionSemanticRole::Flow,
+                function_type: None,
+                inputs: Box::new([]),
+                result: result_ty,
+                body_kind: RuntimeFunctionSiteBodyKind::Executable,
+                effects: effects.clone(),
+            },
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects,
+                ops: (ops).into_boxed_slice(),
+            },
         ),
         flow_executable,
         executable,

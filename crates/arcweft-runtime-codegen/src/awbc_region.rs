@@ -208,6 +208,7 @@ fn opcode_eligible(opcode: AwbcOpcode, options: &AwbcRegionLowerOptions) -> bool
         | AwbcOpcode::CallFunction
         | AwbcOpcode::GotoStatic
         | AwbcOpcode::GotoDynamic
+        | AwbcOpcode::Complete
         | AwbcOpcode::Return
         | AwbcOpcode::SelectDialogueResult
         | AwbcOpcode::ProjectCall
@@ -237,6 +238,7 @@ fn terminator_eligible(terminator: &AwbcTerminator, options: &AwbcRegionLowerOpt
         | AwbcTerminator::Branch { .. }
         | AwbcTerminator::SequenceNext { .. }
         | AwbcTerminator::Match { .. }
+        | AwbcTerminator::Complete
         | AwbcTerminator::Return { .. }
         | AwbcTerminator::Trap { .. }
         | AwbcTerminator::BudgetYield { .. }

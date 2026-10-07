@@ -189,11 +189,18 @@ fn deeply_nested_match_flow_seed_lowers_and_validates_without_recursion() {
         )
         .expect("unit type admission");
     let flow = RuntimeFlowSeed::new(
-        crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
         flow_id("deep-match"),
-        Vec::new(),
-        RuntimeEffectSet::empty(),
-        ops,
+        crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
+            None,
+            Box::new([]),
+            unit,
+            RuntimeEffectSet::empty(),
+        ),
+        crate::plan::RuntimeExecutableBodySeed {
+            effects: RuntimeEffectSet::empty(),
+            ops: (ops).into_boxed_slice(),
+        },
     );
     builder
         .push_flow_schema(flow_schema(flow.id()))
@@ -232,11 +239,18 @@ fn drain(engine: &mut Engine) -> crate::step::RuntimeStepOutput {
 fn native_flow_returns_a_typed_scalar_value() {
     let entry = flow_id("flow.return");
     let plan = finish_plan([RuntimeFlowSeed::new(
-        crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
         entry.clone(),
-        [],
-        crate::plan::RuntimeEffectSet::empty(),
-        vec![RuntimeFlowOpSeed::ReturnExpr(string_value("ready"))],
+        crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
+            None,
+            Box::new([]),
+            string_type(),
+            crate::plan::RuntimeEffectSet::empty(),
+        ),
+        crate::plan::RuntimeExecutableBodySeed {
+            effects: crate::plan::RuntimeEffectSet::empty(),
+            ops: (vec![RuntimeFlowOpSeed::ReturnExpr(string_value("ready"))]).into_boxed_slice(),
+        },
     )]);
     let mut engine = Engine::for_flow(plan, &entry).expect("entry flow exists");
 
@@ -273,32 +287,40 @@ fn named_flow_scope_binds_its_result_in_the_parent_and_keeps_aot_identity() {
         .expect("flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             entry.clone(),
-            [],
-            RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::EnterScope {
-                    identity: identity.clone(),
-                },
-                RuntimeFlowOpSeed::ExitScopeBind {
-                    pattern: RuntimePatternSeed::new(
+            crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
+                None,
+                Box::new([]),
+                string,
+                RuntimeEffectSet::empty(),
+            ),
+            crate::plan::RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::EnterScope {
+                        identity: identity.clone(),
+                    },
+                    RuntimeFlowOpSeed::ExitScopeBind {
+                        pattern: RuntimePatternSeed::new(
+                            string,
+                            RuntimePatternSeedKind::Bind {
+                                mutable: false,
+                                local: result.clone(),
+                            },
+                        ),
+                        expr: string_value("scope result"),
+                    },
+                    RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
                         string,
-                        RuntimePatternSeedKind::Bind {
-                            mutable: false,
-                            local: result.clone(),
-                        },
-                    ),
-                    expr: string_value("scope result"),
-                },
-                RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
-                    string,
-                    RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                        result,
-                        RuntimeLocalReadMode::Copy,
+                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                            result,
+                            RuntimeLocalReadMode::Copy,
+                        )),
                     )),
-                )),
-            ],
+                ])
+                .into_boxed_slice(),
+            },
         ))
         .expect("named flow body admits");
     let plan = builder.finish().expect("named flow plan seals");
@@ -326,19 +348,27 @@ fn named_flow_scope_binds_its_result_in_the_parent_and_keeps_aot_identity() {
 fn native_flow_evaluates_a_named_expression_scope_before_its_outer_return() {
     let entry = flow_id("flow.named_expression_scope");
     let plan = finish_plan([RuntimeFlowSeed::new(
-        crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
         entry.clone(),
-        [],
-        RuntimeEffectSet::empty(),
-        vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+        crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
+            None,
+            Box::new([]),
             string_type(),
-            RuntimeExprSeedKind::Scope {
-                identity: RuntimeScopeIdentity::Named(
-                    DeclarationName::try_new("window").expect("valid scope name"),
-                ),
-                body: Box::new(string_value("expression scope")),
-            },
-        ))],
+            RuntimeEffectSet::empty(),
+        ),
+        crate::plan::RuntimeExecutableBodySeed {
+            effects: RuntimeEffectSet::empty(),
+            ops: (vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                string_type(),
+                RuntimeExprSeedKind::Scope {
+                    identity: RuntimeScopeIdentity::Named(
+                        DeclarationName::try_new("window").expect("valid scope name"),
+                    ),
+                    body: Box::new(string_value("expression scope")),
+                },
+            ))])
+            .into_boxed_slice(),
+        },
     )]);
     let mut engine = Engine::for_flow(plan, &entry).expect("named expression scope starts");
 
@@ -359,18 +389,33 @@ fn native_goto_selects_the_targeted_typed_flow() {
     let ending = flow_id("flow.ending");
     let plan = finish_plan([
         RuntimeFlowSeed::new(
-            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             opening.clone(),
-            [],
-            crate::plan::RuntimeEffectSet::empty(),
-            vec![RuntimeFlowOpSeed::Goto(ending.clone())],
+            crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
+                None,
+                Box::new([]),
+                string_type(),
+                crate::plan::RuntimeEffectSet::empty(),
+            ),
+            crate::plan::RuntimeExecutableBodySeed {
+                effects: crate::plan::RuntimeEffectSet::empty(),
+                ops: (vec![RuntimeFlowOpSeed::Goto(ending.clone())]).into_boxed_slice(),
+            },
         ),
         RuntimeFlowSeed::new(
-            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             ending.clone(),
-            [],
-            crate::plan::RuntimeEffectSet::empty(),
-            vec![RuntimeFlowOpSeed::ReturnExpr(string_value("finished"))],
+            crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
+                None,
+                Box::new([]),
+                string_type(),
+                crate::plan::RuntimeEffectSet::empty(),
+            ),
+            crate::plan::RuntimeExecutableBodySeed {
+                effects: crate::plan::RuntimeEffectSet::empty(),
+                ops: (vec![RuntimeFlowOpSeed::ReturnExpr(string_value("finished"))])
+                    .into_boxed_slice(),
+            },
         ),
     ]);
     let mut engine = Engine::for_flow(plan, &opening).expect("opening flow exists");
@@ -477,31 +522,48 @@ fn native_project_call_direct_continue_publishes_one_catalog_site() {
         .push_flow_schema(flow_schema(&entry))
         .expect("project-call flow schema admits");
     builder
-        .push_flow_seed(RuntimeFlowSeed::new(
-            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
-            entry.clone(),
+        .admit_type_batch(
+            [RuntimePlanTypeSeed::new(
+                string_type(),
+                RuntimePlanTypeProjection::String,
+            )],
             [],
-            crate::plan::RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::ProjectCall {
-                    plan: RuntimeProjectCallPlanSeed {
-                        callee: RuntimeExprSeed::new(
-                            outer,
-                            RuntimeExprSeedKind::MakeCallable {
-                                state: initial.clone(),
-                                captures: Box::new([]),
-                            },
-                        ),
-                        state: initial,
-                        completed_group: 0,
-                        operands: Box::new([]),
-                        ordinary: Box::new([]),
-                        attached: None,
+        )
+        .expect("Flow String result type admits");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            entry.clone(),
+            crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
+                None,
+                Box::new([]),
+                string_type(),
+                crate::plan::RuntimeEffectSet::empty(),
+            ),
+            crate::plan::RuntimeExecutableBodySeed {
+                effects: crate::plan::RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::ProjectCall {
+                        plan: RuntimeProjectCallPlanSeed {
+                            callee: RuntimeExprSeed::new(
+                                outer,
+                                RuntimeExprSeedKind::MakeCallable {
+                                    state: initial.clone(),
+                                    captures: Box::new([]),
+                                },
+                            ),
+                            state: initial,
+                            completed_group: 0,
+                            operands: Box::new([]),
+                            ordinary: Box::new([]),
+                            attached: None,
+                        },
+                        result: RuntimePatternSeed::new(function, RuntimePatternSeedKind::Discard),
                     },
-                    result: RuntimePatternSeed::new(function, RuntimePatternSeedKind::Discard),
-                },
-                RuntimeFlowOpSeed::Return("continued".to_owned()),
-            ],
+                    RuntimeFlowOpSeed::Return("continued".to_owned()),
+                ])
+                .into_boxed_slice(),
+            },
         ))
         .expect("direct project-call flow admits");
     let plan = builder.finish().expect("direct project-call plan seals");
@@ -609,49 +671,83 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
         .push_flow_schema(flow_schema(&arrow_entry))
         .expect("defaulted arrow-call flow schema admits");
     builder
-        .push_flow_seed(RuntimeFlowSeed::new(
-            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
-            arrow_entry.clone(),
+        .admit_type_batch(
+            [RuntimePlanTypeSeed::new(
+                string_type(),
+                RuntimePlanTypeProjection::String,
+            )],
             [],
-            crate::plan::RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::ApplyFunction {
-                    callee: callee.clone(),
-                    args: Box::new([]),
-                    result: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
-                },
-                RuntimeFlowOpSeed::Return("defaulted".to_owned()),
-            ],
+        )
+        .expect("Flow String result type admits");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            arrow_entry.clone(),
+            crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
+                None,
+                Box::new([]),
+                string_type(),
+                crate::plan::RuntimeEffectSet::empty(),
+            ),
+            crate::plan::RuntimeExecutableBodySeed {
+                effects: crate::plan::RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::ApplyFunction {
+                        callee: callee.clone(),
+                        args: Box::new([]),
+                        result: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
+                    },
+                    RuntimeFlowOpSeed::Return("defaulted".to_owned()),
+                ])
+                .into_boxed_slice(),
+            },
         ))
         .expect("defaulted arrow-call flow admits");
     builder
         .push_flow_schema(flow_schema(&entry))
         .expect("defaulted project-call flow schema admits");
     builder
-        .push_flow_seed(RuntimeFlowSeed::new(
-            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
-            entry.clone(),
+        .admit_type_batch(
+            [RuntimePlanTypeSeed::new(
+                string_type(),
+                RuntimePlanTypeProjection::String,
+            )],
             [],
-            crate::plan::RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::ProjectCall {
-                    plan: RuntimeProjectCallPlanSeed {
-                        callee,
-                        state,
-                        completed_group: 0,
-                        operands: Box::new([]),
-                        ordinary: Box::new([]),
-                        attached: Some(RuntimeProjectCallAttachedMaterializationSeed {
-                            abi_ty: option,
-                            binding_ty: unit,
-                            source_index: None,
-                            presence: RuntimeProjectCallAttachedPresenceSeed::DefaultedOmitted,
-                        }),
+        )
+        .expect("Flow String result type admits");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            entry.clone(),
+            crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
+                None,
+                Box::new([]),
+                string_type(),
+                crate::plan::RuntimeEffectSet::empty(),
+            ),
+            crate::plan::RuntimeExecutableBodySeed {
+                effects: crate::plan::RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::ProjectCall {
+                        plan: RuntimeProjectCallPlanSeed {
+                            callee,
+                            state,
+                            completed_group: 0,
+                            operands: Box::new([]),
+                            ordinary: Box::new([]),
+                            attached: Some(RuntimeProjectCallAttachedMaterializationSeed {
+                                abi_ty: option,
+                                binding_ty: unit,
+                                source_index: None,
+                                presence: RuntimeProjectCallAttachedPresenceSeed::DefaultedOmitted,
+                            }),
+                        },
+                        result: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
                     },
-                    result: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
-                },
-                RuntimeFlowOpSeed::Return("defaulted".to_owned()),
-            ],
+                    RuntimeFlowOpSeed::Return("defaulted".to_owned()),
+                ])
+                .into_boxed_slice(),
+            },
         ))
         .expect("defaulted project-call flow admits");
     let plan = builder.finish().expect("defaulted project-call plan seals");
@@ -760,34 +856,53 @@ fn native_project_call_rest_materialization_accepts_empty_and_source_ordered_val
             .collect::<Vec<_>>()
             .into_boxed_slice();
         builder
-            .push_flow_seed(RuntimeFlowSeed::new(
-                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
-                entry.clone(),
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    string_type(),
+                    RuntimePlanTypeProjection::String,
+                )],
                 [],
-                crate::plan::RuntimeEffectSet::empty(),
-                vec![
-                    RuntimeFlowOpSeed::ProjectCall {
-                        plan: RuntimeProjectCallPlanSeed {
-                            callee,
-                            state: callable_state,
-                            completed_group: 0,
-                            operands,
-                            ordinary: Box::new([
-                                RuntimeProjectCallOrdinaryMaterializationSeed::Rest(
-                                    RuntimeProjectCallRestMaterializationSeed {
-                                        parameter: 0,
-                                        abi_ty: unit,
-                                        binding_ty: sequence,
-                                        source_indices,
-                                    },
-                                ),
-                            ]),
-                            attached: None,
+            )
+            .expect("Flow String result type admits");
+        builder
+            .push_flow_seed(RuntimeFlowSeed::new(
+                entry.clone(),
+                crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                    crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                        [61; 32],
+                    ),
+                    None,
+                    Box::new([]),
+                    string_type(),
+                    crate::plan::RuntimeEffectSet::empty(),
+                ),
+                crate::plan::RuntimeExecutableBodySeed {
+                    effects: crate::plan::RuntimeEffectSet::empty(),
+                    ops: (vec![
+                        RuntimeFlowOpSeed::ProjectCall {
+                            plan: RuntimeProjectCallPlanSeed {
+                                callee,
+                                state: callable_state,
+                                completed_group: 0,
+                                operands,
+                                ordinary: Box::new([
+                                    RuntimeProjectCallOrdinaryMaterializationSeed::Rest(
+                                        RuntimeProjectCallRestMaterializationSeed {
+                                            parameter: 0,
+                                            abi_ty: unit,
+                                            binding_ty: sequence,
+                                            source_indices,
+                                        },
+                                    ),
+                                ]),
+                                attached: None,
+                            },
+                            result: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
                         },
-                        result: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
-                    },
-                    RuntimeFlowOpSeed::Return("rest".to_owned()),
-                ],
+                        RuntimeFlowOpSeed::Return("rest".to_owned()),
+                    ])
+                    .into_boxed_slice(),
+                },
             ))
             .expect("rest project-call flow admits");
         let plan = builder.finish().expect("rest project-call plan seals");
@@ -1004,52 +1119,62 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
         .expect("source-once flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             entry.clone(),
-            [],
-            crate::plan::RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::Let {
-                    pattern: RuntimePatternSeed::new(
-                        state_ty,
-                        RuntimePatternSeedKind::Bind {
-                            mutable: true,
-                            local: state.clone(),
-                        },
-                    ),
-                    expr: initial_state,
-                },
-                RuntimeFlowOpSeed::ProjectCall {
-                    plan: RuntimeProjectCallPlanSeed {
-                        callee,
-                        state: callable_state,
-                        completed_group: 0,
-                        operands: Box::new([
-                            RuntimeProjectCallOperandSeed {
-                                value: bump_state(state.clone(), 1),
-                                mode: crate::value::RuntimeCallArgumentMode::Value,
-                                abi_position: 0,
+            crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
+                None,
+                Box::new([]),
+                u32_ty,
+                crate::plan::RuntimeEffectSet::empty(),
+            ),
+            crate::plan::RuntimeExecutableBodySeed {
+                effects: crate::plan::RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::Let {
+                        pattern: RuntimePatternSeed::new(
+                            state_ty,
+                            RuntimePatternSeedKind::Bind {
+                                mutable: true,
+                                local: state.clone(),
                             },
-                            RuntimeProjectCallOperandSeed {
-                                value: bump_state(state.clone(), 2),
-                                mode: crate::value::RuntimeCallArgumentMode::Value,
-                                abi_position: 1,
-                            },
-                        ]),
-                        ordinary: Box::new([RuntimeProjectCallOrdinaryMaterializationSeed::Rest(
-                            RuntimeProjectCallRestMaterializationSeed {
-                                parameter: 0,
-                                abi_ty: u32_ty,
-                                binding_ty: sequence,
-                                source_indices: Box::new([0, 1]),
-                            },
-                        )]),
-                        attached: None,
+                        ),
+                        expr: initial_state,
                     },
-                    result: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
-                },
-                RuntimeFlowOpSeed::ReturnExpr(state_value(state)),
-            ],
+                    RuntimeFlowOpSeed::ProjectCall {
+                        plan: RuntimeProjectCallPlanSeed {
+                            callee,
+                            state: callable_state,
+                            completed_group: 0,
+                            operands: Box::new([
+                                RuntimeProjectCallOperandSeed {
+                                    value: bump_state(state.clone(), 1),
+                                    mode: crate::value::RuntimeCallArgumentMode::Value,
+                                    abi_position: 0,
+                                },
+                                RuntimeProjectCallOperandSeed {
+                                    value: bump_state(state.clone(), 2),
+                                    mode: crate::value::RuntimeCallArgumentMode::Value,
+                                    abi_position: 1,
+                                },
+                            ]),
+                            ordinary: Box::new([
+                                RuntimeProjectCallOrdinaryMaterializationSeed::Rest(
+                                    RuntimeProjectCallRestMaterializationSeed {
+                                        parameter: 0,
+                                        abi_ty: u32_ty,
+                                        binding_ty: sequence,
+                                        source_indices: Box::new([0, 1]),
+                                    },
+                                ),
+                            ]),
+                            attached: None,
+                        },
+                        result: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
+                    },
+                    RuntimeFlowOpSeed::ReturnExpr(state_value(state)),
+                ])
+                .into_boxed_slice(),
+            },
         ))
         .expect("source-once project-call flow admits");
     let plan = builder.finish().expect("source-once plan seals");
@@ -1123,24 +1248,32 @@ fn native_project_call_executable_target_explicit_return_rejoins_catalog_site() 
         .expect("explicit-return flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             entry.clone(),
-            [],
-            crate::plan::RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::ProjectCall {
-                    plan: RuntimeProjectCallPlanSeed {
-                        callee,
-                        state,
-                        completed_group: 0,
-                        operands: Box::new([]),
-                        ordinary: Box::new([]),
-                        attached: None,
+            crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
+                None,
+                Box::new([]),
+                string_type(),
+                crate::plan::RuntimeEffectSet::empty(),
+            ),
+            crate::plan::RuntimeExecutableBodySeed {
+                effects: crate::plan::RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::ProjectCall {
+                        plan: RuntimeProjectCallPlanSeed {
+                            callee,
+                            state,
+                            completed_group: 0,
+                            operands: Box::new([]),
+                            ordinary: Box::new([]),
+                            attached: None,
+                        },
+                        result: RuntimePatternSeed::new(string, RuntimePatternSeedKind::Discard),
                     },
-                    result: RuntimePatternSeed::new(string, RuntimePatternSeedKind::Discard),
-                },
-                RuntimeFlowOpSeed::Return("done".to_owned()),
-            ],
+                    RuntimeFlowOpSeed::Return("done".to_owned()),
+                ])
+                .into_boxed_slice(),
+            },
         ))
         .expect("explicit-return project-call flow admits");
     let plan = builder.finish().expect("explicit-return plan seals");
@@ -1218,30 +1351,54 @@ fn native_project_call_target_goto_unwinds_the_catalog_return_boundary() {
         .expect("goto target schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             entry.clone(),
-            [],
-            crate::plan::RuntimeEffectSet::empty(),
-            vec![RuntimeFlowOpSeed::ProjectCall {
-                plan: RuntimeProjectCallPlanSeed {
-                    callee,
-                    state,
-                    completed_group: 0,
-                    operands: Box::new([]),
-                    ordinary: Box::new([]),
-                    attached: None,
-                },
-                result: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
-            }],
+            crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
+                None,
+                Box::new([]),
+                unit,
+                crate::plan::RuntimeEffectSet::empty(),
+            ),
+            crate::plan::RuntimeExecutableBodySeed {
+                effects: crate::plan::RuntimeEffectSet::empty(),
+                ops: (vec![RuntimeFlowOpSeed::ProjectCall {
+                    plan: RuntimeProjectCallPlanSeed {
+                        callee,
+                        state,
+                        completed_group: 0,
+                        operands: Box::new([]),
+                        ordinary: Box::new([]),
+                        attached: None,
+                    },
+                    result: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
+                }])
+                .into_boxed_slice(),
+            },
         ))
         .expect("goto project-call entry admits");
     builder
-        .push_flow_seed(RuntimeFlowSeed::new(
-            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
-            target.clone(),
+        .admit_type_batch(
+            [RuntimePlanTypeSeed::new(
+                string_type(),
+                RuntimePlanTypeProjection::String,
+            )],
             [],
-            crate::plan::RuntimeEffectSet::empty(),
-            vec![RuntimeFlowOpSeed::Return("goto-done".to_owned())],
+        )
+        .expect("Flow String result type admits");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            target.clone(),
+            crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
+                None,
+                Box::new([]),
+                string_type(),
+                crate::plan::RuntimeEffectSet::empty(),
+            ),
+            crate::plan::RuntimeExecutableBodySeed {
+                effects: crate::plan::RuntimeEffectSet::empty(),
+                ops: (vec![RuntimeFlowOpSeed::Return("goto-done".to_owned())]).into_boxed_slice(),
+            },
         ))
         .expect("goto target flow admits");
     let mut engine = Engine::for_flow(
@@ -1323,21 +1480,29 @@ fn native_project_call_executable_target_fallthrough_fails_closed() {
         .expect("fallthrough flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             entry.clone(),
-            [],
-            crate::plan::RuntimeEffectSet::empty(),
-            vec![RuntimeFlowOpSeed::ProjectCall {
-                plan: RuntimeProjectCallPlanSeed {
-                    callee,
-                    state,
-                    completed_group: 0,
-                    operands: Box::new([]),
-                    ordinary: Box::new([]),
-                    attached: None,
-                },
-                result: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
-            }],
+            crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
+                None,
+                Box::new([]),
+                unit,
+                crate::plan::RuntimeEffectSet::empty(),
+            ),
+            crate::plan::RuntimeExecutableBodySeed {
+                effects: crate::plan::RuntimeEffectSet::empty(),
+                ops: (vec![RuntimeFlowOpSeed::ProjectCall {
+                    plan: RuntimeProjectCallPlanSeed {
+                        callee,
+                        state,
+                        completed_group: 0,
+                        operands: Box::new([]),
+                        ordinary: Box::new([]),
+                        attached: None,
+                    },
+                    result: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
+                }])
+                .into_boxed_slice(),
+            },
         ))
         .expect("fallthrough project-call flow admits");
     let mut engine = Engine::for_flow(builder.finish().expect("fallthrough plan seals"), &entry)
@@ -1372,18 +1537,26 @@ fn native_if_uses_the_admitted_bool_condition() {
         .expect("typed branch flow schema admission");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             entry.clone(),
-            [],
-            crate::plan::RuntimeEffectSet::empty(),
-            vec![RuntimeFlowOpSeed::If {
-                condition: RuntimeExprSeed::new(
-                    bool_type,
-                    RuntimeExprSeedKind::Value(RuntimeValue::Bool(true)),
-                ),
-                then_ops: vec![RuntimeFlowOpSeed::ReturnExpr(string_value("then"))],
-                else_ops: vec![RuntimeFlowOpSeed::ReturnExpr(string_value("else"))],
-            }],
+            crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
+                None,
+                Box::new([]),
+                string_type(),
+                crate::plan::RuntimeEffectSet::empty(),
+            ),
+            crate::plan::RuntimeExecutableBodySeed {
+                effects: crate::plan::RuntimeEffectSet::empty(),
+                ops: (vec![RuntimeFlowOpSeed::If {
+                    condition: RuntimeExprSeed::new(
+                        bool_type,
+                        RuntimeExprSeedKind::Value(RuntimeValue::Bool(true)),
+                    ),
+                    then_ops: vec![RuntimeFlowOpSeed::ReturnExpr(string_value("then"))],
+                    else_ops: vec![RuntimeFlowOpSeed::ReturnExpr(string_value("else"))],
+                }])
+                .into_boxed_slice(),
+            },
         ))
         .expect("typed if flow admission");
     let plan = builder.finish().expect("valid typed branch plan");
@@ -1471,44 +1644,54 @@ fn native_while_let_pop_front_drains_a_vec_and_handles_an_empty_vec() {
             .expect("pop_front flow schema admits");
         builder
             .push_flow_seed(RuntimeFlowSeed::new(
-                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
                 entry.clone(),
-                [],
-                RuntimeEffectSet::empty(),
-                vec![
-                    RuntimeFlowOpSeed::Let {
-                        pattern: RuntimePatternSeed::new(
-                            sequence_type,
-                            RuntimePatternSeedKind::Bind {
-                                mutable: true,
-                                local: sequence.clone(),
-                            },
-                        ),
-                        expr: RuntimeExprSeed::new(
-                            sequence_type,
-                            RuntimeExprSeedKind::Value(RuntimeValue::Seq(
-                                crate::value::RuntimeSeq::values(values),
-                            )),
-                        ),
-                    },
-                    RuntimeFlowOpSeed::WhileLet {
-                        pattern: some_pattern(RuntimePatternSeedKind::Bind {
-                            mutable: false,
-                            local: item,
-                        }),
-                        expr: pop_front(),
-                        guard: None,
-                        body: vec![RuntimeFlowOpSeed::Noop],
-                    },
-                    RuntimeFlowOpSeed::IfLet {
-                        pattern: some_pattern(RuntimePatternSeedKind::Discard),
-                        expr: pop_front(),
-                        guard: None,
-                        then_ops: vec![RuntimeFlowOpSeed::ReturnExpr(string_value("leftover"))],
-                        else_ops: Vec::new(),
-                    },
-                    RuntimeFlowOpSeed::ReturnExpr(string_value("drained")),
-                ],
+                crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                    crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                        [61; 32],
+                    ),
+                    None,
+                    Box::new([]),
+                    string_type(),
+                    RuntimeEffectSet::empty(),
+                ),
+                crate::plan::RuntimeExecutableBodySeed {
+                    effects: RuntimeEffectSet::empty(),
+                    ops: (vec![
+                        RuntimeFlowOpSeed::Let {
+                            pattern: RuntimePatternSeed::new(
+                                sequence_type,
+                                RuntimePatternSeedKind::Bind {
+                                    mutable: true,
+                                    local: sequence.clone(),
+                                },
+                            ),
+                            expr: RuntimeExprSeed::new(
+                                sequence_type,
+                                RuntimeExprSeedKind::Value(RuntimeValue::Seq(
+                                    crate::value::RuntimeSeq::values(values),
+                                )),
+                            ),
+                        },
+                        RuntimeFlowOpSeed::WhileLet {
+                            pattern: some_pattern(RuntimePatternSeedKind::Bind {
+                                mutable: false,
+                                local: item,
+                            }),
+                            expr: pop_front(),
+                            guard: None,
+                            body: vec![RuntimeFlowOpSeed::Noop],
+                        },
+                        RuntimeFlowOpSeed::IfLet {
+                            pattern: some_pattern(RuntimePatternSeedKind::Discard),
+                            expr: pop_front(),
+                            guard: None,
+                            then_ops: vec![RuntimeFlowOpSeed::ReturnExpr(string_value("leftover"))],
+                            else_ops: Vec::new(),
+                        },
+                        RuntimeFlowOpSeed::ReturnExpr(string_value("drained")),
+                    ])
+                    .into_boxed_slice(),
+                },
             ))
             .expect("pop_front flow admits");
         let mut engine = Engine::for_flow(builder.finish().expect("pop_front plan seals"), &entry)
@@ -1676,35 +1859,45 @@ fn native_nominal_field_pop_front_drains_a_vec_and_handles_an_empty_field() {
             .expect("nominal field pop_front flow schema admits");
         builder
             .push_flow_seed(RuntimeFlowSeed::new(
-                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
                 entry.clone(),
-                [],
-                RuntimeEffectSet::empty(),
-                vec![
-                    RuntimeFlowOpSeed::Let {
-                        pattern: RuntimePatternSeed::new(
-                            record_type,
-                            RuntimePatternSeedKind::Bind {
-                                mutable: true,
-                                local: record.clone(),
-                            },
-                        ),
-                        expr: RuntimeExprSeed::new(
-                            record_type,
-                            RuntimeExprSeedKind::Value(record_value),
-                        ),
-                    },
-                    RuntimeFlowOpSeed::WhileLet {
-                        pattern: some_pattern(RuntimePatternSeedKind::Bind {
-                            mutable: false,
-                            local: item,
-                        }),
-                        expr: pop_front(),
-                        guard: None,
-                        body: vec![RuntimeFlowOpSeed::Noop],
-                    },
-                    RuntimeFlowOpSeed::ReturnExpr(string_value("drained")),
-                ],
+                crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                    crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                        [61; 32],
+                    ),
+                    None,
+                    Box::new([]),
+                    string_type(),
+                    RuntimeEffectSet::empty(),
+                ),
+                crate::plan::RuntimeExecutableBodySeed {
+                    effects: RuntimeEffectSet::empty(),
+                    ops: (vec![
+                        RuntimeFlowOpSeed::Let {
+                            pattern: RuntimePatternSeed::new(
+                                record_type,
+                                RuntimePatternSeedKind::Bind {
+                                    mutable: true,
+                                    local: record.clone(),
+                                },
+                            ),
+                            expr: RuntimeExprSeed::new(
+                                record_type,
+                                RuntimeExprSeedKind::Value(record_value),
+                            ),
+                        },
+                        RuntimeFlowOpSeed::WhileLet {
+                            pattern: some_pattern(RuntimePatternSeedKind::Bind {
+                                mutable: false,
+                                local: item,
+                            }),
+                            expr: pop_front(),
+                            guard: None,
+                            body: vec![RuntimeFlowOpSeed::Noop],
+                        },
+                        RuntimeFlowOpSeed::ReturnExpr(string_value("drained")),
+                    ])
+                    .into_boxed_slice(),
+                },
             ))
             .expect("nominal field pop_front flow admits");
         let mut engine = Engine::for_flow(
@@ -1811,62 +2004,72 @@ fn native_vec_push_returns_unit_and_pop_back_moves_the_last_item() {
         .expect("Vec mutation flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             entry.clone(),
-            [],
-            RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::Let {
-                    pattern: RuntimePatternSeed::new(
-                        sequence_type,
-                        RuntimePatternSeedKind::Bind {
-                            mutable: true,
-                            local: sequence.clone(),
-                        },
-                    ),
-                    expr: RuntimeExprSeed::new(
-                        sequence_type,
-                        RuntimeExprSeedKind::Value(RuntimeValue::Seq(RuntimeSeq::values(
-                            Vec::new(),
-                        ))),
-                    ),
-                },
-                RuntimeFlowOpSeed::Let {
-                    pattern: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
-                    expr: RuntimeExprSeed::new(
-                        unit,
-                        RuntimeExprSeedKind::SequencePush {
-                            place: crate::plan::RuntimeMutablePlaceSeed::Local(sequence.clone()),
-                            value: Box::new(RuntimeExprSeed::new(
-                                item_type,
-                                RuntimeExprSeedKind::Value(RuntimeValue::i32(3)),
+            crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
+                None,
+                Box::new([]),
+                item_type,
+                RuntimeEffectSet::empty(),
+            ),
+            crate::plan::RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::Let {
+                        pattern: RuntimePatternSeed::new(
+                            sequence_type,
+                            RuntimePatternSeedKind::Bind {
+                                mutable: true,
+                                local: sequence.clone(),
+                            },
+                        ),
+                        expr: RuntimeExprSeed::new(
+                            sequence_type,
+                            RuntimeExprSeedKind::Value(RuntimeValue::Seq(RuntimeSeq::values(
+                                Vec::new(),
+                            ))),
+                        ),
+                    },
+                    RuntimeFlowOpSeed::Let {
+                        pattern: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
+                        expr: RuntimeExprSeed::new(
+                            unit,
+                            RuntimeExprSeedKind::SequencePush {
+                                place: crate::plan::RuntimeMutablePlaceSeed::Local(
+                                    sequence.clone(),
+                                ),
+                                value: Box::new(RuntimeExprSeed::new(
+                                    item_type,
+                                    RuntimeExprSeedKind::Value(RuntimeValue::i32(3)),
+                                )),
+                            },
+                        ),
+                    },
+                    RuntimeFlowOpSeed::Let {
+                        pattern: some_item(RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: popped_item.clone(),
+                        }),
+                        expr: pop_back(),
+                    },
+                    RuntimeFlowOpSeed::IfLet {
+                        pattern: some_item(RuntimePatternSeedKind::Discard),
+                        expr: pop_back(),
+                        guard: None,
+                        then_ops: vec![RuntimeFlowOpSeed::Return(
+                            "expected an empty Vec".to_owned(),
+                        )],
+                        else_ops: vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                            item_type,
+                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                popped_item,
+                                RuntimeLocalReadMode::Copy,
                             )),
-                        },
-                    ),
-                },
-                RuntimeFlowOpSeed::Let {
-                    pattern: some_item(RuntimePatternSeedKind::Bind {
-                        mutable: false,
-                        local: popped_item.clone(),
-                    }),
-                    expr: pop_back(),
-                },
-                RuntimeFlowOpSeed::IfLet {
-                    pattern: some_item(RuntimePatternSeedKind::Discard),
-                    expr: pop_back(),
-                    guard: None,
-                    then_ops: vec![RuntimeFlowOpSeed::Return(
-                        "expected an empty Vec".to_owned(),
-                    )],
-                    else_ops: vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
-                        item_type,
-                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                            popped_item,
-                            RuntimeLocalReadMode::Copy,
-                        )),
-                    ))],
-                },
-            ],
+                        ))],
+                    },
+                ])
+                .into_boxed_slice(),
+            },
         ))
         .expect("Vec mutation flow admits");
     let mut engine = Engine::for_flow(builder.finish().expect("Vec mutation plan seals"), &entry)
@@ -1933,38 +2136,67 @@ fn await_progress_runs_only_the_first_matching_observer() {
         .expect("Await observer flow schema admission");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             entry.clone(),
-            [need_local.clone()],
-            crate::plan::RuntimeEffectSet::empty(),
-            vec![RuntimeFlowOpSeed::Await {
-                binding: None,
-                target: RuntimeAwaitTargetSeed {
-                    source: RuntimeExprSeed::new(
-                        need_string_type,
-                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                            need_local,
-                            RuntimeLocalReadMode::Move,
-                        )),
+            crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
+                None,
+                Box::new([crate::plan::RuntimeFunctionInputBindingSeed {
+                    transfer: crate::plan::RuntimeFunctionInputTransfer::Formal,
+                    origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
+                        crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+                            [92; 32],
+                        ),
                     ),
-                },
-                observers: vec![
-                    RuntimeAwaitPendingObserverSeed {
-                        pattern: RuntimePatternSeed::new(
-                            progress_type,
-                            RuntimePatternSeedKind::Discard,
-                        ),
-                        ops: vec![RuntimeFlowOpSeed::Return("first".to_owned())],
+                    source: crate::plan::RuntimeFunctionInputSource::Parameter {
+                        position: 0,
+                        passing: crate::plan::RuntimeFunctionParameterPassing::Affine,
                     },
-                    RuntimeAwaitPendingObserverSeed {
-                        pattern: RuntimePatternSeed::new(
-                            progress_type,
-                            RuntimePatternSeedKind::Discard,
+                    input_local: need_local.clone(),
+                    pattern: crate::plan::RuntimePatternSeed::new(
+                        need_string_type,
+                        crate::plan::RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: need_local.clone(),
+                        },
+                    ),
+                    ownership: crate::plan::RuntimeFunctionInputOwnershipRequirement::Owned,
+                    unrestricted_bindings: Box::new([]),
+                }]),
+                string_type(),
+                crate::plan::RuntimeEffectSet::empty(),
+            ),
+            crate::plan::RuntimeExecutableBodySeed {
+                effects: crate::plan::RuntimeEffectSet::empty(),
+                ops: (vec![RuntimeFlowOpSeed::Await {
+                    binding: None,
+                    target: RuntimeAwaitTargetSeed {
+                        source: RuntimeExprSeed::new(
+                            need_string_type,
+                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                need_local,
+                                RuntimeLocalReadMode::Move,
+                            )),
                         ),
-                        ops: vec![RuntimeFlowOpSeed::Return("second".to_owned())],
                     },
-                ],
-            }],
+                    observers: vec![
+                        RuntimeAwaitPendingObserverSeed {
+                            pattern: RuntimePatternSeed::new(
+                                progress_type,
+                                RuntimePatternSeedKind::Discard,
+                            ),
+                            ops: vec![RuntimeFlowOpSeed::Return("first".to_owned())],
+                        },
+                        RuntimeAwaitPendingObserverSeed {
+                            pattern: RuntimePatternSeed::new(
+                                progress_type,
+                                RuntimePatternSeedKind::Discard,
+                            ),
+                            ops: vec![RuntimeFlowOpSeed::Return("second".to_owned())],
+                        },
+                    ],
+                }])
+                .into_boxed_slice(),
+            },
         ))
         .expect("Await observer flow admits");
     let plan = builder.finish().expect("valid Await observer plan");

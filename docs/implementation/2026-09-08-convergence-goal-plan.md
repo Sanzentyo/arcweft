@@ -8189,3 +8189,544 @@ and the complete protected public switch. Do not infer a return type from ops
 or synthesize semantic IDs from table ordinals. Preserve declared permissions
 and body effects separately, and all accepted formal/capture/ownership evidence.
 Astra one-shot consumed; no second consultation, no delegation, main only.
+
+
+### 2026-10-07 — Root Flow function-site ownership migration (WIP; validation active)
+
+Base remains e22bce5624683f4601f4ac1951f6cf66411fbd1b, main0/0 after
+normal fetch. Full goal remains ACTIVE/INCOMPLETE. Astra one-shot was consumed
+at 4b076ec754b45a86a28a6fa185131ccd9ef49136; NEVER repeat or delegate.
+No new branch/worktree. Current Root-owner changes are dirty/uncommitted and
+must NOT be pushed before complete applicable validation.
+
+The single immutable RuntimeFunctionSite row now owns each Root Flow signature
+and executable body. FunctionSiteTable stores Arc rows; RuntimeFlow stores the
+issued function-site coordinate and the exact shared Arc, plus routing identity
+and a derived formal-local index. Pointer equality validates ownership only;
+no address enters a digest. Cloned plans share immutable rows. Builder reserves
+and defines one actual row, then materializes Root references at finish.
+Flow semantic role is tag6 under version1; wire unknown tags start at7.
+Verifier rejects independent equal clones, wrong role/body, duplicate/orphan
+Root ownership and formal-schema identity/passing/ownership disagreement.
+
+All66 FlowSeed constructors (2 actual producers and64 fixtures) now supply a
+complete declaration and explicit RuntimeExecutableBodySeed. Each fixture uses
+its actual String/Unit/number/bool/result identity and admits that type. Helpers
+with different result contracts receive an explicit result type. Real Need
+formal inputs preserve parameter identity/passing, Formal ingress and same-local
+binder; foreign-builder rejection remains exercised. Authored Flow uses the
+accepted full normalized signature and real formals. Controller result comes
+from its accepted instance, without ordinal semantic IDs or result inference.
+Authored lowering guards complete input arity; existing Flow ingress supports
+immutable single-local formals. Resolve any genuinely live accepted Free input
+from accepted authority; do not add a fallback or discard it.
+
+FunctionSite now preserves declared invocation_effects separately from body
+execution effects. Body effects must be a subset of declared permissions. Actual
+compiler regression retains unused fs.write permission while body effects are
+empty. Signature/F metadata commits declared permissions. AWBC uses the exact
+function row for signature, body, type context, formal ingress and FlowEntry
+safepoint. Flow routing binds to the same emitted function ID; old separate
+reserve/emit/replace Flow-code paths are deleted. Dynamic-target flags retained.
+The pending function-site queue stores only plan coordinate/function ID/path,
+not copied signature/body data; executable and expression consumers borrow the
+actual row. Root row is emitted once even when reached through function site.
+Whole-plan operation traversal now walks the owning function table once,
+removing the old duplicate Flow-body walk.
+
+New/extended actual tests: compiler accepted3-formal/result/effect/Core/Root
+ownership/unique AWBC code/codec proof; equal independent Arc-body rejection;
+F semantic-role corpus now exercises a real executable Root Flow; expression
+roles exclude Flow and physical role corpus separately covers Root Flow.
+Manual String status-return fixtures now admit String; effect-only Await
+fixture explicitly declares Unit completion.
+
+Observed validation (not final acceptance):
+-workspace/all-target/all-feature locked check4 PASS20.70s on effects separation,
+ before final visitor/fixture fixes; repeat final check after source is stable.
+-focused3-package library nextest1:1218 selected,1209 pass/9 fail. Failures were
+ duplicate traversal, missing fixture types and generic expression-role fixtures
+ treating new Flow role as ordinary; all repaired.
+-focused library nextest2:1218 selected,1217 pass/1 fail. Remaining Await fixture
+ had String result but effect-only completion; repaired to Unit.
+-exact Await regression nextest PASS1/1;99 excluded by exact filter.
+-all-target focused build failed before tests with Windows mmap/pagefile
+ OS error1455. Broad library build also hit1455 in remaining consumers. Original
+ logs retained; no profile/jobs/timeout/ignore/pagefile configuration changed.
+ Same full workspace/default feature envelope is being prebuilt by target
+ groups; broad library retry retains already completed artifacts. No full-suite
+ success is claimed.
+
+TEMP receipts prefix arcweft-1007-flow-owner-: closure.json (Core transitive50
+workspace packages), constructor inventory files, source-snapshot.json (38
+source paths), focus-lib-inventory.json/focus-lib.log/focus-lib2.log, await.log,
+check4.log, rdeps-lib-build.log and current rdeps-lib-build2.log/inventory2.json.
+Target build script build-targets.ps1 uses all122 integration target names
+from the49 affected non-CLI packages, groups of4 with the SAME --workspace/
+--exclude-cli/rdeps(Core) package/feature envelope. It changes selected build
+targets only. No Rust source edits while any source-sensitive Cargo process
+is active. Snapshot source bytes must be checked before final receipt.
+
+Mandatory next: finish broad library build, grouped integration prebuild and
+complete non-CLI rdeps(Core) nextest inventory/run; CLI lib/bins/check plus the
+six maintained integration targets, exact deduplicated277 baseline comparison
+(TEMP arcweft-1007-awbc-input-origins-rdeps.log or e22bce CLI receipt); repair any
+change-caused failure. Final all-target/all-feature check/Clippy/fmt/diff/
+structure and explicit diff review/stage/coherent commit/normal push follow.
+Do not omit a binary or reduce the assertion/feature scope to obtain a pass.
+
+Root Flow owner join is only a prerequisite: actual candidate Table14, full
+E15 memo/cycle/quota/common atomic seal, and all14 protected public switch steps
+remain required. Retained UI1.4, nominalC1-C6, C3/C5/T01/T06, scheduler/restoreA-F,
+all277 broad CLI baseline repairs and relevant GPU/Tier2/milestone work remain.
+Full goal must not be marked complete at this component cut.
+
+Environment receipt: broad library retry PASS31.09s,3874 selected library cases
+across45 affected runnable library packages (inventory only; tests not yet run).
+Grouped integration prebuild is active; all completed offsets through72 passed.
+To prevent D: disk exhaustion,25 PDB files generated before21:40 were moved
+with native guarded Move-Item to C:/Users/sanze/AppData/Local/Temp/
+arcweft-old-pdb-rescue-e22bce-1007, preserving17,220,669,440bytes and an explicit
+manifest with original paths. Every moved file length was verified. No deletion
+or source/profile/concurrency change. Keep these recoverable artifacts.
+
+All31 grouped integration prebuild offsets0..120 PASS. Final full original
+--workspace --lib --tests inventory still performed additional compilation;
+recorded prebuild success does NOT substitute for its full artifact graph.
+Full inventory attempt1 hit LNK1180/D: disk exhaustion before tests. Attempt2
+hit mmap/OS1455 only in runtime-driver::awbc_product_session before tests.
+Original logs are rdeps-build.log and rdeps-build2.log; no full tests were run.
+Old pre21:40 PDB preservation second batch:170 files/68,932,435,968bytes,
+C:/Users/sanze/AppData/Local/Temp/arcweft-old-pdb-rescue-e22bce-1007-second;
+all moved lengths verified, explicit manifest retained, no deletion. D: free
+68,934,643,712bytes afterward. No profile/jobs/features/timeout/ignore/pagefile
+settings changed. Full original inventory/run retry3 is now active; current
+unified exec session55221, receipts rdeps-inventory3.json/rdeps-build3.log/
+rdeps3.log. Await terminal completion before ANY Rust source edit. Required
+final Clippy/check/structure/CLI baseline277 comparison/commit/push remain.
+
+Full inventory retry3 finally completed and actual full rdeps nextest is
+running (session55221). Inventory contains4867 nonignored selected cases;
+inspect final receipt for ignored/case/binary coverage. Do not claim pass.
+Read-only failure audit already identified change-caused regressions:
+-AgentRunner helper constructors receive a FlowSeed but create/use another
+ builder without admitting its explicit result type; UnknownSeedType. Repair
+ legitimate fixture type admission, not a production fallback.
+-Unit Root natural completion became explicit Return(Unit), causing public
+ FlowExit Return("()") instead of Done and VM Some(Unit) instead of None.
+ Preserve the natural-vs-explicit completion protocol with typed Unit signature
+ authority; do not merely weaken/update old protocol assertions.
+-Flow declared scoped effects (e.g scoped fs.write) must cover required body
+ effects via existing EffectId::covers, not literal binary-search membership.
+-Never Flow terminal paths (choice/goto) now expose ResultShapeMismatch in
+ unreachable fallthrough; lower unreachable completion as typed trap, no
+ fabricated Unit or dynamic return.
+-Root AWBC now has type_context Some, but for_function_with_instance creates
+ FiberFrame::new with type_instantiation None. validate_frame correctly rejects
+ that pair during snapshot restore. Initialize through existing actual
+ instantiate_context/arguments authority at entry/goto/prepared boundaries;
+ keep snapshot validator strict. Avoid prematurely instantiating nonzero generic
+ inputs before the already-preflighted argument packet is transferred.
+-project_function_instances fixture counts now include a legitimate Root row;
+ assert owning role/complete expected definitions rather than stale count1.
+-Final failure inventory may include windowed fixtures that incorrectly
+ declared String for choice/effect-only Unit completion; review actual caller
+ contracts. Do not infer production signatures from ops or blanket Unit.
+
+Current in-progress failure IDs are failures-in-progress.json. Full log is
+rdeps3.log. No Rust edits until full nextest AND its nested Cargo fixture
+processes terminate. Final Clippy/check/structure/CLI277/commit/push not done.
+
+Full rdeps nextest3 TERMINAL exit100:4867 run,4819 pass,48 fail,16 skipped,
+552.298s. Full failures deduplicated into failures-final.json. Nested Cargo
+fixtures are terminal; no source-sensitive process remains. This is NOT green
+and cannot be committed/pushed. Scoped-permission coverage repair has just
+started in RuntimeEffectSet::covers and builder definition admission. Current
+source snapshot is now stale after this repair; take a new snapshot after all
+changes. Remaining Unit completion/frame context/fixtures/generator repairs
+above are mandatory before applicable final checks and publication.
+
+First snapshot repair now also WIP in awbc/fiber.rs: ordinary zero-argument
+root startup binds through existing bind_positional_arguments(&[]) so the
+actual type context is initialized; prepared generic/nonzero startup allocates
+its raw frame through allocate_function_frame then installs its preflighted
+instantiation/owned packet. Goto already uses bind_positional_arguments. No
+validator relaxation or None fallback. Compile/test this API change and audit
+all for_function entry points/nonzero direct callers before acceptance.
+
+First-repairs Core lib check PASS26.54s (first-repairs-check.log), but this
+is compilation only. IMPORTANT follow-up: current for_function_with_instance
+zero-argument binding patch would reject existing public staged nonzero
+startup callers (product_step.rs::for_entry_target_function followed by
+bind_flow_parameter_coordinates, agent_constructors.rs::execute followed by
+bind_function_argument_values, other direct tests). Reconcile the complete
+unbound-vs-executable startup model/all callers with actual typed context;
+do NOT accept that partial patch or add a conditional None fallback. Prepared
+owned startup already installs preflight instantiation via allocate helper.
+Need Unit natural-completion/Never terminal model migration and explicit
+AgentRunner/windowed/generator fixture contracts next. Scope-effect coverage
+now uses EffectId::covers through RuntimeEffectSet::covers. No Cargo handle is
+live after first-repairs check. Full Root migration still DIRTY, UNVALIDATED,
+UNCOMMITTED. HEAD remains e22bce5624683f4601f4ac1951f6cf66411fbd1b; push is
+requested and must occur after coherent complete repair/validation.
+
+Function-context owner investigation: program_types/function_contract.rs
+ParameterMatcher::instantiate requires exact inputs.len == parameters.len and
+returns context+effect substitutions after all value relations. Do not invent
+empty substitutions for a nonzero/generic frame. Legitimate staged public
+startup is presently used in product_step.rs around1877 and agent_constructors
+execute around73: allocate first, bind arguments next. Reconcile this full
+construction domain/API rather than forcing empty arguments or weakening
+validate_frame. allocate_function_frame currently preserves the raw prepared
+path; first repair is not final. Terminal protocol choice remains unimplemented.
+No final Root-owner check/Clippy/receipt/stage/commit/push has completed.
+
+Follow-up refinement now applied (UNTESTED): root constructor binds the actual
+empty packet only when the declared signature has zero parameters. Nonzero
+frames retain existing staged construction until caller binds the checked
+packet; prepared owned startup uses raw allocation+preflight installation.
+This is static declared-arity preparation, not an empty-substitution inference
+or a None-on-failure fallback. Recheck public staged callers and snapshot
+regressions; zero-arg actual Root contexts must now be initialized.
+
+Typed natural-completion migration STARTED (UNCOMPILED/INCOMPLETE):
+AwbcOpcode::Complete tag0x8e/version1 and AwbcTerminator::Complete added in
+schema.rs, code.rs wire writer/reader. This must become a validated Unit Flow
+completion domain, distinct from explicit Return, preserving public Done/VM
+None. ALL/from_encoded/class/family, verifier, VM, snapshot/visitors/backend
+exhaustive consumers and codec round-trip/negative tests still require migration.
+Never-result fallthrough must use existing Unreachable. Do not publish this
+partial schema or relax result validation. Clippy/check/test pending.
+
+Complete migration advanced into instruction decoder rejection classification,
+verifier terminal domain (Flow+Unit result+closed scopes), consumed/output
+classification and shared VM return/completion dispatch. Still UNVALIDATED;
+Root lowerer emission, Never Unreachable, all remaining backend exhaustive
+consumers and meaningful positive/negative/codec tests remain required.
+
+Root lowerer now emits Complete for natural Unit Flow completion and existing
+Unreachable for Never fallthrough; ordinary Unit functions keep explicit
+Return(Unit). Core Complete verifier/codec/VM library check2 PASS10.97s.
+RuntimePlan/backend exhaustive consumers and all completion codec/negative/
+protocol/snapshot regressions are still untested. Current source changed after
+full failing receipt; take new byte snapshot only after repairs finish.
+
+Workspace Complete check TERMINAL exit101: only runtime-codegen awbc_region
+opcode/terminator exhaustive matches lacked Complete; both now migrated in
+the same classification as Return (not yet rechecked). No Cargo process live.
+Additional actual fixture failure detail: driver Need and parity observer
+expected type9 vs actual7 arises from manual noncanonical String IDs and
+FlowOp::Return(string) using the canonical String register. Preserve exact
+nominal/type compatibility; rewrite manual status-return operations as typed
+ReturnExpr using their explicitly admitted String identity. Production has
+canonical normalized String identities and needs no compatibility relaxation.
+
+Typed executable function-site fallthrough now emits Unreachable whenever
+its non-Unit declared result has no explicit terminal, avoiding fabricated
+Unit/dynamic returns; valid bottom/choice/goto continuations stay unreachable,
+and invalid manual non-Unit fallthrough traps. This is shared typed function
+behavior, not a named-fixture exception. AgentRunner two legitimate controller
+fixture helpers now explicitly admit their complete controller_agent_types
+before receiving FlowSeed, preserving actual result identities. Untested.
+
+Manual driver Need status-return and parity progress-observer String returns
+now use explicit typed ReturnExpr matching their real admitted String IDs.
+Generator tools/build-web-ime-player-rendered-fixture.rs old five-arg FlowSeed
+now uses full explicit Unit declaration/body with real mount effect permission.
+Compiler project_function_instances regression asserts one actual Ordinary
+row and one actual Root Flow row, replacing obsolete total-count1. Untested.
+Completion workspace check2 PASS38.35s before these final fixture changes.
+No Cargo process active. All48 previous failures still require fresh evidence,
+Complete codec/negative/regression tests and final full checks/CLI/commit/push.
+
+Meaningful Complete regression added in awbc_lower/tests.rs: typed Unit
+signature, natural VM None versus explicit Some(Unit), canonical wire
+round-trip/reexecution, rejection for non-Flow owner and String result.
+Repaired workspace check had one test-only missing AwbcFunctionKind import;
+fixed after terminal. No full repaired pass or test receipt yet. Pending
+nextest exact repairs, Clippy, source snapshot, final full rdeps/CLI277,
+structure, explicit staging/coherent commit/normal push.
+
+Current active repair-library nextest: Core+RuntimePlan+AgentRunner --lib
+--no-fail-fast, unified exec session33808, TEMP repair-libs.log. No Rust
+source edits until terminal (nested Cargo included). Test count/result pending.
+All48 previous full-suite failures must be reconciled on final bytes, then
+complete50-rdep inventory/case coverage and explicit CLI277 comparison.
+Source snapshots from before repairs are stale. Frame refinement check
+PASS7.88s; Complete Core check2 PASS10.97s; Complete workspace check2
+PASS38.35s before latest fixture/new regression changes. None is a final
+acceptance claim. HEAD stays e22bce5624683f4601f4ac1951f6cf66411fbd1b.
+
+Repair-library nextest TERMINAL exit100:1132 run,1114 pass/18 fail,7.435s.
+New Complete natural/explicit/wire/invalid-domain regression PASS; Core
+staged nonzero callers pass. Remaining17 AgentRunner failures were erroneous
+fixture identity projection: controller_type(marker) derives semantic digest
+from RuntimeCheckedType, NOT [marker;32]. All6 new Flow declarations now
+use actual controller_type(STRING_TY/RESOURCE_BODY_TY/result_ty). The remaining
+Core exhaustive opcode contract lacked Complete; expected typed mapping now
+includes0x8e/Terminator. No assertion weakened. Fresh tests still required.
+No Cargo handle live before next rerun.
+
+Targeted Agent+opcode rerun TERMINAL exit100:67 selected,66 pass/1 fail,
+0.314s,964 excluded. All fixed controller identities and opcode contract
+PASS. Remaining ResourceBody Json return exposed missing AgentValue handling
+in the duplicate VM borrowed matcher (Variant payload recursion hit default
+false). General AgentValue and Variant validation now delegates directly to
+existing program.validate_live_value_view with real schema limits; obsolete
+copied Variant matching arm deleted. No ResourceBody-specific exception or
+return type weakening. This owner-consumer fix is UNCOMPILED/UNTESTED.
+
+Targeted Agent+opcode repair2 PASS67/67,0.358s (964 cases excluded by explicit
+filter), TEMP agent-opcode-repair2.log. All controller/resource response
+regressions and Complete exhaustive v1 byte/family mapping now pass.
+Still need complete Core/RuntimePlan libs and all prior compiler snapshot/
+completion/scoped-effects/windowed/Need/parity/generator regressions, then
+complete50-rdep run/inventory/CLI277 plus final check/Clippy/structure and
+coherent commit/push. No current Cargo handle.
+
+Compiler regression verification active now: nextest packagecompiler targets
+callable_execution,evaluated_effects,generic_continuation_snapshot,named_scopes,
+flow_effects,inline_failure_policy,project_function_instances, --no-fail-fast.
+Unified exec99148, TEMP compiler-repairs.log. No Rust edits while active.
+Only positive repair receipt after full48 failures so far is Agent+opcode
+67/67; new Complete regression passed in earlier1132 library run. Full check
+before fixture repairs passed; source snapshot38 paths is stale. Current
+Complete verifier and VM library code compile, runtime-codegen exhaustive
+consumers migrated. All Arcweft versions remain1. Do not repeat Astra.
+
+Compiler repair integration TERMINAL:209 run,208 pass/1 fail,3.063s.
+All earlier natural completion, character factory, scoped-choice/Never,
+snapshot cancellation and generic continuation save/restore, role count
+regressions PASS. Remaining test assumed body effects equal declared
+permissions. Helper now asserts actual function.invocation_effects against
+expected declared set; authored scope test additionally requires actual body
+[fs.read] and declared/AWBC[fs.read(save),fs.write]. No permission assertion
+weakened; both distinct authorities exercised. Fresh exact test needed.
+
+Scoped Flow-effects rerun PASS5/5,0.151s (flow-effects-repair.log); prior
+compiler209-suite remaining failure repaired. Current remaining consumer
+nextest active: PlayerNative+Driver+RuntimePlan+Bundle, targets
+windowed_live_patch_smoke,awbc_product_session,awbc_product_parity,
+ime_player_rendered; unified exec handle returned by current tool call,
+TEMP remaining-repairs.log. No source edits while active. Full final checks,
+Clippy, closure/case coverage/CLI277, stage/commit/push remain mandatory.
+Current remaining-consumer nextest unified exec session71183. Resume with
+write_stdin; do not start duplicate Cargo/nextest or edit Rust until terminal.
+
+Remaining-consumer nextest session71183 STILL ACTIVE in nested generator
+Cargo build (do not edit Rust). Driver Need save and parity progress observer
+regressions PASS; windowed8 failures now TypeMismatch expected9/actual7 in
+terminator block5, not previous missing-result shape. Same manual String
+identity issue: support/windowed_live_patch_fixtures.rs fixture_string_type()
+is noncanonical but status Return(string) allocates canonical String register.
+After terminal, rewrite that fixture owning module status returns to explicit
+RuntimeExprSeed(fixture_string_type(), Value(String(value))) ReturnExpr.
+Preserve signature/result/patch classification, no runtime type relaxation.
+Generator46th test still running; current results are not final.
+
+Remaining-consumer suite TERMINAL:46 run,38 pass/8 windowed fail,168.471s.
+Need session save, observer parity, all related remaining driver/parity cases
+and real IME generator PASS (generator168.470s). No Cargo process live.
+Support windowed fixture all5 string status-return operations now explicit
+ReturnExpr with actual fixture_string_type(), preserving result/signature/
+patch classes. Fresh windowed smoke required; generator/driver/parity prior
+passes can be reused only if relevant final inputs remain unchanged.
+
+Current windowed smoke repair nextest unified exec46754, TEMP
+windowed-repair.log. No source edits while active; next acceptance is full
+Core/RuntimePlan/Compiler libs, final full50-rdeps inventory/run and explicit
+CLI277 comparison, final all-target/all-feature check/Clippy/fmt/structure,
+review/stage/commit/normal push. Do not mark full convergence goal complete.
+
+Windowed smoke repair PASS8/8,0.603s, TEMP windowed-repair.log. All48
+failures from full rdeps3 have now been repaired and relevant targeted
+consumer tests passed; this is NOT yet a final full-suite pass. Need final
+Core/RuntimePlan/Compiler source-sensitive broad checks and50-rdep coverage,
+CLI exact277 baseline comparison, Clippy/structure/fmt, reviewed stage/commit
+and normal push. Full convergence goal remains active/incomplete. No live
+Cargo process after windowed smoke.
+
+Final workspace check PASS57.61s and workspace Clippy PASS112s (existing
+workspace warnings retained). Change-caused API lint now repaired: FunctionSite
+table builder.push consumes one complete owning RuntimeFunctionSite row rather
+than8 fields; Flow.body panic invariant documented; new Complete decode test
+uses owning decode-budget constructor. UNVALIDATED post-lint source edits,
+so final check/affected Clippy/fmt and full snapshot/rdeps receipts still needed.
+
+Row API check initially rejected sibling construction access to private
+FunctionSite fields; fields now pub(super), restricted to the existing owning
+plan module, so construction can assemble the final row and the table consumes
+it atomically. No public constructor/field exposure or parallel row model.
+Current recheck pending, no prior pass relabeled.
+
+Post-row API final workspace check2 PASS50.37s; affected Core+RuntimePlan
+Clippy2 PASS74s. Workspace Clippy original PASS112s covers untouched owners.
+No new source edits planned. Final fmt/diff/structure audit active; next take
+complete changed-source snapshot and full50-rdeps inventory/run, CLI277.
+Commit/push still pending; full original convergence goal active.
+
+
+2026-10-07 — final ownership/structure review, Root Flow cut (base
+`e22bce5624683f4601f4ac1951f6cf66411fbd1b`, main dirty;49 changed paths).
+Final fmt/diff/structure gate PASS; canonical scanner blocking violations0.
+No unrelated historical LOC trigger promoted to a blocking defect.
+
+| changed path | bytes | physical LOC (base → final) | classification |
+|---|---:|---:|---|
+| `crates/arcweft-agent-runner/src/tests.rs` | 141833 | 3790 → 3863 | test |
+| `crates/arcweft-compiler/src/project/tests.rs` | 158548 | 4177 → 4269 | test |
+| `crates/arcweft-core/src/awbc/codec/code.rs` | 108677 | 2897 → 2899 | production |
+| `crates/arcweft-core/src/awbc/fiber.rs` | 271924 | 7246 → 7275 | production |
+| `crates/arcweft-core/src/awbc/schema.rs` | 120658 | 3739 → 3746 | production |
+| `crates/arcweft-core/src/awbc/tests.rs` | 305772 | 8357 → 8358 | test |
+| `crates/arcweft-core/src/awbc/verify/code.rs` | 240193 | 6177 → 6197 | production |
+| `crates/arcweft-core/src/awbc/vm.rs` | 223984 | 5484 → 5485 | production |
+| `crates/arcweft-core/src/plan.rs` | 64083 | 1739 → 1780 | production |
+| `crates/arcweft-core/src/plan/body_semantic/tests.rs` | 73029 | 1894 → 1971 | test |
+| `crates/arcweft-core/src/plan/construction.rs` | 158665 | 3858 → 3889 | production |
+| `crates/arcweft-core/src/plan/construction/seed.rs` | 96717 | 3013 → 3028 | production |
+| `crates/arcweft-core/src/plan/entry_inventory.rs` | 59814 | 1498 → 1558 | production |
+| `crates/arcweft-core/src/tests/flow.rs` | 91492 | 2030 → 2262 | test |
+| `crates/arcweft-player-native/src/windowed_runtime.rs` | 50770 | 1261 → 1278 | production |
+| `crates/arcweft-player-native/tests/support/windowed_live_patch_fixtures.rs` | 64572 | 1733 → 1765 | test |
+| `crates/arcweft-runtime-accelerator/src/tests.rs` | 103861 | 2671 → 2681 | test |
+| `crates/arcweft-runtime-driver/src/session.rs` | 76705 | 1874 → 1890 | production |
+| `crates/arcweft-runtime-driver/tests/awbc_product_session.rs` | 80482 | 2064 → 2115 | test |
+| `crates/arcweft-runtime-host/src/bundle_runner.rs` | 73462 | 1864 → 1881 | production |
+| `crates/arcweft-runtime-plan/src/awbc_lower/expr.rs` | 94323 | 2393 → 2403 | production |
+| `crates/arcweft-runtime-plan/src/awbc_lower/flow.rs` | 154854 | 4049 → 4005 | production |
+| `crates/arcweft-runtime-plan/src/awbc_lower/inventory.rs` | 100306 | 2455 → 2433 | production |
+| `crates/arcweft-runtime-plan/src/awbc_lower/tests.rs` | 96512 | 2288 → 2474 | test |
+| `crates/arcweft-runtime-plan/src/final_flow.rs` | 434184 | 10103 → 10183 | production |
+
+Cohesion disposition: plan/function-sites/construction/entry inventory own one
+immutable function row, its builder admission and Root ownership proof. Flow
+keeps only routing and derived formal indices; it shares the actual row, never
+a separately cloned signature/body. Table publication and scope validation
+remain in the existing Sans-I/O Core owner. AWBC schema/codec/verifier/VM and
+fiber constructor retain their existing bytecode, admission, execution and
+frame-binding responsibilities. Complete is an exhaustive typed terminator;
+AgentValue/Variant return admission delegates the existing live-value owner.
+The lowerer queue carries a site coordinate and consumes its actual plan row;
+old Flow body emitter and duplicate whole-plan traversal are deleted.
+No crate edge, feature, mixed-I/O state cluster or public split-only API added.
+Core fan-in/fan-out 34/12, RuntimePlan 10/10,
+RuntimeCodegen 1/1 (direct workspace graph, Cargo metadata final).
+Host/driver/player owners only migrate their manual Flow constructors; no
+new unrelated responsibility or traversal. Embedded tests and standalone
+test owners remain coupled to the same plan/codec/execution responsibilities;
+new owner-identity and completion tests live with those behaviors. No file
+grew by300 LOC. Existing large cohesive algorithms are retained with this
+explicit disposition, rather than widening APIs for physical splitting.
+Final48-file non-document SHA256 snapshot fixed before final nextest;
+TEMP `arcweft-1007-flow-owner-source-final.json`. Full final rdeps and CLI
+receipts and commit/push remain pending; full goal remains active.
+
+Embedded test measurements from the same canonical scanner: `crates/arcweft-core/src/awbc/codec/code.rs`=668; `crates/arcweft-core/src/awbc/fiber.rs`=909; `crates/arcweft-core/src/plan/construction.rs`=616; `crates/arcweft-player-native/src/windowed_runtime.rs`=484; `crates/arcweft-runtime-driver/src/session.rs`=339; `crates/arcweft-runtime-host/src/bundle_runner.rs`=1020; `crates/arcweft-runtime-plan/src/final_flow.rs`=584.
+External test modules are classified as tests in the table above. No test
+state migrated into production ownership.
+
+
+2026-10-08 — final nextest execution started after terminal inventory.
+Core transitive reverse-dependency closure50 packages; final non-CLI selection
+4868 cases/46 runnable packages,16 repository-ignored GPU cases. Three affected
+packages have zero runnable tests (arcweft, bundle-assets, render-web); all49
+non-CLI affected packages are represented, no unexpected selected package.
+Complete exhaustive run active (session33453), no Rust edits while active.
+Final check2, Clippy2, fmt and structure receipts remain valid for the recorded
+48 source-file/99 build-input SHA256 snapshot. CLI and commit/push pending.
+
+Final non-CLI nextest TERMINAL PASS:4868/4868,16 repository-ignored GPU
+cases,567.555s. All48 earlier change-caused failures repaired. Every selected
+binary/case ID executed exactly once; no omitted/unexpected case. Final
+nextest inventory and complete transitive closure coverage receipts are under
+TEMP flow-owner-*final*. CLI inventory/build follows serially, no source edit.
+
+Correction2026-10-08: final nextest default-feature command omitted the
+previous all-features/locked envelope. Default-feature4868/4868 remains a
+truthful scoped pass, not final full-feature acceptance. CLI default selection
+595 omits exactly the two cfg(agent-repl) cases from prior597. Await current
+CLI terminal; then rerun non-CLI full Core rdeps and full CLI with explicit
+--all-features --locked. No setting changed or source edit. Do not commit/push
+until those actual final commands and complete case/failure comparison finish.
+
+Default-feature CLI terminal100:595 run,318pass/277fail,23ignored,119.715s.
+All277 failed IDs exactly match prior baseline;new0/resolved0. Default-feature
+selection lacks precisely two agent-repl cases; source unchanged. Explicit
+full-feature locked metadata+target-all inverted graph preserves Core50.
+All-feature final discovery active60344; final all-feature acceptance pending.
+
+All-feature final discovery60344 TERMINAL101 before tests: exactly two
+E0786 failures mmap ArcweftBundle rlib (Windows OS1455), Bundle view_style_program
+and BundleAssets library test. Original build-all-final.log retained. No Rust
+type failure, profile/jobs/feature/timeout change or deletion. Guarded native
+Move-Item preserves generated old PDB files predating2026-10-07 23:54 in
+TEMP arcweft-old-pdb-rescue-e22bce-1008 with original-path/length/time manifest.
+Wait movement56316 terminal and verify lengths before exact all-feature retry.
+
+PDB preservation56316 TERMINAL0:203 files/48,354,299,904bytes, all lengths
+verified, native guarded roots and explicit manifest retained in
+C:/Users/sanze/AppData/Local/Temp/arcweft-old-pdb-rescue-e22bce-1008.
+No deletion. All-feature locked full-scope discovery retry now active.
+
+All-feature discovery retry56634 TERMINAL0, build4m29s. Actual selected
+4901 cases/46 runnable packages,16 existing ignored GPU cases, all49 non-CLI
+closure members represented/no unexpected selected package. All-feature adds
+35 native-capture/GPU cases and excludes two default-only dev-capture-off configuration
+cases; this explicit matrix differs legitimately from default4868. Complete
+all-feature locked rdeps execution active37418, no Rust edits.
+
+Final ALL-FEATURE LOCKED non-CLI rdeps(Core) TERMINAL0:4901/4901pass,
+16 existing ignored GPU cases,120.492s. Every4901 selected binary+case ID
+executed exactly once/no omitted or unexpected case. Default-feature earlier
+4868/4868 remains separate additional configuration evidence (two dev-capture-
+off cases not available in all-feature envelope). Final all-feature CLI
+lib/bins/check+six maintained integration discovery follows serially.
+
+
+### 2026-10-08 — Root Flow owner cut: verified for commit/push
+
+Supersedes the WIP/pending-validation status above. Inspected base and freshly
+fetched origin/main both `e22bce5624683f4601f4ac1951f6cf66411fbd1b`; main
+has exactly49 in-scope dirty paths (48 source/tool files plus this note).
+Root Flow now references its actual immutable function-table row; accepted
+full inputs/result/invocation permissions and executable body have one owner.
+AWBC consumes the same row once. Natural Unit Flow completion has a typed
+Complete terminator, canonical codec/verification and distinct return behavior.
+All old Flow seed/emitter/duplicate traversal consumers have migrated directly.
+No public task-plan table or partial protected Cut5 switch is introduced.
+
+Final evidence for frozen source bytes:
+- `cargo check --workspace --all-targets --all-features --locked`: final
+  workspace check2 PASS50.37s. Workspace Clippy earlier PASS112s; final
+  Core+RuntimePlan all-target/all-feature Clippy2 PASS74s after row API lint
+  repair. Untouched workspace lint owners reuse their unchanged-byte receipt.
+- `cargo fmt --all --check`, `git diff --check`, canonical structure gate:
+  PASS; blocking violations0. Explicit cohesion/metrics disposition above.
+- `cargo nextest run --workspace --lib --tests --exclude arcweft-cli
+  --all-features --locked -E rdeps(=arcweft-core) --no-fail-fast`:
+  4901/4901pass,16 existing ignored GPU cases,120.492s. Fresh all-feature
+  metadata/target-all inversion closure50;46 non-CLI runnable owners and3
+  case-less owners, no omitted selected case/package.
+- Full CLI lib/bins/check plus runtime_native_options,check_core_cli,
+  native_style_parity_sample,release_trust_json,arcw_fixtures_check_run and
+  seq04_8_4_persistent_cache_build_cli_goldens; same all-features/locked
+  rdeps filter/no-fail-fast:597run/320pass/277fail/23ignored,121.784s.
+  Exact597 selected/terminal IDs match prior selection. Failed IDs exactly
+  match prior277 baseline (new0/resolved0). This CLI run is NOT green.
+- Earlier default feature runs remain additional scoped evidence:4868/4868
+  non-CLI pass;595CLI/318pass/277samefail/23ignored. The omitted all-feature
+  flags were corrected explicitly rather than treating this as final scope.
+- Final source/build-input check:48 source/tool SHA256 plus99 manifest/lock/
+  toolchain/nextest/config inputs unchanged; no source edit while Cargo live.
+- All final processes terminal. One all-feature discovery failed pre-test
+  with Windows OS1455; identical retry passed after recoverable PDB preservation.
+  No jobs/profile/feature/timeout/ignore/pagefile modification or deletion.
+
+Full convergence goal ACTIVE/INCOMPLETE. Next actual candidate Table14,
+E15 global memo/cycle/quota/private image/common sealer and all14 protected
+Cut5 switch steps remain, together with View1.4, C3/C5/T01/T06, nominalC1-C6,
+scheduler/restoreA-F, affine/Rust move and borrowing acceptance, all277 CLI
+repairs and required Tier2/milestone/legacy deletion. Do not mark full goal
+complete or repeat the consumed Astra one-shot. Continue existing main after
+this coherent verified commit/normal push.

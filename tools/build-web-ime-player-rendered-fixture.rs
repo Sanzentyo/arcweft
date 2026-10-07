@@ -488,16 +488,15 @@ fn minimal_awbc_program() -> AwbcProgram {
         })
         .expect("fixture Flow metadata");
     builder
-        .push_flow_seed(RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
-            flow.clone(),
-            [],
-            RuntimeEffectSet::try_from_effects([arcweft_id::EffectId::parse(
+        .push_flow_seed(RuntimeFlowSeed::new(flow.clone(), arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]), None, Box::new([]), unit, RuntimeEffectSet::try_from_effects([arcweft_id::EffectId::parse(
                 "presentation.handle.create",
             )
             .expect("fixture mount capability")])
-            .expect("fixture mount effect row"),
-            vec![
+            .expect("fixture mount effect row")), arcweft_core::plan::RuntimeExecutableBodySeed { effects: RuntimeEffectSet::try_from_effects([arcweft_id::EffectId::parse(
+                "presentation.handle.create",
+            )
+            .expect("fixture mount capability")])
+            .expect("fixture mount effect row"), ops: (vec![
                 RuntimeFlowOpSeed::Effect(RuntimeLineEffectSeed::Static(LineEffectRequest::Call(
                     RuntimeCall {
                         callee: "presentation.handle.create".to_owned(),
@@ -512,8 +511,7 @@ fn minimal_awbc_program() -> AwbcProgram {
                     unit,
                     RuntimeExprSeedKind::Value(RuntimeValue::Unit),
                 )),
-            ],
-        ))
+            ]).into_boxed_slice() }))
         .expect("fixture Flow body");
     builder
         .push_entry(RuntimeEntrySpec {

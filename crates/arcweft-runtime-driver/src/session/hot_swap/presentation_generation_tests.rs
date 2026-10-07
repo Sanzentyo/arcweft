@@ -138,12 +138,30 @@ fn bundle_with_source_note(red: u8, scheme: ColorScheme, note: &str) -> ArcweftB
     let mut builder = RuntimePlanBuilder::new();
     let flow = FlowRuntimeId::from_checked_declaration_digest([0x51; 32], "flow.main").unwrap();
     builder
-        .push_flow_seed(RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
-            flow.clone(),
+        .admit_type_batch(
+            [arcweft_core::plan::RuntimePlanTypeSeed::new(
+                arcweft_core::pattern::RuntimeCheckedType::String.semantic_identity_digest(),
+                arcweft_core::plan::RuntimePlanTypeProjection::String,
+            )],
             [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![RuntimeFlowOpSeed::Return("done".to_owned())],
+        )
+        .expect("Flow result type admits");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            flow.clone(),
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                arcweft_core::pattern::RuntimeCheckedType::String.semantic_identity_digest(),
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (vec![RuntimeFlowOpSeed::Return("done".to_owned())]).into_boxed_slice(),
+            },
         ))
         .unwrap();
     builder

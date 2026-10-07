@@ -1,6 +1,7 @@
 //! Plan-owned structured function bodies.
 
 use std::num::NonZeroU32;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -123,6 +124,7 @@ pub enum RuntimeFunctionSemanticRole {
     Effect,
     Line,
     Stream,
+    Flow,
 }
 
 impl RuntimeFunctionSemanticRole {
@@ -133,6 +135,7 @@ impl RuntimeFunctionSemanticRole {
         Self::Effect,
         Self::Line,
         Self::Stream,
+        Self::Flow,
     ];
 
     pub const fn from_semantic_tag(tag: u8) -> Option<Self> {
@@ -143,6 +146,7 @@ impl RuntimeFunctionSemanticRole {
             3 => Some(Self::Effect),
             4 => Some(Self::Line),
             5 => Some(Self::Stream),
+            6 => Some(Self::Flow),
             _ => None,
         }
     }
@@ -156,6 +160,7 @@ impl RuntimeFunctionSemanticRole {
             Self::Effect => 3,
             Self::Line => 4,
             Self::Stream => 5,
+            Self::Flow => 6,
         }
     }
 }
@@ -477,15 +482,22 @@ impl RuntimeFunctionSiteBody {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeFunctionSite {
-    definition: RuntimeFunctionDefinitionIdentity,
-    role: RuntimeFunctionSemanticRole,
-    function_type: Option<RuntimePlanTypeId>,
-    inputs: Box<[RuntimeFunctionInputBinding]>,
-    result: RuntimePlanTypeId,
-    body: RuntimeFunctionSiteBody,
+    pub(super) definition: RuntimeFunctionDefinitionIdentity,
+    pub(super) role: RuntimeFunctionSemanticRole,
+    pub(super) function_type: Option<RuntimePlanTypeId>,
+    pub(super) inputs: Box<[RuntimeFunctionInputBinding]>,
+    pub(super) result: RuntimePlanTypeId,
+    pub(super) invocation_effects: super::RuntimeEffectSet,
+    pub(super) body: RuntimeFunctionSiteBody,
 }
 
 impl RuntimeFunctionSite {
+    /// Declared invocation permissions; execution effects remain on the body.
+    #[must_use]
+    pub const fn invocation_effects(&self) -> &super::RuntimeEffectSet {
+        &self.invocation_effects
+    }
+
     #[must_use]
     pub const fn definition(&self) -> RuntimeFunctionDefinitionIdentity {
         self.definition
@@ -536,7 +548,7 @@ impl RuntimeFunctionSite {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RuntimeFunctionSiteTable {
-    sites: Box<[RuntimeFunctionSite]>,
+    sites: Box<[Arc<RuntimeFunctionSite>]>,
 }
 
 impl RuntimeFunctionSiteTable {
@@ -545,6 +557,7 @@ impl RuntimeFunctionSiteTable {
         usize::try_from(id.get().get() - 1)
             .ok()
             .and_then(|index| self.sites.get(index))
+            .map(Arc::as_ref)
     }
 
     #[must_use]
@@ -559,13 +572,20 @@ impl RuntimeFunctionSiteTable {
 
     #[must_use]
     pub fn iter(&self) -> impl ExactSizeIterator<Item = &RuntimeFunctionSite> {
-        self.sites.iter()
+        self.sites.iter().map(Arc::as_ref)
+    }
+
+    pub(crate) fn shared(&self, id: RuntimeFunctionSiteId) -> Option<Arc<RuntimeFunctionSite>> {
+        usize::try_from(id.get().get() - 1)
+            .ok()
+            .and_then(|index| self.sites.get(index))
+            .map(Arc::clone)
     }
 }
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RuntimeFunctionSiteTableBuilder {
-    sites: Vec<RuntimeFunctionSite>,
+    sites: Vec<Arc<RuntimeFunctionSite>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]
@@ -582,12 +602,7 @@ impl RuntimeFunctionSiteTableBuilder {
 
     pub(crate) fn push(
         &mut self,
-        definition: RuntimeFunctionDefinitionIdentity,
-        role: RuntimeFunctionSemanticRole,
-        function_type: Option<RuntimePlanTypeId>,
-        inputs: Box<[RuntimeFunctionInputBinding]>,
-        result: RuntimePlanTypeId,
-        body: RuntimeFunctionSiteBody,
+        site: RuntimeFunctionSite,
     ) -> Result<RuntimeFunctionSiteId, RuntimeFunctionSiteError> {
         let ordinal = self
             .sites
@@ -596,14 +611,7 @@ impl RuntimeFunctionSiteTableBuilder {
             .and_then(|value| u32::try_from(value).ok())
             .and_then(NonZeroU32::new)
             .ok_or(RuntimeFunctionSiteError::IdentityExhausted)?;
-        self.sites.push(RuntimeFunctionSite {
-            definition,
-            role,
-            function_type,
-            inputs,
-            result,
-            body,
-        });
+        self.sites.push(Arc::new(site));
         Ok(RuntimeFunctionSiteId::from_accepted_ordinal(ordinal))
     }
 

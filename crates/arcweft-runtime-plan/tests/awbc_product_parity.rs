@@ -373,14 +373,24 @@ fn standard_map_awbc_plan() -> (Arc<RuntimePlan>, Vec<AwbcStandardMapCase>) {
     admit_flow_authority(&mut builder, &flow);
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
-            [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
                 unit_ty,
-                RuntimeExprSeedKind::Value(RuntimeValue::Unit),
-            ))],
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                    unit_ty,
+                    RuntimeExprSeedKind::Value(RuntimeValue::Unit),
+                ))])
+                .into_boxed_slice(),
+            },
         ))
         .expect("standard map AWBC flow");
     builder
@@ -445,11 +455,20 @@ fn plan_with_return_and_entry(value: &str, include_entry: bool) -> RuntimePlan {
     }
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
-            [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![RuntimeFlowOpSeed::ReturnExpr(string(value))],
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                STRING_TYPE,
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (vec![RuntimeFlowOpSeed::ReturnExpr(string(value))]).into_boxed_slice(),
+            },
         ))
         .expect("flow admits");
     if include_entry {
@@ -509,53 +528,63 @@ fn plan_with_await_observer() -> RuntimePlan {
     admit_flow_authority(&mut builder, &flow);
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
-            [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::StartNeedProducer {
-                    binding: RuntimePatternSeed::new(
-                        need_type,
-                        RuntimePatternSeedKind::Bind {
-                            mutable: false,
-                            local: need_local.clone(),
-                        },
-                    ),
-                    target: arcweft_core::plan::RuntimeNeedProducerStartTargetSeed {
-                        plan: producer_plan,
-                        arguments: Vec::new(),
-                    },
-                },
-                RuntimeFlowOpSeed::Await {
-                    binding: None,
-                    target: RuntimeAwaitTargetSeed {
-                        source: RuntimeExprSeed::new(
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                STRING_TYPE,
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::StartNeedProducer {
+                        binding: RuntimePatternSeed::new(
                             need_type,
-                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                                need_local,
-                                RuntimeLocalReadMode::Move,
-                            )),
+                            RuntimePatternSeedKind::Bind {
+                                mutable: false,
+                                local: need_local.clone(),
+                            },
                         ),
+                        target: arcweft_core::plan::RuntimeNeedProducerStartTargetSeed {
+                            plan: producer_plan,
+                            arguments: Vec::new(),
+                        },
                     },
-                    observers: vec![
-                        RuntimeAwaitPendingObserverSeed {
-                            pattern: RuntimePatternSeed::new(
-                                progress_type,
-                                RuntimePatternSeedKind::Discard,
+                    RuntimeFlowOpSeed::Await {
+                        binding: None,
+                        target: RuntimeAwaitTargetSeed {
+                            source: RuntimeExprSeed::new(
+                                need_type,
+                                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                    need_local,
+                                    RuntimeLocalReadMode::Move,
+                                )),
                             ),
-                            ops: vec![RuntimeFlowOpSeed::Return("first".to_owned())],
                         },
-                        RuntimeAwaitPendingObserverSeed {
-                            pattern: RuntimePatternSeed::new(
-                                progress_type,
-                                RuntimePatternSeedKind::Discard,
-                            ),
-                            ops: vec![RuntimeFlowOpSeed::Return("second".to_owned())],
-                        },
-                    ],
-                },
-            ],
+                        observers: vec![
+                            RuntimeAwaitPendingObserverSeed {
+                                pattern: RuntimePatternSeed::new(
+                                    progress_type,
+                                    RuntimePatternSeedKind::Discard,
+                                ),
+                                ops: vec![RuntimeFlowOpSeed::ReturnExpr(string("first"))],
+                            },
+                            RuntimeAwaitPendingObserverSeed {
+                                pattern: RuntimePatternSeed::new(
+                                    progress_type,
+                                    RuntimePatternSeedKind::Discard,
+                                ),
+                                ops: vec![RuntimeFlowOpSeed::ReturnExpr(string("second"))],
+                            },
+                        ],
+                    },
+                ])
+                .into_boxed_slice(),
+            },
         ))
         .expect("Await observer flow admits");
     builder

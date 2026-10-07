@@ -390,22 +390,31 @@ fn custom_echo_plan() -> RuntimePlan {
     let need_local = admitted.local_ids()[0].clone();
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
-            [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::StartNeedProducer {
-                    binding: RuntimePatternSeed::new(
-                        need_ty,
-                        RuntimePatternSeedKind::Bind {
-                            mutable: false,
-                            local: need_local.clone(),
-                        },
-                    ),
-                    target: RuntimeNeedProducerStartTargetSeed {
-                        plan: producer_plan,
-                        arguments: vec![arcweft_core::plan::RuntimeHostArgumentSeed::Positional(
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                string_ty,
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::StartNeedProducer {
+                        binding: RuntimePatternSeed::new(
+                            need_ty,
+                            RuntimePatternSeedKind::Bind {
+                                mutable: false,
+                                local: need_local.clone(),
+                            },
+                        ),
+                        target: RuntimeNeedProducerStartTargetSeed {
+                            plan: producer_plan,
+                            arguments:
+                                vec![arcweft_core::plan::RuntimeHostArgumentSeed::Positional(
                             arcweft_core::task::RuntimeRequestRoleIdentity::from_accepted_identity(
                                 [42; 32],
                             ),
@@ -416,23 +425,25 @@ fn custom_echo_plan() -> RuntimePlan {
                                 )),
                             ),
                         )],
+                        },
                     },
-                },
-                RuntimeFlowOpSeed::Await {
-                    binding: None,
-                    target: RuntimeAwaitTargetSeed {
-                        source: RuntimeExprSeed::new(
-                            need_ty,
-                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                                need_local,
-                                RuntimeLocalReadMode::Move,
-                            )),
-                        ),
+                    RuntimeFlowOpSeed::Await {
+                        binding: None,
+                        target: RuntimeAwaitTargetSeed {
+                            source: RuntimeExprSeed::new(
+                                need_ty,
+                                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                    need_local,
+                                    RuntimeLocalReadMode::Move,
+                                )),
+                            ),
+                        },
+                        observers: Vec::new(),
                     },
-                    observers: Vec::new(),
-                },
-                RuntimeFlowOpSeed::Return("custom-done".to_owned()),
-            ],
+                    RuntimeFlowOpSeed::Return("custom-done".to_owned()),
+                ])
+                .into_boxed_slice(),
+            },
         ))
         .expect("custom flow admits");
     builder

@@ -1768,6 +1768,7 @@ pub enum AwbcOpcode {
     BudgetYield = 0x8b,
     SelectDialogueResult = 0x8c,
     SequenceNext = 0x8d,
+    Complete = 0x8e,
     Dialogue = 0x98,
     Choice = 0x99,
     Trap = 0xa0,
@@ -1844,6 +1845,7 @@ impl AwbcOpcode {
         Self::BudgetYield,
         Self::SelectDialogueResult,
         Self::SequenceNext,
+        Self::Complete,
         Self::Dialogue,
         Self::Choice,
         Self::Trap,
@@ -1948,6 +1950,7 @@ impl AwbcOpcode {
             | Self::AwaitMany
             | Self::BudgetYield
             | Self::SelectDialogueResult
+            | Self::Complete
             | Self::SequenceNext
             | Self::Dialogue
             | Self::Choice
@@ -2548,6 +2551,8 @@ pub enum AwbcTerminator {
         dst: Option<AwbcRegisterId>,
         resume: AwbcResumePointId,
     },
+    /// Natural completion of a Unit Flow; distinct from an explicit Return.
+    Complete,
     Return {
         value: Option<AwbcRegisterId>,
     },
@@ -2589,6 +2594,7 @@ impl AwbcTerminator {
             Self::Await { .. } => AwbcOpcode::Await,
             Self::AwaitMany { .. } => AwbcOpcode::AwaitMany,
             Self::HostCall { .. } => AwbcOpcode::HostCall,
+            Self::Complete => AwbcOpcode::Complete,
             Self::Return { .. } => AwbcOpcode::Return,
             Self::SelectDialogueResult { .. } => AwbcOpcode::SelectDialogueResult,
             Self::ProjectCall { .. } => AwbcOpcode::ProjectCall,
@@ -2614,6 +2620,7 @@ impl AwbcTerminator {
             | Self::Match { .. }
             | Self::GotoStatic { .. }
             | Self::GotoDynamic { .. }
+            | Self::Complete
             | Self::Return { .. }
             | Self::SelectDialogueResult { .. }
             | Self::Trap { .. }

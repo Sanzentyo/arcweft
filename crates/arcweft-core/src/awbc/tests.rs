@@ -2977,6 +2977,7 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         (AwbcOpcode::BudgetYield, 0x8b, Terminator),
         (AwbcOpcode::SelectDialogueResult, 0x8c, Terminator),
         (AwbcOpcode::SequenceNext, 0x8d, Terminator),
+        (AwbcOpcode::Complete, 0x8e, Terminator),
         (AwbcOpcode::Dialogue, 0x98, Terminator),
         (AwbcOpcode::Choice, 0x99, Terminator),
         (AwbcOpcode::Trap, 0xa0, Terminator),

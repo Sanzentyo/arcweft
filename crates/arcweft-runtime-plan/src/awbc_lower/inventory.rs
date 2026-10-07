@@ -29,8 +29,7 @@ use arcweft_core::pattern::{RuntimeCheckedType, RuntimeSemanticTypeId, RuntimeVa
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeDialogueContentApplicationKey, RuntimeDialogueValueRole,
     RuntimeEffectSet, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
-    RuntimeFunctionInputBinding, RuntimeFunctionSiteBody, RuntimeHostCallTarget, RuntimePlan,
-    RuntimeTraitMethodId,
+    RuntimeHostCallTarget, RuntimePlan, RuntimeTraitMethodId,
 };
 use arcweft_core::runtime_id::{
     RuntimeDialogueContentTemplateId, RuntimeFunctionSiteId, RuntimeLocalDeclarationId,
@@ -181,13 +180,8 @@ pub(crate) enum PendingAwbcClosure {
     /// authority; each row's synthetic input local is bound to the body
     /// pattern before the site body executes.
     FunctionSite {
-        definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity,
-        role: arcweft_core::plan::RuntimeFunctionSemanticRole,
+        site: arcweft_core::runtime_id::RuntimeFunctionSiteId,
         function: AwbcFunctionId,
-        function_type: Option<arcweft_core::runtime_id::RuntimePlanTypeId>,
-        inputs: Box<[RuntimeFunctionInputBinding]>,
-        result: RuntimePlanTypeId,
-        body: RuntimeFunctionSiteBody,
         path: String,
     },
     /// Protected `fmt` operand thunk. A checked FormatContent instruction
@@ -1498,14 +1492,9 @@ impl AwbcInventory {
         id
     }
 
-    pub fn reserve_flow_function_slot(
-        &mut self,
-        flow: &FlowRuntimeId,
-        definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity,
-    ) -> AwbcFunctionId {
-        let id = self.reserve_function_slot(definition);
-        self.flow_functions.insert(flow.clone(), id);
-        id
+    /// Registers a Flow routing label for the same already-issued function row.
+    pub fn bind_flow_function(&mut self, flow: &FlowRuntimeId, function: AwbcFunctionId) {
+        self.flow_functions.insert(flow.clone(), function);
     }
 
     pub fn replace_function(
@@ -1519,17 +1508,6 @@ impl AwbcInventory {
             debug_assert_eq!(id.index(), self.program.functions.len());
             self.program.functions.push(function);
         }
-        id
-    }
-
-    pub fn replace_flow_function(
-        &mut self,
-        flow: &FlowRuntimeId,
-        id: AwbcFunctionId,
-        function: AwbcFunction,
-    ) -> AwbcFunctionId {
-        let id = self.replace_function(id, function);
-        self.flow_functions.insert(flow.clone(), id);
         id
     }
 

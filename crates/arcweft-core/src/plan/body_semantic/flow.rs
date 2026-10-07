@@ -334,7 +334,7 @@ impl RuntimeBodySemanticContext<'_> {
                     ordinal: self.plan.flows().len(),
                 }
             })?;
-        encoder.digest(flow.definition.as_bytes());
+        encoder.digest(flow.definition().as_bytes());
         encoder.status().map_err(Into::into)
     }
 }

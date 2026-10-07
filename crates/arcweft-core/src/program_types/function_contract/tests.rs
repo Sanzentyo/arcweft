@@ -501,20 +501,28 @@ fn failed_value_choice_does_not_leak_callback_effect_constraints() {
         .unwrap();
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow,
-            [],
-            RuntimeEffectSet::empty(),
-            vec![RuntimeFlowOpSeed::Let {
-                pattern: RuntimePatternSeed::new(id(3), RuntimePatternSeedKind::Discard),
-                expr: RuntimeExprSeed::new(
-                    id(3),
-                    RuntimeExprSeedKind::Function {
-                        site,
-                        captures: Box::new([]),
-                    },
-                ),
-            }],
+            crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
+                None,
+                Box::new([]),
+                id(1),
+                RuntimeEffectSet::empty(),
+            ),
+            crate::plan::RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::empty(),
+                ops: (vec![RuntimeFlowOpSeed::Let {
+                    pattern: RuntimePatternSeed::new(id(3), RuntimePatternSeedKind::Discard),
+                    expr: RuntimeExprSeed::new(
+                        id(3),
+                        RuntimeExprSeedKind::Function {
+                            site,
+                            captures: Box::new([]),
+                        },
+                    ),
+                }])
+                .into_boxed_slice(),
+            },
         ))
         .unwrap();
     let plan = std::sync::Arc::new(builder.finish().unwrap());

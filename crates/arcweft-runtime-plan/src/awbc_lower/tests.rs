@@ -73,6 +73,7 @@ fn flow_executable(flow: &FlowRuntimeId) -> RuntimeFlowExecutable {
 }
 
 fn build_plan(
+    result: RuntimeSemanticTypeId,
     flows: impl IntoIterator<Item = (FlowRuntimeId, Vec<RuntimeFlowOpSeed>)>,
     entries: impl IntoIterator<Item = RuntimeEntrySpec>,
 ) -> RuntimePlan {
@@ -94,13 +95,20 @@ fn build_plan(
             .expect("test flow schema admits");
         builder
             .push_flow_seed(RuntimeFlowSeed::new(
-                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
-                    [61; 32],
-                ),
                 id,
-                [],
-                arcweft_core::plan::RuntimeEffectSet::empty(),
-                ops,
+                arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                    arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                        [61; 32],
+                    ),
+                    None,
+                    Box::new([]),
+                    result,
+                    arcweft_core::plan::RuntimeEffectSet::empty(),
+                ),
+                arcweft_core::plan::RuntimeExecutableBodySeed {
+                    effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                    ops: (ops).into_boxed_slice(),
+                },
             ))
             .expect("test flow admits");
     }
@@ -133,7 +141,11 @@ fn build_plan(
     builder.finish().expect("test runtime plan seals")
 }
 
-fn build_bool_flow_plan(flow: FlowRuntimeId, ops: Vec<RuntimeFlowOpSeed>) -> RuntimePlan {
+fn build_bool_flow_plan(
+    result: RuntimeSemanticTypeId,
+    flow: FlowRuntimeId,
+    ops: Vec<RuntimeFlowOpSeed>,
+) -> RuntimePlan {
     let mut builder = RuntimePlanBuilder::new();
     builder
         .admit_type_batch(
@@ -153,11 +165,20 @@ fn build_bool_flow_plan(flow: FlowRuntimeId, ops: Vec<RuntimeFlowOpSeed>) -> Run
         .expect("boolean loop test flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
-            [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            ops,
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                result,
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (ops).into_boxed_slice(),
+            },
         ))
         .expect("boolean loop test flow admits");
     builder
@@ -248,19 +269,29 @@ fn build_while_let_plan(
         .expect("while-let test flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
-            [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::WhileLet {
-                    pattern,
-                    expr: RuntimeExprSeed::new(option_type, RuntimeExprSeedKind::Value(value)),
-                    guard,
-                    body,
-                },
-                RuntimeFlowOpSeed::ReturnExpr(string_expr("after")),
-            ],
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                type_id(1),
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::WhileLet {
+                        pattern,
+                        expr: RuntimeExprSeed::new(option_type, RuntimeExprSeedKind::Value(value)),
+                        guard,
+                        body,
+                    },
+                    RuntimeFlowOpSeed::ReturnExpr(string_expr("after")),
+                ])
+                .into_boxed_slice(),
+            },
         ))
         .expect("while-let test flow admits");
     builder
@@ -349,49 +380,59 @@ fn build_while_let_pop_front_plan() -> RuntimePlan {
         .expect("while-let pop_front flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
-            [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::Let {
-                    pattern: RuntimePatternSeed::new(
-                        sequence_type,
-                        RuntimePatternSeedKind::Bind {
-                            mutable: true,
-                            local: sequence.clone(),
-                        },
-                    ),
-                    expr: two_bool_vec_expr(sequence_type),
-                },
-                RuntimeFlowOpSeed::WhileLet {
-                    pattern: option_bool_pattern(
-                        option_type,
-                        payload_type,
-                        bool_type,
-                        RuntimePatternSeedKind::Bind {
-                            mutable: false,
-                            local: item,
-                        },
-                    ),
-                    expr: sequence_pop_front_expr(option_type, &sequence),
-                    guard: None,
-                    body: vec![RuntimeFlowOpSeed::Noop],
-                },
-                RuntimeFlowOpSeed::IfLet {
-                    pattern: option_bool_pattern(
-                        option_type,
-                        payload_type,
-                        bool_type,
-                        RuntimePatternSeedKind::Discard,
-                    ),
-                    expr: sequence_pop_front_expr(option_type, &sequence),
-                    guard: None,
-                    then_ops: vec![RuntimeFlowOpSeed::ReturnExpr(string_expr("leftover"))],
-                    else_ops: Vec::new(),
-                },
-                RuntimeFlowOpSeed::ReturnExpr(string_expr("after")),
-            ],
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                type_id(1),
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::Let {
+                        pattern: RuntimePatternSeed::new(
+                            sequence_type,
+                            RuntimePatternSeedKind::Bind {
+                                mutable: true,
+                                local: sequence.clone(),
+                            },
+                        ),
+                        expr: two_bool_vec_expr(sequence_type),
+                    },
+                    RuntimeFlowOpSeed::WhileLet {
+                        pattern: option_bool_pattern(
+                            option_type,
+                            payload_type,
+                            bool_type,
+                            RuntimePatternSeedKind::Bind {
+                                mutable: false,
+                                local: item,
+                            },
+                        ),
+                        expr: sequence_pop_front_expr(option_type, &sequence),
+                        guard: None,
+                        body: vec![RuntimeFlowOpSeed::Noop],
+                    },
+                    RuntimeFlowOpSeed::IfLet {
+                        pattern: option_bool_pattern(
+                            option_type,
+                            payload_type,
+                            bool_type,
+                            RuntimePatternSeedKind::Discard,
+                        ),
+                        expr: sequence_pop_front_expr(option_type, &sequence),
+                        guard: None,
+                        then_ops: vec![RuntimeFlowOpSeed::ReturnExpr(string_expr("leftover"))],
+                        else_ops: Vec::new(),
+                    },
+                    RuntimeFlowOpSeed::ReturnExpr(string_expr("after")),
+                ])
+                .into_boxed_slice(),
+            },
         ))
         .expect("while-let pop_front flow admits");
     builder
@@ -449,40 +490,53 @@ fn build_vec_push_pop_plan() -> RuntimePlan {
         .expect("Vec push/pop flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
-            [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::Let {
-                    pattern: RuntimePatternSeed::new(
-                        sequence_type,
-                        RuntimePatternSeedKind::Bind {
-                            mutable: true,
-                            local: sequence.clone(),
-                        },
-                    ),
-                    expr: two_bool_vec_expr(sequence_type),
-                },
-                RuntimeFlowOpSeed::Let {
-                    pattern: RuntimePatternSeed::new(type_id(2), RuntimePatternSeedKind::Discard),
-                    expr: RuntimeExprSeed::new(
-                        type_id(2),
-                        RuntimeExprSeedKind::SequencePush {
-                            place: arcweft_core::plan::RuntimeMutablePlaceSeed::Local(
-                                sequence.clone(),
-                            ),
-                            value: Box::new(bool_expr(true)),
-                        },
-                    ),
-                },
-                RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
-                    option_type,
-                    RuntimeExprSeedKind::SequencePopBack {
-                        place: arcweft_core::plan::RuntimeMutablePlaceSeed::Local(sequence),
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                option_type,
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::Let {
+                        pattern: RuntimePatternSeed::new(
+                            sequence_type,
+                            RuntimePatternSeedKind::Bind {
+                                mutable: true,
+                                local: sequence.clone(),
+                            },
+                        ),
+                        expr: two_bool_vec_expr(sequence_type),
                     },
-                )),
-            ],
+                    RuntimeFlowOpSeed::Let {
+                        pattern: RuntimePatternSeed::new(
+                            type_id(2),
+                            RuntimePatternSeedKind::Discard,
+                        ),
+                        expr: RuntimeExprSeed::new(
+                            type_id(2),
+                            RuntimeExprSeedKind::SequencePush {
+                                place: arcweft_core::plan::RuntimeMutablePlaceSeed::Local(
+                                    sequence.clone(),
+                                ),
+                                value: Box::new(bool_expr(true)),
+                            },
+                        ),
+                    },
+                    RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                        option_type,
+                        RuntimeExprSeedKind::SequencePopBack {
+                            place: arcweft_core::plan::RuntimeMutablePlaceSeed::Local(sequence),
+                        },
+                    )),
+                ])
+                .into_boxed_slice(),
+            },
         ))
         .expect("Vec push/pop flow admits");
     builder
@@ -600,11 +654,20 @@ fn awbc_cancellation_result_selection_uses_typed_terminal_and_fallthrough_keeps_
         .expect("flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
-            [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![RuntimeFlowOpSeed::Return("done".to_owned())],
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                type_id(1),
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (vec![RuntimeFlowOpSeed::Return("done".to_owned())]).into_boxed_slice(),
+            },
         ))
         .expect("entry flow admits");
     builder
@@ -926,39 +989,53 @@ fn option_and_result_awbc_patterns_use_exact_tuple_payload_edges() {
         .expect("payload flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow.clone(),
-            [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::Let {
-                    pattern: option_pattern,
-                    expr: RuntimeExprSeed::new(
-                        option,
-                        RuntimeExprSeedKind::Value(RuntimeValue::option_some(RuntimeValue::i64(7))),
-                    ),
-                },
-                RuntimeFlowOpSeed::Let {
-                    pattern: result_ok_pattern,
-                    expr: RuntimeExprSeed::new(
-                        result,
-                        RuntimeExprSeedKind::Value(RuntimeValue::result_ok(RuntimeValue::i64(8))),
-                    ),
-                },
-                RuntimeFlowOpSeed::Let {
-                    pattern: result_err_pattern,
-                    expr: RuntimeExprSeed::new(
-                        result,
-                        RuntimeExprSeedKind::Value(RuntimeValue::result_err(RuntimeValue::String(
-                            "no".to_owned(),
-                        ))),
-                    ),
-                },
-                RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
-                    unit,
-                    RuntimeExprSeedKind::Value(RuntimeValue::Unit),
-                )),
-            ],
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                unit,
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::Let {
+                        pattern: option_pattern,
+                        expr: RuntimeExprSeed::new(
+                            option,
+                            RuntimeExprSeedKind::Value(RuntimeValue::option_some(
+                                RuntimeValue::i64(7),
+                            )),
+                        ),
+                    },
+                    RuntimeFlowOpSeed::Let {
+                        pattern: result_ok_pattern,
+                        expr: RuntimeExprSeed::new(
+                            result,
+                            RuntimeExprSeedKind::Value(RuntimeValue::result_ok(RuntimeValue::i64(
+                                8,
+                            ))),
+                        ),
+                    },
+                    RuntimeFlowOpSeed::Let {
+                        pattern: result_err_pattern,
+                        expr: RuntimeExprSeed::new(
+                            result,
+                            RuntimeExprSeedKind::Value(RuntimeValue::result_err(
+                                RuntimeValue::String("no".to_owned()),
+                            )),
+                        ),
+                    },
+                    RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                        unit,
+                        RuntimeExprSeedKind::Value(RuntimeValue::Unit),
+                    )),
+                ])
+                .into_boxed_slice(),
+            },
         ))
         .expect("payload flow admits");
     builder
@@ -1168,7 +1245,7 @@ fn plan_with_local() -> (
 #[test]
 fn missing_local_type_is_reported_instead_of_becoming_a_success_type() {
     let (_, missing) = plan_with_local();
-    let plan = build_plan([], []);
+    let plan = build_plan(type_id(2), [], []);
     let mut inventory = AwbcInventory::new("test.arcw", AwbcLowerOptions::default());
     let dynamic = inventory.dynamic_ty();
 
@@ -1187,13 +1264,7 @@ fn invalid_local_seeds_cannot_produce_an_awbc_plan() {
 
     let mut flow_builder = RuntimePlanBuilder::new();
     assert_eq!(
-        flow_builder.push_flow_seed(RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
-            flow_id("invalid_plan"),
-            [foreign.clone()],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![RuntimeFlowOpSeed::Noop],
-        )),
+        flow_builder.push_flow_seed(RuntimeFlowSeed::new(flow_id("invalid_plan"), arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]), None, Box::new([arcweft_core::plan::RuntimeFunctionInputBindingSeed { transfer: arcweft_core::plan::RuntimeFunctionInputTransfer::Formal, origin: arcweft_core::plan::RuntimeFunctionInputOrigin::Parameter(arcweft_core::plan::RuntimeFunctionParameterIdentity::from_accepted_identity([92;32])), source: arcweft_core::plan::RuntimeFunctionInputSource::Parameter { position:0, passing:arcweft_core::plan::RuntimeFunctionParameterPassing::Value }, input_local: foreign.clone(), pattern: arcweft_core::plan::RuntimePatternSeed::new(type_id(1), arcweft_core::plan::RuntimePatternSeedKind::Bind { mutable:false, local: foreign.clone() }), ownership: arcweft_core::plan::RuntimeFunctionInputOwnershipRequirement::Owned, unrestricted_bindings: Box::new([]) }]), type_id(1), arcweft_core::plan::RuntimeEffectSet::empty()), arcweft_core::plan::RuntimeExecutableBodySeed { effects: arcweft_core::plan::RuntimeEffectSet::empty(), ops: (vec![RuntimeFlowOpSeed::Noop]).into_boxed_slice() })),
         Err(RuntimePlanBuildError::ForeignLocalSeed)
     );
     assert_eq!(flow_builder.finish(), Err(RuntimePlanBuildError::Poisoned));
@@ -1263,6 +1334,7 @@ fn invalid_local_seeds_cannot_produce_an_awbc_plan() {
 fn builder_sealed_constant_return_lowers_and_executes() {
     let main = flow_id("main");
     let plan = build_plan(
+        type_id(1),
         [(
             main.clone(),
             vec![RuntimeFlowOpSeed::ReturnExpr(string_expr("ok"))],
@@ -1284,6 +1356,7 @@ fn selected_entry_lowering_keeps_its_static_flow_closure() {
     let shared = flow_id("shared");
     let unselected = flow_id("unselected");
     let plan = build_plan(
+        type_id(1),
         [
             (
                 selected_flow.clone(),
@@ -1329,6 +1402,7 @@ fn dynamic_goto_keeps_all_accepted_flow_targets() {
     let selected_flow = flow_id("selected");
     let other = flow_id("other");
     let plan = build_plan(
+        type_id(1),
         [
             (
                 selected_flow.clone(),
@@ -1363,6 +1437,7 @@ fn dynamic_goto_keeps_all_accepted_flow_targets() {
 fn builder_sealed_plan_roundtrips_through_canonical_awbc() {
     let main = flow_id("main");
     let report = lower_plan(&build_plan(
+        type_id(2),
         [(
             main.clone(),
             vec![RuntimeFlowOpSeed::ReturnExpr(unit_expr())],
@@ -1388,6 +1463,7 @@ fn builder_sealed_plan_roundtrips_through_canonical_awbc() {
 fn discarded_host_call_result_still_has_an_awbc_destination() {
     let main = flow_id("main");
     let report = lower_plan(&build_plan(
+        type_id(2),
         [(
             main.clone(),
             vec![
@@ -1429,7 +1505,7 @@ fn discarded_host_call_result_still_has_an_awbc_destination() {
 fn host_signature_preserves_every_admitted_operand_and_result_identity() {
     for mode in [RuntimeHostCallMode::Immediate, RuntimeHostCallMode::Suspend] {
         let main = flow_id("main");
-        let plan = build_plan(
+        let plan = build_plan(type_id(2),
             [(
                 main.clone(),
                 vec![
@@ -1526,6 +1602,7 @@ fn host_descriptor_interning_preserves_distinct_call_site_values() {
         .collect::<Vec<_>>();
     ops.push(RuntimeFlowOpSeed::ReturnExpr(unit_expr()));
     let report = lower_plan(&build_plan(
+        type_id(2),
         [(main.clone(), ops)],
         [flow_entry("main", main)],
     ));
@@ -1595,33 +1672,43 @@ fn loop_break_paths_initialize_one_typed_result_before_binding() {
         .expect("loop flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             main.clone(),
-            [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::Loop {
-                    result: Some(RuntimePatternSeed::new(
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                type_id(1),
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::Loop {
+                        result: Some(RuntimePatternSeed::new(
+                            type_id(1),
+                            RuntimePatternSeedKind::Bind {
+                                mutable: false,
+                                local: result.clone(),
+                            },
+                        )),
+                        body: vec![RuntimeFlowOpSeed::If {
+                            condition: bool_expr(true),
+                            then_ops: vec![RuntimeFlowOpSeed::Break(Some(string_expr("then")))],
+                            else_ops: vec![RuntimeFlowOpSeed::Break(Some(string_expr("else")))],
+                        }],
+                    },
+                    RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
                         type_id(1),
-                        RuntimePatternSeedKind::Bind {
-                            mutable: false,
-                            local: result.clone(),
-                        },
+                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                            result,
+                            RuntimeLocalReadMode::Copy,
+                        )),
                     )),
-                    body: vec![RuntimeFlowOpSeed::If {
-                        condition: bool_expr(true),
-                        then_ops: vec![RuntimeFlowOpSeed::Break(Some(string_expr("then")))],
-                        else_ops: vec![RuntimeFlowOpSeed::Break(Some(string_expr("else")))],
-                    }],
-                },
-                RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
-                    type_id(1),
-                    RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                        result,
-                        RuntimeLocalReadMode::Copy,
-                    )),
-                )),
-            ],
+                ])
+                .into_boxed_slice(),
+            },
         ))
         .expect("loop flow admits");
     builder
@@ -1683,35 +1770,45 @@ fn nested_loops_bind_the_nearest_break_result() {
         .expect("nested loop flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             main.clone(),
-            [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::Loop {
-                    result: Some(binding(outer_result.clone())),
-                    body: vec![
-                        RuntimeFlowOpSeed::Loop {
-                            result: Some(binding(inner_result.clone())),
-                            body: vec![RuntimeFlowOpSeed::Break(Some(string_expr("nested")))],
-                        },
-                        RuntimeFlowOpSeed::Break(Some(RuntimeExprSeed::new(
-                            type_id(1),
-                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                                inner_result,
-                                RuntimeLocalReadMode::Copy,
-                            )),
-                        ))),
-                    ],
-                },
-                RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
-                    type_id(1),
-                    RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                        outer_result,
-                        RuntimeLocalReadMode::Copy,
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                type_id(1),
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::Loop {
+                        result: Some(binding(outer_result.clone())),
+                        body: vec![
+                            RuntimeFlowOpSeed::Loop {
+                                result: Some(binding(inner_result.clone())),
+                                body: vec![RuntimeFlowOpSeed::Break(Some(string_expr("nested")))],
+                            },
+                            RuntimeFlowOpSeed::Break(Some(RuntimeExprSeed::new(
+                                type_id(1),
+                                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                    inner_result,
+                                    RuntimeLocalReadMode::Copy,
+                                )),
+                            ))),
+                        ],
+                    },
+                    RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                        type_id(1),
+                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                            outer_result,
+                            RuntimeLocalReadMode::Copy,
+                        )),
                     )),
-                )),
-            ],
+                ])
+                .into_boxed_slice(),
+            },
         ))
         .expect("nested loop flow admits");
     builder
@@ -1729,6 +1826,7 @@ fn nested_loops_bind_the_nearest_break_result() {
 fn loop_continue_targets_the_verified_backedge_header() {
     let main = flow_id("main");
     let plan = build_plan(
+        type_id(2),
         [(
             main.clone(),
             vec![RuntimeFlowOpSeed::Loop {
@@ -1769,6 +1867,7 @@ fn loop_continue_targets_the_verified_backedge_header() {
 fn while_false_condition_skips_body_and_canonical_roundtrip_preserves_execution() {
     let main = flow_id("while.zero");
     let plan = build_bool_flow_plan(
+        type_id(1),
         main,
         vec![
             RuntimeFlowOpSeed::While {
@@ -1803,6 +1902,7 @@ fn while_false_condition_skips_body_and_canonical_roundtrip_preserves_execution(
 fn while_break_exits_after_one_positive_iteration() {
     let main = flow_id("while.break");
     let plan = build_bool_flow_plan(
+        type_id(1),
         main,
         vec![
             RuntimeFlowOpSeed::While {
@@ -1834,6 +1934,7 @@ fn while_break_exits_after_one_positive_iteration() {
 fn while_continue_targets_its_condition_header() {
     let main = flow_id("while.continue");
     let plan = build_bool_flow_plan(
+        type_id(2),
         main,
         vec![
             RuntimeFlowOpSeed::While {
@@ -2050,6 +2151,7 @@ fn typed_runtime_ids_drive_static_goto_and_server_route_targets() {
     let main = flow_id("chapter.main");
     let next = flow_id("chapter.next");
     let plan = build_plan(
+        type_id(1),
         [
             (main, vec![RuntimeFlowOpSeed::Goto(next.clone())]),
             (
@@ -2100,6 +2202,7 @@ fn await_observers_lower_to_progress_dispatch_and_rewait_backedge() {
         .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(type_id(1), RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(type_id(2), RuntimePlanTypeProjection::Unit),
                 RuntimePlanTypeSeed::new(progress_type, RuntimePlanTypeProjection::Progress),
                 RuntimePlanTypeSeed::new(need_type, RuntimePlanTypeProjection::Need(type_id(1))),
             ],
@@ -2124,12 +2227,7 @@ fn await_observers_lower_to_progress_dispatch_and_rewait_backedge() {
         })
         .expect("Await observer flow schema admits");
     builder
-        .push_flow_seed(RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
-            main.clone(),
-            [need_local.clone()],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![RuntimeFlowOpSeed::Await {
+        .push_flow_seed(RuntimeFlowSeed::new(main.clone(), arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]), None, Box::new([arcweft_core::plan::RuntimeFunctionInputBindingSeed { transfer: arcweft_core::plan::RuntimeFunctionInputTransfer::Formal, origin: arcweft_core::plan::RuntimeFunctionInputOrigin::Parameter(arcweft_core::plan::RuntimeFunctionParameterIdentity::from_accepted_identity([92;32])), source: arcweft_core::plan::RuntimeFunctionInputSource::Parameter { position:0, passing:arcweft_core::plan::RuntimeFunctionParameterPassing::Affine }, input_local: need_local.clone(), pattern: arcweft_core::plan::RuntimePatternSeed::new(need_type, arcweft_core::plan::RuntimePatternSeedKind::Bind { mutable:false, local: need_local.clone() }), ownership: arcweft_core::plan::RuntimeFunctionInputOwnershipRequirement::Owned, unrestricted_bindings: Box::new([]) }]), type_id(2), arcweft_core::plan::RuntimeEffectSet::empty()), arcweft_core::plan::RuntimeExecutableBodySeed { effects: arcweft_core::plan::RuntimeEffectSet::empty(), ops: (vec![RuntimeFlowOpSeed::Await {
                 binding: None,
                 target: RuntimeAwaitTargetSeed {
                     source: RuntimeExprSeed::new(
@@ -2147,8 +2245,7 @@ fn await_observers_lower_to_progress_dispatch_and_rewait_backedge() {
                     ),
                     ops: vec![RuntimeFlowOpSeed::Noop],
                 }],
-            }],
-        ))
+            }]).into_boxed_slice() }))
         .expect("Await observer flow admits");
     let launch = flow_id("await.launch");
     builder
@@ -2159,11 +2256,20 @@ fn await_observers_lower_to_progress_dispatch_and_rewait_backedge() {
         .expect("zero-argument launch flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             launch.clone(),
-            [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![RuntimeFlowOpSeed::Noop],
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                type_id(2),
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (vec![RuntimeFlowOpSeed::Noop]).into_boxed_slice(),
+            },
         ))
         .expect("zero-argument launch flow admits");
     builder
@@ -2218,6 +2324,9 @@ fn function_semantic_roles_survive_expression_and_executable_awbc_lowering() {
             )
             .unwrap();
         for &role in RuntimeFunctionSemanticRole::ALL {
+            if role == RuntimeFunctionSemanticRole::Flow {
+                continue;
+            }
             let site = builder
                 .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
                     definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
@@ -2249,6 +2358,11 @@ fn function_semantic_roles_survive_expression_and_executable_awbc_lowering() {
                 .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed { program, site })
                 .unwrap();
         }
+        if executable {
+            let flow = flow_id("role.root");
+            builder.push_flow_schema(flow_schema(&flow)).unwrap();
+            builder.push_flow_seed(RuntimeFlowSeed::new(flow, RuntimeFunctionSiteDeclarationSeed::flow(arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([42;32]), None, Box::new([]), type_id(2), RuntimeEffectSet::empty()), RuntimeExecutableBodySeed { effects: RuntimeEffectSet::empty(), ops: Box::new([RuntimeFlowOpSeed::ReturnExpr(unit_expr())]) })).unwrap();
+        }
         let plan = builder.finish().unwrap();
         let program = AwbcLowerer::new(
             &plan,
@@ -2261,6 +2375,15 @@ fn function_semantic_roles_survive_expression_and_executable_awbc_lowering() {
         let encoded = program.encode_canonical().unwrap();
         let decoded = AwbcProgram::decode_canonical(&encoded, Default::default()).unwrap();
         assert_eq!(decoded, program);
+        let roots = decoded
+            .functions
+            .iter()
+            .filter(|function| function.semantic_role == RuntimeFunctionSemanticRole::Flow)
+            .collect::<Vec<_>>();
+        assert_eq!(roots.len(), usize::from(executable));
+        if let Some(root) = roots.first() {
+            assert_eq!(root.kind, AwbcFunctionKind::Flow);
+        }
         for binding in &decoded.pure_programs {
             let function = &decoded.functions[binding.function.index()];
             assert_eq!(function.kind, AwbcFunctionKind::Ordinary);
@@ -2273,7 +2396,7 @@ fn function_semantic_roles_survive_expression_and_executable_awbc_lowering() {
         }
         assert_eq!(
             decoded.pure_programs.len(),
-            RuntimeFunctionSemanticRole::ALL.len()
+            RuntimeFunctionSemanticRole::ALL.len() - 1
         );
     }
 }
@@ -2285,4 +2408,67 @@ fn manual_local_origin(declaration: &str) -> arcweft_core::plan::RuntimeLocalOri
     identity.update(b"arcweft.manual-fixture-binding.v1\0");
     identity.update(declaration.as_bytes());
     arcweft_core::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
+}
+
+#[test]
+fn typed_unit_flow_completion_is_distinct_from_explicit_return_and_round_trips() {
+    use arcweft_core::awbc::schema::AwbcFunctionKind;
+    let main = flow_id("completion.root");
+    for (ops, expected, natural) in [
+        (vec![RuntimeFlowOpSeed::Noop], None, true),
+        (
+            vec![RuntimeFlowOpSeed::ReturnExpr(unit_expr())],
+            Some(RuntimeValue::Unit),
+            false,
+        ),
+    ] {
+        let plan = build_plan(
+            type_id(2),
+            [(main.clone(), ops)],
+            [flow_entry("completion", main.clone())],
+        );
+        let program = lower_plan(&plan).program;
+        let root = program.flow_function(&main).unwrap();
+        let row = &program.functions[root.index()];
+        assert!(program.signatures[row.signature.index()].result.is_some());
+        assert_eq!(
+            program
+                .blocks
+                .iter()
+                .any(|block| matches!(block.terminator, AwbcTerminator::Complete)),
+            natural
+        );
+        assert_eq!(run_entry(&program), VmExit::Returned(expected.clone()));
+        let decoded = AwbcProgram::decode_canonical(
+            &program.encode_canonical().unwrap(),
+            arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+        )
+        .unwrap();
+        assert_eq!(decoded, program);
+        assert_eq!(run_entry(&decoded), VmExit::Returned(expected));
+        if natural {
+            let mut invalid = program.clone();
+            invalid.functions[root.index()].kind = AwbcFunctionKind::Ordinary;
+            assert!(
+                invalid
+                    .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+                    .is_err()
+            );
+            let mut invalid = program.clone();
+            let string_type = invalid
+                .runtime_types
+                .iter()
+                .position(|ty| ty.semantic_identity() == type_id(1))
+                .unwrap();
+            let signature = invalid.functions[root.index()].signature;
+            invalid.signatures[signature.index()].result = Some(
+                arcweft_core::awbc::schema::AwbcTypeId(u32::try_from(string_type).unwrap()),
+            );
+            assert!(
+                invalid
+                    .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+                    .is_err()
+            );
+        }
+    }
 }

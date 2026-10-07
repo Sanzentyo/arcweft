@@ -64,14 +64,30 @@ fn plan_with_flows(flows: impl IntoIterator<Item = FlowRuntimeId>) -> RuntimePla
             })
             .expect("test Flow schema admits");
         builder
-            .push_flow_seed(RuntimeFlowSeed::new(
-                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
-                    [61; 32],
-                ),
-                flow,
+            .admit_type_batch(
+                [arcweft_core::plan::RuntimePlanTypeSeed::new(
+                    arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest(),
+                    arcweft_core::plan::RuntimePlanTypeProjection::Unit,
+                )],
                 [],
-                arcweft_core::plan::RuntimeEffectSet::empty(),
-                Vec::new(),
+            )
+            .expect("Flow result type admits");
+        builder
+            .push_flow_seed(RuntimeFlowSeed::new(
+                flow,
+                arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                    arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                        [61; 32],
+                    ),
+                    None,
+                    Box::new([]),
+                    arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest(),
+                    arcweft_core::plan::RuntimeEffectSet::empty(),
+                ),
+                arcweft_core::plan::RuntimeExecutableBodySeed {
+                    effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                    ops: (Vec::new()).into_boxed_slice(),
+                },
             ))
             .expect("test Flow admits");
     }

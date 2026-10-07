@@ -572,8 +572,9 @@ impl<'a> Iterator for RuntimeFlowOwnedBodies<'a> {
 impl RuntimePlan {
     /// Visits every owned flow operation in deterministic inventory/preorder.
     ///
-    /// Includes flows, executable function sites, line activation/actions, cancellation
-    /// rules, and cleanup bodies. Function sites are visited once from their
+    /// Includes executable function sites (including Root Flows), line
+    /// activation/actions, cancellation rules, and cleanup bodies. Each
+    /// function body is visited once from its
     /// owning table; `ProjectCall` references do not recursively revisit them.
     /// This is a whole-plan inventory, not a path-sensitive execution trace.
     pub fn visit_flow_ops(&self, visitor: &mut impl FnMut(&FlowOp)) {
@@ -593,9 +594,6 @@ impl RuntimePlan {
         &self,
         visitor: &mut impl FnMut(&FlowOp) -> Result<(), E>,
     ) -> Result<(), E> {
-        for flow in self.flows() {
-            try_visit_ops(flow.body().ops(), visitor)?;
-        }
         for site in self.function_sites().iter() {
             if let RuntimeFunctionSiteBody::Executable(body) = site.body() {
                 try_visit_ops(body.ops(), visitor)?;

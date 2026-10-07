@@ -770,16 +770,57 @@ pub struct RuntimeLineId {
 /// Lowered flow program.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeFlow {
-    pub definition: RuntimeFunctionDefinitionIdentity,
     pub id: FlowRuntimeId,
+    /// Derived invocation index; the immutable function row remains authority.
     pub params: Box<[RuntimeLocalDeclarationId]>,
-    body: RuntimeExecutableBody,
+    function_site: crate::runtime_id::RuntimeFunctionSiteId,
+    function: std::sync::Arc<RuntimeFunctionSite>,
 }
 
 impl RuntimeFlow {
+    pub(crate) fn matches_parameter_contract(&self, schema: &RuntimeFlowSchema) -> bool {
+        schema.flow == self.id
+            && self.function.inputs().len() == schema.parameters.len()
+            && self
+                .function
+                .inputs()
+                .iter()
+                .zip(&schema.parameters)
+                .all(|(input, formal)| {
+                    input.origin() == RuntimeFunctionInputOrigin::Parameter(formal.identity)
+                        && input.source()
+                            == RuntimeFunctionInputSource::Parameter {
+                                position: formal.coordinate.position(),
+                                passing: formal.passing,
+                            }
+                        && input.ownership() == RuntimeFunctionInputOwnershipRequirement::Owned
+                        && formal.mode == crate::entry::RuntimeFlowParameterMode::Owned
+                })
+    }
+
     #[must_use]
-    pub const fn body(&self) -> &RuntimeExecutableBody {
-        &self.body
+    pub const fn function_site(&self) -> crate::runtime_id::RuntimeFunctionSiteId {
+        self.function_site
+    }
+
+    #[must_use]
+    pub fn function(&self) -> &RuntimeFunctionSite {
+        &self.function
+    }
+
+    #[must_use]
+    pub fn definition(&self) -> RuntimeFunctionDefinitionIdentity {
+        self.function.definition()
+    }
+
+    /// # Panics
+    /// Panics only if the admitted Flow ownership invariant was corrupted.
+    #[must_use]
+    pub fn body(&self) -> &RuntimeExecutableBody {
+        self.function
+            .body()
+            .executable()
+            .expect("admitted Flow owns an executable function row")
     }
 }
 

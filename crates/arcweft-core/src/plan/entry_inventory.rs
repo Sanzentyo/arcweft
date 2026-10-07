@@ -576,6 +576,12 @@ pub enum RuntimePlanError {
     DataCodecUse(Box<crate::program_types::RuntimeProgramDataShapeError>),
     #[error("duplicate runtime flow `{0}`")]
     DuplicateFlow(String),
+    #[error("Flow {flow} does not reference its actual immutable Flow function row")]
+    InvalidFlowFunctionOwner { flow: String },
+    #[error("Flow function rows have {actual} owners for {expected} Root Flows")]
+    FlowFunctionOwnerCount { actual: usize, expected: usize },
+    #[error("Flow {flow} parameter schema differs from its function input contract")]
+    FlowParameterContractMismatch { flow: String },
     #[error("duplicate runtime entry `{0}`")]
     DuplicateEntry(String),
     #[error("duplicate runtime pure-helper slot {0}")]
@@ -700,6 +706,47 @@ pub enum RuntimePlanError {
 impl RuntimePlan {
     /// Verifies the complete executable entry inventory before selection.
     pub fn verify(&self) -> Result<(), RuntimePlanError> {
+        for flow in self.flows() {
+            let Some(function) = self.function_sites.shared(flow.function_site()) else {
+                return Err(RuntimePlanError::InvalidFlowFunctionOwner {
+                    flow: flow.id.canonical_label(),
+                });
+            };
+            let params = function
+                .parameter_inputs()
+                .map(super::RuntimeFunctionInputBinding::input_local)
+                .collect::<Vec<_>>();
+            if !std::sync::Arc::ptr_eq(&function, &flow.function)
+                || function.role() != super::RuntimeFunctionSemanticRole::Flow
+                || !matches!(
+                    function.body(),
+                    super::RuntimeFunctionSiteBody::Executable(_)
+                )
+                || params.as_slice() != flow.params.as_ref()
+            {
+                return Err(RuntimePlanError::InvalidFlowFunctionOwner {
+                    flow: flow.id.canonical_label(),
+                });
+            }
+        }
+
+        let roots = self
+            .flows
+            .iter()
+            .map(|flow| flow.function_site())
+            .collect::<BTreeSet<_>>();
+        let actual = self
+            .function_sites
+            .iter()
+            .filter(|site| site.role() == super::RuntimeFunctionSemanticRole::Flow)
+            .count();
+        if roots.len() != self.flows.len() || actual != roots.len() {
+            return Err(RuntimePlanError::FlowFunctionOwnerCount {
+                actual,
+                expected: self.flows.len(),
+            });
+        }
+
         self.callable_states.validate_for_plan(self)?;
         for definition in self.callable_specializations() {
             definition.validate(
@@ -918,6 +965,19 @@ impl RuntimePlan {
                 return Err(RuntimePlanError::MissingSchemaFlow(
                     schema.flow.canonical_label(),
                 ));
+            }
+        }
+        for flow in &self.flows {
+            if let Some(schema) = self
+                .flow_schemas
+                .iter()
+                .find(|schema| schema.flow == flow.id)
+            {
+                if !flow.matches_parameter_contract(schema) {
+                    return Err(RuntimePlanError::FlowParameterContractMismatch {
+                        flow: flow.id.canonical_label(),
+                    });
+                }
             }
         }
         if let Some(flow) = flow_ids

@@ -2127,33 +2127,43 @@ fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
         .expect("u32 flow schema is admitted");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             flow,
-            [],
-            arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
                 u32_ty,
-                RuntimeExprSeedKind::Sum {
-                    source: Box::new(RuntimeExprSeed::new(
-                        u32_seq_ty,
-                        RuntimeExprSeedKind::StandardMap {
-                            family: RuntimeStandardMapFamily::Seq,
-                            order: RuntimeStandardMapOperandOrder::MappingThenReceiver,
-                            mapping: Box::new(RuntimeExprSeed::new(
-                                u32_mapping_ty,
-                                RuntimeExprSeedKind::Function {
-                                    site: mapping,
-                                    captures: Box::new([]),
-                                },
-                            )),
-                            source: Box::new(value_expr(
-                                u32_seq_ty,
-                                runtime_sequence_dense_u32((0..128).collect()),
-                            )),
-                        },
-                    )),
-                },
-            ))],
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops: (vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                    u32_ty,
+                    RuntimeExprSeedKind::Sum {
+                        source: Box::new(RuntimeExprSeed::new(
+                            u32_seq_ty,
+                            RuntimeExprSeedKind::StandardMap {
+                                family: RuntimeStandardMapFamily::Seq,
+                                order: RuntimeStandardMapOperandOrder::MappingThenReceiver,
+                                mapping: Box::new(RuntimeExprSeed::new(
+                                    u32_mapping_ty,
+                                    RuntimeExprSeedKind::Function {
+                                        site: mapping,
+                                        captures: Box::new([]),
+                                    },
+                                )),
+                                source: Box::new(value_expr(
+                                    u32_seq_ty,
+                                    runtime_sequence_dense_u32((0..128).collect()),
+                                )),
+                            },
+                        )),
+                    },
+                ))])
+                .into_boxed_slice(),
+            },
         ))
         .expect("u32 flow is admitted");
     Arc::new(builder.finish().expect("u32 flow plan is sealed"))

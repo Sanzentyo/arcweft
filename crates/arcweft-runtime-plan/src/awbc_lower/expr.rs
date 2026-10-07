@@ -1093,89 +1093,104 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                 );
             }
             PendingAwbcClosure::FunctionSite {
-                definition,
-                role,
+                site,
                 function,
-                function_type,
-                inputs,
-                result,
-                body: RuntimeFunctionSiteBody::Executable(executable),
                 path,
             } => {
-                super::flow::AwbcFlowLowerer::new(inventory, plan).lower_executable_function_site(
-                    function,
-                    definition,
-                    role,
-                    function_type,
-                    &inputs,
-                    result,
-                    &executable,
-                    &path,
-                );
-            }
-            PendingAwbcClosure::FunctionSite {
-                definition,
-                role,
-                function,
-                function_type,
-                inputs,
-                result,
-                body: RuntimeFunctionSiteBody::Expression(expression),
-                path,
-            } => {
-                let mut frame = FrameBuilder::new();
-                let mut abi_parameters = Vec::with_capacity(inputs.len());
-                for (position, input) in inputs.iter().enumerate() {
-                    let input_local = input.input_local();
-                    let name = inventory.local_name(input_local);
-                    let input_ty =
-                        admitted_plan_type(inventory, plan, local_type(plan, input_local));
-                    abi_parameters.push(frame.abi_parameter(position, input_ty, name));
+                let declaration = plan
+                    .function_sites()
+                    .get(site)
+                    .expect("reserved AWBC function site belongs to its RuntimePlan");
+                if declaration.role() == arcweft_core::plan::RuntimeFunctionSemanticRole::Flow {
+                    let flow = plan
+                        .flows()
+                        .iter()
+                        .find(|flow| flow.function_site() == site)
+                        .expect("Flow function site owns a Root Flow");
+                    super::flow::AwbcFlowLowerer::new(inventory, plan).lower_flow(flow);
+                    continue;
                 }
-                let mut body = ExprBodyBuilder::new(inventory, function);
-                let mut input_ownership = Vec::with_capacity(inputs.len());
-                for (input, value) in inputs.iter().zip(abi_parameters) {
-                    let pattern = lower_pattern(inventory, plan, &mut frame, input.pattern());
-                    input_ownership.push(function_input_ownership(
-                        inventory, &frame, input, pattern, &path,
-                    ));
-                    inventory.push_instruction(AwbcInstruction::BindPattern {
-                        pattern,
-                        value,
-                        mode: AwbcBindMode::Declare,
-                    });
-                }
+                let definition = declaration.definition();
+                let role = declaration.role();
+                let function_type = declaration.function_type();
+                let inputs = declaration.inputs();
+                let result = declaration.result();
+                match declaration.body() {
+                    RuntimeFunctionSiteBody::Executable(_) => {
+                        super::flow::AwbcFlowLowerer::new(inventory, plan)
+                            .lower_executable_function_site(function, declaration, &path);
+                    }
+                    RuntimeFunctionSiteBody::Expression(expression) => {
+                        let mut frame = FrameBuilder::new();
+                        let mut abi_parameters = Vec::with_capacity(inputs.len());
+                        for (position, input) in inputs.iter().enumerate() {
+                            let input_local = input.input_local();
+                            let name = inventory.local_name(input_local);
+                            let input_ty =
+                                admitted_plan_type(inventory, plan, local_type(plan, input_local));
+                            abi_parameters.push(frame.abi_parameter(position, input_ty, name));
+                        }
+                        let mut body = ExprBodyBuilder::new(inventory, function);
+                        let mut input_ownership = Vec::with_capacity(inputs.len());
+                        for (input, value) in inputs.iter().zip(abi_parameters) {
+                            let pattern =
+                                lower_pattern(inventory, plan, &mut frame, input.pattern());
+                            input_ownership.push(function_input_ownership(
+                                inventory, &frame, input, pattern, &path,
+                            ));
+                            inventory.push_instruction(AwbcInstruction::BindPattern {
+                                pattern,
+                                value,
+                                mode: AwbcBindMode::Declare,
+                            });
+                        }
 
-                lower_closure_body(inventory, &mut frame, plan, &mut body, &expression, &path);
-                let layout = inventory.intern_frame_layout(format!("{path}:frame"), frame.finish());
-                let block = body.block_start;
-                let block_len = table_range_len(block.0, inventory.program.blocks.len());
-                let params = inputs
-                    .iter()
-                    .map(|input| {
-                        admitted_plan_type(inventory, plan, local_type(plan, input.input_local()))
-                    })
-                    .collect();
-                let result = admitted_plan_type(inventory, plan, result);
-                let signature =
-                    inventory.intern_signature(params, Some(result), AwbcEffectSetId(0));
-                let type_context = function_type.map(|ty| admitted_plan_type(inventory, plan, ty));
-                inventory.replace_function(
-                    function,
-                    AwbcFunction {
-                        definition,
-                        semantic_role: role,
-                        public_id: None,
-                        kind: AwbcFunctionKind::Ordinary,
-                        signature,
-                        type_context,
-                        input_ownership,
-                        frame_layout: layout,
-                        blocks: AwbcTableRange::new(block.0, block_len),
-                        entry_block: block,
-                        flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
-                    },
-                );
+                        lower_closure_body(
+                            inventory,
+                            &mut frame,
+                            plan,
+                            &mut body,
+                            &expression,
+                            &path,
+                        );
+                        let layout =
+                            inventory.intern_frame_layout(format!("{path}:frame"), frame.finish());
+                        let block = body.block_start;
+                        let block_len = table_range_len(block.0, inventory.program.blocks.len());
+                        let params = inputs
+                            .iter()
+                            .map(|input| {
+                                admitted_plan_type(
+                                    inventory,
+                                    plan,
+                                    local_type(plan, input.input_local()),
+                                )
+                            })
+                            .collect();
+                        let result = admitted_plan_type(inventory, plan, result);
+                        let effects = inventory.intern_effect_set(declaration.invocation_effects());
+                        let signature = inventory.intern_signature(params, Some(result), effects);
+                        let type_context =
+                            function_type.map(|ty| admitted_plan_type(inventory, plan, ty));
+                        inventory.replace_function(
+                            function,
+                            AwbcFunction {
+                                definition,
+                                semantic_role: role,
+                                public_id: None,
+                                kind: AwbcFunctionKind::Ordinary,
+                                signature,
+                                type_context,
+                                input_ownership,
+                                frame_layout: layout,
+                                blocks: AwbcTableRange::new(block.0, block_len),
+                                entry_block: block,
+                                flags: AwbcFunctionFlags::empty()
+                                    .with(AwbcFunctionFlag::Deterministic),
+                            },
+                        );
+                    }
+                }
             }
             PendingAwbcClosure::FormatOperand {
                 definition,
@@ -1264,13 +1279,8 @@ fn ensure_function_site(
     let function = inventory.reserve_function_site_slot(site, declaration.definition());
     if !already_reserved {
         inventory.push_pending_closure(PendingAwbcClosure::FunctionSite {
-            definition: declaration.definition(),
-            role: declaration.role(),
+            site,
             function,
-            function_type: declaration.function_type(),
-            inputs: declaration.inputs().to_vec().into_boxed_slice(),
-            result: declaration.result(),
-            body: declaration.body().clone(),
             path: format!("{path}.function.{site}"),
         });
     }

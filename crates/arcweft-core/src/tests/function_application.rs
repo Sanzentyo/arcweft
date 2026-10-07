@@ -133,21 +133,29 @@ pub(crate) fn returning_function_plan(body_kind: RuntimeFunctionSiteBodyKind) ->
     );
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
             entry,
-            [],
-            RuntimeEffectSet::empty(),
-            vec![
-                RuntimeFlowOpSeed::Let {
-                    pattern: RuntimePatternSeed::new(outer, RuntimePatternSeedKind::Discard),
-                    expr: outer_value.clone(),
-                },
-                RuntimeFlowOpSeed::ApplyFunction {
-                    callee: outer_value,
-                    args: Box::new([]),
-                    result: RuntimePatternSeed::new(inner, RuntimePatternSeedKind::Discard),
-                },
-            ],
+            crate::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
+                None,
+                Box::new([]),
+                unit,
+                RuntimeEffectSet::empty(),
+            ),
+            crate::plan::RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::empty(),
+                ops: (vec![
+                    RuntimeFlowOpSeed::Let {
+                        pattern: RuntimePatternSeed::new(outer, RuntimePatternSeedKind::Discard),
+                        expr: outer_value.clone(),
+                    },
+                    RuntimeFlowOpSeed::ApplyFunction {
+                        callee: outer_value,
+                        args: Box::new([]),
+                        result: RuntimePatternSeed::new(inner, RuntimePatternSeedKind::Discard),
+                    },
+                ])
+                .into_boxed_slice(),
+            },
         ))
         .expect("exact-group caller admits");
     builder.finish().expect("application fixture seals")
