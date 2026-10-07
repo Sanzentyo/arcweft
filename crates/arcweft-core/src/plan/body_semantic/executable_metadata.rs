@@ -313,8 +313,51 @@ impl RuntimeBodySemanticContext<'_> {
         self.write_stream(&mut encoder, row)?;
         encoder.finish().map_err(Into::into)
     }
+}
 
-    pub(crate) fn line_row_digest(
+/// The actual admitted group and its completed transcript stay together.
+/// Only the inventory context can issue this proof; bytes cannot construct it.
+pub(crate) struct LineSemantic<'a> {
+    plan: &'a super::RuntimePlanInventory,
+    group: crate::runtime_id::RuntimeLineTaskGroupId,
+    row: &'a crate::line_task::LineTaskGroup,
+    digest: crate::line_task::semantic::LinePlanSemanticDigest,
+}
+
+impl LineSemantic<'_> {
+    pub(crate) const fn digest(&self) -> crate::line_task::semantic::LinePlanSemanticDigest {
+        self.digest
+    }
+
+    /// Table twelve reuses the completed Line tree without another Flow walk.
+    pub(crate) fn executable_row_digest(
+        &self,
+        context: &RuntimeBodySemanticContext<'_>,
+        meter: &mut crate::task::semantic::TaskSemanticMeter,
+    ) -> Result<blake3::Hash, RuntimeBodySemanticError> {
+        meter.status()?;
+        if !std::ptr::eq(self.plan, context.plan)
+            || !context
+                .plan
+                .line_task_groups()
+                .get(self.group.index())
+                .is_some_and(|row| std::ptr::eq(row, self.row))
+        {
+            meter.reject_owner();
+            return Err(RuntimeBodySemanticError::ForeignLineTranscript);
+        }
+        let mut encoder =
+            TaskSemanticEncoder::new(b"arcweft.runtime-plan.executable-row.v1\0", meter);
+        encoder.tag(12);
+        encoder.tag(0);
+        encoder.digest(self.row.definition().as_bytes());
+        encoder.digest(self.digest.as_bytes());
+        encoder.finish().map_err(Into::into)
+    }
+}
+
+impl<'a> RuntimeBodySemanticContext<'a> {
+    pub(crate) fn line_semantic(
         &self,
         meter: &mut crate::task::semantic::TaskSemanticMeter,
         group: crate::runtime_id::RuntimeLineTaskGroupId,
@@ -326,7 +369,7 @@ impl RuntimeBodySemanticContext<'_> {
             RuntimeBodySemanticError,
         >,
         limits: crate::plan::RuntimeTaskPlanSealLimits,
-    ) -> Result<crate::line_task::semantic::LinePlanSemanticDigest, RuntimeBodySemanticError> {
+    ) -> Result<LineSemantic<'a>, RuntimeBodySemanticError> {
         meter.status()?;
         let row = self
             .plan
@@ -339,6 +382,12 @@ impl RuntimeBodySemanticContext<'_> {
                     ordinal: group.index(),
                 }
             })?;
-        row.semantic_digest(self, meter, group, task_owner, task_reference, limits)
+        let digest = row.semantic_digest(self, meter, group, task_owner, task_reference, limits)?;
+        Ok(LineSemantic {
+            plan: self.plan,
+            group,
+            row,
+            digest,
+        })
     }
 }

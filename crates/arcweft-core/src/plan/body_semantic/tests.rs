@@ -1,5 +1,6 @@
 use super::*;
 mod function_rows;
+mod line_rows;
 mod stream_rows;
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::RuntimePlan;
@@ -1690,7 +1691,7 @@ fn actual_line_digest_commits_action_cancel_cleanup_and_order_but_not_mark_spell
     let digest = |plan: &RuntimePlan, owner: &RuntimeTaskPlanCoordinateOwner| {
         let mut meter = TaskSemanticMeter::new(100_000, 1_000_000);
         RuntimeBodySemanticContext::new(plan)
-            .line_row_digest(
+            .line_semantic(
                 &mut meter,
                 crate::runtime_id::RuntimeLineTaskGroupId::from_zero_based(0).unwrap(),
                 owner,
@@ -1698,6 +1699,7 @@ fn actual_line_digest_commits_action_cancel_cleanup_and_order_but_not_mark_spell
                 RuntimeTaskPlanSealLimits::default(),
             )
             .unwrap()
+            .digest()
     };
     let first = actual_line_plan(true, true, "cancel", "mark");
     let renamed = actual_line_plan(true, true, "cancel", "renamed");
@@ -1768,7 +1770,7 @@ fn actual_line_digest_preflights_children_and_uses_one_exact_meter() {
     let group = crate::runtime_id::RuntimeLineTaskGroupId::from_zero_based(0).unwrap();
     let mut meter = TaskSemanticMeter::new(0, 0);
     assert!(matches!(
-        RuntimeBodySemanticContext::new(&plan).line_row_digest(
+        RuntimeBodySemanticContext::new(&plan).line_semantic(
             &mut meter,
             group,
             &owner,
@@ -1786,13 +1788,15 @@ fn actual_line_digest_preflights_children_and_uses_one_exact_meter() {
     );
     let digest = |work, bytes| {
         let mut meter = TaskSemanticMeter::new(work, bytes);
-        let result = RuntimeBodySemanticContext::new(&plan).line_row_digest(
-            &mut meter,
-            group,
-            &owner,
-            &mut |_| panic!("no task refs"),
-            crate::plan::RuntimeTaskPlanSealLimits::default(),
-        );
+        let result = RuntimeBodySemanticContext::new(&plan)
+            .line_semantic(
+                &mut meter,
+                group,
+                &owner,
+                &mut |_| panic!("no task refs"),
+                crate::plan::RuntimeTaskPlanSealLimits::default(),
+            )
+            .map(|semantic| semantic.digest());
         (result, meter.totals())
     };
     let (first, (work, bytes)) = digest(100_000, 1_000_000);

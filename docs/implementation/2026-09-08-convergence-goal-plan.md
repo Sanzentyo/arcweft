@@ -9540,3 +9540,50 @@ review/coherent commit/normal main push required. E1/5/6/7/8/12/global memo/
 actualTable14/private image/common seal/all14 protected Cut5 and original
 View/nominal/scheduler/Rust borrowing/CLI277/Tier2 unfinished. Goal ACTIVE/
 INCOMPLETE; no new Astra/advice/branch/worktree/marker changes.
+
+### 2026-10-08 — actual Line transcript proof and E12 row
+
+Inspected clean main/origin90f814eb5536662f97f452eb41bed967c23ea79b;
+parentfb7956186ca1a0f1063656697f436745ceb339a2 and all15 delivered blobs
+verified. Prior Flow cut delivered actual Core4947PASS/CLI320PASS+277sameFAIL,
+no new/resolved failures; whole convergence ACTIVE. Private E12 prep now
+issues LineSemantic only after existing actual Line group visitor succeeds,
+retaining same inventory/row/typed group coordinate plus completed typed
+LinePlanSemanticDigest. Old bare line_row_digest private context API removed;
+all callers consume issued proof. Canonical table12/kind0 writes accepted
+group identity and cached Line digest, no second Flow traversal or caller
+byte constructor. Foreign inventory rejected before bytes, sticky first-error
+and same shared meter preserved. New actual fixtures cover action/cleanup/
+cancel mutations vs debug mark spelling, constant four-atom cached row work,
+exact limits, foreign rejection and missing row. Focus6 discovery83295 live;
+no Rust edits while Cargo/test live. This is private unused Cut4 preparation,
+not public/task/native/AWBC/codec/Cargo/feature migration; protected all14 Cut5
+unchanged. Complete Core50 graph and99 inputs unchanged; private/leaf impact
+policy allows targeted Core adjacent matrix +check/Clippy, full consumer test
+omission justified because no runtime/public reader consumes this proof yet.
+Prior full Flow-rdeps/CLI receipts remain prior final bytes only. Remaining
+E1/5/6/7/8/global memo/actualTable14/private image/common seal/all14 and original
+View/nominal/scheduler/Rust ownership/CLI277/Tier2 acceptance incomplete.
+Goal ACTIVE/INCOMPLETE, no new Astra/advice/branch/worktree/version changes.
+
+Final Line-row acceptance (supersedes pending discovery): focus83295
+TERMINAL0/build28.99s selected6,6/6PASS0.036s. Core all-target/all-feature/
+locked check9950 PASS11.71s and Clippy16.85s, new non-dead-code diagnostics0.
+Adjacent71 pre-run list0.45s,71/71PASS0.389s; supplementary nonoverlapping
+nominal/pure/request13 actual pre-run list then13/13PASS0.064s. Combined84
+selected/terminal/unique IDs matched,missing0/unexpected0/duplicates0/nonpass0,
+all4 new Line proof cases present. Final4 Rust SHA256/99 build+graph inputs
+fixed; Core50 graph unchanged. Metadata393LOC/16199bytes(+49) owns retained
+actual executable leaf proof/transcript metadata; context626LOC(+2) one typed
+error; existing unit fixture2040LOC(+4), private Line unit child146LOC/5239bytes
+shares actual accepted aggregate fixture. No new size/growth/API/dependency/
+I-O/ownership trigger, no alternate Line grammar/byte factory/public test
+export. Existing cohesive review retained. Private unused Cut4 only; no live
+runtime/public consumer reads LineSemantic, so isolated impact rationale
+above applies. Prior Flow4947 full closure/CLI277 same-failure comparison
+remain earlier bytes, not a new final-Line broad result. Fmt/diff completion
+then explicit5-path full stage/blob/tested-byte review/commit/normal push
+required. E0/2/3/4/9/10/11/12/13 prepared privately; E1/5/6/7/8/global15-table
+memo/actualTable14/private image/common seal/all14 Cut5 and original
+View/nominal/scheduler/Rust borrowing/CLI277/Tier2 acceptance remain. Whole
+goal ACTIVE/INCOMPLETE, no new Astra/advice/branch/worktree/version change.
