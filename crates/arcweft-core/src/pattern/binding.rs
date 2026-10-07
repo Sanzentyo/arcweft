@@ -297,7 +297,14 @@ mod tests {
     fn locals() -> (RuntimeLocalDeclarationId, RuntimeLocalDeclarationTable) {
         let mut builder = RuntimeLocalDeclarationTableBuilder::new();
         let ty = RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN);
-        let local = builder.push(ty).expect("first local identity");
+        let local = builder
+            .push(
+                crate::plan::RuntimeLocalOrigin::Binding(
+                    *blake3::hash(b"arcweft.core.fixture.pattern-binding.local.v1\0").as_bytes(),
+                ),
+                ty,
+            )
+            .expect("first local identity");
         (local, builder.finish())
     }
 

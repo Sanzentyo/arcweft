@@ -176,7 +176,7 @@ fn invalid_source_shapes_leave_types_locals_and_domains_unpublished() {
         let mut builder = RuntimePlanBuilder::new();
         let invalid = RuntimeNominalRecordDomainSeed::new(semantic(1), shape, fields(&names));
         assert!(
-            matches!(builder.admit_semantic_batch(types(&schema), [RuntimeLocalDeclarationSeed::new(semantic(2))], [invalid], [], &schema),
+            matches!(builder.admit_semantic_batch(types(&schema), [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.plan.construction.nominal_domains_tests.invalid_source_shapes_leave_types_locals_and_domains_unpublished.binding_a"), semantic(2))], [invalid], [], &schema),
             Err(RuntimePlanBuildError::NominalRecordDomain(RuntimeNominalRecordDomainError::Shape { source, .. })) if source == expected)
         );
         let valid =
@@ -184,7 +184,7 @@ fn invalid_source_shapes_leave_types_locals_and_domains_unpublished() {
         let admission = builder
             .admit_semantic_batch(
                 types(&schema),
-                [RuntimeLocalDeclarationSeed::new(semantic(2))],
+                [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.plan.construction.nominal_domains_tests.invalid_source_shapes_leave_types_locals_and_domains_unpublished.binding_b"), semantic(2))],
                 [valid],
                 [],
                 &schema,
@@ -299,4 +299,14 @@ fn conflicting_declaration_proof_leaves_admitted_nominal_unchanged() {
         plan.type_table().get(ty).unwrap().nominal_declaration(),
         Some(original.declaration())
     );
+}
+
+#[cfg(test)]
+fn manual_local_origin(declaration: &str) -> crate::plan::RuntimeLocalOrigin {
+    // This fixture declares a semantic binding name independent of its value,
+    // type, source offset, and builder-issued local ordinal.
+    let mut identity = blake3::Hasher::new();
+    identity.update(b"arcweft.manual-fixture-binding.v1\0");
+    identity.update(declaration.as_bytes());
+    crate::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
 }

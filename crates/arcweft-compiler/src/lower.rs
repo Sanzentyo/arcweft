@@ -1121,6 +1121,15 @@ fn project_runtime_semantic_fact_inventories(
                     }
                 })?,
             );
+        } else {
+            input.push_expression_origin(
+                owner,
+                analysis.expression_origin(owner).map_err(|error| {
+                    RuntimeSemanticProjectionError::Type {
+                        reason: error.to_string(),
+                    }
+                })?,
+            );
         }
         if let Some(specialization) = discovered_instances.root_value_specialization(owner)? {
             input.push_expression_specialization(owner, specialization);

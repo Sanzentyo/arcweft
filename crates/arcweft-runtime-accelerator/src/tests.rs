@@ -268,7 +268,15 @@ fn admit_helper(
             input_types
                 .iter()
                 .copied()
-                .map(RuntimeLocalDeclarationSeed::new),
+                .enumerate()
+                .map(|(source_ordinal, ty)| {
+                    RuntimeLocalDeclarationSeed::new(
+                        manual_local_origin(&format!(
+                            "arcweft-runtime-accelerator.fixture.tests.program.inputs[{source_ordinal}]"
+                        )),
+                        ty,
+                    )
+                }),
         )
         .expect("test helper semantic inputs are admitted");
     builder
@@ -396,12 +404,19 @@ fn admit_add_helpers(
     let admission = builder
         .admit_type_batch(
             type_seeds,
-            helpers.iter().flat_map(|(_, input_type, _)| {
-                std::iter::repeat_n(
-                    RuntimeLocalDeclarationSeed::new(helper_type_identity(*input_type)),
-                    2,
-                )
-            }),
+            helpers
+                .iter()
+                .enumerate()
+                .flat_map(|(helper_source, (_, input_type, _))| {
+                    (0..2).map(move |input_source| {
+                        RuntimeLocalDeclarationSeed::new(
+                            manual_local_origin(&format!(
+                                "arcweft-runtime-accelerator.fixture.tests.add-helper[{helper_source}].input[{input_source}]"
+                            )),
+                            helper_type_identity(*input_type),
+                        )
+                    })
+                }),
         )
         .expect("test helper semantic inputs are admitted");
     let mut next_local = 0;
@@ -2015,7 +2030,14 @@ fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
                     },
                 ),
             ],
-            (0..3).map(|_| RuntimeLocalDeclarationSeed::new(u32_ty)),
+            (0..3).map(|source_ordinal| {
+                RuntimeLocalDeclarationSeed::new(
+                    manual_local_origin(&format!(
+                        "arcweft-runtime-accelerator.fixture.tests.dense-map.input[{source_ordinal}]"
+                    )),
+                    u32_ty,
+                )
+            }),
         )
         .expect("u32 flow semantic inputs are admitted");
     let locals = admission.local_ids();
@@ -2637,4 +2659,13 @@ fn vm_batch_uses_i64_args_without_value_vec_allocation() {
     assert_eq!(accelerator.stats().parallel_policy_checks, 1);
     assert_eq!(accelerator.stats().parallel_batches, 1);
     assert_eq!(accelerator.stats().thread_pool_jobs, 2);
+}
+
+fn manual_local_origin(declaration: &str) -> arcweft_core::plan::RuntimeLocalOrigin {
+    // This fixture declares a semantic binding name independent of its value,
+    // type, source offset, and builder-issued local ordinal.
+    let mut identity = blake3::Hasher::new();
+    identity.update(b"arcweft.manual-fixture-binding.v1\0");
+    identity.update(declaration.as_bytes());
+    arcweft_core::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
 }

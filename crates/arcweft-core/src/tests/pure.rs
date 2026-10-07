@@ -38,7 +38,7 @@ fn pure_value_backend_moves_an_affine_need_argument_into_its_result() {
                 RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
                 RuntimePlanTypeSeed::new(need, RuntimePlanTypeProjection::Need(unit)),
             ],
-            [RuntimeLocalDeclarationSeed::new(need)],
+            [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.pure_value_backend_moves_an_affine_need_argument_into_its_result.binding_a"), need)],
         )
         .expect("affine pure input type");
     let input = admission.local_ids()[0].clone();
@@ -111,7 +111,7 @@ fn pure_collect_intrinsic_moves_affine_sequence_items() {
                     },
                 ),
             ],
-            [RuntimeLocalDeclarationSeed::new(vector)],
+            [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.pure_collect_intrinsic_moves_affine_sequence_items.binding_a"), vector)],
         )
         .expect("affine sequence input type");
     let input = admission.local_ids()[0].clone();
@@ -206,7 +206,7 @@ fn pure_format_content_uses_selected_ambient_locale() {
                     },
                 ),
             ],
-            [RuntimeLocalDeclarationSeed::new(int_type)],
+            [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.pure_format_content_uses_selected_ambient_locale.binding_a"), int_type)],
         )
         .unwrap();
     let receiver_local = admission.local_ids()[0].clone();
@@ -559,7 +559,14 @@ fn standard_map_pure_plan() -> (Arc<RuntimePlan>, Vec<StandardMapPureCase>) {
                     },
                 ),
             ],
-            (0..6).map(|_| RuntimeLocalDeclarationSeed::new(item_ty)),
+            (0..6).map(|source_ordinal| {
+                RuntimeLocalDeclarationSeed::new(
+                    manual_local_origin(&format!(
+                        "arcweft-core.fixture.tests.pure.standard-map.callback[{source_ordinal}].input"
+                    )),
+                    item_ty,
+                )
+            }),
         )
         .expect("standard map type graph");
 
@@ -759,7 +766,14 @@ fn admit_i64_helper(
     let admission = builder
         .admit_type_batch(
             scalar_type_seeds(),
-            (0..arity).map(|_| RuntimeLocalDeclarationSeed::new(i64_semantic_type())),
+            (0..arity).map(|source_ordinal| {
+                RuntimeLocalDeclarationSeed::new(
+                    manual_local_origin(&format!(
+                        "arcweft-core.fixture.tests.pure.i64-helper.input[{source_ordinal}]"
+                    )),
+                    i64_semantic_type(),
+                )
+            }),
         )
         .expect("semantic helper inputs");
     builder
@@ -1052,11 +1066,11 @@ fn structured_closure_captures_the_exact_owning_plan() {
                 ),
             ],
             [
-                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
-                RuntimeLocalDeclarationSeed::new(function_semantic_type),
-                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
-                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
-                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.structured_closure_captures_the_exact_owning_plan.binding_a"), i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.structured_closure_captures_the_exact_owning_plan.binding_b"), function_semantic_type),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.structured_closure_captures_the_exact_owning_plan.binding_c"), i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.structured_closure_captures_the_exact_owning_plan.binding_d"), i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.structured_closure_captures_the_exact_owning_plan.binding_e"), i64_semantic_type()),
             ],
         )
         .expect("closure type graph");
@@ -1212,10 +1226,10 @@ fn structured_function_input_tuple_pattern_binds_body_locals() {
                 ),
             ],
             [
-                RuntimeLocalDeclarationSeed::new(function_semantic_type),
-                RuntimeLocalDeclarationSeed::new(tuple_semantic_type),
-                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
-                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.structured_function_input_tuple_pattern_binds_body_locals.binding_a"), function_semantic_type),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.structured_function_input_tuple_pattern_binds_body_locals.binding_b"), tuple_semantic_type),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.structured_function_input_tuple_pattern_binds_body_locals.binding_c"), i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.structured_function_input_tuple_pattern_binds_body_locals.binding_d"), i64_semantic_type()),
             ],
         )
         .expect("tuple-pattern type graph");
@@ -1348,10 +1362,10 @@ fn structured_function_input_sequence_rest_binds_one_logical_tail() {
                 ),
             ],
             [
-                RuntimeLocalDeclarationSeed::new(function_semantic_type),
-                RuntimeLocalDeclarationSeed::new(sequence_semantic_type),
-                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
-                RuntimeLocalDeclarationSeed::new(sequence_semantic_type),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.structured_function_input_sequence_rest_binds_one_logical_tail.binding_a"), function_semantic_type),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.structured_function_input_sequence_rest_binds_one_logical_tail.binding_b"), sequence_semantic_type),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.structured_function_input_sequence_rest_binds_one_logical_tail.binding_c"), i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.structured_function_input_sequence_rest_binds_one_logical_tail.binding_d"), sequence_semantic_type),
             ],
         )
         .expect("sequence-rest type graph");
@@ -1485,9 +1499,9 @@ fn structured_function_input_record_pattern_binds_by_declared_field_coordinate()
                 ),
             ],
             [
-                RuntimeLocalDeclarationSeed::new(function_semantic_type),
-                RuntimeLocalDeclarationSeed::new(record_semantic_type),
-                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.structured_function_input_record_pattern_binds_by_declared_field_coordinate.binding_a"), function_semantic_type),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.structured_function_input_record_pattern_binds_by_declared_field_coordinate.binding_b"), record_semantic_type),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.structured_function_input_record_pattern_binds_by_declared_field_coordinate.binding_c"), i64_semantic_type()),
             ],
         )
         .expect("record-pattern type graph");
@@ -1607,11 +1621,11 @@ fn structured_apply_reorders_source_arguments_to_the_checked_abi() {
                 ),
             ],
             [
-                RuntimeLocalDeclarationSeed::new(function_semantic_type),
-                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
-                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
-                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
-                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.structured_apply_reorders_source_arguments_to_the_checked_abi.binding_a"), function_semantic_type),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.structured_apply_reorders_source_arguments_to_the_checked_abi.binding_b"), i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.structured_apply_reorders_source_arguments_to_the_checked_abi.binding_c"), i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.structured_apply_reorders_source_arguments_to_the_checked_abi.binding_d"), i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.structured_apply_reorders_source_arguments_to_the_checked_abi.binding_e"), i64_semantic_type()),
             ],
         )
         .expect("positioned-call type graph");
@@ -1740,9 +1754,9 @@ fn owned_pure_trait_call_evaluates_receiver_and_source_arguments_once() {
         .admit_type_batch(
             [scalar_type_seeds()[0].clone()],
             [
-                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
-                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
-                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.owned_pure_trait_call_evaluates_receiver_and_source_arguments_once.binding_a"), i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.owned_pure_trait_call_evaluates_receiver_and_source_arguments_once.binding_b"), i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.pure.owned_pure_trait_call_evaluates_receiver_and_source_arguments_once.binding_c"), i64_semantic_type()),
             ],
         )
         .expect("trait call input types");
@@ -1837,7 +1851,12 @@ fn simple_trait_call_plan(
     let admission = builder
         .admit_type_batch(
             [scalar_type_seeds()[0].clone()],
-            [RuntimeLocalDeclarationSeed::new(i64_semantic_type())],
+            [RuntimeLocalDeclarationSeed::new(
+                manual_local_origin(
+                    "arcweft-core.fixture.tests.pure.simple_trait_call_plan.binding_a",
+                ),
+                i64_semantic_type(),
+            )],
         )
         .expect("trait method receiver type");
     let receiver = admission.local_ids()[0].clone();
@@ -2029,4 +2048,13 @@ fn structured_pure_standard_map_covers_all_published_families() {
         RuntimeValue::result_err(RuntimeValue::String("preserve".to_owned()))
     );
     assert_eq!(result_err.stats.evaluated_binary_ops, 0);
+}
+
+fn manual_local_origin(declaration: &str) -> crate::plan::RuntimeLocalOrigin {
+    // This fixture declares a semantic binding name independent of its value,
+    // type, source offset, and builder-issued local ordinal.
+    let mut identity = blake3::Hasher::new();
+    identity.update(b"arcweft.manual-fixture-binding.v1\0");
+    identity.update(declaration.as_bytes());
+    crate::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
 }

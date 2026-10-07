@@ -197,8 +197,18 @@ fn standard_map_awbc_plan() -> (Arc<RuntimePlan>, Vec<AwbcStandardMapCase>) {
                 RuntimePlanTypeSeed::new(unit_ty, RuntimePlanTypeProjection::Unit),
             ],
             [
-                RuntimeLocalDeclarationSeed::new(item_ty),
-                RuntimeLocalDeclarationSeed::new(item_ty),
+                RuntimeLocalDeclarationSeed::new(
+                    manual_local_origin(
+                        "arcweft-runtime-plan.fixture.tests.awbc_product_parity.standard_map_awbc_plan.binding_a",
+                    ),
+                    item_ty,
+                ),
+                RuntimeLocalDeclarationSeed::new(
+                    manual_local_origin(
+                        "arcweft-runtime-plan.fixture.tests.awbc_product_parity.standard_map_awbc_plan.binding_b",
+                    ),
+                    item_ty,
+                ),
             ],
         )
         .expect("standard map AWBC type graph");
@@ -487,7 +497,12 @@ fn plan_with_await_observer() -> RuntimePlan {
                 RuntimePlanTypeSeed::new(progress_type, RuntimePlanTypeProjection::Progress),
                 RuntimePlanTypeSeed::new(need_type, RuntimePlanTypeProjection::Need(STRING_TYPE)),
             ],
-            [RuntimeLocalDeclarationSeed::new(need_type)],
+            [RuntimeLocalDeclarationSeed::new(
+                manual_local_origin(
+                    "arcweft-runtime-plan.fixture.tests.awbc_product_parity.plan_with_await_observer.binding_a",
+                ),
+                need_type,
+            )],
         )
         .expect("Await observer facts admit");
     let need_local = admitted.local_ids()[0].clone();
@@ -592,7 +607,7 @@ fn owned_program_root_retains_affine_inputs_and_result_across_save_restore() {
                 RuntimePlanTypeSeed::new(boolean, RuntimePlanTypeProjection::Bool),
                 RuntimePlanTypeSeed::new(need, RuntimePlanTypeProjection::Need(boolean)),
             ],
-            [RuntimeLocalDeclarationSeed::new(need)],
+            [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-runtime-plan.fixture.tests.awbc_product_parity.owned_program_root_retains_affine_inputs_and_result_across_save_restore.binding_a"), need)],
         )
         .unwrap();
     let local = locals.local_ids()[0].clone();
@@ -1030,4 +1045,13 @@ fn reusable_bool_need() -> arcweft_core::task::RuntimeNeedHandle {
         debug_label: "retained".into(),
     })
     .unwrap()
+}
+
+fn manual_local_origin(declaration: &str) -> arcweft_core::plan::RuntimeLocalOrigin {
+    // This fixture declares a semantic binding name independent of its value,
+    // type, source offset, and builder-issued local ordinal.
+    let mut identity = blake3::Hasher::new();
+    identity.update(b"arcweft.manual-fixture-binding.v1\0");
+    identity.update(declaration.as_bytes());
+    arcweft_core::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
 }

@@ -140,8 +140,8 @@ fn borrowed_program_inputs_reject_nested_affine_values_before_execution() {
                 ),
             ],
             [
-                RuntimeLocalDeclarationSeed::new(boolean),
-                RuntimeLocalDeclarationSeed::new(owner.semantic_identity()),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.pure.program.tests.borrowed_program_inputs_reject_nested_affine_values_before_execution.binding_a"), boolean),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.pure.program.tests.borrowed_program_inputs_reject_nested_affine_values_before_execution.binding_b"), owner.semantic_identity()),
             ],
         )
         .unwrap();
@@ -365,4 +365,13 @@ fn pure_character_dialogue_uses_the_exact_plan_and_ordered_source_row() {
         value
     );
     assert_eq!(backend.external.calls, 1);
+}
+
+fn manual_local_origin(declaration: &str) -> crate::plan::RuntimeLocalOrigin {
+    // This fixture declares a semantic binding name independent of its value,
+    // type, source offset, and builder-issued local ordinal.
+    let mut identity = blake3::Hasher::new();
+    identity.update(b"arcweft.manual-fixture-binding.v1\0");
+    identity.update(declaration.as_bytes());
+    crate::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
 }

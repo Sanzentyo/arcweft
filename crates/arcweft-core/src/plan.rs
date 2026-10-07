@@ -107,7 +107,8 @@ pub use generation_contract::{
     RuntimeViewCatalogDigest, RuntimeViewId,
 };
 pub use local_declarations::{
-    RuntimeLocalDeclaration, RuntimeLocalDeclarationTable, RuntimeLocalDeclarationTableError,
+    RuntimeGeneratedLocalOrigin, RuntimeLocalDeclaration, RuntimeLocalDeclarationTable,
+    RuntimeLocalDeclarationTableError, RuntimeLocalOrigin,
 };
 pub use nominal_record_domains::{
     RuntimeNominalRecordDomain, RuntimeNominalRecordDomainError, RuntimeNominalRecordDomainField,

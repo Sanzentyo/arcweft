@@ -46,7 +46,11 @@ pub(super) fn reserve(
                         operand.ty().identity(),
                     ));
                     if needs_flow {
-                        flow_sources.push((parameter, operand.ty().identity()));
+                        let origin = scope.expression_coordinate(expression)
+                            .ok_or_else(|| RuntimePlanLowerError::new("formatter call has no accepted coordinate"))?
+                            .runtime_generated_local_origin(arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::FormatOperand { parameter })
+                            .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
+                        flow_sources.push((parameter, RuntimeLocalDeclarationSeed::new(origin, operand.ty().identity())));
                     }
                     Ok::<_, RuntimePlanLowerError>(())
                 })();
@@ -121,13 +125,7 @@ pub(super) fn reserve(
         attempts.insert(key, attempt);
     }
     let admission = builder
-        .admit_type_batch(
-            [],
-            source_local_specs
-                .values()
-                .copied()
-                .map(RuntimeLocalDeclarationSeed::new),
-        )
+        .admit_type_batch([], source_local_specs.values().copied())
         .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
     let mut source_locals = BTreeMap::new();
     for ((key, _), local) in source_local_specs.iter().zip(admission.local_ids()) {

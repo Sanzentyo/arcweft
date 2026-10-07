@@ -56,6 +56,7 @@ arboard.workspace = true
 windows = { workspace = true, features = ["Win32_Foundation"] }
 
 [dev-dependencies]
+blake3.workspace = true
 arcweft-character = { workspace = true }
 arcweft-dialogue = { workspace = true }
 arcweft-manifest-model = { workspace = true }

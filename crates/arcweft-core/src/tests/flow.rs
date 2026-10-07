@@ -264,7 +264,7 @@ fn named_flow_scope_binds_its_result_in_the_parent_and_keeps_aot_identity() {
                 string,
                 RuntimePlanTypeProjection::String,
             )],
-            [RuntimeLocalDeclarationSeed::new(string)],
+            [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.flow.named_flow_scope_binds_its_result_in_the_parent_and_keeps_aot_identity.binding_a"), string)],
         )
         .expect("named scope result local admits");
     let result = admission.local_ids()[0].clone();
@@ -553,7 +553,7 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
                     },
                 ),
             ],
-            [RuntimeLocalDeclarationSeed::new(unit)],
+            [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.flow.native_project_call_defaulted_omitted_rejoins_target_through_catalog_site.binding_a"), unit)],
         )
         .expect("project-call attached types admit");
     let target_input = admission
@@ -705,7 +705,7 @@ fn native_project_call_rest_materialization_accepts_empty_and_source_ordered_val
                         },
                     ),
                 ],
-                [RuntimeLocalDeclarationSeed::new(sequence)],
+                [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.flow.native_project_call_rest_materialization_accepts_empty_and_source_ordered_values.binding_a"), sequence)],
             )
             .expect("rest project-call types admit");
         let target_input = admission
@@ -881,8 +881,8 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
                 ),
             ],
             [
-                RuntimeLocalDeclarationSeed::new(state_ty),
-                RuntimeLocalDeclarationSeed::new(sequence),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.flow.native_project_call_evaluates_rest_operands_once_in_source_order.binding_a"), state_ty),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.flow.native_project_call_evaluates_rest_operands_once_in_source_order.binding_b"), sequence),
             ],
             [RuntimeNominalRecordDomainSeed::new(
                 state_ty,
@@ -1437,8 +1437,8 @@ fn native_while_let_pop_front_drains_a_vec_and_handles_an_empty_vec() {
                     ),
                 ],
                 [
-                    RuntimeLocalDeclarationSeed::new(sequence_type),
-                    RuntimeLocalDeclarationSeed::new(item_type),
+                    RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.flow.native_while_let_pop_front_drains_a_vec_and_handles_an_empty_vec.binding_a"), sequence_type),
+                    RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.flow.native_while_let_pop_front_drains_a_vec_and_handles_an_empty_vec.binding_b"), item_type),
                 ],
             )
             .expect("typed Vec.pop_front plan types admit");
@@ -1619,8 +1619,8 @@ fn native_nominal_field_pop_front_drains_a_vec_and_handles_an_empty_field() {
                     ),
                 ],
                 [
-                    RuntimeLocalDeclarationSeed::new(record_type),
-                    RuntimeLocalDeclarationSeed::new(item_type),
+                    RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.flow.native_nominal_field_pop_front_drains_a_vec_and_handles_an_empty_field.binding_a"), record_type),
+                    RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.flow.native_nominal_field_pop_front_drains_a_vec_and_handles_an_empty_field.binding_b"), item_type),
                 ],
                 [RuntimeNominalRecordDomainSeed::new(
                     record_type,
@@ -1777,8 +1777,8 @@ fn native_vec_push_returns_unit_and_pop_back_moves_the_last_item() {
                 RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
             ],
             [
-                RuntimeLocalDeclarationSeed::new(sequence_type),
-                RuntimeLocalDeclarationSeed::new(item_type),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.flow.native_vec_push_returns_unit_and_pop_back_moves_the_last_item.binding_a"), sequence_type),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.flow.native_vec_push_returns_unit_and_pop_back_moves_the_last_item.binding_b"), item_type),
             ],
         )
         .expect("Vec mutation types admit");
@@ -1912,7 +1912,7 @@ fn await_progress_runs_only_the_first_matching_observer() {
                     RuntimePlanTypeProjection::Need(string_type()),
                 ),
             ],
-            [RuntimeLocalDeclarationSeed::new(need_string_type)],
+            [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.flow.await_progress_runs_only_the_first_matching_observer.binding_a"), need_string_type)],
         )
         .expect("Await observer types admit");
     let need_local = admission.local_ids()[0].clone();
@@ -2018,4 +2018,13 @@ fn await_progress_runs_only_the_first_matching_observer() {
             value: "first".to_owned(),
         }]
     );
+}
+
+fn manual_local_origin(declaration: &str) -> crate::plan::RuntimeLocalOrigin {
+    // This fixture declares a semantic binding name independent of its value,
+    // type, source offset, and builder-issued local ordinal.
+    let mut identity = blake3::Hasher::new();
+    identity.update(b"arcweft.manual-fixture-binding.v1\0");
+    identity.update(declaration.as_bytes());
+    crate::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
 }

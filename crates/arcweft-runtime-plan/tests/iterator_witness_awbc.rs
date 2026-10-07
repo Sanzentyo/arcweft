@@ -91,7 +91,10 @@ fn counter_plan(return_when: IteratorReturn) -> RuntimePlan {
                 ),
                 RuntimePlanTypeSeed::new(bool_type, RuntimePlanTypeProjection::Bool),
             ],
-            [RuntimeLocalDeclarationSeed::new(item_type)],
+            [RuntimeLocalDeclarationSeed::new(
+                manual_local_origin("arcweft-runtime-plan.fixture.tests.iterator_witness_awbc.counter_plan.binding_a"),
+                item_type,
+            )],
         )
         .expect("test semantic facts admit");
     let item = admission.local_ids()[0].clone();
@@ -261,4 +264,13 @@ fn builtin_iterator_exits_after_owned_source_is_exhausted() {
         result.fiber_status,
         FlowFiberStatus::Done(FlowExit::Return("-1".to_owned()))
     );
+}
+
+fn manual_local_origin(declaration: &str) -> arcweft_core::plan::RuntimeLocalOrigin {
+    // This fixture declares a semantic binding name independent of its value,
+    // type, source offset, and builder-issued local ordinal.
+    let mut identity = blake3::Hasher::new();
+    identity.update(b"arcweft.manual-fixture-binding.v1\0");
+    identity.update(declaration.as_bytes());
+    arcweft_core::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
 }

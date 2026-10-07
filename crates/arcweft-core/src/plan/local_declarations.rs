@@ -6,14 +6,58 @@ use thiserror::Error;
 
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 
+/// Stable origin issued by the semantic owner, separate from the plan-local ordinal.
+/// Transporting this identity does not prove executable body admission.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeLocalOrigin {
+    Binding([u8; 32]),
+    Parameter(super::RuntimeFunctionParameterIdentity),
+    EvaluatedResult(super::RuntimeFunctionDefinitionIdentity),
+    Generated(RuntimeGeneratedLocalOrigin),
+}
+
+impl From<super::RuntimeFunctionInputOrigin> for RuntimeLocalOrigin {
+    fn from(origin: super::RuntimeFunctionInputOrigin) -> Self {
+        match origin {
+            super::RuntimeFunctionInputOrigin::Binding(binding) => Self::Binding(binding),
+            super::RuntimeFunctionInputOrigin::Parameter(parameter) => Self::Parameter(parameter),
+            super::RuntimeFunctionInputOrigin::EvaluatedResult(definition) => {
+                Self::EvaluatedResult(definition)
+            }
+        }
+    }
+}
+
+/// One accepted structural owner plus its generated-local semantic role.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RuntimeGeneratedLocalOrigin([u8; 32]);
+
+impl RuntimeGeneratedLocalOrigin {
+    #[must_use]
+    pub const fn from_accepted_identity(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
 /// One sealed plan-local declaration row.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RuntimeLocalDeclaration {
+    origin: RuntimeLocalOrigin,
     ty: RuntimePlanTypeId,
     context: Option<RuntimePlanTypeId>,
 }
 
 impl RuntimeLocalDeclaration {
+    #[must_use]
+    pub const fn origin(self) -> RuntimeLocalOrigin {
+        self.origin
+    }
+
     #[must_use]
     pub const fn context(self) -> Option<RuntimePlanTypeId> {
         self.context
@@ -95,9 +139,10 @@ impl RuntimeLocalDeclarationTableBuilder {
     #[cfg(test)]
     pub(crate) fn push(
         &mut self,
+        origin: RuntimeLocalOrigin,
         ty: RuntimePlanTypeId,
     ) -> Result<RuntimeLocalDeclarationId, RuntimeLocalDeclarationTableError> {
-        let prepared = self.prepare_batch([(ty, None)])?;
+        let prepared = self.prepare_batch([(origin, ty, None)])?;
         self.commit_batch(prepared)
             .first()
             .copied()
@@ -106,7 +151,13 @@ impl RuntimeLocalDeclarationTableBuilder {
 
     pub(crate) fn prepare_batch(
         &self,
-        types: impl IntoIterator<Item = (RuntimePlanTypeId, Option<RuntimePlanTypeId>)>,
+        types: impl IntoIterator<
+            Item = (
+                RuntimeLocalOrigin,
+                RuntimePlanTypeId,
+                Option<RuntimePlanTypeId>,
+            ),
+        >,
     ) -> Result<PreparedRuntimeLocalDeclarationBatch, RuntimeLocalDeclarationTableError> {
         let types = types.into_iter().collect::<Box<[_]>>();
         let final_len = self
@@ -119,14 +170,18 @@ impl RuntimeLocalDeclarationTableBuilder {
         let _ = final_len;
         let mut declarations = self.declarations.clone();
         let mut ids = Vec::with_capacity(types.len());
-        for (ty, context) in types {
+        for (origin, ty, context) in types {
             let ordinal = declarations
                 .len()
                 .checked_add(1)
                 .and_then(|value| u32::try_from(value).ok())
                 .and_then(NonZeroU32::new)
                 .ok_or(RuntimeLocalDeclarationTableError::IdentityExhausted)?;
-            declarations.push(RuntimeLocalDeclaration { ty, context });
+            declarations.push(RuntimeLocalDeclaration {
+                origin,
+                ty,
+                context,
+            });
             ids.push(RuntimeLocalDeclarationId::from_accepted_ordinal(ordinal));
         }
         Ok(PreparedRuntimeLocalDeclarationBatch {
@@ -171,12 +226,24 @@ mod tests {
     #[test]
     fn builder_seals_typed_rows_in_contiguous_order() {
         let mut builder = RuntimeLocalDeclarationTableBuilder::new();
-        let first = builder.push(ty(3)).expect("first local");
-        let second = builder.push(ty(7)).expect("second local");
+        let first_origin = RuntimeLocalOrigin::Binding([0x31; 32]);
+        let second_origin = RuntimeLocalOrigin::Parameter(
+            super::super::RuntimeFunctionParameterIdentity::from_accepted_identity([0x71; 32]),
+        );
+        let first = builder.push(first_origin, ty(3)).expect("first local");
+        let second = builder.push(second_origin, ty(7)).expect("second local");
         let table = builder.finish();
 
         assert_eq!(first.get(), NonZeroU32::MIN);
         assert_eq!(second.get(), NonZeroU32::new(2).unwrap());
+        assert_eq!(
+            table.get(first).map(RuntimeLocalDeclaration::origin),
+            Some(first_origin)
+        );
+        assert_eq!(
+            table.get(second).map(RuntimeLocalDeclaration::origin),
+            Some(second_origin)
+        );
         assert_eq!(
             table.get(first).map(RuntimeLocalDeclaration::ty),
             Some(ty(3))
@@ -190,13 +257,18 @@ mod tests {
     #[test]
     fn exhaustion_does_not_append_an_untyped_row() {
         let mut builder = RuntimeLocalDeclarationTableBuilder::with_maximum_for_test(1);
-        let first = builder.push(ty(1)).expect("bounded first local");
+        let origin = RuntimeLocalOrigin::Binding([0x11; 32]);
+        let first = builder.push(origin, ty(1)).expect("bounded first local");
         assert_eq!(
-            builder.push(ty(2)),
+            builder.push(RuntimeLocalOrigin::Binding([0x22; 32]), ty(2)),
             Err(RuntimeLocalDeclarationTableError::IdentityExhausted)
         );
         let table = builder.finish();
         assert_eq!(table.len(), 1);
+        assert_eq!(
+            table.get(first).map(RuntimeLocalDeclaration::origin),
+            Some(origin)
+        );
         assert_eq!(
             table.get(first).map(RuntimeLocalDeclaration::ty),
             Some(ty(1))

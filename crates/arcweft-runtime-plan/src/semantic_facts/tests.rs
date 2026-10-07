@@ -1004,7 +1004,22 @@ fn complete_type_input(project: &HirProject) -> RuntimePlanSemanticFactInput {
             analysis.expression_origin(owner).unwrap(),
         );
     }
+    let selected_children = super::RuntimeSemanticOwnerSet {
+        runtime: &runtime_owners,
+        programs: None,
+        program_free_locals: None,
+    }
+    .selected_expression_children()
+    .unwrap();
     for (owner, expression) in analysis.expressions() {
+        if selected_children.contains_key(&owner)
+            && !input
+                .expression_facts
+                .iter()
+                .any(|(published, _)| *published == owner)
+        {
+            input.push_expression_origin(owner, analysis.expression_origin(owner).unwrap());
+        }
         if runtime_owners.contains_expression(owner) {
             if let arcweft_lang_sema::final_analysis::CheckedExpressionResolution::PostfixBracket(
                 resolution,
@@ -1045,7 +1060,7 @@ fn expression_origins_preserve_coordinates_and_reject_wrong_owner_or_generation(
     let source = "fn root(first: bool) -> bool { first || false }\n";
     let project = project_fixture("expression-origin-admission", source);
     let input = complete_type_input(&project);
-    let target = input.expression_types[0].0;
+    let target = input.expression_facts[0].0;
     let expected = fixture_expression_origin(&project, target);
     let facts = runtime_facts(&project, input).unwrap();
     assert_eq!(
@@ -1053,7 +1068,7 @@ fn expression_origins_preserve_coordinates_and_reject_wrong_owner_or_generation(
         Some(expected.coordinate())
     );
     let mut wrong_owner = complete_type_input(&project);
-    wrong_owner.expression_types[0].1.origin = wrong_owner.expression_types[1].1.origin.clone();
+    wrong_owner.expression_facts[0].1.origin = wrong_owner.expression_facts[1].1.origin.clone();
     assert_eq!(
         runtime_facts(&project, wrong_owner).unwrap_err(),
         RuntimeSemanticFactsError::InvalidExpressionOrigin { expression: target }
@@ -1061,13 +1076,82 @@ fn expression_origins_preserve_coordinates_and_reject_wrong_owner_or_generation(
     let foreign = project_fixture("expression-origin-admission", source);
     assert!(!expected.validate_owner(foreign.analysis_view().unwrap(), target));
     let mut wrong_generation = complete_type_input(&project);
-    wrong_generation.expression_types[0].1.origin = complete_type_input(&foreign).expression_types
+    wrong_generation.expression_facts[0].1.origin = complete_type_input(&foreign).expression_facts
         [0]
     .1
     .origin
     .clone();
     assert_eq!(
         runtime_facts(&project, wrong_generation).unwrap_err(),
+        RuntimeSemanticFactsError::InvalidExpressionOrigin { expression: target }
+    );
+}
+
+#[test]
+fn type_free_expression_origin_is_required_and_retained_before_publication() {
+    let source = "fn root() -> bool { true }\n";
+    let project = project_fixture("type-free-expression-origin", source);
+    let target = boolean_literal(&project);
+    let executable = project.analysis_view().unwrap();
+    let reachability = runtime_reachability_with(
+        &project,
+        |_| None,
+        |owner| {
+            if owner == target {
+                Some(HirRuntimeExpressionProjection::Structural {
+                    value: HirRuntimeValueRetention::Omit,
+                })
+            } else {
+                retained_runtime_projection(executable, owner)
+            }
+        },
+    );
+    assert!(
+        !reachability
+            .selected_expression_type_owners()
+            .unwrap()
+            .contains(&target)
+    );
+    let origin = fixture_expression_origin(&project, target);
+    let complete = || {
+        let mut input = complete_type_input(&project);
+        input
+            .expression_facts
+            .iter_mut()
+            .find(|(owner, _)| *owner == target)
+            .unwrap()
+            .1
+            .ty = None;
+        input
+    };
+    let facts = RuntimePlanSemanticFacts::try_new(executable, &reachability, complete()).unwrap();
+    assert_eq!(
+        facts.expression_coordinate(target),
+        Some(origin.coordinate())
+    );
+    assert!(facts.expression_type(target).is_none());
+
+    let mut missing = complete();
+    missing
+        .expression_facts
+        .retain(|(owner, _)| *owner != target);
+    assert_eq!(
+        RuntimePlanSemanticFacts::try_new(executable, &reachability, missing).unwrap_err(),
+        RuntimeSemanticFactsError::MissingExpressionOrigin { expression: target }
+    );
+
+    let foreign = project_fixture("type-free-expression-origin", source);
+    let foreign_origin = fixture_expression_origin(&foreign, boolean_literal(&foreign));
+    let mut wrong_generation = complete();
+    wrong_generation
+        .expression_facts
+        .iter_mut()
+        .find(|(owner, _)| *owner == target)
+        .unwrap()
+        .1
+        .origin = foreign_origin;
+    assert_eq!(
+        RuntimePlanSemanticFacts::try_new(executable, &reachability, wrong_generation).unwrap_err(),
         RuntimeSemanticFactsError::InvalidExpressionOrigin { expression: target }
     );
 }
@@ -1159,11 +1243,11 @@ fn assignment_fact_fixture(
         .expect("assignment local type")
         .1
         .ty = record_type.clone();
-    for (owner, ty) in &mut input.expression_types {
+    for (owner, ty) in &mut input.expression_facts {
         if *owner == base {
-            ty.ty = record_type.clone();
+            ty.ty = Some(record_type.clone());
         } else if *owner == target || *owner == value {
-            ty.ty = field_type.clone();
+            ty.ty = Some(field_type.clone());
         }
     }
     input.push_value(base, RuntimeResolvedValue::Local(local));

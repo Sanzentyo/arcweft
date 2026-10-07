@@ -552,8 +552,18 @@ fn admit_response_and_need_locals(
                     RuntimePlanTypeProjection::Need(controller_type(response_result_ty)),
                 )]),
             [
-                RuntimeLocalDeclarationSeed::new(controller_type(response_ty)),
-                RuntimeLocalDeclarationSeed::new(need_ty),
+                RuntimeLocalDeclarationSeed::new(
+                    manual_local_origin(
+                        "arcweft-agent-runner.fixture.tests.admit_response_and_need_locals.binding_a",
+                    ),
+                    controller_type(response_ty),
+                ),
+                RuntimeLocalDeclarationSeed::new(
+                    manual_local_origin(
+                        "arcweft-agent-runner.fixture.tests.admit_response_and_need_locals.binding_b",
+                    ),
+                    need_ty,
+                ),
             ],
         )
         .expect("response and Need locals admit");
@@ -1538,9 +1548,12 @@ fn direct_observe_program() -> AwbcProgram {
     let locals = builder
         .admit_type_batch(
             controller_agent_types(),
-            [RuntimeLocalDeclarationSeed::new(controller_type(
-                OBSERVATION_TY,
-            ))],
+            [RuntimeLocalDeclarationSeed::new(
+                manual_local_origin(
+                    "arcweft-agent-runner.fixture.tests.direct_observe_program.binding_a",
+                ),
+                controller_type(OBSERVATION_TY),
+            )],
         )
         .expect("controller types admit");
     let observation = locals.local_ids()[0].clone();
@@ -3723,4 +3736,13 @@ fn controller_awbc_resumes_bound_wait_response() {
         report.final_status,
         Some(FlowFiberStatus::Done(FlowExit::Return(ref value))) if value == "3"
     ));
+}
+
+fn manual_local_origin(declaration: &str) -> arcweft_core::plan::RuntimeLocalOrigin {
+    // This fixture declares a semantic binding name independent of its value,
+    // type, source offset, and builder-issued local ordinal.
+    let mut identity = blake3::Hasher::new();
+    identity.update(b"arcweft.manual-fixture-binding.v1\0");
+    identity.update(declaration.as_bytes());
+    arcweft_core::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
 }

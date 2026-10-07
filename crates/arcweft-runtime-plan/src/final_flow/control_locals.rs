@@ -11,6 +11,9 @@ use crate::semantic_facts::{
 };
 
 use super::{AwaitLocalSeeds, ScopeLocalSeeds, TryLocalSeeds};
+use arcweft_lang_sema::semantic_coordinate::{
+    CheckedGeneratedLocalRole as Role, CheckedSemanticPath,
+};
 
 #[derive(Clone, Default)]
 pub(super) struct ControlLocals {
@@ -43,32 +46,49 @@ impl ControlLocals {
         builder: &mut RuntimePlanBuilder,
     ) -> Result<Self, RuntimePlanLowerError> {
         let declaration =
-            |ty: &RuntimeNormalizedType| match function.filter(|_| !ty.scope().is_root()) {
-                Some(function) => {
-                    RuntimeLocalDeclarationSeed::in_function(ty.identity(), function.identity())
-                }
-                None => RuntimeLocalDeclarationSeed::new(ty.identity()),
+            |ty: &RuntimeNormalizedType, coordinate: Option<&CheckedSemanticPath>, role: Role| {
+                let origin = coordinate
+                    .ok_or_else(|| {
+                        RuntimePlanLowerError::new(
+                            "generated local has no accepted structural coordinate",
+                        )
+                    })?
+                    .runtime_generated_local_origin(role)
+                    .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
+                Ok::<_, RuntimePlanLowerError>(match function.filter(|_| !ty.scope().is_root()) {
+                    Some(function) => RuntimeLocalDeclarationSeed::in_function(
+                        origin,
+                        ty.identity(),
+                        function.identity(),
+                    ),
+                    None => RuntimeLocalDeclarationSeed::new(origin, ty.identity()),
+                })
             };
         let mut owners = Vec::new();
         let mut seeds = Vec::new();
         let mut error = None;
         facts.visit_runtime_expression_types(&mut |owner, ty| {
+            let coordinate = facts.expression_coordinate(owner);
             let expression_value_type = facts.expression_source_type(owner).unwrap_or(ty);
             owners.push((owner, ControlLocal::ExpressionValue));
-            seeds.push(declaration(expression_value_type));
+            seeds.push(declaration(
+                expression_value_type,
+                coordinate,
+                Role::ExpressionSource,
+            ));
             if expression_value_type.identity() != ty.identity() {
                 owners.push((owner, ControlLocal::ExpressionFinalValue));
-                seeds.push(declaration(ty));
+                seeds.push(declaration(ty, coordinate, Role::ExpressionResult));
             }
             if facts.is_pattern_guard(owner)
                 && !matches!(ty.shape(), crate::semantic_facts::RuntimeTypeShape::Never)
             {
                 owners.push((owner, ControlLocal::GuardValue));
-                seeds.push(declaration(ty));
+                seeds.push(declaration(ty, coordinate, Role::GuardValue));
             }
             if facts.awaited(owner).is_some() {
                 owners.push((owner, ControlLocal::Await));
-                seeds.push(declaration(ty));
+                seeds.push(declaration(ty, coordinate, Role::AwaitPayload));
             }
             if let Some(tried) = facts.tried(owner) {
                 let residual = tried.carrier().residual();
@@ -78,13 +98,17 @@ impl ControlLocals {
                         residual: residual.is_some(),
                     },
                 ));
-                seeds.push(declaration(tried.carrier().success()));
-                seeds.extend(residual.map(declaration));
+                seeds.push(declaration(
+                    tried.carrier().success(),
+                    coordinate,
+                    Role::TrySuccess,
+                ));
+                seeds.extend(residual.map(|ty| declaration(ty, coordinate, Role::TryResidual)));
             }
             if let Some(pipe) = facts.pipe(owner) {
                 if let Some(left) = facts.expression_type(pipe.left()) {
                     owners.push((owner, ControlLocal::Pipe));
-                    seeds.push(declaration(left));
+                    seeds.push(declaration(left, coordinate, Role::PipeOperand));
                 } else {
                     error.get_or_insert_with(|| {
                         RuntimePlanLowerError::new(format!(
@@ -97,7 +121,11 @@ impl ControlLocals {
         facts.visit_untyped_evaluated_effect_pipes(&mut |owner, pipe| {
             if let Some(left) = facts.expression_type(pipe.left()) {
                 owners.push((owner, ControlLocal::Pipe));
-                seeds.push(declaration(left));
+                seeds.push(declaration(
+                    left,
+                    facts.expression_coordinate(owner),
+                    Role::PipeOperand,
+                ));
             } else {
                 error.get_or_insert_with(|| {
                     RuntimePlanLowerError::new(format!(
@@ -110,7 +138,7 @@ impl ControlLocals {
             return Err(error);
         }
         let admission = builder
-            .admit_type_batch([], seeds)
+            .admit_type_batch([], seeds.into_iter().collect::<Result<Vec<_>, _>>()?)
             .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
         let mut admitted = admission.local_ids().iter().cloned();
         let mut result = Self::default();
@@ -168,15 +196,24 @@ impl ControlLocals {
         let mut scope_owners = Vec::new();
         let mut scope_seeds = Vec::new();
         facts.visit_scope_continuations(&mut |owner, continuation| {
+            let coordinate = match owner {
+                RuntimeScopeOwner::Expression(owner) => facts.expression_scope(owner),
+                RuntimeScopeOwner::Statement(owner) => facts.statement_scope(owner),
+            }
+            .map(|fact| fact.origin().coordinate());
             scope_owners.push((owner, continuation.residual_type().is_some()));
             scope_seeds.extend([
-                declaration(continuation.carrier_type()),
-                declaration(continuation.value_type()),
+                declaration(continuation.carrier_type(), coordinate, Role::ScopeCarrier),
+                declaration(continuation.value_type(), coordinate, Role::ScopeSuccess),
             ]);
-            scope_seeds.extend(continuation.residual_type().map(declaration));
+            scope_seeds.extend(
+                continuation
+                    .residual_type()
+                    .map(|ty| declaration(ty, coordinate, Role::ScopeResidual)),
+            );
         });
         let admission = builder
-            .admit_type_batch([], scope_seeds)
+            .admit_type_batch([], scope_seeds.into_iter().collect::<Result<Vec<_>, _>>()?)
             .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
         let mut admitted = admission.local_ids().iter().cloned();
         let missing = || RuntimePlanLowerError::new("scope continuation admission omitted a local");

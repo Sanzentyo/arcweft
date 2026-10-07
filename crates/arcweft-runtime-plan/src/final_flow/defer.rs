@@ -26,15 +26,29 @@ pub(super) fn reserve_global_defer_sites(
             fact.captures()
                 .iter()
                 .enumerate()
-                .map(move |(position, capture)| (statement, position, capture.ty().identity()))
+                .map(move |(position, capture)| {
+                    capture
+                        .origin()
+                        .runtime_local_origin()
+                        .map(|origin| {
+                            (
+                                statement,
+                                position,
+                                RuntimeLocalDeclarationSeed::new(origin, capture.ty().identity()),
+                            )
+                        })
+                        .map_err(|error| RuntimePlanLowerError::new(error.to_string()))
+                })
         })
-        .collect::<Vec<_>>();
-    let admission = match builder.admit_type_batch(
-        [],
-        specs
-            .iter()
-            .map(|(_, _, ty)| RuntimeLocalDeclarationSeed::new(*ty)),
-    ) {
+        .collect::<Result<Vec<_>, _>>();
+    let specs = match specs {
+        Ok(specs) => specs,
+        Err(error) => {
+            errors.push(error);
+            return (sites, definitions);
+        }
+    };
+    let admission = match builder.admit_type_batch([], specs.iter().map(|(_, _, seed)| *seed)) {
         Ok(admission) => admission,
         Err(error) => {
             errors.push(RuntimePlanLowerError::new(error.to_string()));

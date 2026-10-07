@@ -387,11 +387,11 @@ impl ProjectFunctionFrameLocals {
         builder: &mut RuntimePlanBuilder,
     ) -> Result<Self, RuntimePlanLowerError> {
         let context = program.function_type().identity();
-        let declaration = |ty: &crate::semantic_facts::RuntimeNormalizedType| {
+        let declaration = |origin, ty: &crate::semantic_facts::RuntimeNormalizedType| {
             if ty.scope().is_root() {
-                RuntimeLocalDeclarationSeed::new(ty.identity())
+                RuntimeLocalDeclarationSeed::new(origin, ty.identity())
             } else {
-                RuntimeLocalDeclarationSeed::in_function(ty.identity(), context)
+                RuntimeLocalDeclarationSeed::in_function(origin, ty.identity(), context)
             }
         };
         let mut rows = semantics
@@ -399,11 +399,24 @@ impl ProjectFunctionFrameLocals {
             .iter()
             .filter_map(|projection| match projection {
                 RuntimeProjectFunctionTypeProjection::Local {
-                    owner: local, ty, ..
-                } => Some((ProjectFunctionFrameLocal::Hir(*local), declaration(ty))),
+                    owner: local,
+                    ty,
+                    origin,
+                } => Some(
+                    origin
+                        .coordinate()
+                        .runtime_local_origin()
+                        .map(|origin| {
+                            (
+                                ProjectFunctionFrameLocal::Hir(*local),
+                                declaration(origin, ty),
+                            )
+                        })
+                        .map_err(|error| RuntimePlanLowerError::new(error.to_string())),
+                ),
                 _ => None,
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, _>>()?;
         for expression in semantics.expressions() {
             let Some(call) = semantics.call(expression.owner()) else {
                 continue;
@@ -422,7 +435,14 @@ impl ProjectFunctionFrameLocals {
                         owner: expression.owner(),
                         source_index,
                     },
-                    declaration(operand.ty()),
+                    declaration(
+                        semantics.expression_coordinate(expression.owner())
+                            .ok_or_else(|| RuntimePlanLowerError::new("call operand has no accepted expression coordinate"))?
+                            .runtime_generated_local_origin(
+                                arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::CallOperand { source_ordinal: source_index }
+                            ).map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
+                        operand.ty(),
+                    ),
                 ));
             }
         }
@@ -801,13 +821,25 @@ pub fn lower_runtime_plan_with_stats(
     let local_facts = facts.local_declarations().collect::<Vec<_>>();
     let mut local_seeds = local_facts
         .iter()
-        .map(|(local, ty)| match facts.local_context(*local) {
-            Some(context) => {
-                RuntimeLocalDeclarationSeed::in_function(ty.identity(), context.identity())
-            }
-            None => RuntimeLocalDeclarationSeed::new(ty.identity()),
+        .map(|(local, ty)| {
+            let origin = facts
+                .local_origin(*local)
+                .ok_or_else(|| {
+                    RuntimePlanLowerError::new("local declaration has no accepted binding origin")
+                })?
+                .runtime_local_origin()
+                .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
+            Ok(match facts.local_context(*local) {
+                Some(context) => RuntimeLocalDeclarationSeed::in_function(
+                    origin,
+                    ty.identity(),
+                    context.identity(),
+                ),
+                None => RuntimeLocalDeclarationSeed::new(origin, ty.identity()),
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, RuntimePlanLowerError>>()
+        .map_err(|error| vec![error])?;
     let mut implicit_callable_facts = Vec::new();
     facts.visit_scoped_implicit_callables(&mut |scope, owner, callable| {
         implicit_callable_facts.push((
@@ -827,7 +859,10 @@ pub fn lower_runtime_plan_with_stats(
         ))]);
     }
     local_seeds.extend(implicit_callable_facts.iter().map(|(_, _, _, callable)| {
-        RuntimeLocalDeclarationSeed::new(callable.parameter().identity())
+        RuntimeLocalDeclarationSeed::new(
+            callable.formal().runtime_input_origin().into(),
+            callable.parameter().identity(),
+        )
     }));
     let controller_result_local_specs = entry_input
         .callables
@@ -868,15 +903,19 @@ pub fn lower_runtime_plan_with_stats(
                     callable.role().callable.as_str()
                 )));
             }
-            Ok((callable.role().callable.clone(), result.identity()))
+            Ok((
+                callable.role().callable.clone(),
+                RuntimeLocalDeclarationSeed::new(
+                    arcweft_core::plan::RuntimeLocalOrigin::EvaluatedResult(
+                        instance.definition_identity().runtime_identity(),
+                    ),
+                    result.identity(),
+                ),
+            ))
         })
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| vec![error])?;
-    local_seeds.extend(
-        controller_result_local_specs
-            .iter()
-            .map(|(_, ty)| RuntimeLocalDeclarationSeed::new(*ty)),
-    );
+    local_seeds.extend(controller_result_local_specs.iter().map(|(_, seed)| *seed));
     let mut project_instance_expression_owners = facts
         .project_function_instances()
         .flat_map(|instance| instance.semantics().type_projection().iter())
@@ -908,7 +947,7 @@ pub fn lower_runtime_plan_with_stats(
         })
         .try_fold(
             Vec::new(),
-            |mut specs: Vec<((ExprId, u32), RuntimeSemanticTypeId)>, (expression, call)| {
+            |mut specs: Vec<((ExprId, u32), RuntimeLocalDeclarationSeed)>, (expression, call)| {
                 if call.attached_content().is_some() {
                     return Err(RuntimePlanLowerError::new(format!(
                         "specialized call {expression:?} cannot carry attached content"
@@ -920,7 +959,11 @@ pub fn lower_runtime_plan_with_stats(
                             "specialized call {expression:?} source operand index exceeds checked limits"
                         ))
                     })?;
-                    specs.push(((expression, source_index), operand.ty().identity()));
+                    let origin = facts.expression_coordinate(expression)
+                        .ok_or_else(|| RuntimePlanLowerError::new("specialized call has no accepted coordinate"))?
+                        .runtime_generated_local_origin(arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::CallOperand { source_ordinal: source_index })
+                        .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
+                    specs.push(((expression, source_index), RuntimeLocalDeclarationSeed::new(origin, operand.ty().identity())));
                 }
                 Ok(specs)
             },
@@ -929,7 +972,7 @@ pub fn lower_runtime_plan_with_stats(
     local_seeds.extend(
         specialized_operand_local_specs
             .iter()
-            .map(|(_, ty)| RuntimeLocalDeclarationSeed::new(*ty)),
+            .map(|(_, seed)| *seed),
     );
     // Generic project-function locals are deliberately absent from the shared
     // semantic local table: their checked types are open until a terminal
@@ -946,12 +989,12 @@ pub fn lower_runtime_plan_with_stats(
                 .filter_map(|projection| match projection {
                     RuntimeProjectFunctionTypeProjection::Local {
                         owner: local,
-                        ty, ..
-                    } => Some((ProjectFunctionFrameLocal::Hir(*local), ty.identity())),
+                        ty, origin
+                    } => Some(origin.coordinate().runtime_local_origin().map(|origin| (ProjectFunctionFrameLocal::Hir(*local), RuntimeLocalDeclarationSeed::new(origin, ty.identity()))).map_err(|error| RuntimePlanLowerError::new(error.to_string()))),
                     RuntimeProjectFunctionTypeProjection::Value { .. }
                     | RuntimeProjectFunctionTypeProjection::SemanticOnlyExpression { .. } => None,
                 })
-                .collect::<Vec<_>>();
+                .collect::<Result<Vec<_>, _>>()?;
             let mut locals = locals;
             for parameter in instance.parameters() {
                 let group = u32::try_from(parameter.group().get()).map_err(|_| {
@@ -965,15 +1008,17 @@ pub fn lower_runtime_plan_with_stats(
                         group,
                         parameter: parameter.parameter(),
                     },
-                    parameter.binding_ty().identity(),
+                    RuntimeLocalDeclarationSeed::new(parameter.definition().runtime_input_origin().into(), parameter.binding_ty().identity()),
                 ));
             }
             if let Some(attached) = instance.callable().attached_content_abi()
                 && attached.group() == instance.key().group()
             {
+                let formal = instance.definition().parameters().iter().find(|parameter| matches!(parameter.origin(), arcweft_lang_sema::final_analysis::CheckedExecutionParameterOrigin::AttachedContent))
+                    .ok_or_else(|| RuntimePlanLowerError::new("attached input has no accepted whole formal"))?;
                 locals.push((
                     ProjectFunctionFrameLocal::AttachedAbi,
-                    attached.binding_ty().identity(),
+                    RuntimeLocalDeclarationSeed::new(formal.runtime_input_origin().into(), attached.binding_ty().identity()),
                 ));
             }
             for expression in instance.semantics().expressions() {
@@ -1003,7 +1048,13 @@ pub fn lower_runtime_plan_with_stats(
                             owner: expression.owner(),
                             source_index,
                         },
-                        operand.ty().identity(),
+                        RuntimeLocalDeclarationSeed::new(
+                            instance.semantics().expression_coordinate(expression.owner())
+                                .ok_or_else(|| RuntimePlanLowerError::new("source-row operand has no accepted coordinate"))?
+                                .runtime_generated_local_origin(arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::CallOperand { source_ordinal: source_index })
+                                .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
+                            operand.ty().identity(),
+                        ),
                     ));
                 }
             }
@@ -1018,11 +1069,11 @@ pub fn lower_runtime_plan_with_stats(
             let mut rows = semantics.type_projection().iter().filter_map(|projection| {
                 match projection {
                     RuntimeProjectFunctionTypeProjection::Local {
-                        owner: local, ty, ..
-                    } => Some((ProjectFunctionFrameLocal::Hir(*local), ty.identity())),
+                        owner: local, ty, origin
+                    } => Some(origin.coordinate().runtime_local_origin().map(|origin| (ProjectFunctionFrameLocal::Hir(*local), RuntimeLocalDeclarationSeed::new(origin, ty.identity()))).map_err(|error| RuntimePlanLowerError::new(error.to_string()))),
                     _ => None,
                 }
-            }).collect::<Vec<_>>();
+            }).collect::<Result<Vec<_>, _>>()?;
             for expression in semantics.expressions() {
                 let Some(call) = semantics.call(expression.owner()) else { continue };
                 if !call.requires_specialized_operand_anf() { continue; }
@@ -1038,7 +1089,13 @@ pub fn lower_runtime_plan_with_stats(
                     ))?;
                     rows.push((
                         ProjectFunctionFrameLocal::SpecializedOperand { owner: expression.owner(), source_index },
-                        operand.ty().identity(),
+                        RuntimeLocalDeclarationSeed::new(
+                            semantics.expression_coordinate(expression.owner())
+                                .ok_or_else(|| RuntimePlanLowerError::new("source-row operand has no accepted coordinate"))?
+                                .runtime_generated_local_origin(arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::CallOperand { source_ordinal: source_index })
+                                .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
+                            operand.ty().identity(),
+                        ),
                     ));
                 }
             }
@@ -1063,32 +1120,29 @@ pub fn lower_runtime_plan_with_stats(
                 .filter_map(|projection| match projection {
                     RuntimeProjectFunctionTypeProjection::Local {
                         owner: local,
-                        ty, ..
-                    } if !captured.contains(local) => Some((
-                        ClosureFrameLocal::Hir(*local),
-                        ty.identity(),
-                    )),
+                        ty, origin
+                    } if !captured.contains(local) => Some(origin.coordinate().runtime_local_origin().map(|origin| (ClosureFrameLocal::Hir(*local), RuntimeLocalDeclarationSeed::new(origin, ty.identity()))).map_err(|error| RuntimePlanLowerError::new(error.to_string()))),
                     RuntimeProjectFunctionTypeProjection::Local { .. }
                     | RuntimeProjectFunctionTypeProjection::Value { .. }
                     | RuntimeProjectFunctionTypeProjection::SemanticOnlyExpression { .. } => None,
                 })
-                .collect::<Vec<_>>();
+                .collect::<Result<Vec<_>, _>>()?;
             rows.extend(closure.parameters().iter().map(|parameter| {
                 (
                     ClosureFrameLocal::ParameterInput {
                         position: parameter.position(),
                     },
-                    parameter.ty().identity(),
+                    RuntimeLocalDeclarationSeed::new(parameter.definition().runtime_input_origin().into(), parameter.ty().identity()),
                 )
             }));
             rows.extend(closure.captures().iter().map(|capture| {
-                (
+                Ok::<_, RuntimePlanLowerError>((
                     ClosureFrameLocal::CaptureInput {
                         position: capture.position(),
                     },
-                    capture.ty().identity(),
-                )
-            }));
+                    RuntimeLocalDeclarationSeed::new(capture.origin().runtime_local_origin().map_err(|error| RuntimePlanLowerError::new(error.to_string()))?, capture.ty().identity()),
+                ))
+            }).collect::<Result<Vec<_>, _>>()?);
             for expression in closure.semantics().expressions() {
                 let Some(call) = closure.semantics().call(expression.owner()) else {
                     continue;
@@ -1116,7 +1170,13 @@ pub fn lower_runtime_plan_with_stats(
                             owner: expression.owner(),
                             source_index,
                         },
-                        operand.ty().identity(),
+                        RuntimeLocalDeclarationSeed::new(
+                            closure.semantics().expression_coordinate(expression.owner())
+                                .ok_or_else(|| RuntimePlanLowerError::new("source-row operand has no accepted coordinate"))?
+                                .runtime_generated_local_origin(arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::CallOperand { source_ordinal: source_index })
+                                .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
+                            operand.ty().identity(),
+                        ),
                     ));
                 }
             }
@@ -1144,7 +1204,7 @@ pub fn lower_runtime_plan_with_stats(
                             })?;
                             Ok((
                                 (instance.key().clone(), position),
-                                capture.binding_ty().identity(),
+                                RuntimeLocalDeclarationSeed::new(capture.formal().definition().runtime_input_origin().into(), capture.binding_ty().identity()),
                             ))
                         })
                 })
@@ -1161,38 +1221,43 @@ pub fn lower_runtime_plan_with_stats(
                         "implicit callable {owner:?} capture {capture:?} has no accepted type"
                     ))
                 })?;
-                Ok(((key.clone(), position), ty.identity()))
+                Ok((
+                    (key.clone(), position),
+                    RuntimeLocalDeclarationSeed::new(
+                        scope
+                            .local_origin(capture.local())
+                            .ok_or_else(|| {
+                                RuntimePlanLowerError::new(
+                                    "implicit capture has no accepted binding origin",
+                                )
+                            })?
+                            .runtime_local_origin()
+                            .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
+                        ty.identity(),
+                    ),
+                ))
             })
         })
         .collect::<Result<Vec<_>, RuntimePlanLowerError>>()
         .map_err(|error| vec![error])?;
     for (_, rows) in &project_instance_local_specs {
-        local_seeds.extend(
-            rows.iter()
-                .map(|(_, ty)| RuntimeLocalDeclarationSeed::new(*ty)),
-        );
+        local_seeds.extend(rows.iter().map(|(_, seed)| *seed));
     }
     for (_, rows) in &trait_method_local_specs {
-        local_seeds.extend(
-            rows.iter()
-                .map(|(_, ty)| RuntimeLocalDeclarationSeed::new(*ty)),
-        );
+        local_seeds.extend(rows.iter().map(|(_, seed)| *seed));
     }
     for (_, rows) in &closure_local_specs {
-        local_seeds.extend(
-            rows.iter()
-                .map(|(_, ty)| RuntimeLocalDeclarationSeed::new(*ty)),
-        );
+        local_seeds.extend(rows.iter().map(|(_, seed)| *seed));
     }
     local_seeds.extend(
         project_default_capture_input_specs
             .iter()
-            .map(|(_, ty)| RuntimeLocalDeclarationSeed::new(*ty)),
+            .map(|(_, seed)| *seed),
     );
     local_seeds.extend(
         implicit_capture_input_local_specs
             .iter()
-            .map(|(_, ty)| RuntimeLocalDeclarationSeed::new(*ty)),
+            .map(|(_, seed)| *seed),
     );
     let mut builder = RuntimePlanBuilder::new();
     let nominal_schema = facts
@@ -1666,9 +1731,7 @@ pub fn lower_runtime_plan_with_stats(
     let effect_admission = builder
         .admit_type_batch(
             [],
-            dialogue_effect_capture_specs
-                .iter()
-                .map(|(_, ty)| RuntimeLocalDeclarationSeed::new(*ty)),
+            dialogue_effect_capture_specs.iter().map(|(_, seed)| *seed),
         )
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
     let mut effect_local_ids = effect_admission.local_ids().iter().cloned();
@@ -1721,12 +1784,9 @@ pub fn lower_runtime_plan_with_stats(
     let value_admission = builder
         .admit_type_batch(
             [],
-            dialogue_value_capture_specs.iter().flat_map(|(_, ty)| {
-                [
-                    RuntimeLocalDeclarationSeed::new(*ty),
-                    RuntimeLocalDeclarationSeed::new(*ty),
-                ]
-            }),
+            dialogue_value_capture_specs
+                .iter()
+                .flat_map(|(_, seed)| [*seed, *seed]),
         )
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
     let mut value_local_ids = value_admission.local_ids().iter().cloned();
@@ -1752,26 +1812,32 @@ pub fn lower_runtime_plan_with_stats(
         )]);
     }
     let mut project_source_specs = Vec::new();
+    let mut project_source_errors = Vec::new();
     context
         .facts
-        .visit_dialogue_content_fragments(&mut |_, fragment| {
+        .visit_dialogue_content_fragments(&mut |scope, fragment| {
             for value in fragment.values() {
                 let Some(project) = value.project_display() else {
                     continue;
                 };
+                let seed = (|| -> Result<_, RuntimePlanLowerError> {
+                    let coordinate = scope.expression_coordinate(value.expression()).ok_or_else(|| RuntimePlanLowerError::new("dialogue display source has no accepted coordinate"))?;
+                    let origin = coordinate.runtime_generated_local_origin(arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::DialogueDisplaySource)
+                        .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
+                    Ok(RuntimeLocalDeclarationSeed::new(origin, project.source_type().identity()))
+                })();
+                let seed = match seed { Ok(seed) => seed, Err(error) => { project_source_errors.push(error); continue; } };
                 project_source_specs.push((
                     RuntimeDialogueValueCaptureKey::new(fragment.template().id(), value.slot(), 0),
-                    project.source_type().identity(),
+                    seed,
                 ));
             }
         });
+    if !project_source_errors.is_empty() {
+        return Err(project_source_errors);
+    }
     let source_admission = builder
-        .admit_type_batch(
-            [],
-            project_source_specs
-                .iter()
-                .map(|(_, ty)| RuntimeLocalDeclarationSeed::new(*ty)),
-        )
+        .admit_type_batch([], project_source_specs.iter().map(|(_, seed)| *seed))
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
     let mut dialogue_value_project_source_locals = BTreeMap::new();
     for ((key, _), local) in project_source_specs
@@ -3249,9 +3315,9 @@ fn reserve_pure_programs<'facts>(
             .enumerate()
             .map(|(position, (parameter, ty))| {
                 let declaration = if ty.scope().is_root() {
-                    RuntimeLocalDeclarationSeed::new(ty.identity())
+                    RuntimeLocalDeclarationSeed::new(parameter.runtime_input_origin().into(), ty.identity())
                 } else {
-                    RuntimeLocalDeclarationSeed::in_function(ty.identity(), program.function_type().identity())
+                    RuntimeLocalDeclarationSeed::in_function(parameter.runtime_input_origin().into(), ty.identity(), program.function_type().identity())
                 };
                 let admitted = builder
                     .admit_type_batch([], [declaration])
@@ -3368,6 +3434,9 @@ fn reserve_pure_programs<'facts>(
             match builder.admit_type_batch(
                 [],
                 [RuntimeLocalDeclarationSeed::new(
+                    arcweft_core::plan::RuntimeLocalOrigin::EvaluatedResult(
+                        program.definition_identity().runtime_identity(),
+                    ),
                     program.result().identity(),
                 )],
             ) {
@@ -4209,8 +4278,10 @@ fn define_pure_programs(
 }
 fn collect_dialogue_value_capture_specs(
     context: &FinalLoweringContext<'_, '_>,
-) -> Result<Vec<(RuntimeDialogueValueCaptureKey, RuntimeSemanticTypeId)>, Vec<RuntimePlanLowerError>>
-{
+) -> Result<
+    Vec<(RuntimeDialogueValueCaptureKey, RuntimeLocalDeclarationSeed)>,
+    Vec<RuntimePlanLowerError>,
+> {
     let mut errors = Vec::new();
     let mut value_specs = BTreeMap::new();
     context
@@ -4228,7 +4299,17 @@ fn collect_dialogue_value_capture_specs(
                     value.slot(),
                     0,
                 );
-                if value_specs.insert(key, value.ty().identity()).is_some() {
+                let Some(definition) = fragment.value_callback_definition(value) else {
+                    errors.push(RuntimePlanLowerError::new(
+                        "dialogue slot has no accepted callback definition",
+                    ));
+                    continue;
+                };
+                let seed = RuntimeLocalDeclarationSeed::new(
+                    arcweft_core::plan::RuntimeLocalOrigin::EvaluatedResult(definition),
+                    value.ty().identity(),
+                );
+                if value_specs.insert(key, seed).is_some() {
                     errors.push(RuntimePlanLowerError::new(format!(
                         "dialogue value {:?} repeats its slot result capture",
                         value.expression()
@@ -4246,8 +4327,10 @@ fn collect_dialogue_value_capture_specs(
 
 fn collect_dialogue_effect_capture_specs(
     context: &FinalLoweringContext<'_, '_>,
-) -> Result<Vec<(RuntimeDialogueEffectCaptureKey, RuntimeSemanticTypeId)>, Vec<RuntimePlanLowerError>>
-{
+) -> Result<
+    Vec<(RuntimeDialogueEffectCaptureKey, RuntimeLocalDeclarationSeed)>,
+    Vec<RuntimePlanLowerError>,
+> {
     let mut errors = Vec::new();
     let mut effect_specs = BTreeMap::new();
     context
@@ -4285,7 +4368,20 @@ fn collect_dialogue_effect_capture_specs(
                         continue;
                     }
                     let key = RuntimeDialogueEffectCaptureKey::new(program, position);
-                    if effect_specs.insert(key, capture.ty().identity()).is_some() {
+                    let origin = match capture.origin().runtime_local_origin() {
+                        Ok(origin) => origin,
+                        Err(error) => {
+                            errors.push(RuntimePlanLowerError::new(error.to_string()));
+                            continue;
+                        }
+                    };
+                    if effect_specs
+                        .insert(
+                            key,
+                            RuntimeLocalDeclarationSeed::new(origin, capture.ty().identity()),
+                        )
+                        .is_some()
+                    {
                         errors.push(RuntimePlanLowerError::new(format!(
                             "dialogue effect {:?} repeats a capture input position",
                             effect.site()

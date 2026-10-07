@@ -49,8 +49,18 @@ fn iterator_plan(copy_receiver: bool) -> RuntimePlan {
                 ),
             ],
             [
-                RuntimeLocalDeclarationSeed::new(state),
-                RuntimeLocalDeclarationSeed::new(state),
+                RuntimeLocalDeclarationSeed::new(
+                    manual_local_origin(
+                        "arcweft-core.fixture.engine.flow.iterator_tests.iterator_plan.binding_a",
+                    ),
+                    state,
+                ),
+                RuntimeLocalDeclarationSeed::new(
+                    manual_local_origin(
+                        "arcweft-core.fixture.engine.flow.iterator_tests.iterator_plan.binding_b",
+                    ),
+                    state,
+                ),
             ],
         )
         .expect("iterator state and Option item type admit");
@@ -187,4 +197,14 @@ fn witness_next_rejects_a_copy_of_its_affine_receiver() {
         engine.next_runtime_iterator_item(&mut iterator, &mut VmRuntimePureCallBackend::default()),
         Err(RuntimeEvalError::AffineLocalCopy(_))
     ));
+}
+
+#[cfg(test)]
+fn manual_local_origin(declaration: &str) -> crate::plan::RuntimeLocalOrigin {
+    // This fixture declares a semantic binding name independent of its value,
+    // type, source offset, and builder-issued local ordinal.
+    let mut identity = blake3::Hasher::new();
+    identity.update(b"arcweft.manual-fixture-binding.v1\0");
+    identity.update(declaration.as_bytes());
+    crate::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
 }

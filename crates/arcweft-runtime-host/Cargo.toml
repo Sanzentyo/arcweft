@@ -26,6 +26,7 @@ serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+blake3.workspace = true
 arcweft-audio-core = { workspace = true }
 arcweft-character = { workspace = true }
 arcweft-dialogue = { workspace = true }

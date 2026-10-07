@@ -12,6 +12,9 @@ cranelift.workspace = true
 cranelift-object.workspace = true
 thiserror.workspace = true
 
+[dev-dependencies]
+blake3.workspace = true
+
 [lib]
 path = "src/lib.rs"
 

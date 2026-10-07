@@ -5120,14 +5120,14 @@ struct RuntimeLocalDeclarationFact {
 }
 
 #[derive(Clone, Debug)]
-struct RuntimeExpressionTypeFact {
-    ty: RuntimeNormalizedType,
+struct RuntimeExpressionFact {
+    ty: Option<RuntimeNormalizedType>,
     origin: arcweft_lang_sema::semantic_coordinate::CheckedExpressionOrigin,
 }
 
 /// Borrowed validation projection; accepted facts retain the only owned rows.
 enum RuntimeExpressionTypeView<'types> {
-    Facts(&'types BTreeMap<ExprId, RuntimeExpressionTypeFact>),
+    Facts(&'types BTreeMap<ExprId, RuntimeExpressionFact>),
     Projected(BTreeMap<ExprId, &'types RuntimeNormalizedType>),
 }
 
@@ -5142,7 +5142,7 @@ impl<'types> FromIterator<(ExprId, &'types RuntimeNormalizedType)>
 impl<'types> RuntimeExpressionTypeView<'types> {
     fn get(&self, owner: &ExprId) -> Option<&'types RuntimeNormalizedType> {
         match self {
-            Self::Facts(facts) => facts.get(owner).map(|fact| &fact.ty),
+            Self::Facts(facts) => facts.get(owner).and_then(|fact| fact.ty.as_ref()),
             Self::Projected(types) => types.get(owner).copied(),
         }
     }
@@ -5163,7 +5163,7 @@ impl<'types> RuntimeExpressionTypeView<'types> {
         facts
             .into_iter()
             .flat_map(|facts| facts.iter())
-            .map(|(owner, fact)| (owner, &fact.ty))
+            .filter_map(|(owner, fact)| fact.ty.as_ref().map(|ty| (owner, ty)))
             .chain(
                 projected
                     .into_iter()
@@ -5391,7 +5391,7 @@ pub struct RuntimePlanSemanticFactInput {
         ExprId,
         arcweft_lang_sema::CheckedExpressionProducerDefinition,
     )>,
-    expression_types: Vec<(ExprId, RuntimeExpressionTypeFact)>,
+    expression_facts: Vec<(ExprId, RuntimeExpressionFact)>,
     pattern_types: Vec<(PatternId, RuntimeNormalizedType)>,
     expression_literals: Vec<(ExprId, RuntimeValue)>,
     expression_residual_values: Vec<(ExprId, RuntimeResidualValue)>,
@@ -5452,7 +5452,7 @@ impl RuntimePlanSemanticFactInput {
             statement_scopes: Vec::new(),
             thread_producers: Vec::new(),
             call_producers: Vec::new(),
-            expression_types: Vec::new(),
+            expression_facts: Vec::new(),
             pattern_types: Vec::new(),
             expression_literals: Vec::new(),
             expression_residual_values: Vec::new(),
@@ -5576,8 +5576,22 @@ impl RuntimePlanSemanticFactInput {
         ty: RuntimeNormalizedType,
         origin: arcweft_lang_sema::semantic_coordinate::CheckedExpressionOrigin,
     ) {
-        self.expression_types
-            .push((owner, RuntimeExpressionTypeFact { ty, origin }));
+        self.expression_facts.push((
+            owner,
+            RuntimeExpressionFact {
+                ty: Some(ty),
+                origin,
+            },
+        ));
+    }
+
+    pub fn push_expression_origin(
+        &mut self,
+        owner: ExprId,
+        origin: arcweft_lang_sema::semantic_coordinate::CheckedExpressionOrigin,
+    ) {
+        self.expression_facts
+            .push((owner, RuntimeExpressionFact { ty: None, origin }));
     }
 
     pub fn push_callable_source(&mut self, fact: RuntimeProjectCallableSourceFact) {
@@ -5888,7 +5902,7 @@ pub struct RuntimePlanSemanticFacts {
     statement_scopes: BTreeMap<StmtId, crate::semantic_facts::RuntimeScopeFact>,
     thread_producers: BTreeMap<ExprId, arcweft_lang_sema::CheckedExpressionProducerDefinition>,
     call_producers: BTreeMap<ExprId, arcweft_lang_sema::CheckedExpressionProducerDefinition>,
-    expression_types: BTreeMap<ExprId, RuntimeExpressionTypeFact>,
+    expression_facts: BTreeMap<ExprId, RuntimeExpressionFact>,
     expression_children: BTreeMap<ExprId, Box<[ExprId]>>,
     pattern_types: BTreeMap<PatternId, RuntimeNormalizedType>,
     expression_literals: BTreeMap<ExprId, RuntimeValue>,
@@ -6070,6 +6084,12 @@ impl<'facts> RuntimeScopedExecutableSemanticFactView<'facts> {
 
     pub fn expression_type(self, owner: ExprId) -> Option<&'facts RuntimeNormalizedType> {
         self.facts.expression_type(owner)
+    }
+    pub fn expression_coordinate(
+        self,
+        owner: ExprId,
+    ) -> Option<&'facts arcweft_lang_sema::semantic_coordinate::CheckedSemanticPath> {
+        self.facts.expression_coordinate(owner)
     }
     pub fn expression_specialization(
         self,
@@ -6378,8 +6398,10 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
     ) {
         match self {
             Self::Global(facts) => {
-                for (owner, ty) in &facts.expression_types {
-                    visitor(*owner, &ty.ty);
+                for (owner, ty) in &facts.expression_facts {
+                    if let Some(ty) = &ty.ty {
+                        visitor(*owner, ty);
+                    }
                 }
             }
             Self::ProjectInstance(facts) => {
@@ -6403,7 +6425,7 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
         match self {
             Self::Global(facts) => {
                 for owner in facts.evaluated_effects.keys() {
-                    if !facts.expression_types.contains_key(owner)
+                    if facts.expression_type(*owner).is_none()
                         && let Some(pipe) = facts.pipe(*owner)
                     {
                         visitor(*owner, pipe);
@@ -6443,6 +6465,15 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
         match self {
             Self::Global(facts) => facts.expression_type(owner),
             Self::ProjectInstance(facts) => facts.expression_type(owner),
+        }
+    }
+    pub fn expression_coordinate(
+        self,
+        owner: ExprId,
+    ) -> Option<&'facts arcweft_lang_sema::semantic_coordinate::CheckedSemanticPath> {
+        match self {
+            Self::Global(facts) => facts.expression_coordinate(owner),
+            Self::ProjectInstance(facts) => facts.expression_coordinate(owner),
         }
     }
     pub fn expression_specialization(
@@ -7312,7 +7343,7 @@ impl RuntimePlanSemanticFacts {
             )?;
         }
         let expression_facts = collect_unique(
-            input.expression_types,
+            input.expression_facts,
             RuntimeSemanticFactFamily::ExpressionType,
         )?;
         for (owner, fact) in &expression_facts {
@@ -8471,6 +8502,22 @@ impl RuntimePlanSemanticFacts {
             &expression_types,
             &instance_expression_owners,
         )?;
+        for owner in expression_children.keys() {
+            if !expression_facts.contains_key(owner) {
+                return Err(RuntimeSemanticFactsError::MissingExpressionOrigin {
+                    expression: *owner,
+                });
+            }
+        }
+        if let Some(owner) = expression_facts
+            .keys()
+            .find(|owner| !expression_children.contains_key(owner))
+        {
+            return Err(RuntimeSemanticFactsError::InactiveExpressionFact {
+                expression: *owner,
+                family: RuntimeSemanticFactFamily::ExpressionChildren,
+            });
+        }
         validate_complete_pattern_types(runtime_owners, &pattern_types, &instance_pattern_owners)?;
 
         let trait_methods = collect_unique(
@@ -9027,7 +9074,7 @@ impl RuntimePlanSemanticFacts {
             statement_scopes,
             thread_producers,
             call_producers,
-            expression_types: expression_facts,
+            expression_facts,
             expression_children,
             pattern_types,
             expression_literals,
@@ -9104,7 +9151,7 @@ impl RuntimePlanSemanticFacts {
             }
         }
         display::validate_selected_format_catalog(&facts, runtime_owners)?;
-        for owner in facts.expression_types.keys() {
+        for owner in facts.expression_facts.keys() {
             if matches!(resolve_expr(&modules, *owner)?, HirExprKind::Closure(_))
                 && !facts.is_pure_program_closure(*owner)
                 && !facts.root_closures.contains_key(owner)
@@ -9305,7 +9352,7 @@ impl RuntimePlanSemanticFacts {
                     ))
                 || !validate_dialogue_effect_operation(
                     modules,
-                    &RuntimeExpressionTypeView::Facts(&self.expression_types),
+                    &RuntimeExpressionTypeView::Facts(&self.expression_facts),
                     &self.calls,
                     effect.operation(),
                 )
@@ -9409,14 +9456,16 @@ impl RuntimePlanSemanticFacts {
         self.thread_producers.get(&expression)
     }
     pub fn expression_type(&self, expression: ExprId) -> Option<&RuntimeNormalizedType> {
-        self.expression_types.get(&expression).map(|fact| &fact.ty)
+        self.expression_facts
+            .get(&expression)
+            .and_then(|fact| fact.ty.as_ref())
     }
 
     pub fn expression_coordinate(
         &self,
         expression: ExprId,
     ) -> Option<&arcweft_lang_sema::semantic_coordinate::CheckedSemanticPath> {
-        self.expression_types
+        self.expression_facts
             .get(&expression)
             .map(|fact| fact.origin.coordinate())
     }
@@ -9625,7 +9674,11 @@ impl RuntimePlanSemanticFacts {
             roots.push(&local.ty);
             roots.extend(local.context.as_ref());
         }
-        roots.extend(self.expression_types.values().map(|fact| &fact.ty));
+        roots.extend(
+            self.expression_facts
+                .values()
+                .filter_map(|fact| fact.ty.as_ref()),
+        );
         roots.extend(self.pattern_types.values());
         roots.extend(self.types.values());
         roots.extend(self.value_contract_types.iter());
@@ -10272,6 +10325,8 @@ fn validate_pure_programs(
 }
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeSemanticFactsError {
+    #[error("runtime expression {expression:?} has no accepted origin")]
+    MissingExpressionOrigin { expression: ExprId },
     #[error("scope {owner:?} origin belongs to another owner or HIR allocation")]
     InvalidScopeOrigin { owner: RuntimeScopeOwner },
     #[error("expression {expression:?} origin belongs to another owner or HIR allocation")]

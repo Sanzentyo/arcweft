@@ -32,6 +32,32 @@ optimization must preserve the same source/runtime/public domain split and must
 not make atom numbers part of save files, bundles, diagnostics, or authored
 source.
 
+### Plan-local declaration origins
+
+Every `RuntimeLocalDeclaration` retains its semantic `RuntimeLocalOrigin`, type,
+and optional function type context. Its table ordinal only addresses the row;
+it does not define the declaration's semantic identity. The seed requires the
+origin before the builder admits and publishes the declaration batch.
+
+The origin grammar distinguishes an accepted binding coordinate, a whole
+function parameter identity, an evaluated result's function definition identity,
+and a generated local coordinate. A generated coordinate combines one accepted
+expression or lexical scope path with its typed semantic purpose, including any
+authored operand position. Closed types, HIR allocation IDs, table ordinals,
+runtime values, and debug labels do not enter that coordinate. Distinct generic
+instantiations retain the same authored origin while their runtime types differ.
+
+Runtime semantic facts retain an accepted origin for every selected expression,
+including an effect carrier that owns no runtime value type. A static callee's
+namespace spelling is omitted according to the selected call inventory.
+Publication rejects missing origins, evidence issued for another HIR allocation,
+and facts outside the selected expression topology. Type queries still omit
+type-free carriers. The origin and optional type share the same owned fact row.
+
+Manually constructed plans supply explicit identities for their own declared
+semantic recipes. Transporting such an identity, or a source-backed origin,
+does not itself establish executable body admission or the complete image seal.
+
 ```rust
 pub struct Engine {
     plan: RuntimePlan,

@@ -41,9 +41,18 @@ fn captured_identity_plan() -> RuntimePlan {
                 ),
             ],
             [
-                RuntimeLocalDeclarationSeed::new(integer),
-                RuntimeLocalDeclarationSeed::new(integer),
-                RuntimeLocalDeclarationSeed::new(integer),
+                RuntimeLocalDeclarationSeed::new(
+                    manual_local_origin("arcweft-core.fixture.value.callable.tests.captured_identity_plan.binding_a"),
+                    integer,
+                ),
+                RuntimeLocalDeclarationSeed::new(
+                    manual_local_origin("arcweft-core.fixture.value.callable.tests.captured_identity_plan.binding_b"),
+                    integer,
+                ),
+                RuntimeLocalDeclarationSeed::new(
+                    manual_local_origin("arcweft-core.fixture.value.callable.tests.captured_identity_plan.binding_c"),
+                    integer,
+                ),
             ],
         )
         .unwrap();
@@ -229,9 +238,9 @@ fn checked_partial_application_seals_retained_parameter_coordinates() {
                 ),
             ],
             [
-                RuntimeLocalDeclarationSeed::new(integer),
-                RuntimeLocalDeclarationSeed::new(boolean),
-                RuntimeLocalDeclarationSeed::new(integer),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.value.callable.tests.checked_partial_application_seals_retained_parameter_coordinates.binding_a"), integer),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.value.callable.tests.checked_partial_application_seals_retained_parameter_coordinates.binding_b"), boolean),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.value.callable.tests.checked_partial_application_seals_retained_parameter_coordinates.binding_c"), integer),
             ],
         )
         .unwrap();
@@ -375,9 +384,24 @@ fn rest_partial_plan(
                 ),
             ],
             [
-                RuntimeLocalDeclarationSeed::new(sequence),
-                RuntimeLocalDeclarationSeed::new(boolean),
-                RuntimeLocalDeclarationSeed::new(boolean),
+                RuntimeLocalDeclarationSeed::new(
+                    manual_local_origin(
+                        "arcweft-core.fixture.value.callable.tests.rest_partial_plan.binding_a",
+                    ),
+                    sequence,
+                ),
+                RuntimeLocalDeclarationSeed::new(
+                    manual_local_origin(
+                        "arcweft-core.fixture.value.callable.tests.rest_partial_plan.binding_b",
+                    ),
+                    boolean,
+                ),
+                RuntimeLocalDeclarationSeed::new(
+                    manual_local_origin(
+                        "arcweft-core.fixture.value.callable.tests.rest_partial_plan.binding_c",
+                    ),
+                    boolean,
+                ),
             ],
         )
         .unwrap();
@@ -593,8 +617,18 @@ fn defaulted_attached_plan_builder(flatten_attached_into_arrow: bool) -> Runtime
                 ),
             ],
             [
-                RuntimeLocalDeclarationSeed::new(boolean),
-                RuntimeLocalDeclarationSeed::new(boolean),
+                RuntimeLocalDeclarationSeed::new(
+                    manual_local_origin(
+                        "arcweft-core.fixture.value.callable.tests.defaulted_attached_plan_builder.binding_a",
+                    ),
+                    boolean,
+                ),
+                RuntimeLocalDeclarationSeed::new(
+                    manual_local_origin(
+                        "arcweft-core.fixture.value.callable.tests.defaulted_attached_plan_builder.binding_b",
+                    ),
+                    boolean,
+                ),
             ],
         )
         .unwrap();
@@ -733,4 +767,13 @@ fn callable_state_rejects_attached_content_flattened_into_the_function_arrow() {
             )
         ))
     ));
+}
+
+fn manual_local_origin(declaration: &str) -> crate::plan::RuntimeLocalOrigin {
+    // This fixture declares a semantic binding name independent of its value,
+    // type, source offset, and builder-issued local ordinal.
+    let mut identity = blake3::Hasher::new();
+    identity.update(b"arcweft.manual-fixture-binding.v1\0");
+    identity.update(declaration.as_bytes());
+    crate::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
 }

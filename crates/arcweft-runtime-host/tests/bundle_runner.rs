@@ -379,7 +379,12 @@ fn custom_echo_plan() -> RuntimePlan {
                 RuntimePlanTypeSeed::new(string_ty, RuntimePlanTypeProjection::String),
                 RuntimePlanTypeSeed::new(need_ty, RuntimePlanTypeProjection::Need(string_ty)),
             ],
-            [RuntimeLocalDeclarationSeed::new(need_ty)],
+            [RuntimeLocalDeclarationSeed::new(
+                manual_local_origin(
+                    "arcweft-runtime-host.fixture.tests.bundle_runner.custom_echo_plan.binding_a",
+                ),
+                need_ty,
+            )],
         )
         .expect("string type admits");
     let need_local = admitted.local_ids()[0].clone();
@@ -505,4 +510,13 @@ fn temp_bundle_path(label: &str, extension: &str) -> PathBuf {
         "arcweft-runtime-host-{label}-{}-{nanos}.{extension}",
         std::process::id()
     ))
+}
+
+fn manual_local_origin(declaration: &str) -> arcweft_core::plan::RuntimeLocalOrigin {
+    // This fixture declares a semantic binding name independent of its value,
+    // type, source offset, and builder-issued local ordinal.
+    let mut identity = blake3::Hasher::new();
+    identity.update(b"arcweft.manual-fixture-binding.v1\0");
+    identity.update(declaration.as_bytes());
+    arcweft_core::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
 }

@@ -212,7 +212,12 @@ fn build_while_let_plan(
                     },
                 ),
             ],
-            [RuntimeLocalDeclarationSeed::new(bool_type)],
+            [RuntimeLocalDeclarationSeed::new(
+                manual_local_origin(
+                    "arcweft-runtime-plan.fixture.awbc_lower.tests.build_while_let_plan.binding_a",
+                ),
+                bool_type,
+            )],
         )
         .expect("while-let test types and binding admit");
     let binding = admission.local_ids()[0].clone();
@@ -319,8 +324,18 @@ fn build_while_let_pop_front_plan() -> RuntimePlan {
                 ),
             ],
             [
-                RuntimeLocalDeclarationSeed::new(sequence_type),
-                RuntimeLocalDeclarationSeed::new(bool_type),
+                RuntimeLocalDeclarationSeed::new(
+                    manual_local_origin(
+                        "arcweft-runtime-plan.fixture.awbc_lower.tests.build_while_let_pop_front_plan.binding_a",
+                    ),
+                    sequence_type,
+                ),
+                RuntimeLocalDeclarationSeed::new(
+                    manual_local_origin(
+                        "arcweft-runtime-plan.fixture.awbc_lower.tests.build_while_let_pop_front_plan.binding_b",
+                    ),
+                    bool_type,
+                ),
             ],
         )
         .expect("while-let pop_front types and locals admit");
@@ -417,7 +432,12 @@ fn build_vec_push_pop_plan() -> RuntimePlan {
                     },
                 ),
             ],
-            [RuntimeLocalDeclarationSeed::new(sequence_type)],
+            [RuntimeLocalDeclarationSeed::new(
+                manual_local_origin(
+                    "arcweft-runtime-plan.fixture.awbc_lower.tests.build_vec_push_pop_plan.binding_a",
+                ),
+                sequence_type,
+            )],
         )
         .expect("Vec push/pop test types and local admit");
     let sequence = admission.local_ids()[0].clone();
@@ -682,7 +702,7 @@ fn line_activation_local_is_exported_only_to_post_reveal_work() {
                 type_id(1),
                 RuntimePlanTypeProjection::String,
             )],
-            [RuntimeLocalDeclarationSeed::new(type_id(1))],
+            [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-runtime-plan.fixture.awbc_lower.tests.line_activation_local_is_exported_only_to_post_reveal_work.binding_a"), type_id(1))],
         )
         .expect("line result and activation local admit");
     let local = admission.local_ids()[0].clone();
@@ -1033,7 +1053,12 @@ fn foreign_local_seed() -> RuntimeLocalSeedId {
                 type_id(1),
                 RuntimePlanTypeProjection::Bool,
             )],
-            [RuntimeLocalDeclarationSeed::new(type_id(1))],
+            [RuntimeLocalDeclarationSeed::new(
+                manual_local_origin(
+                    "arcweft-runtime-plan.fixture.awbc_lower.tests.foreign_local_seed.binding_a",
+                ),
+                type_id(1),
+            )],
         )
         .expect("foreign local admission");
     admission.local_ids()[0].clone()
@@ -1047,7 +1072,12 @@ fn builder_with_local() -> (RuntimePlanBuilder, RuntimeLocalSeedId) {
                 type_id(1),
                 RuntimePlanTypeProjection::Bool,
             )],
-            [RuntimeLocalDeclarationSeed::new(type_id(1))],
+            [RuntimeLocalDeclarationSeed::new(
+                manual_local_origin(
+                    "arcweft-runtime-plan.fixture.awbc_lower.tests.builder_with_local.binding_a",
+                ),
+                type_id(1),
+            )],
         )
         .expect("local admission");
     (builder, admission.local_ids()[0].clone())
@@ -1075,7 +1105,12 @@ fn plan_with_local() -> (
                 type_id(1),
                 RuntimePlanTypeProjection::String,
             )],
-            [RuntimeLocalDeclarationSeed::new(type_id(1))],
+            [RuntimeLocalDeclarationSeed::new(
+                manual_local_origin(
+                    "arcweft-runtime-plan.fixture.awbc_lower.tests.plan_with_local.binding_a",
+                ),
+                type_id(1),
+            )],
         )
         .expect("local plan admission");
     builder
@@ -1526,7 +1561,7 @@ fn loop_break_paths_initialize_one_typed_result_before_binding() {
                 RuntimePlanTypeSeed::new(type_id(1), RuntimePlanTypeProjection::String),
                 RuntimePlanTypeSeed::new(type_id(3), RuntimePlanTypeProjection::Bool),
             ],
-            [RuntimeLocalDeclarationSeed::new(type_id(1))],
+            [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-runtime-plan.fixture.awbc_lower.tests.loop_break_paths_initialize_one_typed_result_before_binding.binding_a"), type_id(1))],
         )
         .expect("loop result facts admit");
     let result = admission.local_ids()[0].clone();
@@ -1602,8 +1637,8 @@ fn nested_loops_bind_the_nearest_break_result() {
                 RuntimePlanTypeProjection::String,
             )],
             [
-                RuntimeLocalDeclarationSeed::new(type_id(1)),
-                RuntimeLocalDeclarationSeed::new(type_id(1)),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-runtime-plan.fixture.awbc_lower.tests.nested_loops_bind_the_nearest_break_result.binding_a"), type_id(1)),
+                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-runtime-plan.fixture.awbc_lower.tests.nested_loops_bind_the_nearest_break_result.binding_b"), type_id(1)),
             ],
         )
         .expect("nested loop result facts admit");
@@ -2046,7 +2081,7 @@ fn await_observers_lower_to_progress_dispatch_and_rewait_backedge() {
                 RuntimePlanTypeSeed::new(progress_type, RuntimePlanTypeProjection::Progress),
                 RuntimePlanTypeSeed::new(need_type, RuntimePlanTypeProjection::Need(type_id(1))),
             ],
-            [RuntimeLocalDeclarationSeed::new(need_type)],
+            [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-runtime-plan.fixture.awbc_lower.tests.await_observers_lower_to_progress_dispatch_and_rewait_backedge.binding_a"), need_type)],
         )
         .expect("Await observer types admit");
     let need_local = admission.local_ids()[0].clone();
@@ -2219,4 +2254,13 @@ fn function_semantic_roles_survive_expression_and_executable_awbc_lowering() {
             RuntimeFunctionSemanticRole::ALL.len()
         );
     }
+}
+
+fn manual_local_origin(declaration: &str) -> arcweft_core::plan::RuntimeLocalOrigin {
+    // This fixture declares a semantic binding name independent of its value,
+    // type, source offset, and builder-issued local ordinal.
+    let mut identity = blake3::Hasher::new();
+    identity.update(b"arcweft.manual-fixture-binding.v1\0");
+    identity.update(declaration.as_bytes());
+    arcweft_core::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
 }

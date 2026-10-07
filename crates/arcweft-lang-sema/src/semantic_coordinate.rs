@@ -1280,6 +1280,89 @@ pub struct CheckedExpressionOriginError {
     pub expression: ExprId,
 }
 
+/// Semantic purpose of a generated local under an accepted structural owner.
+/// Source ordinals identify authored operand rows, never allocation order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CheckedGeneratedLocalRole {
+    ExpressionSource,
+    ExpressionResult,
+    GuardValue,
+    AwaitPayload,
+    TrySuccess,
+    TryResidual,
+    PipeOperand,
+    ScopeCarrier,
+    ScopeSuccess,
+    ScopeResidual,
+    CallOperand {
+        source_ordinal: u32,
+    },
+    FormatOperand {
+        parameter: arcweft_core::value::RuntimeFmtParameterId,
+    },
+    DialogueDisplaySource,
+}
+
+impl CheckedGeneratedLocalRole {
+    fn encode(self, hasher: &mut blake3::Hasher) {
+        let tag = match self {
+            Self::ExpressionSource => 0,
+            Self::ExpressionResult => 1,
+            Self::GuardValue => 2,
+            Self::AwaitPayload => 3,
+            Self::TrySuccess => 4,
+            Self::TryResidual => 5,
+            Self::PipeOperand => 6,
+            Self::ScopeCarrier => 7,
+            Self::ScopeSuccess => 8,
+            Self::ScopeResidual => 9,
+            Self::CallOperand { .. } => 10,
+            Self::FormatOperand { .. } => 11,
+            Self::DialogueDisplaySource => 12,
+        };
+        hasher.update(&[tag]);
+        match self {
+            Self::CallOperand { source_ordinal } => {
+                hasher.update(&source_ordinal.to_le_bytes());
+            }
+            Self::FormatOperand { parameter } => {
+                // The closed fmt schema has nine stable coordinates, 0 through 8.
+                hasher.update(&[parameter.index() as u8]);
+            }
+            _ => {}
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+#[error("checked generated-local coordinate encoding failed: {source}")]
+pub struct CheckedGeneratedLocalOriginError {
+    #[source]
+    source: SemanticCoordinateEncodingError,
+}
+
+impl CheckedSemanticPath {
+    /// Transports an accepted structural anchor and typed local role into Core.
+    /// Closed types, HIR allocation IDs, and plan-local ordinals are excluded.
+    pub fn runtime_generated_local_origin(
+        &self,
+        role: CheckedGeneratedLocalRole,
+    ) -> Result<arcweft_core::plan::RuntimeLocalOrigin, CheckedGeneratedLocalOriginError> {
+        let bytes = self
+            .canonical_bytes()
+            .map_err(|source| CheckedGeneratedLocalOriginError { source })?;
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"arcweft.lang.generated-local-coordinate.v1\0");
+        hasher.update(&bytes);
+        role.encode(&mut hasher);
+        Ok(arcweft_core::plan::RuntimeLocalOrigin::Generated(
+            arcweft_core::plan::RuntimeGeneratedLocalOrigin::from_accepted_identity(
+                *hasher.finalize().as_bytes(),
+            ),
+        ))
+    }
+}
+
 /// One accepted expression coordinate tied to its issuing HIR allocation.
 #[derive(Clone, Debug)]
 pub struct CheckedExpressionOrigin {
@@ -1403,6 +1486,14 @@ impl PartialEq for CheckedStatementOrigin {
 impl Eq for CheckedStatementOrigin {}
 
 impl StableCheckedBindingCoordinate {
+    /// Retains the accepted binding origin in a plan-local declaration row.
+    pub fn runtime_local_origin(
+        &self,
+    ) -> Result<arcweft_core::plan::RuntimeLocalOrigin, StableCheckedBindingDigestError> {
+        self.semantic_digest()
+            .map(|digest| arcweft_core::plan::RuntimeLocalOrigin::Binding(*digest.as_bytes()))
+    }
+
     /// Projects this accepted coordinate into the runtime input origin domain.
     pub fn runtime_input_origin(
         &self,
@@ -2350,6 +2441,57 @@ pub(crate) enum SemanticCoordinateEncodingError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generated_local_origins_separate_structural_owner_and_every_semantic_role() {
+        let root = AcceptedSemanticRoot::Declaration(AcceptedDeclarationSemanticId::from_bytes(
+            [0x31; 32],
+        ));
+        let path = CheckedSemanticPath::new(root, []);
+        let other = CheckedSemanticPath::new(
+            AcceptedSemanticRoot::Declaration(AcceptedDeclarationSemanticId::from_bytes(
+                [0x32; 32],
+            )),
+            [],
+        );
+        let mut roles = vec![
+            CheckedGeneratedLocalRole::ExpressionSource,
+            CheckedGeneratedLocalRole::ExpressionResult,
+            CheckedGeneratedLocalRole::GuardValue,
+            CheckedGeneratedLocalRole::AwaitPayload,
+            CheckedGeneratedLocalRole::TrySuccess,
+            CheckedGeneratedLocalRole::TryResidual,
+            CheckedGeneratedLocalRole::PipeOperand,
+            CheckedGeneratedLocalRole::ScopeCarrier,
+            CheckedGeneratedLocalRole::ScopeSuccess,
+            CheckedGeneratedLocalRole::ScopeResidual,
+            CheckedGeneratedLocalRole::CallOperand { source_ordinal: 0 },
+            CheckedGeneratedLocalRole::CallOperand { source_ordinal: 1 },
+            CheckedGeneratedLocalRole::DialogueDisplaySource,
+        ];
+        roles.extend(
+            (0..9).map(|index| CheckedGeneratedLocalRole::FormatOperand {
+                parameter: arcweft_core::value::RuntimeFmtParameterId::from_index(index).unwrap(),
+            }),
+        );
+        let origins = roles
+            .iter()
+            .map(|role| path.runtime_generated_local_origin(*role).unwrap())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            origins.len(),
+            roles.len(),
+            "all distinct roles and source rows retain distinct origins"
+        );
+        for role in roles {
+            let origin = path.runtime_generated_local_origin(role).unwrap();
+            assert_eq!(
+                origin,
+                path.clone().runtime_generated_local_origin(role).unwrap()
+            );
+            assert_ne!(origin, other.runtime_generated_local_origin(role).unwrap());
+        }
+    }
 
     #[test]
     fn binding_digest_commits_the_accepted_root_family() {

@@ -16,6 +16,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+blake3.workspace = true
 arcweft-manifest-model = { workspace = true }
 arcweft-render-text = { workspace = true }
 arcweft-runtime-plan = { workspace = true }

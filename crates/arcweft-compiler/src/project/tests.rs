@@ -419,6 +419,15 @@ flow main() -> i64 {
                         semantics.expression_coordinate(row.owner()),
                         Some(row.coordinate())
                     );
+                    assert_eq!(
+                        row.coordinate().runtime_generated_local_origin(
+                            arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::ExpressionSource,
+                        ).unwrap(),
+                        analysis.expression_origin(row.owner()).unwrap().coordinate()
+                            .runtime_generated_local_origin(
+                                arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::ExpressionSource,
+                            ).unwrap(),
+                    );
                     row.coordinate().clone()
                 })
                 .collect::<Vec<_>>();
@@ -446,6 +455,24 @@ flow main() -> i64 {
         "closed types do not alter authored semantic coordinates"
     );
     let expected_origin = analysis.local_binding_origin(parameter_local).unwrap();
+    let expected_runtime_origin = expected_origin.coordinate().runtime_local_origin().unwrap();
+    let retained = compiled
+        .runtime_plan()
+        .plan
+        .local_declarations()
+        .declarations()
+        .filter(|row| row.origin() == expected_runtime_origin)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        retained.len(),
+        2,
+        "both closed function bodies retain the same authored binding origin"
+    );
+    assert_ne!(
+        retained[0].ty(),
+        retained[1].ty(),
+        "the origin remains stable across distinct closed runtime types"
+    );
     for instance in &instances {
         let local = instance
             .semantics()

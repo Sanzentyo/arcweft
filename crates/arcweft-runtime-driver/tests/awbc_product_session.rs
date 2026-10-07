@@ -1540,7 +1540,12 @@ fn restartable_need_awfb_bytes() -> Vec<u8> {
                 RuntimePlanTypeSeed::new(asset_ty, RuntimePlanTypeProjection::EntityReference),
                 RuntimePlanTypeSeed::new(need_ty, RuntimePlanTypeProjection::Need(string_ty)),
             ],
-            [RuntimeLocalDeclarationSeed::new(need_ty)],
+            [RuntimeLocalDeclarationSeed::new(
+                manual_local_origin(
+                    "arcweft-runtime-driver.fixture.tests.awbc_product_session.restartable_need_awfb_bytes.binding_a",
+                ),
+                need_ty,
+            )],
         )
         .expect("Need types and local admit");
     let need_local = admitted.local_ids()[0].clone();
@@ -2030,4 +2035,13 @@ fn minimal_awbc_entry(entry: &str) -> AwbcEntry {
         },
         roles: RuntimeEntryRoles::None,
     }
+}
+
+fn manual_local_origin(declaration: &str) -> arcweft_core::plan::RuntimeLocalOrigin {
+    // This fixture declares a semantic binding name independent of its value,
+    // type, source offset, and builder-issued local ordinal.
+    let mut identity = blake3::Hasher::new();
+    identity.update(b"arcweft.manual-fixture-binding.v1\0");
+    identity.update(declaration.as_bytes());
+    arcweft_core::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
 }

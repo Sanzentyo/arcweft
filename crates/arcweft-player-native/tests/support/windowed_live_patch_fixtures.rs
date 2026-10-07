@@ -1355,7 +1355,10 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
                     RuntimePlanTypeProjection::Need(fixture_string_type()),
                 ),
             ],
-            [RuntimeLocalDeclarationSeed::new(need_type)],
+            [RuntimeLocalDeclarationSeed::new(
+                manual_local_origin("arcweft-player-native.fixture.tests.support.windowed_live_patch_fixtures.await_bundle.binding_a"),
+                need_type,
+            )],
         )
         .expect("typed Need producer types and binding admit");
     let need_local = type_admission.local_ids()[0].clone();
@@ -1713,4 +1716,13 @@ pub fn summarize_report(report: &SmokeReport) -> String {
             .has_same_shell_identities(&report.after_commit.shell)
     );
     summary
+}
+
+fn manual_local_origin(declaration: &str) -> arcweft_core::plan::RuntimeLocalOrigin {
+    // This fixture declares a semantic binding name independent of its value,
+    // type, source offset, and builder-issued local ordinal.
+    let mut identity = blake3::Hasher::new();
+    identity.update(b"arcweft.manual-fixture-binding.v1\0");
+    identity.update(declaration.as_bytes());
+    arcweft_core::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
 }

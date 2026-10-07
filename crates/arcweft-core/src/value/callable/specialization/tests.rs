@@ -81,7 +81,17 @@ fn plan() -> RuntimePlan {
     let locals = builder
         .admit_type_batch(
             seeds,
-            [integer, boolean, string, integer].map(RuntimeLocalDeclarationSeed::new),
+            [integer, boolean, string, integer]
+                .into_iter()
+                .enumerate()
+                .map(|(source_ordinal, ty)| {
+                    RuntimeLocalDeclarationSeed::new(
+                        manual_local_origin(&format!(
+                            "arcweft-core.fixture.callable-specialization.input[{source_ordinal}]"
+                        )),
+                        ty,
+                    )
+                }),
         )
         .unwrap();
     let source = builder.reserve_callable_state_seed().unwrap();
@@ -260,4 +270,11 @@ fn specialization_requires_the_exact_program_lease_and_an_admitted_relation() {
         ),
         Err(RuntimeCallableValueError::MissingSpecialization { .. })
     ));
+}
+
+fn manual_local_origin(declaration: &str) -> crate::plan::RuntimeLocalOrigin {
+    let mut identity = blake3::Hasher::new();
+    identity.update(b"arcweft.manual-fixture-binding.v1\0");
+    identity.update(declaration.as_bytes());
+    crate::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
 }
