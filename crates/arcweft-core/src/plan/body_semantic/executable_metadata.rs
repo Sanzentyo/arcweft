@@ -291,6 +291,29 @@ impl RuntimeBodySemanticContext<'_> {
 }
 
 impl RuntimeBodySemanticContext<'_> {
+    /// Table thirteen resolves its row from this same inventory before using
+    /// the existing iterative typed Stream operation owner.
+    pub(crate) fn stream_row_digest(
+        &self,
+        meter: &mut crate::task::semantic::TaskSemanticMeter,
+        ordinal: usize,
+    ) -> Result<blake3::Hash, RuntimeBodySemanticError> {
+        meter.status()?;
+        let row = self.plan.stream_plans().get(ordinal).ok_or_else(|| {
+            meter.reject_owner();
+            RuntimeBodySemanticError::MissingRow {
+                table: "stream plans",
+                ordinal,
+            }
+        })?;
+        let mut encoder =
+            TaskSemanticEncoder::new(b"arcweft.runtime-plan.executable-row.v1\0", meter);
+        encoder.tag(13);
+        encoder.tag(0);
+        self.write_stream(&mut encoder, row)?;
+        encoder.finish().map_err(Into::into)
+    }
+
     pub(crate) fn line_row_digest(
         &self,
         meter: &mut crate::task::semantic::TaskSemanticMeter,

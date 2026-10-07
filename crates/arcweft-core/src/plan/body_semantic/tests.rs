@@ -1,5 +1,6 @@
 use super::*;
 mod function_rows;
+mod stream_rows;
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::RuntimePlan;
 use crate::plan::{

@@ -9413,3 +9413,48 @@ Full convergence goal ACTIVE/INCOMPLETE; no new Astra/advice.
 Flow-row fmt91023 TERMINAL0/PASS and diff checks pass. All validation handles
 terminal; source3 hashes/99 inputs unchanged. Exact4-path staged hunk/blob
 review and delivery next; whole goal remains ACTIVE/INCOMPLETE.
+
+### 2026-10-08 — actual Stream E row from the existing typed operation owner
+
+Inspected main/origin89c09c15216eee609c22fb728b1cd4840bb2106e; parent
+bae182c9f5f57b546750f2da571257356d25ea2b/all4 published blobs verified,
+mismatch0. Added E table13 through same private inventory context. Actual
+row resolved by constant-time source-order get; existing iterative Stream
+visitor reads accepted runtime path/item+error types and complete ordered
+operation/arm/pattern/expression tree. No caller row hash, row copy, source
+reconstruction, linear lookup or second stream grammar. Missing rows poison
+before bytes; inherited first-error checked before row resolution. Actual
+verified Stream fixtures cover operation order/empty arm, runtime identity/error
+type mutation, exact budgets/sticky poison and missing/empty owner rejection.
+Pre-run list5945 TERMINAL0/build26.46s selected4; focus4/4PASS0.031s.
+Final check/Clippy and adjacent Core78 owner matrix follow on frozen3 source
+hashes. Private unused Cut4 encoding only; no public/native/AWBC/codec/feature/
+Cargo/consumer change. Core50 graph/99 inputs unchanged, private/leaf downstream
+omission rationale applies; earlier full-rdeps and CLI277 receipts remain
+earlier evidence only. Remaining E1/5/6/7/8/12, global15-table memo, actual
+Table14/private image/common seal/all14 protected publication and original
+View/nominal/scheduler/Rust ownership/CLI277/Tier2 acceptance incomplete.
+Whole goal ACTIVE/INCOMPLETE; no new Astra/advice, existing main only.
+
+Final Stream-row acceptance (supersedes pending paragraphs): Core all-target/
+all-feature/locked check3888 PASS9.89s, Clippy15.91s PASS; no introduced
+non-dead-code diagnostics. Focus4/4PASS0.031s, final adjacent Core78 actual
+pre-run list0.45s and78/78PASS0.364s (980 skipped focused Core cases). Exact
+selected/terminal/unique78 IDs, missing0/unexpected0/duplicates0, all4 new
+cases present. Final3 Rust hashes/99 build inputs fixed. Metadata owner344LOC/
+14489bytes(+23) owns actual table metadata/typed context; existing unit fixture
+owner2035LOC/75366bytes(+1) shares accepted fixtures, private Stream test child
+107LOC/3684bytes tests actual tree/type/identity/budget/admission responsibility.
+No new size/growth/dependency/I-O/public ownership trigger; prior cohesion
+review reused. Private unused Cut4 only; complete Core50 graph unchanged and
+private/leaf downstream omission rationale applies. Prior aca4 full-rdeps/
+CLI277 receipts remain only earlier evidence. All validation handles terminal;
+fmt/diff terminal receipt follows; exact4-path full staged diff/blob/tested-byte
+review precedes coherent commit/non-forced push. E0/2/3/4/9/10/11/13 prepared
+privately. E1/5/6/7/8/12, global15-table memo, realTable14/private image/common
+seal/all14 protected Cut5 and original View/nominal/scheduler/Rust ownership/
+CLI277/Tier2 acceptance remain unfinished. Whole goal ACTIVE/INCOMPLETE.
+
+Stream-row fmt49428 TERMINAL0/PASS and diff checks pass. All validation
+handles terminal, source3 hashes/99 inputs fixed. Exact4-path staged review
+and delivery next; whole goal remains ACTIVE/INCOMPLETE.
