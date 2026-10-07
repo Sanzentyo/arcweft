@@ -38,6 +38,13 @@ pub(crate) enum RuntimeBodySemanticError {
     #[error("request template roles {actual} exceed limit {maximum}")]
     RequestRoles { actual: usize, maximum: u32 },
 
+    #[error("Line row {ordinal} children {actual} exceed limit {maximum}")]
+    LineChildren {
+        ordinal: usize,
+        actual: usize,
+        maximum: u32,
+    },
+
     #[error("body references missing {table} row {ordinal}")]
     MissingRow { table: &'static str, ordinal: usize },
     #[error("callable semantic graph has a cycle at state {state}")]

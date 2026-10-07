@@ -7881,3 +7881,75 @@ common seal, public schema switch, all original goal acceptance and removal of
 obsolete paths remain required. The 277 broad CLI failures and GPU/Tier2 work
 remain unresolved. Goal active/incomplete; Astra one-shot consumed, never
 repeat. No branch, worktree or delegation.
+
+
+### 2026-10-07 — Actual Line semantic row
+
+Base clean pushed main/origin `ce33d793bbc588ff52192bd90b5df88d7e7ec963`.
+The actual LineTaskGroup owns a private LinePlanSemanticDigest and exhaustive
+transcript of accepted definition/result, captures/exports, activation body,
+handle-site roles, graph root/nodes/edges, action bodies, cancellation rules
+and every cleanup outcome/policy. Flow bodies reuse the retained typed visitor,
+same body context, meter and task coordinate resolver. Mark spelling and
+completed task keys are excluded. Child-count preflight includes owned Flow
+operation inventory before semantic traversal. Context resolves the actual
+plan row; Line owns its encoding. Enum tags remain inherent and exhaustive.
+
+The shared count owner now checks u32 conversion and addition before comparing
+quotas; a synthetic maximum/one-over regression proves overflow precedence.
+The actual builder and unique content attachment exercise Line body, cancel,
+cleanup body/policy mutation, graph order, mark-name exclusion, quota-before-
+traversal and exact cumulative work/byte limits. There is no new serialized
+schema, public export, Cargo edge, final task table or caller digest input.
+
+Validation:
+- Core full lib/tests nextest, all features, locked, no-fail-fast,
+  no-tests=fail: 1,013 passed, 0 failed, 0 skipped; exit 0; 55.319 s,
+  build 50.19 s. Owner and API rejection tests included.
+- Exact inventory comparison: all 1,013 selected/executed case IDs match,
+  with 0 missing or unexpected cases.
+- Core all-target/all-feature locked Clippy: initial exit 0, 27.85 s.
+  New wildcard/unit-statement/unfulfilled-expectation warnings were repaired;
+  final Clippy exits 0, 15.74 s. Existing/private-preparation warnings remain.
+- Structure gate: exit 0, no blockers. Final fmt and explicit ten-path staged
+  diff/whitespace review: exit 0. Inverted Core graph/metadata remain the unchanged 50-package
+  closure; no manifest, feature or dependency edits.
+- The full Core test receipt predates lint-only explicit import/semicolon/
+  annotation cleanup; behavior and test definitions are unchanged. Reused
+  owner evidence is not relabeled as a new run. No public consumer uses these
+  private transcript roots yet, so this cut does not repeat the previous
+  5,081-case Host consumer run. That prior receipt remains original-byte
+  evidence, with its two OS1455 failures and GPU exclusions preserved.
+
+Initial check failed on three module/field visibility diagnostics. Plan row
+lookup now remains on the body context, and narrow crate-private plan seams
+reexport the existing coordinate/Flow event owners for the actual Line join.
+Construction modules remain private, with no copied types or separate walker.
+The first focus compile failed on the fixture's fallible Action ID constructor;
+then both focus tests failed on a source-prefixed Line ID passed to canonical
+construction. Fixtures were corrected to accepted fallible/source constructors;
+repaired focus passed 2/2 before final full Core execution. No production limit,
+assertion, selection, timeout, profile or concurrency was weakened.
+
+Temporary receipts use `arcweft-1007-line-semantic-`: check.log,
+focus.log, focus-final.log, focus-repaired.log, core.log, clippy.log,
+clippy-final.log, structure.log, inventory.json/log and receipt.json.
+The receipt preserves exact selected/executed IDs.
+
+Ownership: the new Line semantic module is one cohesive graph transcript,
+with the sole Line-owned state and shared Flow payload visitor. Body context
+only resolves its plan row. Crate-private seams represent the actual owner
+join and do not widen public APIs. Existing size dispositions for the Line
+parent and plan facade remain applicable: their changes are only module/seam
+lines, and no unrelated state or I/O was added. Measurements before lint-only
+cleanup: Line semantic281 LOC/10,127 bytes (final281/10,171); Line parent2,118/71,348;
+plan1,702/60,574; body context615/23,666; executable metadata337/14,352;
+owner tests1,702/63,019; Flow visitor698/25,477; meter485/16,424.
+
+Actual static candidate inventory, global fifteen-table E memoization,
+private image/common atomic seal, View/Timeout/other Q owners, final public
+schema switch, obsolete-path removal and full original goal acceptance remain
+required. Known 277 broad CLI failures and GPU/Tier2 work remain unresolved.
+Goal active/incomplete. Astra one-shot consumed; never repeat. Main only;
+no branch, worktree or delegation. Final source is reviewed and explicitly
+staged at this coherent cut before normal push.

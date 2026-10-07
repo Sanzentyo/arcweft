@@ -1503,3 +1503,200 @@ fn callable_deep_acyclic_graph_uses_an_iterative_stack() {
     encoder.finish().unwrap();
     assert!(meter.totals().0 < 1_500_000);
 }
+
+fn actual_line_plan(
+    value: bool,
+    cleanup_value: bool,
+    trigger: &str,
+    mark_name: &str,
+) -> (RuntimePlan, crate::plan::RuntimeTaskPlanCoordinateOwner) {
+    use crate::plan::*;
+    use crate::runtime_id::*;
+    let mut builder = RuntimePlanBuilder::new();
+    let unit = RuntimeSemanticTypeId::from_bytes([81; 32]);
+    let boolean = RuntimeSemanticTypeId::from_bytes([82; 32]);
+    builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+                RuntimePlanTypeSeed::new(boolean, RuntimePlanTypeProjection::Bool),
+            ],
+            [],
+        )
+        .unwrap();
+    let operation = |value| RuntimeFlowOpSeed::Let {
+        pattern: RuntimePatternSeed::new(boolean, RuntimePatternSeedKind::Discard),
+        expr: RuntimeExprSeed::new(
+            boolean,
+            RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(value)),
+        ),
+    };
+    let content = builder
+        .push_dialogue_content_seed(RuntimeDialogueContentPlanSeed {
+            line: RuntimeLineId::from_source_entity_body("line.semantic_test").unwrap(),
+            template: RuntimeDialogueContentTemplateManifestSeed {
+                id: RuntimeDialogueContentTemplateId::from_zero_based(0).unwrap(),
+                digest: crate::entry::RuntimeDialogueContentTemplateDigest::from_bytes([83; 32]),
+                slots: Box::new([]),
+                effects: Box::new([]),
+            },
+            values: Box::new([]),
+            effect_sites: Box::new([]),
+            marks: Box::new([mark_name.to_owned()]),
+            effect_site_count: RuntimeDialogueEffectSiteCount::try_from_len(0).unwrap(),
+        })
+        .unwrap();
+    let group = builder
+        .push_line_task_group_seed(RuntimeLineTaskGroupSeed {
+            definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([84; 32]),
+            activation_ops: vec![],
+            result_type: unit,
+            handle_sites: Box::new([]),
+            root: RuntimeLineTaskNodeSeed::Sequence(vec![
+                RuntimeLineTaskNodeSeed::Action(vec![operation(value)]),
+                RuntimeLineTaskNodeSeed::Action(vec![RuntimeFlowOpSeed::Noop]),
+            ]),
+            cancel_rules: Box::new([RuntimeLineTaskCancelRuleSeed {
+                trigger: arcweft_interaction_model::input::InputActionId::new(trigger).unwrap(),
+                action: vec![operation(true)],
+            }]),
+            cleanup_completed: vec![operation(cleanup_value)],
+            cleanup_cancelled: vec![],
+            cleanup_failed: vec![],
+            cleanup_policy: crate::line_task::LineCleanupPolicy::default(),
+        })
+        .unwrap();
+    builder
+        .attach_line_task_group_seed(&content, &group)
+        .unwrap();
+    let owner = builder.task_coordinate_owner(0);
+    (builder.finish().unwrap(), owner)
+}
+
+#[test]
+fn actual_line_digest_commits_action_cancel_cleanup_and_order_but_not_mark_spelling() {
+    use crate::plan::*;
+    let digest = |plan: &RuntimePlan, owner: &RuntimeTaskPlanCoordinateOwner| {
+        let mut meter = TaskSemanticMeter::new(100_000, 1_000_000);
+        RuntimeBodySemanticContext::new(plan)
+            .line_row_digest(
+                &mut meter,
+                crate::runtime_id::RuntimeLineTaskGroupId::from_zero_based(0).unwrap(),
+                owner,
+                &mut |_| panic!("no task references"),
+                RuntimeTaskPlanSealLimits::default(),
+            )
+            .unwrap()
+    };
+    let first = actual_line_plan(true, true, "cancel", "mark");
+    let renamed = actual_line_plan(true, true, "cancel", "renamed");
+    assert_eq!(digest(&first.0, &first.1), digest(&renamed.0, &renamed.1));
+    for changed in [
+        actual_line_plan(false, true, "cancel", "mark"),
+        actual_line_plan(true, false, "cancel", "mark"),
+        actual_line_plan(true, true, "another", "mark"),
+    ] {
+        assert_ne!(digest(&first.0, &first.1), digest(&changed.0, &changed.1));
+    }
+    let mut reordered = first.0.clone();
+    let old = &reordered.line_task_groups[0];
+    let mut nodes = old.nodes().to_vec();
+    if let crate::line_task::LineTaskNode::Sequence(children) = &mut nodes[0] {
+        children.reverse();
+    }
+    reordered.line_task_groups[0] = crate::line_task::LineTaskGroup::new(
+        old.definition(),
+        old.captures().into(),
+        old.activation_exports().into(),
+        old.activation_ops().into(),
+        old.result_type(),
+        old.handle_sites().into(),
+        old.root(),
+        nodes.into(),
+        old.cancel_rules().into(),
+        old.cleanup().clone(),
+    );
+    assert_ne!(digest(&first.0, &first.1), digest(&reordered, &first.1));
+    let mut changed_policy = first.0.clone();
+    let old = &changed_policy.line_task_groups[0];
+    let mut policy = old.cleanup().policy().clone();
+    policy.audio = crate::line_task::AudioCleanup::KeepRegistered;
+    let cleanup = crate::line_task::LineTaskCleanup::new(
+        old.cleanup()
+            .actions(crate::line_task::ScopeExit::Completed)
+            .into(),
+        old.cleanup()
+            .actions(crate::line_task::ScopeExit::Cancelled)
+            .into(),
+        old.cleanup()
+            .actions(crate::line_task::ScopeExit::Failed)
+            .into(),
+        policy,
+    );
+    changed_policy.line_task_groups[0] = crate::line_task::LineTaskGroup::new(
+        old.definition(),
+        old.captures().into(),
+        old.activation_exports().into(),
+        old.activation_ops().into(),
+        old.result_type(),
+        old.handle_sites().into(),
+        old.root(),
+        old.nodes().into(),
+        old.cancel_rules().into(),
+        cleanup,
+    );
+    assert_ne!(
+        digest(&first.0, &first.1),
+        digest(&changed_policy, &first.1)
+    );
+}
+
+#[test]
+fn actual_line_digest_preflights_children_and_uses_one_exact_meter() {
+    let (plan, owner) = actual_line_plan(true, true, "cancel", "mark");
+    let group = crate::runtime_id::RuntimeLineTaskGroupId::from_zero_based(0).unwrap();
+    let mut meter = TaskSemanticMeter::new(0, 0);
+    assert!(matches!(
+        RuntimeBodySemanticContext::new(&plan).line_row_digest(
+            &mut meter,
+            group,
+            &owner,
+            &mut |_| panic!("no task refs"),
+            crate::plan::RuntimeTaskPlanSealLimits {
+                max_children_per_row: 0,
+                ..Default::default()
+            }
+        ),
+        Err(RuntimeBodySemanticError::LineChildren { .. })
+    ));
+    assert_eq!(
+        TaskSemanticEncoder::new(b"later", &mut meter).finish(),
+        Err(TaskSemanticEncodingError::OwnerRejected)
+    );
+    let digest = |work, bytes| {
+        let mut meter = TaskSemanticMeter::new(work, bytes);
+        let result = RuntimeBodySemanticContext::new(&plan).line_row_digest(
+            &mut meter,
+            group,
+            &owner,
+            &mut |_| panic!("no task refs"),
+            crate::plan::RuntimeTaskPlanSealLimits::default(),
+        );
+        (result, meter.totals())
+    };
+    let (first, (work, bytes)) = digest(100_000, 1_000_000);
+    assert!(first.is_ok());
+    assert_eq!(digest(work, bytes).0.unwrap(), first.unwrap());
+    assert!(matches!(
+        digest(work - 1, bytes).0,
+        Err(RuntimeBodySemanticError::Encoding(
+            TaskSemanticEncodingError::SemanticWork
+        ))
+    ));
+    assert!(matches!(
+        digest(work, bytes - 1).0,
+        Err(RuntimeBodySemanticError::Encoding(
+            TaskSemanticEncodingError::TranscriptBytes
+        ))
+    ));
+}

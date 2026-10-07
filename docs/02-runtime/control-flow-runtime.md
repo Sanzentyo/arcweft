@@ -260,6 +260,19 @@ endpoints remain distinct. Completed task digests, expected keys, generations
 and source/debug labels do not supply endpoint or task-reference authority.
 
 
+## Line graph semantic evidence
+
+A Line row commits its accepted definition, result type, ordered captures and
+activation exports, activation body, dense handle-site roles, root coordinate,
+source-ordered nodes and child references, cancellation rules and every cleanup
+outcome body/policy. Each action uses the same typed Flow visitor as function
+bodies, including task construction coordinates. Node/trigger/join/cancel and
+cleanup tags are exhaustive on their owning enums. Node and mark ordinals are
+coordinates within the admitted Line graph; mark spellings and completed task
+plan keys are excluded. Child-count arithmetic and the Line row quota precede
+semantic traversal, and the transcript shares the complete pass's work/byte
+meter. The Line owner issues its digest only after successful completion.
+
 ## Static request role evidence
 
 A checked execution argument slot owns its static request role identity. The

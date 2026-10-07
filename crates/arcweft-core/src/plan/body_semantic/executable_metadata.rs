@@ -305,3 +305,33 @@ impl RuntimeBodySemanticContext<'_> {
         encoder.finish().map_err(Into::into)
     }
 }
+
+impl RuntimeBodySemanticContext<'_> {
+    pub(crate) fn line_row_digest(
+        &self,
+        meter: &mut crate::task::semantic::TaskSemanticMeter,
+        group: crate::runtime_id::RuntimeLineTaskGroupId,
+        task_owner: &crate::plan::RuntimeTaskPlanCoordinateOwner,
+        task_reference: &mut impl FnMut(
+            super::flow::RuntimeBodyTaskSource<'_>,
+        ) -> Result<
+            crate::plan::RuntimeTaskPlanBuildCoordinate,
+            RuntimeBodySemanticError,
+        >,
+        limits: crate::plan::RuntimeTaskPlanSealLimits,
+    ) -> Result<crate::line_task::semantic::LinePlanSemanticDigest, RuntimeBodySemanticError> {
+        meter.status()?;
+        let row = self
+            .plan
+            .line_task_groups()
+            .get(group.index())
+            .ok_or_else(|| {
+                meter.reject_owner();
+                RuntimeBodySemanticError::MissingRow {
+                    table: "line task groups",
+                    ordinal: group.index(),
+                }
+            })?;
+        row.semantic_digest(self, meter, group, task_owner, task_reference, limits)
+    }
+}

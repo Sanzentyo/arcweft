@@ -2,11 +2,15 @@ pub(crate) mod body_semantic;
 mod callable_specialization;
 mod callable_states;
 mod construction;
+pub(crate) use construction::task_coordinates::{
+    RuntimeTaskPlanBuildCoordinate, RuntimeTaskPlanCoordinateOwner,
+};
 mod control_effect;
 mod dialogue_content;
 pub mod entry_inventory;
 mod executable_body;
 mod flow_ops;
+pub(crate) use flow_ops::{RuntimeFlowTreeEvent, try_visit_ops_events};
 mod format_attempt;
 mod function_inputs;
 mod function_sites;

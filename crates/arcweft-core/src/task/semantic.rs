@@ -54,7 +54,12 @@ impl TaskSemanticMeter {
         right: usize,
     ) -> Result<usize, TaskSemanticEncodingError> {
         self.status()?;
+        let left = u32::try_from(left)
+            .map_err(|_| self.reject(TaskSemanticEncodingError::ArithmeticOverflow))?;
+        let right = u32::try_from(right)
+            .map_err(|_| self.reject(TaskSemanticEncodingError::ArithmeticOverflow))?;
         left.checked_add(right)
+            .map(|count| count as usize)
             .ok_or_else(|| self.reject(TaskSemanticEncodingError::ArithmeticOverflow))
     }
 
@@ -459,6 +464,22 @@ mod tests {
         assert_eq!(
             parent.finish(),
             Err(TaskSemanticEncodingError::OwnerRejected)
+        );
+    }
+    #[test]
+    fn count_preflight_checks_the_u32_transcript_domain_before_limits() {
+        let mut meter = meter();
+        assert_eq!(
+            meter.checked_count_sum(u32::MAX as usize, 0),
+            Ok(u32::MAX as usize)
+        );
+        assert_eq!(
+            meter.checked_count_sum(u32::MAX as usize, 1),
+            Err(TaskSemanticEncodingError::ArithmeticOverflow)
+        );
+        assert_eq!(
+            TaskSemanticEncoder::new(b"later", &mut meter).finish(),
+            Err(TaskSemanticEncodingError::ArithmeticOverflow)
         );
     }
 }
