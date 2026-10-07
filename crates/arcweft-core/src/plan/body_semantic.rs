@@ -8,6 +8,7 @@ mod executable_metadata;
 pub(crate) mod flow;
 pub(crate) mod function;
 mod nominal;
+mod pure_rows;
 mod request;
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticEncodingError};
@@ -64,6 +65,10 @@ pub(crate) enum RuntimeBodySemanticError {
     InvalidNominalDomainOwner { owner: RuntimePlanTypeId },
     #[error("function transcript does not belong to this candidate inventory")]
     ForeignFunctionTranscript,
+    #[error("pure helper row does not belong to this candidate inventory")]
+    ForeignPureHelperRow,
+    #[error("trait method row does not belong to this candidate inventory")]
+    ForeignTraitMethodRow,
 }
 
 impl From<TaskSemanticEncodingError> for RuntimeBodySemanticError {

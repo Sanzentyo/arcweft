@@ -9305,3 +9305,65 @@ duplicates0 and all5 new function cases present. This list was inspected after
 the focused run, not claimed as pre-run discovery; later new filters are
 inspected before execution. Actual run already demonstrated all51 passes,
 source5 hashes/99 inputs fixed. Final6-path review/delivery next; goal active.
+
+### 2026-10-08 — actual pure helper and trait method E rows (in progress)
+
+Inspected clean main/origin9de18a3fafd625b4f6f224a07d3d5cf741c0d3ec;
+parentaca4d474473f7f79c426fc6791c774db5e9c9777/all6 published blobs verified,
+mismatch0. Added private E tables10/11 on actual admitted helpers/methods.
+Exact inventory row pointer verified before bytes; accepted definition, ordered
+input parameter identity/local type/origin/passing/physical ABI, result ABI,
+method receiver and complete typed expression body encoded with shared meter.
+Closed inherent ABI tag matches exhaustively cover input/output representations.
+Arena/debug impl/trait/witness labels, inferred/annotated origin and backend
+support choices excluded; accepted definition is the code/trait selection leaf.
+No public task/schema/codec switch, marker change, new Cargo edge or executable
+consumer migration. Production Core all-target/all-feature locked check14070
+PASS10.01s before new test addition. Added actual builder/verified inventory
+fixtures testing diagnostics/backend/arena exclusion, definition/order/ABI/body
+mutation, receiver roles, exact budgets, foreign inventory and sticky poison.
+New filter discovery93385 pending before execution; Rust source not edited
+while Cargo live. Goal ACTIVE/INCOMPLETE; remaining E/realTable14/image/global
+memo/common sealer/all14 protected publication and original acceptance remain.
+
+Initial pure-row focus TERMINAL0:4/4PASS0.032s after actual pre-run selection
+93385/build29.76s. Clippy review found two introduced fixture style warnings
+(excessive boolean roles/duplicated seed construction length); replaced boolean
+row kind by the actual helper/method test algebra and used one inert seed plus
+its padding clone. Removed an unnecessary body-producing closure. No production
+semantic or assertion weakened. Final check/Clippy75986 TERMINAL0/PASS on final
+source; Clippy14.23s, no introduced non-dead-code warning in new owners.
+Broader private Core owner matrix discovery59589 pending before execution.
+Final3 Rust hashes fixed; new test owner310LOC/10739bytes (>300 growth) reviewed
+as one real aggregate admission/ABI/body/diagnostic/membership/quota fixture
+responsibility shared by the two deterministic pure callable owners. No new
+public export/state cluster/I-O/dependency or copied semantic table. Production
+module140LOC/4589bytes, body context622LOC/24242bytes(+5); cohesive existing
+context, no scanner trigger beyond recorded owner growth disposition.
+All new row visitors remain private unused Cut4 preparation; no externally
+reachable runtime/compiler/native/AWBC/codec/public API change. Reuse unchanged
+Core50 reverse graph/99 inputs and apply isolated private/leaf owner tests plus
+Core all-target/all-feature/locked check/Clippy; downstream execution omitted
+for that semantic reason, not claimed green on changed bytes. Earlier aca4
+4927PASS/CLI277FAIL remain only earlier receipts. Full closure/publication/
+CLI repair remains required at protected all14 Cut5 and original goal milestone.
+
+Final pure-row owner matrix TERMINAL0:70/70PASS0.323s,980 skipped in Core
+focused surface. Actual pre-run list59589 TERMINAL0/build20.03s includes
+body56+type8+scope4+pure-index2; one additional existing request path grammar
+case explains70 vs estimated69. Selection guard caught estimate mismatch
+before run; full actual70 retained/executed. Exact selected/terminal/unique70
+IDs, missing0/unexpected0/duplicates0, all4 new cases pass on final fixture.
+Final check/Clippy75986 PASS; no introduced non-dead-code diagnostics remain.
+3 Rust SHA256 and99 build inputs unchanged; all Cargo/test processes terminal.
+Fmt/diff terminal receipt follows; reviewed explicit4-path stage/blob/disk/
+tested-source check precedes coherent commit/non-forced main push. No task
+public schema/protocol/codec or generated artifact switch. E tables0/2/3/4/
+10/11 private preparation now exists; E1 and5/6/7/8/9/12/13/global memo,
+realTable14/private image/common seal/all14 Cut5 and all original acceptance
+remain incomplete. Full goal ACTIVE/INCOMPLETE; no new Astra/advice.
+
+Final pure-row check75986 PASS8.02s/Clippy14.23s, fmt96698 TERMINAL0/PASS
+and diff checks pass. All3 Rust hashes/99 inputs fixed; all validation handles
+terminal. Reviewed exact4 paths and full blobs before delivery; whole goal
+ACTIVE/INCOMPLETE, continue actual remaining E/Table14/sealer owners.
