@@ -407,6 +407,12 @@ runtime-domain local の semantic fact は、Sema が発行した binding coordi
 local-use authority と照合する。型だけの local 投影や別 generation の証拠は
 instance semantic fact の公開前に拒否する。
 
+runtime-domain expression の型行も受理済み expression coordinate と発行元の
+generation を必須で保持し、異なる owner や generation の証拠を公開前に拒否する。
+閉じた executable instance の expression と statement は、Sema の既存の所有行で
+発行された座標を保持する。同じ定義の型特殊化はその座標を維持し、生成時の
+arena ID や閉じた型を lexical coordinate の代わりに使わない。
+
 AWBC の各入力行も取得元と作成時の転送方式を必須で保持し、parameter と
 captured parameter は静的な passing 区分を codec の往復後も保持する。
 function site は受理済みの転送証拠を渡し、formatter operand は選択済みの

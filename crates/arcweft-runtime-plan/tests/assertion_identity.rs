@@ -666,6 +666,7 @@ fn lower_assertion_project(
                     RuntimeTypeShape::Unit
                 },
             ),
+            local_analysis.expression_origin(owner).unwrap(),
         );
     }
     input.push_flow(

@@ -1115,6 +1115,11 @@ fn project_runtime_semantic_fact_inventories(
                 .map_err(|error| RuntimeSemanticProjectionError::Type {
                     reason: format!("runtime expression {owner:?}: {error}"),
                 })?,
+                analysis.expression_origin(owner).map_err(|error| {
+                    RuntimeSemanticProjectionError::Type {
+                        reason: error.to_string(),
+                    }
+                })?,
             );
         }
         if let Some(specialization) = discovered_instances.root_value_specialization(owner)? {

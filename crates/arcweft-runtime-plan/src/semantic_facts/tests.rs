@@ -768,17 +768,45 @@ fn selected_call_inventory(
                     .map(|argument| argument.value())
                     .collect::<Vec<_>>()
                     .into_boxed_slice(),
-                call.callee().value_expression(),
+                fixture_runtime_callee(executable, call),
             ),
         ))
     })
 }
 
+fn fixture_runtime_callee(
+    executable: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
+    call: &arcweft_lang_hir::expr::HirCallInvocation,
+) -> Option<arcweft_lang_hir::identity::ExprId> {
+    let value = call.callee().value_expression()?;
+    executable.modules().find_map(|(_, module)| {
+        let expression = module.resolve_expr(value).ok()?;
+        (!matches!(expression.kind(), HirExprKind::Path(_))).then_some(value)
+    })
+}
+
 fn runtime_reachability(project: &HirProject) -> HirRuntimeSemanticReachability<'_> {
     let executable = project.analysis_view().expect("clean fixture");
+    let analysis = executable
+        .modules()
+        .any(|(_, module)| {
+            module
+                .expressions()
+                .any(|(_, expression)| matches!(expression.kind(), HirExprKind::PostfixBracket(_)))
+        })
+        .then(|| analyze_identity_fixture(project));
     runtime_reachability_with(
         project,
-        |_| None,
+        |owner| {
+            let resolution = analysis.as_ref()?.expression(owner)?.resolution();
+            let arcweft_lang_sema::final_analysis::CheckedExpressionResolution::PostfixBracket(
+                resolution,
+            ) = resolution
+            else {
+                return None;
+            };
+            Some(resolution.candidate())
+        },
         |owner| retained_runtime_projection(executable, owner),
     )
 }
@@ -792,7 +820,7 @@ fn retained_runtime_projection(
         Some(match expression.kind() {
             HirExprKind::Call(call) => HirRuntimeExpressionProjection::Call {
                 result: HirRuntimeValueRetention::Retain,
-                callee: if call.callee().value_expression().is_some() {
+                callee: if fixture_runtime_callee(executable, call).is_some() {
                     HirRuntimeCallCalleeDisposition::RuntimeReceiver
                 } else {
                     HirRuntimeCallCalleeDisposition::Static
@@ -943,11 +971,25 @@ pub(crate) fn fixture_local_origin(
         .unwrap()
 }
 
+pub(crate) fn fixture_expression_origin(
+    project: &HirProject,
+    expression: arcweft_lang_hir::identity::ExprId,
+) -> arcweft_lang_sema::semantic_coordinate::CheckedExpressionOrigin {
+    analyze_identity_fixture(project)
+        .expression_origin(expression)
+        .unwrap()
+}
+
 fn complete_type_input(project: &HirProject) -> RuntimePlanSemanticFactInput {
     let mut input = RuntimePlanSemanticFactInput::new();
     let runtime_owners = runtime_reachability(project);
+    let analysis = analyze_identity_fixture(project);
     for owner in runtime_owners.locals() {
-        input.push_local_declaration(owner, unit_type(), fixture_local_origin(&project, owner));
+        input.push_local_declaration(
+            owner,
+            unit_type(),
+            analysis.local_binding_origin(owner).unwrap(),
+        );
     }
     for owner in runtime_owners.patterns() {
         input.push_pattern_type(owner, unit_type());
@@ -956,7 +998,21 @@ fn complete_type_input(project: &HirProject) -> RuntimePlanSemanticFactInput {
         .selected_expression_type_owners()
         .expect("postfix-free runtime expression-type fixture")
     {
-        input.push_expression_type(owner, unit_type());
+        input.push_expression_type(
+            owner,
+            unit_type(),
+            analysis.expression_origin(owner).unwrap(),
+        );
+    }
+    for (owner, expression) in analysis.expressions() {
+        if runtime_owners.contains_expression(owner) {
+            if let arcweft_lang_sema::final_analysis::CheckedExpressionResolution::PostfixBracket(
+                resolution,
+            ) = expression.resolution()
+            {
+                input.push_postfix_candidate(owner, resolution.candidate());
+            }
+        }
     }
     input
 }
@@ -981,6 +1037,38 @@ fn local_origins_reject_another_binding_and_hir_allocation_before_publication() 
     assert_eq!(
         runtime_facts(&project, wrong_generation).unwrap_err(),
         RuntimeSemanticFactsError::InvalidLocalOrigin { local: target }
+    );
+}
+
+#[test]
+fn expression_origins_preserve_coordinates_and_reject_wrong_owner_or_generation() {
+    let source = "fn root(first: bool) -> bool { first || false }\n";
+    let project = project_fixture("expression-origin-admission", source);
+    let input = complete_type_input(&project);
+    let target = input.expression_types[0].0;
+    let expected = fixture_expression_origin(&project, target);
+    let facts = runtime_facts(&project, input).unwrap();
+    assert_eq!(
+        facts.expression_coordinate(target),
+        Some(expected.coordinate())
+    );
+    let mut wrong_owner = complete_type_input(&project);
+    wrong_owner.expression_types[0].1.origin = wrong_owner.expression_types[1].1.origin.clone();
+    assert_eq!(
+        runtime_facts(&project, wrong_owner).unwrap_err(),
+        RuntimeSemanticFactsError::InvalidExpressionOrigin { expression: target }
+    );
+    let foreign = project_fixture("expression-origin-admission", source);
+    assert!(!expected.validate_owner(foreign.analysis_view().unwrap(), target));
+    let mut wrong_generation = complete_type_input(&project);
+    wrong_generation.expression_types[0].1.origin = complete_type_input(&foreign).expression_types
+        [0]
+    .1
+    .origin
+    .clone();
+    assert_eq!(
+        runtime_facts(&project, wrong_generation).unwrap_err(),
+        RuntimeSemanticFactsError::InvalidExpressionOrigin { expression: target }
     );
 }
 
@@ -1073,9 +1161,9 @@ fn assignment_fact_fixture(
         .ty = record_type.clone();
     for (owner, ty) in &mut input.expression_types {
         if *owner == base {
-            *ty = record_type.clone();
+            ty.ty = record_type.clone();
         } else if *owner == target || *owner == value {
-            *ty = field_type.clone();
+            ty.ty = field_type.clone();
         }
     }
     input.push_value(base, RuntimeResolvedValue::Local(local));
@@ -1132,7 +1220,7 @@ fn trigger_fact_fixture(
 ) {
     let project = project_fixture(
         label,
-        "flow trigger_owner {\n    on true => defer ()\n    return unit\n}\n",
+        "flow trigger_owner {\n    on true => defer ()\n    return ()\n}\n",
     );
     let executable = project.analysis_view().expect("trigger fixture");
     let (_, module) = executable.modules().next().expect("root trigger module");
@@ -1502,7 +1590,11 @@ fn presentation_owned_facts_are_inactive_and_filtered_local_ids_remain_contiguou
     );
 
     let mut input = complete_type_input(&project);
-    input.push_expression_type(presentation_literal, unit_type());
+    input.push_expression_type(
+        presentation_literal,
+        unit_type(),
+        fixture_expression_origin(&project, presentation_literal),
+    );
     assert_eq!(
         runtime_facts(&project, input)
             .expect_err("a presentation expression cannot publish a runtime type"),
@@ -1737,9 +1829,19 @@ fn wrong_expression_family_is_not_reinterpreted() {
 fn dialogue_line_fact_owns_the_checked_path_only_runtime_identity() {
     let project = project_fixture(
         "dialogue-line",
-        "fn root() -> Ref<DialogueLine> {\n    @say.story.greeting\n}\n",
+        "pub character alice {}\nfn opening() { alice(id=@say.story.greeting)[hello]; }\nfn root() -> Ref<DialogueLine> { @say.story.greeting }\n",
     );
-    let owner = entity_reference(&project);
+    let analysis = analyze_identity_fixture(&project);
+    let owner = analysis
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(
+                expression.resolution(),
+                arcweft_lang_sema::final_analysis::CheckedExpressionResolution::DialogueLineReference(_)
+            )
+            .then_some(owner)
+        })
+        .expect("reference to the declared Line");
     let line = RuntimeLineId::from_source_entity_body("say.story.greeting")
         .expect("checked dialogue line conversion");
     let mut input = complete_type_input(&project);
@@ -1794,7 +1896,7 @@ fn accepted_expression_and_pattern_types_are_complete_and_exact() {
 fn runtime_type_completeness_excludes_effect_metadata_owners() {
     let project = project_fixture(
         "effect-metadata-types",
-        "fn root() effects { fs.read } { true }\n",
+        "fn root() -> bool effects { fs.read } { true }\n",
     );
     let executable = project.analysis_view().expect("executable fixture");
     let effect = executable
@@ -1814,7 +1916,11 @@ fn runtime_type_completeness_excludes_effect_metadata_owners() {
     assert_eq!(facts.expression_type(body), Some(&unit_type()));
 
     let mut input = complete_type_input(&project);
-    input.push_expression_type(effect, unit_type());
+    input.push_expression_type(
+        effect,
+        unit_type(),
+        fixture_expression_origin(&project, effect),
+    );
     assert_eq!(
         runtime_facts(&project, input)
             .expect_err("effect metadata cannot publish a runtime expression type"),
@@ -2047,7 +2153,11 @@ fn missing_pattern_type_is_rejected_before_publication() {
         .selected_expression_type_owners()
         .expect("postfix-free runtime expression-type fixture")
     {
-        input.push_expression_type(owner, unit_type());
+        input.push_expression_type(
+            owner,
+            unit_type(),
+            fixture_expression_origin(&project, owner),
+        );
     }
     let pattern = runtime_owners.patterns().next().expect("pattern fixture");
 
@@ -2059,10 +2169,14 @@ fn missing_pattern_type_is_rejected_before_publication() {
 
 #[test]
 fn duplicate_expression_types_are_rejected_before_publication() {
-    let project = project_fixture("duplicate-expression-type", "fn root() { true }\n");
+    let project = project_fixture("duplicate-expression-type", "fn root() -> bool { true }\n");
     let owner = boolean_literal(&project);
     let mut input = complete_type_input(&project);
-    input.push_expression_type(owner, unit_type());
+    input.push_expression_type(
+        owner,
+        unit_type(),
+        fixture_expression_origin(&project, owner),
+    );
 
     assert_eq!(
         runtime_facts(&project, input).expect_err("one expression cannot own two accepted types"),
@@ -2645,7 +2759,11 @@ fn nested_operational_expression_type_is_retained_without_reconstruction() {
         .selected_expression_type_owners()
         .expect("postfix-free runtime expression-type fixture")
     {
-        input.push_expression_type(expression, nested.clone());
+        input.push_expression_type(
+            expression,
+            nested.clone(),
+            fixture_expression_origin(&project, expression),
+        );
     }
     let facts = runtime_facts(&project, input)
         .expect("nested operational fact remains accepted semantic data");
@@ -2704,7 +2822,7 @@ fn postfix_type_completeness_keeps_only_the_selected_candidate_expression_tree()
         "the ordinary candidate retains a Match pattern"
     );
 
-    let postfix_candidates = BTreeMap::from([(postfix_owner, dialogue)]);
+    let postfix_candidates = BTreeMap::from([(postfix_owner, index)]);
     let runtime_owners = runtime_reachability_with(
         &project,
         |owner| postfix_candidates.get(&owner).copied(),
@@ -2713,10 +2831,10 @@ fn postfix_type_completeness_keeps_only_the_selected_candidate_expression_tree()
     let accepted = runtime_owners
         .selected_expression_type_owners()
         .expect("selected runtime expression-type inventory");
-    assert!(!accepted.contains(&postfix_owner));
+    assert!(accepted.contains(&postfix_owner));
     assert!(accepted.contains(&target));
     assert!(!accepted.contains(&dialogue));
-    assert!(!accepted.contains(&index));
+    assert!(accepted.contains(&index));
 
     let complete_selected_input = || {
         let mut input = RuntimePlanSemanticFactInput::new();
@@ -2724,52 +2842,41 @@ fn postfix_type_completeness_keeps_only_the_selected_candidate_expression_tree()
             input.push_local_declaration(owner, unit_type(), fixture_local_origin(&project, owner));
         }
         for owner in &accepted {
-            input.push_expression_type(*owner, unit_type());
+            input.push_expression_type(
+                *owner,
+                unit_type(),
+                fixture_expression_origin(&project, *owner),
+            );
         }
         for owner in runtime_owners.patterns() {
             input.push_pattern_type(owner, unit_type());
         }
-        input.push_postfix_candidate(postfix_owner, dialogue);
+        input.push_postfix_candidate(postfix_owner, index);
         input
     };
     let facts =
         RuntimePlanSemanticFacts::try_new(executable, &runtime_owners, complete_selected_input())
-            .expect("the rolled-back expression candidate needs no type fact");
-    assert!(facts.expression_type(postfix_owner).is_none());
+            .expect("the rolled-back dialogue candidate needs no type fact");
+    assert!(facts.expression_type(postfix_owner).is_some());
     assert!(facts.expression_type(target).is_some());
     assert!(facts.expression_type(dialogue).is_none());
-    assert!(facts.expression_type(index).is_none());
+    assert!(facts.expression_type(index).is_some());
 
     let mut missing_selection = complete_selected_input();
     missing_selection.postfix_candidates.clear();
     assert_eq!(
         RuntimePlanSemanticFacts::try_new(executable, &runtime_owners, missing_selection)
-            .expect_err("a type-free selector still requires its exact accepted choice"),
+            .expect_err("the selector requires its exact accepted choice"),
         RuntimeSemanticFactsError::MissingPostfixCandidate {
             expression: postfix_owner
         }
     );
 
-    let mut input = complete_selected_input();
-    input.push_expression_type(dialogue, unit_type());
-    assert_eq!(
-        RuntimePlanSemanticFacts::try_new(executable, &runtime_owners, input)
-            .expect_err("a selected dialogue carrier cannot publish an expression type"),
-        RuntimeSemanticFactsError::InactiveExpressionFact {
-            expression: dialogue,
-            family: RuntimeSemanticFactFamily::ExpressionType,
-        },
-    );
-
-    let mut input = complete_selected_input();
-    input.push_expression_type(index, unit_type());
-    assert_eq!(
-        RuntimePlanSemanticFacts::try_new(executable, &runtime_owners, input)
-            .expect_err("an unselected candidate cannot publish an expression type"),
-        RuntimeSemanticFactsError::InactiveExpressionFact {
-            expression: index,
-            family: RuntimeSemanticFactFamily::ExpressionType,
-        },
+    assert!(
+        analyze_identity_fixture(&project)
+            .expression_origin(dialogue)
+            .is_err(),
+        "the unselected candidate cannot obtain mandatory accepted-origin evidence"
     );
 }
 

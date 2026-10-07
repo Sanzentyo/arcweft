@@ -210,7 +210,11 @@ fn runtime_projection_emits_stable_diagnostic_without_message_parsing() {
                     RuntimeTypeShape::Unit,
                 )
             };
-            input.push_expression_type(owner, expression_type);
+            input.push_expression_type(
+                owner,
+                expression_type,
+                local_analysis.expression_origin(owner).unwrap(),
+            );
         }
         for (owner, _) in module.patterns() {
             input.push_pattern_type(

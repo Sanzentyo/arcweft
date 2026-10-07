@@ -214,7 +214,7 @@ impl RuntimeEvaluatedEffect {
 
 pub(super) fn validate_evaluated_effect(
     modules: &BTreeMap<HirModuleId, &HirModule>,
-    expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
+    expression_types: &super::RuntimeExpressionTypeView<'_>,
     calls: &BTreeMap<ExprId, RuntimeResolvedCall>,
     expression: ExprId,
     fact: &RuntimeEvaluatedEffectFact,
@@ -263,7 +263,7 @@ pub(super) fn validate_evaluated_effect_result(
 
 pub(super) fn validate_evaluated_effect_operation(
     modules: &BTreeMap<HirModuleId, &HirModule>,
-    expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
+    expression_types: &super::RuntimeExpressionTypeView<'_>,
     calls: &BTreeMap<ExprId, RuntimeResolvedCall>,
     application: ExprId,
     effect: &RuntimeEvaluatedEffect,
@@ -283,7 +283,7 @@ pub(super) fn validate_evaluated_effect_operation(
 
 fn validate_effect_operands(
     modules: &BTreeMap<HirModuleId, &HirModule>,
-    expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
+    expression_types: &super::RuntimeExpressionTypeView<'_>,
     effect: &RuntimeEvaluatedEffect,
 ) -> bool {
     let valid = |operand: &RuntimeEvaluatedEffectOperandFact| {
@@ -328,7 +328,7 @@ fn validate_effect_operands(
 
 fn validate_evaluated_effect_operand(
     modules: &BTreeMap<HirModuleId, &HirModule>,
-    expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
+    expression_types: &super::RuntimeExpressionTypeView<'_>,
     operand: &RuntimeEvaluatedEffectOperandFact,
 ) -> bool {
     if validate_normalized_type(modules, operand.ty()).is_err() {

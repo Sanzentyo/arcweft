@@ -797,7 +797,7 @@ impl CheckedPatternCoordinateEvidence {
     dead_code,
     reason = "the semantic transcript graph consumes this typed coordinate when statement digests publish"
 )]
-pub(crate) struct StableCheckedStatementCoordinate {
+pub struct StableCheckedStatementCoordinate {
     path: CheckedSemanticPath,
 }
 
@@ -810,7 +810,7 @@ impl StableCheckedStatementCoordinate {
         Self { path }
     }
 
-    pub(crate) const fn path(&self) -> &CheckedSemanticPath {
+    pub const fn path(&self) -> &CheckedSemanticPath {
         &self.path
     }
 
@@ -1273,6 +1273,51 @@ impl PartialEq for CheckedLocalBindingOrigin {
 }
 
 impl Eq for CheckedLocalBindingOrigin {}
+
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+#[error("expression {expression:?} has no accepted structural coordinate")]
+pub struct CheckedExpressionOriginError {
+    pub expression: ExprId,
+}
+
+/// One accepted expression coordinate tied to its issuing HIR allocation.
+#[derive(Clone, Debug)]
+pub struct CheckedExpressionOrigin {
+    expression: ExprId,
+    topology: std::sync::Arc<arcweft_lang_hir::project::HirProjectEvaluationTopology>,
+    coordinate: CheckedSemanticPath,
+}
+
+impl CheckedExpressionOrigin {
+    pub(crate) fn new(
+        expression: ExprId,
+        topology: std::sync::Arc<arcweft_lang_hir::project::HirProjectEvaluationTopology>,
+        coordinate: CheckedSemanticPath,
+    ) -> Self {
+        Self {
+            expression,
+            topology,
+            coordinate,
+        }
+    }
+
+    pub fn validate_owner(
+        &self,
+        project: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
+        expression: ExprId,
+    ) -> bool {
+        self.expression == expression
+            && self
+                .topology
+                .generation()
+                .validate_analysis_lease(project)
+                .is_ok()
+    }
+
+    pub const fn coordinate(&self) -> &CheckedSemanticPath {
+        &self.coordinate
+    }
+}
 
 impl StableCheckedBindingCoordinate {
     /// Projects this accepted coordinate into the runtime input origin domain.

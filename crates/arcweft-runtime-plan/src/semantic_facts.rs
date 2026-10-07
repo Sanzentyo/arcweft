@@ -5118,6 +5118,60 @@ struct RuntimeLocalDeclarationFact {
     context: Option<RuntimeNormalizedType>,
 }
 
+#[derive(Clone, Debug)]
+struct RuntimeExpressionTypeFact {
+    ty: RuntimeNormalizedType,
+    origin: arcweft_lang_sema::semantic_coordinate::CheckedExpressionOrigin,
+}
+
+/// Borrowed validation projection; accepted facts retain the only owned rows.
+enum RuntimeExpressionTypeView<'types> {
+    Facts(&'types BTreeMap<ExprId, RuntimeExpressionTypeFact>),
+    Projected(BTreeMap<ExprId, &'types RuntimeNormalizedType>),
+}
+
+impl<'types> FromIterator<(ExprId, &'types RuntimeNormalizedType)>
+    for RuntimeExpressionTypeView<'types>
+{
+    fn from_iter<T: IntoIterator<Item = (ExprId, &'types RuntimeNormalizedType)>>(rows: T) -> Self {
+        Self::Projected(rows.into_iter().collect())
+    }
+}
+
+impl<'types> RuntimeExpressionTypeView<'types> {
+    fn get(&self, owner: &ExprId) -> Option<&'types RuntimeNormalizedType> {
+        match self {
+            Self::Facts(facts) => facts.get(owner).map(|fact| &fact.ty),
+            Self::Projected(types) => types.get(owner).copied(),
+        }
+    }
+
+    fn contains_key(&self, owner: &ExprId) -> bool {
+        self.get(owner).is_some()
+    }
+
+    fn keys(&self) -> impl Iterator<Item = &ExprId> {
+        self.iter().map(|(owner, _)| owner)
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (&ExprId, &'types RuntimeNormalizedType)> {
+        let (facts, projected) = match self {
+            Self::Facts(facts) => (Some(*facts), None),
+            Self::Projected(types) => (None, Some(types)),
+        };
+        facts
+            .into_iter()
+            .flat_map(|facts| facts.iter())
+            .map(|(owner, fact)| (owner, &fact.ty))
+            .chain(
+                projected
+                    .into_iter()
+                    .flat_map(|types| types.iter())
+                    .map(|(owner, ty)| (owner, *ty)),
+            )
+    }
+}
+
 /// Runtime type projection of one admitted value or body root's complete ABI.
 /// Free bindings and full formal inputs retain the admission's stable order.
 #[derive(Clone, Debug)]
@@ -5336,7 +5390,7 @@ pub struct RuntimePlanSemanticFactInput {
         ExprId,
         arcweft_lang_sema::CheckedExpressionProducerDefinition,
     )>,
-    expression_types: Vec<(ExprId, RuntimeNormalizedType)>,
+    expression_types: Vec<(ExprId, RuntimeExpressionTypeFact)>,
     pattern_types: Vec<(PatternId, RuntimeNormalizedType)>,
     expression_literals: Vec<(ExprId, RuntimeValue)>,
     expression_residual_values: Vec<(ExprId, RuntimeResidualValue)>,
@@ -5515,8 +5569,14 @@ impl RuntimePlanSemanticFactInput {
     ) {
         self.call_producers.push((owner, definition));
     }
-    pub fn push_expression_type(&mut self, owner: ExprId, ty: RuntimeNormalizedType) {
-        self.expression_types.push((owner, ty));
+    pub fn push_expression_type(
+        &mut self,
+        owner: ExprId,
+        ty: RuntimeNormalizedType,
+        origin: arcweft_lang_sema::semantic_coordinate::CheckedExpressionOrigin,
+    ) {
+        self.expression_types
+            .push((owner, RuntimeExpressionTypeFact { ty, origin }));
     }
 
     pub fn push_callable_source(&mut self, fact: RuntimeProjectCallableSourceFact) {
@@ -5827,7 +5887,7 @@ pub struct RuntimePlanSemanticFacts {
     statement_scopes: BTreeMap<StmtId, crate::semantic_facts::RuntimeScopeFact>,
     thread_producers: BTreeMap<ExprId, arcweft_lang_sema::CheckedExpressionProducerDefinition>,
     call_producers: BTreeMap<ExprId, arcweft_lang_sema::CheckedExpressionProducerDefinition>,
-    expression_types: BTreeMap<ExprId, RuntimeNormalizedType>,
+    expression_types: BTreeMap<ExprId, RuntimeExpressionTypeFact>,
     expression_children: BTreeMap<ExprId, Box<[ExprId]>>,
     pattern_types: BTreeMap<PatternId, RuntimeNormalizedType>,
     expression_literals: BTreeMap<ExprId, RuntimeValue>,
@@ -6318,7 +6378,7 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
         match self {
             Self::Global(facts) => {
                 for (owner, ty) in &facts.expression_types {
-                    visitor(*owner, ty);
+                    visitor(*owner, &ty.ty);
                 }
             }
             Self::ProjectInstance(facts) => {
@@ -7250,10 +7310,18 @@ impl RuntimePlanSemanticFacts {
                 |kind| matches!(kind, HirExprKind::Call(_)),
             )?;
         }
-        let expression_types = collect_unique(
+        let expression_facts = collect_unique(
             input.expression_types,
             RuntimeSemanticFactFamily::ExpressionType,
         )?;
+        for (owner, fact) in &expression_facts {
+            if !fact.origin.validate_owner(project, *owner) {
+                return Err(RuntimeSemanticFactsError::InvalidExpressionOrigin {
+                    expression: *owner,
+                });
+            }
+        }
+        let expression_types = RuntimeExpressionTypeView::Facts(&expression_facts);
         let mut expression_specializations = BTreeMap::new();
         for (owner, specialization) in input.expression_specializations {
             let definition = callable_specializations
@@ -7271,7 +7339,7 @@ impl RuntimePlanSemanticFacts {
                 .into());
             }
         }
-        for (owner, ty) in &expression_types {
+        for (owner, ty) in expression_types.iter() {
             if instance_expression_owners.contains(owner) {
                 return Err(RuntimeSemanticFactsError::InstanceOwnedGlobalFact {
                     family: RuntimeSemanticFactFamily::ExpressionType,
@@ -8957,7 +9025,7 @@ impl RuntimePlanSemanticFacts {
             statement_scopes,
             thread_producers,
             call_producers,
-            expression_types,
+            expression_types: expression_facts,
             expression_children,
             pattern_types,
             expression_literals,
@@ -9235,7 +9303,7 @@ impl RuntimePlanSemanticFacts {
                     ))
                 || !validate_dialogue_effect_operation(
                     modules,
-                    &self.expression_types,
+                    &RuntimeExpressionTypeView::Facts(&self.expression_types),
                     &self.calls,
                     effect.operation(),
                 )
@@ -9339,7 +9407,16 @@ impl RuntimePlanSemanticFacts {
         self.thread_producers.get(&expression)
     }
     pub fn expression_type(&self, expression: ExprId) -> Option<&RuntimeNormalizedType> {
-        self.expression_types.get(&expression)
+        self.expression_types.get(&expression).map(|fact| &fact.ty)
+    }
+
+    pub fn expression_coordinate(
+        &self,
+        expression: ExprId,
+    ) -> Option<&arcweft_lang_sema::semantic_coordinate::CheckedSemanticPath> {
+        self.expression_types
+            .get(&expression)
+            .map(|fact| fact.origin.coordinate())
     }
 
     /// Returns the sole accepted normalized type of one runtime-domain
@@ -9546,7 +9623,7 @@ impl RuntimePlanSemanticFacts {
             roots.push(&local.ty);
             roots.extend(local.context.as_ref());
         }
-        roots.extend(self.expression_types.values());
+        roots.extend(self.expression_types.values().map(|fact| &fact.ty));
         roots.extend(self.pattern_types.values());
         roots.extend(self.types.values());
         roots.extend(self.value_contract_types.iter());
@@ -10193,6 +10270,8 @@ fn validate_pure_programs(
 }
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeSemanticFactsError {
+    #[error("expression {expression:?} origin belongs to another owner or HIR allocation")]
+    InvalidExpressionOrigin { expression: ExprId },
     #[error("local {local:?} origin belongs to another owner or HIR allocation")]
     InvalidLocalOrigin { local: LocalId },
     #[error("Flow {item:?} definition does not belong to its exact accepted owner")]
@@ -10498,7 +10577,7 @@ pub enum RuntimeSemanticFactFamily {
 
 fn validate_complete_expression_types(
     runtime_owners: RuntimeSemanticOwnerSet<'_>,
-    expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
+    expression_types: &RuntimeExpressionTypeView<'_>,
     instance_owned: &BTreeSet<ExprId>,
 ) -> Result<(), RuntimeSemanticFactsError> {
     let mut accepted = runtime_owners.selected_expression_type_owners()?;
@@ -10818,7 +10897,7 @@ fn validate_project_item(
 fn validate_assignment<'types>(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     local_type: impl Fn(&LocalId) -> Option<&'types RuntimeNormalizedType>,
-    expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
+    expression_types: &RuntimeExpressionTypeView<'_>,
     values: &BTreeMap<ExprId, RuntimeResolvedValue>,
     access: Option<&arcweft_lang_sema::final_analysis::CheckedLocalPlaceAccess>,
     statement: StmtId,
@@ -11433,7 +11512,7 @@ fn validate_normalized_type(
 
 fn validate_call(
     modules: &BTreeMap<HirModuleId, &HirModule>,
-    expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
+    expression_types: &RuntimeExpressionTypeView<'_>,
     expression: ExprId,
     expression_source_type: Option<&RuntimeNormalizedType>,
     hir_call: &HirCallInvocation,
@@ -12357,15 +12436,13 @@ fn validate_project_function_instance(
         .type_projection()
         .iter()
         .filter_map(|projection| match (projection.owner(), projection.ty()) {
-            (RuntimeProjectFunctionTypeOwner::Expression(owner), Some(ty)) => {
-                Some((owner, ty.clone()))
-            }
+            (RuntimeProjectFunctionTypeOwner::Expression(owner), Some(ty)) => Some((owner, ty)),
             (RuntimeProjectFunctionTypeOwner::Expression(_), None)
             | (RuntimeProjectFunctionTypeOwner::Pattern(_), _)
             | (RuntimeProjectFunctionTypeOwner::Local(_), _)
             | (RuntimeProjectFunctionTypeOwner::Type(_), _) => None,
         })
-        .collect::<BTreeMap<_, _>>();
+        .collect::<RuntimeExpressionTypeView<'_>>();
     for projection in instance.semantics().expressions() {
         let RuntimeProjectFunctionExpressionPayload::Call(call) = projection.payload() else {
             continue;
@@ -12613,12 +12690,10 @@ fn validate_project_function_semantic_catalog(
         .type_projection()
         .iter()
         .filter_map(|projection| match (projection.owner(), projection.ty()) {
-            (RuntimeProjectFunctionTypeOwner::Expression(owner), Some(ty)) => {
-                Some((owner, ty.clone()))
-            }
+            (RuntimeProjectFunctionTypeOwner::Expression(owner), Some(ty)) => Some((owner, ty)),
             _ => None,
         })
-        .collect::<BTreeMap<_, _>>();
+        .collect::<RuntimeExpressionTypeView<'_>>();
     let pattern_types = semantics
         .type_projection()
         .iter()
@@ -13171,10 +13246,9 @@ fn validate_project_instance_fragments(
         .filter_map(|row| {
             semantics
                 .expression_type(row.owner())
-                .cloned()
                 .map(|ty| (row.owner(), ty))
         })
-        .collect::<BTreeMap<_, _>>();
+        .collect::<RuntimeExpressionTypeView<'_>>();
     let calls = semantics
         .expressions()
         .iter()
@@ -13261,7 +13335,7 @@ fn validate_project_instance_fragments(
 
 fn validate_dialogue_effect_operation(
     modules: &BTreeMap<HirModuleId, &HirModule>,
-    expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
+    expression_types: &RuntimeExpressionTypeView<'_>,
     calls: &BTreeMap<ExprId, RuntimeResolvedCall>,
     operation: &RuntimeDialogueEffectOperationFact,
 ) -> bool {

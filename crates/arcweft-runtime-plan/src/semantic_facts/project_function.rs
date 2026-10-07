@@ -1900,6 +1900,28 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
     pub fn expression_type(&self, owner: ExprId) -> Option<&RuntimeNormalizedType> {
         self.ty(RuntimeProjectFunctionTypeOwner::Expression(owner))
     }
+
+    pub fn expression_coordinate(
+        &self,
+        owner: ExprId,
+    ) -> Option<&arcweft_lang_sema::semantic_coordinate::CheckedSemanticPath> {
+        self.partition
+            .expressions()
+            .binary_search_by_key(&owner, |row| row.owner())
+            .ok()
+            .map(|index| self.partition.expressions()[index].coordinate())
+    }
+
+    pub fn statement_coordinate(
+        &self,
+        owner: StmtId,
+    ) -> Option<&arcweft_lang_sema::semantic_coordinate::StableCheckedStatementCoordinate> {
+        self.partition
+            .statements()
+            .binary_search_by_key(&owner, |row| row.owner())
+            .ok()
+            .map(|index| self.partition.statements()[index].coordinate())
+    }
     pub fn expression_specialization(
         &self,
         owner: ExprId,

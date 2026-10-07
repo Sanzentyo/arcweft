@@ -188,7 +188,11 @@ fn agent_debug_diagnostic_projects_fresh_session_fault() {
                     RuntimeTypeShape::Unit,
                 )
             };
-            input.push_expression_type(owner, RuntimeNormalizedType::new(semantic_identity, shape));
+            input.push_expression_type(
+                owner,
+                RuntimeNormalizedType::new(semantic_identity, shape),
+                local_analysis.expression_origin(owner).unwrap(),
+            );
         }
         for (owner, _) in module.patterns() {
             input.push_pattern_type(

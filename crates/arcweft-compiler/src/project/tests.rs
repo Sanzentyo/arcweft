@@ -355,7 +355,7 @@ flow main() -> i64 {
 fn generic_project_function_instances_close_one_body_under_distinct_runtime_types() {
     let (project, context) = removed_role_project(
         r#"
-fn identity<T>(value: T) -> T { value }
+fn identity<T>(value: T) -> T { let result = value; result }
 
 flow main() -> i64 {
     identity(1i64)
@@ -399,6 +399,52 @@ flow main() -> i64 {
         RuntimeProjectFunctionTypeOwner, RuntimeProjectFunctionTypeProjection,
     };
     let analysis = compiled.analysis_lease().final_analysis();
+    for (owner, _) in analysis.expressions() {
+        if compiled.runtime_facts().expression_type(owner).is_some() {
+            assert_eq!(
+                compiled.runtime_facts().expression_coordinate(owner),
+                Some(analysis.expression_origin(owner).unwrap().coordinate())
+            );
+        }
+    }
+    let coordinates =
+        |instance: &arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionInstanceFact| {
+            let semantics = instance.semantics();
+            let expressions = semantics
+                .partition()
+                .expressions()
+                .iter()
+                .map(|row| {
+                    assert_eq!(
+                        semantics.expression_coordinate(row.owner()),
+                        Some(row.coordinate())
+                    );
+                    row.coordinate().clone()
+                })
+                .collect::<Vec<_>>();
+            let statements = semantics
+                .partition()
+                .statements()
+                .iter()
+                .map(|row| {
+                    assert_eq!(
+                        semantics.statement_coordinate(row.owner()),
+                        Some(row.coordinate())
+                    );
+                    row.coordinate().clone()
+                })
+                .collect::<Vec<_>>();
+            assert!(
+                !statements.is_empty(),
+                "authored let statement retains an accepted coordinate"
+            );
+            (expressions, statements)
+        };
+    assert_eq!(
+        coordinates(instances[0]),
+        coordinates(instances[1]),
+        "closed types do not alter authored semantic coordinates"
+    );
     let expected_origin = analysis.local_binding_origin(parameter_local).unwrap();
     for instance in &instances {
         let local = instance

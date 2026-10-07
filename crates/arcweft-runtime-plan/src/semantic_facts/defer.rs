@@ -76,7 +76,7 @@ pub(super) fn validate_defer<'types>(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     owners: RuntimeSemanticOwnerSet<'_>,
     local_type: impl Fn(&LocalId) -> Option<&'types RuntimeNormalizedType>,
-    expressions: &BTreeMap<ExprId, RuntimeNormalizedType>,
+    expressions: &super::RuntimeExpressionTypeView<'_>,
     authority: Option<&arcweft_lang_sema::final_analysis::CheckedLocalUseAuthority>,
     statement: StmtId,
     fact: &RuntimeDeferFact,
@@ -94,7 +94,7 @@ pub(super) fn validate_defer<'types>(
 pub(super) fn validate_defer_payload<'types>(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     local_type: impl Fn(&LocalId) -> Option<&'types RuntimeNormalizedType>,
-    expressions: &BTreeMap<ExprId, RuntimeNormalizedType>,
+    expressions: &super::RuntimeExpressionTypeView<'_>,
     authority: Option<&arcweft_lang_sema::final_analysis::CheckedLocalUseAuthority>,
     statement: StmtId,
     fact: &RuntimeDeferFact,

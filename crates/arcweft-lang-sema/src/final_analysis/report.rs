@@ -250,6 +250,10 @@ impl FinalAnalysisClosureExecution {
 /// Failure to project one checked expression into execution.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum FinalAnalysisExecutionProjectionError {
+    #[error("checked expression {owner:?} has no accepted structural coordinate")]
+    InvalidExpressionCoordinate { owner: ExprId },
+    #[error("checked statement {owner:?} has no accepted structural coordinate")]
+    InvalidStatementCoordinate { owner: StmtId },
     #[error("program source {owner:?} belongs to another callable authority")]
     ForeignProgramCallableAuthority {
         owner: super::CheckedExecutionSource,
@@ -335,6 +339,7 @@ pub enum CheckedExecutableRuntimeExpressionFactFamily {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedExecutableRuntimeExpressionFactOwner {
     owner: ExprId,
+    coordinate: crate::semantic_coordinate::CheckedSemanticPath,
     producer_kind: Option<crate::CheckedExpressionProducerKind>,
     family: CheckedExecutableRuntimeExpressionFactFamily,
     has_runtime_type: bool,
@@ -342,6 +347,9 @@ pub struct CheckedExecutableRuntimeExpressionFactOwner {
 }
 
 impl CheckedExecutableRuntimeExpressionFactOwner {
+    pub const fn coordinate(&self) -> &crate::semantic_coordinate::CheckedSemanticPath {
+        &self.coordinate
+    }
     pub const fn producer_kind(&self) -> Option<crate::CheckedExpressionProducerKind> {
         self.producer_kind
     }
@@ -412,18 +420,25 @@ pub enum CheckedExecutableRuntimeStatementFactFamily {
 }
 
 /// One final-sema-sealed statement row in an executable partition.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CheckedExecutableRuntimeStatementFactOwner {
     owner: StmtId,
+    coordinate: crate::semantic_coordinate::StableCheckedStatementCoordinate,
     family: CheckedExecutableRuntimeStatementFactFamily,
 }
 
 impl CheckedExecutableRuntimeStatementFactOwner {
-    pub const fn owner(self) -> StmtId {
+    pub const fn coordinate(
+        &self,
+    ) -> &crate::semantic_coordinate::StableCheckedStatementCoordinate {
+        &self.coordinate
+    }
+
+    pub const fn owner(&self) -> StmtId {
         self.owner
     }
 
-    pub const fn family(self) -> CheckedExecutableRuntimeStatementFactFamily {
+    pub const fn family(&self) -> CheckedExecutableRuntimeStatementFactFamily {
         self.family
     }
 }
@@ -659,6 +674,10 @@ impl FinalAnalysisExecutionProjection<'_> {
         executable: &HirRuntimeExecutableOwner,
         owners: &HirRuntimeExecutableSemanticOwners,
     ) -> Result<CheckedExecutableRuntimeFactPartition, FinalAnalysisExecutionProjectionError> {
+        let coordinates = crate::semantic_coordinate::SemanticCoordinateIndex::new(
+            self.analysis.accepted_root_catalog(),
+            self.analysis,
+        );
         let module = |owner: ExprId| {
             project
                 .modules()
@@ -808,6 +827,9 @@ impl FinalAnalysisExecutionProjection<'_> {
             };
             expressions.push(CheckedExecutableRuntimeExpressionFactOwner {
                 owner,
+                coordinate: coordinates.expression(owner).map_err(|_| {
+                    FinalAnalysisExecutionProjectionError::InvalidExpressionCoordinate { owner }
+                })?,
                 producer_kind: matches!(hir.kind(), arcweft_lang_hir::expr::HirExprKind::Thread(_))
                     .then_some(crate::CheckedExpressionProducerKind::Thread),
                 family,
@@ -901,7 +923,13 @@ impl FinalAnalysisExecutionProjection<'_> {
                         CheckedExecutableRuntimeStatementFactFamily::Yield
                     }
                 };
-                Ok(CheckedExecutableRuntimeStatementFactOwner { owner, family })
+                Ok(CheckedExecutableRuntimeStatementFactOwner {
+                    owner,
+                    family,
+                    coordinate: coordinates.statement(owner).map_err(|_| {
+                        FinalAnalysisExecutionProjectionError::InvalidStatementCoordinate { owner }
+                    })?,
+                })
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(CheckedExecutableRuntimeFactPartition {
@@ -2428,6 +2456,27 @@ impl FinalSemanticAnalysis {
 
     pub fn expression(&self, owner: ExprId) -> Option<&CheckedExpression> {
         self.expressions.get(&owner)
+    }
+
+    pub fn expression_origin(
+        &self,
+        owner: ExprId,
+    ) -> Result<
+        crate::semantic_coordinate::CheckedExpressionOrigin,
+        crate::semantic_coordinate::CheckedExpressionOriginError,
+    > {
+        crate::semantic_coordinate::SemanticCoordinateIndex::new(self.accepted_root_catalog(), self)
+            .expression(owner)
+            .map(|coordinate| {
+                crate::semantic_coordinate::CheckedExpressionOrigin::new(
+                    owner,
+                    Arc::clone(self.hir_topology()),
+                    coordinate,
+                )
+            })
+            .map_err(
+                |_| crate::semantic_coordinate::CheckedExpressionOriginError { expression: owner },
+            )
     }
 
     /// Borrows fallible execution projections from this semantic generation.
