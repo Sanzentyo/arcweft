@@ -12,14 +12,53 @@ use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticMeter};
 /// No byte constructor or decoder exists. Upper publication remains Cut 5.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ProducerFunctionSemanticDigest([u8; 32]);
+
+pub(crate) struct ProducerFunctionSemantic {
+    digest: ProducerFunctionSemanticDigest,
+    endpoints: Box<[(EndpointKind, blake3::Hash)]>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct ProducerEndpoint<'a> {
+    producer: &'a ProducerFunctionSemantic,
+    ordinal: u32,
+    kind: EndpointKind,
+}
+
+impl ProducerEndpoint<'_> {
+    pub(crate) const fn producer_digest(&self) -> ProducerFunctionSemanticDigest {
+        self.producer.digest
+    }
+    pub(crate) const fn ordinal(&self) -> u32 {
+        self.ordinal
+    }
+    pub(crate) const fn kind(&self) -> EndpointKind {
+        self.kind
+    }
+}
+
+impl ProducerFunctionSemantic {
+    pub(crate) const fn digest(&self) -> ProducerFunctionSemanticDigest {
+        self.digest
+    }
+    pub(crate) fn endpoint(&self, ordinal: u32) -> Option<ProducerEndpoint<'_>> {
+        self.endpoints
+            .get(ordinal as usize)
+            .map(|(kind, _)| ProducerEndpoint {
+                producer: self,
+                ordinal,
+                kind: *kind,
+            })
+    }
+}
 impl ProducerFunctionSemanticDigest {
     pub(crate) const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 }
 
-#[derive(Clone, Copy)]
-enum EndpointKind {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum EndpointKind {
     HostTask,
     MakeNeed,
     AwaitManyBase,
@@ -27,7 +66,7 @@ enum EndpointKind {
     LineTask,
 }
 impl EndpointKind {
-    const fn semantic_tag(self) -> u8 {
+    pub(crate) const fn semantic_tag(self) -> u8 {
         match self {
             Self::HostTask => 0,
             Self::AwaitManyBase => 2,
@@ -59,6 +98,23 @@ impl RuntimeBodySemanticContext<'_> {
         >,
         limits: plan::RuntimeTaskPlanSealLimits,
     ) -> Result<ProducerFunctionSemanticDigest, RuntimeBodySemanticError> {
+        self.producer_function(meter, function, task_owner, task_reference, limits)
+            .map(|row| row.digest)
+    }
+
+    pub(crate) fn producer_function(
+        &self,
+        meter: &mut TaskSemanticMeter,
+        function: crate::runtime_id::RuntimeFunctionSiteId,
+        task_owner: &RuntimeTaskPlanCoordinateOwner,
+        task_reference: &mut impl FnMut(
+            super::flow::RuntimeBodyTaskSource<'_>,
+        ) -> Result<
+            RuntimeTaskPlanBuildCoordinate,
+            RuntimeBodySemanticError,
+        >,
+        limits: plan::RuntimeTaskPlanSealLimits,
+    ) -> Result<ProducerFunctionSemantic, RuntimeBodySemanticError> {
         meter.status()?;
         let Some(site) = self.plan.function_sites().get(function) else {
             meter.reject_owner();
@@ -70,14 +126,9 @@ impl RuntimeBodySemanticContext<'_> {
         let endpoints =
             Self::endpoint_count(site.body(), site.inputs().len(), limits.max_function_roles)
                 .inspect_err(|_| meter.reject_owner())?;
-        let roles = site
-            .inputs()
-            .len()
-            .checked_add(endpoints)
-            .ok_or(crate::task::semantic::TaskSemanticEncodingError::ArithmeticOverflow)?;
+        let roles = meter.checked_count_sum(site.inputs().len(), endpoints)?;
         if roles > limits.max_function_roles as usize {
-            let mut reject = TaskSemanticEncoder::new(b"", meter);
-            reject.reject_owner();
+            meter.reject_owner();
             return Err(RuntimeBodySemanticError::FunctionRoles {
                 actual: roles,
                 maximum: limits.max_function_roles,
@@ -145,17 +196,18 @@ impl RuntimeBodySemanticContext<'_> {
         self.write_type(&mut encoder, site.result())?;
         encoder.digest(body.as_bytes());
         encoder.count(paths.len());
-        for (ordinal, (kind, path)) in paths.into_iter().enumerate() {
+        for (ordinal, (kind, path)) in paths.iter().enumerate() {
             encoder.enter_element();
             encoder.enter_role();
             encoder.count(ordinal);
             encoder.tag(kind.semantic_tag());
             encoder.digest(path.as_bytes());
         }
-        encoder
-            .finish()
-            .map(|hash| ProducerFunctionSemanticDigest(*hash.as_bytes()))
-            .map_err(Into::into)
+        let digest = ProducerFunctionSemanticDigest(*encoder.finish()?.as_bytes());
+        Ok(ProducerFunctionSemantic {
+            digest,
+            endpoints: paths.into_boxed_slice(),
+        })
     }
 
     fn endpoint_count(

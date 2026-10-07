@@ -992,3 +992,153 @@ fn producer_endpoint_branch_path_and_role_quota_enter_the_same_transcript() {
         })
     ));
 }
+
+#[test]
+fn request_template_commits_static_role_order_and_paths_under_actual_producer_endpoint() {
+    use super::request::*;
+    let (plan, owner, function) = producer_host_plan(true);
+    let mut meter = TaskSemanticMeter::new(100_000, 1_000_000);
+    let producer = RuntimeBodySemanticContext::new(&plan)
+        .producer_function(
+            &mut meter,
+            function,
+            &owner,
+            &mut |_| Ok(owner.resolve(0).unwrap()),
+            crate::plan::RuntimeTaskPlanSealLimits::default(),
+        )
+        .unwrap();
+    assert!(producer.endpoint(1).is_none());
+    let ty = crate::runtime_id::RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN);
+    let hash = |reverse, path| {
+        let mut meter = TaskSemanticMeter::new(10_000, 100_000);
+        let argument = |ordinal| RuntimeRequestArgument {
+            role: RuntimeRequestArgumentRole::Positional,
+            identity: None,
+            ty,
+            source: RuntimeRequestValueSource::Literal,
+            path: Box::new([RuntimeRequestPathStep::Operand(ordinal)]),
+        };
+        let arguments = if reverse {
+            [argument(1), argument(path)]
+        } else {
+            [argument(path), argument(1)]
+        };
+        RuntimeBodySemanticContext::new(&plan)
+            .request_template_digest(
+                &mut meter,
+                producer.endpoint(0).unwrap(),
+                &arguments,
+                &[],
+                crate::plan::RuntimeTaskPlanSealLimits::default(),
+            )
+            .unwrap()
+    };
+    assert_ne!(hash(false, 0), hash(true, 0));
+    assert_ne!(hash(false, 0), hash(false, 2));
+}
+
+#[test]
+fn request_role_quota_poison_precedes_type_resolution() {
+    use super::request::*;
+    let (plan, owner, function) = producer_host_plan(true);
+    let mut meter = TaskSemanticMeter::new(100_000, 1_000_000);
+    let producer = RuntimeBodySemanticContext::new(&plan)
+        .producer_function(
+            &mut meter,
+            function,
+            &owner,
+            &mut |_| Ok(owner.resolve(0).unwrap()),
+            crate::plan::RuntimeTaskPlanSealLimits::default(),
+        )
+        .unwrap();
+    let unknown =
+        crate::runtime_id::RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::new(99).unwrap());
+    let args = [RuntimeRequestArgument {
+        role: RuntimeRequestArgumentRole::Named,
+        identity: Some(RuntimeRequestRoleIdentity::from_accepted_identity([9; 32])),
+        ty: unknown,
+        source: RuntimeRequestValueSource::Local,
+        path: Box::new([]),
+    }];
+    let mut meter = TaskSemanticMeter::new(1000, 10000);
+    assert!(matches!(
+        RuntimeBodySemanticContext::new(&plan).request_template_digest(
+            &mut meter,
+            producer.endpoint(0).unwrap(),
+            &args,
+            &[],
+            crate::plan::RuntimeTaskPlanSealLimits {
+                max_request_roles: 0,
+                ..Default::default()
+            }
+        ),
+        Err(RuntimeBodySemanticError::RequestRoles {
+            actual: 1,
+            maximum: 0
+        })
+    ));
+    assert_eq!(
+        TaskSemanticEncoder::new(b"later", &mut meter).finish(),
+        Err(TaskSemanticEncodingError::OwnerRejected)
+    );
+}
+
+#[test]
+fn request_template_field_identity_roles_and_shared_budget_affect_acceptance() {
+    use super::request::*;
+    let (plan, owner, function) = producer_host_plan(true);
+    let mut meter = TaskSemanticMeter::new(100_000, 1_000_000);
+    let producer = RuntimeBodySemanticContext::new(&plan)
+        .producer_function(
+            &mut meter,
+            function,
+            &owner,
+            &mut |_| Ok(owner.resolve(0).unwrap()),
+            crate::plan::RuntimeTaskPlanSealLimits::default(),
+        )
+        .unwrap();
+    let ty = crate::runtime_id::RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN);
+    let field = |identity, role| RuntimeRequestField {
+        identity: RuntimeRequestRoleIdentity::from_accepted_identity([identity; 32]),
+        role,
+        ty,
+        path: Box::new([RuntimeRequestPathStep::Operand(0)]),
+    };
+    let digest = |identity, role| {
+        let mut meter = TaskSemanticMeter::new(10_000, 100_000);
+        RuntimeBodySemanticContext::new(&plan)
+            .request_template_digest(
+                &mut meter,
+                producer.endpoint(0).unwrap(),
+                &[],
+                &[field(identity, role)],
+                crate::plan::RuntimeTaskPlanSealLimits::default(),
+            )
+            .unwrap()
+    };
+    assert_ne!(
+        digest(1, RuntimeRequestFieldRole::Required),
+        digest(2, RuntimeRequestFieldRole::Required)
+    );
+    assert_ne!(
+        digest(1, RuntimeRequestFieldRole::Required),
+        digest(1, RuntimeRequestFieldRole::Optional)
+    );
+    let mut meter = TaskSemanticMeter::new(1, 100_000);
+    assert!(matches!(
+        RuntimeBodySemanticContext::new(&plan).request_template_digest(
+            &mut meter,
+            producer.endpoint(0).unwrap(),
+            &[],
+            &[field(1, RuntimeRequestFieldRole::Required)],
+            crate::plan::RuntimeTaskPlanSealLimits::default(),
+        ),
+        Err(RuntimeBodySemanticError::Encoding(
+            TaskSemanticEncodingError::SemanticWork
+        ))
+    ));
+    assert_eq!(
+        TaskSemanticEncoder::new(b"later", &mut meter).finish(),
+        Err(TaskSemanticEncodingError::SemanticWork)
+    );
+}

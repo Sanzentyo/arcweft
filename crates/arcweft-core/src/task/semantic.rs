@@ -47,6 +47,17 @@ impl TaskSemanticMeter {
         }
     }
 
+    /// Preflight count arithmetic shares the first-error state with encoding.
+    pub(crate) fn checked_count_sum(
+        &mut self,
+        left: usize,
+        right: usize,
+    ) -> Result<usize, TaskSemanticEncodingError> {
+        self.status()?;
+        left.checked_add(right)
+            .ok_or_else(|| self.reject(TaskSemanticEncodingError::ArithmeticOverflow))
+    }
+
     pub(crate) fn charge_work(&mut self, units: u64) -> Result<(), TaskSemanticEncodingError> {
         if let Some(error) = self.error {
             return Err(error);
@@ -204,6 +215,29 @@ mod tests {
 
     fn meter() -> TaskSemanticMeter {
         TaskSemanticMeter::new(4_194_304, 67_108_864)
+    }
+
+    #[test]
+    fn count_preflight_overflow_poison_and_existing_error_precedence() {
+        let mut meter = meter();
+        assert_eq!(meter.checked_count_sum(2, 3), Ok(5));
+        assert_eq!(
+            meter.checked_count_sum(usize::MAX, 1),
+            Err(TaskSemanticEncodingError::ArithmeticOverflow)
+        );
+        assert_eq!(
+            TaskSemanticEncoder::new(b"later", &mut meter).finish(),
+            Err(TaskSemanticEncodingError::ArithmeticOverflow)
+        );
+        let mut meter = TaskSemanticMeter::new(0, 100);
+        assert_eq!(
+            meter.charge_work(1),
+            Err(TaskSemanticEncodingError::SemanticWork)
+        );
+        assert_eq!(
+            meter.checked_count_sum(usize::MAX, 1),
+            Err(TaskSemanticEncodingError::SemanticWork)
+        );
     }
 
     #[test]

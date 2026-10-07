@@ -7630,3 +7630,65 @@ existingworkspace sizetriggersretainpreviousdispositions. Measurements:
 Afterallvalidationhandles terminal, nextestinventory945caseIDs exactlymatch
 finalrun945/945,0missing. NoRustsourceeditsafterfullpass. Fmt/diff/explicit
 stagedreviewfollow, privateCut4only;fullgoalstillactive.
+
+
+### 2026-10-07 — private request-template transcript
+
+Inspected main bd5b77cb3bb4656a2d6cc3ae5e18a26371fc073e with four
+uncommitted Core request-owner paths; no unrelated WIP. This cut retains
+private Cut4 scope: closed request argument roles (8), sources (7), path
+steps (12), field roles (5), ordered accepted type/identity fields and Q
+transcript under the actual completed F endpoint capability. Endpoint fields
+are private to the producer owner; Q cannot mint an arbitrary ordinal/kind.
+The producer retains its actual owned endpoint inventory. No public task
+schema, codec, View proof or common sealer is exposed in this cut.
+
+Count preflight is now inherent on the existing shared TaskSemanticMeter;
+arithmetic failure retains the first error across F/Q and later encoding.
+Every request child uses the same work/byte budget. Accepted name/field
+identity currently enters the private request model as accepted 32-byte
+semantic evidence; production Host lowering still only retains named argument
+strings. Actual accepted role transport from checked callable/schema/formal
+owners is required at the protected Cut5 switch. Do not hash debug spelling
+or infer a missing identity. Request-to-body resolution, actual candidate
+table/row-count authority, E fifteen-table memoization/cycle validation,
+common private image/atomic seal, View/Timeout endpoint owners and all
+producer/consumer migrations remain required. Private Q coverage is not
+completion evidence for T01/T06 or the full goal.
+
+Focused initial request tests 24/24 pass, 924 skipped, 0.126s. Added meaningful
+field identity/required-vs-optional and sticky arithmetic/shared-budget
+regressions; final Core allfeature locked lib nextest terminal0:
+950/950 pass, 0 skipped, 7.317s (build44.65s). Core alltarget check/lint pending.
+Source is frozen until check/lint handles terminate; no live duplicate builds.
+Allfeatures Cargo metadata reverse BFS reused from the unchanged Flow cut:
+complete transitive workspace closure remains Core50. No Cargo edges/public
+consumer behavior changed; consumers are validated at the protected switch,
+not claimed rerun here. Prior broad run retains 277 known CLI failures and
+must not be described as fully green. Current goal remains active/incomplete.
+User normal push authorization retained; Astra one-shot consumed, never repeat.
+
+Final Core alltarget allfeature locked check terminal0,23.54s; initialClippy
+terminal0,29.11s with existingwarnings. New needless-pass-by-value warning
+resolved by making the borrowed endpoint capability Copy; its fields and
+issuer remain private. Final postlint/inventory handle pending. Structure
+scanner terminal0, no blocking finding. Fetch confirms existing main and
+origin/main0/0 at bd5b77cb3bb4656a2d6cc3ae5e18a26371fc073e.
+
+Ownership disposition: request transcript grammar stays with the existing
+body semantic context; producer owner alone mints endpoint capabilities; the
+existing task meter owns shared count/error behavior. No extra public model,
+crate edge, second identity resolver, or arbitrary file-size split. Changed
+owner measurements:
+- crates/arcweft-core/src/plan/body_semantic.rs: 33347 bytes, 825 physical LOC.
+- crates/arcweft-core/src/plan/body_semantic/function.rs: 13616 bytes, 349 physical LOC.
+- crates/arcweft-core/src/plan/body_semantic/request.rs: 9163 bytes, 280 physical LOC.
+- crates/arcweft-core/src/plan/body_semantic/tests.rs: 42241 bytes, 1144 physical LOC.
+- crates/arcweft-core/src/task/semantic.rs: 13830 bytes, 417 physical LOC.
+
+Postlint terminal0,28.38s; endpoint needless-pass-by-value warning removed.
+Nextest inventory terminal0 after all run/check/lint handles; listed950 and
+executed950 exact caseIDs,0missing. Initial receipt parser missed padded
+ordinals1..99; corrected regex and compared all950 caseIDs, not a test failure.
+Final fmt/diff and explicit six-path staged review precede commit/push.
+Full goal active/incomplete.

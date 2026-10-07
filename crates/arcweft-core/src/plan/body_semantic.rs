@@ -5,7 +5,8 @@ use super::RuntimePlan;
 
 mod executable_metadata;
 pub(crate) mod flow;
-mod function;
+pub(crate) mod function;
+mod request;
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticEncodingError};
 use crate::value::{
@@ -31,6 +32,9 @@ pub(crate) enum RuntimeBodySemanticError {
     InvalidFunctionInput { input: usize },
     #[error("producer function roles {actual} exceed limit {maximum}")]
     FunctionRoles { actual: usize, maximum: u32 },
+    #[error("request template roles {actual} exceed limit {maximum}")]
+    RequestRoles { actual: usize, maximum: u32 },
+
     #[error("body references missing {table} row {ordinal}")]
     MissingRow { table: &'static str, ordinal: usize },
     #[error("callable semantic graph has a cycle at state {state}")]
