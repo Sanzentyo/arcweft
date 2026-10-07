@@ -7692,3 +7692,58 @@ executed950 exact caseIDs,0missing. Initial receipt parser missed padded
 ordinals1..99; corrected regex and compared all950 caseIDs, not a test failure.
 Final fmt/diff and explicit six-path staged review precede commit/push.
 Full goal active/incomplete.
+
+
+### 2026-10-07 — accepted request-role transport
+
+Inspected clean main/origin de73b8b4b095c1e2f738117fcef0aa9de7cfef75;
+current11paths only. Checked execution slots now retain opaque owner-minted
+CheckedCallRequestRoleIdentity after the existing destination/schema checks.
+Fixed project formals use source-independent declaration semantic identity
+and checked group/parameter coordinates. Nominal record/variant payload fields
+reuse accepted field identity; open arguments reuse existing schema-owned
+OpenArgumentId digest. Compiler ordinary and CharacterDialogue projections
+carry this evidence unchanged in the sole physical operand row. Runtime call
+publication requires Argument iff identity present. No raw constructor,
+source/name fallback, side table, task schema/codec, or new Cargo edge.
+Existing checked-call/application digest grammar unchanged. Maintained
+control-flow-runtime chapter records the closed version-one owner grammar.
+
+Meaningful tests prove fixed formal identity invariance across body/value/
+parameter display/source shifts and repeated calls, distinct formal/callable
+owners, actual compiler field-role transport, and missing/receiver evidence
+rejection before publication. Runtime fixtures obtain a real checked role.
+Initial compiler check failed due sibling enum reference; repaired to schema
+owner. Initial focused build failed on cross-crate private ZERO test constant;
+repaired to public checked constructor. Repaired focused3/3 pass,1454skip,
+0.203s,build25.04s. Compiler/runtime-plan alltarget allfeature locked check0,
+95s. Workspace alltarget allfeature locked check0,93s; workspaceClippy0,109s.
+New if-let style issue corrected and complete8-axis operand constructor has
+explicit cohesive lint disposition. Final affected3 Clippy0,75s; existing
+warnings remain, no-Dwarnings claim. An earlier attempted lint edit did not
+execute due missing Node bindings; no source mutation occurred then.
+
+Fresh allfeatures Cargo metadata and target-all tree inversion0; reverse BFS
+union of Sema/runtime-plan/compiler contains22workspace packages. Complete
+selected surface:21nonCLI lib/tests2870/2870pass,0skip,380.441s (3slow API
+compilefixtures),build7m07s; CLIlib/bins171/171pass2.688s; repository-selected
+CLIintegration24/24pass10.066s. Total3065pass,0fail/skip. Broad CLIcheck277
+historical failures are outside this repository-selected surface and remain
+milestone work; no claim they were rerun/passed. All validation handles terminal.
+Final source differs only by equivalent if-let and lint expectation from the
+3065pass bytes. After finalClippy, all three nextest inventories0:3065listed
+caseIDs exactly match3065executed,0missing. Fmt/stageddiff checks0. Normal
+fetch retains main/origin0/0 at the baseSHA; explicit11path staged review.
+
+Structure scanner0,no blockers. Existing callable authority owns issuance,
+physical operand owns evidence,compiler only transports; no dependency change
+or unrelated state. Large-owner cohesion dispositions remain applicable.
+Measurements (production, existingembeddedtests): checked_application.rs
+178705bytes/4796LOC; semantic_facts.rs557350bytes/14272LOC; compiler lower.rs
+424598bytes/9982LOC (before final equivalentstyle lint adjustment).
+
+Core request template evidence, actual candidate table, E15 memo/cycle/limits,
+private image/common atomic seal, View/Timeout endpoint owners, consumerlegacy
+removal and full originalgoal/milestone validation remain required. This cut
+completes accepted fact transport, not Q/core/commonseal completion. Goalactive;
+Astra one-shot consumed neverrepeat; no new branch/worktree/delegation.

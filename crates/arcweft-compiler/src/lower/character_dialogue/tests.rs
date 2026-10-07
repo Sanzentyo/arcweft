@@ -87,6 +87,14 @@ flow main() -> i64 {
         ]
     );
     assert_eq!(call.operands()[1].ty().shape(), &RuntimeTypeShape::String);
+    assert!(call.operands()[0].request_role_identity().is_none());
+    let first = call.operands()[1]
+        .request_role_identity()
+        .expect("first checked field role");
+    let second = call.operands()[2]
+        .request_role_identity()
+        .expect("second checked field role");
+    assert_ne!(first, second);
 }
 
 #[test]

@@ -6737,6 +6737,7 @@ fn runtime_call(
                     RuntimeResolvedCallOperandBinding::Positional,
                     RuntimeResolvedCallOperandProjection::Scalar,
                     None,
+                    None,
                 ));
             }
             CheckedCallRuntimeOperand::Argument {
@@ -6782,6 +6783,7 @@ fn runtime_call(
                     }
                     CheckedCallOperandDestination::Open(_) => None,
                 },
+                Some(slot.request_role_identity()),
             )),
             CheckedCallRuntimeOperand::AttachedContent {
                 source,

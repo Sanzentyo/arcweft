@@ -71,6 +71,7 @@ macro_rules! digest_type {
 }
 
 digest_type!(ResolvedCallableDigest);
+digest_type!(CheckedCallRequestRoleIdentity);
 digest_type!(FrozenCallTypeSolutionDigest);
 digest_type!(CheckedCallCandidateInventoryDigest);
 digest_type!(CheckedCallApplicationCoreDigest);
@@ -472,6 +473,55 @@ impl ResolvedCallableAuthority {
     }
     pub fn checked_id(&self) -> Option<&CheckedCallableId> {
         self.checked.checked_id()
+    }
+
+    fn request_role_identity(
+        &self,
+        destination: &CheckedCallOperandDestination,
+    ) -> Result<CheckedCallRequestRoleIdentity, CallConstraintInvariant> {
+        let mut encoder =
+            CheckedCallCanonicalEncoder::new(b"arcweft.lang.checked-request-role.v1\0");
+        match destination {
+            CheckedCallOperandDestination::Parameter(coordinate) => {
+                let parameter = self
+                    .schema()
+                    .group(coordinate.group())
+                    .and_then(|group| group.parameter(coordinate.parameter()))
+                    .ok_or(CallConstraintInvariant::MalformedSchemaInventory)?;
+                match parameter.semantic_binding() {
+                    super::schema::CallableParameterSemanticBinding::AcceptedVariantPayloadField(field) => {
+                        encoder.tag(0);
+                        encoder.digest(field.as_bytes());
+                    }
+                    super::schema::CallableParameterSemanticBinding::AcceptedProjectRecordField(field) => {
+                        encoder.tag(1);
+                        encoder.digest(field.as_bytes());
+                    }
+                    super::schema::CallableParameterSemanticBinding::Coordinate
+                    | super::schema::CallableParameterSemanticBinding::Named(_) => {
+                        encoder.tag(2);
+                        // Project identity excludes revision/catalog/source coordinates.
+                        if let CallableCandidateId::Project(declaration) = self.issuer().id() {
+                            encoder.tag(0);
+                            encoder.digest(declaration.semantic_digest().as_bytes());
+                        } else {
+                            encoder.tag(1);
+                            encoder.stable_callable_identity(self.stable())?;
+                        }
+                        encoder.index(coordinate.group().get())?;
+                        encoder.index(coordinate.parameter().get())?;
+                    }
+                }
+            }
+            CheckedCallOperandDestination::Open(open) => {
+                if open.schema() != self.schema().semantic_digest() {
+                    return Err(CallConstraintInvariant::PreparedSchemaMismatch);
+                }
+                encoder.tag(3);
+                encoder.digest(open.semantic_digest().as_bytes());
+            }
+        }
+        Ok(CheckedCallRequestRoleIdentity(encoder.finish()))
     }
 
     pub(crate) fn visit_types<E>(
@@ -1696,6 +1746,7 @@ pub struct CheckedCallExecutionSlot {
     source: CheckedCallExecutionSource,
     abi_position: u32,
     destination: CheckedCallOperandDestination,
+    request_role_identity: CheckedCallRequestRoleIdentity,
     source_projection: CheckedConstraintSourceProjection,
     selection: CheckedCallSemanticSelection,
     inferred: TypeKind,
@@ -1762,6 +1813,11 @@ impl CheckedCallSemanticOperand {
 }
 
 impl CheckedCallExecutionSlot {
+    /// Owner-issued static request role. No source/display reconstruction is needed.
+    pub const fn request_role_identity(&self) -> CheckedCallRequestRoleIdentity {
+        self.request_role_identity
+    }
+
     pub const fn slot(&self) -> CallableArgumentSlotIndex {
         self.slot
     }
@@ -2037,6 +2093,10 @@ impl CheckedCallExecutionProjection {
                     slot: slot.slot,
                     source: slot.source,
                     abi_position,
+                    request_role_identity: selected
+                        .base()
+                        .authority()
+                        .request_role_identity(&slot.destination)?,
                     destination: slot.destination,
                     source_projection: slot.source_projection,
                     selection: slot.selection,

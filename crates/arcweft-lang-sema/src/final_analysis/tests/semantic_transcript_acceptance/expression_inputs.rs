@@ -382,3 +382,50 @@ fn execution_definition_identity_tracks_accepted_origin_across_body_edits() {
         observe(&source.replace("view Main", "view Other")).definition_identity()
     );
 }
+
+#[test]
+fn checked_request_roles_are_formal_owned_and_source_independent() {
+    fn roles(source: &str) -> Vec<Vec<[u8; 32]>> {
+        let world = super::fixture(source, None);
+        let report = super::analyze(&world).expect("checked request roles");
+        report
+            .calls()
+            .filter_map(|(_, facts)| {
+                let application = facts.selected_application()?;
+                Some(
+                    application
+                        .core()
+                        .execution()
+                        .arguments()
+                        .iter()
+                        .flat_map(|argument| argument.slots())
+                        .map(|slot| *slot.request_role_identity().as_bytes())
+                        .collect(),
+                )
+            })
+            .collect()
+    }
+    let baseline = roles(
+        "fn target(first: bool, second: bool) -> bool { first }\nfn root() -> bool { target(true, false) }\n",
+    );
+    assert_eq!(baseline.len(), 1);
+    assert_eq!(baseline[0].len(), 2);
+    assert_ne!(baseline[0][0], baseline[0][1]);
+    let changed = roles(
+        "// source shifted\nfn target(first: bool, second: bool) -> bool { second }\nfn root() -> bool { target(false, true) }\n",
+    );
+    assert_eq!(baseline, changed);
+    let renamed_parameters = roles(
+        "fn target(left: bool, right: bool) -> bool { left }\nfn root() -> bool { target(true, false) }\n",
+    );
+    assert_eq!(baseline, renamed_parameters);
+    let other_owner = roles(
+        "fn other(first: bool, second: bool) -> bool { first }\nfn root() -> bool { other(true, false) }\n",
+    );
+    assert_ne!(baseline[0][0], other_owner[0][0]);
+    let repeated = roles(
+        "fn target(first: bool, second: bool) -> bool { first }\nfn root() -> bool { let _ = target(true, false); target(false, true) }\n",
+    );
+    assert_eq!(repeated.len(), 2);
+    assert_eq!(repeated[0], repeated[1]);
+}

@@ -248,3 +248,29 @@ contains balanced body roles, operation source ordinals, and the endpoint
 ordinal within an operation, so empty branches and multiple AwaitMany
 endpoints remain distinct. Completed task digests, expected keys, generations
 and source/debug labels do not supply endpoint or task-reference authority.
+
+
+## Static request role evidence
+
+A checked execution argument slot owns its static request role identity. The
+identity is minted after the callable/schema destination is validated, then
+transported unchanged in the compiler's source-ordered runtime operand row.
+A receiver or callee is not an argument role; an Argument row must carry this
+evidence before the runtime call is published.
+
+Accepted record and variant payload field roles use their existing accepted
+field identities. An open named argument uses the existing schema-owned open
+argument identity, whose validated binding bytes are semantic data. A fixed
+project formal uses its source-independent declaration identity and checked
+group/parameter coordinate. Other fixed formals use their checked callable
+identity and formal coordinate. Source names, expression values, ABI allocation
+positions, and call-site revisions do not reconstruct a fixed formal role.
+Types, source order, passing and request paths remain distinct transcript roles.
+
+The version-one checked request-role domain is
+`arcweft.lang.checked-request-role.v1\0`. Its closed family tags are accepted
+variant payload field (0), accepted record field (1), fixed formal (2), and
+open argument (3). Field/open families contain the existing 32-byte identity.
+A fixed formal contains project declaration (0) or checked callable (1)
+identity, followed by group and parameter ordinals. Consumers receive the
+opaque issued identity, without a byte constructor or source-based fallback.

@@ -93,6 +93,7 @@ pub(super) fn runtime_character_dialogue_call(
         RuntimeResolvedCallOperandBinding::Positional,
         RuntimeResolvedCallOperandProjection::Scalar,
         None,
+        None,
     )];
     let fields = project_patch_operands(
         owner,
@@ -216,6 +217,7 @@ fn project_patch_operands(
                 runtime_call_operand_binding(owner, selected, *passing, slot)?,
                 projection,
                 parameter,
+                Some(slot.request_role_identity()),
             ));
             Ok(CharacterDialoguePatchField {
                 coordinate: field.coordinate().clone(),

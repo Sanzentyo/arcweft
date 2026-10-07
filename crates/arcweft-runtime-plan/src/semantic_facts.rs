@@ -3435,6 +3435,10 @@ pub enum RuntimeResolvedCallError {
     DuplicateOperandOrigin,
     #[error("runtime call physical operands are not in canonical source order")]
     NonCanonicalSourceOrder,
+    #[error(
+        "runtime call request role evidence disagrees with operand origin at ABI position {position}"
+    )]
+    RequestRoleIdentity { position: u32 },
     #[error("runtime call contains more than one receiver operand")]
     MultipleReceivers,
     #[error("runtime attached-content ABI position {actual} is not the final position {expected}")]
@@ -3771,6 +3775,13 @@ impl RuntimeResolvedCall {
         let mut receivers = 0_u8;
         for operand in &operands {
             let position = operand.abi_position();
+            if matches!(
+                operand.origin(),
+                RuntimeResolvedCallOperandOrigin::Argument { .. }
+            ) != operand.request_role_identity().is_some()
+            {
+                return Err(RuntimeResolvedCallError::RequestRoleIdentity { position });
+            }
             let index = usize::try_from(position).map_err(|_| {
                 RuntimeResolvedCallError::AbiPositionOutOfRange {
                     position,
@@ -4575,9 +4586,14 @@ pub struct RuntimeResolvedCallOperand {
     binding: RuntimeResolvedCallOperandBinding,
     projection: RuntimeResolvedCallOperandProjection,
     parameter: Option<RuntimeCallParameterCoordinate>,
+    request_role_identity: Option<arcweft_lang_sema::callable::CheckedCallRequestRoleIdentity>,
 }
 
 impl RuntimeResolvedCallOperand {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one physical operand retains complete source, ABI, projection and accepted role evidence"
+    )]
     pub fn new(
         abi_position: u32,
         origin: RuntimeResolvedCallOperandOrigin,
@@ -4586,6 +4602,7 @@ impl RuntimeResolvedCallOperand {
         binding: RuntimeResolvedCallOperandBinding,
         projection: RuntimeResolvedCallOperandProjection,
         parameter: Option<RuntimeCallParameterCoordinate>,
+        request_role_identity: Option<arcweft_lang_sema::callable::CheckedCallRequestRoleIdentity>,
     ) -> Self {
         Self {
             abi_position,
@@ -4595,6 +4612,7 @@ impl RuntimeResolvedCallOperand {
             binding,
             projection,
             parameter,
+            request_role_identity,
         }
     }
 
@@ -4616,6 +4634,13 @@ impl RuntimeResolvedCallOperand {
     }
     pub const fn projection(&self) -> &RuntimeResolvedCallOperandProjection {
         &self.projection
+    }
+
+    /// Sealed checked role retained without spelling-based reconstruction.
+    pub const fn request_role_identity(
+        &self,
+    ) -> Option<arcweft_lang_sema::callable::CheckedCallRequestRoleIdentity> {
+        self.request_role_identity
     }
 
     pub const fn parameter(&self) -> Option<RuntimeCallParameterCoordinate> {

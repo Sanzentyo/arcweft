@@ -22,12 +22,14 @@ fn source_row(source: arcweft_lang_hir::identity::ExprId) -> Vec<RuntimeResolved
     .map(|(index, origin)| {
         RuntimeResolvedCallOperand::new(
             u32::try_from(index).unwrap(),
-            origin,
+            origin.clone(),
             RuntimeResolvedCallOperandSource::Expression(source),
             unit_type(),
             RuntimeResolvedCallOperandBinding::Positional,
             RuntimeResolvedCallOperandProjection::Scalar,
             None,
+            matches!(origin, RuntimeResolvedCallOperandOrigin::Argument { .. })
+                .then(request_role_fixture),
         )
     })
     .collect()

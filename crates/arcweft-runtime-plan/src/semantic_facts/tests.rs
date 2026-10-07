@@ -111,6 +111,7 @@ fn attached_content_consumes_only_the_terminal_call_abi_position() {
         RuntimeResolvedCallOperandBinding::Positional,
         RuntimeResolvedCallOperandProjection::Scalar,
         None,
+        Some(request_role_fixture()),
     );
     let accepted = RuntimeResolvedCall::try_new(
         RuntimeResolvedCallDispatch::Value { callee: source },
@@ -162,6 +163,7 @@ fn call_operands_retain_source_order_and_derive_abi_order() {
             binding,
             projection,
             None,
+            Some(request_role_fixture()),
         )
     };
     let source_row = vec![
@@ -361,6 +363,7 @@ fn project_callable_attached_interface_is_consumed_only_by_its_terminal_group() 
             RuntimeResolvedCallOperandBinding::Positional,
             RuntimeResolvedCallOperandProjection::Scalar,
             None,
+            Some(request_role_fixture()),
         )],
         Some(RuntimePositionedAttachedContent::new(
             1,
@@ -385,6 +388,28 @@ fn project_callable_attached_interface_is_consumed_only_by_its_terminal_group() 
         .expect_err("terminal group cannot omit its attached ABI row"),
         RuntimeResolvedCallError::AttachedContentInterfaceMismatch
     );
+}
+
+fn request_role_fixture() -> arcweft_lang_sema::callable::CheckedCallRequestRoleIdentity {
+    let project = project_fixture(
+        "request-role",
+        "fn target(value: bool) -> bool { value }\nfn root() -> bool { target(true) }\n",
+    );
+    let analysis = analyze_identity_fixture(&project);
+    analysis
+        .calls()
+        .find_map(|(_, facts)| {
+            facts
+                .selected_application()?
+                .core()
+                .execution()
+                .arguments()
+                .first()?
+                .slots()
+                .first()
+                .map(|slot| slot.request_role_identity())
+        })
+        .expect("one real checked parameter role")
 }
 
 fn analyze_identity_fixture(
@@ -3953,4 +3978,60 @@ fn iterator_method_definition(
         .checked_execution_context(executable, registered.symbols(), source.clone(), None)
         .unwrap();
     Arc::new(context.checked_execution_input_abi(source).unwrap())
+}
+
+#[test]
+fn call_operand_request_role_presence_is_checked_before_publication() {
+    let project = project_fixture("request-role-rejection", "fn root() { true }\n");
+    let source = boolean_literal(&project);
+    let group = arcweft_lang_sema::callable::CallableGroupIndex::try_from_usize(0).unwrap();
+    let build = |origin, role| {
+        RuntimeResolvedCall::try_new(
+            RuntimeResolvedCallDispatch::Value { callee: source },
+            group,
+            vec![RuntimeResolvedCallOperand::new(
+                0,
+                origin,
+                RuntimeResolvedCallOperandSource::Expression(source),
+                unit_type(),
+                RuntimeResolvedCallOperandBinding::Positional,
+                RuntimeResolvedCallOperandProjection::Scalar,
+                None,
+                role,
+            )],
+            None,
+            None,
+            RuntimeCallResultShape::Value,
+        )
+    };
+    assert_eq!(
+        build(
+            RuntimeResolvedCallOperandOrigin::Argument {
+                argument: 0,
+                slot: 0
+            },
+            None
+        ),
+        Err(RuntimeResolvedCallError::RequestRoleIdentity { position: 0 })
+    );
+    assert_eq!(
+        build(
+            RuntimeResolvedCallOperandOrigin::Receiver,
+            Some(request_role_fixture())
+        ),
+        Err(RuntimeResolvedCallError::RequestRoleIdentity { position: 0 })
+    );
+    let identity = request_role_fixture();
+    let admitted = build(
+        RuntimeResolvedCallOperandOrigin::Argument {
+            argument: 0,
+            slot: 0,
+        },
+        Some(identity),
+    )
+    .unwrap();
+    assert_eq!(
+        admitted.operands()[0].request_role_identity(),
+        Some(identity)
+    );
 }
