@@ -8945,3 +8945,224 @@ coherent commit and non-forced push authorized. This finishes preparation
 storage admission only. Table14/private image/E15 globalmemo/common seal/
 all14 protected Cut5 steps and full original convergence acceptance remain.
 Full goal ACTIVE/INCOMPLETE; continue on main, no Astra replay/new advice agent.
+
+Inventory cut delivered/pushed normally: ee4ede92ae05d0642e724390f1121ef91cb039e7,
+parent ded6d68b1ece5b38e0ab401e0f07bb8c8da9aff3. Observed clean main equal
+origin/main. Extra precommit staged-blob verification failed ENOBUFS because
+the1,438,811-byte goal note exceeded execFileSync default output buffer;
+the exception was not handled before commit/push proceeded. This is a delivery
+procedure error, not a claimed precommit pass. Postcommit complete19-path
+blob comparison with explicit16MiB output buffer matches reviewed disk/tested
+source; complete88,276-byte diff retained under TEMP. Source/Cargo validation
+receipts above remain actual. Correct tool exceptions before dependent Git
+mutations on continuation. No forced push or destructive Git operation.
+Full goal remains ACTIVE/INCOMPLETE; resume private image/Table14/E15/common
+semantic seal and protected all14 Cut5 consumer/codec/publication migration.
+
+### 2026-10-08 — private lexical/effect row transcript preparation in progress
+
+Base existing main ee4ede92ae05d0642e724390f1121ef91cb039e7, previously clean/
+equal origin. Added private inherent semantic encoding for RuntimeTypeBinder,
+RuntimeTypeScope, RuntimeArrayLength, RuntimeFunctionTypeContract; borrowed
+adapter implements the existing effect owner DecisionEncoding/Membership-
+Encoding. Canonical membership graph and bound depth/slot roles supply bytes,
+not Serde/source spelling or a parallel effect model. All writes share the
+surrounding TaskSemanticMeter; no fresh work/byte quota. Tests cover canonical
+label ordering, lexical role/arity changes, exact work/byte limits, preceding
+sticky failure, binder order and constant/bound array roles. Focus30793 active;
+source frozen while Cargo runs. This is private Cut4 row metadata preparation,
+not a completed table0 row digest, E15/global memo, Table14 or common sealer.
+Four in-scope paths dirty (goal note/type_scope/module/test). Required affected
+validation, row integration and coherent commit/push remain; full goal ACTIVE.
+Do not repeat Astra. After focus, implement exact table0 owner row visitor and
+global15-table context with actual candidate rows, then protected Cut5 all14.
+
+Focus30793 TERMINAL100:4run/1pass/3fail because the new fixtures used invalid
+effect labels IO/Time (MissingOperation), before encoder assertions. Corrected
+fixture labels to the existing canonical fs.read/fs.write grammar; no production
+effect admission weakened. Rerun follows, then actual table0 integration remains.
+
+Private type-scope focus13611 TERMINAL0/build14.06s:4/4pass0.032s after
+fixture-only correction. New producer adapter/scopes/length/effect graph
+behavior now has exact-budget/sticky-failure evidence. Core all-target/all-
+feature locked check and full Core library nextest now running; this is not
+yet full affected reverse-closure acceptance or an integrated E15 row visitor.
+Current production target is actual table0 RuntimePlanTypeDeclaration shape,
+scope, accepted identity, ordered children, nominal/opaque roles; then remaining
+E tables/global memo/real candidateTable14/private image/common seal and every
+protected Cut5 step. Do not publish provisional public task rows or claim goal
+complete. Core inventory delivery ee4ede92ae05d0642e724390f1121ef91cb039e7 stays
+valid for its recorded18-file bytes; new scope encoder is separate uncommitted
+WIP until connected and validated. No extra Astra/advice agents.
+
+Core check/library47771 TERMINAL0:all-target/all-feature/locked check PASS
+31.85s; full Core library nextest971/971PASS,0skip,5.882s. Focus4/4 pass
+after fixture correction remains actual evidence. New type-scope encoder is
+uncommitted private preparation; no full reverse-closure rerun, Clippy/fmt
+final receipt, E15 row integration or publication claimed for these new bytes.
+Existing inventory cut ee4ede92ae05d0642e724390f1121ef91cb039e7 is already
+normally pushed and verified. Current dirty paths: existing goal note plus
+type_scope.rs, type_scope/semantic.rs, type_scope/semantic/tests.rs. No live
+Cargo/test handle remains. Next exact table0 owner row visitor must include
+scope/binder/array/function membership and every projection role; actual type
+table declarations_with_ids supplies dense canonical row order. Nominal/opaque
+accepted identity/layout/class/persistence and ordered child references must
+be encoded without debug/source names or generic Serde. Then remainingE
+owners/global memo/realTable14/private image/common seal/protected all14
+Cut5 steps and every original View/nominal/scheduler/CLI277/Tier2 acceptance.
+Continue existing main, preserve current WIP. No new branch/worktree; no new
+Astra/advice agent. Full goal ACTIVE/INCOMPLETE; no completion claim.
+
+### 2026-10-08 — actual type-row, occurrence codec and pure binding owner migration
+
+Inspected main ee4ede92ae05d0642e724390f1121ef91cb039e7; carried private scope
+WIP forward. Actual RuntimePlanTypeDeclaration now emits the accepted E-row
+domain/table0/kind followed by accepted type/nominal identity, lexical scope,
+exhaustive36-kind metadata and ordered child table-reference roles. Public
+nominal ID is semantic identity, not excluded diagnostic source type spelling.
+Codec occurrences affect actual wire/default behavior; E type rows include
+their closed iterative owner transcript, wire names/styles/format/skip/default
+roles. Default programs resolve through actual bindings to accepted function
+definition/signature leaves, not allocation ordinal or alias bytes. Full function
+body stays on its actual E function row; no recursive code-reference expansion.
+Detected duplicated body/type effect adapters and removed both: existing
+TaskSemanticEncoder now implements the canonical effect owner encoding once
+with shared work/byte accounting. Source order and first sticky error retained.
+The pure binding table owns original ordered rows plus one immutable derived
+lookup index; native invocation/default and restore/return consumers migrated
+together. Missing/ambiguous errors preserved; structural verification retains
+its original duplicate/signature error order. No source reconstruction, fallback,
+parallel contract table, I/O, new task-public schema or contract marker change.
+Core all-target/all-feature locked check48938 PASS25.65s. Added exact type-row
+bytes/work, diagnostic-name exclusion, child ordering, codec/scope/effect/nominal
+mutation, inherited quotas, missing default rejection, stable code-leaf and
+source-order/ambiguous index tests. New production source not yet fully tested;
+targeted/full rdeps/workspace lints/structural/diff/commit/push still required.
+This is real private E table0 preparation, not full E15/Table14/common seal or
+protected all14 Cut5 publication. Full original convergence goal ACTIVE.
+
+Focused51 test run16457 TERMINAL100:50pass/1fail0.264s. Nominal fixture
+failed MissingProof at actual type admission; no row hash was reached. Replaced
+its fabricated layout-only seed with complete existing nominal schema/domain
+admission (accepted declaration identity + independently derived layout). All
+other actual type/codec/default/owner and body/effect tests passed. No relaxed
+nominal or ownership admission. Rerun on final fixture follows.
+
+Focus66954 TERMINAL101 before tests: corrected nominal fixture used Vec where
+the existing schema body requires Box<[RuntimeNominalSchemaField]>. Fixed
+the test constructor shape only; retry follows. This compile failure is not
+a runtime or environment result and does not invalidate prior observed50
+focused passes on their own earlier fixture/source bytes.
+
+Final focused17481 TERMINAL0:51/51pass0.336s after final nominal fixture repair.
+This includes all body semantic owners + new scope/type/codec/index behavior.
+Actual admitted nominal source schema/domain is used, not an unproven layout.
+Final Rust source now frozen across23 paths; next workspace all-target/
+all-feature/locked check/Clippy, fresh Core50 rdeps discovery/full test inventory,
+exact CLI277 comparison, structural ownership review/fmt/diff/commit/push.
+No Rust edits while source-sensitive Cargo/tests run. Full goal incomplete.
+
+Workspace check/Clippy39300 both TERMINAL0/PASS1m35s and1m44s with existing
+warnings on first frozen23-file bytes. Review found codec Record/Enum name
+is diagnostic TypeShape metadata (actual codec consumers ignore it), distinct
+from wire_name/tag/content fields. Current new visitor incorrectly hashed
+those diagnostic names, violating source-spelling exclusion. Add actual
+diagnostic-rename/wire-mutation behavior regression, reproduce before repair,
+then remove diagnostic field reads and rerun the final source checks. Do not
+claim these earlier check receipts for edited bytes. Full goal incomplete.
+
+Codec-name regression44519 TERMINAL100:1/1FAIL0.016s on the pre-repair
+visitor (distinct hashes for diagnostic-only renamed Record type). Removed
+only Record/Enum diagnostic name reads; retained public nominal ID, wire
+field/case names, tag/content, format/skip/default roles. Full focused rerun
+follows; no final-pass claim on earlier bytes.
+
+Post-repair focused12818 TERMINAL0:52/52PASS0.264s, including diagnostic-name
+exclusion and wire-role mutations. Removed newly introduced unused scope import,
+used Copy binder by value, explicit limits names and a normal void semicolon.
+Codec visitor keeps one exhaustive iterative algebra; justified too_many_lines
+expectation names that cohesive grammar rather than hiding unrelated warnings.
+Private Cut4 unused-row-method warnings stay visible until common E integration.
+Final source checks/rdeps/CLI baseline follow; earlier frozen receipts are not
+relabelled for edited source. Full goal ACTIVE/INCOMPLETE.
+
+Final workspace check/Clippy55395 TERMINAL0/PASS42.59s and58.46s with visible
+existing warnings and explicitly private Cut4 unintegrated-row warnings.
+Fresh all-feature locked Cargo metadata + tree invert Core confirms50-package
+complete reverse closure, unchanged from prior graph. Structure gate PASS/
+blocking0. Final23 Rust file hashes retained; no source edit while Cargo live.
+Owner disposition: private type/codec visitors belong to actual existing
+algebras; one exhaustive iterative codec stack, one canonical effect trait
+implementation on the shared encoder. No schema reconstruction/parallel state.
+PureProgramTable keeps original rows and a derived lookup index, preserving
+source order and ambiguity; no new public table/API or Cargo edge. All native/
+default/continuation lookups use this owner; duplicate/signature structural
+order unchanged. New392LOC/15050-byte unit test owner exercises actual admitted
+row semantics and codec/default roles, not source spelling or layout assertions.
+Touched large owners: engine4245LOC/166876bytes (base4246,-1) keeps native
+continuation ownership and replaces only binding lookup; plan1459LOC/49497
+bytes (+2) remains grammar/publication; construction3903LOC/159237bytes (+2)
+remains sole aggregate admission; entry verification1565LOC/60029bytes (+0)
+keeps accepted deterministic structural order. No new mixed state/I/O cluster
+or numeric split-only API. New production responsibility modules below1200LOC.
+Actual full rdeps discovery/execution and exact CLI277 comparison remain.
+Full goal ACTIVE/INCOMPLETE; private row prep is not complete E15/sealer/Cut5.
+
+Final new-owner lint review: no introduced non-dead-code diagnostic remains
+on private type/scope/codec/table modules.23 Rust SHA256 unchanged;99 build
+inputs unchanged. Complete50-package non-CLI discovery23948 live; no Rust
+edits allowed until actual terminal completion. Native/default/restore/return
+consumer migration is covered by this full reverse closure, not only52 focus
+tests. Header/function/nominal role library rows beyond table0 and actual
+candidateTable14/common sealer remain pending. Current local rows retain only
+origin/type/context; future E1 integration must use actual authoritative roles
+or complete producer/consumer authority changes, never fabricated default
+mutability/storage/initialization fields from source spelling. Full goal active.
+
+Full non-CLI discovery23948 TERMINAL0/build8m47s; actual test inventory obtained
+without restart/scope narrowing. Selected4919 cases across46 runnable owners
+within50-package Core closure;16 repository GPU ignores. Test run follows.
+
+Non-CLI full rdeps18197 TERMINAL0:4919/4919PASS,543.060s,16 existing GPU
+ignores. All4919 selected/terminal/unique IDs exactly match; missing0/
+unexpected0/duplicates0. All new14 cases pass in full run; actual generator
+PASS290.666s and all public/API compile-fail boundaries pass. Source23 Rust
+files frozen; fresh CLI9-binary/all-feature/locked baseline comparison follows.
+Do not claim all tests green while known CLI277 repairs remain. Full goal active.
+
+CLI discovery28435 TERMINAL0/build3m02s; actual selection597 across9 binaries
+with23 existing ignores, all-feature/locked/lib+bins+check and6 maintained
+integrations/Core-rdeps filter. Fresh origin/main still equals HEAD/base
+ee4ede92ae05d0642e724390f1121ef91cb039e7; no reconciliation needed. Run follows.
+
+Final CLI run65230 TERMINAL100:597 selected/terminal unique IDs,320pass/
+277FAIL/23 existing ignored in125.557s. Exact failed IDs equal prior277 baseline
+(new0/resolved0); missing0/unexpected0. CLI is NOT green and277 repairs remain
+original goal acceptance. Fmt4439 TERMINAL0.23 Rust SHA256 and99 build inputs
+unchanged. All validation processes terminal. Ready reviewed24-path stage/
+coherent commit/non-forced push of private type-row preparation + real pure
+binding owner migration; this does not publish task schema or complete E15.
+
+2026-10-08 final type-row cut acceptance (supersedes pending paragraphs):
+base/main/origin ee4ede92ae05d0642e724390f1121ef91cb039e7,23 Rust + existing
+goal note. Actual table0 type owner fields + scope/canonical effects/occurrence
+codec/default code leaves implemented privately. Diagnostics excluded; public
+nominal IDs and wire roles retained. Repaired diagnostic-name regression is
+before1/1FAIL and after52/52focusedPASS. Pure program row/index owner and all
+native/default/continuation lookups migrated without source-order/error loss.
+Complete50-package locked all-feature Core rdeps:4919/4919PASS543.060s,16
+repository GPU ignores, exact selection/execution IDs missing0/unexpected0/
+duplicates0. CLI597/320pass/277sameFAIL/23ignored125.557s; new0/resolved0,
+not green. Final workspace all-target/all-feature locked check42.59s and
+Clippy58.46s PASS; no introduced non-dead-code diagnostics on new owners.
+Private unused semantic-row warnings remain visible until full E integration.
+Fmt4439 and structure gate PASS/blocking0, touched owner disposition/metrics
+above.23 Rust SHA256 +99 stable build-input hashes unchanged. No code edited
+during Cargo. All validation processes terminal; complete24-path explicit
+stage/full diff/blob review before commit/non-forced push. Do not repeat
+previous ENOBUFS procedure error: use explicit16MiB buffers and fail before
+dependent Git mutations if any check throws. No public task rows/protocol/codec
+switch, version bump or compatibility route. Whole E15/global memo/actual
+Table14/private image/common sealer/all14 Cut5 atomic switch and original
+View/nominal/scheduler/borrowing/CLI277/Tier2 acceptance remain unfinished.
+Full goal ACTIVE/INCOMPLETE; resume remaining owners on existing main.

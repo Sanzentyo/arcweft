@@ -23,16 +23,16 @@ pub fn evaluate_pure_program_with_backend(
         name: program.to_string(),
         reason: reason.to_owned(),
     };
-    let mut bindings = plan
-        .pure_programs()
-        .iter()
-        .filter(|binding| binding.program() == program);
-    let binding = bindings
-        .next()
-        .ok_or_else(|| error("pure program is absent from the selected plan"))?;
-    if bindings.next().is_some() {
-        return Err(error("pure program binding is ambiguous"));
-    }
+    let binding = plan.resolve_pure_program(program).map_err(|reason| {
+        error(match reason {
+            crate::plan::RuntimePureProgramLookupError::Missing => {
+                "pure program is absent from the selected plan"
+            }
+            crate::plan::RuntimePureProgramLookupError::Ambiguous => {
+                "pure program binding is ambiguous"
+            }
+        })
+    })?;
     let site = plan
         .function_sites()
         .get(binding.site())

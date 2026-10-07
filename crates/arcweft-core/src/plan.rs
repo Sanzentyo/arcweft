@@ -22,6 +22,8 @@ mod local_declarations;
 pub(crate) use local_declarations::RuntimeLocalDeclarationTableBuilder;
 mod nominal_record_domains;
 mod project_call;
+mod pure_programs;
+pub(crate) use pure_programs::RuntimePureProgramLookupError;
 mod task_semantic;
 mod type_kind;
 mod type_scope;

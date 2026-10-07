@@ -228,6 +228,42 @@ impl<'a> TaskSemanticEncoder<'a> {
     }
 }
 
+// The canonical effect owner emits its ordered decision grammar through the
+// same pass encoder used by type contracts and executable body metadata.
+impl crate::effect_row::DecisionEncoding<crate::plan::RuntimeBoundEffectReference>
+    for TaskSemanticEncoder<'_>
+{
+    type Error = TaskSemanticEncodingError;
+    fn tag(&mut self, value: u8) -> Result<(), Self::Error> {
+        Self::tag(self, value);
+        self.status()
+    }
+    fn count(&mut self, value: usize) -> Result<(), Self::Error> {
+        Self::count(self, value);
+        self.status()
+    }
+    fn variable(
+        &mut self,
+        variable: &crate::plan::RuntimeBoundEffectReference,
+    ) -> Result<(), Self::Error> {
+        self.enter_element();
+        self.status()?;
+        self.ordinal(variable.depth());
+        self.ordinal(variable.slot());
+        self.status()
+    }
+}
+impl crate::effect_row::MembershipEncoding<crate::plan::RuntimeBoundEffectReference>
+    for TaskSemanticEncoder<'_>
+{
+    fn effect(&mut self, effect: &arcweft_id::EffectId) -> Result<(), Self::Error> {
+        self.enter_element();
+        self.status()?;
+        self.string(effect.as_str());
+        self.status()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

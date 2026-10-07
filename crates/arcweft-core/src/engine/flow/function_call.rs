@@ -137,9 +137,8 @@ impl Engine {
         match frame.continuation {
             FunctionReturnContinuation::Program { program } => {
                 if !plan_owner
-                    .pure_programs()
-                    .iter()
-                    .any(|binding| binding.program() == program && binding.site() == frame.site)
+                    .resolve_pure_program(program)
+                    .is_ok_and(|binding| binding.site() == frame.site)
                 {
                     self.fail_eval(
                         RuntimeEvalError::UnsupportedPure {

@@ -47,6 +47,14 @@ pub(crate) enum RuntimeBodySemanticError {
 
     #[error("body references missing {table} row {ordinal}")]
     MissingRow { table: &'static str, ordinal: usize },
+    #[error("body references unknown pure program {program:?}")]
+    UnknownPureProgram {
+        program: arcweft_id::runtime_program::RuntimePureProgramId,
+    },
+    #[error("body references ambiguous pure program {program:?}")]
+    AmbiguousPureProgram {
+        program: arcweft_id::runtime_program::RuntimePureProgramId,
+    },
     #[error("callable semantic graph has a cycle at state {state}")]
     CallableCycle { state: usize },
 }
@@ -459,7 +467,7 @@ impl<'a> RuntimeBodySemanticContext<'a> {
         encoder.count(row.arguments.effects.len());
         for effect in &row.arguments.effects {
             encoder.enter_element();
-            effect.encode(&mut RuntimeBodyEffectEncoding { encoder })?;
+            effect.encode(encoder)?;
         }
         encoder.count(row.states.len());
         for state in &row.states {
@@ -566,6 +574,26 @@ impl<'a> RuntimeBodySemanticContext<'a> {
         encoder.status().map_err(Into::into)
     }
 
+    pub(crate) fn write_pure_program_reference(
+        &self,
+        encoder: &mut TaskSemanticEncoder<'_>,
+        program: arcweft_id::runtime_program::RuntimePureProgramId,
+    ) -> Result<(), RuntimeBodySemanticError> {
+        encoder.status()?;
+        let binding = self.plan.resolve_pure_program(program).map_err(|reason| {
+            encoder.reject_owner();
+            match reason {
+                super::RuntimePureProgramLookupError::Missing => {
+                    RuntimeBodySemanticError::UnknownPureProgram { program }
+                }
+                super::RuntimePureProgramLookupError::Ambiguous => {
+                    RuntimeBodySemanticError::AmbiguousPureProgram { program }
+                }
+            }
+        })?;
+        self.write_function_reference(encoder, binding.site())
+    }
+
     fn write_initialization(
         encoder: &mut TaskSemanticEncoder<'_>,
         state: RuntimePlaceInitialization,
@@ -580,36 +608,3 @@ impl<'a> RuntimeBodySemanticContext<'a> {
 
 #[cfg(test)]
 mod tests;
-
-struct RuntimeBodyEffectEncoding<'a, 'meter> {
-    encoder: &'a mut TaskSemanticEncoder<'meter>,
-}
-impl crate::effect_row::DecisionEncoding<super::RuntimeBoundEffectReference>
-    for RuntimeBodyEffectEncoding<'_, '_>
-{
-    type Error = RuntimeBodySemanticError;
-    fn tag(&mut self, tag: u8) -> Result<(), Self::Error> {
-        self.encoder.tag(tag);
-        self.encoder.status().map_err(Into::into)
-    }
-    fn count(&mut self, count: usize) -> Result<(), Self::Error> {
-        self.encoder.count(count);
-        self.encoder.status().map_err(Into::into)
-    }
-    fn variable(
-        &mut self,
-        variable: &super::RuntimeBoundEffectReference,
-    ) -> Result<(), Self::Error> {
-        self.encoder.ordinal(variable.depth());
-        self.encoder.ordinal(variable.slot());
-        self.encoder.status().map_err(Into::into)
-    }
-}
-impl crate::effect_row::MembershipEncoding<super::RuntimeBoundEffectReference>
-    for RuntimeBodyEffectEncoding<'_, '_>
-{
-    fn effect(&mut self, effect: &arcweft_id::EffectId) -> Result<(), Self::Error> {
-        self.encoder.string(effect.as_str());
-        self.encoder.status().map_err(Into::into)
-    }
-}

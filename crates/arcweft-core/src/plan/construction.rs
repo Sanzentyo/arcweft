@@ -2771,7 +2771,9 @@ impl RuntimePlanBuilder {
             flow_executables: self.flow_executables,
             flows,
             pure_helpers,
-            pure_programs: self.pure_programs,
+            pure_programs: super::pure_programs::RuntimePureProgramTable::from_rows(
+                self.pure_programs,
+            ),
             trait_methods,
             line_task_groups: self.line_task_groups,
             stream_plans: self.stream_plans,

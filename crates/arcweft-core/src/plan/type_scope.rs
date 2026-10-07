@@ -5,6 +5,8 @@
 //! every occurrence against its incoming scope before it can be used by a
 //! program; executable value and ABI roots additionally require an empty scope.
 
+mod semantic;
+
 use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 

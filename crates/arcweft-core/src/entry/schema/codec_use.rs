@@ -7,6 +7,8 @@
 //! Default producers refer to the existing pure-program bindings, which retain
 //! their own executable body and exact signature.
 
+mod semantic;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 

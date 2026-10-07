@@ -1,5 +1,7 @@
 //! Canonical runtime-plan type projection graph.
 
+mod semantic;
+
 use super::{RuntimeArrayLength, RuntimeBoundTypeReference, RuntimeFunctionTypeContract};
 use crate::entry::{RuntimeMapKind, RuntimeNominalTypeId, TypeLayoutHash};
 use crate::pattern::{

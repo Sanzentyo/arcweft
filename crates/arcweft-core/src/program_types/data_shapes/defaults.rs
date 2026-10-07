@@ -161,16 +161,16 @@ impl<'program> RuntimeProgramDataShapes<'program> {
             };
             let signature = match self.types {
                 RuntimeProgramTypes::Plan(plan) => {
-                    let mut candidates = plan
-                        .pure_programs()
-                        .iter()
-                        .filter(|binding| binding.program() == program);
-                    let binding = candidates
-                        .next()
-                        .ok_or_else(|| invalid("program is absent"))?;
-                    if candidates.next().is_some() {
-                        return Err(invalid("program identity is ambiguous").into());
-                    }
+                    let binding = plan.resolve_pure_program(program).map_err(|reason| {
+                        invalid(match reason {
+                            crate::plan::RuntimePureProgramLookupError::Missing => {
+                                "program is absent"
+                            }
+                            crate::plan::RuntimePureProgramLookupError::Ambiguous => {
+                                "program identity is ambiguous"
+                            }
+                        })
+                    })?;
                     let site = plan
                         .function_sites()
                         .get(binding.site())

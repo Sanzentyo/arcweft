@@ -53,7 +53,7 @@ pub struct RuntimePlanInventory {
     pub(crate) flow_executables: Vec<RuntimeFlowExecutable>,
     pub(crate) flows: Vec<RuntimeFlow>,
     pub(crate) pure_helpers: Vec<RuntimePureHelper>,
-    pub(crate) pure_programs: Vec<RuntimePureProgramBinding>,
+    pub(crate) pure_programs: super::pure_programs::RuntimePureProgramTable,
     pub(crate) trait_methods: Vec<RuntimeTraitMethod>,
     pub(crate) line_task_groups: Vec<LineTaskGroup>,
     pub(crate) stream_plans: Vec<StreamPlan>,
@@ -178,7 +178,15 @@ impl RuntimePlanInventory {
 
     #[must_use]
     pub fn pure_programs(&self) -> &[RuntimePureProgramBinding] {
-        &self.pure_programs
+        self.pure_programs.as_slice()
+    }
+
+    pub(crate) fn resolve_pure_program(
+        &self,
+        program: arcweft_id::runtime_program::RuntimePureProgramId,
+    ) -> Result<&RuntimePureProgramBinding, super::pure_programs::RuntimePureProgramLookupError>
+    {
+        self.pure_programs.resolve(program)
     }
 
     #[must_use]

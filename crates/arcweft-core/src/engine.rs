@@ -929,9 +929,8 @@ impl FunctionReturnContinuation {
                     return Err("native program continuation requires its plan owner".to_owned());
                 };
                 if !plan
-                    .pure_programs()
-                    .iter()
-                    .any(|binding| binding.program() == program && binding.site() == site)
+                    .resolve_pure_program(program)
+                    .is_ok_and(|binding| binding.site() == site)
                 {
                     return Err("native program continuation is absent from its plan".to_owned());
                 }

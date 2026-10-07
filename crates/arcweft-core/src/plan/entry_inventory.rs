@@ -998,7 +998,7 @@ impl super::RuntimePlanInventory {
 
     fn verify_pure_programs(&self) -> Result<(), RuntimePlanError> {
         let mut pure_programs = BTreeSet::new();
-        for binding in &self.pure_programs {
+        for binding in self.pure_programs() {
             if !pure_programs.insert(binding.program()) {
                 return Err(RuntimePlanError::DuplicatePureProgram {
                     program: binding.program(),

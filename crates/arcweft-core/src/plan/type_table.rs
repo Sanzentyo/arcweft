@@ -5,6 +5,8 @@ use std::{
     num::NonZeroU32,
 };
 
+mod semantic;
+
 use thiserror::Error;
 
 use crate::pattern::{
