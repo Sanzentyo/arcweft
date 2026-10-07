@@ -69,6 +69,8 @@ pub(crate) enum RuntimeBodySemanticError {
     ForeignPureHelperRow,
     #[error("trait method row does not belong to this candidate inventory")]
     ForeignTraitMethodRow,
+    #[error("Flow row {ordinal} does not belong to this producer function")]
+    InvalidFlowProducer { ordinal: usize },
 }
 
 impl From<TaskSemanticEncodingError> for RuntimeBodySemanticError {

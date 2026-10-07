@@ -65,6 +65,54 @@ impl<'a> ProducerEndpoint<'a> {
 }
 
 impl ProducerFunctionSemantic<'_> {
+    /// Resolves the actual Flow row in constant time. Its accepted runtime
+    /// path is semantic identity; the separately stored public label is debug
+    /// metadata. Function/parameter indices are validated before reuse.
+    pub(crate) fn executable_flow_row_digest(
+        &self,
+        context: &RuntimeBodySemanticContext<'_>,
+        meter: &mut TaskSemanticMeter,
+        ordinal: usize,
+    ) -> Result<blake3::Hash, RuntimeBodySemanticError> {
+        meter.status()?;
+        if !std::ptr::eq(self.plan, context.plan) {
+            meter.reject_owner();
+            return Err(RuntimeBodySemanticError::ForeignFunctionTranscript);
+        }
+        let row = context.plan.flows().get(ordinal).ok_or_else(|| {
+            meter.reject_owner();
+            RuntimeBodySemanticError::MissingRow {
+                table: "flows",
+                ordinal,
+            }
+        })?;
+        if self.function_id != row.function_site()
+            || !std::ptr::eq(self.function, row.function())
+            || self.function.role() != plan::RuntimeFunctionSemanticRole::Flow
+        {
+            meter.reject_owner();
+            return Err(RuntimeBodySemanticError::InvalidFlowProducer { ordinal });
+        }
+        let mut encoder =
+            TaskSemanticEncoder::new(b"arcweft.runtime-plan.executable-row.v1\0", meter);
+        encoder.tag(9);
+        encoder.tag(0);
+        encoder.digest(row.definition().as_bytes());
+        encoder.count(row.id.path().segments().len());
+        for segment in row.id.path().segments() {
+            encoder.enter_element();
+            encoder.string(segment.as_str());
+        }
+        encoder.count(row.params.len());
+        for (ordinal, parameter) in row.params.iter().enumerate() {
+            encoder.enter_element();
+            encoder.count(ordinal);
+            context.write_local(&mut encoder, *parameter)?;
+        }
+        encoder.digest(self.body_root.as_bytes());
+        encoder.finish().map_err(Into::into)
+    }
+
     /// The executable row reuses this actual completed function transcript;
     /// its body and endpoint paths are never reconstructed or walked again.
     pub(crate) fn executable_row_digest(

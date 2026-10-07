@@ -9367,3 +9367,49 @@ Final pure-row check75986 PASS8.02s/Clippy14.23s, fmt96698 TERMINAL0/PASS
 and diff checks pass. All3 Rust hashes/99 inputs fixed; all validation handles
 terminal. Reviewed exact4 paths and full blobs before delivery; whole goal
 ACTIVE/INCOMPLETE, continue actual remaining E/Table14/sealer owners.
+
+### 2026-10-08 — actual Flow E row bound to its producer function
+
+Inspected main/origin bae182c9f5f57b546750f2da571257356d25ea2b; parent
+9de18a3fafd625b4f6f224a07d3d5cf741c0d3ec/all4 published blobs verified,
+mismatch0. Added E table9 emission on the existing borrowed F owner: resolve
+actual Flow source-order row with constant-time get, verify same inventory,
+actual function-site ID/Arc pointer/Flow role, then encode accepted definition,
+canonical runtime path, ordered derived parameter bindings and cached actual
+body-root. No body/endpoint/task resolver rewalk, joined-label allocation or
+linear per-row search. Existing aggregate verification already correlates
+Flow params and function Arc with the function table; no parallel authority.
+FlowRuntimeId explicitly separates checked runtime identity from debug public
+label, so only canonical path segments are read. Added actual verified Flow
+fixtures for body/padding, runtime identity vs debug label, foreign/wrong
+function/missing-row rejection, exact shared quotas/inherited poison. Core
+all-target/all-feature locked check91152 PASS10.00s before added tests;
+pre-run discovery6714 TERMINAL0/build27.98s selected9 cases including4 Flow.
+Focused9/9PASS0.049s. Final check/Clippy and adjacent owner matrix follow.
+Private unused Cut4 encoding only; no public/runtime/native/AWBC/codec/Cargo
+edge change. Unchanged Core50 graph/99 inputs; downstream omission follows
+recorded private/leaf reasoning, prior aca4 closure/CLI receipts not relabelled.
+E1/5/6/7/8/12/13/global memo/actualTable14/private image/common seal/all14
+protected Cut5 and original convergence acceptance remain. Goal ACTIVE.
+
+Final Flow-row acceptance (supersedes pending paragraphs): Core all-target/
+all-feature/locked check41245 PASS8.52s and Clippy16.26s PASS; no introduced
+non-dead-code diagnostics. Pre-run focused9 list6714/build27.98s and9/9PASS
+0.049s; final adjacent Core74 selection/list0.48s,74/74PASS0.471s (980 skipped
+focused Core cases). Exact selected/terminal/unique74 IDs, missing0/unexpected0/
+duplicates0. Actual4 new Flow tests pass;3 Rust SHA256 and99 inputs frozen.
+Production function owner460LOC/18251bytes(+48), context624LOC/24363bytes(+2),
+function/Flow unit owner334LOC/11921bytes(+159) shares actual accepted producer
+fixtures, no duplicate ABI/source model/public test export. No new ownership/
+dependency/I-O/scanner trigger; prior cohesive disposition reused. Private unused
+Cut4 preparation only, unchanged Core50 graph; downstream omission rationale
+above applies. Earlier full-rdeps/CLI277 receipts stay earlier evidence only.
+Fmt/diff terminal result follows; reviewed explicit4-path diff/blob/tested-byte
+checks precede commit/normal main push. E0/2/3/4/9/10/11 preparation exists,
+E1/5/6/7/8/12/13/global memo/actualTable14/private image/common seal/protected
+all14 Cut5 and original View/nominal/scheduler/borrowing/CLI277/Tier2 unfinished.
+Full convergence goal ACTIVE/INCOMPLETE; no new Astra/advice.
+
+Flow-row fmt91023 TERMINAL0/PASS and diff checks pass. All validation handles
+terminal; source3 hashes/99 inputs unchanged. Exact4-path staged hunk/blob
+review and delivery next; whole goal remains ACTIVE/INCOMPLETE.
