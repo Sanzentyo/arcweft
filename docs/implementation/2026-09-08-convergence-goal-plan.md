@@ -9248,3 +9248,60 @@ Fmt13440 TERMINAL0/PASS; final diff checks pass. All final4 Rust SHA256 and
 99 build inputs remain fixed. Exact5-path staged hunk/blob review follows;
 no remaining live Cargo/test process. Continue remaining genuine E owners and
 whole-image/common-seal integration after this coherent private Cut4 delivery.
+
+### 2026-10-08 — function executable row reuses actual F/body/endpoint owner
+
+Observed clean main/origin aca4d474473f7f79c426fc6791c774db5e9c9777 after
+nominal cut; parent5bac7c2f610d73050eb5ef503ce584b5ceb0e242/all5 published
+blobs verified, mismatch0. Found existing private function-row encoder used
+its own function-row domain and independently walked signature/body rather
+than retaining the actual F owner result. Deleted that second body walk/domain.
+ProducerFunctionSemantic now retains actual admitted function ID, borrowed row,
+completed body-root and endpoint paths. It emits canonical E table4/closed role
+from the same owner, rejects a foreign inventory, and reuses body/path digests
+without a resolver/body walk. Common sealer will prepare/cache each producer
+once on the shared meter; no caller-supplied row hash or public task proof.
+Existing function-row entry prepares F then emits this row, with explicit
+function-role limits. Added tests for every accepted role/body/arena padding,
+endpoint branch/order, one resolver pass and repeat emission charges, exact
+whole F+E work/byte boundaries, role preflight, foreign owner and inherited
+poison. Core all-target/all-feature locked check46057 PASS11.71s before new
+test addition; final focused26500 pending. Rust source frozen during Cargo.
+This is private Cut4 preparation, not whole E/global memo/realTable14/common
+seal/all14 Cut5 publication. Original convergence goal remains ACTIVE;
+CLI277 and every remaining View/nominal/scheduler/borrowing/Tier2 acceptance
+remain required. No new Astra/advice; existing main only.
+
+Final function-row focus26500 TERMINAL0:51/51PASS0.252s across all existing
+body/F/Q/line/callable/stream/nominal owners plus5 new function-row cases.
+Final Core all-target/all-feature locked check49596 PASS8.60s and Clippy
+PASS17.31s; no introduced non-dead-code diagnostic in changed owners.
+5 Rust file hashes and99 graph/build inputs fixed. Complete Core50 rdeps
+graph from prior cut remains valid/unchanged. This is isolated private Cut4
+encoding preparation: actual F transcript/body/path owner is not reachable
+from published runtime/compiler consumers (private visibility and unused
+production lint evidence); no public ABI, table layout, native/AWBC execution,
+codec or feature/dependency change. Per rust-impact-testing private/leaf rule
+and repository test policy, downstream execution is omitted with this reason.
+Prior aca4d474473f7f79c426fc6791c774db5e9c9777 non-CLI4927PASS and CLI277
+FAIL receipts remain only for their original bytes, not relabelled as new
+function-row runs. Full protected publication acceptance still requires whole
+closure/public boundaries/CLI repairs. New function test owner175LOC/6073bytes
+reuses actual accepted producer fixtures, no duplicate authority or public
+exports for test sharing. Function412LOC/16259bytes (+33), metadata321LOC/
+13617bytes (-27), body context617LOC/24021bytes (+2), existing unit owner
+2034LOC/75349bytes (+7) remains one actual typed-body acceptance fixture
+owner; new tests follow function-row responsibility in private child module.
+No new growth/ownership/dependency/I-O/public boundary requiring scanner;
+existing disposition reused. Fmt/diff final receipt follows; complete explicit
+6-path staged diff/blob/tested-source review before commit/normal push.
+Full goal remains ACTIVE/INCOMPLETE; continue remaining real E row owners,
+E1 declaration metadata migration and actual Table14/private image/global
+row memo/common sealer, then all14 protected Cut5 steps and original acceptance.
+
+Fmt70117 TERMINAL0/PASS and cached diff checks pass. Final focused51 test
+IDs equal the explicit Core inventory185b16 (build0.48s), missing0/unexpected0/
+duplicates0 and all5 new function cases present. This list was inspected after
+the focused run, not claimed as pre-run discovery; later new filters are
+inspected before execution. Actual run already demonstrated all51 passes,
+source5 hashes/99 inputs fixed. Final6-path review/delivery next; goal active.

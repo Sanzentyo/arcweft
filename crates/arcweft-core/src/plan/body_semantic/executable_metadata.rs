@@ -269,9 +269,8 @@ impl RuntimeBodySemanticContext<'_> {
         }
         encoder.status().map_err(Into::into)
     }
-    /// Encodes the actual signature and owned body under one row owner.
-    /// Code references remain accepted-definition leaves, allowing ordinary
-    /// recursive calls without recursively re-expanding function definitions.
+    /// Prepares the actual producer transcript, then writes table four from
+    /// that same owner. The body/endpoint walk is shared with F preparation.
     pub(crate) fn function_row_digest(
         &self,
         meter: &mut crate::task::semantic::TaskSemanticMeter,
@@ -283,31 +282,11 @@ impl RuntimeBodySemanticContext<'_> {
             crate::plan::construction::task_coordinates::RuntimeTaskPlanBuildCoordinate,
             RuntimeBodySemanticError,
         >,
+        limits: plan::RuntimeTaskPlanSealLimits,
     ) -> Result<blake3::Hash, RuntimeBodySemanticError> {
-        let mut encoder =
-            TaskSemanticEncoder::new(b"arcweft.runtime-plan.function-row.v1\0", meter);
-        self.write_function_signature(&mut encoder, function)?;
-        let site = self.plan.function_sites().get(function).ok_or_else(|| {
-            encoder.reject_owner();
-            RuntimeBodySemanticError::MissingRow {
-                table: "function body",
-                ordinal: function.get().get() as usize - 1,
-            }
-        })?;
-        match site.body() {
-            plan::RuntimeFunctionSiteBody::Expression(body) => {
-                self.write_expression(&mut encoder, body)?;
-            }
-            plan::RuntimeFunctionSiteBody::Executable(body) => {
-                encoder.count(body.effects().len());
-                for effect in body.effects().iter() {
-                    encoder.enter_element();
-                    encoder.string(effect.as_str());
-                }
-                self.write_flow(&mut encoder, body.ops(), task_owner, task_reference)?;
-            }
-        }
-        encoder.finish().map_err(Into::into)
+        let producer =
+            self.producer_function(meter, function, task_owner, task_reference, limits)?;
+        producer.executable_row_digest(self, meter)
     }
 }
 

@@ -62,6 +62,8 @@ pub(crate) enum RuntimeBodySemanticError {
     ForeignNominalDomain,
     #[error("nominal domain owner {owner} has no accepted nominal declaration")]
     InvalidNominalDomainOwner { owner: RuntimePlanTypeId },
+    #[error("function transcript does not belong to this candidate inventory")]
+    ForeignFunctionTranscript,
 }
 
 impl From<TaskSemanticEncodingError> for RuntimeBodySemanticError {

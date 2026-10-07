@@ -1,4 +1,5 @@
 use super::*;
+mod function_rows;
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::RuntimePlan;
 use crate::plan::{
@@ -755,7 +756,13 @@ fn actual_function_row_commits_body_value_but_ignores_function_arena_padding() {
     let hash = |(plan, owner, id): &(RuntimePlan, _, _)| {
         let mut meter = TaskSemanticMeter::new(1000, 10000);
         RuntimeBodySemanticContext::new(plan)
-            .function_row_digest(&mut meter, *id, owner, &mut |_| panic!("no task edge"))
+            .function_row_digest(
+                &mut meter,
+                *id,
+                owner,
+                &mut |_| panic!("no task edge"),
+                crate::plan::RuntimeTaskPlanSealLimits::default(),
+            )
             .unwrap()
     };
     assert_eq!(hash(&first), hash(&padding));

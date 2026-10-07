@@ -17,6 +17,8 @@ pub(crate) struct ProducerFunctionSemantic<'a> {
     digest: ProducerFunctionSemanticDigest,
     plan: &'a super::RuntimePlanInventory,
     function: &'a plan::RuntimeFunctionSite,
+    function_id: crate::runtime_id::RuntimeFunctionSiteId,
+    body_root: blake3::Hash,
     endpoints: Box<[(EndpointKind, blake3::Hash, &'a plan::FlowOp)]>,
 }
 
@@ -63,6 +65,35 @@ impl<'a> ProducerEndpoint<'a> {
 }
 
 impl ProducerFunctionSemantic<'_> {
+    /// The executable row reuses this actual completed function transcript;
+    /// its body and endpoint paths are never reconstructed or walked again.
+    pub(crate) fn executable_row_digest(
+        &self,
+        context: &RuntimeBodySemanticContext<'_>,
+        meter: &mut TaskSemanticMeter,
+    ) -> Result<blake3::Hash, RuntimeBodySemanticError> {
+        meter.status()?;
+        if !std::ptr::eq(self.plan, context.plan) {
+            meter.reject_owner();
+            return Err(RuntimeBodySemanticError::ForeignFunctionTranscript);
+        }
+        let mut encoder =
+            TaskSemanticEncoder::new(b"arcweft.runtime-plan.executable-row.v1\0", meter);
+        encoder.tag(4);
+        encoder.tag(self.function.role().semantic_tag());
+        context.write_function_signature(&mut encoder, self.function_id)?;
+        encoder.digest(self.body_root.as_bytes());
+        encoder.count(self.endpoints.len());
+        for (ordinal, (kind, path, _)) in self.endpoints.iter().enumerate() {
+            encoder.enter_element();
+            encoder.enter_role();
+            encoder.count(ordinal);
+            encoder.tag(kind.semantic_tag());
+            encoder.digest(path.as_bytes());
+        }
+        encoder.finish().map_err(Into::into)
+    }
+
     pub(crate) const fn digest(&self) -> ProducerFunctionSemanticDigest {
         self.digest
     }
@@ -236,6 +267,8 @@ impl<'a> RuntimeBodySemanticContext<'a> {
             digest,
             plan: self.plan,
             function: site,
+            function_id: function,
+            body_root: body,
             endpoints: paths.into_boxed_slice(),
         })
     }
