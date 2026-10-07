@@ -215,3 +215,36 @@ produce a value through `break expr`.
 ## Replay
 
 Control-flow constructs are deterministic as long as expression evaluation is deterministic. Loop iteration count is recorded only for debug traces, not as semantic state.
+
+## Function semantic input evidence
+
+The function transcript uses the accepted function definition and its actual
+owned expression or executable body. Code references are accepted definition
+leaves; ordinary recursive calls do not recursively expand called bodies. The
+complete executable image commits every referenced definition's body row.
+
+A retained input carries its origin, source role and transfer evidence from
+`RuntimeFunctionInputBinding`. These are independent of frame-ingress
+`Owned`/`Unrestricted` requirements. Origin tags are Binding (0), whole
+Parameter (1), and EvaluatedResult (2), each followed by its accepted 32-byte
+identity. Source tags are Capture (0), CapturedParameter (1), and Parameter
+(2), followed by the source position; the two formal roles also include the
+existing Value/Shared/Affine passing tag. Transfer is Transferred (0) plus
+Copy/SnapshotClone/Move (0/1/2), ExternalBinding (1), or Formal (2).
+
+In particular, extracting a body with external free bindings creates no
+Copy/Move operation, and retaining a whole formal preserves its passing
+evidence. Neither role may be inferred from a value's current occupancy,
+type, local ordinal, or an ingress requirement. This corrects the narrower
+three-mode capture field in the retained task-plan correction package: the
+current producer transcript writes origin, semantic input type, source and
+transfer evidence for each canonical retained input. The package remains a
+historical design mirror; its omission does not authorize inventing a transfer.
+
+The body-root transcript includes the full admitted signature/prologue and
+owned body, including ordered task build-coordinate references. Producer
+endpoints are ordered positions in that owned operation tree. Their path
+contains balanced body roles, operation source ordinals, and the endpoint
+ordinal within an operation, so empty branches and multiple AwaitMany
+endpoints remain distinct. Completed task digests, expected keys, generations
+and source/debug labels do not supply endpoint or task-reference authority.

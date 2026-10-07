@@ -36,6 +36,10 @@ impl TaskSemanticMeter {
         *self.error.get_or_insert(error)
     }
 
+    pub(crate) fn reject_owner(&mut self) {
+        self.reject(TaskSemanticEncodingError::OwnerRejected);
+    }
+
     pub(crate) const fn status(&self) -> Result<(), TaskSemanticEncodingError> {
         match self.error {
             Some(error) => Err(error),
@@ -117,7 +121,7 @@ impl<'a> TaskSemanticEncoder<'a> {
     }
 
     pub(crate) fn reject_owner(&mut self) {
-        self.meter.reject(TaskSemanticEncodingError::OwnerRejected);
+        self.meter.reject_owner();
     }
 
     pub(crate) fn tag(&mut self, tag: u8) {

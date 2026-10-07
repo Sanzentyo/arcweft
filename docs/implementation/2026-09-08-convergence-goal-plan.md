@@ -7569,3 +7569,64 @@ review follows;fullgoalactive/incomplete. NeednormativeFparameter/capture/
 endpointpathtranscript and actual task candidate inventory/Q/Ecommonseal;
 ExternalBinding/Formaltransfer mustneverbe guessed asCopy/Move. Continue
 actualowner migration withone finalauthority;Astraoneshotconsumedneverrepeat.
+
+### 2026-10-07 — private producer function transcript
+
+Inspected clean main e30476c4491cbbba020a76bc0d53798c1bad2805; prior
+turn progress delivered Flow and actualfunctionrow verifiedcommits/push.
+CurrentprivateCoreownerchanges implement ProducerFunctionSemanticDigest
+foractual structuredFunctionSite input/body/ownedendpointgrammar. Origin,
+source andtransfer byte behavior now owned inherently by existing input
+enums; duplicated contextmatches deleted. FullsixFunctionSemanticRole body
+mutation/arena-padding regression, sharedmeter failure, distinct five
+transfer states (Copy/SnapshotClone/Move/ExternalBinding/Formal), actual
+Hostendpoint then/else path/role quota accepted. Bodyroot commits full
+admittedsignature/prologue plus actualExpression/Executabletree/effects.
+Closed currentFlowendpointgrammar coversHost/Thread, StartNeed, AwaitMany
+base+child, Dialogue/Line. ActualView/Timeoutendpoint owners are not yet
+structuredFlowrows: their final integration/coverage remains required, so
+privateFencoding success doesnotproveT01allfamilycomplete. No final task
+table/commonsealer/publishedproof/codec switch.
+
+Technicalresolution: retaineddesignpackage's threecapturemodefield cannot
+represent existing valid extractedExternalBinding and CapturedParameter
+Formal rows. They are not Copy/Move and mustnot be guessed fromtype or
+ingressownership. Maintained docs/02-runtime/control-flow-runtime.md now
+specifies currentorigin/source/transfergrammar and explicit correction of
+the retainedmirror, preservedunchanged. Producer capture rows encode origin
+domain+accepted32identity,semanticinputtype,source(passingforformal),transfer.
+No versionbump/compatreader. Fullactualsignature/body root commits passing/
+patterns/unrestrictedingress obligations. Allremainingcontracts retained.
+
+Preflight bounds checkedfunctionroles/endpointcount beforetaskresolver;
+privateendpointpaths usebalancedBodyRole/OperationSourceOrdinal/Endpoint
+Ordinal andactualownedtree, noHIR/source/debug/arenaID/completedplanhash.
+Allintermediatebody/path/Ftranscripts shareoneTaskSemanticMeter. Ownererror
+poisonsmeterdirectly (no throwawayemptyencoder). Role errors poison too;
+arithmeticfailureandfulllimits needfinalcommonpreflightintegration.
+
+InitialCorecheck74150terminal0,23.75s;focused20/20pass0.109s924skip.
+ActualHostbranch/quota21/21pass0.121s924skip(build20.95s). Aftertypedendpoint/
+preflightpoison, finalCoreallfeaturelockedlib945/945pass0skip6.073s,build42.26s.
+FinalalltargetCorecheckterminal0;finalClippyterminal0,27.31s existingwarnings
+andprivateunusedowners remain, no-Dwarningsclaim. F is private andcurrently
+no productioncommonsealcaller; unchangedCore50graph/consumerbehaviorreceipts
+reused underpriorCut4rationale. NextcompleteQroleacceptedidentitytransport,
+staticcandidate tasktable/issuer-backedrowcount, E15tableowners/memo/cycle/
+commonimagewithactualupperView/decode/publicatomic switch andfullconsumer
+validation. Fullgoalactive/incomplete;Astraoneshotnotrepeated.
+
+Ownershipreview:newfunctionowner is one borrowingcontext transcript over
+actualFunctionSite/ownedFlowpaths; no copiedAST or new runtime/IOstate.
+Existinginputenums own tags/bytebehavior; retaineddocumentcorrection
+explicitlypreservesformal/ExternalBindingseparation. Testownerremainsone
+semantictranscriptboundary; no publicAPIwideningforfilesplit. No newCargo
+edges;previousCore50metadata remainsvalid. Structuregate terminal0,
+existingworkspace sizetriggersretainpreviousdispositions. Measurements:
+- crates/arcweft-core/src/plan/body_semantic/function.rs: 12018 bytes, 297 physical LOC.
+- crates/arcweft-core/src/plan/function_sites.rs: 20828 bytes, 662 physical LOC.
+- crates/arcweft-core/src/plan/body_semantic/tests.rs: 36826 bytes, 994 physical LOC.
+
+Afterallvalidationhandles terminal, nextestinventory945caseIDs exactlymatch
+finalrun945/945,0missing. NoRustsourceeditsafterfullpass. Fmt/diff/explicit
+stagedreviewfollow, privateCut4only;fullgoalstillactive.

@@ -164,11 +164,7 @@ impl RuntimeBodySemanticContext<'_> {
         encoder: &mut TaskSemanticEncoder<'_>,
         function: crate::runtime_id::RuntimeFunctionSiteId,
     ) -> Result<(), RuntimeBodySemanticError> {
-        use crate::plan::{
-            RuntimeFunctionCaptureMode as Capture, RuntimeFunctionInputOrigin as Origin,
-            RuntimeFunctionInputOwnershipRequirement as Ownership,
-            RuntimeFunctionInputSource as Source, RuntimeFunctionInputTransfer as Transfer,
-        };
+        use crate::plan::RuntimeFunctionInputOwnershipRequirement as Ownership;
         self.write_function_reference(encoder, function)?;
         let site = self.plan.function_sites().get(function).ok_or_else(|| {
             encoder.reject_owner();
@@ -184,48 +180,9 @@ impl RuntimeBodySemanticContext<'_> {
         encoder.count(site.inputs().len());
         for input in site.inputs() {
             encoder.enter_element();
-            match input.source() {
-                Source::Capture { position } => {
-                    encoder.tag(0);
-                    encoder.ordinal(position);
-                }
-                Source::CapturedParameter { position, passing } => {
-                    encoder.tag(1);
-                    encoder.ordinal(position);
-                    encoder.tag(passing.semantic_tag());
-                }
-                Source::Parameter { position, passing } => {
-                    encoder.tag(2);
-                    encoder.ordinal(position);
-                    encoder.tag(passing.semantic_tag());
-                }
-            }
-            match input.origin() {
-                Origin::Binding(identity) => {
-                    encoder.tag(0);
-                    encoder.digest(&identity);
-                }
-                Origin::Parameter(identity) => {
-                    encoder.tag(1);
-                    encoder.digest(identity.as_bytes());
-                }
-                Origin::EvaluatedResult(identity) => {
-                    encoder.tag(2);
-                    encoder.digest(identity.as_bytes());
-                }
-            }
-            match input.transfer() {
-                Transfer::Transferred(mode) => {
-                    encoder.tag(0);
-                    encoder.tag(match mode {
-                        Capture::Copy => 0,
-                        Capture::SnapshotClone => 1,
-                        Capture::Move => 2,
-                    });
-                }
-                Transfer::ExternalBinding => encoder.tag(1),
-                Transfer::Formal => encoder.tag(2),
-            }
+            input.source().encode_semantic_source(encoder);
+            input.origin().encode_semantic_origin(encoder);
+            input.transfer().encode_semantic_transfer(encoder);
             encoder.tag(match input.ownership() {
                 Ownership::Owned => 0,
                 Ownership::Unrestricted => 1,

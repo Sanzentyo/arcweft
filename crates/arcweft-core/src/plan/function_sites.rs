@@ -275,6 +275,80 @@ impl RuntimeFunctionInputSource {
     }
 }
 
+impl RuntimeFunctionInputOrigin {
+    pub(crate) fn encode_semantic_origin(
+        self,
+        encoder: &mut crate::task::semantic::TaskSemanticEncoder<'_>,
+    ) {
+        match self {
+            Self::Binding(identity) => {
+                encoder.tag(0);
+                encoder.digest(&identity);
+            }
+            Self::Parameter(identity) => {
+                encoder.tag(1);
+                encoder.digest(identity.as_bytes());
+            }
+            Self::EvaluatedResult(identity) => {
+                encoder.tag(2);
+                encoder.digest(identity.as_bytes());
+            }
+        }
+    }
+}
+
+impl RuntimeFunctionInputTransfer {
+    /// Formal passing is retained explicitly; extraction never invents a
+    /// language-level capture operation for an external or whole-formal input.
+    pub(crate) fn encode_semantic_transfer(
+        self,
+        encoder: &mut crate::task::semantic::TaskSemanticEncoder<'_>,
+    ) {
+        match self {
+            Self::Transferred(mode) => {
+                encoder.tag(0);
+                encoder.tag(mode.semantic_tag());
+            }
+            Self::ExternalBinding => encoder.tag(1),
+            Self::Formal => encoder.tag(2),
+        }
+    }
+}
+
+impl RuntimeFunctionCaptureMode {
+    pub(crate) const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Copy => 0,
+            Self::SnapshotClone => 1,
+            Self::Move => 2,
+        }
+    }
+}
+
+impl RuntimeFunctionInputSource {
+    pub(crate) fn encode_semantic_source(
+        self,
+        encoder: &mut crate::task::semantic::TaskSemanticEncoder<'_>,
+    ) {
+        match self {
+            Self::Capture { position } => {
+                encoder.tag(0);
+                encoder.ordinal(position);
+            }
+            Self::CapturedParameter { position, passing } => {
+                encoder.tag(1);
+                encoder.ordinal(position);
+                encoder.tag(passing.semantic_tag());
+            }
+            Self::Parameter { position, passing } => {
+                encoder.tag(2);
+                encoder.ordinal(position);
+                encoder.tag(passing.semantic_tag());
+            }
+        }
+    }
+}
+
 /// The live value guarantee required when an input enters a function frame.
 /// Function types do not imply this guarantee; the selected caller supplies it.
 #[derive(

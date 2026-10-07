@@ -752,3 +752,243 @@ fn actual_function_row_commits_body_value_but_ignores_function_arena_padding() {
     assert_eq!(hash(&first), hash(&padding));
     assert_ne!(hash(&first), hash(&changed));
 }
+
+fn producer_expression_plan(
+    padding: bool,
+    value: bool,
+    role: crate::plan::RuntimeFunctionSemanticRole,
+) -> (
+    RuntimePlan,
+    crate::plan::construction::task_coordinates::RuntimeTaskPlanCoordinateOwner,
+    crate::runtime_id::RuntimeFunctionSiteId,
+) {
+    let mut builder = RuntimePlanBuilder::new();
+    let boolean = RuntimeSemanticTypeId::from_bytes([61; 32]);
+    builder
+        .admit_type_batch(
+            [RuntimePlanTypeSeed::new(
+                boolean,
+                RuntimePlanTypeProjection::Bool,
+            )],
+            [],
+        )
+        .unwrap();
+    let owner = builder.task_coordinate_owner(0);
+    if padding {
+        builder
+            .push_function_site_seed(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([99; 32]),
+                role,
+                [],
+                crate::plan::RuntimeExprSeed::new(
+                    boolean,
+                    crate::plan::RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(
+                        false,
+                    )),
+                ),
+            )
+            .unwrap();
+    }
+    builder
+        .push_function_site_seed(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([71; 32]),
+            role,
+            [],
+            crate::plan::RuntimeExprSeed::new(
+                boolean,
+                crate::plan::RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(value)),
+            ),
+        )
+        .unwrap();
+    let plan = builder.finish().unwrap();
+    let id = crate::runtime_id::RuntimeFunctionSiteId::from_accepted_ordinal(
+        NonZeroU32::new(if padding { 2 } else { 1 }).unwrap(),
+    );
+    (plan, owner, id)
+}
+
+#[test]
+fn producer_function_digest_commits_actual_body_for_every_function_role() {
+    for role in crate::plan::RuntimeFunctionSemanticRole::ALL {
+        let first = producer_expression_plan(false, true, *role);
+        let padded = producer_expression_plan(true, true, *role);
+        let changed = producer_expression_plan(false, false, *role);
+        let hash = |(plan, owner, function): &(RuntimePlan, _, _)| {
+            let mut meter = TaskSemanticMeter::new(10_000, 100_000);
+            RuntimeBodySemanticContext::new(plan)
+                .producer_function_digest(
+                    &mut meter,
+                    *function,
+                    owner,
+                    &mut |_| panic!("no task edge"),
+                    crate::plan::RuntimeTaskPlanSealLimits::default(),
+                )
+                .unwrap()
+        };
+        assert_eq!(hash(&first), hash(&padded));
+        assert_ne!(hash(&first), hash(&changed));
+    }
+}
+
+#[test]
+fn retained_transfer_encoding_never_conflates_external_formal_and_language_moves() {
+    use crate::plan::{RuntimeFunctionCaptureMode as C, RuntimeFunctionInputTransfer as T};
+    let kinds = [
+        T::Transferred(C::Copy),
+        T::Transferred(C::SnapshotClone),
+        T::Transferred(C::Move),
+        T::ExternalBinding,
+        T::Formal,
+    ];
+    let mut hashes = std::collections::HashSet::new();
+    for kind in kinds {
+        let mut meter = TaskSemanticMeter::new(10, 10);
+        let mut encoder = TaskSemanticEncoder::new(b"t", &mut meter);
+        kind.encode_semantic_transfer(&mut encoder);
+        hashes.insert(encoder.finish().unwrap());
+    }
+    assert_eq!(hashes.len(), 5);
+}
+
+#[test]
+fn producer_digest_meter_is_shared_and_poisoned_on_body_failure() {
+    let (plan, owner, function) = producer_expression_plan(
+        false,
+        true,
+        crate::plan::RuntimeFunctionSemanticRole::Ordinary,
+    );
+    let mut meter = TaskSemanticMeter::new(1, 10000);
+    assert!(matches!(
+        RuntimeBodySemanticContext::new(&plan).producer_function_digest(
+            &mut meter,
+            function,
+            &owner,
+            &mut |_| panic!("no task edge"),
+            crate::plan::RuntimeTaskPlanSealLimits::default()
+        ),
+        Err(RuntimeBodySemanticError::Encoding(
+            TaskSemanticEncodingError::SemanticWork
+        ))
+    ));
+    let encoder = TaskSemanticEncoder::new(b"later", &mut meter);
+    assert_eq!(
+        encoder.finish(),
+        Err(TaskSemanticEncodingError::SemanticWork)
+    );
+}
+
+fn producer_host_plan(
+    in_then: bool,
+) -> (
+    RuntimePlan,
+    crate::plan::construction::task_coordinates::RuntimeTaskPlanCoordinateOwner,
+    crate::runtime_id::RuntimeFunctionSiteId,
+) {
+    use crate::plan::*;
+    let mut builder = RuntimePlanBuilder::new();
+    let unit = RuntimeSemanticTypeId::from_bytes([62; 32]);
+    let boolean = RuntimeSemanticTypeId::from_bytes([61; 32]);
+    builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+                RuntimePlanTypeSeed::new(boolean, RuntimePlanTypeProjection::Bool),
+            ],
+            [],
+        )
+        .unwrap();
+    let effects = RuntimeEffectSet::empty();
+    let site = builder
+        .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([72; 32]),
+            role: RuntimeFunctionSemanticRole::Ordinary,
+            function_type: None,
+            inputs: Box::new([]),
+            result: unit,
+            body_kind: RuntimeFunctionSiteBodyKind::Executable,
+            effects: effects.clone(),
+        })
+        .unwrap();
+    let host = RuntimeFlowOpSeed::HostCall {
+        binding: None,
+        target: RuntimeHostCallTargetSeed {
+            producer: crate::task::HostCallProducerDefinition {
+                contract: crate::task::NeedProducerContractDigest::from_bytes([1; 32]),
+                plan: crate::task::TaskPlanSemanticDigest::from_bytes([2; 32]),
+                site: crate::task::NeedProducerSiteDigest::from_bytes([3; 32]),
+            },
+            public_id: "test.notify".to_owned(),
+            capability: "test".to_owned(),
+            operation: "notify".to_owned(),
+            contract: None,
+            args: vec![],
+            result: unit,
+            mode: crate::step::RuntimeHostCallMode::Suspend,
+            deterministic: false,
+        },
+    };
+    builder
+        .define_function_site_seed(
+            &site,
+            RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                effects,
+                ops: Box::new([
+                    RuntimeFlowOpSeed::If {
+                        condition: RuntimeExprSeed::new(
+                            boolean,
+                            RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(true)),
+                        ),
+                        then_ops: if in_then { vec![host.clone()] } else { vec![] },
+                        else_ops: if in_then { vec![] } else { vec![host] },
+                    },
+                    RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                        unit,
+                        RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Unit),
+                    )),
+                ]),
+            }),
+        )
+        .unwrap();
+    let owner = builder.task_coordinate_owner(1);
+    (
+        builder.finish().unwrap(),
+        owner,
+        crate::runtime_id::RuntimeFunctionSiteId::from_accepted_ordinal(NonZeroU32::MIN),
+    )
+}
+
+#[test]
+fn producer_endpoint_branch_path_and_role_quota_enter_the_same_transcript() {
+    let first = producer_host_plan(true);
+    let second = producer_host_plan(false);
+    let hash = |(plan, owner, function): &(RuntimePlan, _, _)| {
+        let mut meter = TaskSemanticMeter::new(10_000, 100_000);
+        RuntimeBodySemanticContext::new(plan)
+            .producer_function_digest(
+                &mut meter,
+                *function,
+                owner,
+                &mut |_| Ok(owner.resolve(0).unwrap()),
+                crate::plan::RuntimeTaskPlanSealLimits::default(),
+            )
+            .unwrap()
+    };
+    assert_ne!(hash(&first), hash(&second));
+    let mut meter = TaskSemanticMeter::new(10_000, 100_000);
+    assert!(matches!(
+        RuntimeBodySemanticContext::new(&first.0).producer_function_digest(
+            &mut meter,
+            first.2,
+            &first.1,
+            &mut |_| panic!("quota must precede resolver"),
+            crate::plan::RuntimeTaskPlanSealLimits {
+                max_function_roles: 0,
+                ..Default::default()
+            }
+        ),
+        Err(RuntimeBodySemanticError::FunctionRoles {
+            actual: 1,
+            maximum: 0
+        })
+    ));
+}

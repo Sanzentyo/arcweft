@@ -5,6 +5,7 @@ use super::RuntimePlan;
 
 mod executable_metadata;
 pub(crate) mod flow;
+mod function;
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticEncodingError};
 use crate::value::{
@@ -26,6 +27,10 @@ pub(crate) enum RuntimeBodySemanticError {
     RuntimeFlowContinuation,
     #[error("body task coordinate belongs to another candidate inventory")]
     ForeignTaskCoordinate,
+    #[error("producer function has invalid input evidence at input {input}")]
+    InvalidFunctionInput { input: usize },
+    #[error("producer function roles {actual} exceed limit {maximum}")]
+    FunctionRoles { actual: usize, maximum: u32 },
     #[error("body references missing {table} row {ordinal}")]
     MissingRow { table: &'static str, ordinal: usize },
     #[error("callable semantic graph has a cycle at state {state}")]
