@@ -8730,3 +8730,94 @@ scheduler/restoreA-F, affine/Rust move and borrowing acceptance, all277 CLI
 repairs and required Tier2/milestone/legacy deletion. Do not mark full goal
 complete or repeat the consumed Astra one-shot. Continue existing main after
 this coherent verified commit/normal push.
+
+
+### 2026-10-08 — referenced View legacy audit and Core-runtime admission repair
+
+Inspected existing main `5e4b28725e6de35a61a6b4f7f93376e3e71d3071`, initially
+clean and equal to origin/main; Root Flow owner cut is committed/pushed.
+Reference chat6ac6388e-a730-83ee-8ed5-55729754ac09 was read as advisory data.
+Its current-phase claim is stale: this goal has been preparing the protected
+task semantic sealer; earlier View branches/repeat migration is already in main.
+Current RepeatKeyed owns ViewRepeatProgram with Core source and key execution.
+Remaining ViewValueProgram consumers are ApplyFx reactive arguments/key, the
+explicit presentation Fx boundary; FxRuntimeValue hits alone are not proof
+of an authored-general-expression fallback. Compiler still emits that Fx ABI.
+
+Real defect found: Core-program-free View construction enumerated required
+program instructions in Driver but omitted RepeatKeyed. Public construction
+and prepare_view_program_replacement accepted a valid repeat without AWBC.
+Two new behavior regressions reproduce both failures (before2 terminal100,
+0/2pass,0.023s). First test compile attempt used wrong replacement method
+name; corrected to actual owning API before behavior run (not a runtime proof).
+Resource now owns requires_program_runtime and instruction behavior is an
+exhaustive match including RepeatKeyed. Driver construction, fresh entry and
+replacement use the same resource predicate; no fallback or codec/version
+change. Tests cover empty/nonempty repeat, both AWBC-free constructors, actual
+AWBC execution, and rejected replacement retaining live snapshot/mount state.
+Source/contract changes WIP; focus73681 active. Full all-feature locked checks,
+Clippy, Bundle/Driver transitive-rdeps nextest and exact CLI277 comparison,
+cohesion/scanner/final frozen-byte review/commit/normal push remain required.
+Full goal stays ACTIVE/INCOMPLETE; do not repeat Astra or spawn new agents.
+
+Focused repair73681 TERMINAL0:2/2pass,0.024s after25.38s build. Private
+instruction predicate subsequently made const; no behavior change. Final
+workspace check/Clippy25733 now active. Fresh locked all-feature graph union
+Bundle+RuntimeDriver=17 packages, package set under TEMP view-runtime-
+requirement-closure.json; final3 Rust source-file SHA256 snapshot retained.
+Need final full transitive-rdeps run/exact CLI baseline, structural disposition
+and final reviewed5-path commit/normal push. No full-goal completion claim.
+
+Final workspace all-target/all-feature locked check25733 PASS44.56s; same
+Clippy PASS79s with existing warnings. New3 Rust source bytes remain frozen.
+Owner review: Bundle View resource model owns the requirement rule because
+it owns the closed instruction grammar and aggregate executable references.
+Driver consumes that rule for construction/fresh entry/replacement; removes
+its incomplete duplicate enumeration. No new dependency, feature, state
+cluster, parallel model, source reconstruction, codec or marker change.
+Bundle direct workspace fan-in/out11/18; Driver7/17. Current measurements:
+- `crates/arcweft-bundle/src/resource_codec/view/model.rs`: 64780 bytes, 1944 physical LOC; base 1899 (growth 45); production.
+- `crates/arcweft-runtime-driver/src/view_runtime/catalog.rs`: 26953 bytes, 699 physical LOC; base 718 (growth -19); production.
+- `crates/arcweft-runtime-driver/tests/view_runtime.rs`: 119498 bytes, 3277 physical LOC; base 3215 (growth 62); integration tests.
+Existing >1200-LOC model owns the same retained resource grammar; tests remain
+on its codec/schema boundary. Driver catalog is699LOC and loses19LOC. Large
+3277LOC integration owner remains cohesive construction/execution/restore/
+replacement tests; new regression exercises those same public boundaries.
+No growth300 or split-only public API. Canonical scanner and complete affected
+non-CLI nextest discovery now active; CLI277 comparison and push pending.
+
+Canonical structure gate PASS/blocking0; Model embedded tests55physicalLOC.
+Ownership disposition above covers both triggered model1944/integration3277
+files; no unrelated historical trigger is promoted to blocking. Fmt/diff
+checks passed before final affected discovery12618. No Rust edit while live.
+
+Affected non-CLI discovery12618 TERMINAL0/build5m23s; run5689 TERMINAL0:
+1784/1784pass,0skip,119.245s. All1784 selected/unique terminal cases match
+exactly (missing0/unexpected0/duplicate0). Complete17-package union comprises
+15 runnable non-CLI owners, case-less BundleAssets and CLI (separate phase).
+Actual IME generator113.750s PASS and both new regressions PASS in full run.
+Final CLI lib/bins/check+six maintained integrations/all-features/locked
+union-rdeps comparison follows; all Rust bytes frozen, no goal complete.
+
+
+2026-10-08 final View runtime-requirement acceptance (supersedes pending
+paragraphs): base/main/origin `5e4b28725e6de35a61a6b4f7f93376e3e71d3071`,
+exact5 in-scope paths/3 Rust files. New2 regression tests fail before repair
+and pass after repair; complete17-package Bundle/Driver rdeps selected1784
+non-CLI cases, all1784pass/0skip in119.245s, exact inventory/execution match.
+CLI15104 discovery0/build1m43s; run98225 terminal100:597run/320pass/277fail/
+23ignored in122.570s. All597 selected/terminal IDs match; exact failed IDs
+equal original277 baseline (new0/resolved0). CLI is not reported green.
+Workspace all-target/all-feature locked check44.56s and Clippy79s PASS;
+fmt/diff/structure PASS (blocking0); owner metrics/cohesion above. Final3
+Rust SHA256 plus99 stable build-input hashes unchanged; no source edit while
+Cargo live. Complete5-path diff reviewed, no unrelated WIP, feature/dependency/
+serialized-shape/marker change. All validation processes terminal.
+Ready explicit stage/commit/normal push under existing user authorization.
+This closes the actual AWBC-free repeat construction/replacement omission,
+not the entire View1.4 or full convergence goal. The linked historical
+RepeatKeyed-scalar claim is superseded by actual Core/AWBC source/key code;
+ApplyFx scalar programs remain their explicit presentation-owned boundary.
+Next continue actual candidate Table14/E15/common atomic seal/all14 protected
+Cut5 steps and every remaining View/nominal/scheduler/ownership/CLI277/Tier2
+acceptance from the original goal. No new advice agent or repeated Astra.

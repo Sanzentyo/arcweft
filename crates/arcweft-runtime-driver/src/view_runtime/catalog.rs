@@ -108,28 +108,9 @@ impl ViewProgramCatalog {
         text: Option<&arcweft_bundle::resource_codec::ViewTextResource>,
     ) -> Result<Option<Self>, ViewProgramCatalogError> {
         if text.is_some_and(|text| text.requires_program_runtime())
-            || product.program().is_some_and(|program| {
-                program.resource().action_buttons.iter().any(|button| {
-                    button
-                        .enabled_value()
-                        .and_then(|value| value.program())
-                        .is_some()
-                }) || program.resource().instructions.iter().any(|instruction| {
-                    matches!(
-                        instruction,
-                        ViewProgramInstruction::BindLocal { .. }
-                            | ViewProgramInstruction::Branch { .. }
-                            | ViewProgramInstruction::Match { .. }
-                    ) || matches!(instruction, ViewProgramInstruction::CallView { arguments, .. } if !arguments.is_empty())
-                }) || !program.resource().handlers.is_empty()
-                    || program.resource().definitions.iter().any(|definition| {
-                        definition.parameter_contract.is_some()
-                            || definition
-                                .parameters
-                                .iter()
-                                .any(|parameter| parameter.default_program.is_some())
-                    })
-            })
+            || product
+                .program()
+                .is_some_and(|program| program.resource().requires_program_runtime())
         {
             return Err(ViewProgramCatalogError::MissingProgramRuntime);
         }

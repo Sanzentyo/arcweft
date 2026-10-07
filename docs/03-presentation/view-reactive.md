@@ -235,6 +235,11 @@ ABI から parameter、state projection、local、repeat item を型付きで渡
 placeholder 値を実行値として使わない。context time は mount activation から
 の logical seconds、ordinal は対象内の logical instruction/item index である。
 
+Core program を必要とする retained resource は、構築・replacement の時点で
+同じ bundle の AWBC authority を必要とする。repeat の source が空でもこの条件は
+変わらない。Core program を持たない resource は AWBC なしで構築できるが、
+一般 expression を Fx scalar evaluator へ切り替える fallback は許さない。
+
 checked root は expression の値生成と callable body の呼び出しを区別する。
 宣言本体の root は宣言 identity と body role を組にして保持し、同じ accepted
 HIR topology の body projection を使う。実行 ABI は正規順の free input と、

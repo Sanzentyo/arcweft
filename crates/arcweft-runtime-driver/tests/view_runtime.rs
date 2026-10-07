@@ -45,7 +45,8 @@ use arcweft_runtime_driver::view_runtime::{
     BundleViewInstancePathSegment, BundleViewMountOutput, BundleViewPaintItem,
     BundleViewRuntime as AcceptedBundleViewRuntime, BundleViewRuntimeError, BundleViewStyleNode,
     BundleViewStyleNodeId, BundleViewStyleNodeKind, BundleViewTextValue, SavedViewOwner,
-    ViewOwnerEvidence, ViewProgramReplacementError, ViewProgramReplacementOutcome,
+    ViewOwnerEvidence, ViewProgramCatalogError, ViewProgramReplacementError,
+    ViewProgramReplacementOutcome,
 };
 use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
 use arcweft_text_model::{
@@ -1989,6 +1990,67 @@ fn view_save_round_trips_stable_nested_owners_and_allocator_stays_fresh() {
             .unwrap()
             >= 3
     );
+}
+
+#[test]
+fn core_repeat_requires_awbc_at_construction_even_when_the_source_is_empty() {
+    for items in [&[][..], &[0, 1][..]] {
+        let (repeat, awbc) = repeat_fixture_awbc(items, None);
+        let product = validated_product(replacement_repeat_graph_program(repeat));
+        assert_eq!(
+            AcceptedBundleViewRuntime::try_new(product.clone(), None).err(),
+            Some(BundleViewRuntimeError::Catalog(
+                ViewProgramCatalogError::MissingProgramRuntime
+            ))
+        );
+        assert_eq!(
+            AcceptedBundleViewRuntime::try_new_with_registry(
+                product.clone(),
+                None,
+                ViewRegistry::default(),
+            )
+            .err(),
+            Some(BundleViewRuntimeError::Catalog(
+                ViewProgramCatalogError::MissingProgramRuntime
+            ))
+        );
+        let mut runtime =
+            AcceptedBundleViewRuntime::try_new_with_awbc(product, None, awbc).unwrap();
+        let frame = runtime.evaluate(
+            &[handle("handle.repeat-owner", "view.RepeatRoot")],
+            &[],
+            false,
+        );
+        assert!(frame.diagnostics.is_empty(), "{frame:#?}");
+        assert_eq!(frame.mounts.len(), items.len() + 1);
+    }
+}
+
+#[test]
+fn core_free_view_rejects_a_repeat_replacement_without_changing_live_state() {
+    let (repeat, _) = repeat_fixture_awbc(&[0, 1], None);
+    let candidate = replacement_repeat_graph_program(repeat);
+    let mut initial = candidate.clone();
+    initial.instructions.remove(0);
+    initial.definitions[0].body = ViewInstructionSpan::new(0, 1);
+    initial.definitions[1].body = ViewInstructionSpan::new(1, 2);
+    let mut runtime = AcceptedBundleViewRuntime::try_new(validated_product(initial), None).unwrap();
+    let mounted = handle("handle.repeat-owner", "view.RepeatRoot");
+    let before_frame = runtime.evaluate(std::slice::from_ref(&mounted), &[], false);
+    assert!(before_frame.diagnostics.is_empty(), "{before_frame:#?}");
+    let before = runtime.snapshot().unwrap();
+    assert_eq!(
+        runtime
+            .prepare_view_program_replacement(validated_product(candidate))
+            .err(),
+        Some(ViewProgramReplacementError::Catalog(
+            ViewProgramCatalogError::MissingProgramRuntime
+        ))
+    );
+    assert_eq!(runtime.snapshot().unwrap(), before);
+    let after_frame = runtime.evaluate(&[mounted], &[], false);
+    assert!(after_frame.diagnostics.is_empty(), "{after_frame:#?}");
+    assert_eq!(after_frame.mounts, before_frame.mounts);
 }
 
 #[test]

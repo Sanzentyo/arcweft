@@ -62,6 +62,31 @@ pub struct ViewProgramResource {
     pub adapter_requirements: Vec<CrossSectionRef>,
 }
 
+impl ViewProgramResource {
+    /// Whether this retained resource needs the exact Core/AWBC execution owner.
+    /// Presentation-owned Fx argument sampling alone does not require that owner.
+    #[must_use]
+    pub fn requires_program_runtime(&self) -> bool {
+        self.instructions
+            .iter()
+            .any(ViewProgramInstruction::requires_program_runtime)
+            || !self.handlers.is_empty()
+            || self.action_buttons.iter().any(|button| {
+                button
+                    .enabled_value()
+                    .and_then(|value| value.program())
+                    .is_some()
+            })
+            || self.definitions.iter().any(|definition| {
+                definition.parameter_contract.is_some()
+                    || definition
+                        .parameters
+                        .iter()
+                        .any(|parameter| parameter.default_program.is_some())
+            })
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum ViewProgramInstruction {
@@ -152,6 +177,26 @@ pub enum ViewProgramInstruction {
 }
 
 impl ViewProgramInstruction {
+    const fn requires_program_runtime(&self) -> bool {
+        match self {
+            Self::BindLocal { .. }
+            | Self::Branch { .. }
+            | Self::Match { .. }
+            | Self::RepeatKeyed { .. }
+            | Self::BindHandler { .. } => true,
+            Self::CallView { arguments, .. } => !arguments.is_empty(),
+            Self::OpenElement { .. }
+            | Self::CloseElement
+            | Self::EmitText { .. }
+            | Self::EmitImage { .. }
+            | Self::EmitCustom { .. }
+            | Self::BeginScope
+            | Self::EndScope
+            | Self::ApplyFx { .. }
+            | Self::AttachSemantic { .. } => false,
+        }
+    }
+
     /// Ordered Style applications attached to a node-producing instruction.
     pub fn styles(&self) -> &[ViewStyleApplicationTarget] {
         match self {
