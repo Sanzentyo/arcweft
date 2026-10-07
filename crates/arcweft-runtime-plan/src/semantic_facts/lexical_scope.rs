@@ -37,6 +37,7 @@ pub(super) fn validate_statement_scope(
 }
 
 pub(super) fn validate_global_scopes(
+    project: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
     modules: &BTreeMap<HirModuleId, &HirModule>,
     owners: RuntimeSemanticOwnerSet<'_>,
     instance_expressions: &BTreeSet<ExprId>,
@@ -45,6 +46,14 @@ pub(super) fn validate_global_scopes(
     statements: &BTreeMap<StmtId, RuntimeScopeFact>,
 ) -> Result<(), RuntimeSemanticFactsError> {
     for (owner, identity) in expressions {
+        if !identity
+            .origin()
+            .validate_owner(project, RuntimeScopeOwner::Expression(*owner))
+        {
+            return Err(RuntimeSemanticFactsError::InvalidScopeOrigin {
+                owner: RuntimeScopeOwner::Expression(*owner),
+            });
+        }
         if instance_expressions.contains(owner) {
             return Err(RuntimeSemanticFactsError::InstanceOwnedGlobalFact {
                 family: RuntimeSemanticFactFamily::ExpressionScope,
@@ -68,6 +77,14 @@ pub(super) fn validate_global_scopes(
         }
     }
     for (owner, identity) in statements {
+        if !identity
+            .origin()
+            .validate_owner(project, RuntimeScopeOwner::Statement(*owner))
+        {
+            return Err(RuntimeSemanticFactsError::InvalidScopeOrigin {
+                owner: RuntimeScopeOwner::Statement(*owner),
+            });
+        }
         if instance_statements.contains(owner) {
             return Err(RuntimeSemanticFactsError::InstanceOwnedGlobalFact {
                 family: RuntimeSemanticFactFamily::StatementScope,

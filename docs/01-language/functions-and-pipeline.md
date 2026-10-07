@@ -413,6 +413,11 @@ generation を必須で保持し、異なる owner や generation の証拠を�
 発行された座標を保持する。同じ定義の型特殊化はその座標を維持し、生成時の
 arena ID や閉じた型を lexical coordinate の代わりに使わない。
 
+scope の semantic fact は名前とは別に、受理済み expression／statement の
+origin を必須で持つ。匿名 scope 同士も別の構造座標を保持する。global の受理と
+閉じた executable instance の受理は owner の種別・同一性・発行元 generation を
+照合し、名前が一致するだけの証拠や別 owner の証拠を公開前に拒否する。
+
 AWBC の各入力行も取得元と作成時の転送方式を必須で保持し、parameter と
 captured parameter は静的な passing 区分を codec の往復後も保持する。
 function site は受理済みの転送証拠を渡し、formatter operand は選択済みの

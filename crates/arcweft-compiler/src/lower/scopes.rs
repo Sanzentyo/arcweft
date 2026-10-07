@@ -4,7 +4,9 @@ use arcweft_lang_hir::identity::{ScopeId, StmtId};
 use arcweft_lang_hir::scope::HirScopeKind;
 use arcweft_lang_hir::stmt::HirStmtKind;
 use arcweft_lang_sema::final_analysis::CheckedTryBoundaryOwner;
-use arcweft_runtime_plan::semantic_facts::{RuntimeScopeContinuation, RuntimeScopeFact};
+use arcweft_runtime_plan::semantic_facts::{
+    RuntimeScopeContinuation, RuntimeScopeFact, RuntimeScopeOrigin,
+};
 
 use super::{
     CheckedExpressionResolution, ExprId, FinalSemanticAnalysis, HirExprKind, ProjectInstanceTypes,
@@ -39,6 +41,11 @@ impl ScopeProjection<'_, '_> {
             .expression(owner)
             .ok_or_else(|| failure("scope expression has no final semantic value"))?;
         self.project(
+            RuntimeScopeOrigin::Expression(
+                self.analysis
+                    .expression_origin(owner)
+                    .map_err(|error| failure(error.to_string()))?,
+            ),
             block.scope(),
             checked_expression_type(expression, owner)?,
             identity,
@@ -57,11 +64,21 @@ impl ScopeProjection<'_, '_> {
         let HirStmtKind::Scope(block) = source.kind() else {
             return Err(failure("checked scope statement has the wrong HIR family"));
         };
-        self.project(block.body().scope(), &TypeKind::Unit, identity)
+        self.project(
+            RuntimeScopeOrigin::Statement(
+                self.analysis
+                    .statement_origin(owner)
+                    .map_err(|error| failure(error.to_string()))?,
+            ),
+            block.body().scope(),
+            &TypeKind::Unit,
+            identity,
+        )
     }
 
     fn project(
         &self,
+        origin: RuntimeScopeOrigin,
         scope: ScopeId,
         value_type: &TypeKind,
         identity: &arcweft_lang_sema::final_analysis::CheckedScopeIdentity,
@@ -153,6 +170,7 @@ impl ScopeProjection<'_, '_> {
             })
             .transpose()?;
         Ok(RuntimeScopeFact::new(
+            origin,
             runtime_scope_identity(identity),
             continuation,
         ))

@@ -108,7 +108,8 @@ mod flow;
 mod lexical_scope;
 mod scope_continuation;
 pub use scope_continuation::{
-    RuntimeScopeContinuation, RuntimeScopeContinuationError, RuntimeScopeFact, RuntimeScopeOwner,
+    RuntimeScopeContinuation, RuntimeScopeContinuationError, RuntimeScopeFact, RuntimeScopeOrigin,
+    RuntimeScopeOwner,
 };
 mod project_function;
 mod type_dependencies;
@@ -7487,6 +7488,7 @@ impl RuntimePlanSemanticFacts {
             RuntimeSemanticFactFamily::StatementScope,
         )?;
         lexical_scope::validate_global_scopes(
+            project,
             &modules,
             runtime_owners,
             &instance_expression_owners,
@@ -10270,6 +10272,8 @@ fn validate_pure_programs(
 }
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeSemanticFactsError {
+    #[error("scope {owner:?} origin belongs to another owner or HIR allocation")]
+    InvalidScopeOrigin { owner: RuntimeScopeOwner },
     #[error("expression {expression:?} origin belongs to another owner or HIR allocation")]
     InvalidExpressionOrigin { expression: ExprId },
     #[error("local {local:?} origin belongs to another owner or HIR allocation")]
@@ -12753,6 +12757,15 @@ fn validate_project_function_semantic_catalog(
             RuntimeProjectFunctionExpressionPayload::Structural
             | RuntimeProjectFunctionExpressionPayload::Consumed => {}
             RuntimeProjectFunctionExpressionPayload::Scope(identity) => {
+                let scope_owner = RuntimeScopeOwner::Expression(owner);
+                if !identity
+                    .origin()
+                    .validate_authority(semantics.local_uses(), scope_owner)
+                {
+                    return Err(RuntimeSemanticFactsError::InvalidScopeOrigin {
+                        owner: scope_owner,
+                    });
+                }
                 lexical_scope::validate_expression_scope(hir, owner, identity.identity())?;
                 lexical_scope::validate_continuation(
                     modules,
@@ -13107,6 +13120,15 @@ fn validate_project_function_semantic_catalog(
     for row in semantics.statements() {
         match row.payload() {
             RuntimeProjectFunctionStatementPayload::Scope(identity) => {
+                let scope_owner = RuntimeScopeOwner::Statement(row.owner());
+                if !identity
+                    .origin()
+                    .validate_authority(semantics.local_uses(), scope_owner)
+                {
+                    return Err(RuntimeSemanticFactsError::InvalidScopeOrigin {
+                        owner: scope_owner,
+                    });
+                }
                 lexical_scope::validate_statement_scope(
                     resolve_stmt(modules, row.owner())?,
                     row.owner(),

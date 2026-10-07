@@ -1,9 +1,139 @@
 use super::super::{
-    RuntimeScopeContinuation, RuntimeScopeFact, RuntimeScopeOwner, RuntimeTryBoundaryOwner,
-    RuntimeTryCarrierFact, RuntimeTryFact,
+    RuntimeScopeContinuation, RuntimeScopeFact, RuntimeScopeOrigin, RuntimeScopeOwner,
+    RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact,
 };
 use super::*;
 use arcweft_core::scope::RuntimeScopeIdentity;
+
+#[test]
+fn scope_origins_reject_another_owner_family_and_generation() {
+    let source = "fn root() -> Unit {\nlet first = scope first { () };\nlet second = scope second { () };\n()\n}\nflow scopes {\nscope { let inner = () }\nscope { let other = () }\nreturn ()\n}\n";
+    let project = project_fixture("scope-origin-admission", source);
+    let view = project.analysis_view().unwrap();
+    let analysis = analyze_identity_fixture(&project);
+    let scopes = |project: &HirProject| {
+        let analysis = analyze_identity_fixture(project);
+        let mut input = complete_type_input(project);
+        for (_, module) in project.analysis_view().unwrap().modules() {
+            for (owner, expression) in module.expressions() {
+                if let HirExprKind::NamedBlock(block) = expression.kind() {
+                    let arcweft_lang_hir::expr::HirNamedBlockName::Resolved(name) = block.name()
+                    else {
+                        panic!("named fixture scope");
+                    };
+                    input.push_expression_scope(
+                        owner,
+                        RuntimeScopeFact::new(
+                            RuntimeScopeOrigin::Expression(
+                                analysis.expression_origin(owner).unwrap(),
+                            ),
+                            RuntimeScopeIdentity::Named(
+                                arcweft_id::DeclarationName::try_new(name.as_str()).unwrap(),
+                            ),
+                            None,
+                        ),
+                    );
+                }
+            }
+            for (owner, statement) in module.statements() {
+                if matches!(statement.kind(), HirStmtKind::Scope(_)) {
+                    input.push_statement_scope(
+                        owner,
+                        RuntimeScopeFact::new(
+                            RuntimeScopeOrigin::Statement(
+                                analysis.statement_origin(owner).unwrap(),
+                            ),
+                            RuntimeScopeIdentity::Anonymous,
+                            None,
+                        ),
+                    );
+                }
+            }
+        }
+        input
+    };
+    let input = scopes(&project);
+    assert_eq!(input.expression_scopes.len(), 2);
+    assert_eq!(input.statement_scopes.len(), 2);
+    let expression = input.expression_scopes[0].0;
+    let statement = input.statement_scopes[0].0;
+    let expected = analysis.statement_origin(statement).unwrap();
+    let authority = arcweft_lang_sema::final_analysis::CheckedLocalUseAuthority::Global(
+        Arc::clone(analysis.checked_local_uses()),
+    );
+    assert!(expected.validate_authority(&authority, statement));
+    let facts = runtime_facts(&project, input).unwrap();
+    let facts = super::super::RuntimeExecutableSemanticFactView::Global(&facts);
+    assert_eq!(
+        facts
+            .statement_scope(statement)
+            .unwrap()
+            .origin()
+            .coordinate(),
+        expected.coordinate().path()
+    );
+    let statements = scopes(&project).statement_scopes;
+    assert_ne!(
+        statements[0].1.origin().coordinate(),
+        statements[1].1.origin().coordinate(),
+        "anonymous scopes have distinct accepted coordinates"
+    );
+
+    let mut wrong_expression = scopes(&project);
+    wrong_expression.expression_scopes[0].1 = RuntimeScopeFact::new(
+        wrong_expression.expression_scopes[1].1.origin().clone(),
+        wrong_expression.expression_scopes[0].1.identity().clone(),
+        None,
+    );
+    assert_eq!(
+        runtime_facts(&project, wrong_expression).unwrap_err(),
+        RuntimeSemanticFactsError::InvalidScopeOrigin {
+            owner: RuntimeScopeOwner::Expression(expression)
+        }
+    );
+    let mut wrong_statement = scopes(&project);
+    wrong_statement.statement_scopes[0].1 = RuntimeScopeFact::new(
+        wrong_statement.statement_scopes[1].1.origin().clone(),
+        RuntimeScopeIdentity::Anonymous,
+        None,
+    );
+    assert_eq!(
+        runtime_facts(&project, wrong_statement).unwrap_err(),
+        RuntimeSemanticFactsError::InvalidScopeOrigin {
+            owner: RuntimeScopeOwner::Statement(statement)
+        }
+    );
+    let mut wrong_family = scopes(&project);
+    wrong_family.statement_scopes[0].1 = RuntimeScopeFact::new(
+        wrong_family.expression_scopes[0].1.origin().clone(),
+        RuntimeScopeIdentity::Anonymous,
+        None,
+    );
+    assert_eq!(
+        runtime_facts(&project, wrong_family).unwrap_err(),
+        RuntimeSemanticFactsError::InvalidScopeOrigin {
+            owner: RuntimeScopeOwner::Statement(statement)
+        }
+    );
+
+    let foreign = project_fixture("scope-origin-admission", source);
+    let foreign_analysis = analyze_identity_fixture(&foreign);
+    let foreign_authority = arcweft_lang_sema::final_analysis::CheckedLocalUseAuthority::Global(
+        Arc::clone(foreign_analysis.checked_local_uses()),
+    );
+    assert!(!expected.validate_owner(foreign.analysis_view().unwrap(), statement));
+    assert!(!expected.validate_authority(&foreign_authority, statement));
+    assert!(!expected.validate_authority(&authority, statements[1].0));
+    assert!(expected.validate_owner(view, statement));
+    let mut wrong_generation = scopes(&project);
+    wrong_generation.statement_scopes[0].1 = scopes(&foreign).statement_scopes[0].1.clone();
+    assert_eq!(
+        runtime_facts(&project, wrong_generation).unwrap_err(),
+        RuntimeSemanticFactsError::InvalidScopeOrigin {
+            owner: RuntimeScopeOwner::Statement(statement)
+        }
+    );
+}
 
 #[test]
 #[allow(
@@ -81,6 +211,7 @@ fn root(input: Option<Unit>) -> Option<Unit> {
         RuntimeScopeIdentity::Named(arcweft_id::DeclarationName::try_new("first").unwrap());
     let make_fact = |exit, boundary_type| {
         RuntimeScopeFact::new(
+            RuntimeScopeOrigin::Expression(fixture_expression_origin(&project, scope_owner)),
             identity.clone(),
             Some(
                 RuntimeScopeContinuation::try_new(
@@ -108,7 +239,14 @@ fn root(input: Option<Unit>) -> Option<Unit> {
         owner: RuntimeScopeOwner::Expression(scope_owner),
     };
     assert_eq!(
-        validate(&RuntimeScopeFact::new(identity.clone(), None), &unit_type()),
+        validate(
+            &RuntimeScopeFact::new(
+                RuntimeScopeOrigin::Expression(fixture_expression_origin(&project, scope_owner)),
+                identity.clone(),
+                None
+            ),
+            &unit_type()
+        ),
         Err(invalid.clone())
     );
     assert_eq!(

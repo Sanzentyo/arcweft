@@ -2479,6 +2479,27 @@ impl FinalSemanticAnalysis {
             )
     }
 
+    pub fn statement_origin(
+        &self,
+        owner: StmtId,
+    ) -> Result<
+        crate::semantic_coordinate::CheckedStatementOrigin,
+        crate::semantic_coordinate::CheckedStatementOriginError,
+    > {
+        crate::semantic_coordinate::SemanticCoordinateIndex::new(self.accepted_root_catalog(), self)
+            .statement(owner)
+            .map(|coordinate| {
+                crate::semantic_coordinate::CheckedStatementOrigin::new(
+                    owner,
+                    Arc::clone(self.hir_topology()),
+                    coordinate,
+                )
+            })
+            .map_err(
+                |_| crate::semantic_coordinate::CheckedStatementOriginError { statement: owner },
+            )
+    }
+
     /// Borrows fallible execution projections from this semantic generation.
     /// Tooling-only outcomes remain queryable in the report but cannot yield
     /// an executable plan through this view.

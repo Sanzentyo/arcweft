@@ -1317,7 +1317,90 @@ impl CheckedExpressionOrigin {
     pub const fn coordinate(&self) -> &CheckedSemanticPath {
         &self.coordinate
     }
+
+    pub fn validate_authority(
+        &self,
+        authority: &crate::final_analysis::CheckedLocalUseAuthority,
+        expression: ExprId,
+    ) -> bool {
+        self.expression == expression
+            && std::sync::Arc::ptr_eq(self.topology.generation(), authority.generation())
+    }
 }
+
+impl PartialEq for CheckedExpressionOrigin {
+    fn eq(&self, other: &Self) -> bool {
+        self.expression == other.expression
+            && std::sync::Arc::ptr_eq(self.topology.generation(), other.topology.generation())
+            && self.coordinate == other.coordinate
+    }
+}
+
+impl Eq for CheckedExpressionOrigin {}
+
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+#[error("statement {statement:?} has no accepted structural coordinate")]
+pub struct CheckedStatementOriginError {
+    pub statement: StmtId,
+}
+
+/// One accepted statement coordinate tied to its issuing HIR allocation.
+#[derive(Clone, Debug)]
+pub struct CheckedStatementOrigin {
+    statement: StmtId,
+    topology: std::sync::Arc<arcweft_lang_hir::project::HirProjectEvaluationTopology>,
+    coordinate: StableCheckedStatementCoordinate,
+}
+
+impl CheckedStatementOrigin {
+    pub(crate) fn new(
+        statement: StmtId,
+        topology: std::sync::Arc<arcweft_lang_hir::project::HirProjectEvaluationTopology>,
+        coordinate: StableCheckedStatementCoordinate,
+    ) -> Self {
+        Self {
+            statement,
+            topology,
+            coordinate,
+        }
+    }
+
+    pub fn validate_owner(
+        &self,
+        project: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
+        statement: StmtId,
+    ) -> bool {
+        self.statement == statement
+            && self
+                .topology
+                .generation()
+                .validate_analysis_lease(project)
+                .is_ok()
+    }
+
+    pub fn validate_authority(
+        &self,
+        authority: &crate::final_analysis::CheckedLocalUseAuthority,
+        statement: StmtId,
+    ) -> bool {
+        self.statement == statement
+            && std::sync::Arc::ptr_eq(self.topology.generation(), authority.generation())
+    }
+
+    pub const fn coordinate(&self) -> &StableCheckedStatementCoordinate {
+        &self.coordinate
+    }
+}
+
+impl PartialEq for CheckedStatementOrigin {
+    fn eq(&self, other: &Self) -> bool {
+        self.statement == other.statement
+            && std::sync::Arc::ptr_eq(self.topology.generation(), other.topology.generation())
+            && self.coordinate == other.coordinate
+    }
+}
+
+impl Eq for CheckedStatementOrigin {}
 
 impl StableCheckedBindingCoordinate {
     /// Projects this accepted coordinate into the runtime input origin domain.

@@ -13,24 +13,79 @@ pub enum RuntimeScopeOwner {
     Statement(StmtId),
 }
 
+/// Accepted structural anchor and generation evidence for a lexical frame.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeScopeOrigin {
+    Expression(arcweft_lang_sema::semantic_coordinate::CheckedExpressionOrigin),
+    Statement(arcweft_lang_sema::semantic_coordinate::CheckedStatementOrigin),
+}
+
+impl RuntimeScopeOrigin {
+    pub fn coordinate(&self) -> &arcweft_lang_sema::semantic_coordinate::CheckedSemanticPath {
+        match self {
+            Self::Expression(origin) => origin.coordinate(),
+            Self::Statement(origin) => origin.coordinate().path(),
+        }
+    }
+
+    pub(super) fn validate_owner(
+        &self,
+        project: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
+        owner: RuntimeScopeOwner,
+    ) -> bool {
+        match (self, owner) {
+            (Self::Expression(origin), RuntimeScopeOwner::Expression(owner)) => {
+                origin.validate_owner(project, owner)
+            }
+            (Self::Statement(origin), RuntimeScopeOwner::Statement(owner)) => {
+                origin.validate_owner(project, owner)
+            }
+            _ => false,
+        }
+    }
+
+    pub(super) fn validate_authority(
+        &self,
+        authority: &arcweft_lang_sema::final_analysis::CheckedLocalUseAuthority,
+        owner: RuntimeScopeOwner,
+    ) -> bool {
+        match (self, owner) {
+            (Self::Expression(origin), RuntimeScopeOwner::Expression(owner)) => {
+                origin.validate_authority(authority, owner)
+            }
+            (Self::Statement(origin), RuntimeScopeOwner::Statement(owner)) => {
+                origin.validate_authority(authority, owner)
+            }
+            _ => false,
+        }
+    }
+}
+
 /// One lexical frame and its optional outward propagation continuation.
 /// The carrier belongs to this lowering boundary: its success is the scope's
 /// own value, while its residual is exactly the checked enclosing carrier's.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeScopeFact {
+    origin: RuntimeScopeOrigin,
     identity: RuntimeScopeIdentity,
     continuation: Option<RuntimeScopeContinuation>,
 }
 
 impl RuntimeScopeFact {
     pub const fn new(
+        origin: RuntimeScopeOrigin,
         identity: RuntimeScopeIdentity,
         continuation: Option<RuntimeScopeContinuation>,
     ) -> Self {
         Self {
+            origin,
             identity,
             continuation,
         }
+    }
+
+    pub const fn origin(&self) -> &RuntimeScopeOrigin {
+        &self.origin
     }
 
     pub const fn identity(&self) -> &RuntimeScopeIdentity {
