@@ -5255,7 +5255,7 @@ impl RuntimePlanBodyConstruction<'_> {
                         require_local_in_scope(actor.local(), scope)?;
                         used.insert(actor.local());
                     }
-                    for expression in line_operation_expressions(operation) {
+                    for expression in operation.argument_exprs() {
                         self.validate_expression_locals(expression, scope, used)?;
                     }
                     if let Some(binding) = binding {
@@ -5611,102 +5611,12 @@ impl RuntimePlanBodyConstruction<'_> {
     ) -> Result<(), RuntimePlanBuildError> {
         for effect in effects {
             if let LineEffectRequest::Audio(command) = effect {
-                for expression in audio_command_expressions(command) {
+                for expression in command.argument_exprs() {
                     self.validate_expression_locals(expression, scope, used)?;
                 }
             }
         }
         Ok(())
-    }
-}
-
-fn line_operation_expressions(operation: &RuntimeLineOperation) -> Vec<&RuntimeExpr> {
-    match operation {
-        RuntimeLineOperation::AcquireActor { .. } | RuntimeLineOperation::VoiceHandle { .. } => {
-            Vec::new()
-        }
-        RuntimeLineOperation::Schedule {
-            delay, captures, ..
-        } => std::iter::once(delay)
-            .chain(
-                captures
-                    .iter()
-                    .map(super::super::RuntimeScheduledCapture::value),
-            )
-            .collect(),
-        RuntimeLineOperation::ActorLook {
-            look, crossfade, ..
-        } => vec![look, crossfade],
-    }
-}
-
-fn audio_command_expressions(command: &RuntimeAudioCommand) -> Vec<&RuntimeExpr> {
-    match command {
-        RuntimeAudioCommand::Play {
-            voice,
-            resource,
-            bus,
-            gain_db_milli,
-            pan_milli,
-            start_frame,
-            fade_in_millis,
-            ..
-        } => vec![
-            voice,
-            resource,
-            bus,
-            gain_db_milli,
-            pan_milli,
-            start_frame,
-            fade_in_millis,
-        ],
-        RuntimeAudioCommand::Stop {
-            voice,
-            fade_out_millis,
-        } => vec![voice, fade_out_millis],
-        RuntimeAudioCommand::StopAll { fade_out_millis } => vec![fade_out_millis],
-        RuntimeAudioCommand::SetVoiceGain {
-            voice,
-            gain_db_milli,
-            transition_millis,
-        } => vec![voice, gain_db_milli, transition_millis],
-        RuntimeAudioCommand::SetVoicePan {
-            voice,
-            pan_milli,
-            transition_millis,
-        } => vec![voice, pan_milli, transition_millis],
-        RuntimeAudioCommand::SetBusGain {
-            bus,
-            gain_db_milli,
-            transition_millis,
-        } => vec![bus, gain_db_milli, transition_millis],
-        RuntimeAudioCommand::SetBusMute { bus, muted } => vec![bus, muted],
-        RuntimeAudioCommand::SetEffectEnabled {
-            bus,
-            effect,
-            enabled,
-        } => vec![bus, effect, enabled],
-        RuntimeAudioCommand::SetEffectParameter {
-            bus,
-            effect,
-            value,
-            transition_millis,
-            ..
-        } => vec![bus, effect, value, transition_millis],
-        RuntimeAudioCommand::ApplySnapshot {
-            snapshot,
-            transition_millis,
-        } => vec![snapshot, transition_millis],
-        RuntimeAudioCommand::RequestMicrophone { capture, .. }
-        | RuntimeAudioCommand::StopMicrophone { capture } => vec![capture],
-        RuntimeAudioCommand::SetCaptureMonitor {
-            capture,
-            bus,
-            gain_db_milli,
-        } => std::iter::once(capture)
-            .chain(bus.iter())
-            .chain(std::iter::once(gain_db_milli))
-            .collect(),
     }
 }
 

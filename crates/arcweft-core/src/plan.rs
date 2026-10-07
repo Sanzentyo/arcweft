@@ -89,7 +89,7 @@ pub use dialogue_content::{
     RuntimeDialogueValueSite,
 };
 pub use executable_body::{RuntimeEffectSet, RuntimeEffectSetError, RuntimeExecutableBody};
-pub use flow_ops::{RuntimeFlowBodyRole, RuntimeFlowOwnedBodies};
+pub use flow_ops::{RuntimeFlowBodyRole, RuntimeFlowOwnedBodies, RuntimeFlowValueRole};
 pub use format_attempt::{
     RuntimeFormatAttempt, RuntimeFormatAttemptOperand, RuntimeFormatAttemptTable,
 };
@@ -1676,5 +1676,22 @@ impl RuntimePlan {
     ) -> Result<FlowRuntimeId, RuntimeFlowTargetError> {
         FlowRuntimeId::resolve_runtime_target(value, self.flows.iter().map(|flow| &flow.id))
             .cloned()
+    }
+}
+
+impl RuntimeLineOperation {
+    /// Direct owned expressions; borrowed receiver metadata is not a value read.
+    pub(crate) fn argument_exprs(&self) -> Vec<&RuntimeExpr> {
+        match self {
+            Self::AcquireActor { .. } | Self::VoiceHandle { .. } => Vec::new(),
+            Self::Schedule {
+                delay, captures, ..
+            } => std::iter::once(delay)
+                .chain(captures.iter().map(RuntimeScheduledCapture::value))
+                .collect(),
+            Self::ActorLook {
+                look, crossfade, ..
+            } => vec![look, crossfade],
+        }
     }
 }

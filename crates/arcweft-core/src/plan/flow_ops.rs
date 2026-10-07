@@ -24,7 +24,300 @@ pub struct RuntimeFlowOwnedBodies<'a> {
     guard: bool,
 }
 
+/// Role of a directly owned expression or pattern in one operation.
+/// Ordinals retain source positions; referenced catalog definitions are edges.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeFlowValueRole {
+    Pattern,
+    Value,
+    Target,
+    Result,
+    Source,
+    Condition,
+    Guard,
+    Callee,
+    Scrutinee,
+    Argument {
+        ordinal: usize,
+    },
+    AwaitObserverPattern {
+        ordinal: usize,
+    },
+    MatchPattern {
+        arm: usize,
+    },
+    MatchGuard {
+        arm: usize,
+    },
+    BaseRequestArgument {
+        ordinal: usize,
+    },
+    ChildRequestArgument {
+        ordinal: usize,
+    },
+    Capture {
+        ordinal: usize,
+    },
+    LineArgument {
+        ordinal: usize,
+    },
+    EffectArgument {
+        ordinal: usize,
+    },
+    AudioArgument {
+        ordinal: usize,
+    },
+    ChoiceAudioArgument {
+        option: usize,
+        effect: usize,
+        argument: usize,
+    },
+}
+
 impl FlowOp {
+    /// Borrows directly owned value/pattern roots in source order. Referenced
+    /// project-call/default/content definitions remain catalog edges.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one exhaustive borrowed projection owns the complete Flow expression/pattern root algebra"
+    )]
+    pub fn try_visit_value_roots<E>(
+        &self,
+        visitor: &mut impl FnMut(
+            RuntimeFlowValueRole,
+            crate::value::RuntimeExpressionNode<'_>,
+        ) -> Result<(), E>,
+    ) -> Result<(), E> {
+        use crate::value::RuntimeExpressionNode as Node;
+        use RuntimeFlowValueRole as Role;
+        let expression = |role, value, visitor: &mut dyn FnMut(Role, Node<'_>) -> Result<(), E>| {
+            visitor(role, Node::Expression(value))
+        };
+        match self {
+            FlowOp::Let { pattern, expr }
+            | FlowOp::LetElse { pattern, expr, .. }
+            | FlowOp::WhileLet { pattern, expr, .. }
+            | FlowOp::WhileLetNext { pattern, expr, .. }
+            | FlowOp::ExitScopeBind { pattern, expr } => {
+                visitor(Role::Pattern, Node::Pattern(pattern))?;
+                expression(Role::Value, expr, visitor)?;
+                if let FlowOp::WhileLet {
+                    guard: Some(guard), ..
+                }
+                | FlowOp::WhileLetNext {
+                    guard: Some(guard), ..
+                } = self
+                {
+                    expression(Role::Guard, guard, visitor)?;
+                }
+            }
+            FlowOp::FormatOperandAttempt { value, .. }
+            | FlowOp::CompleteFormatOperand { value, .. }
+            | FlowOp::Assign { value, .. }
+            | FlowOp::CommitDialogueResult { value }
+            | FlowOp::SelectDialogueResult { value }
+            | FlowOp::GotoExpr(value)
+            | FlowOp::ReturnExpr(value)
+            | FlowOp::Break(Some(value)) => expression(Role::Value, value, visitor)?,
+            FlowOp::Dialogue { target, result, .. } => {
+                expression(Role::Target, target, visitor)?;
+                visitor(Role::Result, Node::Pattern(result.pattern()))?;
+            }
+            FlowOp::Await {
+                binding,
+                target,
+                observers,
+            } => {
+                if let Some(binding) = binding {
+                    visitor(Role::Pattern, Node::Pattern(binding))?;
+                }
+                expression(Role::Source, target.source(), visitor)?;
+                for (ordinal, observer) in observers.iter().enumerate() {
+                    visitor(
+                        Role::AwaitObserverPattern { ordinal },
+                        Node::Pattern(&observer.pattern),
+                    )?;
+                }
+            }
+            FlowOp::StartNeedProducer { binding, target } => {
+                visitor(Role::Pattern, Node::Pattern(binding))?;
+                for (ordinal, argument) in target.arguments().iter().enumerate() {
+                    expression(Role::Argument { ordinal }, argument, visitor)?;
+                }
+            }
+            FlowOp::AwaitMany {
+                binding, target, ..
+            } => {
+                if let Some(binding) = binding {
+                    visitor(Role::Pattern, Node::Pattern(binding))?;
+                }
+                expression(Role::Source, &target.source, visitor)?;
+                for (ordinal, argument) in target.base.request.args.iter().enumerate() {
+                    expression(
+                        Role::BaseRequestArgument { ordinal },
+                        argument.value(),
+                        visitor,
+                    )?;
+                }
+                for (ordinal, argument) in target.child.request.args.iter().enumerate() {
+                    expression(
+                        Role::ChildRequestArgument { ordinal },
+                        argument.value(),
+                        visitor,
+                    )?;
+                }
+            }
+            FlowOp::HostCall { binding, target } => {
+                if let Some(binding) = binding {
+                    visitor(Role::Pattern, Node::Pattern(binding))?;
+                }
+                for (ordinal, argument) in target.args.iter().enumerate() {
+                    expression(Role::Argument { ordinal }, argument.value(), visitor)?;
+                }
+            }
+            FlowOp::ApplyGroup {
+                callee,
+                args,
+                result,
+            } => {
+                expression(Role::Callee, callee, visitor)?;
+                for (ordinal, argument) in args.iter().enumerate() {
+                    expression(Role::Argument { ordinal }, argument.value(), visitor)?;
+                }
+                visitor(Role::Result, Node::Pattern(result))?;
+            }
+            FlowOp::If { condition, .. }
+            | FlowOp::While { condition, .. }
+            | FlowOp::WhileNext { condition, .. } => {
+                expression(Role::Condition, condition, visitor)?;
+            }
+            FlowOp::IfLet {
+                pattern,
+                expr,
+                guard,
+                ..
+            } => {
+                visitor(Role::Pattern, Node::Pattern(pattern))?;
+                expression(Role::Value, expr, visitor)?;
+                if let Some(guard) = guard {
+                    expression(Role::Guard, guard, visitor)?;
+                }
+            }
+            FlowOp::Match { scrutinee, arms } => {
+                expression(Role::Scrutinee, scrutinee, visitor)?;
+                for (arm_index, arm) in arms.iter().enumerate() {
+                    visitor(
+                        Role::MatchPattern { arm: arm_index },
+                        Node::Pattern(&arm.pattern),
+                    )?;
+                    if let Some(condition) = arm
+                        .guard
+                        .as_ref()
+                        .and_then(|guard| guard.condition.as_ref())
+                    {
+                        expression(Role::MatchGuard { arm: arm_index }, condition, visitor)?;
+                    }
+                }
+            }
+            FlowOp::Loop { result, .. } => {
+                if let Some(result) = result {
+                    visitor(Role::Result, Node::Pattern(result))?;
+                }
+            }
+            FlowOp::For {
+                pattern, source, ..
+            } => {
+                visitor(Role::Pattern, Node::Pattern(pattern))?;
+                expression(Role::Source, source, visitor)?;
+            }
+            FlowOp::ForNext { pattern, .. } => visitor(Role::Pattern, Node::Pattern(pattern))?,
+            FlowOp::Thread { producer, .. } => {
+                for (ordinal, argument) in producer.request.args.iter().enumerate() {
+                    expression(Role::Argument { ordinal }, argument.value(), visitor)?;
+                }
+            }
+            FlowOp::LetScope { pattern, value, .. } => {
+                visitor(Role::Pattern, Node::Pattern(pattern))?;
+                expression(Role::Value, value, visitor)?;
+            }
+            FlowOp::RegisterDefer { captures, .. } => {
+                for (ordinal, capture) in captures.iter().enumerate() {
+                    expression(Role::Capture { ordinal }, capture, visitor)?;
+                }
+            }
+            FlowOp::LineOperation { binding, operation } => {
+                if let Some(binding) = binding {
+                    visitor(Role::Pattern, Node::Pattern(binding))?;
+                }
+                for (ordinal, argument) in operation.argument_exprs().into_iter().enumerate() {
+                    expression(Role::LineArgument { ordinal }, argument, visitor)?;
+                }
+            }
+            FlowOp::EvaluatedEffect(effect) => {
+                for (ordinal, argument) in effect.argument_exprs().into_iter().enumerate() {
+                    expression(Role::EffectArgument { ordinal }, argument, visitor)?;
+                }
+            }
+            FlowOp::Effect(effect) | FlowOp::RegisterCleanup { effect, .. } => {
+                if let crate::effect::LineEffectRequest::Audio(command) = effect {
+                    for (ordinal, argument) in command.argument_exprs().into_iter().enumerate() {
+                        expression(Role::AudioArgument { ordinal }, argument, visitor)?;
+                    }
+                }
+            }
+            FlowOp::Choice { options, .. } => {
+                for (option, choice) in options.iter().enumerate() {
+                    for (effect, request) in choice.effects.iter().enumerate() {
+                        if let crate::effect::LineEffectRequest::Audio(command) = request {
+                            for (argument, value) in
+                                command.argument_exprs().into_iter().enumerate()
+                            {
+                                expression(
+                                    Role::ChoiceAudioArgument {
+                                        option,
+                                        effect,
+                                        argument,
+                                    },
+                                    value,
+                                    visitor,
+                                )?;
+                            }
+                        }
+                    }
+                }
+            }
+            FlowOp::Bind(_)
+            | FlowOp::ProjectCall { .. }
+            | FlowOp::LoopNext { .. }
+            | FlowOp::Scope { .. }
+            | FlowOp::Break(None)
+            | FlowOp::Continue
+            | FlowOp::Goto(_)
+            | FlowOp::Return(_)
+            | FlowOp::CancelCleanup { .. }
+            | FlowOp::EnterScope { .. }
+            | FlowOp::ExitScope
+            | FlowOp::CompleteAwaitObserver
+            | FlowOp::Noop => {}
+        }
+        Ok(())
+    }
+
+    /// Authored operations can enter an inert image only when all owned
+    /// expression and pattern literals permit Copy. Runtime continuation
+    /// values use their dedicated snapshot owners instead.
+    pub(crate) fn literals_permit_copy(&self) -> bool {
+        try_visit_ops(std::slice::from_ref(self), &mut |op| {
+            if matches!(op, FlowOp::Bind(_) | FlowOp::ForNext { .. }) {
+                return Err(());
+            }
+            op.try_visit_value_roots(&mut |_, node| {
+                node.literals_permit_copy().then_some(()).ok_or(())
+            })
+        })
+        .is_ok()
+    }
+
     /// Enumerates all directly owned bodies, retaining empty bodies and their
     /// roles. Referenced function sites are not owned children.
     #[must_use]

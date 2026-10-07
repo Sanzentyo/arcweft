@@ -93,3 +93,77 @@ impl RuntimeAudioCommand {
         }
     }
 }
+
+impl RuntimeAudioCommand {
+    /// Direct owned expressions in the command ABI order.
+    pub(crate) fn argument_exprs(&self) -> Vec<&RuntimeExpr> {
+        match self {
+            Self::Play {
+                voice,
+                resource,
+                bus,
+                gain_db_milli,
+                pan_milli,
+                start_frame,
+                fade_in_millis,
+                ..
+            } => vec![
+                voice,
+                resource,
+                bus,
+                gain_db_milli,
+                pan_milli,
+                start_frame,
+                fade_in_millis,
+            ],
+            Self::Stop {
+                voice,
+                fade_out_millis,
+            } => vec![voice, fade_out_millis],
+            Self::StopAll { fade_out_millis } => vec![fade_out_millis],
+            Self::SetVoiceGain {
+                voice,
+                gain_db_milli,
+                transition_millis,
+            } => vec![voice, gain_db_milli, transition_millis],
+            Self::SetVoicePan {
+                voice,
+                pan_milli,
+                transition_millis,
+            } => vec![voice, pan_milli, transition_millis],
+            Self::SetBusGain {
+                bus,
+                gain_db_milli,
+                transition_millis,
+            } => vec![bus, gain_db_milli, transition_millis],
+            Self::SetBusMute { bus, muted } => vec![bus, muted],
+            Self::SetEffectEnabled {
+                bus,
+                effect,
+                enabled,
+            } => vec![bus, effect, enabled],
+            Self::SetEffectParameter {
+                bus,
+                effect,
+                value,
+                transition_millis,
+                ..
+            } => vec![bus, effect, value, transition_millis],
+            Self::ApplySnapshot {
+                snapshot,
+                transition_millis,
+            } => vec![snapshot, transition_millis],
+            Self::RequestMicrophone { capture, .. } | Self::StopMicrophone { capture } => {
+                vec![capture]
+            }
+            Self::SetCaptureMonitor {
+                capture,
+                bus,
+                gain_db_milli,
+            } => std::iter::once(capture)
+                .chain(bus.iter())
+                .chain(std::iter::once(gain_db_milli))
+                .collect(),
+        }
+    }
+}

@@ -7085,3 +7085,76 @@ F/Q/E actual body/image admission, common builder/decode publication, restored
 producer transactions, affine Line, retained View and remaining original
 acceptance stay required. Full convergence goal remains active/incomplete;
 Astra one-shot is consumed and must not repeat.
+
+### 2026-10-07 — owned Flow value roots and native inert-copy guard
+
+Inspected main base b0aa38b835f01d9798c2730d1a729ac245cfa920; current cut dirty.
+The previous input-count-only function quota prototype was removed before
+publication: it omitted endpoint/child roles and could not establish the final
+function-role limit. Final F/Q/E/count preflight remains part of the protected
+common-sealer switch. Astra one-shot remains consumed; never repeat it.
+
+FlowOp now borrows actual expression/pattern roots through an exhaustive typed
+role projection, retaining sparse Match arm, Await observer, request argument,
+capture, Choice option/effect and audio source ordinals. Catalog references stay
+edges. Audio and Line argument enumeration moved onto the existing owners;
+lexical admission uses those same methods and the old free helpers were deleted.
+Native static rollback copying checks every owned nested expression/pattern
+literal before cloning; evaluated Bind/ForNext and formatter values keep their
+dedicated snapshot owners. New regressions cover role/order, first rejection,
+affine pattern/audio/deep children, and actual rollback rejection/Copy roundtrip.
+No final task schema/table/digest is exposed by this cut.
+
+Validation in progress on frozen final Rust bytes: nextest Core50 closure
+handle18938; sequential full workspace check/Clippy handle23224. Fresh locked
+all-feature metadata and target-all inverse tree reproduce exactly50 packages.
+Canonical structural dry-run passed, blockers0/no reports written. Initial
+Core check failed on new fixture key/Box mistakes; corrected before final run.
+Whole closure remains subject to exact comparison with prior277 CLI failures.
+Full convergence goal remains active/incomplete.
+
+Ownership disposition at the same dirty base: Core fan-in34; workspace
+fan-out12 (all dependencies21). Physical file metrics bytes/LOC/baseLOC:
+audio5196/169/95; engine166916/4246/4216; plan60353/1697/1680;
+construction/lower259287/6070/6160; flow_ops19126/511/222;
+flow_ops/tests13256/441/236; expression_literals3033/82/76;
+expression_tree16625/404/404. All production except flow_ops/tests; no generated,
+benchmark/tool/facade owner added. Canonical scanner embeddedTestLOC: engine126,
+lower279; plan0; expression_literals45; flow_ops/expression_tree external modules
+are not embedded test bodies. Existing engine owns rollback lifecycle, lower
+owns lexical admission, audio/Line own their closed value grammar, flow_ops owns
+borrowed structural traversal. The same audio/Line projections serve admission
+and copy inspection; no copied semantic AST, side catalog, source reconstruction,
+I/O dependency or public visibility solely for file splitting. Existing large
+engine/lower owners retain their cohesive boundaries; lower shrank90LOC.
+
+Broad nextest18938 terminal100:9m00s build/656.513s execution,
+5,445unique results/5,168passed(5slow)/277failed/39skipped; all5new regressions
+PASS. Failure IDs exactly equal b0aa38b baseline277,new0/resolved0; full run is
+not green. Workspace check/Clippy23224 terminal0:10m48s check including normal
+build-lock wait/2m26s Clippy. After all source-sensitive handles ended, resolved
+three new visitor lint warnings: documented exhaustive-owner length expectation,
+merged equivalent Break arm, and explicit semicolon. No behavior/ABI/graph change.
+Core unit owner revalidation40510 and final workspace checks are live; all other
+consumer behavioral results reuse this unchanged broad cut. Need final after-run
+full selection list/all-ID reconciliation and staged review/commit/push.
+
+Final-source Core unit run40510 terminal0:910/910passed,6.149s execution
+after7m06s ordinary build; no skipped owner case. Final workspace check/Clippy
+91022 terminal0:47.38s check/7m38s Clippy including shared build-lock wait.
+Changed Flow visitor lint warnings0; existing workspace warnings remain.
+fmt/diff40142 terminal0. Fetch verified HEAD=origin/main at b0aa38b fullSHA
+above,0/0. Full after-run list45892 uses retained exact312binary metadata and
+fresh Cargo metadata, unchanged graph/features/paths, with no Cargo rebuild.
+Await its terminal JSON before all-ID/owner reconciliation and commit.
+
+After-run reused-binary list45892 terminal0:5,445selected equals5,445actual
+PASS/FAIL IDs; missing/unexpected0,47runnable packages and3case-less
+compile-covered packages arcweft/bundle-assets/render-web. Core selected910
+exactly equals910actual final-source owner IDs,missing/unexpected0.
+Final flow_ops physicalLOC515(base222,growth293)/bytes19246;
+other scoped ownership metrics/dispositions unchanged. All validation handles
+terminal. Complete9explicit paths/hunks reviewed before stage. This cut closes
+owned value traversal and rollback copy rejection, not F/Q/E seal or original
+convergence. Static table/quotas/common publication/restore/affineLine/retained
+View and remaining original acceptance stay required. Goal active/incomplete.

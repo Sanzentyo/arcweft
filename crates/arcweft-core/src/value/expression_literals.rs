@@ -8,6 +8,12 @@ impl RuntimeExpr {
     /// only when every embedded live value is recursively unrestricted.
     /// Local reads are evaluated later and do not duplicate their bindings.
     pub(crate) fn literals_permit_copy(&self) -> bool {
+        RuntimeExpressionNode::Expression(self).literals_permit_copy()
+    }
+}
+
+impl RuntimeExpressionNode<'_> {
+    pub(crate) fn literals_permit_copy(self) -> bool {
         self.try_visit_owned_tree(&mut |_, node| {
             let literal = match node {
                 RuntimeExpressionNode::Expression(expression) => match expression.kind() {

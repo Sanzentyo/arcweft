@@ -234,3 +234,208 @@ fn executable_site_verification_rejects_the_first_nested_activation_reference() 
         matches!(plan.verify(), Err(RuntimePlanError::MissingProjectCallSite { site }) if site == first)
     );
 }
+
+fn labelled(label: &str) -> RuntimeExpr {
+    RuntimeExpr::from_admitted_parts(
+        ty(),
+        RuntimeExprKind::Value(RuntimeValue::String(label.to_owned())),
+    )
+}
+
+#[test]
+fn value_roles_preserve_sparse_match_and_observer_source_positions() {
+    use RuntimeFlowValueRole as Role;
+    let op = FlowOp::Match {
+        scrutinee: labelled("subject"),
+        arms: vec![
+            RuntimeMatchArm {
+                pattern: pattern(),
+                guard: None,
+                ops: vec![],
+            },
+            RuntimeMatchArm {
+                pattern: pattern(),
+                guard: Some(RuntimeMatchGuard {
+                    candidate: RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN),
+                    condition: Some(labelled("guard")),
+                    copy_locals: Box::new([]),
+                    ops: vec![],
+                }),
+                ops: vec![],
+            },
+        ],
+    };
+    let mut roles = Vec::new();
+    op.try_visit_value_roots(&mut |role, _| {
+        roles.push(role);
+        Ok::<(), ()>(())
+    })
+    .unwrap();
+    assert_eq!(
+        roles,
+        [
+            Role::Scrutinee,
+            Role::MatchPattern { arm: 0 },
+            Role::MatchPattern { arm: 1 },
+            Role::MatchGuard { arm: 1 }
+        ]
+    );
+    let await_op = FlowOp::Await {
+        binding: None,
+        target: crate::plan::RuntimeNeedAwaitTarget::new(value()),
+        observers: vec![
+            RuntimeAwaitPendingObserver {
+                pattern: pattern(),
+                ops: vec![],
+            },
+            RuntimeAwaitPendingObserver {
+                pattern: pattern(),
+                ops: vec![],
+            },
+        ],
+    };
+    roles.clear();
+    await_op
+        .try_visit_value_roots(&mut |role, _| {
+            roles.push(role);
+            Ok::<(), ()>(())
+        })
+        .unwrap();
+    assert_eq!(
+        roles,
+        [
+            Role::Source,
+            Role::AwaitObserverPattern { ordinal: 0 },
+            Role::AwaitObserverPattern { ordinal: 1 }
+        ]
+    );
+}
+
+#[test]
+fn value_root_rejection_stops_before_later_match_roots() {
+    let op = FlowOp::Match {
+        scrutinee: value(),
+        arms: vec![RuntimeMatchArm {
+            pattern: pattern(),
+            guard: None,
+            ops: vec![],
+        }],
+    };
+    let mut visits = 0;
+    let result = op.try_visit_value_roots(&mut |_, _| {
+        visits += 1;
+        Err("reject subject")
+    });
+    assert_eq!(result, Err("reject subject"));
+    assert_eq!(visits, 1);
+}
+
+#[test]
+fn static_control_copy_rejects_affine_pattern_audio_and_deep_child_literals() {
+    let affine = || {
+        RuntimeExpr::from_admitted_parts(
+            ty(),
+            RuntimeExprKind::Value(RuntimeValue::NeedHandle(crate::tests::reusable_need(
+                "need.control",
+            ))),
+        )
+    };
+    let affine_pattern = RuntimePattern::from_admitted_parts(
+        ty(),
+        RuntimePatternKind::Literal(RuntimeValue::NeedHandle(crate::tests::reusable_need(
+            "need.pattern",
+        ))),
+    );
+    assert!(
+        !FlowOp::Let {
+            pattern: affine_pattern,
+            expr: value()
+        }
+        .literals_permit_copy()
+    );
+    assert!(
+        !FlowOp::RegisterCleanup {
+            key: "cleanup".to_owned(),
+            effect: crate::effect::LineEffectRequest::Audio(Box::new(
+                crate::audio::RuntimeAudioCommand::StopAll {
+                    fade_out_millis: affine()
+                }
+            ))
+        }
+        .literals_permit_copy()
+    );
+    assert!(
+        !FlowOp::Loop {
+            result: None,
+            body: vec![FlowOp::ReturnExpr(affine())]
+        }
+        .literals_permit_copy()
+    );
+    assert!(
+        FlowOp::Loop {
+            result: None,
+            body: vec![FlowOp::ReturnExpr(value())]
+        }
+        .literals_permit_copy()
+    );
+}
+
+#[test]
+fn choice_audio_values_keep_option_and_effect_positions() {
+    let op = FlowOp::Choice {
+        id: None,
+        options: vec![
+            crate::plan::ChoiceRuntimeOption {
+                id: None,
+                label: "empty".to_owned(),
+                target: None,
+                out: None,
+                effects: vec![],
+            },
+            crate::plan::ChoiceRuntimeOption {
+                id: None,
+                label: "audio".to_owned(),
+                target: None,
+                out: None,
+                effects: vec![crate::effect::LineEffectRequest::Audio(Box::new(
+                    crate::audio::RuntimeAudioCommand::SetCaptureMonitor {
+                        capture: labelled("capture"),
+                        bus: None,
+                        gain_db_milli: labelled("gain"),
+                    },
+                ))],
+            },
+        ],
+    };
+    let mut actual = Vec::new();
+    op.try_visit_value_roots(&mut |role, node| {
+        if let crate::value::RuntimeExpressionNode::Expression(expr) = node
+            && let RuntimeExprKind::Value(RuntimeValue::String(label)) = expr.kind()
+        {
+            actual.push((role, label.clone()));
+        }
+        Ok::<(), ()>(())
+    })
+    .unwrap();
+    assert_eq!(
+        actual,
+        [
+            (
+                RuntimeFlowValueRole::ChoiceAudioArgument {
+                    option: 1,
+                    effect: 0,
+                    argument: 0
+                },
+                "capture".to_owned()
+            ),
+            (
+                RuntimeFlowValueRole::ChoiceAudioArgument {
+                    option: 1,
+                    effect: 0,
+                    argument: 1
+                },
+                "gain".to_owned()
+            ),
+        ]
+    );
+}

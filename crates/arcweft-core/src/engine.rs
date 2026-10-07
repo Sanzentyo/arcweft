@@ -400,7 +400,8 @@ impl FlowOpRollbackImage {
                     );
                 }
             }
-            _ => Self::Static(op.clone()),
+            _ if op.literals_permit_copy() => Self::Static(op.clone()),
+            _ => return Err("static flow operation contains an affine literal".to_owned()),
         })
     }
 
@@ -4115,6 +4116,35 @@ mod rollback_tests {
     use crate::task::{LogicalEpoch, RuntimeNeedState, TaskSequence};
     use arcweft_need::Need;
     use std::num::NonZeroU32;
+
+    #[test]
+    fn native_static_rollback_rejects_nested_affine_literal_before_copy() {
+        let owner = crate::task::RuntimeProgramOwner::Plan(Arc::new(
+            RuntimePlanBuilder::new().finish().unwrap(),
+        ));
+        let ty = RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN);
+        let make_op = |value| FlowOp::If {
+            condition: RuntimeExpr::from_admitted_parts(
+                ty,
+                crate::value::RuntimeExprKind::Value(RuntimeValue::Bool(true)),
+            ),
+            then_ops: vec![FlowOp::ReturnExpr(RuntimeExpr::from_admitted_parts(
+                ty,
+                crate::value::RuntimeExprKind::Value(value),
+            ))],
+            else_ops: vec![],
+        };
+        let affine = make_op(RuntimeValue::NeedHandle(crate::tests::reusable_need(
+            "need.rollback",
+        )));
+        assert_eq!(
+            FlowOpRollbackImage::from_live(&affine, &owner).unwrap_err(),
+            "static flow operation contains an affine literal"
+        );
+        let unrestricted = make_op(RuntimeValue::Bool(false));
+        let image = FlowOpRollbackImage::from_live(&unrestricted, &owner).unwrap();
+        assert_eq!(image.into_live(&owner).unwrap(), unrestricted);
+    }
 
     #[test]
     fn native_rollback_round_trips_distinct_affine_env_and_ready_owners() {

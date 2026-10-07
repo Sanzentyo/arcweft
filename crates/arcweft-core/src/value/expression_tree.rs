@@ -107,7 +107,7 @@ impl RuntimePattern {
 }
 
 impl RuntimeExpressionNode<'_> {
-    fn try_visit_owned_tree<E>(
+    pub(crate) fn try_visit_owned_tree<E>(
         self,
         visitor: &mut impl FnMut(RuntimeExpressionChildRole, RuntimeExpressionNode<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
