@@ -7545,3 +7545,27 @@ memoizedencoder/privateimage finaltable transition. No goalcompletionclaim.
 Inventory terminal0 after run/check/lint:940caseIDs exactlymatch executed
 Coreowner,0missing. fmt/diff/explicit11-path stagedreview follow; private
 Cut4commit includes no new public row/codec/proof. Fullgoalactive/incomplete.
+
+### 2026-10-07 — actual function body row
+
+PriorprivateFlowcut main/origin6ed6f8a8daa5e5ae1eb1757f0383b08570708cd9
+pushedFFclean; progressverified940pass,check/lint/fmt/structure/inventory.
+CurrenttwoCoreownerpaths +existingnote add function_row_digest: actual
+accepted signature/inputmetadata and actualExpression/Executablebody in
+one private transcript under sharedmeter. Executablebody includes closed
+effects and balancedFlow withownerboundtaskcoordinates; recursivecode
+references remain accepteddefinitionleaves, not recursivebodyexpansion.
+Rawprivateblake3Hash is an executable-row internal result, not F/Q/E proof
+orpublicdigest constructor. No fakefinalFunctionSemanticDigest minted.
+
+Meaningfulactualbuilder regression: changingBoolbodyliteral changesrowhash;
+insertingunrelatedfunctionrow leavesitunchanged. Focusedbodyowner nextest
+terminal0:17/17pass0.099s924skipped,build18.81s. Corealltargetallfeaturelocked
+checkterminal0,9.91s;Clippyterminal0,16.32s (existingwarnings/deadprivatecode),
+onlynewsemicolonstyle correctedafterterminal. AllotherCoretests fromprior
+940passunchanged and reused for samebehavior. CompleteCore50graphunchanged
+andconsumerbehaviorunaffected untilprotectedpublicsealer. Finalfmt/diff
+review follows;fullgoalactive/incomplete. NeednormativeFparameter/capture/
+endpointpathtranscript and actual task candidate inventory/Q/Ecommonseal;
+ExternalBinding/Formaltransfer mustneverbe guessed asCopy/Move. Continue
+actualowner migration withone finalauthority;Astraoneshotconsumedneverrepeat.

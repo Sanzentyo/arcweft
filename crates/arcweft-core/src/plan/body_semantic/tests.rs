@@ -688,3 +688,67 @@ fn audio_loop_and_microphone_constraints_enter_static_effect_metadata() {
     };
     assert_ne!(hash(play(10)), hash(play(11)));
 }
+
+#[test]
+fn actual_function_row_commits_body_value_but_ignores_function_arena_padding() {
+    let make = |padding, value| {
+        let mut builder = RuntimePlanBuilder::new();
+        let boolean = RuntimeSemanticTypeId::from_bytes([61; 32]);
+        builder
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    boolean,
+                    RuntimePlanTypeProjection::Bool,
+                )],
+                [],
+            )
+            .unwrap();
+        let owner = builder.task_coordinate_owner(0);
+        if padding {
+            builder
+                .push_function_site_seed(
+                    crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                        [99; 32],
+                    ),
+                    crate::plan::RuntimeFunctionSemanticRole::Ordinary,
+                    [],
+                    crate::plan::RuntimeExprSeed::new(
+                        boolean,
+                        crate::plan::RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(
+                            false,
+                        )),
+                    ),
+                )
+                .unwrap();
+        }
+        builder
+            .push_function_site_seed(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([71; 32]),
+                crate::plan::RuntimeFunctionSemanticRole::Ordinary,
+                [],
+                crate::plan::RuntimeExprSeed::new(
+                    boolean,
+                    crate::plan::RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(
+                        value,
+                    )),
+                ),
+            )
+            .unwrap();
+        let plan = builder.finish().unwrap();
+        let id = crate::runtime_id::RuntimeFunctionSiteId::from_accepted_ordinal(
+            NonZeroU32::new(if padding { 2 } else { 1 }).unwrap(),
+        );
+        (plan, owner, id)
+    };
+    let first = make(false, true);
+    let padding = make(true, true);
+    let changed = make(false, false);
+    let hash = |(plan, owner, id): &(RuntimePlan, _, _)| {
+        let mut meter = TaskSemanticMeter::new(1000, 10000);
+        RuntimeBodySemanticContext::new(plan)
+            .function_row_digest(&mut meter, *id, owner, &mut |_| panic!("no task edge"))
+            .unwrap()
+    };
+    assert_eq!(hash(&first), hash(&padding));
+    assert_ne!(hash(&first), hash(&changed));
+}
