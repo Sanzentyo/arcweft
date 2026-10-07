@@ -46,37 +46,153 @@ impl<'a> RuntimeBodySemanticContext<'a> {
         encoder: &mut TaskSemanticEncoder<'_>,
         expression: &crate::value::RuntimeExpr,
     ) -> Result<(), RuntimeBodySemanticError> {
+        self.write_node(
+            encoder,
+            crate::value::RuntimeExpressionNode::Expression(expression),
+        )
+    }
+
+    pub(crate) fn write_node(
+        &self,
+        encoder: &mut TaskSemanticEncoder<'_>,
+        node: crate::value::RuntimeExpressionNode<'_>,
+    ) -> Result<(), RuntimeBodySemanticError> {
         use crate::value::expression_tree::RuntimeExpressionTreeEvent as Event;
-        crate::value::RuntimeExpressionNode::Expression(expression).try_visit_owned_events(
-            &mut |event| {
-                encoder.status()?;
-                match event {
-                    Event::Enter { role, node } => {
-                        encoder.enter_element();
-                        encoder.tag(0);
-                        role.encode_semantic_path(encoder);
-                        match node {
-                            crate::value::RuntimeExpressionNode::Expression(expression) => {
-                                encoder.tag(0);
-                                expression.encode_body_metadata(self, encoder)?;
-                            }
-                            crate::value::RuntimeExpressionNode::Pattern(pattern) => {
-                                encoder.tag(1);
-                                self.write_pattern_metadata(encoder, pattern)?;
-                            }
+        node.try_visit_owned_events(&mut |event| {
+            encoder.status()?;
+            match event {
+                Event::Enter { role, node } => {
+                    encoder.enter_element();
+                    encoder.tag(0);
+                    role.encode_semantic_path(encoder);
+                    match node {
+                        crate::value::RuntimeExpressionNode::Expression(expression) => {
+                            encoder.tag(0);
+                            expression.encode_body_metadata(self, encoder)?;
+                        }
+                        crate::value::RuntimeExpressionNode::Pattern(pattern) => {
+                            encoder.tag(1);
+                            self.write_pattern_metadata(encoder, pattern)?;
                         }
                     }
-                    Event::Exit { node } => {
-                        encoder.tag(1);
-                        encoder.tag(match node {
-                            crate::value::RuntimeExpressionNode::Expression(_) => 0,
-                            crate::value::RuntimeExpressionNode::Pattern(_) => 1,
-                        });
+                }
+                Event::Exit { node } => {
+                    encoder.tag(1);
+                    encoder.tag(match node {
+                        crate::value::RuntimeExpressionNode::Expression(_) => 0,
+                        crate::value::RuntimeExpressionNode::Pattern(_) => 1,
+                    });
+                }
+            }
+            encoder.status().map_err(Into::into)
+        })
+    }
+
+    /// Stream bodies use the same typed expression/pattern context. An explicit
+    /// work stack retains empty-body boundaries and source arm/child positions.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one iterative Stream body transcript owns all seven operation kinds and ordered child boundaries"
+    )]
+    pub(crate) fn write_stream(
+        &self,
+        encoder: &mut TaskSemanticEncoder<'_>,
+        stream: &crate::stream::StreamPlan,
+    ) -> Result<(), RuntimeBodySemanticError> {
+        use crate::stream::StreamOp as Op;
+        use crate::value::RuntimeExpressionNode as Node;
+        enum Work<'a> {
+            Body(u8, usize, &'a [Op]),
+            Ops(std::iter::Enumerate<std::slice::Iter<'a, Op>>),
+            EndBody,
+            EndOperation,
+            Arms(std::iter::Enumerate<std::slice::Iter<'a, crate::stream::StreamMatchArm>>),
+        }
+        encoder.count(stream.id().path().segments().len());
+        for segment in stream.id().path().segments() {
+            encoder.enter_element();
+            encoder.string(segment.as_str());
+        }
+        self.write_type(encoder, stream.item_ty())?;
+        self.write_type(encoder, stream.error_ty())?;
+        let mut work = vec![Work::Body(0, 0, stream.ops())];
+        while let Some(next) = work.pop() {
+            encoder.status()?;
+            match next {
+                Work::Body(role, ordinal, ops) => {
+                    encoder.enter_element();
+                    encoder.tag(0);
+                    encoder.tag(role);
+                    encoder.count(ordinal);
+                    encoder.count(ops.len());
+                    encoder.status()?;
+                    work.push(Work::EndBody);
+                    work.push(Work::Ops(ops.iter().enumerate()));
+                }
+                Work::Arms(mut arms) => {
+                    if let Some((ordinal, arm)) = arms.next() {
+                        work.push(Work::Arms(arms));
+                        work.push(Work::Body(4, ordinal, &arm.ops));
                     }
                 }
-                encoder.status().map_err(Into::into)
-            },
-        )
+                Work::EndBody => encoder.tag(1),
+                Work::EndOperation => encoder.tag(3),
+                Work::Ops(mut ops) => {
+                    let Some((ordinal, op)) = ops.next() else {
+                        continue;
+                    };
+                    encoder.enter_element();
+                    encoder.tag(2);
+                    encoder.count(ordinal);
+                    encoder.tag(op.semantic_tag());
+                    encoder.status()?;
+                    work.push(Work::Ops(ops));
+                    work.push(Work::EndOperation);
+                    match op {
+                        Op::Let { pattern, expr } => {
+                            self.write_node(encoder, Node::Pattern(pattern))?;
+                            self.write_expression(encoder, expr)?;
+                        }
+                        Op::ForNext {
+                            pattern,
+                            source,
+                            body,
+                        } => {
+                            self.write_node(encoder, Node::Pattern(pattern))?;
+                            self.write_expression(encoder, source)?;
+                            work.push(Work::Body(1, 0, body));
+                        }
+                        Op::Yield { expr } => self.write_expression(encoder, expr)?,
+                        Op::If {
+                            condition,
+                            then_ops,
+                            else_ops,
+                        } => {
+                            self.write_expression(encoder, condition)?;
+                            work.push(Work::Body(3, 0, else_ops));
+                            work.push(Work::Body(2, 0, then_ops));
+                        }
+                        Op::Match { scrutinee, arms } => {
+                            self.write_expression(encoder, scrutinee)?;
+                            encoder.count(arms.len());
+                            for arm in arms {
+                                encoder.enter_element();
+                                self.write_node(encoder, Node::Pattern(&arm.pattern))?;
+                                encoder.tag(u8::from(arm.guard.is_some()));
+                                if let Some(guard) = &arm.guard {
+                                    self.write_expression(encoder, guard)?;
+                                }
+                            }
+                            encoder.status()?;
+                            work.push(Work::Arms(arms.iter().enumerate()));
+                        }
+                        Op::Close { source } => self.write_expression(encoder, source)?,
+                        Op::Return => {}
+                    }
+                }
+            }
+        }
+        encoder.status().map_err(Into::into)
     }
 
     pub(crate) fn write_type(

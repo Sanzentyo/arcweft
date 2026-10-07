@@ -90,6 +90,20 @@ pub enum StreamOp {
     Return,
 }
 
+impl StreamOp {
+    pub(crate) const fn semantic_tag(&self) -> u8 {
+        match self {
+            Self::Let { .. } => 0,
+            Self::ForNext { .. } => 1,
+            Self::Yield { .. } => 2,
+            Self::If { .. } => 3,
+            Self::Match { .. } => 4,
+            Self::Close { .. } => 5,
+            Self::Return => 6,
+        }
+    }
+}
+
 /// One stream `match` arm.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StreamMatchArm {
@@ -226,5 +240,62 @@ impl StreamRuntimeState {
         self.emitted_count += 1;
         self.close();
         Some(sequence)
+    }
+}
+
+#[cfg(test)]
+mod semantic_tests {
+    use super::*;
+
+    #[test]
+    fn deeply_nested_stream_body_is_encoded_without_recursive_descent() {
+        let semantic = crate::pattern::RuntimeSemanticTypeId::from_bytes([11; 32]);
+        let mut builder = crate::plan::RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [crate::plan::RuntimePlanTypeSeed::new(
+                    semantic,
+                    crate::plan::RuntimePlanTypeProjection::Bool,
+                )],
+                [],
+            )
+            .unwrap();
+        let plan = builder.finish().unwrap();
+        let ty =
+            crate::runtime_id::RuntimePlanTypeId::from_accepted_ordinal(std::num::NonZeroU32::MIN);
+        let mut ops = vec![crate::stream::StreamOp::Return];
+        for _ in 0..20_000 {
+            ops = vec![crate::stream::StreamOp::If {
+                condition: crate::value::RuntimeExpr::from_admitted_parts(
+                    ty,
+                    crate::value::RuntimeExprKind::Value(crate::value::RuntimeValue::Bool(true)),
+                ),
+                then_ops: ops,
+                else_ops: vec![],
+            }];
+        }
+        let stream = crate::stream::StreamPlan::from_admitted_parts(
+            crate::stream::StreamRuntimeId::canonical("deep").unwrap(),
+            ty,
+            ty,
+            ops,
+        );
+        let mut meter = crate::task::semantic::TaskSemanticMeter::new(2_000_000, 10_000_000);
+        let mut encoder =
+            crate::task::semantic::TaskSemanticEncoder::new(b"stream-body.v1\0", &mut meter);
+        crate::plan::body_semantic::RuntimeBodySemanticContext::new(&plan)
+            .write_stream(&mut encoder, &stream)
+            .unwrap();
+        assert!(encoder.finish().is_ok());
+        let mut work = stream.ops;
+        while let Some(op) = work.pop() {
+            if let StreamOp::If {
+                then_ops, else_ops, ..
+            } = op
+            {
+                work.extend(then_ops);
+                work.extend(else_ops);
+            }
+        }
     }
 }

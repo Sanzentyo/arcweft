@@ -7404,3 +7404,52 @@ Next implementation resumes actual Flow/Stream metadata, full function and
 endpoint F/Q/E row owners, then protected common sealer/public switch and
 complete reverse-consumer validation. Committing this tested private cut
 does not complete or pause the original active goal.
+
+### 2026-10-07 — Stream typed body visitor
+
+Delivered prior Cut 4 checkpoint main/origin main both
+4af2832cf60ab50248f72c03f78b62fb592add5c; observed clean after normal
+fast-forward push. This continuation changes only Core body context, its
+tests, Stream inherent tags/tests and this existing goal note.
+
+Actual Stream body transcript now covers all seven current operation kinds,
+accepted path segments and item/error type identities, source operation
+positions, pattern/value/guard metadata, empty body boundaries, ordered
+then/else/Match body roles. Shared write_node handles actual expressions and
+patterns. Explicit stack plus arm iterator cursor bounds traversal storage
+by depth rather than all pending arms; meter status is checked before
+expanding children. No final public proof/task schema or F/Q/E authority.
+
+Actual builder tests show Yield reordering and then/else relocation change
+the body transcript; meter work rejection poisons publication. Stream-owner
+fixture encodes 20,000 nested If bodies without recursive traversal and
+destroys the owned fixture iteratively. Initial check rejected nonexistent
+StreamRuntimeId::as_str; repaired using accepted typed path segments rather
+than reconstructing a diagnostic label. Initial focused nextest: 10/10 pass,
+923 skipped, 0.058s, build47.05s. After cursor/deep coverage, final Core lib
+nextest all-features/locked terminal0:934/934pass,0skipped,5.841s,build20.66s.
+Changed scope remains private preparation with no production sealer caller;
+reuse prior fresh Core50 reverse graph and unchanged consumer receipts under
+above rationale. Final check/Clippy and fmt/diff receipts follow. Goal remains
+active/incomplete, Astra not repeated. Next close exhaustive Flow/effect/
+project-call metadata with actual task coordinate migration and full F/Q/E
+common protected publication.
+
+Stream final check terminal0,23.19s; Clippy initialterminal0,29.34s.
+Only subsequent changes are numeric separator spelling in the deep test and
+a narrowly documented too_many_lines expectation for the exhaustive visitor;
+934 pass reused for identical behavior. Final lint rerun follows. No source
+fixtures/dependencies/features/target change. Structure ownership remains
+the same borrowing body context and existing Stream algebra, no new state
+owner/crate/export. Measurements:
+- crates/arcweft-core/src/plan/body_semantic.rs: 32870 bytes, 813 LOC (base 697).
+- crates/arcweft-core/src/plan/body_semantic/tests.rs: 16952 bytes, 452 LOC (base 374).
+- crates/arcweft-core/src/stream.rs: 8508 bytes, 301 LOC (base 230).
+
+Final Stream Clippy terminal0,15.66s afterstyle-onlyrepair. Inventory
+first launched via Node child_process lacked configured MSVC linker and
+failed to link; this was a launcher-environment error, not a passing check.
+Reran cargo nextest list in the original PowerShell environment after all
+handles terminal: terminal0,12.94sbuild,934caseIDs exactlymatch final owner
+execution,0missing. No semantic edits after934-passreceipt. Fmt/diff/staged
+4-path review passed. Normal main commit/push follows; fullgoalactive.

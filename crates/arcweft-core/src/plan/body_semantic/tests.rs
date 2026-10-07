@@ -372,3 +372,81 @@ fn invalid_body_reference_poison_prevents_ignored_error_digest_publication() {
         Err(TaskSemanticEncodingError::OwnerRejected)
     );
 }
+
+fn stream_plan(reverse: bool, branch: bool) -> RuntimePlan {
+    use crate::plan::{
+        RuntimeExprSeed, RuntimeExprSeedKind, RuntimeStreamOpSeed as Op, RuntimeStreamPlanSeed,
+    };
+    let mut builder = RuntimePlanBuilder::new();
+    let boolean = RuntimeSemanticTypeId::from_bytes([61; 32]);
+    let unit = RuntimeSemanticTypeId::from_bytes([62; 32]);
+    builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(boolean, RuntimePlanTypeProjection::Bool),
+                RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+            ],
+            [],
+        )
+        .unwrap();
+    let expr = |value| {
+        RuntimeExprSeed::new(
+            boolean,
+            RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(value)),
+        )
+    };
+    let mut ops = vec![
+        Op::Yield { expr: expr(true) },
+        Op::Yield { expr: expr(false) },
+    ];
+    if reverse {
+        ops.reverse();
+    }
+    builder
+        .push_stream_plan_seed(RuntimeStreamPlanSeed {
+            id: crate::stream::StreamRuntimeId::canonical("items").unwrap(),
+            item_ty: boolean,
+            error_ty: unit,
+            ops: vec![Op::If {
+                condition: expr(true),
+                then_ops: if branch { ops.clone() } else { vec![] },
+                else_ops: if branch { vec![] } else { ops },
+            }],
+        })
+        .unwrap();
+    builder.finish().unwrap()
+}
+
+#[test]
+fn stream_body_order_and_empty_branch_role_are_semantic() {
+    let first = stream_plan(false, true);
+    let reordered = stream_plan(true, true);
+    let branch = stream_plan(false, false);
+    let digest = |plan: &RuntimePlan| {
+        let mut meter = TaskSemanticMeter::new(1000, 10000);
+        let mut encoder = TaskSemanticEncoder::new(b"stream-body.v1\0", &mut meter);
+        RuntimeBodySemanticContext::new(plan)
+            .write_stream(&mut encoder, &plan.stream_plans()[0])
+            .unwrap();
+        encoder.finish().unwrap()
+    };
+    assert_ne!(digest(&first), digest(&reordered));
+    assert_ne!(digest(&first), digest(&branch));
+}
+
+#[test]
+fn stream_body_work_quota_poison_prevents_digest_publication() {
+    let plan = stream_plan(false, true);
+    let mut meter = TaskSemanticMeter::new(3, 10000);
+    let mut encoder = TaskSemanticEncoder::new(b"stream-body.v1\0", &mut meter);
+    assert!(matches!(
+        RuntimeBodySemanticContext::new(&plan).write_stream(&mut encoder, &plan.stream_plans()[0]),
+        Err(RuntimeBodySemanticError::Encoding(
+            TaskSemanticEncodingError::SemanticWork
+        ))
+    ));
+    assert_eq!(
+        encoder.finish(),
+        Err(TaskSemanticEncodingError::SemanticWork)
+    );
+}
