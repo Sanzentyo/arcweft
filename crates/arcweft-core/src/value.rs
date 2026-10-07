@@ -40,9 +40,11 @@ mod env;
 pub(crate) use env::RuntimeEnvRollbackImage;
 mod expression_literals;
 mod expression_locals;
-mod expression_tree;
+mod expression_semantic;
+pub(crate) mod expression_tree;
 mod format_content;
 mod integer;
+mod literal_semantic;
 mod nesting;
 mod nominal_record;
 mod nominal_record_expr;
@@ -3916,6 +3918,214 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
             } else {
                 format!(".{name}")
             }
+        }
+    }
+}
+
+impl RuntimeLocalReadMode {
+    pub(crate) const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Copy => 0,
+            Self::Move => 1,
+        }
+    }
+}
+
+impl RuntimeCallArgumentMode {
+    pub(crate) const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Value => 0,
+            Self::Spread => 1,
+        }
+    }
+}
+
+impl RuntimeStandardMapFamily {
+    pub(crate) const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Vec => 0,
+            Self::Seq => 1,
+            Self::Array => 2,
+            Self::Slice => 3,
+            Self::Option => 4,
+            Self::Result => 5,
+        }
+    }
+}
+
+impl RuntimeStandardMapOperandOrder {
+    pub(crate) const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::MappingThenReceiver => 0,
+            Self::ReceiverThenMapping => 1,
+        }
+    }
+}
+
+impl RuntimeUnaryOp {
+    pub(crate) const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Not => 0,
+            Self::Neg => 1,
+        }
+    }
+}
+
+impl RuntimeBinaryOp {
+    pub(crate) const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Eq => 0,
+            Self::Ne => 1,
+            Self::Lt => 2,
+            Self::Le => 3,
+            Self::Gt => 4,
+            Self::Ge => 5,
+            Self::Add => 6,
+            Self::Sub => 7,
+            Self::Mul => 8,
+            Self::Div => 9,
+            Self::And => 10,
+            Self::Or => 11,
+        }
+    }
+}
+
+impl RuntimeExprKind {
+    pub(crate) const fn semantic_tag(&self) -> u8 {
+        match self {
+            Self::Value(_) => 0,
+            Self::Agent(_) => 1,
+            Self::Local(_) => 2,
+            Self::SequencePopFront { .. } => 3,
+            Self::SequencePush { .. } => 4,
+            Self::SequencePopBack { .. } => 5,
+            Self::EntityRef(_) => 6,
+            Self::Let { .. } => 7,
+            Self::Scope { .. } => 8,
+            Self::Tuple(_) => 9,
+            Self::DialogueContent { .. } => 10,
+            Self::FormatContent { .. } => 11,
+            Self::CharacterDialogue { .. } => 12,
+            Self::BracketSeq(_) => 13,
+            Self::RepeatSeq { .. } => 14,
+            Self::Range { .. } => 15,
+            Self::NominalRecord(_) => 16,
+            Self::Variant { .. } => 17,
+            Self::Field { .. } => 18,
+            Self::ProjectTuple { .. } => 19,
+            Self::ProjectRecord { .. } => 20,
+            Self::Assign { .. } => 21,
+            Self::Call { .. } => 22,
+            Self::MakeCallable { .. } => 23,
+            Self::SpecializeCallable { .. } => 24,
+            Self::ApplyGroup { .. } => 25,
+            Self::TraitCall { .. } => 26,
+            Self::PureCall { .. } => 27,
+            Self::StandardMap { .. } => 28,
+            Self::Sum { .. } => 29,
+            Self::Unary { .. } => 30,
+            Self::Binary { .. } => 31,
+            Self::If { .. } => 32,
+            Self::IfLet { .. } => 33,
+            Self::Match { .. } => 34,
+            Self::ReductionUnchanged { .. } => 35,
+        }
+    }
+}
+
+impl RuntimeIntrinsic {
+    pub(crate) const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Add => 0,
+            Self::CoreRange => 1,
+            Self::CoreIterCollect => 2,
+            Self::CoreRangeIntoIter => 3,
+            Self::CoreSeqIntoIter => 4,
+            Self::CoreStreamIntoIter => 5,
+            Self::CoreVecIntoIter => 6,
+            Self::CoreArrayIntoIter => 7,
+            Self::CoreSliceIntoIter => 8,
+            Self::CoreTupleIntoIter => 9,
+            Self::CoreIterNext => 10,
+            Self::CoreOptionIsSome => 11,
+            Self::CoreOptionUnwrap => 12,
+            Self::StdOptionContext => 13,
+            Self::StdOptionWithContext => 14,
+            Self::StdResultContext => 15,
+            Self::StdResultWithContext => 16,
+            Self::CoreIndex => 17,
+            Self::StringTrim => 18,
+            Self::StringToString => 19,
+            Self::VecWithCapacity => 20,
+            Self::StringWithCapacity => 21,
+            Self::BytesWithCapacity => 22,
+            Self::VecReserve => 23,
+            Self::StringReserve => 24,
+            Self::BytesReserve => 25,
+            Self::VecShrinkTo => 26,
+            Self::StringShrinkTo => 27,
+            Self::BytesShrinkTo => 28,
+            Self::VecShrink => 29,
+            Self::StringShrink => 30,
+            Self::BytesShrink => 31,
+            Self::StdF32Abs => 32,
+            Self::StdF32Floor => 33,
+            Self::StdF32Ceil => 34,
+            Self::StdF32Round => 35,
+            Self::StdF32Trunc => 36,
+            Self::StdF32Fract => 37,
+            Self::StdF32Sqrt => 38,
+            Self::StdF32Sin => 39,
+            Self::StdF32Cos => 40,
+            Self::StdF32Tan => 41,
+            Self::StdF32Exp => 42,
+            Self::StdF32Exp2 => 43,
+            Self::StdF32Ln => 44,
+            Self::StdF32Log2 => 45,
+            Self::StdF32Log10 => 46,
+            Self::StdF32Powf => 47,
+            Self::StdF32Atan2 => 48,
+            Self::StdF32MulAdd => 49,
+            Self::StdF32IsNan => 50,
+            Self::StdF32IsInfinite => 51,
+            Self::StdF32IsFinite => 52,
+            Self::StdF32IsSignPositive => 53,
+            Self::StdF32IsSignNegative => 54,
+            Self::StdF32ToBits => 55,
+            Self::StdF32FromBits => 56,
+            Self::StdF32ToF64 => 57,
+            Self::StdF64Abs => 58,
+            Self::StdF64Floor => 59,
+            Self::StdF64Ceil => 60,
+            Self::StdF64Round => 61,
+            Self::StdF64Trunc => 62,
+            Self::StdF64Fract => 63,
+            Self::StdF64Sqrt => 64,
+            Self::StdF64Sin => 65,
+            Self::StdF64Cos => 66,
+            Self::StdF64Tan => 67,
+            Self::StdF64Exp => 68,
+            Self::StdF64Exp2 => 69,
+            Self::StdF64Ln => 70,
+            Self::StdF64Log2 => 71,
+            Self::StdF64Log10 => 72,
+            Self::StdF64Powf => 73,
+            Self::StdF64Atan2 => 74,
+            Self::StdF64MulAdd => 75,
+            Self::StdF64IsNan => 76,
+            Self::StdF64IsInfinite => 77,
+            Self::StdF64IsFinite => 78,
+            Self::StdF64IsSignPositive => 79,
+            Self::StdF64IsSignNegative => 80,
+            Self::StdF64ToBits => 81,
+            Self::StdF64FromBits => 82,
+            Self::StdF64ToF32 => 83,
+            Self::MathMatmulF32 => 84,
+            Self::MathMatrixAddF32 => 85,
+            Self::MathTensorAddF32 => 86,
+            Self::MathMatmulF64 => 87,
+            Self::MathMatrixAddF64 => 88,
+            Self::MathTensorAddF64 => 89,
         }
     }
 }

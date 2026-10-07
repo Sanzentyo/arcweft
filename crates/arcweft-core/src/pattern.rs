@@ -3204,6 +3204,24 @@ fn runtime_opaque_matches_type(
     owner.accepts_opaque_value(value)
 }
 
+impl RuntimePatternKind {
+    pub(crate) const fn semantic_tag(&self) -> u8 {
+        match self {
+            Self::Bind { .. } => 0,
+            Self::Discard => 1,
+            Self::Literal(_) => 2,
+            Self::Entity(_) => 3,
+            Self::Tuple(_) => 4,
+            Self::Or(_) => 5,
+            Self::Record { .. } => 6,
+            Self::Sequence { .. } => 7,
+            Self::Variant { .. } => 8,
+            Self::Whole { .. } => 9,
+            Self::Typed { .. } => 10,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

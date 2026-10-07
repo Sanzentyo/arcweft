@@ -290,3 +290,116 @@ fn deep_tree_and_copy_admission_use_the_iterative_owner() {
         }
     }
 }
+
+#[test]
+fn balanced_events_retain_each_actual_node_and_close_nested_empty_trees() {
+    let root = expression(RuntimeExprKind::Tuple(vec![
+        expression(RuntimeExprKind::Tuple(vec![])),
+        literal("leaf"),
+    ]));
+    let mut actual = Vec::new();
+    RuntimeExpressionNode::Expression(&root)
+        .try_visit_owned_events(&mut |event| {
+            match event {
+                RuntimeExpressionTreeEvent::Enter { role, node } => actual.push((
+                    true,
+                    Some(role),
+                    match node {
+                        RuntimeExpressionNode::Expression(node) => {
+                            std::ptr::from_ref(node) as usize
+                        }
+                        RuntimeExpressionNode::Pattern(_) => unreachable!(),
+                    },
+                )),
+                RuntimeExpressionTreeEvent::Exit { node } => actual.push((
+                    false,
+                    None,
+                    match node {
+                        RuntimeExpressionNode::Expression(node) => {
+                            std::ptr::from_ref(node) as usize
+                        }
+                        RuntimeExpressionNode::Pattern(_) => unreachable!(),
+                    },
+                )),
+            }
+            Ok::<(), ()>(())
+        })
+        .unwrap();
+    assert_eq!(
+        actual
+            .iter()
+            .map(|(enter, role, _)| (*enter, *role))
+            .collect::<Vec<_>>(),
+        [
+            (true, Some(R::Root)),
+            (true, Some(R::Item { ordinal: 0 })),
+            (false, None),
+            (true, Some(R::Item { ordinal: 1 })),
+            (false, None),
+            (false, None),
+        ]
+    );
+    assert_eq!(actual[0].2, actual[5].2);
+    assert_eq!(actual[1].2, actual[2].2);
+    assert_eq!(actual[3].2, actual[4].2);
+}
+
+#[test]
+fn balanced_tree_rejection_does_not_emit_pending_exits() {
+    let root = expression(RuntimeExprKind::Tuple(vec![
+        literal("first"),
+        literal("later"),
+    ]));
+    let mut enters = 0;
+    let mut exits = 0;
+    let result = RuntimeExpressionNode::Expression(&root).try_visit_owned_events(&mut |event| {
+        match event {
+            RuntimeExpressionTreeEvent::Enter { .. } => {
+                enters += 1;
+                if enters == 2 {
+                    return Err("child rejection");
+                }
+            }
+            RuntimeExpressionTreeEvent::Exit { .. } => exits += 1,
+        }
+        Ok(())
+    });
+    assert_eq!(result, Err("child rejection"));
+    assert_eq!((enters, exits), (2, 0));
+}
+
+#[test]
+fn semantic_child_roles_use_explicit_tags_and_checked_source_ordinals() {
+    let mut meter = crate::task::semantic::TaskSemanticMeter::new(20, 100);
+    let mut encoder = crate::task::semantic::TaskSemanticEncoder::new(b"roles.v1\0", &mut meter);
+    for role in [
+        R::Root,
+        R::Item { ordinal: 2 },
+        R::ContentCapture {
+            effect: 3,
+            capture: 4,
+        },
+        R::MatchGuard { arm: 5 },
+    ] {
+        role.encode_semantic_path(&mut encoder);
+    }
+    let mut expected = b"roles.v1\0".to_vec();
+    expected.extend([0, 4]);
+    expected.extend(2_u32.to_le_bytes());
+    expected.push(6);
+    expected.extend(3_u32.to_le_bytes());
+    expected.extend(4_u32.to_le_bytes());
+    expected.push(33);
+    expected.extend(5_u32.to_le_bytes());
+    assert_eq!(encoder.finish().unwrap(), blake3::hash(&expected));
+    if usize::BITS > 32 {
+        let mut meter = crate::task::semantic::TaskSemanticMeter::new(20, 100);
+        let mut encoder =
+            crate::task::semantic::TaskSemanticEncoder::new(b"roles.v1\0", &mut meter);
+        R::MatchGuard { arm: usize::MAX }.encode_semantic_path(&mut encoder);
+        assert_eq!(
+            encoder.finish(),
+            Err(crate::task::semantic::TaskSemanticEncodingError::CountOverflow)
+        );
+    }
+}

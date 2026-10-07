@@ -16,6 +16,30 @@ pub enum RuntimeFlowBodyRole {
     MatchGuard { arm: usize },
     MatchArm { arm: usize },
 }
+impl RuntimeFlowBodyRole {
+    pub(crate) fn encode_semantic_path(
+        self,
+        encoder: &mut crate::task::semantic::TaskSemanticEncoder<'_>,
+    ) {
+        match self {
+            Self::Body => encoder.tag(0),
+            Self::Then => encoder.tag(1),
+            Self::Else => encoder.tag(2),
+            Self::AwaitObserver { ordinal } => {
+                encoder.tag(3);
+                encoder.count(ordinal);
+            }
+            Self::MatchGuard { arm } => {
+                encoder.tag(4);
+                encoder.count(arm);
+            }
+            Self::MatchArm { arm } => {
+                encoder.tag(5);
+                encoder.count(arm);
+            }
+        }
+    }
+}
 
 /// Borrowed direct children of an operation, in structural source order.
 pub struct RuntimeFlowOwnedBodies<'a> {
@@ -480,29 +504,65 @@ impl RuntimePlan {
     }
 }
 
+/// Balanced body and operation boundaries used by the semantic owner.
+/// Empty bodies still emit both boundaries; operation ordinals are source roles.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum RuntimeFlowTreeEvent<'a> {
+    EnterBody {
+        role: RuntimeFlowBodyRole,
+        ops: &'a [FlowOp],
+    },
+    ExitBody,
+    EnterOperation {
+        ordinal: usize,
+        op: &'a FlowOp,
+    },
+    ExitOperation,
+}
+
 fn try_visit_ops<E>(
     ops: &[FlowOp],
     visitor: &mut impl FnMut(&FlowOp) -> Result<(), E>,
 ) -> Result<(), E> {
+    try_visit_ops_events(ops, &mut |event| match event {
+        RuntimeFlowTreeEvent::EnterOperation { op, .. } => visitor(op),
+        RuntimeFlowTreeEvent::EnterBody { .. }
+        | RuntimeFlowTreeEvent::ExitBody
+        | RuntimeFlowTreeEvent::ExitOperation => Ok(()),
+    })
+}
+
+pub(super) fn try_visit_ops_events<E>(
+    ops: &[FlowOp],
+    visitor: &mut impl FnMut(RuntimeFlowTreeEvent<'_>) -> Result<(), E>,
+) -> Result<(), E> {
+    use RuntimeFlowTreeEvent as Event;
     enum Frame<'a> {
-        Ops(std::slice::Iter<'a, FlowOp>),
+        Ops(std::iter::Enumerate<std::slice::Iter<'a, FlowOp>>),
         Children(RuntimeFlowOwnedBodies<'a>),
     }
-    let mut stack = vec![Frame::Ops(ops.iter())];
+    visitor(Event::EnterBody {
+        role: RuntimeFlowBodyRole::Body,
+        ops,
+    })?;
+    let mut stack = vec![Frame::Ops(ops.iter().enumerate())];
     while let Some(frame) = stack.last_mut() {
         match frame {
             Frame::Ops(ops) => {
-                if let Some(op) = ops.next() {
-                    visitor(op)?;
+                if let Some((ordinal, op)) = ops.next() {
+                    visitor(Event::EnterOperation { ordinal, op })?;
                     stack.push(Frame::Children(op.owned_bodies()));
                 } else {
+                    visitor(Event::ExitBody)?;
                     stack.pop();
                 }
             }
             Frame::Children(children) => {
-                if let Some((_, ops)) = children.next() {
-                    stack.push(Frame::Ops(ops.iter()));
+                if let Some((role, ops)) = children.next() {
+                    visitor(Event::EnterBody { role, ops })?;
+                    stack.push(Frame::Ops(ops.iter().enumerate()));
                 } else {
+                    visitor(Event::ExitOperation)?;
                     stack.pop();
                 }
             }

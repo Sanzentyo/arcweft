@@ -278,6 +278,8 @@ pub enum NeedProducerPlanError {
     TranscriptArithmeticOverflow,
     #[error("Need producer semantic work limit exceeded")]
     SemanticWorkLimit,
+    #[error("producer transcript owner rejected semantic input")]
+    OwnerRejected,
     #[error("Need producer semantic transcript byte limit exceeded")]
     TranscriptByteLimit,
 }
@@ -680,6 +682,9 @@ impl NeedProducerTaskPlan {
             HostRestartPolicy::Restartable => 1,
         });
         let digest = encoder.finish().map_err(|error| match error {
+            super::semantic::TaskSemanticEncodingError::OwnerRejected => {
+                NeedProducerPlanError::OwnerRejected
+            }
             super::semantic::TaskSemanticEncodingError::CountOverflow => {
                 NeedProducerPlanError::ArgumentBindingCountOverflow
             }

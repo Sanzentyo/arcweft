@@ -10,6 +10,7 @@ pub(crate) enum TaskSemanticEncodingError {
     ArithmeticOverflow,
     SemanticWork,
     TranscriptBytes,
+    OwnerRejected,
 }
 
 pub(crate) struct TaskSemanticMeter {
@@ -115,8 +116,24 @@ impl<'a> TaskSemanticEncoder<'a> {
         self.meter.status()
     }
 
+    pub(crate) fn reject_owner(&mut self) {
+        self.meter.reject(TaskSemanticEncodingError::OwnerRejected);
+    }
+
     pub(crate) fn tag(&mut self, tag: u8) {
         self.atom(&[tag]);
+    }
+
+    pub(crate) fn scalar_u64(&mut self, value: u64) {
+        self.atom(&value.to_le_bytes());
+    }
+
+    pub(crate) fn scalar_u128(&mut self, value: u128) {
+        self.atom(&value.to_le_bytes());
+    }
+
+    pub(crate) fn ordinal(&mut self, ordinal: u32) {
+        self.atom(&ordinal.to_le_bytes());
     }
 
     pub(crate) fn digest(&mut self, digest: &[u8; 32]) {
@@ -179,6 +196,23 @@ mod tests {
 
     fn meter() -> TaskSemanticMeter {
         TaskSemanticMeter::new(4_194_304, 67_108_864)
+    }
+
+    #[test]
+    fn source_ordinal_is_one_little_endian_atom_with_exact_limits() {
+        let mut meter = TaskSemanticMeter::new(1, 5);
+        let mut encoder = TaskSemanticEncoder::new(b"d", &mut meter);
+        encoder.ordinal(0x0403_0201);
+        assert_eq!(encoder.finish().unwrap(), blake3::hash(&[b'd', 1, 2, 3, 4]));
+        assert_eq!(meter.totals(), (1, 5));
+        let mut short = TaskSemanticMeter::new(0, 5);
+        let mut encoder = TaskSemanticEncoder::new(b"d", &mut short);
+        encoder.ordinal(0);
+        assert_eq!(
+            encoder.finish(),
+            Err(TaskSemanticEncodingError::SemanticWork)
+        );
+        assert_eq!(short.totals(), (0, 1));
     }
 
     #[test]

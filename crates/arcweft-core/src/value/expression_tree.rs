@@ -51,6 +51,151 @@ pub enum RuntimeExpressionChildRole {
     PatternField { ordinal: usize },
     WholePattern,
 }
+impl RuntimeExpressionChildRole {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the closed child-role algebra owns each exact semantic tag and source coordinate"
+    )]
+    pub(crate) fn encode_semantic_path(
+        self,
+        encoder: &mut crate::task::semantic::TaskSemanticEncoder<'_>,
+    ) {
+        match self {
+            Self::Root => {
+                encoder.tag(0);
+            }
+            Self::AgentOperand { ordinal } => {
+                encoder.tag(1);
+                encoder.count(ordinal);
+            }
+            Self::Initializer => {
+                encoder.tag(2);
+            }
+            Self::Body => {
+                encoder.tag(3);
+            }
+            Self::Item { ordinal } => {
+                encoder.tag(4);
+                encoder.count(ordinal);
+            }
+            Self::ContentValue { ordinal } => {
+                encoder.tag(5);
+                encoder.count(ordinal);
+            }
+            Self::ContentCapture { effect, capture } => {
+                encoder.tag(6);
+                encoder.count(effect);
+                encoder.count(capture);
+            }
+            Self::FormatOperand { ordinal } => {
+                encoder.tag(7);
+                encoder.count(ordinal);
+            }
+            Self::Target => {
+                encoder.tag(8);
+            }
+            Self::DialogueField { ordinal } => {
+                encoder.tag(9);
+                encoder.count(ordinal);
+            }
+            Self::RepeatedValue => {
+                encoder.tag(10);
+            }
+            Self::RangeStart => {
+                encoder.tag(11);
+            }
+            Self::RangeEnd => {
+                encoder.tag(12);
+            }
+            Self::RecordInitializer { ordinal } => {
+                encoder.tag(13);
+                encoder.count(ordinal);
+            }
+            Self::VariantPayload => {
+                encoder.tag(14);
+            }
+            Self::AssignmentValue => {
+                encoder.tag(15);
+            }
+            Self::Argument { ordinal } => {
+                encoder.tag(16);
+                encoder.count(ordinal);
+            }
+            Self::CallableCapture { ordinal } => {
+                encoder.tag(17);
+                encoder.count(ordinal);
+            }
+            Self::CallableValue => {
+                encoder.tag(18);
+            }
+            Self::Callee => {
+                encoder.tag(19);
+            }
+            Self::Receiver => {
+                encoder.tag(20);
+            }
+            Self::Mapping => {
+                encoder.tag(21);
+            }
+            Self::Source => {
+                encoder.tag(22);
+            }
+            Self::UnaryOperand => {
+                encoder.tag(23);
+            }
+            Self::Left => {
+                encoder.tag(24);
+            }
+            Self::Right => {
+                encoder.tag(25);
+            }
+            Self::Condition => {
+                encoder.tag(26);
+            }
+            Self::Pattern => {
+                encoder.tag(27);
+            }
+            Self::Guard => {
+                encoder.tag(28);
+            }
+            Self::Then => {
+                encoder.tag(29);
+            }
+            Self::Else => {
+                encoder.tag(30);
+            }
+            Self::Scrutinee => {
+                encoder.tag(31);
+            }
+            Self::MatchPattern { arm } => {
+                encoder.tag(32);
+                encoder.count(arm);
+            }
+            Self::MatchGuard { arm } => {
+                encoder.tag(33);
+                encoder.count(arm);
+            }
+            Self::MatchValue { arm } => {
+                encoder.tag(34);
+                encoder.count(arm);
+            }
+            Self::ReductionState => {
+                encoder.tag(35);
+            }
+            Self::PatternItem { ordinal } => {
+                encoder.tag(36);
+                encoder.count(ordinal);
+            }
+            Self::PatternField { ordinal } => {
+                encoder.tag(37);
+                encoder.count(ordinal);
+            }
+            Self::WholePattern => {
+                encoder.tag(38);
+            }
+        }
+    }
+}
 
 /// An actual borrowed node of a lowered expression's owned tree.
 #[derive(Clone, Copy, Debug)]
@@ -106,18 +251,48 @@ impl RuntimePattern {
     }
 }
 
+/// Balanced boundaries of an actual borrowed expression/pattern tree.
+/// Child roles occur on entry; exit closes the same node without cloning it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum RuntimeExpressionTreeEvent<'a> {
+    Enter {
+        role: RuntimeExpressionChildRole,
+        node: RuntimeExpressionNode<'a>,
+    },
+    Exit {
+        node: RuntimeExpressionNode<'a>,
+    },
+}
+
 impl RuntimeExpressionNode<'_> {
     pub(crate) fn try_visit_owned_tree<E>(
         self,
         visitor: &mut impl FnMut(RuntimeExpressionChildRole, RuntimeExpressionNode<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
-        visitor(RuntimeExpressionChildRole::Root, self)?;
-        let mut stack = vec![self.owned_children()];
-        while let Some(children) = stack.last_mut() {
+        self.try_visit_owned_events(&mut |event| match event {
+            RuntimeExpressionTreeEvent::Enter { role, node } => visitor(role, node),
+            RuntimeExpressionTreeEvent::Exit { .. } => Ok(()),
+        })
+    }
+
+    /// Visits balanced owned-tree boundaries with an explicit depth stack.
+    /// Rejection stops before both later children and pending exit events.
+    pub(crate) fn try_visit_owned_events<E>(
+        self,
+        visitor: &mut impl FnMut(RuntimeExpressionTreeEvent<'_>) -> Result<(), E>,
+    ) -> Result<(), E> {
+        use RuntimeExpressionTreeEvent as Event;
+        visitor(Event::Enter {
+            role: RuntimeExpressionChildRole::Root,
+            node: self,
+        })?;
+        let mut stack = vec![(self, self.owned_children())];
+        while let Some((node, children)) = stack.last_mut() {
             if let Some((role, child)) = children.next() {
-                visitor(role, child)?;
-                stack.push(child.owned_children());
+                visitor(Event::Enter { role, node: child })?;
+                stack.push((child, child.owned_children()));
             } else {
+                visitor(Event::Exit { node: *node })?;
                 stack.pop();
             }
         }

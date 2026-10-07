@@ -784,6 +784,21 @@ pub enum RuntimeDialogueContentPlanTableError {
     },
 }
 
+impl RuntimeDialogueContentEffectTrigger {
+    pub(crate) fn encode_body_metadata(
+        self,
+        encoder: &mut crate::task::semantic::TaskSemanticEncoder<'_>,
+    ) {
+        match self {
+            Self::Content => encoder.tag(0),
+            Self::Delay { duration } => {
+                encoder.tag(1);
+                encoder.scalar_u64(duration.as_nanos());
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

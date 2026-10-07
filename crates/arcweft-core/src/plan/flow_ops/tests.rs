@@ -439,3 +439,98 @@ fn choice_audio_values_keep_option_and_effect_positions() {
         ]
     );
 }
+
+#[test]
+fn balanced_flow_events_distinguish_empty_branches_and_nested_sibling_bodies() {
+    let ops = [FlowOp::If {
+        condition: value(),
+        then_ops: vec![],
+        else_ops: vec![
+            FlowOp::Loop {
+                result: None,
+                body: vec![marker("leaf")],
+            },
+            marker("sibling"),
+        ],
+    }];
+    let mut actual = Vec::new();
+    try_visit_ops_events(&ops, &mut |event| {
+        let label = match event {
+            RuntimeFlowTreeEvent::EnterBody { role, ops } => format!("body:{role:?}:{}", ops.len()),
+            RuntimeFlowTreeEvent::ExitBody => "end-body".to_owned(),
+            RuntimeFlowTreeEvent::EnterOperation { ordinal, .. } => format!("op:{ordinal}"),
+            RuntimeFlowTreeEvent::ExitOperation => "end-op".to_owned(),
+        };
+        actual.push(label);
+        Ok::<(), ()>(())
+    })
+    .unwrap();
+    assert_eq!(
+        actual,
+        [
+            "body:Body:1",
+            "op:0",
+            "body:Then:0",
+            "end-body",
+            "body:Else:2",
+            "op:0",
+            "body:Body:1",
+            "op:0",
+            "end-op",
+            "end-body",
+            "end-op",
+            "op:1",
+            "end-op",
+            "end-body",
+            "end-op",
+            "end-body"
+        ]
+    );
+}
+
+#[test]
+fn balanced_flow_rejection_stops_before_pending_boundaries() {
+    let mut actual = Vec::new();
+    let ops = [FlowOp::Loop {
+        result: None,
+        body: vec![marker("reject"), marker("later")],
+    }];
+    let result = try_visit_ops_events(&ops, &mut |event| {
+        match event {
+            RuntimeFlowTreeEvent::EnterOperation {
+                op: FlowOp::Return(label),
+                ..
+            } => {
+                actual.push(label.clone());
+                return Err("leaf rejection");
+            }
+            RuntimeFlowTreeEvent::ExitBody | RuntimeFlowTreeEvent::ExitOperation => {
+                actual.push("exit".to_owned());
+            }
+            _ => {}
+        }
+        Ok(())
+    });
+    assert_eq!(result, Err("leaf rejection"));
+    assert_eq!(actual, ["reject"]);
+}
+
+#[test]
+fn semantic_body_roles_do_not_renumber_sparse_source_positions() {
+    let mut meter = crate::task::semantic::TaskSemanticMeter::new(20, 100);
+    let mut encoder =
+        crate::task::semantic::TaskSemanticEncoder::new(b"body-role.v1\0", &mut meter);
+    for role in [
+        RuntimeFlowBodyRole::Then,
+        RuntimeFlowBodyRole::MatchGuard { arm: 3 },
+        RuntimeFlowBodyRole::AwaitObserver { ordinal: 7 },
+    ] {
+        role.encode_semantic_path(&mut encoder);
+    }
+    let mut expected = b"body-role.v1\0".to_vec();
+    expected.extend([1, 4]);
+    expected.extend(3_u32.to_le_bytes());
+    expected.push(3);
+    expected.extend(7_u32.to_le_bytes());
+    assert_eq!(encoder.finish().unwrap(), blake3::hash(&expected));
+}

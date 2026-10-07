@@ -529,11 +529,14 @@ pub enum RuntimeControlEffectContractError {
     StringLengthOverflow,
     #[error("control/effect contract child has not been sealed")]
     UnsealedChild,
+    #[error("control/effect transcript owner rejected semantic input")]
+    OwnerRejected,
 }
 
 impl From<TaskSemanticEncodingError> for RuntimeControlEffectContractError {
     fn from(error: TaskSemanticEncodingError) -> Self {
         match error {
+            TaskSemanticEncodingError::OwnerRejected => Self::OwnerRejected,
             TaskSemanticEncodingError::CountOverflow => Self::CountOverflow,
             TaskSemanticEncodingError::StringLengthOverflow => Self::StringLengthOverflow,
             TaskSemanticEncodingError::ArithmeticOverflow => Self::ArithmeticOverflow,

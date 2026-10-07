@@ -7158,3 +7158,249 @@ terminal. Complete9explicit paths/hunks reviewed before stage. This cut closes
 owned value traversal and rollback copy rejection, not F/Q/E seal or original
 convergence. Static table/quotas/common publication/restore/affineLine/retained
 View and remaining original acceptance stay required. Goal active/incomplete.
+
+### 2026-10-07 — body boundary traversal preparation (uncommitted)
+
+Clean inspected main=origin/main207f9398cfd5fa093e2167a7dc4f046b27a19a1b;
+previous turn is progress (actual owned roots/rollback guard + coherent push).
+Current dirty work introduces balanced Enter/Exit expression/pattern and
+Flow body/operation events on the existing sole iterative walkers; old preorder
+consumers adapt through the same engines, no copied AST or second recursion.
+Empty bodies/trees retain boundaries and original source ordinals; rejection
+stops pending exits and later children. Private child-role encoding is explicit
+closed matching with checked source counts and shared metered u32-LE atom.
+No function/task final digest/table is published; actual F/Q/E common sealer,
+endpoint/static coordinate and private-image switch remain REQUIRED.
+
+Initial Corecheck30112 passed33.79s. Owner20851:917run/916pass/1failed
+6.681s: new exact-byte fixture mistakenly expected MatchGuard tag32 instead of
+33; repaired only after workspacecheck/Clippy14846 terminal0
+(check2m36/Clippy38.55s). New balanced order/rejection/deep tests pass.
+Corrected finalowner64357 LIVE -pCore --lib allfeatureslocked, no workspace
+rebuild; source frozen. Private path methods/events remain partly unused until
+actual semantic encoder consumes them; not a finished public delivery cut.
+Next action await64357; integrate actual typed metadata/body seal context
+including referenced child owners and task coordinates, then selected validation
+and coherent commit/push at a complete boundary. NoAstra/agents/newbranch.
+Full goal remainsactive/incomplete.
+
+Corrected finalowner64357 terminal0:917/917passed6.178s,no skips. Initial
+check/Clippy pass reused for unchanged production; fixture expectation only
+changed. This is private preparation, stillUNCOMMITTED and not full seal.
+Next actual implementation must consume balanced events + exact role paths
+inside the owning semantic context; avoid repeated safe traversal-only cuts.
+Previousgoalturn alreadypushed207f9398c remainslatestremote.
+
+### 2026-10-07 — actual body metadata context (private WIP)
+
+Inspected main207f9398cfd5fa093e2167a7dc4f046b27a19a1b unchanged; prior
+goalturn is progress (balanced walkers917tests pass, not finalseal). Current
+private RuntimeBodySemanticContext borrows actual plan type/local tables,
+resolves arena local IDs to mandatory accepted origins/types, encodes
+pattern-binding paths, mutable place paths, post-RHS initialization/displaced
+field contours and source order. Actual expression balanced events now call
+the owning expression metadata encoder, committing kind/operator/map/mode/
+call ABI/guard-copy local roles, helper/method accepted definitions. Added
+explicit inherent tags on existing expression/pattern/scalar owners. No copied
+AST/serialized transcript/raw ordinal-as-identity/public final task row.
+
+Initialcontextcheck43926 terminal0 27.75s; connectedmetadata13430 terminal0
+11.91s. Owner nextest is live in body-metadata-owner-run log. Four new tests
+exercise local table padding invariance, exact assignment cleanup contour/field
+order, sticky meter precedence, actual Local expression boundary transcript.
+UnencodedMetadata is temporary private WIP rejection for literal/Agent/entity/
+dialogue/formatter/field/call/callable/specialization and pattern metadata; it
+MUST be deleted by implementing every variant before final acceptance.
+The F/Q/E final child/root digest, endpoint/task coordinate, row memoization,
+common privateimage seal and atomic publication remain required; this partial
+context is not a published coherent cut. No commit/push yet; dirty6 previous
+paths plus new owner files and existing scalar owners preserved.
+Next action poll original current ownerhandle, finish allmetadata/literal
+owner encoding and actual function/request common-sealer connections.
+Fullgoalactive/incomplete; Astraone-shotconsumedneverrepeat.
+
+Bodycontextowner39478 terminal0:921/921passed6.016s after1m08sbuild,
+all4newcontexttestsPASS. Afterterminal added actual unsupported-literal
+metadata rejection assertion (private WIP seam only; not language rejection);
+focused body_semantic4tests originalhandle63691LIVE. No other sourcebehavior
+changed; futurefinalacceptance deletes UnencodedMetadata and admits allvalid
+owner metadata. Actual function/request seal remainsunfinished.
+
+Focusedmetadatarejection63691 terminal0:4/4pass0.026s,917skipped.
+Added failureatomicity hardening afterterminal: incomplete private metadata
+poisons shared TaskSemanticMeter so ignoring contexterror cannot finalize
+a partialdigest. Temporary IncompleteBodyMetadata variant must be removed
+with UnencodedMetadata once everybodyvariantencodes. Initialmapping in
+control/effect unreachable arm is WIP and should be replaced with typed
+owner error (or sharedgeneral rejection) before delivery; no panicroute
+accepted. Corealltargetpoisoncheck13236LIVE, Rustsourcefrozen.
+
+Poisoncheck13236terminal101 exhaustive match exposed producerconsumer missing
+newmetererror. Repaired withoutpanic: generalprivate OwnerRejected meter
+state propagates through existingtyped ControlEffect/NeedProducer errors;
+removed WIPunreachable conversion. Finalpoisoncheck11566terminal0 10.69s.
+Connectedmetadata incomplete rejection poisonsmeter; finaltest assertsfinish
+OwnerRejected after contextfailure. CurrentfinalCoreowner nextestLIVE in
+body-metadata-final-owner-run.log; sourcefrozen. GeneralOwnerRejected may
+remain final failureatomicity infrastructure; UnencodedMetadata temporary
+variant/unsupportedmetadata branches MUST be deleted at completeencoder.
+Still no publicdigest/tasktable/image switch, no completedFQEclaim, no commit.
+
+FinalCoreowner39997terminal0:921/921passed5.981s,no skips,finalmetadata
+context andmeter rejection assertionallpass. Allvalidationhandles nowterminal.
+StillprivateWIP/dirty/uncommitted from207f9398c: original6filesplus
+pattern.rs,plan.rs,local_declarations.rs,value.rs,control_effect.rs,
+task/producer.rs; newplan/body_semantic.rs+tests andvalue/expression_semantic.rs.
+No broadreverseconsumerbehavior rerun warrantedbeforefinalprotectedconnect;
+freshgraphunchanged Core50, lastdeliveredfullrun5,445/5,168pass/277exactbaseline.
+Nextimplementallliteral/Agent/entity/content/formatter/field/call/callable/
+specialization/patternmetadata andactualF/Q/Eownerroot/taskcoordinate seal;
+removeUnencodedMetadata, integrateprivateimage/fullatomicpublication, then
+validatefulldeps/codec/negative/artifacts/structure andcoherentcommitpush.
+DonotrepeatAstraoneshot. Fullgoalactive/incomplete.
+
+### 2026-10-07 — static literal/pattern/formatter metadata (private WIP)
+
+Mainbase207f9398cfd5fa093e2167a7dc4f046b27a19a1b unchanged,dirtywork
+preserved. Previousturnprogress actualbodycontext/type/local/place/cleanup
+plus921ownerpass; thisturn closes ALLpatternmetadata and connects Value/Entity
+staticbodyroots, Agentexpressionconstructor andCharacterDialogueoperation/
+orderedtypedfields. Newliteral_semantic owner usesexistingborrowedlogical
+views/explcitstack: scalarwidth/floatbits,orderedtuple/sequence/record,nominal
+ownerlayout,opaqueowner/payload,variantcase/payload,range,Matrix/Tensorshape
+andbits,Reductionstate/commands,Agentprobe/predicate metadata+ownedvalues,
+staticIteratorvalues/rangecursor. No cloningforcolumnardenseview/noSerdehash/
+persistent RuntimeValueDigest substitute/zero normalization for executablebits.
+RuntimeNeed/Callable/IteratorWitness/DataShape areinvalidstaticownerleaves and
+poisonmeter; temporaryUnencodedLiteraldeleted. Pattern binds/rest/path/local
+origin andsourcefield/case/guardroles nowencodeactualmetadata; no128kind
+placeholder. UnencodedMetadata stilltemporary forcontent/callable/field/call/
+specialization; mustfinishallvariants/deletebeforefinalcommonseal.
+
+Staticliteralcheck19648terminal0 10.02s;firstowner62793 925/925pass6.795s
+(build30s),fournewliteralmeaningtests pass. Finaliteratorcheck97333terminal0
+10.15s;Agent/Charactercheck98863terminal0. Formattercheck68009terminal101
+APIaccessormistakesrepaired onactualowner:role.encoded,sourceordinalget-1,
+triggerinherentencodeincludingduration. Finalformatter96519terminal0 27.07s.
+Actualformattercontext resolvesmanifestdigest/slotsemtype+roles/effectsource
+positions+capturetypes/triggerduration;attemptoperandABIprojectmethoddefinition
+andformattedoperandsdefinition/paramsourceorder;no rawtableIDintranscript.
+CurrentCoreowner96291LIVE allfeaturelockedlib frozenRust;newpatternliteral
+root/templatebuilderdelaymutation/invalidNeedpoison tests. Needfinishremaining
+metadata/FQEstatictaskcoordinate/privateimageatomicpublication thenfull
+closure/codec/negative/artifacts/structure/coherentcommitpush. Thisisprivate
+preparation,notcompletedgoalorpublicschema. Astraone-shotconsumedneverrepeat.
+
+Patternformatterowner96291terminal0:928/928passed5.966s/no skip,48.99s
+build. All7newliteral/pattern/template/liveNeed regressionspass. Afterterminal
+added staticOpaqueclass/persistence explicitrejection and20,000deeptuple
+iterativetraversalregression; focusedliteralowner73603LIVE sourcefrozen.
+Originalpattern/fullproofconsumerbytesunchangedexceptprivateLiteralownerpolicy;
+no finishedpublicschema/commit/push. Remaining5exprmetadata families:
+DialogueContent,Field,Call,MakeCallable,SpecializeCallable; thenactualflow/
+function/request/staticcoordinates/commonFQEseal/privateimagepublication.
+No broadconsumer validation claim beyondprivateCoreowner. Fullgoalactive.
+
+Finalfocusedstaticliteral73603terminal0:6/6passed0.034s/923skipped;
+20,000nestedtupletraversalpass0.029s,exactmeter/bit/storage/shape/order/live
+Needrejectionpass. Allvalidationhandlesnowterminal. CurrentdirtyprivateWIP
+from207f9398c includes newliteral_semantic.rs/tests, expression_semantic.rs,
+body_semantic.rs/tests plusrecordedexistingownerchanges; no stagedcommit.
+Do not turn928Core+6focused into fullgoalsuccess. Continue remainingfive
+expressionmetadata families and completeFlow/Stream/function/request/FQE
+commonprotectedseal, thenactualrdeps/codec/negative/fullacceptance andpush.
+Astraoneshotconsumedneverrepeat;Sol6.1/mainonly;ordinarytestnextest.
+
+### 2026-10-07 — Cut 4 private body transcript checkpoint
+
+Inspected main base 207f9398cfd5fa093e2167a7dc4f046b27a19a1b, dirty
+18 in-scope paths (13 tracked and 5 new owner/test files). No other WIP
+observed. Supersedes the earlier statement that this private preparation
+cannot form a commit: COMPILE_CLEAN_SEQUENCE.md explicitly permits Cut 4
+private visitors/tags/meter and transcript tests as a retained cut. This
+checkpoint exposes no task-plan table, child seal proof, raw constructor,
+View projection, codec row, or completed F/Q/E authority. Cut 5 remains one
+protected public switch. The full convergence goal stays active/incomplete.
+
+Completed all current expression and pattern metadata variants, balanced
+owned expression/Flow events and exact body-child roles; static logical
+literal encoding preserves numeric width and float bits and walks deep
+values iteratively. Resolved type/local/function/template/helper/method
+references use existing accepted semantic owners instead of arena ordinals.
+Callable graphs retain typed position/ABI/transition/partial metadata and
+resolve their origin's original arrow/code definition without following a
+self-origin edge. Missing references and invalid runtime-only literal leaves
+poison the shared meter so an ignored owner error cannot publish a partial
+hash. Deleted temporary UnencodedMetadata/UnencodedLiteral rejections.
+
+Remaining: full function-body/endpoint child F, request-template Q, all
+fifteen E table families, row memoization and exact role limits; owner-bound
+task coordinates/static task table, common private image sealer, actual
+upper View authority and atomic codec/builder publication/consumer deletion.
+Current callable/function references are accepted definition references,
+not completed body digests. No F/Q/E completion claim. Astra one-shot remains
+consumed and was not repeated. Rust-compatible Move reinitialization remains
+the final language contract.
+
+Validation selection: fresh cargo metadata --all-features --format-version 1
+--locked and cargo tree --workspace --all-features --target all --invert
+arcweft-core resolve the same 50 workspace-package transitive reverse
+dependency closure as the previous delivered cut. This checkpoint's new
+semantic context is private and has no production sealer caller; existing
+copy admission retains the same enter-only traversal behavior and all old
+Core tests are included. New public error variants only propagate the shared
+private meter's otherwise unreachable owner rejection. Therefore owner
+nextest plus all-target Core Clippy/check establish this private cut. Full
+consumer nextest is deferred to the changed production public seal; previous
+207f full closure evidence (5,445 cases, 5,168 pass, 277 exact pre-existing
+CLI failures) is reused only for unchanged consumer behavior, not relabeled
+as a current run or a complete acceptance pass.
+
+Owner nextest first 930/930 passed in 7.094s; actual builder regression
+proves function/state arena padding invariance and changed accepted code
+definition sensitivity. Final pass follows poison hardening and lint repairs.
+Initial Clippy terminal 0, 33.89s; existing warnings and unused Cut 4 private
+owners remain. Final lint/check outcome recorded below; no -D warnings
+acceptance claim. A module placement edit initially caused cargo fmt to
+reject nested impl syntax; moved it to the actual module scope before rerun.
+No test bypass or production behavior exception.
+
+Ownership disposition: new body_semantic is the borrowing context over sole
+admitted plan tables; expression_semantic adds inherent metadata behavior to
+the existing expression algebra; literal_semantic is one iterative logical
+value algebra with no copied AST, Serde transcript, I/O, or whole catalog
+clone. Tests follow these respective owner boundaries. Existing value and
+pattern large owners only gain inherent closed tags; size does not justify
+new public wrappers. New body context pub(crate) access is required by the
+legitimate value metadata consumer, not file splitting. Dependency graph
+unchanged: Core remains Sans I/O and gains no upstream crate edge.
+
+Measured current Core files (production unless named tests):
+- crates/arcweft-core/src/plan/body_semantic.rs: 27856 bytes, 697 physical LOC.
+- crates/arcweft-core/src/plan/body_semantic/tests.rs: 14243 bytes, 374 physical LOC.
+- crates/arcweft-core/src/value/expression_semantic.rs: 10377 bytes, 227 physical LOC.
+- crates/arcweft-core/src/value/literal_semantic.rs: 25529 bytes, 590 physical LOC.
+- crates/arcweft-core/src/value/literal_semantic/tests.rs: 3899 bytes, 105 physical LOC.
+- crates/arcweft-core/src/value.rs: 149270 bytes, 4131 physical LOC.
+- crates/arcweft-core/src/pattern.rs: 161019 bytes, 4166 physical LOC.
+
+Canonical structure gate exited 0 with no blocking findings; existing
+workspace size/test review triggers retained. New owner growth reviewed above.
+
+Final Cut 4 receipts: owner nextest terminal 0, 931/931 pass, 0 skipped,
+6.234s (build 18.38s), including invalid-reference poison regression.
+After run terminal, nextest list -p arcweft-core --lib --all-features --locked
+--message-format json matched all 931 executed IDs, 0 missing. Test-only
+dense sequence helper import was made explicit after narrowing imports
+initially caused E0425; final pass includes that repair. Final cargo check
+-p arcweft-core --all-targets --all-features --locked terminal 0, 9.82s.
+Final cargo clippy with the same package/target/features/lock terminal 0,
+17.06s; additional style/import lints fixed, existing warnings and private
+unconnected preparation dead-code diagnostics retained and reported. No
+-D warnings pass claim. fmt/diff and explicit staged-path review follow.
+All validation handles terminal; no source changed after final owner run.
+
+Next implementation resumes actual Flow/Stream metadata, full function and
+endpoint F/Q/E row owners, then protected common sealer/public switch and
+complete reverse-consumer validation. Committing this tested private cut
+does not complete or pause the original active goal.
