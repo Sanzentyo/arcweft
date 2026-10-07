@@ -1379,3 +1379,127 @@ fn actual_host_request_recognizes_typed_capture_prologue_bindings() {
     assert_eq!(actual, expected);
     assert_ne!(actual, wrong);
 }
+
+/// Private image fixture probes graph termination independently of structural
+/// admission: all references use actual plan rows, including deliberate cycles.
+fn callable_graph_fixture(
+    depth: usize,
+    edges: usize,
+) -> (RuntimePlan, crate::runtime_id::RuntimeCallableStateId) {
+    use crate::plan::*;
+    use crate::runtime_id::RuntimeCallableStateId as State;
+    let (mut plan, origin) = callable_plan(false, 41);
+    let prototype = plan.callable_states().get(origin).unwrap().clone();
+    let mut rows = vec![prototype.clone()];
+    for index in 1..depth {
+        let mut row = prototype.clone();
+        row.partials = (0..edges)
+            .map(|parameter| RuntimeCallablePartialTransition {
+                parameters: Box::new([RuntimeCallableParameterCoordinate {
+                    group: 0,
+                    parameter: u32::try_from(parameter).unwrap(),
+                }]),
+                state: State::for_index(index - 1).unwrap(),
+                values: Box::new([]),
+            })
+            .collect();
+        rows.push(row);
+    }
+    plan.callable_states = RuntimeCallableStateTable::from_admitted(rows);
+    (plan, State::for_index(depth - 1).unwrap())
+}
+
+#[test]
+fn callable_shared_dag_finishes_with_linear_work_and_exact_budget() {
+    let (plan, root) = callable_graph_fixture(32, 2);
+    let digest = |work, bytes| {
+        let mut meter = TaskSemanticMeter::new(work, bytes);
+        let mut encoder = TaskSemanticEncoder::new(b"callable-body.v1\0", &mut meter);
+        let result =
+            RuntimeBodySemanticContext::new(&plan).write_callable_state(&mut encoder, root);
+        match result {
+            Ok(()) => (Ok(encoder.finish().unwrap()), meter.totals()),
+            Err(_) => (encoder.finish(), meter.totals()),
+        }
+    };
+    let (first, (work, bytes)) = digest(10_000, 100_000);
+    assert!(first.is_ok());
+    assert!(
+        work < 3_000,
+        "32 shared levels must not expand as a binary tree"
+    );
+    assert_eq!(digest(work, bytes).0, first);
+    assert_eq!(
+        digest(work - 1, bytes).0,
+        Err(TaskSemanticEncodingError::SemanticWork)
+    );
+    assert_eq!(
+        digest(work, bytes - 1).0,
+        Err(TaskSemanticEncodingError::TranscriptBytes)
+    );
+}
+
+#[test]
+fn callable_memo_keeps_source_edge_order_and_definition_changes() {
+    use crate::plan::*;
+    let (plan, root) = callable_graph_fixture(3, 2);
+    let mut reordered = plan.clone();
+    let mut rows = reordered
+        .callable_states()
+        .iter()
+        .cloned()
+        .collect::<Vec<_>>();
+    rows[root.index()].partials.reverse();
+    reordered.callable_states = RuntimeCallableStateTable::from_admitted(rows);
+    let digest = |plan: &RuntimePlan| {
+        let mut meter = TaskSemanticMeter::new(10_000, 100_000);
+        let mut encoder = TaskSemanticEncoder::new(b"callable-body.v1\0", &mut meter);
+        RuntimeBodySemanticContext::new(plan)
+            .write_callable_state(&mut encoder, root)
+            .unwrap();
+        encoder.finish().unwrap()
+    };
+    assert_ne!(digest(&plan), digest(&reordered));
+    assert_eq!(digest(&plan), digest(&plan.clone()));
+}
+
+#[test]
+fn callable_graph_rejects_definition_and_origin_cycles_with_sticky_failure() {
+    use crate::plan::*;
+    for origin_cycle in [false, true] {
+        let (mut plan, root) = callable_graph_fixture(2, 1);
+        let mut rows = plan.callable_states().iter().cloned().collect::<Vec<_>>();
+        if origin_cycle {
+            rows[0].transition = RuntimeCallableTransition::Retain {
+                state: crate::runtime_id::RuntimeCallableStateId::for_index(0).unwrap(),
+                values: Box::new([]),
+            };
+        } else {
+            rows[root.index()].partials[0].state = root;
+        }
+        plan.callable_states = RuntimeCallableStateTable::from_admitted(rows);
+        let mut meter = TaskSemanticMeter::new(10_000, 100_000);
+        let mut encoder = TaskSemanticEncoder::new(b"callable-body.v1\0", &mut meter);
+        assert!(matches!(
+            RuntimeBodySemanticContext::new(&plan).write_callable_state(&mut encoder, root),
+            Err(RuntimeBodySemanticError::CallableCycle { .. })
+        ));
+        encoder.tag(0);
+        assert_eq!(
+            encoder.finish(),
+            Err(TaskSemanticEncodingError::OwnerRejected)
+        );
+    }
+}
+
+#[test]
+fn callable_deep_acyclic_graph_uses_an_iterative_stack() {
+    let (plan, root) = callable_graph_fixture(20_000, 1);
+    let mut meter = TaskSemanticMeter::new(4_194_304, 67_108_864);
+    let mut encoder = TaskSemanticEncoder::new(b"callable-body.v1\0", &mut meter);
+    RuntimeBodySemanticContext::new(&plan)
+        .write_callable_state(&mut encoder, root)
+        .unwrap();
+    encoder.finish().unwrap();
+    assert!(meter.totals().0 < 1_500_000);
+}

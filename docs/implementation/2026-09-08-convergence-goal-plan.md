@@ -7824,3 +7824,60 @@ check failures and Tier2/GPU milestone work are not superseded by this selected
 run. Goal remains active. Astra one-shot remains consumed; never repeat it.
 No branch, worktree or delegation was created. The validated 17-path cut is
 explicitly staged and reviewed before commit and normal push.
+
+
+### 2026-10-07 — Callable graph memoization
+
+Base clean pushed main/origin `7e555b8e0285d22542e0c6c28c77037884cae206`.
+The private body owner replaces repeated callable-state/origin expansion with
+source-ordered borrowed graph edges, typed Visiting/Done memo entries and child
+digests under the sole meter. State allocation IDs are memo keys, never hash
+input. The old traversal is deleted. There is no new catalog, public ABI,
+codec or Cargo dependency. Memo scope is one graph transcript, not global E.
+
+Regression coverage includes a 32-level shared DAG that finishes under 3,000
+work units, exact work/byte limits and one-over rejection, ordered edges,
+state/origin cycles, and a 20,000-level acyclic graph on the iterative stack.
+Child transcript errors poison the parent, with no fresh child budget. Private
+malformed-image fixtures probe termination separately from structural admission;
+these tests do not claim malformed layouts are accepted by the builder.
+
+Validation of final sources:
+- Full Core lib/tests nextest, all features, locked, no-fail-fast, no-tests=fail:
+  1,010 passed, 0 failed, 0 skipped; exit 0; execution 52.653 s.
+- Final exact nextest inventory: all 1,010 selected case IDs executed, with
+  0 missing or unexpected IDs. API rejection and owner tests are included.
+- Core all-target/all-feature locked Clippy: exit 0, 38.57 s. Existing and
+  private-preparation dead-code warnings remain; no warnings-as-errors claim.
+- Canonical structure gate: exit 0, no blockers. Final fmt/diff check required
+  before explicit staging and commit.
+- Fresh target-all inverted Core graph: exit 0; closure remains 50 packages.
+  Metadata/manifest inputs are unchanged. All current body transcript roots
+  are private preparation and Core tests, with no external production caller.
+  Full Core owner tests and lint therefore cover this private implementation
+  cut. The previous 5,081-case public-consumer run remains evidence for its
+  original Host argument bytes; it is not relabeled as a new memoization run.
+
+Initial Core check failed on four moved-module references, corrected after
+terminal. The first focused run had 42 passes and one exact-boundary test
+failure: the expected byte total was written as 37 instead of 38. The test now
+uses the actual sum of parent/child domains, ordinal and digest, then verifies
+the next tag rejects at byte 39. No production assertion, limit or selection
+was weakened. The final complete owner run passed after this correction.
+
+Receipts in the temporary directory use `arcweft-1007-callable-memo-`:
+core.log, clippy.log, structure.log, inventory.json/log and receipt.json.
+The receipt preserves exact selected and executed case IDs.
+
+The callable module is one cohesive borrowed graph/memo/metadata owner,
+331 physical LOC and 12,879 bytes. The body context shrinks to 608 LOC and
+23,494 bytes; its duplicate graph traversal is removed. Owner tests remain
+1,505 LOC and 55,441 bytes, and the meter stays an encoding/first-error owner
+at 464 LOC and 15,564 bytes. No visibility widening was needed for extraction;
+state belongs to the actual plan, and memo entries are derived ephemeral data.
+
+Actual candidate inventory, global fifteen-table E memoization, private image,
+common seal, public schema switch, all original goal acceptance and removal of
+obsolete paths remain required. The 277 broad CLI failures and GPU/Tier2 work
+remain unresolved. Goal active/incomplete; Astra one-shot consumed, never
+repeat. No branch, worktree or delegation.

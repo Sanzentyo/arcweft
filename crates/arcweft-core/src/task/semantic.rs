@@ -201,6 +201,20 @@ impl<'a> TaskSemanticEncoder<'a> {
         }
     }
 
+    /// Computes one owner child transcript using this pass's meter. The child
+    /// has no fresh quota and cannot publish after a sticky failure.
+    pub(crate) fn child_digest<E: From<TaskSemanticEncodingError>>(
+        &mut self,
+        domain: &'static [u8],
+        write: impl FnOnce(&mut TaskSemanticEncoder<'_>) -> Result<(), E>,
+    ) -> Result<blake3::Hash, E> {
+        self.status()?;
+        let mut child = TaskSemanticEncoder::new(domain, self.meter);
+        child.status()?;
+        write(&mut child).inspect_err(|_| child.reject_owner())?;
+        child.finish().map_err(Into::into)
+    }
+
     pub(crate) fn finish(self) -> Result<blake3::Hash, TaskSemanticEncodingError> {
         match self.meter.error {
             Some(error) => Err(error),
@@ -413,5 +427,38 @@ mod tests {
             Err(TaskSemanticEncodingError::CountOverflow)
         );
         assert_eq!(meter.totals(), (0, 1));
+    }
+
+    #[test]
+    fn child_digest_shares_budget_and_poison_with_its_parent() {
+        let mut meter = TaskSemanticMeter::new(3, 38);
+        let mut parent = TaskSemanticEncoder::new(b"p", &mut meter);
+        let child = parent
+            .child_digest(b"c", |child| {
+                child.ordinal(7);
+                Ok::<(), TaskSemanticEncodingError>(())
+            })
+            .unwrap();
+        parent.digest(child.as_bytes());
+        parent.tag(8);
+        assert_eq!(
+            parent.finish(),
+            Err(TaskSemanticEncodingError::TranscriptBytes)
+        );
+        assert_eq!(meter.totals(), (3, 38));
+
+        let mut meter = TaskSemanticMeter::new(10, 100);
+        let mut parent = TaskSemanticEncoder::new(b"p", &mut meter);
+        assert_eq!(
+            parent.child_digest(b"c", |_| {
+                Err::<(), _>(TaskSemanticEncodingError::OwnerRejected)
+            }),
+            Err(TaskSemanticEncodingError::OwnerRejected)
+        );
+        parent.tag(0);
+        assert_eq!(
+            parent.finish(),
+            Err(TaskSemanticEncodingError::OwnerRejected)
+        );
     }
 }

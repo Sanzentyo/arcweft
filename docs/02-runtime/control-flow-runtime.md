@@ -223,6 +223,16 @@ owned expression or executable body. Code references are accepted definition
 leaves; ordinary recursive calls do not recursively expand called bodies. The
 complete executable image commits every referenced definition's body row.
 
+Callable state and origin references form a finite typed graph. The semantic
+visitor computes each reachable definition/origin digest once per graph
+transcript, preserving transition and partial-application source order. Private
+state ordinals are memo keys only; no allocation coordinate is written into
+these child digests. A Visiting edge rejects a forbidden cycle. Accepted code
+and nominal references remain semantic leaves. An explicit borrowed-edge
+stack avoids Rust recursion and avoids expanding shared subgraphs as trees.
+Every graph visit, child transcript and emitted cached digest uses the same
+work/byte meter; a child error poisons the parent before publication.
+
 A retained input carries its origin, source role and transfer evidence from
 `RuntimeFunctionInputBinding`. These are independent of frame-ingress
 `Owned`/`Unrestricted` requirements. Origin tags are Binding (0), whole
