@@ -167,7 +167,8 @@ fn digest(
             .pure_helpers()
             .last()
             .unwrap()
-            .executable_semantic_row_digest(&context, &mut meter)
+            .executable_semantic(&context, &mut meter)
+            .map(|semantic| semantic.digest())
     };
     (result, meter.totals())
 }
@@ -270,7 +271,8 @@ fn pure_rows_share_exact_limits_and_reject_foreign_owner_or_inherited_poison() {
                 .pure_helpers()
                 .last()
                 .unwrap()
-                .executable_semantic_row_digest(&context, &mut meter)
+                .executable_semantic(&context, &mut meter)
+                .map(|semantic| semantic.digest())
         };
         assert!(matches!(
             result,
@@ -297,7 +299,8 @@ fn pure_rows_share_exact_limits_and_reject_foreign_owner_or_inherited_poison() {
                 .pure_helpers()
                 .last()
                 .unwrap()
-                .executable_semantic_row_digest(&context, &mut poisoned)
+                .executable_semantic(&context, &mut poisoned)
+                .map(|semantic| semantic.digest())
         };
         assert!(matches!(
             result,

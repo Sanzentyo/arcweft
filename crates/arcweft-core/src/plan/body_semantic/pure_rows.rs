@@ -75,12 +75,33 @@ impl RuntimeBodySemanticContext<'_> {
     }
 }
 
-impl RuntimePureHelper {
-    pub(crate) fn executable_semantic_row_digest(
+/// Issued from the actual helper only after its complete ABI/body row succeeds.
+pub(crate) struct PureHelperSemantic<'a> {
+    plan: &'a super::RuntimePlanInventory,
+    helper: &'a RuntimePureHelper,
+    digest: blake3::Hash,
+}
+
+impl PureHelperSemantic<'_> {
+    pub(crate) const fn digest(&self) -> blake3::Hash {
+        self.digest
+    }
+
+    pub(super) fn matches_helper(
         &self,
         context: &RuntimeBodySemanticContext<'_>,
+        helper: crate::plan::RuntimePureHelperId,
+    ) -> bool {
+        std::ptr::eq(self.plan, context.plan) && self.helper.id == helper
+    }
+}
+
+impl RuntimePureHelper {
+    pub(crate) fn executable_semantic<'a>(
+        &'a self,
+        context: &RuntimeBodySemanticContext<'a>,
         meter: &mut TaskSemanticMeter,
-    ) -> Result<blake3::Hash, RuntimeBodySemanticError> {
+    ) -> Result<PureHelperSemantic<'a>, RuntimeBodySemanticError> {
         meter.status()?;
         if !context
             .plan
@@ -99,7 +120,12 @@ impl RuntimePureHelper {
         context.write_pure_inputs(&mut encoder, &self.inputs)?;
         encoder.tag(self.output_type.semantic_tag());
         context.write_expression(&mut encoder, &self.expr)?;
-        encoder.finish().map_err(Into::into)
+        let digest = encoder.finish()?;
+        Ok(PureHelperSemantic {
+            plan: context.plan,
+            helper: self,
+            digest,
+        })
     }
 }
 

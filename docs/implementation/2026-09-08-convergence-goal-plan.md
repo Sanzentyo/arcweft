@@ -9587,3 +9587,65 @@ required. E0/2/3/4/9/10/11/12/13 prepared privately; E1/5/6/7/8/global15-table
 memo/actualTable14/private image/common seal/all14 Cut5 and original
 View/nominal/scheduler/Rust borrowing/CLI277/Tier2 acceptance remain. Whole
 goal ACTIVE/INCOMPLETE, no new Astra/advice/branch/worktree/version change.
+
+### 2026-10-08 — completed code proofs for E7/E8 executable roles
+
+Inspected clean main/origin771236af9d59fba65b20e171a2248a2b1a9d19ec;
+previous goal turn was concrete Flow+Line implementation/validation/commit/
+push progress, not a wait/no-progress turn. E7/E8 read actual source-ordered
+callable/Flow role rows and require completed code proofs from this same
+inventory. Helper E10 now issues PureHelperSemantic retaining actual helper/
+inventory/hash after its full ABI/body visitor succeeds; old bare helper
+row-digest API removed, callers consume proof. Function/Controller targets
+reuse ProducerFunctionSemantic F proof retaining complete signature/body/
+endpoints. Typed code enum covers all3 real substrates. Actual Flow schema
+owns parameter identity/order/mode/passing/type; F owns return/effect/body.
+Accepted callable/Flow contracts and optional controller roles participate.
+FlowRuntimeId owns one path+operational-selector transcript shared E8/E9;
+E9 byte grammar preserved. No second body walk, raw input hash factory,
+JIT/AOT choice, display parameter name or arena coordinate in row bytes.
+Actual fully verified Agent fixture covers body/passing mutations, arena
+padding/debug exclusion, contract changes and wrong/foreign/missing/poison
+rejection. PureHelper/FunctionSite staged-row fixtures separately assert
+whole-plan UnreachableCallableExecutable rejection; these metadata encodings
+are private prep, not positive runtime publication/T01 evidence. Initial
+7/7PASS0.043s after discovery4429/build28.30s; extended8-case discovery49780
+running, no source edits during validation. Core static-local E1 inspection
+confirmed role/owner metadata gap remains; no defaults/fabricated fields added.
+Private unused Cut4 only, all14 protected public task migration untouched.
+Core50 graph/99 inputs unchanged; private/leaf Core owner check/Clippy+adjacent
+matrices justified, no new runtime/public consumer reads these proofs yet.
+Prior Flow4947/CLI277 receipts remain prior bytes only. Remaining E1/5/6,
+global15-table memo/actualTable14/private image/common seal/all14 Cut5 and
+original View/nominal/scheduler/Rust borrowing/CLI277/Tier2 unfinished.
+Goal ACTIVE/INCOMPLETE; no new Astra/advice/branch/worktree/version change.
+
+Final executable-role acceptance (supersedes pending validation): extended
+focus49780 TERMINAL0 then8/8PASS0.050s, Core all-target/all-feature/locked
+check and Clippy38465 PASS before style repair. Removed3 default-trait-access
+warnings by naming RuntimeTaskPlanSealLimits and decomposed controller test
+fixture at actual Flow-body vs Entry-role graph boundary; no weakened assert/
+blanket allow/production API widening. Final60588 check9.26s/Clippy15.47s
+PASS, introduced non-dead-code diagnostics0. Final pre-run adjacent list88,
+run88/88PASS0.450s (981 skipped Core cases); exact88 selected/terminal/unique
+IDs,missing0/unexpected0/duplicates0/nonpass0. All4 new role cases, original
+helper+method ownership/meter/debug/ABI cases and E9 identity cases present.
+Final6 Rust hashes/99 inputs fixed; no graph/Cargo/feature/runtime/codec/public
+shape migration. Role metadata owner158LOC/6273bytes owns E7/E8 code-proof/
+ABI/contract binding and shared Flow identity grammar. New unit child478LOC/
+16857bytes(+478) triggers owner-growth review: cohesive accepted vs staged
+entry executable graph fixtures and proof/contract/meter assertions, one
+domain owner, production typed builders, no alternate ABI/resolver/schema
+projection/public test export. Actual Flow body and entry-role fixture
+functions separate lifecycle boundaries; borrowing immutable original rows,
+no unrelated state/I-O and Core fan-in50/fan-out unchanged. Function owner
+477LOC(+16), helper owner166LOC(+26), helper unit313LOC(+3), context631LOC(+5)
+retain original responsibilities. Prior whole-workspace structure0-blocking
+review reused for unchanged graph/ownership direction; no scanner trigger
+beyond this documented unit owner growth review. Private unused Cut4 only;
+full-rdeps omission rationale above applies, prior Flow4947/CLI277 receipts
+are only earlier bytes. Fmt/diff then explicit7-path full hunk/blob/tested-
+source review/commit/normal push required. E0/2/3/4/7/8/9/10/11/12/13 privately
+prepared; E1/5/6/global15-table memo/actualTable14/private image/common seal/
+all14 Cut5 and original View/nominal/scheduler/Rust borrowing/CLI277/Tier2
+unfinished. Full goal ACTIVE/INCOMPLETE, no new Astra/advice/branch/worktree.

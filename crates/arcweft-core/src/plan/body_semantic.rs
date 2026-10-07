@@ -5,6 +5,7 @@ use super::RuntimePlanInventory;
 
 mod callable;
 mod executable_metadata;
+mod executable_roles;
 pub(crate) mod flow;
 pub(crate) mod function;
 mod nominal;
@@ -73,6 +74,10 @@ pub(crate) enum RuntimeBodySemanticError {
     InvalidFlowProducer { ordinal: usize },
     #[error("Line transcript does not belong to this candidate inventory")]
     ForeignLineTranscript,
+    #[error("callable executable row {ordinal} has no matching completed code transcript")]
+    InvalidCallableExecutableProducer { ordinal: usize },
+    #[error("Flow executable row {ordinal} has no matching completed producer transcript")]
+    InvalidFlowExecutableProducer { ordinal: usize },
 }
 
 impl From<TaskSemanticEncodingError> for RuntimeBodySemanticError {

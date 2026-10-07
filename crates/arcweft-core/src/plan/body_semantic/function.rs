@@ -65,6 +65,27 @@ impl<'a> ProducerEndpoint<'a> {
 }
 
 impl ProducerFunctionSemantic<'_> {
+    pub(super) fn matches_function(
+        &self,
+        context: &RuntimeBodySemanticContext<'_>,
+        function: crate::runtime_id::RuntimeFunctionSiteId,
+    ) -> bool {
+        std::ptr::eq(self.plan, context.plan) && self.function_id == function
+    }
+
+    pub(super) fn matches_flow(
+        &self,
+        context: &RuntimeBodySemanticContext<'_>,
+        flow: &plan::FlowRuntimeId,
+    ) -> bool {
+        std::ptr::eq(self.plan, context.plan)
+            && context.plan.flows.flow(flow).is_some_and(|row| {
+                self.function_id == row.function_site()
+                    && std::ptr::eq(self.function, row.function())
+                    && self.function.role() == plan::RuntimeFunctionSemanticRole::Flow
+            })
+    }
+
     /// Resolves the actual Flow row in constant time. Its accepted runtime
     /// path is semantic identity; its public label also binds dynamic target
     /// selection. Function/parameter indices are validated before reuse.
@@ -98,12 +119,7 @@ impl ProducerFunctionSemantic<'_> {
         encoder.tag(9);
         encoder.tag(0);
         encoder.digest(row.definition().as_bytes());
-        encoder.count(row.id.path().segments().len());
-        for segment in row.id.path().segments() {
-            encoder.enter_element();
-            encoder.string(segment.as_str());
-        }
-        encoder.string(row.id.public_label_ref().as_str());
+        row.id.write_executable_identity(&mut encoder);
         encoder.count(row.params.len());
         for (ordinal, parameter) in row.params.iter().enumerate() {
             encoder.enter_element();
