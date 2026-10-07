@@ -14,7 +14,8 @@ use crate::value::RuntimeExpr;
 
 /// Stable lexical definition identity transported from its semantic owner.
 /// These bytes identify a definition; they do not prove body admission or sealing.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
 pub struct RuntimeFunctionDefinitionIdentity([u8; 32]);
 
 impl RuntimeFunctionDefinitionIdentity {
@@ -177,6 +178,32 @@ pub enum RuntimeFunctionInputSource {
 }
 
 impl RuntimeFunctionInputSource {
+    /// Stable origin grammar for explicit function-site input rows.
+    pub const fn accepts_origin(self, origin: RuntimeFunctionInputOrigin) -> bool {
+        matches!(
+            (self, origin),
+            (
+                Self::Capture { .. },
+                RuntimeFunctionInputOrigin::Binding(_)
+                    | RuntimeFunctionInputOrigin::EvaluatedResult(_)
+            ) | (
+                Self::Parameter { .. } | Self::CapturedParameter { .. },
+                RuntimeFunctionInputOrigin::Parameter(_)
+            )
+        )
+    }
+
+    /// AWBC-generated thunks retain the full origin of the captured local.
+    /// Supplied and retained whole formals still require formal identities.
+    pub const fn accepts_local_origin(self, origin: super::RuntimeLocalOrigin) -> bool {
+        match self {
+            Self::Capture { .. } => true,
+            Self::Parameter { .. } | Self::CapturedParameter { .. } => {
+                matches!(origin, super::RuntimeLocalOrigin::Parameter(_))
+            }
+        }
+    }
+
     /// Valid creation operations for this semantic input role.
     pub const fn accepts_transfer(self, transfer: RuntimeFunctionInputTransfer) -> bool {
         matches!(

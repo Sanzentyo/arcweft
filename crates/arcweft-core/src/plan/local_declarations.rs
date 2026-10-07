@@ -2,13 +2,15 @@
 
 use std::num::NonZeroU32;
 
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 
 /// Stable origin issued by the semantic owner, separate from the plan-local ordinal.
 /// Transporting this identity does not prove executable body admission.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
 pub enum RuntimeLocalOrigin {
     Binding([u8; 32]),
     Parameter(super::RuntimeFunctionParameterIdentity),
@@ -29,7 +31,8 @@ impl From<super::RuntimeFunctionInputOrigin> for RuntimeLocalOrigin {
 }
 
 /// One accepted structural owner plus its generated-local semantic role.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
 pub struct RuntimeGeneratedLocalOrigin([u8; 32]);
 
 impl RuntimeGeneratedLocalOrigin {

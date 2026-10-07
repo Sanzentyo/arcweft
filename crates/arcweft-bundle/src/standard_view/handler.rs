@@ -138,6 +138,10 @@ fn install_dialogue_handler_rows(candidate: &mut AwbcProgram) -> Result<(), Stan
         signature,
         type_context: None,
         input_ownership: vec![AwbcFunctionInputOwnership::parameter(
+            arcweft_core::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+                *blake3::hash(b"arcweft.std.view.dialogue.primary-action.formal.view.v1\0")
+                    .as_bytes(),
+            ),
             0,
             arcweft_core::plan::RuntimeFunctionParameterPassing::Affine,
         )],

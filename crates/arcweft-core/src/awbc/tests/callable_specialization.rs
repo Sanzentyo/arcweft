@@ -119,6 +119,9 @@ fn specialization_program() -> AwbcProgram {
             signature: AwbcSignatureId(1),
             type_context: None,
             input_ownership: vec![AwbcFunctionInputOwnership::parameter(
+                manual_awbc_formal_identity(
+                    "arcweft-core.src.awbc.tests.callable_specialization.specialization_program.input-a",
+                ),
                 0,
                 crate::plan::RuntimeFunctionParameterPassing::Value,
             )],
@@ -325,4 +328,13 @@ fn callable_specialization_verification_enforces_table_and_cumulative_work_budge
             ..
         })
     ));
+}
+
+fn manual_awbc_formal_identity(declaration: &str) -> crate::plan::RuntimeFunctionParameterIdentity {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"arcweft.manual-awbc-formal.v1\0");
+    hash.update(declaration.as_bytes());
+    crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+        *hash.finalize().as_bytes(),
+    )
 }

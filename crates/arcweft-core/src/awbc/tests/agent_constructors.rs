@@ -26,6 +26,7 @@ fn constructor_program(
         .enumerate()
         .map(|(position, passing)| {
             AwbcFunctionInputOwnership::parameter(
+                manual_awbc_formal_identity(&format!("arcweft-core.src.awbc.tests.agent_constructors.constructor_program.input-a[{position}]")),
                 u32::try_from(position).expect("fixture input ordinal"),
                 passing,
             )
@@ -365,4 +366,13 @@ fn an_unsized_empty_collection_rejects_when_its_cardinality_is_known() {
                 .is_err()
         );
     }
+}
+
+fn manual_awbc_formal_identity(declaration: &str) -> crate::plan::RuntimeFunctionParameterIdentity {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"arcweft.manual-awbc-formal.v1\0");
+    hash.update(declaration.as_bytes());
+    crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+        *hash.finalize().as_bytes(),
+    )
 }

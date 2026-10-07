@@ -116,6 +116,7 @@ pub(crate) fn function_input_ownership(
         })
         .collect();
     AwbcFunctionInputOwnership {
+        origin: input.origin().into(),
         source: input.source(),
         transfer: input.transfer(),
         requirement: input.ownership(),

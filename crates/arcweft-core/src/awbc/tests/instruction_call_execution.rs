@@ -100,6 +100,9 @@ fn mut_trait_program(receiver_out: AwbcRegisterId) -> std::sync::Arc<AwbcProgram
         signature: AwbcSignatureId(1),
         type_context: None,
         input_ownership: vec![AwbcFunctionInputOwnership::parameter(
+            manual_awbc_formal_identity(
+                "arcweft-core.src.awbc.tests.instruction_call_execution.mut_trait_program.input-a",
+            ),
             0,
             crate::plan::RuntimeFunctionParameterPassing::Affine,
         )],
@@ -243,4 +246,13 @@ fn mut_trait_return_updates_receiver_on_the_same_saved_fiber() {
         Err(AwbcVerifyError::InvalidInvariant { message, .. })
             if message == "instruction destinations are distinct"
     ));
+}
+
+fn manual_awbc_formal_identity(declaration: &str) -> crate::plan::RuntimeFunctionParameterIdentity {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"arcweft.manual-awbc-formal.v1\0");
+    hash.update(declaration.as_bytes());
+    crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+        *hash.finalize().as_bytes(),
+    )
 }

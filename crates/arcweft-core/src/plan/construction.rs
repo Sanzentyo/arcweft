@@ -3017,18 +3017,7 @@ fn validate_function_input_bindings(
         if !input.source().accepts_transfer(input.transfer()) {
             return Err(RuntimePlanBuildError::InvalidFunctionInputSource { index });
         }
-        if !matches!(
-            (input.source(), input.origin()),
-            (
-                RuntimeFunctionInputSource::Capture { .. },
-                super::RuntimeFunctionInputOrigin::Binding(_)
-                    | super::RuntimeFunctionInputOrigin::EvaluatedResult(_)
-            ) | (
-                RuntimeFunctionInputSource::CapturedParameter { .. }
-                    | RuntimeFunctionInputSource::Parameter { .. },
-                super::RuntimeFunctionInputOrigin::Parameter(_)
-            )
-        ) {
+        if !input.source().accepts_origin(input.origin()) {
             return Err(RuntimePlanBuildError::InvalidFunctionInputSource { index });
         }
         if input

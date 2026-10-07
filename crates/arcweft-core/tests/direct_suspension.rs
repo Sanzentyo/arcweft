@@ -760,6 +760,9 @@ fn direct_suspension_functions() -> Vec<AwbcFunction> {
             signature: AwbcSignatureId(0),
             type_context: None,
             input_ownership: vec![AwbcFunctionInputOwnership::parameter(
+                manual_awbc_formal_identity(
+                    "arcweft-core.tests.direct_suspension.direct_suspension_functions.input-a",
+                ),
                 0,
                 arcweft_core::plan::RuntimeFunctionParameterPassing::Affine,
             )],
@@ -775,6 +778,9 @@ fn direct_suspension_functions() -> Vec<AwbcFunction> {
             signature: AwbcSignatureId(1),
             type_context: None,
             input_ownership: vec![AwbcFunctionInputOwnership::capture(
+                manual_awbc_capture_origin(
+                    "arcweft-core.tests.direct_suspension.direct_suspension_functions.input-b",
+                ),
                 0,
                 arcweft_core::plan::RuntimeFunctionCaptureMode::Move,
             )],
@@ -892,4 +898,22 @@ fn need_frame_layout(need_ty: AwbcTypeId) -> AwbcFrameLayout {
         }],
         max_scope_depth: 1,
     }
+}
+
+fn manual_awbc_formal_identity(
+    declaration: &str,
+) -> arcweft_core::plan::RuntimeFunctionParameterIdentity {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"arcweft.manual-awbc-formal.v1\0");
+    hash.update(declaration.as_bytes());
+    arcweft_core::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+        *hash.finalize().as_bytes(),
+    )
+}
+
+fn manual_awbc_capture_origin(declaration: &str) -> arcweft_core::plan::RuntimeLocalOrigin {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"arcweft.manual-awbc-capture.v1\0");
+    hash.update(declaration.as_bytes());
+    arcweft_core::plan::RuntimeLocalOrigin::Binding(*hash.finalize().as_bytes())
 }

@@ -1283,6 +1283,8 @@ pub struct AwbcFunction {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AwbcFunctionInputOwnership {
+    /// Stable semantic identity retained from the actual input producer.
+    pub origin: crate::plan::RuntimeLocalOrigin,
     /// Exact semantic source, including mandatory static passing for a formal.
     pub source: crate::plan::RuntimeFunctionInputSource,
     /// Exact retained-value creation operation, separate from frame ingress.
@@ -1295,10 +1297,12 @@ pub struct AwbcFunctionInputOwnership {
 impl AwbcFunctionInputOwnership {
     /// Direct value ingress with an explicit source; Copy guarantees stay separate.
     pub fn owned(
+        origin: crate::plan::RuntimeLocalOrigin,
         source: crate::plan::RuntimeFunctionInputSource,
         transfer: crate::plan::RuntimeFunctionInputTransfer,
     ) -> Self {
         Self {
+            origin,
             source,
             transfer,
             requirement: RuntimeFunctionInputOwnershipRequirement::Owned,
@@ -1306,14 +1310,24 @@ impl AwbcFunctionInputOwnership {
             unrestricted_bindings: Vec::new(),
         }
     }
-    pub fn parameter(position: u32, passing: crate::plan::RuntimeFunctionParameterPassing) -> Self {
+    pub fn parameter(
+        identity: crate::plan::RuntimeFunctionParameterIdentity,
+        position: u32,
+        passing: crate::plan::RuntimeFunctionParameterPassing,
+    ) -> Self {
         Self::owned(
+            crate::plan::RuntimeLocalOrigin::Parameter(identity),
             crate::plan::RuntimeFunctionInputSource::Parameter { position, passing },
             crate::plan::RuntimeFunctionInputTransfer::Formal,
         )
     }
-    pub fn capture(position: u32, mode: crate::plan::RuntimeFunctionCaptureMode) -> Self {
+    pub fn capture(
+        origin: crate::plan::RuntimeLocalOrigin,
+        position: u32,
+        mode: crate::plan::RuntimeFunctionCaptureMode,
+    ) -> Self {
         Self::owned(
+            origin,
             crate::plan::RuntimeFunctionInputSource::Capture { position },
             crate::plan::RuntimeFunctionInputTransfer::Transferred(mode),
         )

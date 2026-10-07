@@ -83,6 +83,7 @@ impl<'a, 'plan> AwbcTraitMethodLowerer<'a, 'plan> {
                     .enumerate()
                     .map(|(position, input)| {
                         AwbcFunctionInputOwnership::parameter(
+                            input.identity(),
                             table_index(position),
                             input.passing(),
                         )

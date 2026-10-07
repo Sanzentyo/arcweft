@@ -256,10 +256,16 @@ fn context_program() -> AwbcContextFixture {
                 type_context: None,
                 input_ownership: vec![
                     AwbcFunctionInputOwnership::parameter(
+                        manual_awbc_formal_identity(
+                            "arcweft-core.src.awbc.product_step.tests.context.context_program.input-a",
+                        ),
                         0,
                         crate::plan::RuntimeFunctionParameterPassing::Value,
                     ),
                     AwbcFunctionInputOwnership::parameter(
+                        manual_awbc_formal_identity(
+                            "arcweft-core.src.awbc.product_step.tests.context.context_program.input-b",
+                        ),
                         1,
                         crate::plan::RuntimeFunctionParameterPassing::Affine,
                     ),
@@ -331,6 +337,7 @@ fn context_program() -> AwbcContextFixture {
             input_ownership: (0..program.signatures[signature.index()].params.len())
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
+                manual_awbc_capture_origin(&format!("arcweft-core.src.awbc.product_step.tests.context.context_program.input-c[{position}]")),
                         u32::try_from(position).expect("fixture input ordinal"),
                         crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
@@ -613,4 +620,20 @@ fn awbc_standalone_context_requires_string_proof_but_accepts_direct_content() {
     )
     .expect("already typed Content does not need a String-conversion proof");
     assert_eq!(context_error(result).message(), &direct_content);
+}
+
+fn manual_awbc_formal_identity(declaration: &str) -> crate::plan::RuntimeFunctionParameterIdentity {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"arcweft.manual-awbc-formal.v1\0");
+    hash.update(declaration.as_bytes());
+    crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+        *hash.finalize().as_bytes(),
+    )
+}
+
+fn manual_awbc_capture_origin(declaration: &str) -> crate::plan::RuntimeLocalOrigin {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"arcweft.manual-awbc-capture.v1\0");
+    hash.update(declaration.as_bytes());
+    crate::plan::RuntimeLocalOrigin::Binding(*hash.finalize().as_bytes())
 }

@@ -1022,6 +1022,7 @@ fn line_activation_register_defer_commits_captures_and_cursor() {
             input_ownership: (0..program.signatures[AwbcSignatureId(1).index()].params.len())
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
+                manual_awbc_capture_origin(&format!("arcweft-core.src.awbc.product_step.tests.line_activation_register_defer_commits_captures_and_cursor.input-a[{position}]")),
                         u32::try_from(position).expect("fixture input ordinal"),
                         crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
@@ -1041,6 +1042,7 @@ fn line_activation_register_defer_commits_captures_and_cursor() {
             input_ownership: (0..program.signatures[AwbcSignatureId(2).index()].params.len())
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
+                manual_awbc_capture_origin(&format!("arcweft-core.src.awbc.product_step.tests.line_activation_register_defer_commits_captures_and_cursor.input-b[{position}]")),
                         u32::try_from(position).expect("fixture input ordinal"),
                         crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
@@ -2467,8 +2469,20 @@ fn scheduled_actor_look_program() -> AwbcProgram {
         signature: AwbcSignatureId(1),
         type_context: None,
         input_ownership: vec![
-            AwbcFunctionInputOwnership::capture(0, crate::plan::RuntimeFunctionCaptureMode::Move),
-            AwbcFunctionInputOwnership::capture(1, crate::plan::RuntimeFunctionCaptureMode::Move),
+            AwbcFunctionInputOwnership::capture(
+                manual_awbc_capture_origin(
+                    "arcweft-core.src.awbc.product_step.tests.scheduled_actor_look_program.input-a",
+                ),
+                0,
+                crate::plan::RuntimeFunctionCaptureMode::Move,
+            ),
+            AwbcFunctionInputOwnership::capture(
+                manual_awbc_capture_origin(
+                    "arcweft-core.src.awbc.product_step.tests.scheduled_actor_look_program.input-b",
+                ),
+                1,
+                crate::plan::RuntimeFunctionCaptureMode::Move,
+            ),
         ],
         frame_layout: AwbcFrameLayoutId(2),
         blocks: AwbcTableRange::new(2, 1),
@@ -3095,6 +3109,7 @@ fn mark_selector_program(
             input_ownership: (0..program.signatures[AwbcSignatureId(0).index()].params.len())
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
+                manual_awbc_capture_origin(&format!("arcweft-core.src.awbc.product_step.tests.mark_selector_program.input-a[{position}]")),
                         u32::try_from(position).expect("fixture input ordinal"),
                         crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
@@ -3114,6 +3129,7 @@ fn mark_selector_program(
             input_ownership: (0..program.signatures[AwbcSignatureId(0).index()].params.len())
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
+                manual_awbc_capture_origin(&format!("arcweft-core.src.awbc.product_step.tests.mark_selector_program.input-b[{position}]")),
                         u32::try_from(position).expect("fixture input ordinal"),
                         crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
@@ -3133,6 +3149,7 @@ fn mark_selector_program(
             input_ownership: (0..program.signatures[AwbcSignatureId(0).index()].params.len())
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
+                manual_awbc_capture_origin(&format!("arcweft-core.src.awbc.product_step.tests.mark_selector_program.input-c[{position}]")),
                         u32::try_from(position).expect("fixture input ordinal"),
                         crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
@@ -3460,6 +3477,7 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
             input_ownership: (0..program.signatures[AwbcSignatureId(4).index()].params.len())
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
+                manual_awbc_capture_origin(&format!("arcweft-core.src.awbc.product_step.tests.init_scope_defer_host_call_program.input-a[{position}]")),
                         u32::try_from(position).expect("fixture input ordinal"),
                         crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
@@ -3479,6 +3497,7 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
             input_ownership: (0..program.signatures[AwbcSignatureId(2).index()].params.len())
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
+                manual_awbc_capture_origin(&format!("arcweft-core.src.awbc.product_step.tests.init_scope_defer_host_call_program.input-b[{position}]")),
                         u32::try_from(position).expect("fixture input ordinal"),
                         crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
@@ -3742,6 +3761,7 @@ fn defer_host_call_program() -> AwbcProgram {
             input_ownership: (0..program.signatures[AwbcSignatureId(1).index()].params.len())
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
+                manual_awbc_capture_origin(&format!("arcweft-core.src.awbc.product_step.tests.defer_host_call_program.input-a[{position}]")),
                         u32::try_from(position).expect("fixture input ordinal"),
                         crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
@@ -3761,6 +3781,7 @@ fn defer_host_call_program() -> AwbcProgram {
             input_ownership: (0..program.signatures[AwbcSignatureId(2).index()].params.len())
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
+                manual_awbc_capture_origin(&format!("arcweft-core.src.awbc.product_step.tests.defer_host_call_program.input-b[{position}]")),
                         u32::try_from(position).expect("fixture input ordinal"),
                         crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
@@ -5365,6 +5386,9 @@ fn direct_need_program() -> AwbcProgram {
             signature: AwbcSignatureId(0),
             type_context: None,
             input_ownership: vec![AwbcFunctionInputOwnership::parameter(
+                manual_awbc_formal_identity(
+                    "arcweft-core.src.awbc.product_step.tests.direct_need_program.input-a",
+                ),
                 0,
                 crate::plan::RuntimeFunctionParameterPassing::Affine,
             )],
@@ -5729,6 +5753,9 @@ fn await_many_product_program() -> AwbcProgram {
             signature: AwbcSignatureId(0),
             type_context: None,
             input_ownership: vec![AwbcFunctionInputOwnership::parameter(
+                manual_awbc_formal_identity(
+                    "arcweft-core.src.awbc.product_step.tests.await_many_product_program.input-a",
+                ),
                 0,
                 crate::plan::RuntimeFunctionParameterPassing::Affine,
             )],
@@ -5853,6 +5880,7 @@ fn await_many_product_program() -> AwbcProgram {
             input_ownership: (0..inputs.len())
                 .map(|position| {
                     AwbcFunctionInputOwnership::capture(
+                manual_awbc_capture_origin(&format!("arcweft-core.src.awbc.product_step.tests.await_many_product_program.input-b[{position}]")),
                         u32::try_from(position).expect("fixture input ordinal"),
                         crate::plan::RuntimeFunctionCaptureMode::Move,
                     )
@@ -5957,4 +5985,20 @@ fn constant_string(program: &mut AwbcProgram, value: &str) -> crate::awbc::schem
     );
     program.constants.push(AwbcConstant::String(string));
     constant
+}
+
+fn manual_awbc_formal_identity(declaration: &str) -> crate::plan::RuntimeFunctionParameterIdentity {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"arcweft.manual-awbc-formal.v1\0");
+    hash.update(declaration.as_bytes());
+    crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+        *hash.finalize().as_bytes(),
+    )
+}
+
+fn manual_awbc_capture_origin(declaration: &str) -> crate::plan::RuntimeLocalOrigin {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"arcweft.manual-awbc-capture.v1\0");
+    hash.update(declaration.as_bytes());
+    crate::plan::RuntimeLocalOrigin::Binding(*hash.finalize().as_bytes())
 }

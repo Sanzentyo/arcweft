@@ -364,6 +364,7 @@ impl Wire for AwbcFunction {
 
 impl Wire for crate::awbc::schema::AwbcFunctionInputOwnership {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.origin.write_wire(writer)?;
         self.source.write_wire(writer)?;
         self.transfer.write_wire(writer)?;
         self.requirement.write_wire(writer)?;
@@ -373,11 +374,65 @@ impl Wire for crate::awbc::schema::AwbcFunctionInputOwnership {
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
+            origin: crate::plan::RuntimeLocalOrigin::read_wire(reader)?,
             source: crate::plan::RuntimeFunctionInputSource::read_wire(reader)?,
             transfer: crate::plan::RuntimeFunctionInputTransfer::read_wire(reader)?,
             requirement: crate::plan::RuntimeFunctionInputOwnershipRequirement::read_wire(reader)?,
             pattern: Option::<crate::awbc::schema::AwbcPatternId>::read_wire(reader)?,
             unrestricted_bindings: Vec::read_wire(reader)?,
+        })
+    }
+}
+
+impl Wire for crate::plan::RuntimeLocalOrigin {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::Binding(bytes) => {
+                writer.write_u8(0);
+                bytes.write_wire(writer)
+            }
+            Self::Parameter(identity) => {
+                writer.write_u8(1);
+                identity.as_bytes().write_wire(writer)
+            }
+            Self::EvaluatedResult(definition) => {
+                writer.write_u8(2);
+                definition.as_bytes().write_wire(writer)
+            }
+            Self::Generated(coordinate) => {
+                writer.write_u8(3);
+                coordinate.as_bytes().write_wire(writer)
+            }
+        }
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Ok(match tag {
+            0 => Self::Binding(<[u8; 32]>::read_wire(reader)?),
+            1 => Self::Parameter(
+                crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+                    <[u8; 32]>::read_wire(reader)?,
+                ),
+            ),
+            2 => Self::EvaluatedResult(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    <[u8; 32]>::read_wire(reader)?,
+                ),
+            ),
+            3 => Self::Generated(
+                crate::plan::RuntimeGeneratedLocalOrigin::from_accepted_identity(
+                    <[u8; 32]>::read_wire(reader)?,
+                ),
+            ),
+            _ => {
+                return Err(AwbcCodecError::UnknownTag {
+                    kind: "function input origin",
+                    tag,
+                    offset,
+                });
+            }
         })
     }
 }
@@ -2587,6 +2642,94 @@ mod function_input_source_wire_tests {
     use crate::plan::{RuntimeFunctionInputSource, RuntimeFunctionParameterPassing};
 
     #[test]
+    fn mandatory_input_origins_preserve_every_domain_and_fixed_payload() {
+        use crate::plan::{
+            RuntimeFunctionCaptureMode, RuntimeFunctionDefinitionIdentity,
+            RuntimeFunctionInputTransfer, RuntimeFunctionParameterIdentity,
+            RuntimeGeneratedLocalOrigin, RuntimeLocalOrigin,
+        };
+        for (tag, origin) in [
+            (0, RuntimeLocalOrigin::Binding([0x31; 32])),
+            (
+                1,
+                RuntimeLocalOrigin::Parameter(
+                    RuntimeFunctionParameterIdentity::from_accepted_identity([0x31; 32]),
+                ),
+            ),
+            (
+                2,
+                RuntimeLocalOrigin::EvaluatedResult(
+                    RuntimeFunctionDefinitionIdentity::from_accepted_identity([0x31; 32]),
+                ),
+            ),
+            (
+                3,
+                RuntimeLocalOrigin::Generated(RuntimeGeneratedLocalOrigin::from_accepted_identity(
+                    [0x31; 32],
+                )),
+            ),
+        ] {
+            let row =
+                AwbcFunctionInputOwnership::capture(origin, 0, RuntimeFunctionCaptureMode::Move);
+            let mut writer = Writer::with_capacity(64);
+            row.write_wire(&mut writer).unwrap();
+            let bytes = writer.into_bytes();
+            assert_eq!(bytes[0], tag);
+            assert_eq!(&bytes[1..33], &[0x31; 32]);
+            let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+            assert_eq!(
+                AwbcFunctionInputOwnership::read_wire(&mut reader).unwrap(),
+                row
+            );
+            reader.finish().unwrap();
+            let mut json = serde_json::to_value(&row).unwrap();
+            assert_eq!(
+                serde_json::from_value::<AwbcFunctionInputOwnership>(json.clone()).unwrap(),
+                row
+            );
+            json.as_object_mut().unwrap().remove("origin");
+            assert!(serde_json::from_value::<AwbcFunctionInputOwnership>(json).is_err());
+            for length in 0..33 {
+                let mut reader = Reader::new(&bytes[..length], &AwbcDecodeBudget::default());
+                assert!(RuntimeLocalOrigin::read_wire(&mut reader).is_err());
+            }
+            assert!(row.source.accepts_local_origin(row.origin));
+            assert_eq!(
+                row.transfer,
+                RuntimeFunctionInputTransfer::Transferred(RuntimeFunctionCaptureMode::Move)
+            );
+        }
+        for tag in 4..=u8::MAX {
+            let bytes = [tag];
+            let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+            assert_eq!(
+                RuntimeLocalOrigin::read_wire(&mut reader).unwrap_err(),
+                AwbcCodecError::UnknownTag {
+                    kind: "function input origin",
+                    tag,
+                    offset: 0
+                }
+            );
+        }
+    }
+
+    fn declared_origin(source: RuntimeFunctionInputSource) -> crate::plan::RuntimeLocalOrigin {
+        match source {
+            RuntimeFunctionInputSource::Capture { .. } => {
+                crate::plan::RuntimeLocalOrigin::Binding([0x31; 32])
+            }
+            RuntimeFunctionInputSource::Parameter { .. }
+            | RuntimeFunctionInputSource::CapturedParameter { .. } => {
+                crate::plan::RuntimeLocalOrigin::Parameter(
+                    crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+                        [0x71; 32],
+                    ),
+                )
+            }
+        }
+    }
+
+    #[test]
     fn mandatory_transfer_operations_round_trip_and_reject_unknown_tags() {
         use crate::plan::{
             RuntimeFunctionCaptureMode as Mode, RuntimeFunctionInputTransfer as Transfer,
@@ -2606,7 +2749,7 @@ mod function_input_source_wire_tests {
             } else {
                 RuntimeFunctionInputSource::Capture { position: 0 }
             };
-            let row = AwbcFunctionInputOwnership::owned(source, transfer);
+            let row = AwbcFunctionInputOwnership::owned(declared_origin(source), source, transfer);
             let mut writer = Writer::with_capacity(32);
             row.write_wire(&mut writer).unwrap();
             let bytes = writer.into_bytes();
@@ -2667,6 +2810,7 @@ mod function_input_source_wire_tests {
         }
         for source in sources {
             let row = AwbcFunctionInputOwnership::owned(
+                declared_origin(source),
                 source,
                 match source {
                     RuntimeFunctionInputSource::Capture { .. } => {

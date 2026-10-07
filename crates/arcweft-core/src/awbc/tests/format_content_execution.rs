@@ -221,6 +221,9 @@ fn format_program(value_thunk: ValueThunk) -> AwbcProgram {
             signature: AwbcSignatureId(1),
             type_context: None,
             input_ownership: vec![AwbcFunctionInputOwnership::capture(
+                manual_awbc_capture_origin(
+                    "arcweft-core.src.awbc.tests.format_content_execution.format_program.input-a",
+                ),
                 0,
                 crate::plan::RuntimeFunctionCaptureMode::Move,
             )],
@@ -279,6 +282,9 @@ fn flow_format_attempt_program(outcome: FlowAttemptHelperOutcome) -> AwbcProgram
     let string_type = AwbcTypeId(2);
     program.signatures[2].params = vec![int_type];
     program.functions[2].input_ownership = vec![AwbcFunctionInputOwnership::capture(
+        manual_awbc_capture_origin(
+            "arcweft-core.src.awbc.tests.format_content_execution.flow_format_attempt_program.input-a",
+        ),
         0,
         crate::plan::RuntimeFunctionCaptureMode::Move,
     )];
@@ -815,10 +821,12 @@ fn project_display_program(project_success: bool) -> AwbcProgram {
         type_context: None,
         input_ownership: vec![
             AwbcFunctionInputOwnership::parameter(
+                manual_awbc_formal_identity("arcweft-core.src.awbc.tests.format_content_execution.project_display_program.input-a"),
                 0,
                 crate::plan::RuntimeFunctionParameterPassing::Value,
             ),
             AwbcFunctionInputOwnership::parameter(
+                manual_awbc_formal_identity("arcweft-core.src.awbc.tests.format_content_execution.project_display_program.input-b"),
                 1,
                 crate::plan::RuntimeFunctionParameterPassing::Value,
             ),
@@ -887,6 +895,7 @@ fn project_display_program(project_success: bool) -> AwbcProgram {
             signature: value_signature,
             type_context: None,
             input_ownership: vec![AwbcFunctionInputOwnership::capture(
+                manual_awbc_capture_origin("arcweft-core.src.awbc.tests.format_content_execution.project_display_program.input-c"),
                 0,
                 crate::plan::RuntimeFunctionCaptureMode::Move,
             )],
@@ -1180,6 +1189,7 @@ fn nested_format_program(call: NestedValueCall, value_thunk: ValueThunk) -> Awbc
         signature: AwbcSignatureId(1),
         type_context: None,
         input_ownership: vec![AwbcFunctionInputOwnership::parameter(
+                manual_awbc_formal_identity("arcweft-core.src.awbc.tests.format_content_execution.nested_format_program.input-a"),
             0,
             crate::plan::RuntimeFunctionParameterPassing::Value,
         )],
@@ -2036,4 +2046,20 @@ fn option_project_none_skips_display_method_and_invalid_locale_context() {
             color: None,
         }
     );
+}
+
+fn manual_awbc_formal_identity(declaration: &str) -> crate::plan::RuntimeFunctionParameterIdentity {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"arcweft.manual-awbc-formal.v1\0");
+    hash.update(declaration.as_bytes());
+    crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+        *hash.finalize().as_bytes(),
+    )
+}
+
+fn manual_awbc_capture_origin(declaration: &str) -> crate::plan::RuntimeLocalOrigin {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"arcweft.manual-awbc-capture.v1\0");
+    hash.update(declaration.as_bytes());
+    crate::plan::RuntimeLocalOrigin::Binding(*hash.finalize().as_bytes())
 }

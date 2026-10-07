@@ -6,6 +6,9 @@ fn canonical_or_patterns_reject_bad_arity_cycles_and_binding_inventories() {
     program.runtime_types = vec![runtime_type(1, AwbcRuntimeTypeShape::Bool)];
     program.signatures[0].params = vec![AwbcTypeId(0)];
     program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::parameter(
+        manual_awbc_formal_identity(
+            "arcweft-core.src.awbc.tests.or_patterns.canonical_or_patterns_reject_bad_arity_cycles_and_binding_inventories.input-a",
+        ),
         0,
         crate::plan::RuntimeFunctionParameterPassing::Value,
     )];
@@ -73,4 +76,13 @@ fn canonical_or_patterns_reject_bad_arity_cycles_and_binding_inventories() {
         Err(AwbcVerifyError::InvalidInvariant { message, .. })
             if message == "alternative binding inventories differ"
     ));
+}
+
+fn manual_awbc_formal_identity(declaration: &str) -> crate::plan::RuntimeFunctionParameterIdentity {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"arcweft.manual-awbc-formal.v1\0");
+    hash.update(declaration.as_bytes());
+    crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+        *hash.finalize().as_bytes(),
+    )
 }

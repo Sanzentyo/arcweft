@@ -2929,6 +2929,9 @@ fn pure_fixture_awbc(
         type_context: None,
         input_ownership: if has_parameter {
             vec![AwbcFunctionInputOwnership::parameter(
+                manual_awbc_formal_identity(
+                    "arcweft-runtime-driver.tests.view_runtime.pure_fixture_awbc.input-a",
+                ),
                 0,
                 arcweft_core::plan::RuntimeFunctionParameterPassing::Value,
             )]
@@ -3127,6 +3130,7 @@ fn repeat_fixture_awbc(
             input_ownership: (0..inputs.len())
                 .map(|position| {
                     AwbcFunctionInputOwnership::parameter(
+                manual_awbc_formal_identity(&format!("arcweft-runtime-driver.tests.view_runtime.repeat_fixture_awbc.input-a[{position}]")),
                         u32::try_from(position).expect("fixture input ordinal"),
                         arcweft_core::plan::RuntimeFunctionParameterPassing::Value,
                     )
@@ -3180,5 +3184,16 @@ fn repeat_fixture_awbc(
             body_span: 1,
         },
         Arc::new(program),
+    )
+}
+
+fn manual_awbc_formal_identity(
+    declaration: &str,
+) -> arcweft_core::plan::RuntimeFunctionParameterIdentity {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"arcweft.manual-awbc-formal.v1\0");
+    hash.update(declaration.as_bytes());
+    arcweft_core::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+        *hash.finalize().as_bytes(),
     )
 }

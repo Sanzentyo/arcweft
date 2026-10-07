@@ -1064,9 +1064,15 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                         kind: AwbcFunctionKind::Ordinary,
                         signature,
                         type_context: None,
-                        input_ownership: (0..inputs.len())
-                            .map(|position| {
+                        input_ownership: inputs
+                            .iter()
+                            .enumerate()
+                            .map(|(position, local)| {
                                 AwbcFunctionInputOwnership::capture(
+                                    plan.local_declarations()
+                                        .get(*local)
+                                        .expect("admitted TaskRequest capture declaration")
+                                        .origin(),
                                     table_index(position),
                                     arcweft_core::plan::RuntimeFunctionCaptureMode::Copy,
                                 )
@@ -1202,8 +1208,12 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                         input_ownership: captures
                             .iter()
                             .enumerate()
-                            .map(|(position, (_, mode))| {
+                            .map(|(position, (local, mode))| {
                                 AwbcFunctionInputOwnership::capture(
+                                    plan.local_declarations()
+                                        .get(*local)
+                                        .expect("admitted formatter capture declaration")
+                                        .origin(),
                                     table_index(position),
                                     match mode {
                                         RuntimeLocalReadMode::Copy => {

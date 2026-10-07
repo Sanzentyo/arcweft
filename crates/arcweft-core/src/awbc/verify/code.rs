@@ -534,6 +534,12 @@ fn validate_function_input_ownership(
                 });
             }
         }
+        if !row.source.accepts_local_origin(row.origin) {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at: at.clone(),
+                message: format!("input {position} origin does not match its source role"),
+            });
+        }
         let mut required = BTreeSet::new();
         for target in &row.unrestricted_bindings {
             if !required.insert(*target) {

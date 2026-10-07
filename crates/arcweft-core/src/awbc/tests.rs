@@ -264,6 +264,9 @@ fn format_content_program() -> AwbcProgram {
         signature: AwbcSignatureId(1),
         type_context: None,
         input_ownership: vec![AwbcFunctionInputOwnership::capture(
+            manual_awbc_capture_origin(
+                "arcweft-core.src.awbc.tests.format_content_program.input-a",
+            ),
             0,
             crate::plan::RuntimeFunctionCaptureMode::Move,
         )],
@@ -1130,6 +1133,9 @@ fn sequence_next_moves_affine_item_and_initializes_only_nonempty_edge() {
     ];
     program.signatures[0].params = vec![sequence];
     program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::parameter(
+        manual_awbc_formal_identity(
+            "arcweft-core.src.awbc.tests.sequence_next_moves_affine_item_and_initializes_only_nonempty_edge.input-a",
+        ),
         0,
         crate::plan::RuntimeFunctionParameterPassing::Affine,
     )];
@@ -2200,6 +2206,9 @@ fn project_call_retained_program() -> AwbcProgram {
         type_context: None,
         input_ownership: vec![
             AwbcFunctionInputOwnership::owned(
+                crate::plan::RuntimeLocalOrigin::Parameter(manual_awbc_formal_identity(
+                    "arcweft-core.src.awbc.tests.project_call_retained_program.input-a",
+                )),
                 crate::plan::RuntimeFunctionInputSource::CapturedParameter {
                     position: 0,
                     passing: crate::plan::RuntimeFunctionParameterPassing::Value,
@@ -2207,6 +2216,9 @@ fn project_call_retained_program() -> AwbcProgram {
                 crate::plan::RuntimeFunctionInputTransfer::Formal,
             ),
             AwbcFunctionInputOwnership::parameter(
+                manual_awbc_formal_identity(
+                    "arcweft-core.src.awbc.tests.project_call_retained_program.input-b",
+                ),
                 0,
                 crate::plan::RuntimeFunctionParameterPassing::Value,
             ),
@@ -2546,6 +2558,9 @@ fn project_call_default_program() -> AwbcProgram {
             signature: AwbcSignatureId(2),
             type_context: None,
             input_ownership: vec![AwbcFunctionInputOwnership::owned(
+                crate::plan::RuntimeLocalOrigin::Parameter(manual_awbc_formal_identity(
+                    "arcweft-core.src.awbc.tests.project_call_default_program.input-a",
+                )),
                 crate::plan::RuntimeFunctionInputSource::CapturedParameter {
                     position: 0,
                     passing: crate::plan::RuntimeFunctionParameterPassing::Value,
@@ -4876,6 +4891,9 @@ fn verifier_rejects_duplicate_binding_targets_across_pattern_rest() {
     ];
     program.signatures[0].params = vec![AwbcTypeId(0)];
     program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::parameter(
+        manual_awbc_formal_identity(
+            "arcweft-core.src.awbc.tests.verifier_rejects_duplicate_binding_targets_across_pattern_rest.input-a",
+        ),
         0,
         crate::plan::RuntimeFunctionParameterPassing::Affine,
     )];
@@ -4936,6 +4954,9 @@ fn verifier_tracks_dynamic_record_children_before_the_rest_binding() {
     program.runtime_types = vec![runtime_type(1, AwbcRuntimeTypeShape::Dynamic)];
     program.signatures[0].params = vec![AwbcTypeId(0)];
     program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::parameter(
+        manual_awbc_formal_identity(
+            "arcweft-core.src.awbc.tests.verifier_tracks_dynamic_record_children_before_the_rest_binding.input-a",
+        ),
         0,
         crate::plan::RuntimeFunctionParameterPassing::Affine,
     )];
@@ -5023,6 +5044,9 @@ fn verifier_rejects_incorrect_agent_field_destination_type() {
     ];
     program.signatures[0].params = vec![AwbcTypeId(0)];
     program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::parameter(
+        manual_awbc_formal_identity(
+            "arcweft-core.src.awbc.tests.verifier_rejects_incorrect_agent_field_destination_type.input-a",
+        ),
         0,
         crate::plan::RuntimeFunctionParameterPassing::Affine,
     )];
@@ -5097,7 +5121,13 @@ fn optional_string_field_program(
         runtime_type(5, AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(1)])),
     ];
     program.signatures[0].params = vec![AwbcTypeId(0)];
-    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::parameter(0, passing)];
+    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::parameter(
+        manual_awbc_formal_identity(
+            "arcweft-core.src.awbc.tests.optional_string_field_program.input-a",
+        ),
+        0,
+        passing,
+    )];
     program.frame_layouts[0] = AwbcFrameLayout {
         scopes: Vec::new(),
         slots: vec![
@@ -5208,10 +5238,16 @@ fn verifier_rejects_agent_operands_that_can_only_fail_at_runtime() {
     viewport.signatures[0].params = vec![AwbcTypeId(0), AwbcTypeId(0)];
     viewport.functions[0].input_ownership = vec![
         AwbcFunctionInputOwnership::parameter(
+            manual_awbc_formal_identity(
+                "arcweft-core.src.awbc.tests.verifier_rejects_agent_operands_that_can_only_fail_at_runtime.input-a",
+            ),
             0,
             crate::plan::RuntimeFunctionParameterPassing::Affine,
         ),
         AwbcFunctionInputOwnership::parameter(
+            manual_awbc_formal_identity(
+                "arcweft-core.src.awbc.tests.verifier_rejects_agent_operands_that_can_only_fail_at_runtime.input-b",
+            ),
             1,
             crate::plan::RuntimeFunctionParameterPassing::Affine,
         ),
@@ -5273,6 +5309,9 @@ fn verifier_rejects_agent_operands_that_can_only_fail_at_runtime() {
     ];
     all.signatures[0].params = vec![AwbcTypeId(1)];
     all.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::parameter(
+        manual_awbc_formal_identity(
+            "arcweft-core.src.awbc.tests.verifier_rejects_agent_operands_that_can_only_fail_at_runtime.input-c",
+        ),
         0,
         crate::plan::RuntimeFunctionParameterPassing::Value,
     )];
@@ -6294,6 +6333,7 @@ fn reduction_unchanged_materializes_one_reference_layer_without_widening_other_o
         signature: AwbcSignatureId(1),
         type_context: None,
         input_ownership: vec![AwbcFunctionInputOwnership::parameter(
+                manual_awbc_formal_identity("arcweft-core.src.awbc.tests.reduction_unchanged_materializes_one_reference_layer_without_widening_other_ops.input-a"),
             0,
             crate::plan::RuntimeFunctionParameterPassing::Value,
         )],
@@ -6431,6 +6471,9 @@ fn stateful_entry_with_function_site_callables() -> AwbcProgram {
     ];
     program.signatures[0].params = vec![AwbcTypeId(0)];
     program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::parameter(
+        manual_awbc_formal_identity(
+            "arcweft-core.src.awbc.tests.stateful_entry_with_function_site_callables.input-a",
+        ),
         0,
         crate::plan::RuntimeFunctionParameterPassing::Value,
     )];
@@ -6502,10 +6545,12 @@ fn stateful_entry_with_function_site_callables() -> AwbcProgram {
             type_context: None,
             input_ownership: vec![
                 AwbcFunctionInputOwnership::parameter(
+                manual_awbc_formal_identity("arcweft-core.src.awbc.tests.stateful_entry_with_function_site_callables.input-b"),
                     0,
                     crate::plan::RuntimeFunctionParameterPassing::Affine,
                 ),
                 AwbcFunctionInputOwnership::parameter(
+                manual_awbc_formal_identity("arcweft-core.src.awbc.tests.stateful_entry_with_function_site_callables.input-c"),
                     1,
                     crate::plan::RuntimeFunctionParameterPassing::Value,
                 ),
@@ -7359,6 +7404,9 @@ fn callable_instructions_capture_and_apply_program_owned_state() {
                 signature: AwbcSignatureId(1),
                 type_context: None,
                 input_ownership: vec![AwbcFunctionInputOwnership::capture(
+                    manual_awbc_capture_origin(
+                        "arcweft-core.src.awbc.tests.callable_instructions_capture_and_apply_program_owned_state.input-a",
+                    ),
                     0,
                     crate::plan::RuntimeFunctionCaptureMode::Move,
                 )],
@@ -7780,10 +7828,16 @@ fn expression_apply_keeps_partial_application_as_a_value_operation() {
     program.signatures[1].params = vec![AwbcTypeId(0), AwbcTypeId(0)];
     program.functions[1].input_ownership = vec![
         AwbcFunctionInputOwnership::parameter(
+            manual_awbc_formal_identity(
+                "arcweft-core.src.awbc.tests.expression_apply_keeps_partial_application_as_a_value_operation.input-a",
+            ),
             0,
             crate::plan::RuntimeFunctionParameterPassing::Value,
         ),
         AwbcFunctionInputOwnership::parameter(
+            manual_awbc_formal_identity(
+                "arcweft-core.src.awbc.tests.expression_apply_keeps_partial_application_as_a_value_operation.input-b",
+            ),
             1,
             crate::plan::RuntimeFunctionParameterPassing::Value,
         ),
@@ -8121,6 +8175,37 @@ fn nested_return_restores_caller_resume_and_destination() {
 }
 
 #[test]
+fn verifier_rejects_nonformal_origins_for_supplied_and_captured_formals() {
+    use crate::plan::{
+        RuntimeFunctionDefinitionIdentity, RuntimeGeneratedLocalOrigin, RuntimeLocalOrigin,
+    };
+    let base = project_call_retained_program();
+    base.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .unwrap();
+    for ordinal in 0..2 {
+        for origin in [
+            RuntimeLocalOrigin::Binding([0x31; 32]),
+            RuntimeLocalOrigin::EvaluatedResult(
+                RuntimeFunctionDefinitionIdentity::from_accepted_identity([0x31; 32]),
+            ),
+            RuntimeLocalOrigin::Generated(RuntimeGeneratedLocalOrigin::from_accepted_identity(
+                [0x31; 32],
+            )),
+        ] {
+            let mut program = base.clone();
+            program.functions[1].input_ownership[ordinal].origin = origin;
+            let error = program
+                .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+                .unwrap_err();
+            assert!(
+                matches!(error, AwbcVerifyError::InvalidInvariant { ref message, .. } if message.contains("origin does not match its source role")),
+                "{error:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn verifier_rejects_noncanonical_function_input_sources_before_execution() {
     use crate::plan::{RuntimeFunctionInputSource, RuntimeFunctionParameterPassing};
     let base = project_call_retained_program();
@@ -8207,4 +8292,20 @@ fn verifier_rejects_function_input_transfer_source_mismatch_before_execution() {
             matches!(error, AwbcVerifyError::InvalidInvariant { ref message, .. } if message.contains("transfer does not match its source role"))
         );
     }
+}
+
+fn manual_awbc_formal_identity(declaration: &str) -> crate::plan::RuntimeFunctionParameterIdentity {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"arcweft.manual-awbc-formal.v1\0");
+    hash.update(declaration.as_bytes());
+    crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+        *hash.finalize().as_bytes(),
+    )
+}
+
+fn manual_awbc_capture_origin(declaration: &str) -> crate::plan::RuntimeLocalOrigin {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"arcweft.manual-awbc-capture.v1\0");
+    hash.update(declaration.as_bytes());
+    crate::plan::RuntimeLocalOrigin::Binding(*hash.finalize().as_bytes())
 }

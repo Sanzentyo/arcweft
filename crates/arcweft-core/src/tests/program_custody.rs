@@ -348,6 +348,9 @@ pub(crate) fn awbc_handle_program(
         signature: AwbcSignatureId(0),
         type_context: None,
         input_ownership: vec![AwbcFunctionInputOwnership::parameter(
+            manual_awbc_formal_identity(
+                "arcweft-core.src.tests.program_custody.awbc_handle_program.input-a",
+            ),
             0,
             crate::plan::RuntimeFunctionParameterPassing::Affine,
         )],
@@ -436,6 +439,9 @@ pub(crate) fn awbc_prefixed_handle_program(
     program.functions[0].input_ownership.insert(
         0,
         AwbcFunctionInputOwnership::parameter(
+            manual_awbc_formal_identity(
+                "arcweft-core.src.tests.program_custody.awbc_prefixed_handle_program.input-a",
+            ),
             0,
             crate::plan::RuntimeFunctionParameterPassing::Value,
         ),
@@ -595,4 +601,13 @@ fn manual_local_origin(declaration: &str) -> crate::plan::RuntimeLocalOrigin {
     identity.update(b"arcweft.manual-fixture-binding.v1\0");
     identity.update(declaration.as_bytes());
     crate::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
+}
+
+fn manual_awbc_formal_identity(declaration: &str) -> crate::plan::RuntimeFunctionParameterIdentity {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"arcweft.manual-awbc-formal.v1\0");
+    hash.update(declaration.as_bytes());
+    crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+        *hash.finalize().as_bytes(),
+    )
 }

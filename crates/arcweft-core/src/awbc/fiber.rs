@@ -6390,6 +6390,9 @@ mod tests {
         program.functions[0]
             .input_ownership
             .push(AwbcFunctionInputOwnership::parameter(
+                manual_awbc_formal_identity(
+                    "arcweft-core.src.awbc.fiber.one_unit_parameter_entry_program.input-a",
+                ),
                 0,
                 crate::plan::RuntimeFunctionParameterPassing::Value,
             ));
@@ -6449,6 +6452,9 @@ mod tests {
                 signature: AwbcSignatureId(signature_id),
                 type_context: None,
                 input_ownership: vec![AwbcFunctionInputOwnership::capture(
+                    manual_awbc_capture_origin(
+                        "arcweft-core.src.awbc.fiber.format_entry_program.input-a",
+                    ),
                     0,
                     crate::plan::RuntimeFunctionCaptureMode::Move,
                 )],
@@ -7209,4 +7215,22 @@ mod tests {
             Err(FiberStateError::InvalidRuntimeValue { .. })
         ));
     }
+}
+
+#[cfg(test)]
+fn manual_awbc_formal_identity(declaration: &str) -> crate::plan::RuntimeFunctionParameterIdentity {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"arcweft.manual-awbc-formal.v1\0");
+    hash.update(declaration.as_bytes());
+    crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+        *hash.finalize().as_bytes(),
+    )
+}
+
+#[cfg(test)]
+fn manual_awbc_capture_origin(declaration: &str) -> crate::plan::RuntimeLocalOrigin {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"arcweft.manual-awbc-capture.v1\0");
+    hash.update(declaration.as_bytes());
+    crate::plan::RuntimeLocalOrigin::Binding(*hash.finalize().as_bytes())
 }

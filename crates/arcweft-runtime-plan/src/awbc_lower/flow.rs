@@ -434,6 +434,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     .enumerate()
                     .map(|(position, input)| {
                         AwbcFunctionInputOwnership::parameter(
+                            input.identity(),
                             table_index(position),
                             input.passing(),
                         )
@@ -888,9 +889,19 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 kind,
                 signature,
                 type_context: None,
-                input_ownership: (0..captures.len())
-                    .map(|position| {
-                        AwbcFunctionInputOwnership::capture(table_index(position), capture_mode)
+                input_ownership: captures
+                    .iter()
+                    .enumerate()
+                    .map(|(position, local)| {
+                        AwbcFunctionInputOwnership::capture(
+                            self.plan
+                                .local_declarations()
+                                .get(*local)
+                                .expect("admitted Line capture declaration")
+                                .origin(),
+                            table_index(position),
+                            capture_mode,
+                        )
                     })
                     .collect(),
                 frame_layout: layout,
@@ -1070,7 +1081,11 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 .iter()
                 .enumerate()
                 .map(|(position, input)| {
-                    AwbcFunctionInputOwnership::parameter(table_index(position), input.passing)
+                    AwbcFunctionInputOwnership::parameter(
+                        input.identity,
+                        table_index(position),
+                        input.passing,
+                    )
                 })
                 .collect(),
             _ => {

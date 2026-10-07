@@ -983,6 +983,35 @@ fn assert_awbc_capture_transfer(
         })
         .map(|input| input.transfer)
         .collect::<Vec<_>>();
+
+    let source_origins = runtime
+        .plan
+        .function_sites()
+        .iter()
+        .filter(|site| site.role() == role)
+        .flat_map(|site| site.inputs())
+        .filter(|input| {
+            matches!(
+                input.source(),
+                arcweft_core::plan::RuntimeFunctionInputSource::Capture { .. }
+            )
+        })
+        .map(|input| arcweft_core::plan::RuntimeLocalOrigin::from(input.origin()))
+        .collect::<Vec<_>>();
+    let retained_origins = decoded
+        .functions
+        .iter()
+        .filter(|function| function.semantic_role == role)
+        .flat_map(|function| &function.input_ownership)
+        .filter(|input| {
+            matches!(
+                input.source,
+                arcweft_core::plan::RuntimeFunctionInputSource::Capture { .. }
+            )
+        })
+        .map(|input| input.origin)
+        .collect::<Vec<_>>();
+    assert_eq!(retained_origins, source_origins);
     assert_eq!(transfers, vec![expected]);
 }
 

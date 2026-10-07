@@ -206,6 +206,9 @@ fn partial_parameter_storage_is_borrowed_and_transferred_without_losing_its_chil
     program.frame_layouts[0].slots[0].role = AwbcFrameSlotRole::Parameter;
     program.signatures[0].params = vec![AwbcTypeId(1)];
     program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::parameter(
+        manual_awbc_formal_identity(
+            "arcweft-core.src.awbc.tests.local_assignment.partial_parameter_storage_is_borrowed_and_transferred_without_losing_its_children.input-a",
+        ),
         0,
         crate::plan::RuntimeFunctionParameterPassing::Affine,
     )];
@@ -761,14 +764,23 @@ fn sequence_output_cannot_overwrite_a_conditionally_initialized_slot() {
         program.signatures[0].params = vec![AwbcTypeId(2), AwbcTypeId(3), AwbcTypeId(1)];
         program.functions[0].input_ownership = vec![
             AwbcFunctionInputOwnership::parameter(
+                manual_awbc_formal_identity(
+                    "arcweft-core.src.awbc.tests.local_assignment.sequence_output_cannot_overwrite_a_conditionally_initialized_slot.input-a",
+                ),
                 0,
                 crate::plan::RuntimeFunctionParameterPassing::Affine,
             ),
             AwbcFunctionInputOwnership::parameter(
+                manual_awbc_formal_identity(
+                    "arcweft-core.src.awbc.tests.local_assignment.sequence_output_cannot_overwrite_a_conditionally_initialized_slot.input-b",
+                ),
                 1,
                 crate::plan::RuntimeFunctionParameterPassing::Value,
             ),
             AwbcFunctionInputOwnership::parameter(
+                manual_awbc_formal_identity(
+                    "arcweft-core.src.awbc.tests.local_assignment.sequence_output_cannot_overwrite_a_conditionally_initialized_slot.input-c",
+                ),
                 2,
                 crate::plan::RuntimeFunctionParameterPassing::Affine,
             ),
@@ -866,4 +878,13 @@ fn sequence_output_cannot_overwrite_a_conditionally_initialized_slot() {
             );
         }
     }
+}
+
+fn manual_awbc_formal_identity(declaration: &str) -> crate::plan::RuntimeFunctionParameterIdentity {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"arcweft.manual-awbc-formal.v1\0");
+    hash.update(declaration.as_bytes());
+    crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
+        *hash.finalize().as_bytes(),
+    )
 }

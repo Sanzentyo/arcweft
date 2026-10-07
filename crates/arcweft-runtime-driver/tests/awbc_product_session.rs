@@ -1971,6 +1971,9 @@ fn minimal_awbc_program(entry: &str) -> AwbcProgram {
                 type_context: None,
                 input_ownership: vec![
                     arcweft_core::awbc::schema::AwbcFunctionInputOwnership::capture(
+                        manual_awbc_capture_origin(
+                            "arcweft-runtime-driver.tests.awbc_product_session.minimal_awbc_program.input-a",
+                        ),
                         0,
                         arcweft_core::plan::RuntimeFunctionCaptureMode::Move,
                     ),
@@ -2044,4 +2047,11 @@ fn manual_local_origin(declaration: &str) -> arcweft_core::plan::RuntimeLocalOri
     identity.update(b"arcweft.manual-fixture-binding.v1\0");
     identity.update(declaration.as_bytes());
     arcweft_core::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
+}
+
+fn manual_awbc_capture_origin(declaration: &str) -> arcweft_core::plan::RuntimeLocalOrigin {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"arcweft.manual-awbc-capture.v1\0");
+    hash.update(declaration.as_bytes());
+    arcweft_core::plan::RuntimeLocalOrigin::Binding(*hash.finalize().as_bytes())
 }
