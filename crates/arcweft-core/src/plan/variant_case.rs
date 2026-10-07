@@ -56,6 +56,18 @@ impl RuntimePlan {
         ty: RuntimePlanTypeId,
         ordinal: u32,
     ) -> Result<RuntimePlanVariantCase<'_>, RuntimePlanVariantCaseError> {
+        self.inventory.variant_case(ty, ordinal)
+    }
+}
+
+impl super::RuntimePlanInventory {
+    /// Resolves names, value identity and payload type for every variant family.
+    /// Callers retain plan-local payload IDs instead of reconstructing checked types.
+    pub fn variant_case(
+        &self,
+        ty: RuntimePlanTypeId,
+        ordinal: u32,
+    ) -> Result<RuntimePlanVariantCase<'_>, RuntimePlanVariantCaseError> {
         self.type_table()
             .get(ty)
             .ok_or(RuntimePlanVariantCaseError::UnknownType { ty })?

@@ -1,7 +1,7 @@
 //! Private typed context for actual body semantic transcripts.
 //! No public seal proof is minted by this preparation owner.
 
-use super::RuntimePlan;
+use super::RuntimePlanInventory;
 
 mod callable;
 mod executable_metadata;
@@ -59,11 +59,11 @@ impl From<TaskSemanticEncodingError> for RuntimeBodySemanticError {
 
 /// Borrows the sole admitted tables; arena IDs are resolved before writing.
 pub(crate) struct RuntimeBodySemanticContext<'a> {
-    plan: &'a RuntimePlan,
+    plan: &'a RuntimePlanInventory,
 }
 
 impl<'a> RuntimeBodySemanticContext<'a> {
-    pub(crate) const fn new(plan: &'a RuntimePlan) -> Self {
+    pub(crate) const fn new(plan: &'a RuntimePlanInventory) -> Self {
         Self { plan }
     }
 

@@ -661,6 +661,26 @@ impl RuntimeCallableSpecializationContext for super::RuntimePlan {
     type Function = crate::runtime_id::RuntimeFunctionSiteId;
 
     fn type_scope(&self, ty: Self::Type) -> Option<&RuntimeTypeScope> {
+        self.inventory.type_scope(ty)
+    }
+
+    fn type_projection(&self, ty: Self::Type) -> Option<RuntimePlanTypeProjection<Self::Type>> {
+        self.inventory.type_projection(ty)
+    }
+
+    fn callable_state(
+        &self,
+        id: RuntimeCallableStateId,
+    ) -> Option<&RuntimeCallableStateDefinition<Self::Type, Self::Function>> {
+        self.inventory.callable_state(id)
+    }
+}
+
+impl RuntimeCallableSpecializationContext for super::RuntimePlanInventory {
+    type Type = crate::runtime_id::RuntimePlanTypeId;
+    type Function = crate::runtime_id::RuntimeFunctionSiteId;
+
+    fn type_scope(&self, ty: Self::Type) -> Option<&RuntimeTypeScope> {
         self.type_table()
             .get(ty)
             .map(super::RuntimePlanTypeDeclaration::scope)

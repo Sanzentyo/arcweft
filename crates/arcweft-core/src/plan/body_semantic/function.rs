@@ -15,7 +15,7 @@ pub(crate) struct ProducerFunctionSemanticDigest([u8; 32]);
 
 pub(crate) struct ProducerFunctionSemantic<'a> {
     digest: ProducerFunctionSemanticDigest,
-    plan: &'a super::RuntimePlan,
+    plan: &'a super::RuntimePlanInventory,
     function: &'a plan::RuntimeFunctionSite,
     endpoints: Box<[(EndpointKind, blake3::Hash, &'a plan::FlowOp)]>,
 }
@@ -23,7 +23,7 @@ pub(crate) struct ProducerFunctionSemantic<'a> {
 #[derive(Clone, Copy)]
 pub(crate) struct ProducerEndpoint<'a> {
     digest: ProducerFunctionSemanticDigest,
-    plan: &'a super::RuntimePlan,
+    plan: &'a super::RuntimePlanInventory,
     function: &'a plan::RuntimeFunctionSite,
     operation: &'a plan::FlowOp,
     ordinal: u32,
@@ -40,7 +40,7 @@ impl<'a> ProducerEndpoint<'a> {
     pub(crate) const fn kind(&self) -> EndpointKind {
         self.kind
     }
-    pub(crate) fn belongs_to(&self, plan: &super::RuntimePlan) -> bool {
+    pub(crate) fn belongs_to(&self, plan: &super::RuntimePlanInventory) -> bool {
         std::ptr::eq(self.plan, plan)
     }
     pub(crate) fn host_target(&self) -> Option<&'a plan::RuntimeHostCallTarget> {

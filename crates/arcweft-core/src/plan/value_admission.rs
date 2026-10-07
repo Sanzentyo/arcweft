@@ -1,6 +1,6 @@
 //! Value admission against the existing plan tables, including recursive domains.
 //!
-//! The building and sealed phases borrow the same authorities. No checked-type
+//! The building and complete-inventory phases borrow the same authorities. No checked-type
 //! tree or additional nominal catalog is materialized for executable acceptance.
 
 use thiserror::Error;
@@ -42,6 +42,41 @@ pub enum RuntimePlanValueAdmissionError {
 }
 
 impl RuntimePlan {
+    /// Validates a live value against this plan's exact type/domain tables,
+    /// including recursive nominal descendants, without persistence encoding.
+    pub fn validate_live_value(
+        &self,
+        ty: RuntimePlanTypeId,
+        value: &RuntimeValue,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<(), RuntimePlanValueAdmissionError> {
+        self.inventory.validate_live_value(ty, value, limits)
+    }
+
+    /// Validates a decoded private snapshot candidate before publication.
+    pub fn validate_snapshot_value(
+        &self,
+        ty: RuntimePlanTypeId,
+        value: &RuntimeValue,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<(), RuntimePlanValueAdmissionError> {
+        self.inventory.validate_snapshot_value(ty, value, limits)
+    }
+
+    /// Validates the complete finite value through the plan's type and nominal
+    /// domain tables, and hashes its canonical persistent representation.
+    /// Recursive type edges are followed only when the value has a descendant.
+    pub fn accepts_value(
+        &self,
+        ty: RuntimePlanTypeId,
+        value: &RuntimeValue,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<RuntimeValueDigest, RuntimePlanValueAdmissionError> {
+        self.inventory.accepts_value(ty, value, limits)
+    }
+}
+
+impl super::RuntimePlanInventory {
     pub(crate) fn validate_value_relation<
         C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>,
     >(
@@ -55,7 +90,7 @@ impl RuntimePlan {
             .ok_or(RuntimePlanValueAdmissionError::UnknownType { ty })?;
         let limits = RuntimeSchemaLimits::engine_default();
         let mut validation = PlanValueValidation {
-            authority: PlanValueAuthority::Sealed(self),
+            authority: PlanValueAuthority::Inventory(self),
             work: ValidationWork::new(limits),
             context,
         };
@@ -92,7 +127,7 @@ impl RuntimePlan {
             binding,
             |context| {
                 let mut validation = PlanValueValidation {
-                    authority: PlanValueAuthority::Sealed(self),
+                    authority: PlanValueAuthority::Inventory(self),
                     work: ValidationWork::new(limits),
                     context,
                 };
@@ -138,7 +173,7 @@ impl RuntimePlan {
             binding,
             |context| {
                 let mut validation = PlanValueValidation {
-                    authority: PlanValueAuthority::Sealed(self),
+                    authority: PlanValueAuthority::Inventory(self),
                     work: ValidationWork::new(limits),
                     context,
                 };
@@ -173,7 +208,7 @@ impl RuntimePlan {
         limits: RuntimeSchemaLimits,
     ) -> Result<RuntimeValueDigest, RuntimePlanValueAdmissionError> {
         let mut validation =
-            PlanValueValidation::new(PlanValueAuthority::Sealed(self), ty, limits)?;
+            PlanValueValidation::new(PlanValueAuthority::Inventory(self), ty, limits)?;
         value_encoding::validate_and_hash(value, limits, &mut validation, Expected::Type(ty))
             .map_err(|source| RuntimePlanValueAdmissionError::Value { ty, source })
     }
@@ -181,7 +216,7 @@ impl RuntimePlan {
 
 /// Borrowed phase context; every lookup uses the original admitted tables.
 pub(super) enum PlanValueAuthority<'a> {
-    Sealed(&'a RuntimePlan),
+    Inventory(&'a super::RuntimePlanInventory),
     Building {
         types: &'a RuntimePlanTypeTableBuilder,
         records: &'a RuntimeNominalRecordDomainTableBuilder,
@@ -192,7 +227,7 @@ pub(super) enum PlanValueAuthority<'a> {
 impl<'a> PlanValueAuthority<'a> {
     fn get(&self, ty: RuntimePlanTypeId) -> Option<&'a RuntimePlanTypeDeclaration> {
         match self {
-            Self::Sealed(plan) => plan.type_table().get(ty),
+            Self::Inventory(plan) => plan.type_table().get(ty),
             Self::Building { types, .. } => types.get(ty),
         }
     }
@@ -206,21 +241,21 @@ impl<'a> PlanValueAuthority<'a> {
         semantic: crate::pattern::RuntimeSemanticTypeId,
     ) -> Option<RuntimePlanTypeId> {
         match self {
-            Self::Sealed(plan) => plan.type_table().id_for_semantic(semantic),
+            Self::Inventory(plan) => plan.type_table().id_for_semantic(semantic),
             Self::Building { types, .. } => types.id_for_semantic(semantic),
         }
     }
 
     fn record(&self, ty: RuntimePlanTypeId) -> Option<&'a RuntimeNominalRecordDomain> {
         match self {
-            Self::Sealed(plan) => plan.nominal_record_domains().get(ty),
+            Self::Inventory(plan) => plan.nominal_record_domains().get(ty),
             Self::Building { records, .. } => records.get(ty),
         }
     }
 
     fn variant(&self, ty: RuntimePlanTypeId) -> Option<&'a RuntimeVariantDomain> {
         match self {
-            Self::Sealed(plan) => plan.variant_domains().get(ty),
+            Self::Inventory(plan) => plan.variant_domains().get(ty),
             Self::Building { variants, .. } => variants.get(ty),
         }
     }
@@ -618,10 +653,10 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
                 value,
             ),
             (Type::Function { .. }, View::RuntimeOnly(RuntimeValue::Callable(callable))) => {
-                let PlanValueAuthority::Sealed(plan) = &self.authority else {
+                let PlanValueAuthority::Inventory(plan) = &self.authority else {
                     return Err(Self::mismatch(value));
                 };
-                if !matches!(callable.owner(), crate::task::RuntimeProgramOwner::Plan(owner) if std::ptr::eq(owner.as_ref(), *plan))
+                if !matches!(callable.owner(), crate::task::RuntimeProgramOwner::Plan(owner) if std::ptr::eq(&owner.inventory, *plan))
                     || callable.validate_retained().is_err()
                 {
                     return Err(Self::mismatch(value));
@@ -647,7 +682,7 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
             (
                 Type::Agent(RuntimeAgentTypeProjection::DataShape(_)),
                 View::Agent(crate::value::RuntimeAgentValue::DataShape(shape)),
-            ) if matches!(&self.authority, PlanValueAuthority::Sealed(plan) if shape.matches_plan(plan, declaration.semantic_identity())) => {
+            ) if matches!(&self.authority, PlanValueAuthority::Inventory(plan) if shape.matches_plan(plan, declaration.semantic_identity())) => {
                 Ok(Children::None)
             }
             (Type::Agent(expected), View::Agent(actual))

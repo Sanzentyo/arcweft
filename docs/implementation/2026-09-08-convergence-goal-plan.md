@@ -8821,3 +8821,127 @@ ApplyFx scalar programs remain their explicit presentation-owned boundary.
 Next continue actual candidate Table14/E15/common atomic seal/all14 protected
 Cut5 steps and every remaining View/nominal/scheduler/ownership/CLI277/Tier2
 acceptance from the original goal. No new advice agent or repeated Astra.
+
+
+### 2026-10-08 — shared RuntimePlan inventory preparation in progress
+
+Inspected existing main `ded6d68b1ece5b38e0ab401e0f07bb8c8da9aff3`; observed18
+in-scope Rust paths dirty during migration (17 tracked + new inventory owner).
+RuntimePlan previously had to exist before complete structural verification
+or body semantic transcript borrowing. The existing physical tables now belong
+to RuntimePlanInventory; no duplicate projection/table. The aggregate builder
+privately prepares it, structural verification borrows it, and RuntimePlan
+wraps the same storage only after acceptance. RuntimeProgramTypes, function/
+callable relations, value admission and body semantic context share this owner.
+Immutable Deref retains read access; no public constructor or DerefMut. Public
+getter constness retained. DataShape/callable admission compares the exact
+inventory address, preserving executable-owner exclusion rather than equality.
+Artifact binding and Content proof publication remain RuntimePlan duties.
+This is Cut4 prerequisite preparation, NOT complete Table14/E15/sealer or
+protected Cut5 task-schema publication. No new public task row, raw digest
+constructor, codec, marker, Cargo edge or compatibility reader. Added tests for
+private preparation/body consistency and exact-owner DataShape admission.
+Initial compile migration failures (imports/delegates/internal tamper fixtures/
+phase renames) were corrected. Workspace all-target/all-feature locked check
+75549 active; no Rust edit while running. Core transitive-rdeps50, exact test
+inventory/execution, CLI277 comparison, workspace Clippy/fmt/structure/owner
+review/diff/commit/normal push pending. Full goal ACTIVE/INCOMPLETE.
+Next actual candidate Table14/private image, E15 global memo/cycle/quota/common
+seal/all14 protected publication steps, then every original View/nominal/
+scheduler/borrowing/CLI/Tier2 acceptance. Do not repeat Astra or spawn advice.
+
+Workspace check75549 TERMINAL0/all-target/all-feature/locked PASS1m33s.
+Then deleted the two unused private RuntimePlan admission delegates; final
+focus76257 running on18 frozen Rust paths. Canonical graph inputs99 match
+previous Core all-feature locked metadata byte-for-byte;50-package transitive
+closure remains applicable. No dependency/feature/target configuration change.
+Ownership disposition: new inventory533LOC/21369bytes stores exactly the
+previous plan tables and owns their immutable type/nominal/value lookups.
+RuntimePlan1457LOC/49417bytes (base1780, growth-323) now owns publication/
+artifact-generation duties and its existing executable grammar. Shared read
+borrowing is required by actual public RuntimeProgramTypes; not widening for
+file splitting. Construction3901LOC/159148bytes (base3889,+12) remains sole
+aggregate lowering/admission owner; structural verify1565LOC/60028bytes
+(base1558,+7) retains its existing deterministic order on the same tables.
+No unrelated state cluster, duplicated verifier or transcript traversal, new
+Cargo edge, I/O or fallback. Embedded tests measured by canonical scanner
+at final gate; body tests2027LOC (+56) and pure tests2070LOC (+6) retain their
+existing owner boundaries. Inventory constructor/private builder preparation
+and mutation remain internal; no DerefMut. Required next actual task-table/
+image/global encoder preparation is still pending, not claimed complete.
+
+Final workspace all-target/all-feature locked check22061 PASS44.46s; Clippy
+PASS1m52s with existing warnings (not -D warnings acceptance for full Cut5).
+Focused nextest76257 PASS2/2,0.019s after1m01s build. Final18 Rust SHA256
+remain unchanged. Fresh Cargo metadata/all-features/locked + cargo tree invert
+confirm complete50 workspace-package Core reverse closure; exact previous
+package set. Core direct workspace fan-in34/fan-out12 (21 total direct dependencies); no new graph edges.
+Canonical structural gate PASS/blocking0. Construction embedded tests616LOC;
+new inventory533LOC responsibility/cohesion and touched upper-trigger owners
+covered by the disposition above. Nextest non-CLI discovery98200 active on
+the full closure, not a narrowed package approximation. CLI277 comparison
+and final commit/push pending. Full goal ACTIVE/INCOMPLETE.
+
+Non-CLI nextest discovery98200 TERMINAL101 before test discovery; RuntimeHost
+lib-test rustc process exited0xc0000409 STATUS_STACK_BUFFER_OVERRUN. Test
+inventory empty; no tests claimed run or passed. Diagnose actual compiler
+stderr/resources and retry same source/features/selection without jobs/profile/
+stack/timeout/ignore changes. Workspace check/Clippy and2 focus tests remain
+their actual pass evidence; this discovery is a distinct failed build receipt.
+
+Full diagnostic: first discovery also contains Bundle mmap OS1455 in Player
+Native/Scene targets, allocation failures10,067,536 and2,097,152bytes, Agent
+Runner compiler allocation panic. This is build resource failure before tests,
+not a source type/behavior test result. All failed compiler/Cargo processes
+terminal; same frozen18 Rust files, features/target/jobs/profile/stack/pagefile
+unchanged. Identical discovery retry follows; no scope narrowing or claim green.
+
+Identical all-feature/locked discovery40887 TERMINAL0/build4m15s after OS
+resource failure. Discovered4921 cases; selected4905 across46 runnable non-CLI
+packages within50-package closure;16 existing ignored native-GPU cases retain
+their repository policy. CLI separate; remaining3 package owners case-less.
+Full rdeps run57083 active, same18 frozen Rust files, no source change.
+
+Full rdeps run57083 TERMINAL0:4905/4905PASS,552.196s,16 repository-ignored
+GPU cases. Actual selected/terminal/unique4905 exact match; missing0/
+unexpected0/duplicate0. First review regex failed to accept padded counts
+for first999 log rows; corrected to nextest actual count spacing and repeated
+ID extraction, not a missing-test result. All API compile-fail owners pass;
+actual deterministic IME generator PASS300.587s. CLI discovery68424 active;
+same18 frozen Rust files. Commit/push still pending, full goal incomplete.
+
+CLI discovery68424 TERMINAL0/build3m17s; selected597 in9 binaries,23 existing
+ignored cases. Comparison run92698 active/all-feature/locked/lib+bins+check
+and6 maintained CLI integrations/full Core-rdeps filter/no-fail-fast. Final18
+Rust hashes and99 manifest/lock/toolchain/config inputs unchanged. Fresh
+origin/main and HEAD both ded6d68b1ece5b38e0ab401e0f07bb8c8da9aff3; no remote
+reconciliation required. Diff reviewed; final complete19-path stage pending.
+
+Final CLI comparison92698 TERMINAL100:597run/320PASS/277FAIL/23ignored in
+126.190s. All597 selected/unique terminal IDs match (missing0/unexpected0).
+Failed ID set exactly equals observed prior277 baseline, new0/resolved0.
+Failure summary repeats the277 FAIL lines;874 raw matching lines are runner
+reporting, not extra test executions. CLI suite remains NOT green/full goal
+repairs still required. Final fmt6535 running; final source hash/stage/commit/
+normal push follows. No Rust byte change while any Cargo process is active.
+
+2026-10-08 final inventory cut acceptance (supersedes pending paragraphs):
+existing main/origin ded6d68b1ece5b38e0ab401e0f07bb8c8da9aff3,18 Rust+1 goal-note
+paths only. Private builder preparation, unchanged ordered structural verifier,
+body/value/type/callable authorities share one physical inventory. Public plan
+is created after verification; constructorless immutable borrowing gives no
+task seal or artifact proof. Exact DataShape/callable owner exclusion retained.
+Focused2/2pass. Complete50-package all-feature locked reverse closure:4905/
+4905 non-CLI pass552.196s,16 repository GPU ignores; exact selection/execution
+IDs, no missing/unexpected/duplicates. CLI597/320pass/277sameFAIL/23ignored
+126.190s; new0/resolved0, not green. Workspace all-target/all-feature locked
+check44.46s and Clippy1m52s PASS with existing warnings; relocated134-line
+type-algebra warning already existed. Structure PASS/blocking0; touched
+owner metrics/cohesion above. Fmt6535 TERMINAL0; source18/build-input99
+SHA256 unchanged. First broad discovery OS1455/allocation failures recorded,
+identical retry PASS without jobs/profile/feature/stack/pagefile changes.
+All required validation commands terminal; explicit complete staged review,
+coherent commit and non-forced push authorized. This finishes preparation
+storage admission only. Table14/private image/E15 globalmemo/common seal/
+all14 protected Cut5 steps and full original convergence acceptance remain.
+Full goal ACTIVE/INCOMPLETE; continue on main, no Astra replay/new advice agent.

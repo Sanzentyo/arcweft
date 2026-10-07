@@ -1961,7 +1961,7 @@ fn pure_trait_call_rejects_borrowed_receivers_and_host_calls() {
 fn pure_trait_call_checks_selected_method_and_sealed_abi() {
     let base = simple_trait_call_plan(RuntimeReceiverMode::Owned, false);
     let mut wrong_id = Arc::new((*base).clone());
-    Arc::get_mut(&mut wrong_id).unwrap().trait_methods[0].id = RuntimeTraitMethodId(1);
+    Arc::get_mut(&mut wrong_id).unwrap().inventory.trait_methods[0].id = RuntimeTraitMethodId(1);
     let request =
         PureFunctionRequest::try_new(Arc::clone(&wrong_id), wrong_id.pure_helpers()[0].id, [])
             .expect("wrong method id request");
@@ -1972,13 +1972,16 @@ fn pure_trait_call_checks_selected_method_and_sealed_abi() {
 
     let mut wrong_abi = Arc::new((*base).clone());
     let input = wrong_abi.trait_methods()[0].inputs[0];
-    Arc::get_mut(&mut wrong_abi).unwrap().trait_methods[0].inputs[0] =
-        crate::plan::RuntimeCallableParameter::new(
-            input.identity(),
-            input.local(),
-            input.passing(),
-            RuntimePureInputType::F64,
-        );
+    Arc::get_mut(&mut wrong_abi)
+        .unwrap()
+        .inventory
+        .trait_methods[0]
+        .inputs[0] = crate::plan::RuntimeCallableParameter::new(
+        input.identity(),
+        input.local(),
+        input.passing(),
+        RuntimePureInputType::F64,
+    );
     let request =
         PureFunctionRequest::try_new(Arc::clone(&wrong_abi), wrong_abi.pure_helpers()[0].id, [])
             .expect("wrong method ABI request");
@@ -1988,8 +1991,11 @@ fn pure_trait_call_checks_selected_method_and_sealed_abi() {
     ));
 
     let mut wrong_result = Arc::new((*base).clone());
-    Arc::get_mut(&mut wrong_result).unwrap().trait_methods[0].output_type =
-        RuntimePureOutputType::F64;
+    Arc::get_mut(&mut wrong_result)
+        .unwrap()
+        .inventory
+        .trait_methods[0]
+        .output_type = RuntimePureOutputType::F64;
     let request = PureFunctionRequest::try_new(
         Arc::clone(&wrong_result),
         wrong_result.pure_helpers()[0].id,

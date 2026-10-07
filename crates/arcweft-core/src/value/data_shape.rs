@@ -9,7 +9,6 @@ use crate::{
     awbc::schema::AwbcProgram,
     entry::RuntimeSchemaLimits,
     pattern::RuntimeSemanticTypeId,
-    plan::RuntimePlan,
     program_types::{RuntimeProgramTypeError, RuntimeProgramTypes},
     task::RuntimeProgramOwner,
     value::RuntimeValue,
@@ -162,10 +161,10 @@ impl RuntimeDataShape {
 
     pub(crate) fn matches_plan(
         &self,
-        plan: &RuntimePlan,
+        plan: &crate::plan::RuntimePlanInventory,
         shape_type: RuntimeSemanticTypeId,
     ) -> bool {
-        matches!(&self.owner, RuntimeProgramOwner::Plan(owner) if std::ptr::eq(owner.as_ref(), plan))
+        matches!(&self.owner, RuntimeProgramOwner::Plan(owner) if std::ptr::eq(&owner.inventory, plan))
             && self.shape_type == shape_type
     }
 

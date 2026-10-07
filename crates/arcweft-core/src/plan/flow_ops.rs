@@ -578,6 +578,29 @@ impl RuntimePlan {
     /// owning table; `ProjectCall` references do not recursively revisit them.
     /// This is a whole-plan inventory, not a path-sensitive execution trace.
     pub fn visit_flow_ops(&self, visitor: &mut impl FnMut(&FlowOp)) {
+        self.inventory.visit_flow_ops(visitor)
+    }
+
+    /// Visits the same owned inventory as [`Self::visit_flow_ops`], stopping
+    /// immediately at the first visitor error. Later children and table rows
+    /// are not visited after rejection.
+    pub fn try_visit_flow_ops<E>(
+        &self,
+        visitor: &mut impl FnMut(&FlowOp) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.inventory.try_visit_flow_ops(visitor)
+    }
+}
+
+impl super::RuntimePlanInventory {
+    /// Visits every owned flow operation in deterministic inventory/preorder.
+    ///
+    /// Includes executable function sites (including Root Flows), line
+    /// activation/actions, cancellation rules, and cleanup bodies. Each
+    /// function body is visited once from its
+    /// owning table; `ProjectCall` references do not recursively revisit them.
+    /// This is a whole-plan inventory, not a path-sensitive execution trace.
+    pub fn visit_flow_ops(&self, visitor: &mut impl FnMut(&FlowOp)) {
         match self.try_visit_flow_ops(&mut |op| {
             visitor(op);
             Ok::<(), std::convert::Infallible>(())

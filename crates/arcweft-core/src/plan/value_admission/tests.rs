@@ -85,7 +85,7 @@ fn iterator_admission_validates_only_its_owned_remainder() {
     let limits = RuntimeSchemaLimits::engine_default();
     let ty = id(&plan, 1);
     let mut validation =
-        PlanValueValidation::new(PlanValueAuthority::Sealed(&plan), ty, limits).unwrap();
+        PlanValueValidation::new(PlanValueAuthority::Inventory(&plan), ty, limits).unwrap();
     let result = value_encoding::validate_live(
         &RuntimeValue::Iterator(iterator),
         limits,
@@ -668,4 +668,29 @@ fn builtin_payloads_are_correlated_before_type_rows_are_published() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn inventory_admission_keeps_data_shape_bound_to_the_exact_program_owner() {
+    let plan = std::sync::Arc::new(plan([
+        seed(1, Type::Bool),
+        seed(
+            2,
+            Type::Agent(RuntimeAgentTypeProjection::DataShape(semantic(1))),
+        ),
+    ]));
+    let shape = crate::value::RuntimeDataShape::bind(
+        crate::task::RuntimeProgramOwner::Plan(std::sync::Arc::clone(&plan)),
+        semantic(2),
+    )
+    .unwrap();
+    let value = RuntimeValue::Agent(crate::value::RuntimeAgentValue::DataShape(shape));
+    let ty = id(&plan, 2);
+    let limits = RuntimeSchemaLimits::engine_default();
+    plan.inventory
+        .validate_live_value(ty, &value, limits)
+        .unwrap();
+    let foreign = plan.inventory.clone();
+    assert!(foreign.validate_live_value(ty, &value, limits).is_err());
+    assert!(plan.clone().validate_live_value(ty, &value, limits).is_ok());
 }

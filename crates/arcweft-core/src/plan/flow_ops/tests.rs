@@ -121,7 +121,7 @@ fn inventory_plan(activation: Box<[FlowOp]>) -> RuntimePlan {
     let mut plan = builder.finish().unwrap();
     // This isolated inventory fixture bypasses unrelated group attachment
     // validation; it exercises the same owned bodies as finished group rows.
-    plan.line_task_groups.push(LineTaskGroup::new(
+    plan.inventory.line_task_groups.push(LineTaskGroup::new(
         crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([71; 32]),
         Box::new([]),
         Box::new([]),

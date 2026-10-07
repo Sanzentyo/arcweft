@@ -332,6 +332,77 @@ impl FunctionTypeAuthority for AwbcProgram {
 impl FunctionTypeAuthority for RuntimePlan {
     type Type = RuntimePlanTypeId;
     fn bound_type(&self, ty: Self::Type) -> Option<RuntimeBoundTypeReference> {
+        self.inventory.bound_type(ty)
+    }
+    fn array(&self, ty: Self::Type) -> Option<(RuntimeArrayLength, Self::Type)> {
+        self.inventory.array(ty)
+    }
+    fn nominal_arguments(
+        &self,
+        expected: Self::Type,
+        actual: Self::Type,
+    ) -> Option<Result<(&[Self::Type], &[Self::Type]), ()>> {
+        self.inventory.nominal_arguments(expected, actual)
+    }
+    fn scope(&self, ty: Self::Type) -> Option<&RuntimeTypeScope> {
+        self.inventory.scope(ty)
+    }
+    fn semantic(&self, ty: Self::Type) -> Option<RuntimeSemanticTypeId> {
+        self.inventory.semantic(ty)
+    }
+    fn by_semantic(&self, ty: RuntimeSemanticTypeId) -> Option<Self::Type> {
+        self.inventory.by_semantic(ty)
+    }
+    fn function(
+        &self,
+        ty: Self::Type,
+    ) -> Option<(&RuntimeFunctionTypeContract, &[Self::Type], Self::Type)> {
+        self.inventory.function(ty)
+    }
+    fn relate_children(
+        &self,
+        expected: Self::Type,
+        actual: Self::Type,
+        visit: &mut impl FnMut(Self::Type, Self::Type) -> Result<(), ()>,
+    ) -> Option<Result<(), ()>> {
+        self.inventory.relate_children(expected, actual, visit)
+    }
+    fn is_unit(&self, ty: Self::Type) -> bool {
+        self.inventory.is_unit(ty)
+    }
+    fn record_field(
+        &self,
+        ty: Self::Type,
+        header: &crate::value::RuntimePlaceRecordHeader,
+        count: usize,
+        ordinal: usize,
+    ) -> Option<Self::Type> {
+        self.inventory.record_field(ty, header, count, ordinal)
+    }
+    fn compatible(&self, expected: Self::Type, actual: Self::Type) -> bool {
+        self.inventory.compatible(expected, actual)
+    }
+    fn value_matches(
+        &self,
+        expected: Self::Type,
+        value: RuntimeValueView<'_>,
+        depth: usize,
+    ) -> bool {
+        self.inventory.value_matches(expected, value, depth)
+    }
+    fn value_relation<C: RuntimeValueTypeContext<Self::Type>>(
+        &self,
+        expected: Self::Type,
+        value: RuntimeValueView<'_>,
+        context: &mut C,
+    ) -> bool {
+        self.inventory.value_relation(expected, value, context)
+    }
+}
+
+impl FunctionTypeAuthority for crate::plan::RuntimePlanInventory {
+    type Type = RuntimePlanTypeId;
+    fn bound_type(&self, ty: Self::Type) -> Option<RuntimeBoundTypeReference> {
         match self.type_table().get(ty)?.projection() {
             RuntimePlanTypeProjection::BoundType(reference) => Some(*reference),
             _ => None,

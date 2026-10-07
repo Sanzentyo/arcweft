@@ -404,7 +404,7 @@ impl RuntimeCallableStateTable {
 
     pub(crate) fn validate_for_plan(
         &self,
-        plan: &super::RuntimePlan,
+        plan: &super::RuntimePlanInventory,
     ) -> Result<(), RuntimeCallableStateError> {
         for (index, definition) in self.states.iter().enumerate() {
             let state = RuntimeCallableStateId::for_index(index)
@@ -419,7 +419,7 @@ impl RuntimeCallableState {
     fn validate_for_plan(
         &self,
         state: RuntimeCallableStateId,
-        plan: &super::RuntimePlan,
+        plan: &super::RuntimePlanInventory,
     ) -> Result<(), RuntimeCallableStateError> {
         use super::RuntimePlanTypeProjection as Type;
         let ty = |id, role| {
@@ -704,7 +704,7 @@ impl RuntimeCallableState {
     fn validate_body_inputs(
         &self,
         state: RuntimeCallableStateId,
-        plan: &super::RuntimePlan,
+        plan: &super::RuntimePlanInventory,
         target: RuntimeFunctionSiteId,
         captures: &[RuntimeCallableInputSource],
         arguments: &[RuntimeCallableInputSource],

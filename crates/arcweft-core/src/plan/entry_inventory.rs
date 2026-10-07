@@ -704,6 +704,13 @@ pub enum RuntimePlanError {
 }
 
 impl RuntimePlan {
+    /// Verifies the complete immutable executable inventory before selection.
+    pub fn verify(&self) -> Result<(), RuntimePlanError> {
+        self.inventory.verify()
+    }
+}
+
+impl super::RuntimePlanInventory {
     /// Verifies the complete executable entry inventory before selection.
     pub fn verify(&self) -> Result<(), RuntimePlanError> {
         for flow in self.flows() {

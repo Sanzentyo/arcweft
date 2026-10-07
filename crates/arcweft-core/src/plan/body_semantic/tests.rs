@@ -1,5 +1,6 @@
 use super::*;
 use crate::pattern::RuntimeSemanticTypeId;
+use crate::plan::RuntimePlan;
 use crate::plan::{
     RuntimeLocalDeclarationSeed, RuntimeLocalOrigin, RuntimePlanBuilder, RuntimePlanTypeProjection,
     RuntimePlanTypeSeed,
@@ -1507,7 +1508,7 @@ fn callable_graph_fixture(
             .collect();
         rows.push(row);
     }
-    plan.callable_states = RuntimeCallableStateTable::from_admitted(rows);
+    plan.inventory.callable_states = RuntimeCallableStateTable::from_admitted(rows);
     (plan, State::for_index(depth - 1).unwrap())
 }
 
@@ -1552,7 +1553,7 @@ fn callable_memo_keeps_source_edge_order_and_definition_changes() {
         .cloned()
         .collect::<Vec<_>>();
     rows[root.index()].partials.reverse();
-    reordered.callable_states = RuntimeCallableStateTable::from_admitted(rows);
+    reordered.inventory.callable_states = RuntimeCallableStateTable::from_admitted(rows);
     let digest = |plan: &RuntimePlan| {
         let mut meter = TaskSemanticMeter::new(10_000, 100_000);
         let mut encoder = TaskSemanticEncoder::new(b"callable-body.v1\0", &mut meter);
@@ -1579,7 +1580,7 @@ fn callable_graph_rejects_definition_and_origin_cycles_with_sticky_failure() {
         } else {
             rows[root.index()].partials[0].state = root;
         }
-        plan.callable_states = RuntimeCallableStateTable::from_admitted(rows);
+        plan.inventory.callable_states = RuntimeCallableStateTable::from_admitted(rows);
         let mut meter = TaskSemanticMeter::new(10_000, 100_000);
         let mut encoder = TaskSemanticEncoder::new(b"callable-body.v1\0", &mut meter);
         assert!(matches!(
@@ -1706,7 +1707,7 @@ fn actual_line_digest_commits_action_cancel_cleanup_and_order_but_not_mark_spell
     if let crate::line_task::LineTaskNode::Sequence(children) = &mut nodes[0] {
         children.reverse();
     }
-    reordered.line_task_groups[0] = crate::line_task::LineTaskGroup::new(
+    reordered.inventory.line_task_groups[0] = crate::line_task::LineTaskGroup::new(
         old.definition(),
         old.captures().into(),
         old.activation_exports().into(),
@@ -1735,7 +1736,7 @@ fn actual_line_digest_commits_action_cancel_cleanup_and_order_but_not_mark_spell
             .into(),
         policy,
     );
-    changed_policy.line_task_groups[0] = crate::line_task::LineTaskGroup::new(
+    changed_policy.inventory.line_task_groups[0] = crate::line_task::LineTaskGroup::new(
         old.definition(),
         old.captures().into(),
         old.activation_exports().into(),
@@ -1963,9 +1964,64 @@ fn flow_owner_reuses_the_table_row_and_rejects_an_independent_equal_body() {
     assert!(std::ptr::eq(flow.function(), row));
     let cloned = plan.clone();
     assert!(std::ptr::eq(cloned.flows()[0].function(), row));
-    plan.flows[0].function = std::sync::Arc::new(plan.flows[0].function.as_ref().clone());
+    plan.inventory.flows[0].function =
+        std::sync::Arc::new(plan.inventory.flows[0].function.as_ref().clone());
     assert!(matches!(
         plan.verify(),
         Err(crate::plan::RuntimePlanError::InvalidFlowFunctionOwner { .. })
     ));
+}
+
+#[test]
+fn private_inventory_resolves_body_and_type_authority_before_plan_publication() {
+    let mut builder = RuntimePlanBuilder::new();
+    let semantic = RuntimeSemanticTypeId::from_bytes([71; 32]);
+    let admission = builder
+        .admit_type_batch(
+            [RuntimePlanTypeSeed::new(
+                semantic,
+                RuntimePlanTypeProjection::Bool,
+            )],
+            [RuntimeLocalDeclarationSeed::new(
+                RuntimeLocalOrigin::Binding([72; 32]),
+                semantic,
+            )],
+        )
+        .unwrap();
+    let ty = admission.type_ids()[0];
+    let local = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
+    let expression = crate::value::RuntimeExpr::from_admitted_parts(
+        ty,
+        crate::value::RuntimeExprKind::Local(crate::value::RuntimeLocalRead::from_admitted_parts(
+            local,
+            crate::value::RuntimeLocalReadMode::Copy,
+        )),
+    );
+    let inventory = builder.prepare_inventory(Default::default()).unwrap();
+    inventory.verify().unwrap();
+    let types = crate::program_types::RuntimeProgramTypes::Plan(&inventory);
+    types.require_type(semantic).unwrap();
+    inventory
+        .validate_live_value(
+            ty,
+            &crate::value::RuntimeValue::Bool(true),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
+    let digest = |inventory: &RuntimePlanInventory| {
+        let mut meter = TaskSemanticMeter::new(1_000, 10_000);
+        let mut encoder = TaskSemanticEncoder::new(b"candidate-body-test.v1\0", &mut meter);
+        RuntimeBodySemanticContext::new(inventory)
+            .write_expression(&mut encoder, &expression)
+            .unwrap();
+        encoder.finish().unwrap()
+    };
+    let prepared = digest(&inventory);
+    let plan = RuntimePlan {
+        artifact: None,
+        inventory,
+    };
+    assert_eq!(plan.artifact(), None);
+    assert_eq!(prepared, digest(&plan));
+    assert!(std::ptr::eq(plan.type_table(), plan.inventory.type_table()));
 }

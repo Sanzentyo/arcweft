@@ -14,7 +14,7 @@ use crate::{
     entry::{RuntimeNominalTypeId, RuntimeSchemaLimits, RuntimeValueDigest, TypeLayoutHash},
     pattern::{RuntimeBuiltinVariantIdentity, RuntimeCheckedType, RuntimeSemanticTypeId},
     plan::{
-        RuntimePlan, RuntimePlanTypeProjection, RuntimePlanTypeResolutionError,
+        RuntimePlanInventory, RuntimePlanTypeProjection, RuntimePlanTypeResolutionError,
         RuntimePlanValueAdmissionError,
     },
     value::RuntimeValue,
@@ -34,7 +34,7 @@ pub use data_shapes::{
 /// One active executable type authority borrowed for producer-side admission.
 #[derive(Clone, Copy, Debug)]
 pub enum RuntimeProgramTypes<'a> {
-    Plan(&'a RuntimePlan),
+    Plan(&'a RuntimePlanInventory),
     Awbc(&'a AwbcProgram),
 }
 

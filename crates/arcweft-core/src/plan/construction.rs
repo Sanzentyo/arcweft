@@ -2641,6 +2641,20 @@ impl RuntimePlanBuilder {
         self,
         limits: super::RuntimeTaskPlanSealLimits,
     ) -> Result<RuntimePlan, RuntimePlanBuildError> {
+        let inventory = self.prepare_inventory(limits)?;
+        inventory.verify()?;
+        Ok(RuntimePlan {
+            artifact: None,
+            inventory,
+        })
+    }
+
+    /// Materializes the sole table authority before public-plan construction.
+    /// Semantic sealing borrows this same storage after structural admission.
+    pub(super) fn prepare_inventory(
+        self,
+        limits: super::RuntimeTaskPlanSealLimits,
+    ) -> Result<super::RuntimePlanInventory, RuntimePlanBuildError> {
         self.preflight_executable_inventory(limits)?;
         self.callable_states.borrow_mut().seal()?;
         self.validate_finish_preconditions()?;
@@ -2736,8 +2750,7 @@ impl RuntimePlanBuilder {
         let project_call_sites = self.project_call_sites.into_inner().finish();
         let local_declarations = self.locals.finish();
         validate_flow_parameters(&flows, &self.flow_schemas, &local_declarations, &type_table)?;
-        let plan = RuntimePlan {
-            artifact: None,
+        let inventory = super::RuntimePlanInventory {
             type_table,
             local_declarations,
             nominal_record_domains: self.nominal_record_domains.finish(),
@@ -2763,8 +2776,7 @@ impl RuntimePlanBuilder {
             line_task_groups: self.line_task_groups,
             stream_plans: self.stream_plans,
         };
-        plan.verify()?;
-        Ok(plan)
+        Ok(inventory)
     }
 
     fn preflight_executable_inventory(
