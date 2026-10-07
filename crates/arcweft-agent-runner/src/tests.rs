@@ -580,9 +580,9 @@ fn agent_need_producer(
     let mut arguments = Vec::with_capacity(request_args.len());
     for argument in request_args {
         let (name, value) = match argument {
-            RuntimeHostArgumentSeed::Positional(value) => (None, value),
-            RuntimeHostArgumentSeed::Named(argument) => (Some(argument.name), argument.value),
-            RuntimeHostArgumentSeed::Spread(_) => {
+            RuntimeHostArgumentSeed::Positional(_, value) => (None, value),
+            RuntimeHostArgumentSeed::Named(_, argument) => (Some(argument.name), argument.value),
+            RuntimeHostArgumentSeed::Spread(..) => {
                 panic!("Agent Need producer fixtures do not use spread arguments")
             }
         };
@@ -1316,10 +1316,15 @@ fn capture_binding_program_with_budget(budget: AgentBudget) -> AwbcProgram {
     let (producer_plan, producer_arguments) = agent_need_producer(
         CAPTURE_RESULT_TY,
         "capture".to_owned(),
-        vec![RuntimeHostArgumentSeed::Positional(controller_expr(
-            CAPTURE_TARGET_TY,
-            RuntimeExprSeedKind::Agent(arcweft_core::plan::RuntimeAgentExprSeed::CaptureViewport),
-        ))],
+        vec![RuntimeHostArgumentSeed::Positional(
+            arcweft_core::task::RuntimeRequestRoleIdentity::from_accepted_identity([42; 32]),
+            controller_expr(
+                CAPTURE_TARGET_TY,
+                RuntimeExprSeedKind::Agent(
+                    arcweft_core::plan::RuntimeAgentExprSeed::CaptureViewport,
+                ),
+            ),
+        )],
     );
     let flow = flow_id("agent.capture_binding");
     agent_controller_program_with_builder(
@@ -1391,10 +1396,15 @@ fn read_resource_binding_program() -> AwbcProgram {
     let (producer_plan, producer_arguments) = agent_need_producer(
         RESOURCE_RESULT_TY,
         "read_resource".to_owned(),
-        vec![RuntimeHostArgumentSeed::Positional(controller_expr(
-            STRING_TY,
-            RuntimeExprSeedKind::Value(RuntimeValue::String("agent://resource/test".to_owned())),
-        ))],
+        vec![RuntimeHostArgumentSeed::Positional(
+            arcweft_core::task::RuntimeRequestRoleIdentity::from_accepted_identity([42; 32]),
+            controller_expr(
+                STRING_TY,
+                RuntimeExprSeedKind::Value(RuntimeValue::String(
+                    "agent://resource/test".to_owned(),
+                )),
+            ),
+        )],
     );
     let flow = flow_id("agent.read_resource_binding");
     agent_controller_program_with_builder(
@@ -1611,10 +1621,13 @@ fn entity_metadata_binding_program() -> AwbcProgram {
         result_ty: STRING_TY,
         field: RuntimeAgentField::EntityMetadataSemanticHash,
         operation: "entity_meta",
-        args: vec![RuntimeHostArgumentSeed::Positional(controller_expr(
-            STRING_TY,
-            RuntimeExprSeedKind::Value(RuntimeValue::String("flow.opening".to_owned())),
-        ))],
+        args: vec![RuntimeHostArgumentSeed::Positional(
+            arcweft_core::task::RuntimeRequestRoleIdentity::from_accepted_identity([42; 32]),
+            controller_expr(
+                STRING_TY,
+                RuntimeExprSeedKind::Value(RuntimeValue::String("flow.opening".to_owned())),
+            ),
+        )],
     })
 }
 
@@ -1628,16 +1641,25 @@ fn project_neighbors_binding_program() -> AwbcProgram {
         field: RuntimeAgentField::ProjectGraphNeighborhoodEdgeCount,
         operation: "project_neighbors",
         args: vec![
-            RuntimeHostArgumentSeed::Positional(controller_expr(
-                STRING_TY,
-                RuntimeExprSeedKind::Value(RuntimeValue::String(
-                    "project:entity:flow.opening".to_owned(),
-                )),
-            )),
-            RuntimeHostArgumentSeed::Named(arcweft_core::task::NamedHostArg {
-                name: "depth".to_owned(),
-                value: controller_expr(U32_TY, RuntimeExprSeedKind::Value(RuntimeValue::u32(1))),
-            }),
+            RuntimeHostArgumentSeed::Positional(
+                arcweft_core::task::RuntimeRequestRoleIdentity::from_accepted_identity([42; 32]),
+                controller_expr(
+                    STRING_TY,
+                    RuntimeExprSeedKind::Value(RuntimeValue::String(
+                        "project:entity:flow.opening".to_owned(),
+                    )),
+                ),
+            ),
+            RuntimeHostArgumentSeed::Named(
+                arcweft_core::task::RuntimeRequestRoleIdentity::from_accepted_identity([42; 32]),
+                arcweft_core::task::NamedHostArg {
+                    name: "depth".to_owned(),
+                    value: controller_expr(
+                        U32_TY,
+                        RuntimeExprSeedKind::Value(RuntimeValue::u32(1)),
+                    ),
+                },
+            ),
         ],
     })
 }
@@ -1671,24 +1693,42 @@ fn wait_binding_program() -> AwbcProgram {
         field: RuntimeAgentField::ObservationTick,
         operation: "wait",
         args: vec![
-            RuntimeHostArgumentSeed::Positional(predicate),
-            RuntimeHostArgumentSeed::Named(arcweft_core::task::NamedHostArg {
-                name: "timeout".to_owned(),
-                value: controller_expr(
-                    DURATION_TY,
-                    RuntimeExprSeedKind::Value(RuntimeValue::Duration(
-                        LogicalDuration::from_nanos(5_000_000),
-                    )),
-                ),
-            }),
-            RuntimeHostArgumentSeed::Named(arcweft_core::task::NamedHostArg {
-                name: "stable_frames".to_owned(),
-                value: controller_expr(U32_TY, RuntimeExprSeedKind::Value(RuntimeValue::u32(2))),
-            }),
-            RuntimeHostArgumentSeed::Named(arcweft_core::task::NamedHostArg {
-                name: "poll_frames".to_owned(),
-                value: controller_expr(U32_TY, RuntimeExprSeedKind::Value(RuntimeValue::u32(1))),
-            }),
+            RuntimeHostArgumentSeed::Positional(
+                arcweft_core::task::RuntimeRequestRoleIdentity::from_accepted_identity([42; 32]),
+                predicate,
+            ),
+            RuntimeHostArgumentSeed::Named(
+                arcweft_core::task::RuntimeRequestRoleIdentity::from_accepted_identity([42; 32]),
+                arcweft_core::task::NamedHostArg {
+                    name: "timeout".to_owned(),
+                    value: controller_expr(
+                        DURATION_TY,
+                        RuntimeExprSeedKind::Value(RuntimeValue::Duration(
+                            LogicalDuration::from_nanos(5_000_000),
+                        )),
+                    ),
+                },
+            ),
+            RuntimeHostArgumentSeed::Named(
+                arcweft_core::task::RuntimeRequestRoleIdentity::from_accepted_identity([42; 32]),
+                arcweft_core::task::NamedHostArg {
+                    name: "stable_frames".to_owned(),
+                    value: controller_expr(
+                        U32_TY,
+                        RuntimeExprSeedKind::Value(RuntimeValue::u32(2)),
+                    ),
+                },
+            ),
+            RuntimeHostArgumentSeed::Named(
+                arcweft_core::task::RuntimeRequestRoleIdentity::from_accepted_identity([42; 32]),
+                arcweft_core::task::NamedHostArg {
+                    name: "poll_frames".to_owned(),
+                    value: controller_expr(
+                        U32_TY,
+                        RuntimeExprSeedKind::Value(RuntimeValue::u32(1)),
+                    ),
+                },
+            ),
         ],
     })
 }

@@ -7747,3 +7747,80 @@ private image/common atomic seal, View/Timeout endpoint owners, consumerlegacy
 removal and full originalgoal/milestone validation remain required. This cut
 completes accepted fact transport, not Q/core/commonseal completion. Goalactive;
 Astra one-shot consumed neverrepeat; no new branch/worktree/delegation.
+
+
+### 2026-10-07 — Core Host request evidence and actual Q
+
+Continues from pushed main/origin
+`7ab9048384aa494e05e237331fca2b4887be2ab5`.
+Core RuntimeRequestRoleIdentity moves the existing private Q input identity
+to its static request owner. It is accepted input data, not a digest or seal
+proof. Every positional/named/spread seed and admitted template requires the
+identity; Sema projects its opaque issued role, runtime-plan carries it, and
+builder admission retains it. Evaluator/free-local/type consumers use the
+final shape. Manual execution fixtures explicitly supply fixture roles; no
+production default, source reconstruction or fallback was added.
+
+F endpoints borrow the actual plan, function and Flow operation. The Host Q
+adapter projects arguments from that endpoint, rejects foreign plan ownership,
+and records source-ordered type/role/path evidence without reading evaluated
+values or display names. F retains accepted argument metadata. Source
+classification covers all expression variants, follows result wrappers
+iteratively, recognizes projected locals and typed/rest capture bindings, and
+uses the same sticky work/byte meter as encoding. Compiler coverage exercises
+an actual manifest-backed HostCall, alongside Core owner, name-invariance,
+role-mutation, capture-source and quota-precedence tests.
+
+Validation on the final Rust sources:
+- Workspace all-target/all-feature locked check: exit 0, 45.28 s.
+- Workspace Clippy: exit 0, 108 s; affected five-package final Clippy: exit 0,
+  68 s. Existing warnings remain; no warnings-as-errors claim.
+- Final focused Core nextest: 28 passed; compiler transport nextest: 1 passed.
+- Fresh all-feature Cargo metadata and target-all inverted graph: exit 0.
+  Transitive Core reverse closure contains 50 workspace packages.
+- Full 49 non-CLI packages, lib/tests, all features, locked, no-fail-fast,
+  no-tests=fail: 4,886 passed, 16 explicitly ignored GPU cases, exit 0.
+  Execution 592.500 s; build 2 m 52 s.
+- Repository-selected CLI lib/bins: 171 passed, exit 0, 1.823 s.
+  Selected six CLI integration binaries: 24 passed, exit 0, 9.426 s.
+- Exact nextest inventories match all 5,081 executed case IDs, with 0 missing.
+  Of the 50 packages, 47 own cases; arcweft, arcweft-bundle-assets and
+  arcweft-render-web are caseless. The 16 ignored GPU case IDs and filter
+  reasons remain separate from passing evidence.
+- Final fmt check and structure scanner: exit 0, no structure blockers.
+
+Two initial non-CLI builds failed with E0786 caused by Windows OS1455 mmap
+allocation of the 1.0366 GiB arcweft-bundle rlib, first in runtime-driver's
+awbc_product_session and then in project-loader external_payload. Neither
+failed phase supplies test execution evidence. With unchanged sources and
+ordinary Cargo settings, the actual awbc_product_session target prebuilt and
+passed 29 cases, then the original 49-package lib/tests command completed.
+Those 29 case IDs overlap the final run and are not double counted. No jobs,
+profile, timeout, pagefile or OS setting was changed, and no target cleanup
+was performed. CLI passing results were reused under unchanged inputs.
+
+Receipts in the host temporary directory use the prefix
+`arcweft-1007-core-request-`: metadata.json, inverse.txt, closure.json,
+rdeps-run.log, rdeps-retry.log, rdeps-final.log, rdeps-inventory.json,
+cli-lib-inventory.json, cli-selected-inventory.json and inventory-summary.json.
+The summary preserves exact selected/executed/ignored case IDs and reasons.
+
+Ownership review: static arguments own accepted roles and executable values;
+F borrows admitted producers; Q projects them under one meter. No extra Cargo
+edge, parallel catalog, cloned AST, public task digest constructor, task codec
+or provisional seal proof was introduced. Existing large-owner cohesion
+rationale remains applicable. Measurements at this cut:
+- core task.rs: 58,514 bytes, 1,839 physical LOC.
+- body_semantic/function.rs: 14,487 bytes, 372 physical LOC.
+- body_semantic/request.rs: 16,862 bytes, 435 physical LOC.
+- body_semantic/tests.rs: 50,630 bytes, 1,381 physical LOC.
+- compiler project/tests.rs: 151,764 bytes, 4,060 physical LOC.
+
+This closes actual Host input transport and a private owner-bound Q adapter.
+The actual candidate table, E memoization, private image/common atomic seal,
+View/Timeout and other Q families, public schema switch, obsolete-path removal
+and full original goal acceptance remain required. The known 277 broad CLI
+check failures and Tier2/GPU milestone work are not superseded by this selected
+run. Goal remains active. Astra one-shot remains consumed; never repeat it.
+No branch, worktree or delegation was created. The validated 17-path cut is
+explicitly staged and reviewed before commit and normal push.

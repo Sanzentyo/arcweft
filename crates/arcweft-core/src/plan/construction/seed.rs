@@ -1083,10 +1083,11 @@ fn collect_host_argument_free_locals(
 ) {
     for argument in arguments {
         match argument {
-            RuntimeHostArgumentSeed::Positional(value) | RuntimeHostArgumentSeed::Spread(value) => {
+            RuntimeHostArgumentSeed::Positional(_, value)
+            | RuntimeHostArgumentSeed::Spread(_, value) => {
                 value.collect_free_locals(bound, locals);
             }
-            RuntimeHostArgumentSeed::Named(argument) => {
+            RuntimeHostArgumentSeed::Named(_, argument) => {
                 argument.value.collect_free_locals(bound, locals);
             }
         }
@@ -1263,9 +1264,12 @@ impl RuntimeHostTaskRequestTemplateSeed {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeHostArgumentSeed {
-    Positional(RuntimeExprSeed),
-    Named(NamedHostArg<RuntimeExprSeed>),
-    Spread(RuntimeExprSeed),
+    Positional(crate::task::RuntimeRequestRoleIdentity, RuntimeExprSeed),
+    Named(
+        crate::task::RuntimeRequestRoleIdentity,
+        NamedHostArg<RuntimeExprSeed>,
+    ),
+    Spread(crate::task::RuntimeRequestRoleIdentity, RuntimeExprSeed),
 }
 
 #[derive(Clone, Debug, PartialEq)]

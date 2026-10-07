@@ -1452,7 +1452,7 @@ fn host_signature_preserves_every_admitted_operand_and_result_identity() {
                             capability: "test".to_owned(),
                             operation: "notify".to_owned(),
                             contract: None,
-                            args: vec![arcweft_core::plan::RuntimeHostArgumentSeed::Positional(
+                            args: vec![arcweft_core::plan::RuntimeHostArgumentSeed::Positional(arcweft_core::task::RuntimeRequestRoleIdentity::from_accepted_identity([42;32]),
                                 string_expr("message"),
                             )],
                             result: type_id(2),
@@ -1513,6 +1513,9 @@ fn host_descriptor_interning_preserves_distinct_call_site_values() {
                 operation: "notify".to_owned(),
                 contract: None,
                 args: vec![arcweft_core::plan::RuntimeHostArgumentSeed::Positional(
+                    arcweft_core::task::RuntimeRequestRoleIdentity::from_accepted_identity(
+                        [42; 32],
+                    ),
                     string_expr(message),
                 )],
                 result: type_id(2),

@@ -655,9 +655,9 @@ fn try_visit_ops<E>(
     })
 }
 
-pub(super) fn try_visit_ops_events<E>(
-    ops: &[FlowOp],
-    visitor: &mut impl FnMut(RuntimeFlowTreeEvent<'_>) -> Result<(), E>,
+pub(super) fn try_visit_ops_events<'a, E>(
+    ops: &'a [FlowOp],
+    visitor: &mut impl FnMut(RuntimeFlowTreeEvent<'a>) -> Result<(), E>,
 ) -> Result<(), E> {
     use RuntimeFlowTreeEvent as Event;
     enum Frame<'a> {

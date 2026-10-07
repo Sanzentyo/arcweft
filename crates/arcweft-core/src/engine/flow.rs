@@ -1066,14 +1066,14 @@ impl Engine {
                 .evaluate_expr_with_backend(argument.value(), pure_backend)
                 .map_err(|error| error.to_string())?;
             match argument {
-                RuntimeHostArgumentTemplate::Positional(_) => {
+                RuntimeHostArgumentTemplate::Positional(..) => {
                     positional.push(crate::value::RuntimePayload::from(value));
                 }
-                RuntimeHostArgumentTemplate::Named(argument) => named.push(NamedHostArg {
+                RuntimeHostArgumentTemplate::Named(_, argument) => named.push(NamedHostArg {
                     name: argument.name.clone(),
                     value: crate::value::RuntimePayload::from(value),
                 }),
-                RuntimeHostArgumentTemplate::Spread(_) => {
+                RuntimeHostArgumentTemplate::Spread(..) => {
                     let values = crate::value::runtime_value_into_sequence_values(value).map_err(
                         |value| {
                             format!(

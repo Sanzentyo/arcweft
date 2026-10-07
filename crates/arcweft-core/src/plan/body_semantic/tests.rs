@@ -884,6 +884,33 @@ fn producer_host_plan(
     crate::plan::construction::task_coordinates::RuntimeTaskPlanCoordinateOwner,
     crate::runtime_id::RuntimeFunctionSiteId,
 ) {
+    producer_host_plan_with_arguments(in_then, vec![])
+}
+
+fn producer_host_plan_with_arguments(
+    in_then: bool,
+    args: Vec<crate::plan::RuntimeHostArgumentSeed>,
+) -> (
+    RuntimePlan,
+    crate::plan::construction::task_coordinates::RuntimeTaskPlanCoordinateOwner,
+    crate::runtime_id::RuntimeFunctionSiteId,
+) {
+    producer_host_plan_with_setup(in_then, |_| (args, Box::new([])))
+}
+
+fn producer_host_plan_with_setup(
+    in_then: bool,
+    setup: impl FnOnce(
+        &mut RuntimePlanBuilder,
+    ) -> (
+        Vec<crate::plan::RuntimeHostArgumentSeed>,
+        Box<[crate::plan::RuntimeFunctionInputBindingSeed]>,
+    ),
+) -> (
+    RuntimePlan,
+    crate::plan::construction::task_coordinates::RuntimeTaskPlanCoordinateOwner,
+    crate::runtime_id::RuntimeFunctionSiteId,
+) {
     use crate::plan::*;
     let mut builder = RuntimePlanBuilder::new();
     let unit = RuntimeSemanticTypeId::from_bytes([62; 32]);
@@ -897,13 +924,14 @@ fn producer_host_plan(
             [],
         )
         .unwrap();
+    let (args, inputs) = setup(&mut builder);
     let effects = RuntimeEffectSet::empty();
     let site = builder
         .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
             definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([72; 32]),
             role: RuntimeFunctionSemanticRole::Ordinary,
             function_type: None,
-            inputs: Box::new([]),
+            inputs,
             result: unit,
             body_kind: RuntimeFunctionSiteBodyKind::Executable,
             effects: effects.clone(),
@@ -921,7 +949,7 @@ fn producer_host_plan(
             capability: "test".to_owned(),
             operation: "notify".to_owned(),
             contract: None,
-            args: vec![],
+            args,
             result: unit,
             mode: crate::step::RuntimeHostCallMode::Suspend,
             deterministic: false,
@@ -1141,4 +1169,213 @@ fn request_template_field_identity_roles_and_shared_budget_affect_acceptance() {
         TaskSemanticEncoder::new(b"later", &mut meter).finish(),
         Err(TaskSemanticEncodingError::SemanticWork)
     );
+}
+
+#[test]
+fn actual_host_request_uses_admitted_roles_and_excludes_display_names() {
+    use crate::plan::{RuntimeExprSeed, RuntimeExprSeedKind, RuntimeHostArgumentSeed};
+    use crate::task::{NamedHostArg, RuntimeRequestRoleIdentity};
+    let make = |label: &str, identity| {
+        producer_host_plan_with_arguments(
+            true,
+            vec![RuntimeHostArgumentSeed::Named(
+                RuntimeRequestRoleIdentity::from_accepted_identity([identity; 32]),
+                NamedHostArg {
+                    name: label.to_owned(),
+                    value: RuntimeExprSeed::new(
+                        RuntimeSemanticTypeId::from_bytes([61; 32]),
+                        RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(true)),
+                    ),
+                },
+            )],
+        )
+    };
+    let hash = |label: &str, identity| {
+        let (plan, owner, function) = make(label, identity);
+        let mut meter = TaskSemanticMeter::new(100_000, 1_000_000);
+        let context = RuntimeBodySemanticContext::new(&plan);
+        let producer = context
+            .producer_function(
+                &mut meter,
+                function,
+                &owner,
+                &mut |_| Ok(owner.resolve(0).unwrap()),
+                crate::plan::RuntimeTaskPlanSealLimits::default(),
+            )
+            .unwrap();
+        let target = producer.endpoint(0).unwrap().host_target().unwrap();
+        assert_eq!(target.args[0].identity().as_bytes(), &[identity; 32]);
+        context
+            .host_request_template_digest(
+                &mut meter,
+                producer.endpoint(0).unwrap(),
+                Default::default(),
+            )
+            .unwrap()
+    };
+    assert_eq!(hash("first", 42), hash("renamed", 42));
+    assert_ne!(hash("first", 42), hash("first", 43));
+
+    let (plan, owner, function) = make("first", 42);
+    let clone = plan.clone();
+    let mut meter = TaskSemanticMeter::new(100_000, 1_000_000);
+    let context = RuntimeBodySemanticContext::new(&plan);
+    let producer = context
+        .producer_function(
+            &mut meter,
+            function,
+            &owner,
+            &mut |_| Ok(owner.resolve(0).unwrap()),
+            Default::default(),
+        )
+        .unwrap();
+    assert!(matches!(
+        RuntimeBodySemanticContext::new(&clone).host_request_template_digest(
+            &mut meter,
+            producer.endpoint(0).unwrap(),
+            Default::default()
+        ),
+        Err(RuntimeBodySemanticError::InvalidHostRequestEndpoint)
+    ));
+    assert_eq!(
+        TaskSemanticEncoder::new(b"later", &mut meter).finish(),
+        Err(TaskSemanticEncodingError::OwnerRejected)
+    );
+}
+
+#[test]
+fn actual_host_request_quota_precedes_source_projection() {
+    use crate::plan::{RuntimeExprSeed, RuntimeExprSeedKind, RuntimeHostArgumentSeed};
+    let (plan, owner, function) = producer_host_plan_with_arguments(
+        true,
+        vec![RuntimeHostArgumentSeed::Positional(
+            crate::task::RuntimeRequestRoleIdentity::from_accepted_identity([42; 32]),
+            RuntimeExprSeed::new(
+                RuntimeSemanticTypeId::from_bytes([61; 32]),
+                RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(true)),
+            ),
+        )],
+    );
+    let mut meter = TaskSemanticMeter::new(100_000, 1_000_000);
+    let context = RuntimeBodySemanticContext::new(&plan);
+    let producer = context
+        .producer_function(
+            &mut meter,
+            function,
+            &owner,
+            &mut |_| Ok(owner.resolve(0).unwrap()),
+            Default::default(),
+        )
+        .unwrap();
+    let mut meter = TaskSemanticMeter::new(0, 0);
+    assert!(matches!(
+        context.host_request_template_digest(
+            &mut meter,
+            producer.endpoint(0).unwrap(),
+            crate::plan::RuntimeTaskPlanSealLimits {
+                max_request_roles: 0,
+                ..Default::default()
+            }
+        ),
+        Err(RuntimeBodySemanticError::RequestRoles {
+            actual: 1,
+            maximum: 0
+        })
+    ));
+    assert_eq!(
+        TaskSemanticEncoder::new(b"later", &mut meter).finish(),
+        Err(TaskSemanticEncodingError::OwnerRejected)
+    );
+}
+
+#[test]
+fn actual_host_request_recognizes_typed_capture_prologue_bindings() {
+    use super::request::*;
+    use crate::plan::*;
+    let (plan, owner, function) = producer_host_plan_with_setup(true, |builder| {
+        let boolean = RuntimeSemanticTypeId::from_bytes([61; 32]);
+        let locals = builder
+            .admit_type_batch(
+                [],
+                [
+                    RuntimeLocalDeclarationSeed::new(
+                        RuntimeLocalOrigin::Binding([31; 32]),
+                        boolean,
+                    ),
+                    RuntimeLocalDeclarationSeed::new(
+                        RuntimeLocalOrigin::Binding([32; 32]),
+                        boolean,
+                    ),
+                ],
+            )
+            .unwrap();
+        let input = locals.local_ids()[0].clone();
+        let local = locals.local_ids()[1].clone();
+        let expression = RuntimeExprSeed::new(
+            boolean,
+            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                local.clone(),
+                crate::value::RuntimeLocalReadMode::Copy,
+            )),
+        );
+        (
+            vec![RuntimeHostArgumentSeed::Positional(
+                RuntimeRequestRoleIdentity::from_accepted_identity([42; 32]),
+                expression,
+            )],
+            Box::new([RuntimeFunctionInputBindingSeed {
+                transfer: RuntimeFunctionInputTransfer::Transferred(
+                    RuntimeFunctionCaptureMode::Copy,
+                ),
+                origin: RuntimeFunctionInputOrigin::Binding([31; 32]),
+                source: RuntimeFunctionInputSource::Capture { position: 0 },
+                input_local: input,
+                pattern: RuntimePatternSeed::new(boolean, RuntimePatternSeedKind::Typed { local }),
+                ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
+                unrestricted_bindings: Box::new([]),
+            }]),
+        )
+    });
+    let mut meter = TaskSemanticMeter::new(100_000, 1_000_000);
+    let context = RuntimeBodySemanticContext::new(&plan);
+    let producer = context
+        .producer_function(
+            &mut meter,
+            function,
+            &owner,
+            &mut |_| Ok(owner.resolve(0).unwrap()),
+            Default::default(),
+        )
+        .unwrap();
+    let endpoint = producer.endpoint(0).unwrap();
+    let argument = |source| RuntimeRequestArgument {
+        role: RuntimeRequestArgumentRole::Positional,
+        identity: None,
+        ty: endpoint.host_target().unwrap().args[0].value().ty(),
+        source,
+        path: Box::new([RuntimeRequestPathStep::Operand(0)]),
+    };
+    let actual = context
+        .host_request_template_digest(&mut meter, endpoint, Default::default())
+        .unwrap();
+    let expected = context
+        .request_template_digest(
+            &mut meter,
+            endpoint,
+            &[argument(RuntimeRequestValueSource::Capture)],
+            &[],
+            Default::default(),
+        )
+        .unwrap();
+    let wrong = context
+        .request_template_digest(
+            &mut meter,
+            endpoint,
+            &[argument(RuntimeRequestValueSource::Local)],
+            &[],
+            Default::default(),
+        )
+        .unwrap();
+    assert_eq!(actual, expected);
+    assert_ne!(actual, wrong);
 }

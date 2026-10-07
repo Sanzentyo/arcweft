@@ -406,6 +406,10 @@ impl<'hir> FinalExprLowerer<'hir> {
             .into_iter()
             .zip(call.operands())
             .map(|((value, _), operand)| {
+                let identity = operand
+                    .request_role_identity()
+                    .ok_or_else(|| format!("host call {id:?} has no accepted argument role"))?
+                    .runtime_identity();
                 if matches!(operand.origin(), RuntimeResolvedCallOperandOrigin::Receiver) {
                     return Err(format!(
                         "host call {id:?} cannot project a receiver argument"
@@ -415,18 +419,21 @@ impl<'hir> FinalExprLowerer<'hir> {
                     (
                         RuntimeResolvedCallOperandProjection::Scalar,
                         RuntimeResolvedCallOperandBinding::Positional,
-                    ) => Ok(RuntimeHostArgumentSeed::Positional(value)),
+                    ) => Ok(RuntimeHostArgumentSeed::Positional(identity, value)),
                     (
                         RuntimeResolvedCallOperandProjection::Scalar,
                         RuntimeResolvedCallOperandBinding::Named(name),
-                    ) => Ok(RuntimeHostArgumentSeed::Named(NamedHostArg {
-                        name: name.clone(),
-                        value,
-                    })),
+                    ) => Ok(RuntimeHostArgumentSeed::Named(
+                        identity,
+                        NamedHostArg {
+                            name: name.clone(),
+                            value,
+                        },
+                    )),
                     (
                         RuntimeResolvedCallOperandProjection::SpreadContainer(_),
                         RuntimeResolvedCallOperandBinding::Positional,
-                    ) => Ok(RuntimeHostArgumentSeed::Spread(value)),
+                    ) => Ok(RuntimeHostArgumentSeed::Spread(identity, value)),
                     _ => Err(format!(
                         "host call {id:?} has an unsupported operand binding/projection"
                     )),

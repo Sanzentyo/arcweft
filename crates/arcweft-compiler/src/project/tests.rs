@@ -3959,3 +3959,102 @@ fn dialogue_effect_capture_transfer_drives_creation_and_ingress() {
         );
     }
 }
+
+#[test]
+fn lowered_host_arguments_keep_the_checked_request_role_identity() {
+    use arcweft_adapter_context::manifest::{
+        AdapterCallableGroupIndex, AdapterCallableName, AdapterCallableParameterIndex,
+        AdapterEffectCapability, AdapterFunctionParam, AdapterFunctionSignature, AdapterHostCall,
+        AdapterManifest, AdapterParameterGroup, AdapterParameterPassing, AdapterParameterPresence,
+        AdapterTypeKind,
+    };
+    use arcweft_adapter_sema::registration::AdapterSemanticRegistration;
+    let (project, context) = removed_role_project(
+        "extern capability fixture { fn observe(value: bool) -> Unit effects { control.suspend } }\nflow main() -> i64 { fixture.observe(value = true); return 42i64 }\n",
+    );
+    let effect = AdapterEffectCapability::new("control.suspend");
+    let parameter = AdapterFunctionParam::try_new(
+        AdapterCallableParameterIndex::try_from_usize(0).unwrap(),
+        Some(AdapterCallableName::try_new("value").unwrap()),
+        AdapterTypeKind::Bool,
+        AdapterParameterPassing::PositionalOrNamed,
+        AdapterParameterPresence::Required,
+    )
+    .unwrap();
+    let manifest = AdapterManifest::new("test.request-role", "Request role test")
+        .with_effect(effect.clone())
+        .with_host_call(AdapterHostCall::with_signature(
+            "fixture.observe",
+            AdapterFunctionSignature::try_new(
+                vec![
+                    AdapterParameterGroup::try_new(
+                        AdapterCallableGroupIndex::try_from_usize(0).unwrap(),
+                        vec![parameter],
+                    )
+                    .unwrap(),
+                ],
+                AdapterTypeKind::Unit,
+            )
+            .unwrap(),
+            [effect],
+        ));
+    let registration = AdapterSemanticRegistration::new(&manifest);
+    let parts = registration.source_backed_facts(0).unwrap().into_parts();
+    let mut documents = project
+        .modules()
+        .map(|module| Arc::clone(module.document()))
+        .collect::<Vec<_>>();
+    documents.push(parts.document);
+    let facts = ProjectRegistrationFacts::try_new(
+        context.facts().world().clone(),
+        documents,
+        parts.externals.into_vec(),
+        Vec::new(),
+        vec![parts.environment],
+    )
+    .unwrap();
+    let context = ProjectCompilationContext::new(
+        Arc::new(registration.declare_target(TypeCheckEnv::standard())),
+        Arc::new(facts),
+        Arc::clone(context.resource_types()),
+        None,
+        None,
+    );
+    let (mut session, parsed) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed, &context)
+        .expect("manifest-backed host request compiles");
+    let expected = compiled
+        .runtime_facts()
+        .calls()
+        .find_map(|(_, call)| {
+            matches!(
+                call.dispatch(),
+                arcweft_runtime_plan::semantic_facts::RuntimeResolvedCallDispatch::Static(
+                    arcweft_runtime_plan::semantic_facts::RuntimeResolvedStaticCallTarget::Host(_)
+                )
+            )
+            .then(|| {
+                call.operands()[0]
+                    .request_role_identity()
+                    .unwrap()
+                    .runtime_identity()
+            })
+        })
+        .expect("accepted Host argument role");
+    let argument = compiled
+        .runtime_plan()
+        .plan
+        .flows()
+        .iter()
+        .flat_map(|flow| flow.body().ops())
+        .find_map(|op| {
+            if let arcweft_core::plan::FlowOp::HostCall { target, .. } = op {
+                target.args.first()
+            } else {
+                None
+            }
+        })
+        .expect("actual admitted HostCall argument");
+    assert_eq!(argument.identity(), expected);
+    assert_eq!(argument.name(), Some("value"));
+}

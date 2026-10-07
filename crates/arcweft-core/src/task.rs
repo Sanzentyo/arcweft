@@ -601,11 +601,24 @@ pub struct HostTaskRequestTemplate {
     pub(crate) captures: Vec<RuntimeLocalDeclarationId>,
 }
 
+/// Accepted static argument/field role transported by the checked owner.
+/// This is input evidence, not a completed request or task-plan digest.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RuntimeRequestRoleIdentity([u8; 32]);
+impl RuntimeRequestRoleIdentity {
+    pub const fn from_accepted_identity(identity: [u8; 32]) -> Self {
+        Self(identity)
+    }
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeHostArgumentTemplate {
-    Positional(RuntimeExpr),
-    Named(NamedHostArg<RuntimeExpr>),
-    Spread(RuntimeExpr),
+    Positional(RuntimeRequestRoleIdentity, RuntimeExpr),
+    Named(RuntimeRequestRoleIdentity, NamedHostArg<RuntimeExpr>),
+    Spread(RuntimeRequestRoleIdentity, RuntimeExpr),
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1521,37 +1534,58 @@ impl HostTaskRequestTemplate {
 }
 
 impl RuntimeHostArgumentTemplate {
-    pub fn positional(value: RuntimeExpr) -> Self {
-        Self::Positional(value)
+    pub const fn identity(&self) -> RuntimeRequestRoleIdentity {
+        match self {
+            Self::Positional(identity, _)
+            | Self::Named(identity, _)
+            | Self::Spread(identity, _) => *identity,
+        }
+    }
+    pub(crate) const fn semantic_tag(&self) -> u8 {
+        match self {
+            Self::Positional(..) => 0,
+            Self::Named(..) => 1,
+            Self::Spread(..) => 2,
+        }
+    }
+    pub fn positional(identity: RuntimeRequestRoleIdentity, value: RuntimeExpr) -> Self {
+        Self::Positional(identity, value)
     }
 
-    pub fn named(name: impl Into<String>, value: RuntimeExpr) -> Self {
-        Self::Named(NamedHostArg {
-            name: name.into(),
-            value,
-        })
+    pub fn named(
+        identity: RuntimeRequestRoleIdentity,
+        name: impl Into<String>,
+        value: RuntimeExpr,
+    ) -> Self {
+        Self::Named(
+            identity,
+            NamedHostArg {
+                name: name.into(),
+                value,
+            },
+        )
     }
 
-    pub fn spread(value: RuntimeExpr) -> Self {
-        Self::Spread(value)
+    pub fn spread(identity: RuntimeRequestRoleIdentity, value: RuntimeExpr) -> Self {
+        Self::Spread(identity, value)
     }
 
     pub fn name(&self) -> Option<&str> {
         match self {
-            Self::Named(argument) => Some(&argument.name),
-            Self::Positional(_) | Self::Spread(_) => None,
+            Self::Named(_, argument) => Some(&argument.name),
+            Self::Positional(..) | Self::Spread(..) => None,
         }
     }
 
     pub fn value(&self) -> &RuntimeExpr {
         match self {
-            Self::Positional(value) | Self::Spread(value) => value,
-            Self::Named(argument) => &argument.value,
+            Self::Positional(_, value) | Self::Spread(_, value) => value,
+            Self::Named(_, argument) => &argument.value,
         }
     }
 
     pub const fn is_spread(&self) -> bool {
-        matches!(self, Self::Spread(_))
+        matches!(self, Self::Spread(..))
     }
 }
 

@@ -78,6 +78,13 @@ digest_type!(CheckedCallApplicationCoreDigest);
 digest_type!(CheckedCallContinuationDigest);
 digest_type!(CheckedCallApplicationDigest);
 
+impl CheckedCallRequestRoleIdentity {
+    /// Carries already checked role evidence into the Core static request owner.
+    pub const fn runtime_identity(self) -> arcweft_core::task::RuntimeRequestRoleIdentity {
+        arcweft_core::task::RuntimeRequestRoleIdentity::from_accepted_identity(self.0)
+    }
+}
+
 impl CheckedCallContinuationDigest {
     /// Projects the checked continuation identity into the opaque runtime
     /// lineage domain without exposing a source- or declaration-based

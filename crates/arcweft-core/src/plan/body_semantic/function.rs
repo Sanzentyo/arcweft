@@ -13,21 +13,26 @@ use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticMeter};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ProducerFunctionSemanticDigest([u8; 32]);
 
-pub(crate) struct ProducerFunctionSemantic {
+pub(crate) struct ProducerFunctionSemantic<'a> {
     digest: ProducerFunctionSemanticDigest,
-    endpoints: Box<[(EndpointKind, blake3::Hash)]>,
+    plan: &'a super::RuntimePlan,
+    function: &'a plan::RuntimeFunctionSite,
+    endpoints: Box<[(EndpointKind, blake3::Hash, &'a plan::FlowOp)]>,
 }
 
 #[derive(Clone, Copy)]
 pub(crate) struct ProducerEndpoint<'a> {
-    producer: &'a ProducerFunctionSemantic,
+    digest: ProducerFunctionSemanticDigest,
+    plan: &'a super::RuntimePlan,
+    function: &'a plan::RuntimeFunctionSite,
+    operation: &'a plan::FlowOp,
     ordinal: u32,
     kind: EndpointKind,
 }
 
-impl ProducerEndpoint<'_> {
+impl<'a> ProducerEndpoint<'a> {
     pub(crate) const fn producer_digest(&self) -> ProducerFunctionSemanticDigest {
-        self.producer.digest
+        self.digest
     }
     pub(crate) const fn ordinal(&self) -> u32 {
         self.ordinal
@@ -35,17 +40,33 @@ impl ProducerEndpoint<'_> {
     pub(crate) const fn kind(&self) -> EndpointKind {
         self.kind
     }
+    pub(crate) fn belongs_to(&self, plan: &super::RuntimePlan) -> bool {
+        std::ptr::eq(self.plan, plan)
+    }
+    pub(crate) fn host_target(&self) -> Option<&'a plan::RuntimeHostCallTarget> {
+        if let plan::FlowOp::HostCall { target, .. } = self.operation {
+            Some(target)
+        } else {
+            None
+        }
+    }
+    pub(crate) const fn function(&self) -> &'a plan::RuntimeFunctionSite {
+        self.function
+    }
 }
 
-impl ProducerFunctionSemantic {
+impl ProducerFunctionSemantic<'_> {
     pub(crate) const fn digest(&self) -> ProducerFunctionSemanticDigest {
         self.digest
     }
     pub(crate) fn endpoint(&self, ordinal: u32) -> Option<ProducerEndpoint<'_>> {
         self.endpoints
             .get(ordinal as usize)
-            .map(|(kind, _)| ProducerEndpoint {
-                producer: self,
+            .map(|(kind, _, operation)| ProducerEndpoint {
+                digest: self.digest,
+                plan: self.plan,
+                function: self.function,
+                operation,
                 ordinal,
                 kind: *kind,
             })
@@ -84,7 +105,7 @@ enum PathStep {
     Endpoint(usize),
 }
 
-impl RuntimeBodySemanticContext<'_> {
+impl<'a> RuntimeBodySemanticContext<'a> {
     pub(crate) fn producer_function_digest(
         &self,
         meter: &mut TaskSemanticMeter,
@@ -114,7 +135,7 @@ impl RuntimeBodySemanticContext<'_> {
             RuntimeBodySemanticError,
         >,
         limits: plan::RuntimeTaskPlanSealLimits,
-    ) -> Result<ProducerFunctionSemantic, RuntimeBodySemanticError> {
+    ) -> Result<ProducerFunctionSemantic<'a>, RuntimeBodySemanticError> {
         meter.status()?;
         let Some(site) = self.plan.function_sites().get(function) else {
             meter.reject_owner();
@@ -196,7 +217,7 @@ impl RuntimeBodySemanticContext<'_> {
         self.write_type(&mut encoder, site.result())?;
         encoder.digest(body.as_bytes());
         encoder.count(paths.len());
-        for (ordinal, (kind, path)) in paths.iter().enumerate() {
+        for (ordinal, (kind, path, _)) in paths.iter().enumerate() {
             encoder.enter_element();
             encoder.enter_role();
             encoder.count(ordinal);
@@ -206,6 +227,8 @@ impl RuntimeBodySemanticContext<'_> {
         let digest = ProducerFunctionSemanticDigest(*encoder.finish()?.as_bytes());
         Ok(ProducerFunctionSemantic {
             digest,
+            plan: self.plan,
+            function: site,
             endpoints: paths.into_boxed_slice(),
         })
     }
@@ -237,9 +260,9 @@ impl RuntimeBodySemanticContext<'_> {
     }
 
     fn endpoint_paths(
-        body: &RuntimeFunctionSiteBody,
+        body: &'a RuntimeFunctionSiteBody,
         meter: &mut TaskSemanticMeter,
-    ) -> Result<Vec<(EndpointKind, blake3::Hash)>, RuntimeBodySemanticError> {
+    ) -> Result<Vec<(EndpointKind, blake3::Hash, &'a plan::FlowOp)>, RuntimeBodySemanticError> {
         let RuntimeFunctionSiteBody::Executable(body) = body else {
             return Ok(vec![]);
         };
@@ -285,7 +308,7 @@ impl RuntimeBodySemanticContext<'_> {
                                 }
                             }
                         }
-                        endpoints.push((kind, encoder.finish()?));
+                        endpoints.push((kind, encoder.finish()?, op));
                         path.pop();
                     }
                 }

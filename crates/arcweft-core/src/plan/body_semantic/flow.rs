@@ -146,10 +146,12 @@ impl RuntimeBodySemanticContext<'_> {
                     task_reference,
                 )?;
                 self.write_type(encoder, target.result)?;
+                self.write_host_arguments_metadata(encoder, &target.args)?;
             }
             FlowOp::Thread {
                 producer, captures, ..
             } => {
+                self.write_host_arguments_metadata(encoder, &producer.request.args)?;
                 Self::write_task_reference(
                     encoder,
                     RuntimeBodyTaskSource::Producer(producer),
@@ -286,6 +288,22 @@ impl RuntimeBodySemanticContext<'_> {
             return Err(RuntimeBodySemanticError::ForeignTaskCoordinate);
         }
         encoder.ordinal(ordinal.ordinal());
+        encoder.status().map_err(Into::into)
+    }
+
+    fn write_host_arguments_metadata(
+        &self,
+        encoder: &mut TaskSemanticEncoder<'_>,
+        arguments: &[crate::task::RuntimeHostArgumentTemplate],
+    ) -> Result<(), RuntimeBodySemanticError> {
+        encoder.count(arguments.len());
+        for (ordinal, argument) in arguments.iter().enumerate() {
+            encoder.enter_element();
+            encoder.count(ordinal);
+            encoder.tag(argument.semantic_tag());
+            encoder.digest(argument.identity().as_bytes());
+            self.write_type(encoder, argument.value().ty())?;
+        }
         encoder.status().map_err(Into::into)
     }
 

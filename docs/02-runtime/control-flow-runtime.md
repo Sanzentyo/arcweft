@@ -274,3 +274,27 @@ open argument (3). Field/open families contain the existing 32-byte identity.
 A fixed formal contains project declaration (0) or checked callable (1)
 identity, followed by group and parameter ordinals. Consumers receive the
 opaque issued identity, without a byte constructor or source-based fallback.
+
+
+Core Host argument templates retain that identity alongside the executable
+value in each positional/named/spread variant. Builder admission copies the
+identity while admitting the expression; evaluation consumes the value and
+binding mode. Display names remain runtime routing data, not a reconstruction
+source for the static request transcript.
+
+A producer endpoint borrows its actual plan, function and operation. The Host
+request encoder accepts the corresponding HostCall through this capability;
+it rejects a foreign plan or a different endpoint operation before issuing Q.
+Argument roles and paths are source ordered: each starts with Operand(ordinal),
+named arguments add NamedArgument(accepted role identity), and spread arguments
+add SpreadArgument(ordinal). The Host request argument vector owns no additional
+request field rows. Literal payloads and display names are not read by this
+projection; the actual expression type and admitted source role are retained.
+
+Source classification follows the actual expression without evaluation.
+Need-typed sources are NeedHandle. Local reads use the function's accepted
+capture prologue to distinguish Capture from Local; field/tuple/record reads
+are Projection. Aggregate constructions use AggregateItem. Let/Scope/Assign
+wrappers follow their result expression iteratively. Other eager computation
+results, including operators and conditionals, use CallResult. Classification,
+role/path projection and encoding share the same checked work/byte meter.

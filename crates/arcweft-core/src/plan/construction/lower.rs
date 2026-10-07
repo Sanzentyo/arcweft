@@ -4755,17 +4755,26 @@ impl RuntimePlanBodyConstruction<'_> {
                 .into_iter()
                 .map(|arg| {
                     Ok(match arg {
-                        RuntimeHostArgumentSeed::Positional(value) => {
-                            RuntimeHostArgumentTemplate::Positional(self.lower_expression(value)?)
+                        RuntimeHostArgumentSeed::Positional(identity, value) => {
+                            RuntimeHostArgumentTemplate::Positional(
+                                identity,
+                                self.lower_expression(value)?,
+                            )
                         }
-                        RuntimeHostArgumentSeed::Named(argument) => {
-                            RuntimeHostArgumentTemplate::Named(NamedHostArg {
-                                name: argument.name,
-                                value: self.lower_expression(argument.value)?,
-                            })
+                        RuntimeHostArgumentSeed::Named(identity, argument) => {
+                            RuntimeHostArgumentTemplate::Named(
+                                identity,
+                                NamedHostArg {
+                                    name: argument.name,
+                                    value: self.lower_expression(argument.value)?,
+                                },
+                            )
                         }
-                        RuntimeHostArgumentSeed::Spread(value) => {
-                            RuntimeHostArgumentTemplate::Spread(self.lower_expression(value)?)
+                        RuntimeHostArgumentSeed::Spread(identity, value) => {
+                            RuntimeHostArgumentTemplate::Spread(
+                                identity,
+                                self.lower_expression(value)?,
+                            )
                         }
                     })
                 })
@@ -4778,17 +4787,20 @@ impl RuntimePlanBodyConstruction<'_> {
         argument: RuntimeHostArgumentSeed,
     ) -> Result<RuntimeHostArgumentTemplate, RuntimePlanBuildError> {
         Ok(match argument {
-            RuntimeHostArgumentSeed::Positional(value) => {
-                RuntimeHostArgumentTemplate::Positional(self.lower_expression(value)?)
+            RuntimeHostArgumentSeed::Positional(identity, value) => {
+                RuntimeHostArgumentTemplate::Positional(identity, self.lower_expression(value)?)
             }
-            RuntimeHostArgumentSeed::Named(argument) => {
-                RuntimeHostArgumentTemplate::Named(NamedHostArg {
-                    name: argument.name,
-                    value: self.lower_expression(argument.value)?,
-                })
+            RuntimeHostArgumentSeed::Named(identity, argument) => {
+                RuntimeHostArgumentTemplate::Named(
+                    identity,
+                    NamedHostArg {
+                        name: argument.name,
+                        value: self.lower_expression(argument.value)?,
+                    },
+                )
             }
-            RuntimeHostArgumentSeed::Spread(value) => {
-                RuntimeHostArgumentTemplate::Spread(self.lower_expression(value)?)
+            RuntimeHostArgumentSeed::Spread(identity, value) => {
+                RuntimeHostArgumentTemplate::Spread(identity, self.lower_expression(value)?)
             }
         })
     }
@@ -5594,9 +5606,9 @@ impl RuntimePlanBodyConstruction<'_> {
     ) -> Result<(), RuntimePlanBuildError> {
         for argument in arguments {
             let value = match argument {
-                RuntimeHostArgumentTemplate::Positional(value)
-                | RuntimeHostArgumentTemplate::Spread(value) => value,
-                RuntimeHostArgumentTemplate::Named(argument) => &argument.value,
+                RuntimeHostArgumentTemplate::Positional(_, value)
+                | RuntimeHostArgumentTemplate::Spread(_, value) => value,
+                RuntimeHostArgumentTemplate::Named(_, argument) => &argument.value,
             };
             self.validate_expression_locals(value, scope, used)?;
         }
