@@ -157,7 +157,7 @@ pub(crate) struct RuntimeRequestField {
 }
 
 impl RuntimeBodySemanticContext<'_> {
-    /// Reads the actual admitted `HostCall` referenced by F's opaque endpoint.
+    /// Reads actual HostCall/MakeNeed arguments through F's opaque endpoint.
     /// Literal/evaluated payloads and display names never supply Q evidence.
     pub(crate) fn host_request_template_digest(
         &self,
@@ -170,11 +170,11 @@ impl RuntimeBodySemanticContext<'_> {
             meter.reject_owner();
             return Err(RuntimeBodySemanticError::InvalidHostRequestEndpoint);
         }
-        let target = endpoint.host_target().ok_or_else(|| {
+        let actual_arguments = endpoint.host_arguments().ok_or_else(|| {
             meter.reject_owner();
             RuntimeBodySemanticError::InvalidHostRequestEndpoint
         })?;
-        let actual = meter.checked_count_sum(target.args.len(), 0)?;
+        let actual = meter.checked_count_sum(actual_arguments.len(), 0)?;
         if actual > limits.max_request_roles as usize {
             meter.reject_owner();
             return Err(RuntimeBodySemanticError::RequestRoles {
@@ -183,7 +183,7 @@ impl RuntimeBodySemanticContext<'_> {
             });
         }
         let mut arguments = Vec::with_capacity(actual);
-        for (ordinal, argument) in target.args.iter().enumerate() {
+        for (ordinal, argument) in actual_arguments.iter().enumerate() {
             meter.charge_work(1)?;
             let ordinal = u32::try_from(ordinal).map_err(|_| {
                 meter.reject_owner();

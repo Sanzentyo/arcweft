@@ -7953,3 +7953,131 @@ required. Known 277 broad CLI failures and GPU/Tier2 work remain unresolved.
 Goal active/incomplete. Astra one-shot consumed; never repeat. Main only;
 no branch, worktree or delegation. Final source is reviewed and explicitly
 staged at this coherent cut before normal push.
+
+
+### 2026-10-07 — Actual MakeNeed argument roles and Q
+
+Base was clean main/origin at d55f7c4dafd4bb5a7143dbfb18963285be6d5a5a
+(0/0). This cut is a prerequisite for the actual static candidate/E migration:
+the old MakeNeed Vec<RuntimeExpr> startup path discarded accepted argument roles.
+
+MakeNeed now carries the existing RuntimeHostArgumentSeed/Template used by
+HostCall. FinalExprLowerer resolves each role from its own scoped accepted call
+row by source ordinal; both startup and HostCall use this projection. Core
+admission, free-local/scope traversal, Native evaluation, AWBC lowering, CLI
+asset discovery and manual fixtures consume the same argument authority.
+Startup admits scalar positional/named bindings matching the selected request,
+rejects spread and checks full arity before zip. Extra arguments cannot vanish.
+Values are evaluated once in source order. Static F metadata and the existing
+owner-bound Q kernel read the actual MakeNeed endpoint (kind 6) and retain its
+accepted role identity. Q excludes display names and literal payloads.
+
+New executable evidence covers actual compiler positional/named role transport,
+actual MakeNeed F/Q endpoint ownership, name-only Q invariance, accepted identity
+mutation, extra-argument rejection and binding/spread rejection. Production
+roles have no default, generated ordinal identity, source reconstruction or
+parallel model. Manual fixtures retain explicit accepted fixture identities.
+No Cargo edge, codec/schema marker, move/borrow policy or final seal changed.
+
+Validation before the broad consumer run:
+- Focus57025: 39/39 passed, 1,078 filtered, 0.203s. Initial focus75660 failed
+  to compile because a fixture used the wrong HostRestartPolicy module;
+  the fixture was repaired before the passing run.
+- Workspace check50807: 13.21s; workspace Clippy: 1m48s, both exit0.
+  Initial check13626 found the missed CLI asset consumer, which was migrated.
+- A context-owned operand lookup replaced an arbitrary operand parameter after
+  the unused-self lint. A reserved Node variable prevented the first edit from
+  executing. Transport13457 passed3/3 on the pre-lookup source, so it is retained
+  only as earlier-byte evidence. The corrected edit actually applied.
+- Closed-context84389: workspace all-target/all-feature locked check15.47s and
+  affected runtime-plan Clippy1m08s, both exit0. Other workspace lint owners
+  are unchanged and reuse50807, without being relabeled as a new run.
+- Structure scanner exit0/no blockers. Fresh all-feature metadata and target-all
+  inverse traversal exit0: complete Core closure50,49 packages excluding CLI.
+  SHA256 snapshot covers the final20 changed Rust files before broad execution.
+
+Broad85999 terminated101. The49-package build failed before tests started:
+runtime-host view_interaction_dispatch required arcweft_bundle as an rlib but
+could not use it in that form. This diagnostic alone does not establish OS1455.
+CLI lib/bins passed171/171 (zero skipped,2.015s). The six selected CLI integration
+build failed with link.exe1140/fatal LNK1180 (insufficient disk). D: had24,576
+free bytes. No toolchain process remained after that script terminated.
+
+Automatic approval review rejected guarded recursive cache deletion before
+execution (reason: blocked by policy; no more detailed rationale). Nothing was
+deleted. A safer content-preserving Move-Item rescued old generated incremental
+cache directories to C:/Users/sanze/AppData/Local/Temp/
+arcweft-cargo-incremental-rescue-d55f7c4. Source/destination resolved paths,
+reparse absence, no tracked cache files and absent Cargo/rustc/link processes
+were checked. Every bulk move verified equal file count and byte total before
+and after. Initial single-directory move preserved arcweft_data-2b1q3pyn28zlo;
+bulk28928 then moved974 directories/47,739,636,758 bytes and terminated0.
+D: free was43,002,912,768 bytes after rescue. Rescue contents remain preserved.
+
+Unchanged phases retry9817 terminated: nonCLI build101 before tests;
+CLI integrations24/24 passed, zero skipped,9.711s. NonCLI reported OS1455
+while mmap-reading the bundle rlib; distinguish it from the original rlib
+and disk diagnostics. Isolated player-native lib66385 passed49/49,0.559s;
+this used its own all-feature package selection, not the full feature union.
+The exact49-package broad retry16487 terminated101 before tests, with actual
+OS1455, rustc internal import-resolution crashes and an unresolved import.
+No test assertion failure or implementation cause is inferred from these.
+
+Kept the49 packages/all-features/locked and normal Cargo settings. Full-union
+lib inventory64999 terminated0. Lib run69201 passed3,905/3,905, zero skipped,
+42.780s; the exact3,905 selected/executed IDs match with no omission or extra.
+First receipt parsing missed999 padded progress counters; the whitespace-aware
+parser fixed the receipt, without changing any test or execution result.
+Four lib binaries are caseless: arcweft, bundle-assets, render-text, render-web;
+the workspace check/lint covers them. Final discovery below also includes
+integration targets.
+
+The13 previously failed integration targets were then listed one at a time,
+using the same49 package arguments/all-features/locked (warm11021 terminal0).
+All13 inventories/builds passed; listing is not test execution. Full original
+49-package lib/tests discovery and execution90743 then terminated0:
+- Discovery/build:2m02s;187 binaries,46 packages with cases. The3 caseless
+  packages are arcweft, bundle-assets and render-web; final all-target check
+  and Clippy cover their compilation. CLI is the50th closure package.
+- Run:4,898/4,898 passed,16 existing GPU cases explicitly ignored,710.967s.
+  Four slow tests passed. No failure or zero-test consumer is hidden.
+- CLI lib/bins original85999:171/171 passed,2.015s; CLI six integrations
+  retry9817:24/24 passed,9.711s. Final matching inventories both exit0.
+- Exact inventories/receipts match all5,093 executed IDs: no omission,
+  unexpected case or duplicate. The16 excluded case IDs/reason=ignored are
+  preserved in the receipt; they are not runtime GPU acceptance evidence.
+- Final fmt12873 passed; final20-source SHA256 snapshot unchanged. Final
+  whitespace/diff review completed. The origin fetch still matched the base,
+  so no newer remote source was merged after validation.
+
+No jobs, profile, timeout, assertion, ignore policy, feature or pagefile changed.
+The warm3,905 lib cases and isolated49 native cases overlap the final run;
+they are not double counted. CLI reuse is explicitly its original-byte pass,
+not a rerun. Earlier build failures remain part of this record. No public codec
+or executable example changed, so no new doctest/artifact generation is needed.
+
+Receipts in TEMP use arcweft-1007-makeneed-roles-: original/retry/final build
+logs, focus-final.log, check-final/clippy and check-closed/clippy-closed logs,
+structure.log, fmt.log, metadata.json, inverse.txt, closure.json,
+source-snapshot.json, cache-rescue.json, lib-receipt.json, rdeps-inventory.json,
+rdeps-receipt.json, CLI inventories and cli-receipts.json. The preserved cache
+rescue is separate from source and remains on C:. No toolchain process remains.
+The final complete22-path diff is reviewed, explicitly staged, committed and
+normally pushed at this coherent cut before continuing the same active goal.
+
+Ownership review: the Core startup target owns selected plan plus common
+arguments; the projection belongs to the accepted scoped call context.
+Native/AWBC/eager roots consume retained values, while Core F/Q consumes roles.
+No copied AST or side catalog. Existing cohesion dispositions for construction
+lowering and final expression/Flow modules apply to the request-role boundary.
+Measured sizes: Plan1,739 LOC/62,470 bytes; Core body tests1,894/69,880;
+request435/16,883; construction lower6,092/260,180; final expression3,524/144,166;
+final Flow10,084/428,654; compiler project tests4,118/153,726.
+
+Actual candidate inventory, global fifteen-table E, common atomic seal, final
+public schema switch, obsolete-path removal and all original T01/T06, retained
+UI, nominal/scheduler/restore acceptance remain required. Known277 broad CLI
+failures and GPU/Tier2 work remain unresolved. Goal active/incomplete. Astra
+one-shot consumed (4b076ec754b45a86a28a6fa185131ccd9ef49136); never repeat.
+Main only, no branch/worktree/delegation. Review explicit staged paths at the
+validated coherent cut and normal commit/push; then continue the same goal.

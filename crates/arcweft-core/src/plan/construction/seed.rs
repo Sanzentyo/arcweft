@@ -836,9 +836,7 @@ fn collect_binding_or_host_free_locals(
             }
         }
         RuntimeFlowOpSeed::StartNeedProducer { binding, target } => {
-            for argument in &target.arguments {
-                argument.collect_free_locals(bound, locals);
-            }
+            collect_host_argument_free_locals(&target.arguments, bound, locals);
             binding.collect_binding_locals(bound);
         }
         RuntimeFlowOpSeed::AwaitMany {
@@ -1218,7 +1216,7 @@ pub struct RuntimeAwaitTargetSeed {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeNeedProducerStartTargetSeed {
     pub plan: NeedProducerTaskPlan,
-    pub arguments: Vec<RuntimeExprSeed>,
+    pub arguments: Vec<RuntimeHostArgumentSeed>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

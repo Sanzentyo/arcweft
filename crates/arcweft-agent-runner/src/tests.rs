@@ -574,21 +574,23 @@ fn agent_need_producer(
     response_result_ty: u8,
     operation: String,
     request_args: Vec<RuntimeHostArgumentSeed>,
-) -> (NeedProducerTaskPlan, Vec<RuntimeExprSeed>) {
+) -> (NeedProducerTaskPlan, Vec<RuntimeHostArgumentSeed>) {
     let mut argument_names = Vec::with_capacity(request_args.len());
     let mut argument_types = Vec::with_capacity(request_args.len());
     let mut arguments = Vec::with_capacity(request_args.len());
     for argument in request_args {
-        let (name, value) = match argument {
+        let (name, value) = match &argument {
             RuntimeHostArgumentSeed::Positional(_, value) => (None, value),
-            RuntimeHostArgumentSeed::Named(_, argument) => (Some(argument.name), argument.value),
+            RuntimeHostArgumentSeed::Named(_, argument) => {
+                (Some(argument.name.clone()), &argument.value)
+            }
             RuntimeHostArgumentSeed::Spread(..) => {
                 panic!("Agent Need producer fixtures do not use spread arguments")
             }
         };
         argument_types.push(value.ty());
         argument_names.push(name);
-        arguments.push(value);
+        arguments.push(argument);
     }
 
     let contract_bytes = [response_result_ty; 32];

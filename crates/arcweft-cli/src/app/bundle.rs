@@ -807,7 +807,7 @@ fn static_image_asset_refs(plan: &RuntimePlan) -> Vec<String> {
                     ..
                 }
             ) && let Some(argument) = target.arguments().first()
-                && let Some(asset) = static_image_asset_ref_expr(argument)
+                && let Some(asset) = static_image_asset_ref_expr(argument.value())
             {
                 refs.push(asset);
             }

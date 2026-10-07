@@ -927,7 +927,8 @@ impl Engine {
     ) {
         let plan = target.plan().clone();
         let mut arguments = Vec::with_capacity(target.arguments().len());
-        for (index, expression) in target.arguments().iter().enumerate() {
+        for (index, argument) in target.arguments().iter().enumerate() {
+            let expression = argument.value();
             let Some(expected) = plan.argument_types().get(index).copied() else {
                 self.fail_eval("Need producer argument type row is incomplete", output);
                 return;

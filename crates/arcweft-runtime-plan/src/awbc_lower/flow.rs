@@ -1527,7 +1527,8 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     .arguments()
                     .iter()
                     .map(|argument| {
-                        AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(argument)
+                        AwbcExprLowerer::new(self.inventory, frame, path, self.plan)
+                            .lower(argument.value())
                     })
                     .collect::<Vec<_>>();
                 let Some(destination_type) = self.inventory.plan_type(binding.ty()) else {

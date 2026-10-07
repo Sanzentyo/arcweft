@@ -131,12 +131,15 @@ impl RuntimeBodySemanticContext<'_> {
                 encoder.tag(u8::from(binding.is_some()));
                 encoder.count(observers.len());
             }
-            FlowOp::StartNeedProducer { target, .. } => Self::write_task_reference(
-                encoder,
-                RuntimeBodyTaskSource::Start(target),
-                task_owner,
-                task_reference,
-            )?,
+            FlowOp::StartNeedProducer { target, .. } => {
+                self.write_host_arguments_metadata(encoder, target.arguments())?;
+                Self::write_task_reference(
+                    encoder,
+                    RuntimeBodyTaskSource::Start(target),
+                    task_owner,
+                    task_reference,
+                )?;
+            }
             FlowOp::HostCall { binding, target } => {
                 encoder.tag(u8::from(binding.is_some()));
                 Self::write_task_reference(

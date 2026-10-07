@@ -1400,9 +1400,14 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
                 ),
                 target: arcweft_core::plan::RuntimeNeedProducerStartTargetSeed {
                     plan: producer_plan,
-                    arguments: vec![RuntimeExprSeed::new(
-                        entity_reference_type,
-                        RuntimeExprSeedKind::EntityRef(asset_reference),
+                    arguments: vec![arcweft_core::plan::RuntimeHostArgumentSeed::Positional(
+                        arcweft_core::task::RuntimeRequestRoleIdentity::from_accepted_identity(
+                            [42; 32],
+                        ),
+                        RuntimeExprSeed::new(
+                            entity_reference_type,
+                            RuntimeExprSeedKind::EntityRef(asset_reference),
+                        ),
                     )],
                 },
             },

@@ -390,6 +390,56 @@ impl<'hir> FinalExprLowerer<'hir> {
             .dialogue_content_fragment_for_source(source)
     }
 
+    /// Preserves the accepted argument role and source binding for Host-backed
+    /// calls, including MakeNeed startup. Value lowering is performed once by
+    /// the caller's checked control/evaluation context.
+    pub(crate) fn request_argument_seed(
+        &self,
+        id: ExprId,
+        ordinal: usize,
+        value: RuntimeExprSeed,
+    ) -> Result<RuntimeHostArgumentSeed, String> {
+        let operand =
+            self.call(id)?.operands().get(ordinal).ok_or_else(|| {
+                format!("request call {id:?} has no accepted argument at {ordinal}")
+            })?;
+        let identity = operand
+            .request_role_identity()
+            .ok_or_else(|| format!("request call {id:?} has no accepted argument role"))?
+            .runtime_identity();
+        if !matches!(
+            operand.origin(),
+            RuntimeResolvedCallOperandOrigin::Argument { .. }
+        ) {
+            return Err(format!(
+                "request call {id:?} cannot project a non-argument operand"
+            ));
+        }
+        match (operand.projection(), operand.binding()) {
+            (
+                RuntimeResolvedCallOperandProjection::Scalar,
+                RuntimeResolvedCallOperandBinding::Positional,
+            ) => Ok(RuntimeHostArgumentSeed::Positional(identity, value)),
+            (
+                RuntimeResolvedCallOperandProjection::Scalar,
+                RuntimeResolvedCallOperandBinding::Named(name),
+            ) => Ok(RuntimeHostArgumentSeed::Named(
+                identity,
+                NamedHostArg {
+                    name: name.clone(),
+                    value,
+                },
+            )),
+            (
+                RuntimeResolvedCallOperandProjection::SpreadContainer(_),
+                RuntimeResolvedCallOperandBinding::Positional,
+            ) => Ok(RuntimeHostArgumentSeed::Spread(identity, value)),
+            _ => Err(format!(
+                "request call {id:?} has an unsupported operand binding/projection"
+            )),
+        }
+    }
+
     pub(crate) fn lower_host_call_target(
         &self,
         id: ExprId,
@@ -401,44 +451,16 @@ impl<'hir> FinalExprLowerer<'hir> {
         else {
             return Ok(None);
         };
-        let args = self
-            .lower_call_operands(id, call)?
+        let operands = self.lower_call_operands(id, call)?;
+        if operands.len() != call.operands().len() {
+            return Err(format!(
+                "request call {id:?} lowered argument count differs from its accepted row"
+            ));
+        }
+        let args = operands
             .into_iter()
-            .zip(call.operands())
-            .map(|((value, _), operand)| {
-                let identity = operand
-                    .request_role_identity()
-                    .ok_or_else(|| format!("host call {id:?} has no accepted argument role"))?
-                    .runtime_identity();
-                if matches!(operand.origin(), RuntimeResolvedCallOperandOrigin::Receiver) {
-                    return Err(format!(
-                        "host call {id:?} cannot project a receiver argument"
-                    ));
-                }
-                match (operand.projection(), operand.binding()) {
-                    (
-                        RuntimeResolvedCallOperandProjection::Scalar,
-                        RuntimeResolvedCallOperandBinding::Positional,
-                    ) => Ok(RuntimeHostArgumentSeed::Positional(identity, value)),
-                    (
-                        RuntimeResolvedCallOperandProjection::Scalar,
-                        RuntimeResolvedCallOperandBinding::Named(name),
-                    ) => Ok(RuntimeHostArgumentSeed::Named(
-                        identity,
-                        NamedHostArg {
-                            name: name.clone(),
-                            value,
-                        },
-                    )),
-                    (
-                        RuntimeResolvedCallOperandProjection::SpreadContainer(_),
-                        RuntimeResolvedCallOperandBinding::Positional,
-                    ) => Ok(RuntimeHostArgumentSeed::Spread(identity, value)),
-                    _ => Err(format!(
-                        "host call {id:?} has an unsupported operand binding/projection"
-                    )),
-                }
-            })
+            .enumerate()
+            .map(|(ordinal, (value, _))| self.request_argument_seed(id, ordinal, value))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Some(RuntimeHostCallTargetSeed {
             producer: {

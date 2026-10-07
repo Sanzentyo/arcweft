@@ -3709,16 +3709,26 @@ impl RuntimePlanBodyConstruction<'_> {
                 let plan_item =
                     self.resolve_seed_type("Need producer payload", target.plan.payload_type())?;
                 require_same("Need producer result item", item, plan_item)?;
+                if target.arguments.len() != target.plan.argument_count() {
+                    return Err(
+                        crate::plan::RuntimeNeedProducerStartTargetError::ArgumentCountMismatch
+                            .into(),
+                    );
+                }
                 let mut arguments = Vec::with_capacity(target.arguments.len());
                 for (argument, expected_type) in target
                     .arguments
                     .into_iter()
                     .zip(target.plan.argument_types().iter().copied())
                 {
-                    let argument = self.lower_expression(argument)?;
+                    let argument = self.lower_host_argument(argument)?;
                     let expected_type =
                         self.resolve_seed_type("Need producer argument", expected_type)?;
-                    require_same("Need producer argument", expected_type, argument.ty())?;
+                    require_same(
+                        "Need producer argument",
+                        expected_type,
+                        argument.value().ty(),
+                    )?;
                     arguments.push(argument);
                 }
                 let target =
@@ -5304,7 +5314,7 @@ impl RuntimePlanBodyConstruction<'_> {
                 }
                 FlowOp::StartNeedProducer { binding, target } => {
                     for argument in target.arguments() {
-                        self.validate_expression_locals(argument, scope, used)?;
+                        self.validate_expression_locals(argument.value(), scope, used)?;
                     }
                     *scope = extend_scope(scope, pattern_binding_locals(binding))?;
                 }

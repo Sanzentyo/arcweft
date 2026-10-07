@@ -405,9 +405,16 @@ fn custom_echo_plan() -> RuntimePlan {
                     ),
                     target: RuntimeNeedProducerStartTargetSeed {
                         plan: producer_plan,
-                        arguments: vec![RuntimeExprSeed::new(
-                            string_ty,
-                            RuntimeExprSeedKind::Value(RuntimeValue::String("hello".to_owned())),
+                        arguments: vec![arcweft_core::plan::RuntimeHostArgumentSeed::Positional(
+                            arcweft_core::task::RuntimeRequestRoleIdentity::from_accepted_identity(
+                                [42; 32],
+                            ),
+                            RuntimeExprSeed::new(
+                                string_ty,
+                                RuntimeExprSeedKind::Value(RuntimeValue::String(
+                                    "hello".to_owned(),
+                                )),
+                            ),
                         )],
                     },
                 },

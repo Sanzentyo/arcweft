@@ -283,6 +283,26 @@ flow main(background: Ref<Asset>) -> i64 {
             arcweft_runtime_plan::semantic_facts::RuntimeResolvedStaticCallTarget::Registered(_)
         )
     ));
+    let expected_role = call.operands()[0]
+        .request_role_identity()
+        .unwrap()
+        .runtime_identity();
+    let target = compiled
+        .runtime_plan()
+        .plan
+        .flows()
+        .iter()
+        .flat_map(|flow| flow.body().ops())
+        .find_map(|op| {
+            if let arcweft_core::plan::FlowOp::StartNeedProducer { target, .. } = op {
+                Some(target)
+            } else {
+                None
+            }
+        })
+        .expect("actual admitted MakeNeed endpoint");
+    assert_eq!(target.arguments()[0].identity(), expected_role);
+    assert_eq!(target.arguments()[0].name(), None);
 }
 
 #[test]
@@ -4057,4 +4077,42 @@ fn lowered_host_arguments_keep_the_checked_request_role_identity() {
         .expect("actual admitted HostCall argument");
     assert_eq!(argument.identity(), expected);
     assert_eq!(argument.name(), Some("value"));
+}
+
+#[test]
+fn named_make_need_arguments_keep_the_checked_request_role_identity() {
+    let (project, context) = removed_role_project(
+        "flow main(background: Ref<Asset>) -> i64 { let pending = asset.image(asset = background); return 1i64 }\n",
+    );
+    let (mut session, parsed) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed, &context)
+        .expect("named MakeNeed startup compiles");
+    let role = compiled
+        .runtime_facts()
+        .calls()
+        .find_map(|(_, call)| {
+            call.need_producer().map(|_| {
+                call.operands()[0]
+                    .request_role_identity()
+                    .unwrap()
+                    .runtime_identity()
+            })
+        })
+        .expect("accepted MakeNeed role");
+    let argument = compiled
+        .runtime_plan()
+        .plan
+        .flows()
+        .iter()
+        .flat_map(|flow| flow.body().ops())
+        .find_map(|op| {
+            if let arcweft_core::plan::FlowOp::StartNeedProducer { target, .. } = op {
+                target.arguments().first()
+            } else {
+                None
+            }
+        })
+        .expect("actual admitted MakeNeed argument");
+    assert_eq!(argument.identity(), role);
+    assert_eq!(argument.name(), Some("asset"));
 }

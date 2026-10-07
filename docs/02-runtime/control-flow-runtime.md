@@ -299,15 +299,16 @@ identity, followed by group and parameter ordinals. Consumers receive the
 opaque issued identity, without a byte constructor or source-based fallback.
 
 
-Core Host argument templates retain that identity alongside the executable
-value in each positional/named/spread variant. Builder admission copies the
-identity while admitting the expression; evaluation consumes the value and
-binding mode. Display names remain runtime routing data, not a reconstruction
+Core HostCall and MakeNeed startup argument templates retain that identity
+alongside the executable value in each positional/named/spread variant. Builder
+admission copies the identity while admitting the expression; evaluation
+consumes the value and binding mode. Display names remain runtime routing data, not a reconstruction
 source for the static request transcript.
 
 A producer endpoint borrows its actual plan, function and operation. The Host
-request encoder accepts the corresponding HostCall through this capability;
-it rejects a foreign plan or a different endpoint operation before issuing Q.
+request encoder accepts the corresponding HostCall or MakeNeed startup through
+this capability. It rejects a foreign plan or a different endpoint operation
+before issuing Q.
 Argument roles and paths are source ordered: each starts with Operand(ordinal),
 named arguments add NamedArgument(accepted role identity), and spread arguments
 add SpreadArgument(ordinal). The Host request argument vector owns no additional
@@ -321,3 +322,12 @@ are Projection. Aggregate constructions use AggregateItem. Let/Scope/Assign
 wrappers follow their result expression iteratively. Other eager computation
 results, including operators and conditionals, use CallResult. Classification,
 role/path projection and encoding share the same checked work/byte meter.
+
+MakeNeed startup admits only scalar positional/named bindings compatible with
+the selected producer request. It rejects spread and mismatched names. Builder
+admission checks the complete argument count before zipping with the type row,
+so extra arguments cannot be discarded. Native and AWBC consumers evaluate
+the retained expression once in source order; role metadata is static input
+evidence. Asset request routing retains the selected formal name even when the
+source used positional binding. The request transcript retains that source
+binding role and the accepted identity without reconstructing it from names.

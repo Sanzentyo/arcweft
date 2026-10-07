@@ -289,7 +289,7 @@ impl FlowOp {
             FlowOp::StartNeedProducer { binding, target } => {
                 visitor(Role::Pattern, Node::Pattern(binding))?;
                 for (ordinal, argument) in target.arguments().iter().enumerate() {
-                    expression(Role::Argument { ordinal }, argument, visitor)?;
+                    expression(Role::Argument { ordinal }, argument.value(), visitor)?;
                 }
             }
             FlowOp::AwaitMany {

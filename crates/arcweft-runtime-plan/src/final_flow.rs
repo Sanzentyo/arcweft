@@ -7682,7 +7682,8 @@ impl<'a> FinalFlowLowerer<'a> {
             .operands()
             .iter()
             .zip(plan.argument_types())
-            .map(|(operand, expected)| {
+            .enumerate()
+            .map(|(ordinal, (operand, expected))| {
                 if operand.ty().identity() != *expected
                     || !matches!(
                         operand.projection(),
@@ -7693,8 +7694,11 @@ impl<'a> FinalFlowLowerer<'a> {
                         "Need producer call {expression:?} has an unchecked runtime argument"
                     )));
                 }
-                lowerer
+                let value = lowerer
                     .lower_scalar_operand_source(operand.source(), operand.ty())
+                    .map_err(RuntimePlanLowerError::new)?;
+                lowerer
+                    .request_argument_seed(expression, ordinal, value)
                     .map_err(RuntimePlanLowerError::new)
             })
             .collect::<Result<Vec<_>, _>>()?;

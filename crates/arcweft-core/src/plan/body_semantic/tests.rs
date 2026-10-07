@@ -911,6 +911,26 @@ fn producer_host_plan_with_setup(
     crate::plan::construction::task_coordinates::RuntimeTaskPlanCoordinateOwner,
     crate::runtime_id::RuntimeFunctionSiteId,
 ) {
+    try_producer_request_plan_with_setup(in_then, None, setup).unwrap()
+}
+
+fn try_producer_request_plan_with_setup(
+    in_then: bool,
+    start_plan: Option<crate::task::NeedProducerTaskPlan>,
+    setup: impl FnOnce(
+        &mut RuntimePlanBuilder,
+    ) -> (
+        Vec<crate::plan::RuntimeHostArgumentSeed>,
+        Box<[crate::plan::RuntimeFunctionInputBindingSeed]>,
+    ),
+) -> Result<
+    (
+        RuntimePlan,
+        crate::plan::construction::task_coordinates::RuntimeTaskPlanCoordinateOwner,
+        crate::runtime_id::RuntimeFunctionSiteId,
+    ),
+    crate::plan::RuntimePlanBuildError,
+> {
     use crate::plan::*;
     let mut builder = RuntimePlanBuilder::new();
     let unit = RuntimeSemanticTypeId::from_bytes([62; 32]);
@@ -924,6 +944,18 @@ fn producer_host_plan_with_setup(
             [],
         )
         .unwrap();
+    let need = RuntimeSemanticTypeId::from_bytes([63; 32]);
+    if start_plan.is_some() {
+        builder
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    need,
+                    RuntimePlanTypeProjection::Need(unit),
+                )],
+                [],
+            )
+            .unwrap();
+    }
     let (args, inputs) = setup(&mut builder);
     let effects = RuntimeEffectSet::empty();
     let site = builder
@@ -937,52 +969,60 @@ fn producer_host_plan_with_setup(
             effects: effects.clone(),
         })
         .unwrap();
-    let host = RuntimeFlowOpSeed::HostCall {
-        binding: None,
-        target: RuntimeHostCallTargetSeed {
-            producer: crate::task::HostCallProducerDefinition {
-                contract: crate::task::NeedProducerContractDigest::from_bytes([1; 32]),
-                plan: crate::task::TaskPlanSemanticDigest::from_bytes([2; 32]),
-                site: crate::task::NeedProducerSiteDigest::from_bytes([3; 32]),
+    let host = if let Some(plan) = start_plan {
+        RuntimeFlowOpSeed::StartNeedProducer {
+            binding: RuntimePatternSeed::new(need, RuntimePatternSeedKind::Discard),
+            target: RuntimeNeedProducerStartTargetSeed {
+                plan,
+                arguments: args,
             },
-            public_id: "test.notify".to_owned(),
-            capability: "test".to_owned(),
-            operation: "notify".to_owned(),
-            contract: None,
-            args,
-            result: unit,
-            mode: crate::step::RuntimeHostCallMode::Suspend,
-            deterministic: false,
-        },
+        }
+    } else {
+        RuntimeFlowOpSeed::HostCall {
+            binding: None,
+            target: RuntimeHostCallTargetSeed {
+                producer: crate::task::HostCallProducerDefinition {
+                    contract: crate::task::NeedProducerContractDigest::from_bytes([1; 32]),
+                    plan: crate::task::TaskPlanSemanticDigest::from_bytes([2; 32]),
+                    site: crate::task::NeedProducerSiteDigest::from_bytes([3; 32]),
+                },
+                public_id: "test.notify".to_owned(),
+                capability: "test".to_owned(),
+                operation: "notify".to_owned(),
+                contract: None,
+                args,
+                result: unit,
+                mode: crate::step::RuntimeHostCallMode::Suspend,
+                deterministic: false,
+            },
+        }
     };
-    builder
-        .define_function_site_seed(
-            &site,
-            RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
-                effects,
-                ops: Box::new([
-                    RuntimeFlowOpSeed::If {
-                        condition: RuntimeExprSeed::new(
-                            boolean,
-                            RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(true)),
-                        ),
-                        then_ops: if in_then { vec![host.clone()] } else { vec![] },
-                        else_ops: if in_then { vec![] } else { vec![host] },
-                    },
-                    RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
-                        unit,
-                        RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Unit),
-                    )),
-                ]),
-            }),
-        )
-        .unwrap();
+    builder.define_function_site_seed(
+        &site,
+        RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+            effects,
+            ops: Box::new([
+                RuntimeFlowOpSeed::If {
+                    condition: RuntimeExprSeed::new(
+                        boolean,
+                        RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(true)),
+                    ),
+                    then_ops: if in_then { vec![host.clone()] } else { vec![] },
+                    else_ops: if in_then { vec![] } else { vec![host] },
+                },
+                RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                    unit,
+                    RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Unit),
+                )),
+            ]),
+        }),
+    )?;
     let owner = builder.task_coordinate_owner(1);
-    (
-        builder.finish().unwrap(),
+    Ok((
+        builder.finish()?,
         owner,
         crate::runtime_id::RuntimeFunctionSiteId::from_accepted_ordinal(NonZeroU32::MIN),
-    )
+    ))
 }
 
 #[test]
@@ -1699,4 +1739,156 @@ fn actual_line_digest_preflights_children_and_uses_one_exact_meter() {
             TaskSemanticEncodingError::TranscriptBytes
         ))
     ));
+}
+
+fn make_need_request_plan(name: Option<&str>) -> crate::task::NeedProducerTaskPlan {
+    use crate::task::*;
+    NeedProducerTaskPlan::try_new(
+        NeedProducerContractDigest::from_bytes([11; 32]),
+        NeedProducerSiteDigest::from_bytes([12; 32]),
+        NeedProducerRequestProjection::ExternCapability {
+            capability: HostCapabilityId("test".into()),
+            operation: "notify".into(),
+            contract: crate::step::HostCallContractDigest::from_bytes([11; 32]),
+            argument_names: Box::new([name.map(str::to_owned)]),
+        },
+        Box::new([RuntimeSemanticTypeId::from_bytes([61; 32])]),
+        RuntimeSemanticTypeId::from_bytes([62; 32]),
+        TaskPolicy::AlwaysStart,
+        crate::task::HostRestartPolicy::Restartable,
+        TaskClass::Io,
+        TaskPriority(0),
+        CancelScopeId("test".into()),
+    )
+    .unwrap()
+}
+
+#[test]
+fn make_need_request_uses_actual_endpoint_and_keeps_checked_role_identity() {
+    use crate::plan::*;
+    use crate::task::{NamedHostArg, RuntimeRequestRoleIdentity};
+    let make = |name: &str, identity| {
+        try_producer_request_plan_with_setup(true, Some(make_need_request_plan(Some(name))), |_| {
+            (
+                vec![RuntimeHostArgumentSeed::Named(
+                    RuntimeRequestRoleIdentity::from_accepted_identity([identity; 32]),
+                    NamedHostArg {
+                        name: name.into(),
+                        value: RuntimeExprSeed::new(
+                            RuntimeSemanticTypeId::from_bytes([61; 32]),
+                            RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(true)),
+                        ),
+                    },
+                )],
+                Box::new([]),
+            )
+        })
+        .unwrap()
+    };
+    let hash = |name: &str, identity| {
+        let (plan, owner, function) = make(name, identity);
+        let context = RuntimeBodySemanticContext::new(&plan);
+        let mut meter = TaskSemanticMeter::new(100_000, 1_000_000);
+        let producer = context
+            .producer_function(
+                &mut meter,
+                function,
+                &owner,
+                &mut |_| Ok(owner.resolve(0).unwrap()),
+                RuntimeTaskPlanSealLimits::default(),
+            )
+            .unwrap();
+        let endpoint = producer.endpoint(0).unwrap();
+        assert_eq!(endpoint.kind(), super::function::EndpointKind::MakeNeed);
+        assert_eq!(
+            endpoint.host_arguments().unwrap()[0].identity().as_bytes(),
+            &[identity; 32]
+        );
+        context
+            .host_request_template_digest(
+                &mut meter,
+                endpoint,
+                RuntimeTaskPlanSealLimits::default(),
+            )
+            .unwrap()
+    };
+    assert_eq!(hash("field", 42), hash("renamed", 42));
+    assert_ne!(hash("field", 42), hash("field", 43));
+}
+
+#[test]
+fn make_need_builder_rejects_extra_arguments_before_zip_can_drop_them() {
+    use crate::plan::*;
+    let args = vec![
+        RuntimeHostArgumentSeed::Positional(
+            crate::task::RuntimeRequestRoleIdentity::from_accepted_identity([42; 32]),
+            RuntimeExprSeed::new(
+                RuntimeSemanticTypeId::from_bytes([61; 32]),
+                RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(true))
+            )
+        );
+        2
+    ];
+    assert!(matches!(
+        try_producer_request_plan_with_setup(true, Some(make_need_request_plan(None)), |_| (
+            args,
+            Box::new([])
+        )),
+        Err(RuntimePlanBuildError::NeedProducerStartTarget(
+            RuntimeNeedProducerStartTargetError::ArgumentCountMismatch
+        ))
+    ));
+}
+
+#[test]
+fn make_need_target_rejects_binding_mismatch_and_spread() {
+    use crate::task::{
+        NamedHostArg, RuntimeHostArgumentTemplate as Argument, RuntimeRequestRoleIdentity,
+    };
+    let (plan, _, _) =
+        try_producer_request_plan_with_setup(true, Some(make_need_request_plan(None)), |_| {
+            (
+                vec![crate::plan::RuntimeHostArgumentSeed::Positional(
+                    RuntimeRequestRoleIdentity::from_accepted_identity([42; 32]),
+                    crate::plan::RuntimeExprSeed::new(
+                        RuntimeSemanticTypeId::from_bytes([61; 32]),
+                        crate::plan::RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(
+                            true,
+                        )),
+                    ),
+                )],
+                Box::new([]),
+            )
+        })
+        .unwrap();
+    let value = crate::value::RuntimeExpr::from_admitted_parts(
+        plan.type_table()
+            .id_for_semantic(RuntimeSemanticTypeId::from_bytes([61; 32]))
+            .unwrap(),
+        crate::value::RuntimeExprKind::Value(crate::value::RuntimeValue::Bool(true)),
+    );
+    let role = RuntimeRequestRoleIdentity::from_accepted_identity([42; 32]);
+    for argument in [
+        Argument::Positional(role, value.clone()),
+        Argument::Named(
+            role,
+            NamedHostArg {
+                name: "wrong".into(),
+                value: value.clone(),
+            },
+        ),
+        Argument::Spread(role, value),
+    ] {
+        assert!(matches!(
+            crate::plan::RuntimeNeedProducerStartTarget::try_new(
+                make_need_request_plan(Some("field")),
+                vec![argument]
+            ),
+            Err(
+                crate::plan::RuntimeNeedProducerStartTargetError::ArgumentBindingMismatch {
+                    ordinal: 0
+                }
+            )
+        ));
+    }
 }

@@ -1429,16 +1429,51 @@ impl RuntimeNeedAwaitTarget {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeNeedProducerStartTarget {
     plan: NeedProducerTaskPlan,
-    arguments: Box<[RuntimeExpr]>,
+    arguments: Box<[crate::task::RuntimeHostArgumentTemplate]>,
 }
 
 impl RuntimeNeedProducerStartTarget {
     pub fn try_new(
         plan: NeedProducerTaskPlan,
-        arguments: Vec<RuntimeExpr>,
+        arguments: Vec<crate::task::RuntimeHostArgumentTemplate>,
     ) -> Result<Self, RuntimeNeedProducerStartTargetError> {
         if arguments.len() != plan.argument_count() {
             return Err(RuntimeNeedProducerStartTargetError::ArgumentCountMismatch);
+        }
+        for (ordinal, argument) in arguments.iter().enumerate() {
+            let binding_matches = match (plan.request(), argument) {
+                (
+                    crate::task::NeedProducerRequestProjection::AssetLoad { .. },
+                    crate::task::RuntimeHostArgumentTemplate::Positional(..),
+                ) => true,
+                (
+                    crate::task::NeedProducerRequestProjection::AssetLoad { argument_name, .. },
+                    crate::task::RuntimeHostArgumentTemplate::Named(_, named),
+                ) => named.name == *argument_name,
+                (
+                    crate::task::NeedProducerRequestProjection::ExternCapability {
+                        argument_names,
+                        ..
+                    },
+                    crate::task::RuntimeHostArgumentTemplate::Positional(..),
+                ) => matches!(argument_names.get(ordinal), Some(None)),
+                (
+                    crate::task::NeedProducerRequestProjection::ExternCapability {
+                        argument_names,
+                        ..
+                    },
+                    crate::task::RuntimeHostArgumentTemplate::Named(_, named),
+                ) => {
+                    argument_names.get(ordinal).and_then(Option::as_deref)
+                        == Some(named.name.as_str())
+                }
+                (_, crate::task::RuntimeHostArgumentTemplate::Spread(..)) => false,
+            };
+            if !binding_matches {
+                return Err(
+                    RuntimeNeedProducerStartTargetError::ArgumentBindingMismatch { ordinal },
+                );
+            }
         }
         Ok(Self {
             plan,
@@ -1452,7 +1487,7 @@ impl RuntimeNeedProducerStartTarget {
     }
 
     #[must_use]
-    pub fn arguments(&self) -> &[RuntimeExpr] {
+    pub fn arguments(&self) -> &[crate::task::RuntimeHostArgumentTemplate] {
         &self.arguments
     }
 }
@@ -1461,6 +1496,8 @@ impl RuntimeNeedProducerStartTarget {
 pub enum RuntimeNeedProducerStartTargetError {
     #[error("Need producer start arguments do not match the selected request signature")]
     ArgumentCountMismatch,
+    #[error("Need producer argument {ordinal} binding differs from its selected scalar request")]
+    ArgumentBindingMismatch { ordinal: usize },
 }
 
 /// Typed operation executable only inside its owning dialogue activation.

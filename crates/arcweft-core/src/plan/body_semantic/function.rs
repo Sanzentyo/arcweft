@@ -50,6 +50,13 @@ impl<'a> ProducerEndpoint<'a> {
             None
         }
     }
+    pub(crate) fn host_arguments(&self) -> Option<&'a [crate::task::RuntimeHostArgumentTemplate]> {
+        match self.operation {
+            plan::FlowOp::HostCall { target, .. } => Some(&target.args),
+            plan::FlowOp::StartNeedProducer { target, .. } => Some(target.arguments()),
+            _ => None,
+        }
+    }
     pub(crate) const fn function(&self) -> &'a plan::RuntimeFunctionSite {
         self.function
     }

@@ -1589,9 +1589,14 @@ fn restartable_need_awfb_bytes() -> Vec<u8> {
                     ),
                     target: arcweft_core::plan::RuntimeNeedProducerStartTargetSeed {
                         plan,
-                        arguments: vec![RuntimeExprSeed::new(
-                            asset_ty,
-                            RuntimeExprSeedKind::EntityRef(reference),
+                        arguments: vec![arcweft_core::plan::RuntimeHostArgumentSeed::Positional(
+                            arcweft_core::task::RuntimeRequestRoleIdentity::from_accepted_identity(
+                                [42; 32],
+                            ),
+                            RuntimeExprSeed::new(
+                                asset_ty,
+                                RuntimeExprSeedKind::EntityRef(reference),
+                            ),
                         )],
                     },
                 },

@@ -1830,7 +1830,7 @@ impl AwbcInventory {
     pub fn intern_need_producer_task(
         &mut self,
         plan: &NeedProducerTaskPlan,
-        expressions: &[RuntimeExpr],
+        expressions: &[arcweft_core::task::RuntimeHostArgumentTemplate],
     ) -> Option<AwbcTaskPlanId> {
         let names = match plan.request() {
             NeedProducerRequestProjection::AssetLoad { argument_name, .. } => {
@@ -1852,7 +1852,8 @@ impl AwbcInventory {
             return None;
         }
         let mut params = Vec::with_capacity(expressions.len());
-        for (index, expression) in expressions.iter().enumerate() {
+        for (index, argument) in expressions.iter().enumerate() {
+            let expression = argument.value();
             let Some(ty) = self.plan_type(expression.ty()) else {
                 self.diagnostic(AwbcLowerDiagnostic::error(
                     format!("need_producer.argument.{index}"),

@@ -33,7 +33,7 @@ pub(crate) enum RuntimeBodySemanticError {
     InvalidFunctionInput { input: usize },
     #[error("producer function roles {actual} exceed limit {maximum}")]
     FunctionRoles { actual: usize, maximum: u32 },
-    #[error("request endpoint does not belong to this plan or is not a HostCall")]
+    #[error("request endpoint does not belong to this plan or is not Host-backed")]
     InvalidHostRequestEndpoint,
     #[error("request template roles {actual} exceed limit {maximum}")]
     RequestRoles { actual: usize, maximum: u32 },
