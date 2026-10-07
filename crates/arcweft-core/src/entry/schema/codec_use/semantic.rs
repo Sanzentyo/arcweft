@@ -1,9 +1,30 @@
 //! Executable codec roles read from the existing occurrence policy owner.
 //! Wire names are contract fields; diagnostic/source labels are not read here.
 
-use super::{RuntimeCodecUse, RuntimeFieldCodecUse, RuntimeVariantCodecUse};
+use super::{
+    RuntimeCodecUse, RuntimeFieldCodecUse, RuntimeNominalCodecUses, RuntimeVariantCodecUse,
+};
 use crate::plan::body_semantic::{RuntimeBodySemanticContext, RuntimeBodySemanticError};
 use crate::task::semantic::TaskSemanticEncoder;
+
+impl RuntimeNominalCodecUses {
+    pub(crate) fn encode_executable_policy(
+        &self,
+        context: &RuntimeBodySemanticContext<'_>,
+        encoder: &mut TaskSemanticEncoder<'_>,
+    ) -> Result<(), RuntimeBodySemanticError> {
+        encoder.status()?;
+        self.body.encode_executable_policy(context, encoder)?;
+        encoder.count(self.arguments.len());
+        for (ordinal, argument) in self.arguments.iter().enumerate() {
+            encoder.enter_element();
+            encoder.status()?;
+            encoder.count(ordinal);
+            argument.encode_executable_policy(context, encoder)?;
+        }
+        encoder.status().map_err(Into::into)
+    }
+}
 
 impl RuntimeCodecUse {
     #[expect(

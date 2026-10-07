@@ -7,6 +7,7 @@ mod callable;
 mod executable_metadata;
 pub(crate) mod flow;
 pub(crate) mod function;
+mod nominal;
 mod request;
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticEncodingError};
@@ -57,6 +58,10 @@ pub(crate) enum RuntimeBodySemanticError {
     },
     #[error("callable semantic graph has a cycle at state {state}")]
     CallableCycle { state: usize },
+    #[error("nominal domain does not belong to this candidate inventory")]
+    ForeignNominalDomain,
+    #[error("nominal domain owner {owner} has no accepted nominal declaration")]
+    InvalidNominalDomainOwner { owner: RuntimePlanTypeId },
 }
 
 impl From<TaskSemanticEncodingError> for RuntimeBodySemanticError {

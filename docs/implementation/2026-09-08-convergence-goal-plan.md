@@ -9166,3 +9166,85 @@ switch, version bump or compatibility route. Whole E15/global memo/actual
 Table14/private image/common sealer/all14 Cut5 atomic switch and original
 View/nominal/scheduler/borrowing/CLI277/Tier2 acceptance remain unfinished.
 Full goal ACTIVE/INCOMPLETE; resume remaining owners on existing main.
+
+### 2026-10-08 — actual nominal domain executable rows (in progress)
+
+Inspected clean main/origin 5bac7c2f610d73050eb5ef503ce584b5ceb0e242; verified
+all24 published blobs and delivery receipt, mismatch0. Added private E table2
+and3 owner visitors on the actual admitted record/variant domains. Inventory
+pointer membership is checked before emitting bytes; accepted nominal instance,
+declaration, public identity and layout remain leaves. Closed record shape,
+declaration-order field/case roles and accepted owner-scoped ordinal identities,
+child type coordinates and occurrence body/argument codec roles use the same
+sticky work/byte meter. Names are not read directly. The label-shadow test holds
+accepted identity/layout/codec fixed; it does not claim recompiled source renames
+keep current TypeLayoutHash unchanged (current schema layout includes names).
+No new public authority, task schema/protocol/codec switch, source reconstruction
+or marker change. First focus11542 TERMINAL0:6/6PASS0.035s; final8 cases pending.
+Core all-target/all-feature locked check12.07s and Clippy37.68s PASS96861;
+no introduced non-dead-code diagnostics in new owners. Private unintegrated-row
+warnings remain visible. New463LOC/17500-byte unit test owner (>300 growth)
+reviewed as one nominal row admission/transcript/quota/membership responsibility;
+production module131LOC/5051bytes, codec semantic owner190LOC/8830bytes, body
+context615LOC/23910bytes. No state/I-O/dependency/API expansion; source label
+shadow exists only in tests, uses actual table builders and keeps accepted
+metadata/artifacts fixed. Remaining E1 ownership metadata, all other E rows,
+global15-table memo, actual Table14/private image/common seal/protected all14
+Cut5 switch and original View/nominal/scheduler/Rust borrowing/CLI277/Tier2
+acceptance remain unfinished. No new Astra/advice; full goal ACTIVE/INCOMPLETE.
+
+Final focus84500 TERMINAL0:8/8PASS0.045s, all exact record/variant bytes,
+source-role/type/wire mutations, label-shadow, shared exact quotas/sticky poison
+and foreign inventory rejection included. Core check/Clippy above cover these
+final4 Rust file hashes, no later source edits.99 Cargo/generator inputs equal
+previous50-package all-feature locked graph; reuse that unchanged graph receipt
+(no new dependency/feature/API edge). Full non-CLI rdeps discovery95388
+TERMINAL0/build5m44s:4943 discovered,4927 selected across46 runnable packages
+within complete50 closure,16 existing GPU ignores. Full run61085 pending.
+This cut changes private unused Cut4 owner visitors only: Core all-target/
+all-feature locked check/Clippy plus full transitive rdeps runtime/API/generator
+evidence selected; workspace check/lint not repeated for unchanged public and
+consumer boundaries. CLI277 remains original goal repair and requires actual
+baseline comparison at delivery; not green by equivalence.
+
+Full non-CLI run61085 TERMINAL0:4927/4927PASS480.591s,4slow,16 existing
+GPU ignores. Exact selected/terminal/unique IDs4927, missing0/unexpected0/
+duplicates0. Actual deterministic IME generator PASS213.430s; all selected
+API compile-fail owners passed. New8 cases and existing move/reinitialization/
+branch/shadowing/AWBC restore evidence pass in complete rdeps surface.
+Coverage reader initially missed padded nextest ordinal columns; corrected
+parser and completed full ID equality before further validation. No Rust edits
+since final source snapshot. CLI9-binary/all-feature/locked discovery71024
+pending, followed by actual597/277 failure-set comparison. Goal incomplete.
+
+CLI discovery71024 TERMINAL0/build1m26s selected195 across8 binaries: initial
+command omitted the existing check integration (402 selected cases). Equality
+check against prior597 inventory rejected this narrowed surface before any
+CLI run. Retained partial inventory; add explicit --test check and rediscover
+the full9-binary597 surface before execution. No test was bypassed.
+
+2026-10-08 final nominal-row cut acceptance (supersedes pending paragraphs):
+base main/origin 5bac7c2f610d73050eb5ef503ce584b5ceb0e242. Actual E tables2/3
+private owner transcripts and nominal occurrence codec body/argument roles;
+no copied row/schema/provenance authority or public task migration. Core
+all-target/all-feature/locked check12.07s and Clippy37.68s PASS; final focused
+8/8PASS0.045s. Complete50-package Core reverse closure (unchanged99 build
+inputs) non-CLI4927/4927PASS480.591s/16 existing GPU ignores, exact all4927
+selected/terminal/unique IDs, missing0/unexpected0/duplicates0; generator
+PASS213.430s and all selected API compile-fail tests pass. CLI full discovery
+63792 TERMINAL0/build9.12s after explicit check-target correction,597 cases
+across9 binaries. CLI63243 TERMINAL100:320pass/277sameFAIL/23ignored121.055s;
+exact IDs missing0/unexpected0/duplicates0/new0/resolved0. CLI NOT green.
+4 final Rust SHA256 and99 build inputs unchanged through final evidence;
+all test/build processes terminal before any source edit or delivery mutation.
+Fmt13440 and diff checks follow terminal receipt; owner cohesion/growth review
+above reused, no new structural dependency/API/I-O boundary. Explicit5-path
+stage/full diff/staged-blob/disk/tested-hash review precedes coherent commit/
+normal fast-forward push. Whole remaining E/table14/private image/common seal/
+protected all14 Cut5 switch and original View/nominal/scheduler/Rust ownership/
+CLI277/Tier2 acceptance still required. Full goal ACTIVE/INCOMPLETE.
+
+Fmt13440 TERMINAL0/PASS; final diff checks pass. All final4 Rust SHA256 and
+99 build inputs remain fixed. Exact5-path staged hunk/blob review follows;
+no remaining live Cargo/test process. Continue remaining genuine E owners and
+whole-image/common-seal integration after this coherent private Cut4 delivery.
