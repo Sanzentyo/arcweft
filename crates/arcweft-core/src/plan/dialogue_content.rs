@@ -651,6 +651,10 @@ pub(crate) struct RuntimeDialogueContentPlanTableBuilder {
 }
 
 impl RuntimeDialogueContentPlanTableBuilder {
+    pub(crate) fn len(&self) -> usize {
+        self.rows.len()
+    }
+
     pub(crate) fn new() -> Self {
         Self::default()
     }

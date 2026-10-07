@@ -7039,3 +7039,49 @@ identity transport, not F/Q/E actual body/whole-image sealing. Static task quota
 preflight, restore/patch transactions, affine Line custody, retained View, and
 the rest of the convergence acceptance remain required. Full goal stays active
 and incomplete. Astra one-shot remains consumed and must not repeat.
+
+### 2026-10-07 — common finish seal policy, validated row-quota cut
+
+Inspected clean main base `83d397f93676342f70dbe7676cab83c26311a992`. Preceding
+goal turn is progress: required function definition transport was validated and
+pushed. This continuation connects `finish()` and explicit
+`finish_with_seal_limits()` to one consuming finish path. Checked conversion and
+addition count all fourteen current executable table owners before structural
+finalization/publication; equality passes and excess rejects with a typed error.
+Private inherent len accessors read existing row owners, with no copied inventory
+table. Selected limits also reach the shared C work/byte meter. No new task
+row/table/digest/codec is published ahead of the protected Cut5 atomic switch.
+
+Actual builder tests passed for type+local exact row boundary, row quota
+precedence over an unfinished helper, and explicit work limits reaching C.
+Validation on final source:
+
+- workspace/all-targets/all-features/locked check native0,52.61s;
+- workspace/all-targets/all-features/locked Clippy native0,9m50s including normal
+  shared build-lock wait;
+- fmt --all -- --check, diff --check, structural dry-run native0, blockers0,
+  no reports written;
+- fresh locked all-feature metadata and target-all Core inverse tree exactly
+  match the selected transitive closure of50workspacepackages;
+- nextest full closure original handle1511 terminal100:5,440run/5,163passed
+  (7slow)/277failed/39skipped,648.538s execution after8m28s ordinary build;
+  unique failed IDs exactlymatch preceding83d397 baseline277,new0/resolved0,
+  all arcweft-cli::check. Whole run is not green;
+- after-run nextest list terminal0:5,440selected=5,440actual PASS/FAIL IDs,
+  missing/unexpected0,47runnablepackages; arcweft/bundle-assets/render-web
+  are case-less compile-covered.
+
+Ownership review covers construction3858LOC,type_table1060,dialogue_content857,
+local_declarations285,nominal_record_domains333,variant_domains328. Common
+consuming finish owns validation policy and arithmetic; owner accessors remain
+private. Embedded tests exercise actual builder outcomes, not source spelling.
+No branch/worktree/Astra consultation/test restart/job/profile/timeout change or
+Rust source mutation while a validation handle was live. Complete7path hunk
+review is required before coherent normal fast-forward commit/push.
+
+This completes current executable row preflight and explicit finish policy.
+Static task table14, child/function/request/View/full lower-bound preflight,
+F/Q/E actual body/image admission, common builder/decode publication, restored
+producer transactions, affine Line, retained View and remaining original
+acceptance stay required. Full convergence goal remains active/incomplete;
+Astra one-shot is consumed and must not repeat.

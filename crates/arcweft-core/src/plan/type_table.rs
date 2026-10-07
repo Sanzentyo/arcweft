@@ -384,6 +384,10 @@ pub enum RuntimePlanTypeTableError {
 }
 
 impl RuntimePlanTypeTableBuilder {
+    pub(crate) fn len(&self) -> usize {
+        self.rows.len()
+    }
+
     #[must_use]
     pub(crate) const fn new() -> Self {
         Self {

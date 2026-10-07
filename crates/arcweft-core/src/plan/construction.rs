@@ -146,6 +146,10 @@ pub enum RuntimePlanTable {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimePlanBuildError {
+    #[error("runtime executable inventory count overflow")]
+    ExecutableInventoryArithmeticOverflow,
+    #[error("runtime executable inventory has {actual} rows, exceeding maximum {maximum}")]
+    ExecutableInventoryRowsLimit { actual: u32, maximum: u32 },
     #[error(transparent)]
     ControlEffectContract(#[from] super::RuntimeControlEffectContractError),
     #[error(transparent)]
@@ -2616,6 +2620,16 @@ impl RuntimePlanBuilder {
     }
 
     pub fn finish(self) -> Result<RuntimePlan, RuntimePlanBuildError> {
+        self.finish_with_seal_limits(super::RuntimeTaskPlanSealLimits::default())
+    }
+
+    /// Consumes the builder with explicit semantic-validation policy.
+    /// Limits are not executable semantics and never enter a digest.
+    pub fn finish_with_seal_limits(
+        self,
+        limits: super::RuntimeTaskPlanSealLimits,
+    ) -> Result<RuntimePlan, RuntimePlanBuildError> {
+        self.preflight_executable_inventory(limits)?;
         self.callable_states.borrow_mut().seal()?;
         self.validate_finish_preconditions()?;
         let mut function_site_builder = RuntimeFunctionSiteTableBuilder::new();
@@ -2672,7 +2686,6 @@ impl RuntimePlanBuilder {
             })
             .collect();
         let type_table = self.types.finish()?;
-        let limits = super::RuntimeTaskPlanSealLimits::default();
         let mut meter = crate::task::semantic::TaskSemanticMeter::new(
             limits.max_semantic_work,
             limits.max_transcript_bytes,
@@ -2726,6 +2739,43 @@ impl RuntimePlanBuilder {
         };
         plan.verify()?;
         Ok(plan)
+    }
+
+    fn preflight_executable_inventory(
+        &self,
+        limits: super::RuntimeTaskPlanSealLimits,
+    ) -> Result<(), RuntimePlanBuildError> {
+        // The accepted table inventory 0..13; table 14 has no candidate owner yet.
+        // Auxiliary implementation tables are not extra semantic image rows.
+        let counts = [
+            self.types.len(),
+            self.locals.len(),
+            self.nominal_record_domains.len(),
+            self.variant_domains.len(),
+            self.function_sites.len(),
+            self.dialogue_content.len(),
+            self.entries.len(),
+            self.callable_executables.len(),
+            self.flow_executables.len(),
+            self.flows.len(),
+            self.pure_helpers.len(),
+            self.trait_methods.len(),
+            self.line_task_groups.len(),
+            self.stream_plans.len(),
+        ];
+        let actual = counts.into_iter().try_fold(0_u32, |total, count| {
+            u32::try_from(count)
+                .ok()
+                .and_then(|count| total.checked_add(count))
+                .ok_or(RuntimePlanBuildError::ExecutableInventoryArithmeticOverflow)
+        })?;
+        if actual > limits.max_executable_rows {
+            return Err(RuntimePlanBuildError::ExecutableInventoryRowsLimit {
+                actual,
+                maximum: limits.max_executable_rows,
+            });
+        }
+        Ok(())
     }
 
     fn validate_finish_preconditions(&self) -> Result<(), RuntimePlanBuildError> {
@@ -3463,6 +3513,109 @@ mod tests {
             checked.semantic_identity_digest(),
             other_layout.semantic_identity_digest()
         );
+    }
+
+    #[test]
+    fn executable_row_limit_counts_types_and_locals_before_publication() {
+        let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
+        let make = || {
+            let mut builder = RuntimePlanBuilder::new();
+            builder
+                .admit_type_batch(
+                    [RuntimePlanTypeSeed::new(
+                        unit,
+                        RuntimePlanTypeProjection::Unit,
+                    )],
+                    [RuntimeLocalDeclarationSeed::new(
+                        super::super::RuntimeLocalOrigin::Binding([0x41; 32]),
+                        unit,
+                    )],
+                )
+                .unwrap();
+            builder
+        };
+        let limits = super::super::RuntimeTaskPlanSealLimits {
+            max_executable_rows: 2,
+            ..super::super::RuntimeTaskPlanSealLimits::default()
+        };
+        let plan = make().finish_with_seal_limits(limits).unwrap();
+        assert_eq!(plan.type_table().len(), 1);
+        assert_eq!(plan.local_declarations().len(), 1);
+        assert!(matches!(
+            make().finish_with_seal_limits(super::super::RuntimeTaskPlanSealLimits {
+                max_executable_rows: 1,
+                ..limits
+            }),
+            Err(RuntimePlanBuildError::ExecutableInventoryRowsLimit {
+                actual: 2,
+                maximum: 1
+            })
+        ));
+    }
+
+    #[test]
+    fn finish_policy_reaches_the_shared_control_contract_meter() {
+        let make = || {
+            let mut builder = RuntimePlanBuilder::new();
+            builder
+                .push_control_effect_contract(
+                    super::super::RuntimeControlEffectContractDefinition {
+                        mode: super::super::RuntimeTaskControlMode::StraightLine,
+                        effects: Box::new([]),
+                        children: Box::new([]),
+                    },
+                )
+                .unwrap();
+            builder
+        };
+        assert!(make().finish().is_ok());
+        assert!(matches!(
+            make().finish_with_seal_limits(super::super::RuntimeTaskPlanSealLimits {
+                max_semantic_work: 0,
+                ..super::super::RuntimeTaskPlanSealLimits::default()
+            }),
+            Err(RuntimePlanBuildError::ControlEffectContract(
+                super::super::RuntimeControlEffectContractError::WorkLimit
+            ))
+        ));
+    }
+
+    #[test]
+    fn executable_row_preflight_precedes_unfinished_definition_validation() {
+        let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    unit,
+                    RuntimePlanTypeProjection::Unit,
+                )],
+                [],
+            )
+            .unwrap();
+        builder
+            .reserve_pure_helper_seed(RuntimePureHelperDeclarationSeed {
+                definition: super::super::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [0x42; 32],
+                ),
+                name: "unfinished".to_owned(),
+                inputs: Box::new([]),
+                result: unit,
+                output_abi: super::super::RuntimePureOutputType::Value,
+                scalar_eval_supported: false,
+                origin: super::super::RuntimePureHelperOrigin::Annotated,
+            })
+            .unwrap();
+        assert!(matches!(
+            builder.finish_with_seal_limits(super::super::RuntimeTaskPlanSealLimits {
+                max_executable_rows: 1,
+                ..super::super::RuntimeTaskPlanSealLimits::default()
+            }),
+            Err(RuntimePlanBuildError::ExecutableInventoryRowsLimit {
+                actual: 2,
+                maximum: 1
+            })
+        ));
     }
 
     #[test]

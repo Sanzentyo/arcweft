@@ -125,6 +125,10 @@ pub enum RuntimeLocalDeclarationTableError {
 }
 
 impl RuntimeLocalDeclarationTableBuilder {
+    pub(crate) fn len(&self) -> usize {
+        self.declarations.len()
+    }
+
     #[must_use]
     pub(crate) const fn new() -> Self {
         Self {

@@ -229,6 +229,10 @@ pub enum RuntimeVariantDomainError {
 }
 
 impl RuntimeVariantDomainTableBuilder {
+    pub(crate) fn len(&self) -> usize {
+        self.domains.len()
+    }
+
     #[must_use]
     pub(crate) const fn new() -> Self {
         Self {
