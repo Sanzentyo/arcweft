@@ -222,6 +222,14 @@ impl RuntimeBodySemanticContext<'_> {
                 ordinal: content.get().get() as usize - 1,
             }
         })?;
+        self.write_dialogue_content_row(encoder, row)
+    }
+
+    fn write_dialogue_content_row(
+        &self,
+        encoder: &mut TaskSemanticEncoder<'_>,
+        row: &crate::plan::RuntimeDialogueContentPlan,
+    ) -> Result<(), RuntimeBodySemanticError> {
         self.write_content_template(encoder, row.template())?;
         encoder.count(row.values().len());
         for value in row.values() {
@@ -268,6 +276,40 @@ impl RuntimeBodySemanticContext<'_> {
             encoder.digest(group.definition().as_bytes());
         }
         encoder.status().map_err(Into::into)
+    }
+
+    /// Table five commits the actual content execution mapping. Static rich
+    /// text parts belong to the text-model template digest; Core keeps that
+    /// leaf and its exact ABI manifest rather than copying the text grammar.
+    pub(crate) fn dialogue_content_row_digest(
+        &self,
+        meter: &mut crate::task::semantic::TaskSemanticMeter,
+        ordinal: usize,
+    ) -> Result<blake3::Hash, RuntimeBodySemanticError> {
+        meter.status()?;
+        let row = self
+            .plan
+            .dialogue_content()
+            .rows()
+            .get(ordinal)
+            .ok_or_else(|| {
+                meter.reject_owner();
+                RuntimeBodySemanticError::MissingRow {
+                    table: "dialogue content",
+                    ordinal,
+                }
+            })?;
+        let mut encoder =
+            TaskSemanticEncoder::new(b"arcweft.runtime-plan.executable-row.v1\0", meter);
+        encoder.tag(5);
+        encoder.tag(0);
+        encoder.count(row.line().path().segments().len());
+        for segment in row.line().path().segments() {
+            encoder.enter_element();
+            encoder.string(segment.as_str());
+        }
+        self.write_dialogue_content_row(&mut encoder, row)?;
+        encoder.finish().map_err(Into::into)
     }
     /// Prepares the actual producer transcript, then writes table four from
     /// that same owner. The body/endpoint walk is shared with F preparation.

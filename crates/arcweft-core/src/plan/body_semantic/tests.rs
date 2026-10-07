@@ -1,4 +1,5 @@
 use super::*;
+mod content_rows;
 mod function_rows;
 mod line_rows;
 mod stream_rows;

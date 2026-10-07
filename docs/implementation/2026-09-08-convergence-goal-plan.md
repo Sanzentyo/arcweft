@@ -9720,3 +9720,76 @@ all14 protected Cut5 and original View/nominal/scheduler/Rust move+borrowing/
 CLI277/Tier2/final legacy deletion acceptance remain. Goal ACTIVE/INCOMPLETE.
 One-shot Astra already consumed (4b076ec754b45a86a28a6fa185131ccd9ef49136);
 no repeat consultation, new branch/worktree or version-marker change.
+
+
+### 2026-10-08 — E5 actual dialogue content execution row
+
+Inspected clean main/originb2590d44af2f1022de17ace02660ba852174b13d;
+E6 delivery verified parent2058473f97f37b3080672193d20e8da3c53f80a4, exact7
+paths/blobs and clean main. E5 preparation now writes actual accepted Line
+identity and the existing content mapping under table5/kind0/executable-row
+v1. Existing write_dialogue_content resolves its typed ID then shares the
+same private resolved-row visitor; E5 reads actual original source-order
+rows and passes that reference directly. No copied/digest-indexed table,
+reconstructed source/coordinate or second content grammar. The existing
+writer's bytes are unchanged. It visits template leaf + exact slot/effect
+ABI, source-order value sites/function identities/capture expressions,
+effect sites/callable states/captures, mark coordinates/count and accepted
+Line group definition. Code and Line bodies remain on F/E4 and E12 owners,
+not rewalked or supplied as arbitrary digest bytes.
+
+Static rich-text parts/child insertion grammar is owned by text-model's
+DialogueContentFragmentTemplate canonical digest, which try_new validates
+against its actual document/manifests. Core has no text-model dependency and
+its manifest retains that digest/ABI leaf. E5 commits this existing leaf;
+it does not duplicate upper text grammar or claim to have checked an upper
+text artifact here. Test manifests use controlled leaf values as existing
+Core ABI fixtures, not positive Bundle/text-body admission evidence. Final
+common seal/publication still needs the corresponding artifact/ABI checks
+and global code/row references; private E5 is not whole T01/T06 completion.
+Frozen mirrors untouched; no new Serde task transcript, version marker,
+public/runtime/codec/Cargo/feature consumer migration or byte factory.
+
+First discovery11930 TERMINAL101 caught a guessed nonexistent content-ID
+constructor. Removed coordinate construction entirely by sharing actual
+resolved-row visitor; retry46780 PASS/build27.90s. Three actual aggregate
+Content fixtures then3/3PASS0.026s. Value/callback captures, template leaf,
+accepted Line identity, reveal/delay trigger and callback order mutations
+all change row; unused function arena padding does not. Actual Line fixture
+shows its debug marks/body changes remain on existing Line owner while its
+accepted group identity participates in E5. Exact shared work/byte limits,
+missing row before bytes and first-error poison tested. All fixtures call
+builder.finish/verify, no weakened admission or synthetic public test API.
+First Clippy style warning repaired by borrowing fixture settings, no allow.
+
+Final Core all-target/all-feature/locked check57652 PASS8.04s and
+Clippy14.55s, introduced non-dead-code diagnostics0. Actual pre-run adjacent
+inventory2879 selected97, run97/97PASS0.509s,981skipped;97 selected/terminal/
+unique IDs,missing0/unexpected0/duplicate0/nonpass0. All3 new Content cases
+plus prior94 adjacent cases present. Final3 Rust hashes and97 selected IDs/
+coverage retained under TEMP arcweft-1008-content-row-*. Complete transitive
+Core reverse closure50 reuses unchanged resolved Cargo graph with all99
+build/graph inputs verified unchanged. This unused private Cut4 leaf has no
+live/public reader, so owner Core check/Clippy/adjacent matrix satisfies cut
+impact policy; full-rdeps/CLI/Tier2 omitted for this cut. Prior Flow4947PASS
+and CLI320PASS+277sameFAIL remain earlier-byte receipts; CLI277 are genuine
+unresolved goal repairs and have not been relabeled green.
+
+Owner review: executable_metadata.rs393->435LOC/17758bytes owns only
+plan-resolved executable metadata and delegates traversal to actual typed
+owners. Context/borrow ownership unchanged, no new I/O/dependency/API seam.
+Root unit fixture2040->2041LOC/75619bytes only adds its responsibility child.
+New Content unit child307LOC/10948bytes(+307) triggers growth review: one
+Content acceptance/transcript/limits boundary, shared actual Line fixture,
+production typed builders, no alternate schema/projection/resolver or
+public fixture exports; cohesive retention justified. Dependency edges/
+Core transitive reverse closure50 unchanged, previous structure0-blocking
+review reusable; no unrelated ownership/scanner expansion.
+
+Fmt/diff then explicit4-path full stage/hunk/blob/tested-byte review/coherent
+commit/normal main push required. E0/2/3/4/5/6/7/8/9/10/11/12/13 privately
+prepared; E1 static-local typed owner migration, global15-table memo,
+actualTable14/private image/common seal/all14 protected Cut5 and original
+View/nominal/scheduler/Rust move+borrowing/CLI277/Tier2/final legacy deletion
+acceptance remain. Goal ACTIVE/INCOMPLETE. No new Astra/delegation/branch/
+worktree; one-shot advice remains consumed and must not rerun after compaction.
