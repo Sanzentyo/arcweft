@@ -2265,6 +2265,19 @@ impl<'hir> FinalExprLowerer<'hir> {
             }
             if attempt.is_none() {
                 operands.push(RuntimeFormatContentOperandSeed {
+                    definition: self
+                        .semantic_facts
+                        .expression_coordinate(id)
+                        .ok_or_else(|| {
+                            format!("formatter call {id:?} has no accepted function owner")
+                        })?
+                        .runtime_function_definition()
+                        .map_err(|error| error.to_string())?
+                        .generated_child(
+                            arcweft_core::plan::RuntimeGeneratedFunctionRole::FormatOperand {
+                                parameter: *identity,
+                            },
+                        ),
                     parameter: *identity,
                     expression: self.lower_scalar_operand_source(operand.source(), operand.ty())?,
                 });

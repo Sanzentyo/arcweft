@@ -1231,6 +1231,7 @@ pub struct RuntimeAwaitManyTargetSeed {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeNeedProducerTemplateSeed {
+    pub definition: crate::plan::RuntimeFunctionDefinitionIdentity,
     pub family: crate::task::NeedProducerFamily,
     pub contract: crate::task::NeedProducerContractDigest,
     pub plan: crate::task::TaskPlanSemanticDigest,
@@ -2195,6 +2196,7 @@ impl RuntimeExprSeed {
 /// One selected `fmt` parameter expression in authored source order.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeFormatContentOperandSeed {
+    pub definition: crate::plan::RuntimeFunctionDefinitionIdentity,
     pub parameter: RuntimeFmtParameterId,
     pub expression: RuntimeExprSeed,
 }
@@ -2223,8 +2225,13 @@ pub struct RuntimeFormatAttemptDeclarationSeed {
 
 impl RuntimeFormatContentOperandSeed {
     #[must_use]
-    pub const fn new(parameter: RuntimeFmtParameterId, expression: RuntimeExprSeed) -> Self {
+    pub const fn new(
+        definition: crate::plan::RuntimeFunctionDefinitionIdentity,
+        parameter: RuntimeFmtParameterId,
+        expression: RuntimeExprSeed,
+    ) -> Self {
         Self {
+            definition,
             parameter,
             expression,
         }

@@ -1673,6 +1673,7 @@ mod tests {
             }],
             functions: vec![
                 AwbcFunction {
+                    definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-bundle.src.patch.same_label_flow_program.definition.0.v1\0").as_bytes()),
                     semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
                     public_id: Some(AwbcStringId(2)),
                     kind: AwbcFunctionKind::Flow,
@@ -1685,6 +1686,7 @@ mod tests {
                     flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
                 },
                 AwbcFunction {
+                    definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-bundle.src.patch.same_label_flow_program.definition.1.v1\0").as_bytes()),
                     semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
                     public_id: Some(AwbcStringId(2)),
                     kind: AwbcFunctionKind::Flow,

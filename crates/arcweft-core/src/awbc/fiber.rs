@@ -6343,6 +6343,7 @@ mod tests {
             max_scope_depth: 0,
         });
         program.functions.push(AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.fiber.zero_parameter_entry_program.definition.0.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
@@ -6444,8 +6445,17 @@ mod tests {
             result: Some(AwbcTypeId(1)),
             effects: Default::default(),
         });
-        for (function_id, signature_id) in [(1, 1), (2, 2)] {
+        for (declaration, function_id, signature_id) in
+            [("format.value", 1, 1), ("format.style", 2, 2)]
+        {
             program.functions.push(AwbcFunction {
+                definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    *blake3::hash(
+                        format!("arcweft.core.fiber.format_entry_program.{declaration}.v1\0")
+                            .as_bytes(),
+                    )
+                    .as_bytes(),
+                ),
                 semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
                 public_id: None,
                 kind: AwbcFunctionKind::Synthetic,

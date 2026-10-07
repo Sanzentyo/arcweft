@@ -237,6 +237,7 @@ fn context_program() -> AwbcContextFixture {
         ],
         functions: vec![
             AwbcFunction {
+                definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.context.context_program.definition.0.v1\0").as_bytes()),
                 semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
                 public_id: Some(AwbcStringId(0)),
                 kind: AwbcFunctionKind::Ordinary,
@@ -249,6 +250,7 @@ fn context_program() -> AwbcContextFixture {
                 flags: Default::default(),
             },
             AwbcFunction {
+                definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.context.context_program.definition.1.v1\0").as_bytes()),
                 semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
                 public_id: None,
                 kind: AwbcFunctionKind::Ordinary,
@@ -306,7 +308,11 @@ fn context_program() -> AwbcContextFixture {
         plain_text_context_template: Some(template_ref),
         ..AwbcProgram::default()
     };
-    for index in 1..4 {
+    for (declaration, index) in [
+        ("result.with-context", 1),
+        ("option.context", 2),
+        ("option.with-context", 3),
+    ] {
         let function = AwbcFunctionId(index + 1);
         let signature = program.intrinsics[index as usize].signature;
         let frame_layout = if signature == AwbcSignatureId(2) {
@@ -329,6 +335,7 @@ fn context_program() -> AwbcContextFixture {
             source_map: None,
         });
         program.functions.push(AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(format!("arcweft.core.product_step.context.context_program.{declaration}.v1\0").as_bytes()).as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,

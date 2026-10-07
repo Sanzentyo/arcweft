@@ -218,6 +218,7 @@ fn context_fixture(receiver: ContextReceiver, defaulted: bool) -> ContextFixture
         source_map: None,
     });
     program.functions.push(AwbcFunction {
+        definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.context_callback_execution.context_fixture.definition.0.v1\0").as_bytes()),
         semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Ordinary,
@@ -263,6 +264,7 @@ fn context_fixture(receiver: ContextReceiver, defaulted: bool) -> ContextFixture
             source_map: None,
         });
         program.functions.push(AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.context_callback_execution.context_fixture.definition.1.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
@@ -876,6 +878,7 @@ fn formatter_context_fixture() -> ContextFixture {
     });
     program.functions.extend([
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.context_callback_execution.formatter_context_fixture.definition.0.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
@@ -896,6 +899,7 @@ fn formatter_context_fixture() -> ContextFixture {
             flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         },
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.context_callback_execution.formatter_context_fixture.definition.1.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,

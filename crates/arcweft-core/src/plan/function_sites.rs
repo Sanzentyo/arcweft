@@ -29,6 +29,61 @@ impl RuntimeFunctionDefinitionIdentity {
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
+
+    /// Identifies one generated recipe under this accepted semantic owner.
+    /// Source ordinals address the parent's declaration graph before AWBC allocation.
+    pub fn generated_child(self, role: RuntimeGeneratedFunctionRole) -> Self {
+        let mut hash = blake3::Hasher::new();
+        hash.update(b"arcweft.runtime.generated-function-definition.v1\0");
+        hash.update(self.as_bytes());
+        match role {
+            RuntimeGeneratedFunctionRole::TaskRequest => {
+                hash.update(&[0]);
+            }
+            RuntimeGeneratedFunctionRole::FormatOperand { parameter } => {
+                hash.update(&[1, parameter.index() as u8]);
+            }
+            RuntimeGeneratedFunctionRole::LineActivation => {
+                hash.update(&[2]);
+            }
+            RuntimeGeneratedFunctionRole::LineAction { source_node } => {
+                hash.update(&[3]);
+                hash.update(&source_node.to_le_bytes());
+            }
+            RuntimeGeneratedFunctionRole::LineCancellation { source_rule } => {
+                hash.update(&[4]);
+                hash.update(&source_rule.to_le_bytes());
+            }
+            RuntimeGeneratedFunctionRole::LineCleanup { exit } => {
+                let exit = match exit {
+                    crate::line_task::ScopeExit::Completed => 0,
+                    crate::line_task::ScopeExit::Cancelled => 1,
+                    crate::line_task::ScopeExit::Failed => 2,
+                };
+                hash.update(&[5, exit]);
+            }
+        }
+        Self(*hash.finalize().as_bytes())
+    }
+}
+
+/// Closed semantic purposes of generated executable functions.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeGeneratedFunctionRole {
+    TaskRequest,
+    FormatOperand {
+        parameter: crate::value::RuntimeFmtParameterId,
+    },
+    LineActivation,
+    LineAction {
+        source_node: u32,
+    },
+    LineCancellation {
+        source_rule: u32,
+    },
+    LineCleanup {
+        exit: crate::line_task::ScopeExit,
+    },
 }
 
 /// Accepted whole-formal identity, independent of its frame local and ABI.
@@ -482,6 +537,52 @@ impl RuntimeFunctionSiteTableBuilder {
     pub(crate) fn finish(self) -> RuntimeFunctionSiteTable {
         RuntimeFunctionSiteTable {
             sites: self.sites.into_boxed_slice(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod generated_definition_tests {
+    use super::*;
+
+    #[test]
+    fn generated_function_definitions_separate_parent_role_and_source_position() {
+        let parent = RuntimeFunctionDefinitionIdentity::from_accepted_identity([0x31; 32]);
+        let other = RuntimeFunctionDefinitionIdentity::from_accepted_identity([0x32; 32]);
+        let mut roles = vec![
+            RuntimeGeneratedFunctionRole::TaskRequest,
+            RuntimeGeneratedFunctionRole::LineActivation,
+            RuntimeGeneratedFunctionRole::LineAction { source_node: 0 },
+            RuntimeGeneratedFunctionRole::LineAction { source_node: 1 },
+            RuntimeGeneratedFunctionRole::LineCancellation { source_rule: 0 },
+            RuntimeGeneratedFunctionRole::LineCancellation { source_rule: 1 },
+        ];
+        roles.extend(
+            (0..9).map(|index| RuntimeGeneratedFunctionRole::FormatOperand {
+                parameter: crate::value::RuntimeFmtParameterId::from_index(index).unwrap(),
+            }),
+        );
+        roles.extend(
+            [
+                crate::line_task::ScopeExit::Completed,
+                crate::line_task::ScopeExit::Cancelled,
+                crate::line_task::ScopeExit::Failed,
+            ]
+            .map(|exit| RuntimeGeneratedFunctionRole::LineCleanup { exit }),
+        );
+        let definitions = roles
+            .iter()
+            .map(|role| parent.generated_child(*role))
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(definitions.len(), roles.len());
+        assert!(!definitions.contains(&parent));
+        for role in roles {
+            assert_eq!(
+                parent.generated_child(role),
+                RuntimeFunctionDefinitionIdentity::from_accepted_identity(*parent.as_bytes())
+                    .generated_child(role)
+            );
+            assert_ne!(parent.generated_child(role), other.generated_child(role));
         }
     }
 }

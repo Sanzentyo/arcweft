@@ -317,7 +317,8 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .iter()
             .filter(|flow| selected_flows.contains(&flow.id))
         {
-            self.inventory.reserve_flow_function_slot(&flow.id);
+            self.inventory
+                .reserve_flow_function_slot(&flow.id, flow.definition);
         }
         self.lower_defer_sites();
         for flow in self
@@ -383,7 +384,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             return;
         }
 
-        let owner = self.inventory.reserve_function_slot();
+        let owner = self.inventory.reserve_function_slot(helper.definition);
         let mut frame = FrameBuilder::new();
         let mut parameter_types = Vec::with_capacity(helper.inputs.len());
         for input in &helper.inputs {
@@ -423,6 +424,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         let function = self.inventory.replace_function(
             owner,
             AwbcFunction {
+                definition: helper.definition,
                 semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
                 public_id: Some(public_id),
                 kind: AwbcFunctionKind::PureHelper,
@@ -514,6 +516,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .map(|(index, rule)| AwbcLineCancelHandler {
                 trigger: rule.trigger().clone(),
                 function: self.lower_line_task_cancel_handler(
+                    table_index(index),
                     &task_inputs,
                     rule.action(),
                     &format!("line_task.cancel.{index}"),
@@ -526,6 +529,9 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .actions(arcweft_core::line_task::ScopeExit::Completed);
         let cleanup_completed = (!completed.is_empty()).then(|| {
             self.lower_line_function(
+                arcweft_core::plan::RuntimeGeneratedFunctionRole::LineCleanup {
+                    exit: arcweft_core::line_task::ScopeExit::Completed,
+                },
                 &task_inputs,
                 completed,
                 "line_task.cleanup.completed",
@@ -538,6 +544,9 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .actions(arcweft_core::line_task::ScopeExit::Cancelled);
         let cleanup_cancelled = (!cancelled.is_empty()).then(|| {
             self.lower_line_function(
+                arcweft_core::plan::RuntimeGeneratedFunctionRole::LineCleanup {
+                    exit: arcweft_core::line_task::ScopeExit::Cancelled,
+                },
                 &task_inputs,
                 cancelled,
                 "line_task.cleanup.cancelled",
@@ -550,6 +559,9 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .actions(arcweft_core::line_task::ScopeExit::Failed);
         let cleanup_failed = (!failed.is_empty()).then(|| {
             self.lower_line_function(
+                arcweft_core::plan::RuntimeGeneratedFunctionRole::LineCleanup {
+                    exit: arcweft_core::line_task::ScopeExit::Failed,
+                },
                 &task_inputs,
                 failed,
                 "line_task.cleanup.failed",
@@ -657,6 +669,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         path: &str,
     ) -> Option<(AwbcFunctionId, Vec<AwbcLineActivationExport>)> {
         let (function, slots) = self.lower_line_function_with_capture_slots(
+            arcweft_core::plan::RuntimeGeneratedFunctionRole::LineActivation,
             captures,
             ops,
             path,
@@ -760,6 +773,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 },
                 LineTaskNode::Action(ops) => AwbcLineTaskNode::Action(
                     self.lower_line_task_action(
+                        table_index(index),
                         scheduled_action_inputs
                             .get(&node_ids[index])
                             .map_or(task_inputs, Vec::as_slice),
@@ -780,6 +794,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
 
     fn lower_line_task_action(
         &mut self,
+        source_node: u32,
         captures: &[arcweft_core::runtime_id::RuntimeLocalDeclarationId],
         ops: &[FlowOp],
         path: &str,
@@ -791,6 +806,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .line_result_selector
             .replace((result_type, result_type_awbc));
         let function = self.lower_line_function(
+            arcweft_core::plan::RuntimeGeneratedFunctionRole::LineAction { source_node },
             captures,
             ops,
             path,
@@ -803,6 +819,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
 
     fn lower_line_task_cancel_handler(
         &mut self,
+        source_rule: u32,
         captures: &[arcweft_core::runtime_id::RuntimeLocalDeclarationId],
         ops: &[FlowOp],
         path: &str,
@@ -816,6 +833,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .line_result_selector
             .replace((result_type, result_type_awbc));
         let function = self.lower_line_function(
+            arcweft_core::plan::RuntimeGeneratedFunctionRole::LineCancellation { source_rule },
             captures,
             ops,
             path,
@@ -829,18 +847,20 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
 
     fn lower_line_function(
         &mut self,
+        role: arcweft_core::plan::RuntimeGeneratedFunctionRole,
         captures: &[arcweft_core::runtime_id::RuntimeLocalDeclarationId],
         ops: &[FlowOp],
         path: &str,
         kind: AwbcFunctionKind,
         capture_mode: arcweft_core::plan::RuntimeFunctionCaptureMode,
     ) -> AwbcFunctionId {
-        self.lower_line_function_with_capture_slots(captures, ops, path, kind, capture_mode)
+        self.lower_line_function_with_capture_slots(role, captures, ops, path, kind, capture_mode)
             .0
     }
 
     fn lower_line_function_with_capture_slots(
         &mut self,
+        role: arcweft_core::plan::RuntimeGeneratedFunctionRole,
         captures: &[arcweft_core::runtime_id::RuntimeLocalDeclarationId],
         ops: &[FlowOp],
         path: &str,
@@ -850,7 +870,14 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         AwbcFunctionId,
         Vec<crate::awbc_lower::frame::FrameCaptureSlot>,
     ) {
-        let owner = self.inventory.reserve_function_slot();
+        let definition = self
+            .line_group
+            .as_ref()
+            .expect("Line function has its accepted group owner")
+            .group
+            .definition()
+            .generated_child(role);
+        let owner = self.inventory.reserve_function_slot(definition);
         let mut frame = FrameBuilder::new();
         for capture in captures {
             let ty = self.local_type(*capture);
@@ -884,6 +911,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         let function = self.inventory.replace_function(
             owner,
             AwbcFunction {
+                definition,
                 semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Line,
                 public_id,
                 kind,
@@ -922,6 +950,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
     pub(crate) fn lower_executable_function_site(
         &mut self,
         owner: AwbcFunctionId,
+        definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity,
         role: arcweft_core::plan::RuntimeFunctionSemanticRole,
         function_type: Option<arcweft_core::runtime_id::RuntimePlanTypeId>,
         inputs: &[RuntimeFunctionInputBinding],
@@ -1004,6 +1033,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         self.inventory.replace_function(
             owner,
             AwbcFunction {
+                definition,
                 semantic_role: role,
                 public_id: None,
                 kind: AwbcFunctionKind::Ordinary,
@@ -1029,10 +1059,10 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .iter()
             .find(|schema| schema.flow == flow.id);
         let canonical_name = flow.id.canonical_label();
-        let owner = self
-            .inventory
-            .flow_function(&flow.id)
-            .unwrap_or_else(|| self.inventory.reserve_flow_function_slot(&flow.id));
+        let owner = self.inventory.flow_function(&flow.id).unwrap_or_else(|| {
+            self.inventory
+                .reserve_flow_function_slot(&flow.id, flow.definition)
+        });
         for parameter in &flow.params {
             let ty = self.local_type(*parameter);
             frame.parameter(*parameter, ty);
@@ -1100,6 +1130,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             &flow.id,
             owner,
             AwbcFunction {
+                definition: flow.definition,
                 semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
                 public_id: Some(public_id),
                 kind: AwbcFunctionKind::Flow,
@@ -2078,10 +2109,13 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             return None;
         };
         let already_reserved = self.inventory.function_site_function(site).is_some();
-        let function = self.inventory.reserve_function_site_slot(site);
+        let function = self
+            .inventory
+            .reserve_function_site_slot(site, declaration.definition());
         if !already_reserved {
             self.inventory
                 .push_pending_closure(PendingAwbcClosure::FunctionSite {
+                    definition: declaration.definition(),
                     role: declaration.role(),
                     function,
                     function_type: declaration.function_type(),

@@ -612,6 +612,27 @@ impl CheckedLocalInputCoordinate {
 }
 
 impl CheckedSemanticPath {
+    /// Stable generated-function owner anchored in this accepted structural path.
+    /// This identity excludes body contents and closed instance types.
+    pub fn runtime_function_definition(
+        &self,
+    ) -> Result<
+        arcweft_core::plan::RuntimeFunctionDefinitionIdentity,
+        CheckedFunctionDefinitionOriginError,
+    > {
+        let bytes = self
+            .canonical_bytes()
+            .map_err(|source| CheckedFunctionDefinitionOriginError { source })?;
+        let mut hash = blake3::Hasher::new();
+        hash.update(b"arcweft.lang.generated-function-owner.v1\0");
+        hash.update(&bytes);
+        Ok(
+            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                *hash.finalize().as_bytes(),
+            ),
+        )
+    }
+
     pub(crate) fn new(
         root: AcceptedSemanticRoot,
         steps: impl Into<Box<[CheckedSemanticPathStep]>>,
@@ -662,6 +683,13 @@ impl CheckedSemanticPath {
         }
         Ok(output)
     }
+}
+
+#[derive(Debug, Error)]
+#[error("checked function definition coordinate encoding failed: {source}")]
+pub struct CheckedFunctionDefinitionOriginError {
+    #[source]
+    source: SemanticCoordinateEncodingError,
 }
 
 /// Opaque accepted-rooted coordinate carried by compiler-local semantic
@@ -2441,6 +2469,33 @@ pub(crate) enum SemanticCoordinateEncodingError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generated_function_owner_definition_retains_accepted_root_family() {
+        let path = CheckedSemanticPath::new(
+            AcceptedSemanticRoot::Declaration(AcceptedDeclarationSemanticId::from_bytes(
+                [0x31; 32],
+            )),
+            [],
+        );
+        let foreign = CheckedSemanticPath::new(
+            AcceptedSemanticRoot::Declaration(AcceptedDeclarationSemanticId::from_bytes(
+                [0x32; 32],
+            )),
+            [],
+        );
+        let item = CheckedSemanticPath::new(
+            AcceptedSemanticRoot::Item(AcceptedItemSemanticId::from_bytes([0x31; 32])),
+            [],
+        );
+        let definition = path.runtime_function_definition().unwrap();
+        assert_eq!(
+            definition,
+            path.clone().runtime_function_definition().unwrap()
+        );
+        assert_ne!(definition, foreign.runtime_function_definition().unwrap());
+        assert_ne!(definition, item.runtime_function_definition().unwrap());
+    }
 
     #[test]
     fn generated_local_origins_separate_structural_owner_and_every_semantic_role() {

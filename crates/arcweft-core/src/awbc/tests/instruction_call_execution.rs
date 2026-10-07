@@ -94,6 +94,7 @@ fn mut_trait_program(receiver_out: AwbcRegisterId) -> std::sync::Arc<AwbcProgram
         source_map: None,
     });
     program.functions.push(AwbcFunction {
+        definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.instruction_call_execution.mut_trait_program.definition.0.v1\0").as_bytes()),
         semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::TraitMethod,

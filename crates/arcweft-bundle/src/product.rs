@@ -1507,6 +1507,7 @@ mod tests {
                 max_scope_depth: 0,
             }],
             functions: vec![AwbcFunction {
+                definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-bundle.src.product.minimal_awbc_program.definition.0.v1\0").as_bytes()),
                 semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
                 public_id: Some(AwbcStringId(0)),
                 kind: AwbcFunctionKind::Flow,

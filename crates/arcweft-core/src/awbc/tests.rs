@@ -118,6 +118,12 @@ fn minimal_program() -> AwbcProgram {
             max_scope_depth: 0,
         }],
         functions: vec![AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                *blake3::hash(
+                    b"crates.arcweft-core.src.awbc.tests.minimal_program.definition.0.v1\0",
+                )
+                .as_bytes(),
+            ),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
@@ -258,6 +264,12 @@ fn format_content_program() -> AwbcProgram {
         max_scope_depth: 0,
     });
     program.functions.push(AwbcFunction {
+        definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+            *blake3::hash(
+                b"crates.arcweft-core.src.awbc.tests.format_content_program.definition.0.v1\0",
+            )
+            .as_bytes(),
+        ),
         semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Synthetic,
@@ -1423,6 +1435,7 @@ fn explicit_dialogue_selector_roundtrips_executes_and_restores_distinctly() {
     });
     program.functions.extend([
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.explicit_dialogue_selector_roundtrips_executes_and_restores_distinctly.definition.0.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::LineActivation,
@@ -1435,6 +1448,7 @@ fn explicit_dialogue_selector_roundtrips_executes_and_restores_distinctly() {
             flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         },
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.explicit_dialogue_selector_roundtrips_executes_and_restores_distinctly.definition.1.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::LineTask,
@@ -1822,6 +1836,12 @@ fn project_call_invoke_program() -> AwbcProgram {
     });
     program.functions[0].blocks = AwbcTableRange::new(0, 2);
     program.functions.push(AwbcFunction {
+        definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+            *blake3::hash(
+                b"crates.arcweft-core.src.awbc.tests.project_call_invoke_program.definition.0.v1\0",
+            )
+            .as_bytes(),
+        ),
         semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Ordinary,
@@ -1912,6 +1932,7 @@ fn ordinary_returning_call_program() -> AwbcProgram {
     });
     program.functions[0].blocks = AwbcTableRange::new(0, 2);
     program.functions.push(AwbcFunction {
+        definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.ordinary_returning_call_program.definition.0.v1\0").as_bytes()),
         semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Ordinary,
@@ -2199,6 +2220,7 @@ fn project_call_retained_program() -> AwbcProgram {
     });
     program.functions[0].blocks = AwbcTableRange::new(0, 4);
     program.functions.push(AwbcFunction {
+        definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.project_call_retained_program.definition.0.v1\0").as_bytes()),
         semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Ordinary,
@@ -2540,6 +2562,7 @@ fn project_call_default_program() -> AwbcProgram {
     program.functions[0].blocks = AwbcTableRange::new(0, 2);
     program.functions.extend([
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.project_call_default_program.definition.0.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
@@ -2552,6 +2575,7 @@ fn project_call_default_program() -> AwbcProgram {
             flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         },
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.project_call_default_program.definition.1.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
@@ -2720,6 +2744,12 @@ fn goto_unwind_program(dynamic: bool) -> AwbcProgram {
     program.functions[0].frame_layout = AwbcFrameLayoutId(0);
     program.functions.extend([
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                *blake3::hash(
+                    b"crates.arcweft-core.src.awbc.tests.goto_unwind_program.definition.0.v1\0",
+                )
+                .as_bytes(),
+            ),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
@@ -2732,6 +2762,12 @@ fn goto_unwind_program(dynamic: bool) -> AwbcProgram {
             flags: inner_flags,
         },
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                *blake3::hash(
+                    b"crates.arcweft-core.src.awbc.tests.goto_unwind_program.definition.1.v1\0",
+                )
+                .as_bytes(),
+            ),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Flow,
@@ -2810,6 +2846,7 @@ fn project_call_target_goto_program(dynamic: bool) -> AwbcProgram {
         }
     };
     program.functions.push(AwbcFunction {
+        definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.project_call_target_goto_program.definition.0.v1\0").as_bytes()),
         semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Flow,
@@ -2842,6 +2879,7 @@ fn project_call_default_goto_program() -> AwbcProgram {
         args: Vec::new(),
     };
     program.functions.push(AwbcFunction {
+        definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.project_call_default_goto_program.definition.0.v1\0").as_bytes()),
         semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Flow,
@@ -5623,6 +5661,7 @@ fn expression_apply_frame_layouts() -> Vec<AwbcFrameLayout> {
 fn expression_apply_functions(synthetic_len: u32) -> Vec<AwbcFunction> {
     vec![
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.expression_apply_functions.definition.0.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
@@ -5635,6 +5674,7 @@ fn expression_apply_functions(synthetic_len: u32) -> Vec<AwbcFunction> {
             flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         },
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.expression_apply_functions.definition.1.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
@@ -6327,6 +6367,7 @@ fn reduction_unchanged_materializes_one_reference_layer_without_widening_other_o
         max_scope_depth: 0,
     });
     program.functions.push(AwbcFunction {
+        definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.reduction_unchanged_materializes_one_reference_layer_without_widening_other_ops.definition.0.v1\0").as_bytes()),
         semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Ordinary,
@@ -6526,6 +6567,7 @@ fn stateful_entry_with_function_site_callables() -> AwbcProgram {
     };
     program.functions.extend([
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.stateful_entry_with_function_site_callables.definition.0.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
@@ -6538,6 +6580,7 @@ fn stateful_entry_with_function_site_callables() -> AwbcProgram {
             flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         },
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.stateful_entry_with_function_site_callables.definition.1.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
@@ -7386,6 +7429,7 @@ fn callable_instructions_capture_and_apply_program_owned_state() {
         }],
         functions: vec![
             AwbcFunction {
+                definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.callable_instructions_capture_and_apply_program_owned_state.definition.0.v1\0").as_bytes()),
                 semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
                 public_id: Some(AwbcStringId(1)),
                 kind: AwbcFunctionKind::Flow,
@@ -7398,6 +7442,7 @@ fn callable_instructions_capture_and_apply_program_owned_state() {
                 flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
             },
             AwbcFunction {
+                definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.callable_instructions_capture_and_apply_program_owned_state.definition.1.v1\0").as_bytes()),
                 semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
                 public_id: None,
                 kind: AwbcFunctionKind::Synthetic,
@@ -8103,6 +8148,7 @@ fn nested_return_restores_caller_resume_and_destination() {
     });
     program.functions[0].blocks = AwbcTableRange::new(0, 2);
     program.functions.push(AwbcFunction {
+        definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.nested_return_restores_caller_resume_and_destination.definition.0.v1\0").as_bytes()),
         semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Synthetic,

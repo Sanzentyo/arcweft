@@ -6770,6 +6770,16 @@ impl<'a> FinalFlowLowerer<'a> {
                     contract.update(b"arcweft.thread.producer-contract.v1\0");
                     contract.update(identity.as_bytes());
                     let producer = arcweft_core::plan::RuntimeNeedProducerTemplateSeed {
+                        definition: self
+                            .semantic_facts
+                            .expression_coordinate(*thread)
+                            .ok_or_else(|| {
+                                RuntimePlanLowerError::new(
+                                    "Thread producer has no accepted function owner",
+                                )
+                            })?
+                            .runtime_function_definition()
+                            .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
                         family: arcweft_core::task::NeedProducerFamily::StructuredTaskPlan,
                         contract: arcweft_core::task::NeedProducerContractDigest::from_bytes(
                             *contract.finalize().as_bytes(),

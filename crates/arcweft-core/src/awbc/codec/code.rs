@@ -335,6 +335,7 @@ impl Wire for crate::plan::RuntimeFunctionSemanticRole {
 impl Wire for AwbcFunction {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.semantic_role.write_wire(writer)?;
+        self.definition.as_bytes().write_wire(writer)?;
         self.public_id.write_wire(writer)?;
         self.kind.write_wire(writer)?;
         self.signature.write_wire(writer)?;
@@ -349,6 +350,9 @@ impl Wire for AwbcFunction {
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::read_wire(reader)?,
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                <[u8; 32]>::read_wire(reader)?,
+            ),
             public_id: Option::<AwbcStringId>::read_wire(reader)?,
             kind: AwbcFunctionKind::read_wire(reader)?,
             signature: AwbcSignatureId::read_wire(reader)?,
@@ -2590,6 +2594,7 @@ mod function_semantic_role_wire_tests {
     fn all_function_semantic_roles_round_trip_independently_of_execution_kind() {
         for &role in RuntimeFunctionSemanticRole::ALL {
             let function = AwbcFunction {
+                definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.codec.code.all_function_semantic_roles_round_trip_independently_of_execution_kind.definition.0.v1\0").as_bytes()),
                 semantic_role: role,
                 public_id: None,
                 kind: AwbcFunctionKind::Ordinary,
@@ -2605,6 +2610,12 @@ mod function_semantic_role_wire_tests {
             function.write_wire(&mut writer).unwrap();
             let bytes = writer.into_bytes();
             assert_eq!(bytes[0], role.semantic_tag());
+            assert_eq!(&bytes[1..33], function.definition.as_bytes());
+            for identity_len in 0..32 {
+                let mut truncated =
+                    Reader::new(&bytes[..1 + identity_len], &AwbcDecodeBudget::default());
+                assert!(AwbcFunction::read_wire(&mut truncated).is_err());
+            }
             let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
             assert_eq!(AwbcFunction::read_wire(&mut reader).unwrap(), function);
             reader.finish().unwrap();
@@ -2613,6 +2624,12 @@ mod function_semantic_role_wire_tests {
                 serde_json::from_value::<AwbcFunction>(json.clone()).unwrap(),
                 function
             );
+            let mut missing_definition = json.clone();
+            missing_definition
+                .as_object_mut()
+                .unwrap()
+                .remove("definition");
+            assert!(serde_json::from_value::<AwbcFunction>(missing_definition).is_err());
             let mut missing = json;
             missing.as_object_mut().unwrap().remove("semantic_role");
             assert!(serde_json::from_value::<AwbcFunction>(missing).is_err());

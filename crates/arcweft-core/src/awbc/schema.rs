@@ -1261,6 +1261,8 @@ awbc_u8_enum! {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcFunction {
+    /// Accepted lexical definition or generated recipe identity; independent of table allocation.
+    pub definition: crate::plan::RuntimeFunctionDefinitionIdentity,
     /// Accepted semantic purpose, independent of the execution substrate.
     pub semantic_role: crate::plan::RuntimeFunctionSemanticRole,
     pub public_id: Option<AwbcStringId>,

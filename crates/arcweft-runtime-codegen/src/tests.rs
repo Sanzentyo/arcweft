@@ -98,6 +98,13 @@ fn program() -> AwbcProgram {
             max_scope_depth: 0,
         }],
         functions: vec![AwbcFunction {
+            definition:
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    *blake3::hash(
+                        b"crates.arcweft-runtime-codegen.src.tests.program.definition.0.v1\0",
+                    )
+                    .as_bytes(),
+                ),
             semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
@@ -184,6 +191,7 @@ fn callable_project_call_program() -> AwbcProgram {
         effects: AwbcEffectSetId(0),
     });
     program.functions.push(AwbcFunction {
+        definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-runtime-codegen.src.tests.callable_project_call_program.definition.0.v1\0").as_bytes()),
         semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Ordinary,
@@ -404,6 +412,7 @@ fn compiled_nested_return_restores_caller_and_writes_destination() {
         effects: AwbcEffectSetId(0),
     });
     program.functions.push(AwbcFunction {
+        definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-runtime-codegen.src.tests.compiled_nested_return_restores_caller_and_writes_destination.definition.0.v1\0").as_bytes()),
         semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Synthetic,

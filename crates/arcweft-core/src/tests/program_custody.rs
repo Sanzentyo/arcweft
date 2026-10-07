@@ -342,6 +342,7 @@ pub(crate) fn awbc_handle_program(
         max_scope_depth: 0,
     }];
     program.functions = vec![AwbcFunction {
+        definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.tests.program_custody.awbc_handle_program.definition.0.v1\0").as_bytes()),
         semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Ordinary,

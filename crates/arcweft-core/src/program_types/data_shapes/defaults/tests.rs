@@ -106,6 +106,7 @@ fn programs() -> (RuntimePlan, AwbcProgram) {
             max_scope_depth: 0,
         }],
         functions: vec![AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.program_types.data_shapes.defaults.tests.programs.definition.0.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Ordinary,

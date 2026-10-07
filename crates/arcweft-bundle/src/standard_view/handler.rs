@@ -132,6 +132,9 @@ fn install_dialogue_handler_rows(candidate: &mut AwbcProgram) -> Result<(), Stan
         source_map: None,
     });
     candidate.functions.push(AwbcFunction {
+        definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+            *blake3::hash(b"arcweft.std.view.dialogue.primary-action.function.v1\0").as_bytes(),
+        ),
         semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: Some(function_name),
         kind: AwbcFunctionKind::Ordinary,

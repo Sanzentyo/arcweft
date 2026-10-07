@@ -650,6 +650,25 @@ fn awbc_cancellation_result_selection_uses_typed_terminal_and_fallthrough_keeps_
             .collect::<Vec<_>>()
     };
 
+    let definition = plan.line_task_groups()[0].definition();
+    for (source_rule, handler) in group.cancel_handlers.iter().enumerate() {
+        assert_eq!(
+            program.functions[handler.function.index()].definition,
+            definition.generated_child(
+                arcweft_core::plan::RuntimeGeneratedFunctionRole::LineCancellation {
+                    source_rule: u32::try_from(source_rule).unwrap(),
+                }
+            )
+        );
+    }
+    let bytes = program.encode_canonical().unwrap();
+    let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+        &bytes,
+        arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+    )
+    .unwrap();
+    assert_eq!(decoded.functions, program.functions);
+
     let selected = function(&selected_action);
     assert_eq!(
         selected.kind,

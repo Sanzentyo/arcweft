@@ -640,14 +640,47 @@ fn format_content_expression(
             project_option: false,
             operands: vec![
                 RuntimeFormatContentOperand::from_admitted_parts(
+                    crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                        *blake3::hash(
+                            b"arcweft.core.context_tests.format_content_expression.formatter.v1\0",
+                        )
+                        .as_bytes(),
+                    )
+                    .generated_child(
+                        crate::plan::RuntimeGeneratedFunctionRole::FormatOperand {
+                            parameter: RuntimeFmtParameterId::Value,
+                        },
+                    ),
                     RuntimeFmtParameterId::Value,
                     format_call_expression(plan, target),
                 ),
                 RuntimeFormatContentOperand::from_admitted_parts(
+                    crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                        *blake3::hash(
+                            b"arcweft.core.context_tests.format_content_expression.formatter.v1\0",
+                        )
+                        .as_bytes(),
+                    )
+                    .generated_child(
+                        crate::plan::RuntimeGeneratedFunctionRole::FormatOperand {
+                            parameter: RuntimeFmtParameterId::Style,
+                        },
+                    ),
                     RuntimeFmtParameterId::Style,
                     format_call_expression(plan, target),
                 ),
                 RuntimeFormatContentOperand::from_admitted_parts(
+                    crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                        *blake3::hash(
+                            b"arcweft.core.context_tests.format_content_expression.formatter.v1\0",
+                        )
+                        .as_bytes(),
+                    )
+                    .generated_child(
+                        crate::plan::RuntimeGeneratedFunctionRole::FormatOperand {
+                            parameter: RuntimeFmtParameterId::Fallback,
+                        },
+                    ),
                     RuntimeFmtParameterId::Fallback,
                     format_call_expression(plan, target),
                 ),
@@ -673,6 +706,7 @@ fn native_formatter_uses_selected_locale_for_number_style() {
             project_option: false,
             operands: vec![
                 RuntimeFormatContentOperand::from_admitted_parts(
+                    crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"arcweft.core.context_tests.native_formatter_uses_selected_locale_for_number_style.formatter.v1\0").as_bytes()).generated_child(crate::plan::RuntimeGeneratedFunctionRole::FormatOperand { parameter: RuntimeFmtParameterId::Value }),
                     RuntimeFmtParameterId::Value,
                     RuntimeExpr::from_admitted_parts(
                         type_table.id_for_semantic(context.types.i64).unwrap(),
@@ -680,6 +714,7 @@ fn native_formatter_uses_selected_locale_for_number_style() {
                     ),
                 ),
                 RuntimeFormatContentOperand::from_admitted_parts(
+                    crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"arcweft.core.context_tests.native_formatter_uses_selected_locale_for_number_style.formatter.v1\0").as_bytes()).generated_child(crate::plan::RuntimeGeneratedFunctionRole::FormatOperand { parameter: RuntimeFmtParameterId::Style }),
                     RuntimeFmtParameterId::Style,
                     RuntimeExpr::from_admitted_parts(
                         type_table.id_for_semantic(STRING).unwrap(),

@@ -215,6 +215,7 @@ fn format_program(value_thunk: ValueThunk) -> AwbcProgram {
     ]);
     program.functions.extend([
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.format_content_execution.format_program.definition.0.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
@@ -233,6 +234,7 @@ fn format_program(value_thunk: ValueThunk) -> AwbcProgram {
             flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         },
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.format_content_execution.format_program.definition.1.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
@@ -814,6 +816,7 @@ fn project_display_program(project_success: bool) -> AwbcProgram {
         source_map: None,
     });
     program.functions.push(AwbcFunction {
+        definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.format_content_execution.project_display_program.definition.0.v1\0").as_bytes()),
         semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::TraitMethod,
@@ -889,6 +892,7 @@ fn project_display_program(project_success: bool) -> AwbcProgram {
             source_map: None,
         });
         program.functions.push(AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.format_content_execution.project_display_program.definition.1.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
@@ -1108,6 +1112,7 @@ fn project_display_option_none_program() -> AwbcProgram {
         source_map: None,
     });
     program.functions.push(AwbcFunction {
+        definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.format_content_execution.project_display_option_none_program.definition.0.v1\0").as_bytes()),
         semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Synthetic,
@@ -1180,6 +1185,7 @@ fn nested_format_program(call: NestedValueCall, value_thunk: ValueThunk) -> Awbc
     });
     program.frame_layouts.push(program.frame_layouts[1].clone());
     program.functions.push(AwbcFunction {
+        definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.format_content_execution.nested_format_program.definition.0.v1\0").as_bytes()),
         semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: match call {

@@ -393,6 +393,7 @@ fn minimal_awbc_bytes() -> Vec<u8> {
             max_scope_depth: 0,
         }],
         functions: vec![AwbcFunction {
+            definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-project-loader.src.cache.persistent_query.tests.minimal_awbc_bytes.definition.0.v1\0").as_bytes()),
             semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(3)),
             kind: AwbcFunctionKind::Flow,

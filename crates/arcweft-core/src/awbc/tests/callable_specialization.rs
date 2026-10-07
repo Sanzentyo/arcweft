@@ -101,6 +101,7 @@ fn specialization_program() -> AwbcProgram {
     let deterministic = AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic);
     program.functions = vec![
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.callable_specialization.specialization_program.definition.0.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
@@ -113,6 +114,7 @@ fn specialization_program() -> AwbcProgram {
             flags: deterministic,
         },
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.tests.callable_specialization.specialization_program.definition.1.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,

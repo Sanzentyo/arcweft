@@ -1261,6 +1261,7 @@ dependencies = [
  "arcweft-text-layout",
  "arcweft-text-model",
  "arcweft-view",
+ "blake3",
  "futures-channel",
  "js-sys",
  "num-traits",

@@ -1014,6 +1014,7 @@ fn line_activation_register_defer_commits_captures_and_cursor() {
     let defer_body = AwbcFunctionId(2);
     program.functions.extend([
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.line_activation_register_defer_commits_captures_and_cursor.definition.0.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::LineActivation,
@@ -1034,6 +1035,7 @@ fn line_activation_register_defer_commits_captures_and_cursor() {
             flags: AwbcFunctionFlags::default(),
         },
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.line_activation_register_defer_commits_captures_and_cursor.definition.1.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
@@ -2288,6 +2290,7 @@ fn actor_look_program() -> AwbcProgram {
     program.functions[0].blocks = AwbcTableRange::new(0, 1);
     program.functions[0].entry_block = AwbcBlockId(0);
     program.functions.push(AwbcFunction {
+        definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.actor_look_program.definition.0.v1\0").as_bytes()),
         semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::LineActivation,
@@ -2463,6 +2466,7 @@ fn scheduled_actor_look_program() -> AwbcProgram {
         max_scope_depth: 0,
     });
     program.functions.push(AwbcFunction {
+        definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.scheduled_actor_look_program.definition.0.v1\0").as_bytes()),
         semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::LineTask,
@@ -3101,6 +3105,7 @@ fn mark_selector_program(
     });
     program.functions.extend([
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.mark_selector_program.definition.0.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::LineActivation,
@@ -3121,6 +3126,7 @@ fn mark_selector_program(
             flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         },
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.mark_selector_program.definition.1.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::LineTask,
@@ -3141,6 +3147,7 @@ fn mark_selector_program(
             flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         },
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.mark_selector_program.definition.2.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::LineCancellationHandler,
@@ -3469,6 +3476,7 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
     }];
     program.functions.extend([
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.init_scope_defer_host_call_program.definition.0.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::LineActivation,
@@ -3489,6 +3497,7 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
             flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::MaySuspend),
         },
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.init_scope_defer_host_call_program.definition.1.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
@@ -3753,6 +3762,7 @@ fn defer_host_call_program() -> AwbcProgram {
     ];
     program.functions.extend([
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.defer_host_call_program.definition.0.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::LineActivation,
@@ -3773,6 +3783,7 @@ fn defer_host_call_program() -> AwbcProgram {
             flags: AwbcFunctionFlags::default(),
         },
         AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.defer_host_call_program.definition.1.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,
@@ -5009,6 +5020,7 @@ fn trap_program(code: AwbcTrapCode, message: &str) -> AwbcProgram {
             source_map: None,
         }],
         functions: vec![AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.trap_program.definition.0.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
@@ -5081,6 +5093,7 @@ fn content_ensure_program() -> AwbcProgram {
             source_map: None,
         }],
         functions: vec![AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.content_ensure_program.definition.0.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
@@ -5183,6 +5196,7 @@ fn host_call_program() -> AwbcProgram {
             },
         ],
         functions: vec![AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.host_call_program.definition.0.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
@@ -5380,6 +5394,7 @@ fn direct_need_program() -> AwbcProgram {
             },
         ],
         functions: vec![AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.direct_need_program.definition.0.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
@@ -5552,6 +5567,7 @@ fn need_producer_program(restart: AwbcTaskRestartPolicy) -> AwbcProgram {
             },
         ],
         functions: vec![AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.need_producer_program.definition.0.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
@@ -5747,6 +5763,7 @@ fn await_many_product_program() -> AwbcProgram {
             },
         ],
         functions: vec![AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.await_many_product_program.definition.0.v1\0").as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
@@ -5837,9 +5854,25 @@ fn await_many_product_program() -> AwbcProgram {
             items: vec![AwbcRegisterId(0)],
         },
     ];
-    for (function, signature, inputs, tuple_ty, result_register, instruction) in [
-        (1, 3, vec![], AwbcTypeId(3), AwbcRegisterId(0), 0),
-        (2, 4, vec![item_ty], AwbcTypeId(4), AwbcRegisterId(1), 1),
+    for (declaration, function, signature, inputs, tuple_ty, result_register, instruction) in [
+        (
+            "request.base",
+            1,
+            3,
+            vec![],
+            AwbcTypeId(3),
+            AwbcRegisterId(0),
+            0,
+        ),
+        (
+            "request.child",
+            2,
+            4,
+            vec![item_ty],
+            AwbcTypeId(4),
+            AwbcRegisterId(1),
+            1,
+        ),
     ] {
         let mut slots: Vec<_> = inputs
             .iter()
@@ -5872,6 +5905,7 @@ fn await_many_product_program() -> AwbcProgram {
             source_map: None,
         });
         program.functions.push(AwbcFunction {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(format!("arcweft.core.product_step.await_many_product_program.{declaration}.v1\0").as_bytes()).as_bytes()),
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,

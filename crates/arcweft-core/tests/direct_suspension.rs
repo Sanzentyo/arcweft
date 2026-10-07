@@ -754,6 +754,7 @@ fn direct_suspension_signatures(need_ty: AwbcTypeId) -> Vec<AwbcSignature> {
 fn direct_suspension_functions() -> Vec<AwbcFunction> {
     vec![
         AwbcFunction {
+            definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.tests.direct_suspension.direct_suspension_functions.definition.0.v1\0").as_bytes()),
             semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
@@ -772,6 +773,7 @@ fn direct_suspension_functions() -> Vec<AwbcFunction> {
             flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         },
         AwbcFunction {
+            definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.tests.direct_suspension.direct_suspension_functions.definition.1.v1\0").as_bytes()),
             semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,

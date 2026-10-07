@@ -1011,6 +1011,20 @@ fn assert_awbc_capture_transfer(
         })
         .map(|input| input.origin)
         .collect::<Vec<_>>();
+    let source_definitions = runtime
+        .plan
+        .function_sites()
+        .iter()
+        .filter(|site| site.role() == role)
+        .map(|site| site.definition())
+        .collect::<std::collections::BTreeSet<_>>();
+    let retained_definitions = decoded
+        .functions
+        .iter()
+        .filter(|function| function.semantic_role == role)
+        .map(|function| function.definition)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(source_definitions.is_subset(&retained_definitions));
     assert_eq!(retained_origins, source_origins);
     assert_eq!(transfers, vec![expected]);
 }

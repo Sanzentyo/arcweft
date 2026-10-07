@@ -1952,6 +1952,7 @@ fn minimal_awbc_program(entry: &str) -> AwbcProgram {
         ],
         functions: vec![
             AwbcFunction {
+                definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-runtime-driver.tests.awbc_product_session.minimal_awbc_program.definition.0.v1\0").as_bytes()),
                 semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
                 public_id: Some(AwbcStringId(1)),
                 kind: AwbcFunctionKind::Flow,
@@ -1964,6 +1965,7 @@ fn minimal_awbc_program(entry: &str) -> AwbcProgram {
                 flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
             },
             AwbcFunction {
+                definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-runtime-driver.tests.awbc_product_session.minimal_awbc_program.definition.1.v1\0").as_bytes()),
                 semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
                 public_id: None,
                 kind: AwbcFunctionKind::Synthetic,

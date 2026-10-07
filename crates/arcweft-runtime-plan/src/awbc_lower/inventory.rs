@@ -171,6 +171,7 @@ struct BlockEmission {
 #[derive(Clone, Debug)]
 pub(crate) enum PendingAwbcClosure {
     TaskRequest {
+        definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity,
         function: AwbcFunctionId,
         inputs: Box<[RuntimeLocalDeclarationId]>,
         arguments: Box<[RuntimeExpr]>,
@@ -180,6 +181,7 @@ pub(crate) enum PendingAwbcClosure {
     /// authority; each row's synthetic input local is bound to the body
     /// pattern before the site body executes.
     FunctionSite {
+        definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity,
         role: arcweft_core::plan::RuntimeFunctionSemanticRole,
         function: AwbcFunctionId,
         function_type: Option<arcweft_core::runtime_id::RuntimePlanTypeId>,
@@ -191,6 +193,7 @@ pub(crate) enum PendingAwbcClosure {
     /// Protected `fmt` operand thunk. A checked FormatContent instruction
     /// resumes this body on the same fiber and retains its source-order result.
     FormatOperand {
+        definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity,
         function: AwbcFunctionId,
         captures: Box<
             [(
@@ -1474,9 +1477,13 @@ impl AwbcInventory {
         id
     }
 
-    pub fn reserve_function_slot(&mut self) -> AwbcFunctionId {
+    pub fn reserve_function_slot(
+        &mut self,
+        definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity,
+    ) -> AwbcFunctionId {
         let id = AwbcFunctionId(table_index(self.program.functions.len()));
         self.program.functions.push(AwbcFunction {
+            definition,
             semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
@@ -1491,8 +1498,12 @@ impl AwbcInventory {
         id
     }
 
-    pub fn reserve_flow_function_slot(&mut self, flow: &FlowRuntimeId) -> AwbcFunctionId {
-        let id = self.reserve_function_slot();
+    pub fn reserve_flow_function_slot(
+        &mut self,
+        flow: &FlowRuntimeId,
+        definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity,
+    ) -> AwbcFunctionId {
+        let id = self.reserve_function_slot(definition);
         self.flow_functions.insert(flow.clone(), id);
         id
     }
@@ -1542,11 +1553,15 @@ impl AwbcInventory {
         self.function_sites.get(&site).copied()
     }
 
-    pub fn reserve_function_site_slot(&mut self, site: RuntimeFunctionSiteId) -> AwbcFunctionId {
+    pub fn reserve_function_site_slot(
+        &mut self,
+        site: RuntimeFunctionSiteId,
+        definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity,
+    ) -> AwbcFunctionId {
         if let Some(function) = self.function_site_function(site) {
             return function;
         }
-        let function = self.reserve_function_slot();
+        let function = self.reserve_function_slot(definition);
         self.function_sites.insert(site, function);
         function
     }
@@ -1720,7 +1735,7 @@ impl AwbcInventory {
         let inputs = target.captures().collect::<Vec<_>>();
         let mut child_inputs = inputs.clone();
         child_inputs.push(target.item_binding);
-        let child_function = self.intern_task_request_function(&target.child.request, child_inputs);
+        let child_function = self.intern_task_request_function(&target.child, child_inputs);
         let child = self.intern_producer_template(
             &target.child,
             AwbcTaskPlanKind::Template {
@@ -1731,7 +1746,7 @@ impl AwbcInventory {
                 request_function: child_function,
             },
         )?;
-        let request_function = self.intern_task_request_function(&target.base.request, inputs);
+        let request_function = self.intern_task_request_function(&target.base, inputs);
         self.intern_producer_template(
             &target.base,
             AwbcTaskPlanKind::AwaitMany {
@@ -1749,11 +1764,16 @@ impl AwbcInventory {
 
     fn intern_task_request_function(
         &mut self,
-        request: &HostTaskRequestTemplate,
+        producer: &arcweft_core::task::NeedProducerTemplate,
         inputs: Vec<RuntimeLocalDeclarationId>,
     ) -> AwbcFunctionId {
-        let function = self.reserve_function_slot();
+        let request = &producer.request;
+        let definition = producer
+            .definition
+            .generated_child(arcweft_core::plan::RuntimeGeneratedFunctionRole::TaskRequest);
+        let function = self.reserve_function_slot(definition);
         self.push_pending_closure(PendingAwbcClosure::TaskRequest {
+            definition,
             function,
             inputs: inputs.into_boxed_slice(),
             arguments: request.args.iter().map(|arg| arg.value().clone()).collect(),
@@ -2217,48 +2237,6 @@ impl AwbcInventory {
             target,
             roles: entry.roles.clone(),
         });
-    }
-
-    pub fn synthetic_empty_function(&mut self, name: &str) -> AwbcFunctionId {
-        self.empty_function(name, AwbcFunctionKind::Synthetic, AwbcSafePointKind::Return)
-    }
-
-    fn empty_function(
-        &mut self,
-        name: &str,
-        kind: AwbcFunctionKind,
-        safe_point: AwbcSafePointKind,
-    ) -> AwbcFunctionId {
-        let layout = self.intern_frame_layout(
-            format!("{name}:empty"),
-            AwbcFrameLayout {
-                scopes: Vec::new(),
-                slots: Vec::new(),
-                max_scope_depth: 0,
-            },
-        );
-        let block = self.push_block(AwbcBlock {
-            owner: AwbcFunctionId(table_index(self.program.functions.len())),
-            instructions: AwbcTableRange::new(table_index(self.program.instructions.len()), 0),
-            terminator: AwbcTerminator::Return { value: None },
-            safe_point,
-            source_map: None,
-        });
-        let signature = self.intern_unit_signature();
-        let public_id = Some(self.intern_string(name));
-        self.push_function(AwbcFunction {
-            semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
-            public_id,
-            kind,
-            signature,
-            type_context: None,
-            input_ownership: Vec::<AwbcFunctionInputOwnership>::new(),
-            frame_layout: layout,
-            blocks: AwbcTableRange::new(block.0, 1),
-            entry_block: block,
-            flags: AwbcFunctionFlags::empty()
-                .with(arcweft_core::awbc::schema::AwbcFunctionFlag::Deterministic),
-        })
     }
 }
 

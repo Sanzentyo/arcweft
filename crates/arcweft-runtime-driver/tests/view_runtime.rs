@@ -2922,6 +2922,7 @@ fn pure_fixture_awbc(
         source_map: None,
     });
     program.functions.push(AwbcFunction {
+        definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-runtime-driver.tests.view_runtime.pure_fixture_awbc.definition.0.v1\0").as_bytes()),
         semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
         public_id: None,
         kind: AwbcFunctionKind::Ordinary,
@@ -3064,9 +3065,23 @@ fn repeat_fixture_awbc(
         items: tuples,
     });
     let source_end = u32::try_from(program.instructions.len()).unwrap();
-    for (ordinal, id, inputs, result_type, result_identity) in [
-        (0, source_id, Vec::new(), AwbcTypeId(4), sequence_id),
-        (1, key_id, vec![AwbcTypeId(2)], AwbcTypeId(2), scalar_id),
+    for (declaration, ordinal, id, inputs, result_type, result_identity) in [
+        (
+            "source",
+            0,
+            source_id,
+            Vec::new(),
+            AwbcTypeId(4),
+            sequence_id,
+        ),
+        (
+            "key",
+            1,
+            key_id,
+            vec![AwbcTypeId(2)],
+            AwbcTypeId(2),
+            scalar_id,
+        ),
     ] {
         let start = u32::try_from(program.instructions.len()).unwrap();
         if ordinal == 1 {
@@ -3122,6 +3137,7 @@ fn repeat_fixture_awbc(
             source_map: None,
         });
         program.functions.push(AwbcFunction {
+            definition: arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(format!("arcweft.runtime_driver.view_runtime.repeat_fixture_awbc.{declaration}.v1\0").as_bytes()).as_bytes()),
             semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: None,
             kind: AwbcFunctionKind::Ordinary,

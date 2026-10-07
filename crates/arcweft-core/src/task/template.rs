@@ -52,6 +52,7 @@ impl HostCallProducerDefinition {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct NeedProducerTemplate {
+    pub definition: crate::plan::RuntimeFunctionDefinitionIdentity,
     pub family: NeedProducerFamily,
     pub contract: NeedProducerContractDigest,
     pub plan: TaskPlanSemanticDigest,

@@ -6977,3 +6977,65 @@ Broad27006confirmedlive partial4,372terminal/277fail/new0. Exactbaseline stillal
 Broad27006stillconfirmedlive partial5,428terminal,allneworigincanonical/rejection/realcompilecapture tests pass,277existingfailuresexactsofar/new0; IME368.441spassed,remaining7publicAPIcompiledrejection checksunderoriginalnextest. Current29cutpaths unchanged/no sourcehashdrift; allotherrequiredchecksgreen. Needoriginalbroadterminal0or100 withallIDscovered,baselinecompare,finalreceiptsstagefullhunks/normalpush. Fullgoalstillactive.
 
 AWBC input-origin cut final receipts at e8be7134bf550661e0f46d00c283ee259178b010, dirty main,2026-10-07: broad27006terminalnextest100 after1.36s build/543.253s execution; all5,435unique selectedterminalIDs/all47runnablepackages from82491match exactly(missing0/unexpected0);5,158passed(6slow)/277failed/39skipped. ExactfailedIDs equal precedingCorelocaloriginbaseline277(new0/resolved0),allCLI; fullgreen notclaimed. Allnewcodec4domainpayload/unknown/truncated/missingorigin andformaloriginpreexecutionrejection tests pass; actualcompilerclosure/implicit/defer/dialoguecapture canonicalCore-AWBCorigins pass. Owner97822pass1,229/1,229in160.497s; initialalltarget39999pass1m07 before newtests; finalcheckClippy52298pass10m22/1m28 forfinalsource; fmt/diff80703pass;canonicalstructureterminal0(no blockers,nonwriting), freshlockedallfeaturemetadata/targetallinverse5ownerunionCore50,case-less3compilecovered. Sourcefreeze27Rustpathsunchanged/current29cutpaths; no livevalidationhandle remains. FetchconfirmsHEAD=origin/maine8be. Finalshape mandatoryorigin inexistingAWBCrow, ownCore origin grammar4domains/canonicaltags32fixedbytes/serde mandatory/nofallbackorlegacypath/version>1; actualsource/formal/localowneridentities allforwarded, manual64ctors15files explicitsemanticrecipe16sourcepositions. Ownershipreview/metrics/embeddedtestsabove apply. Ready explicit29pathstage/fullhunkreview/coherentcommitnormalpush. FullFdefinitionAWBCmetadata+generateddefinitionanchors,F/Q/Ecommonexhaustivebody/image seal,taskstaticquota/restoretransaction/retainedView/affineLine/fullgoal remainrequired; thiscutcompletes inputorigintransport,notentiregoal. Astraoneshotconsumedneverrepeat.
+
+### 2026-10-07 — mandatory AWBC function definitions, validated publication cut
+
+Inspected main base: `1e34e333f24fd9cb6b8df43be2780c0fe2286978`; observed 48
+local changed paths, all in this migration. Ordinary callable/helper/method/Flow
+functions retain Core's accepted definition. Sema issues generated expression
+parent anchors from private accepted structural coordinates. Core's closed recipe
+derives formatter, TaskRequest, and Line activation/action/cancellation/cleanup
+child definitions; Line positions are the parent declaration graph before AWBC
+allocation. Core seeds/final rows and every AWBC reservation/final producer retain
+the mandatory identity. Canonical v1 places fixed 32 definition bytes after the
+semantic-role tag; missing JSON/truncated binary definitions reject. Removed the
+unconsumed empty-function path. No parallel identity table or legacy reader.
+
+All manual AWBC/native formatter fixtures migrated with explicit semantic recipe
+labels. Complete hunk review found four multi-definition loops (formatter
+Value/Style, AwaitMany base/child request, Result/Option context, View source/key);
+all now have distinct declared recipe names independent of allocation. Only the
+web test owner adds workspace blake3; lockfile adds the existing dependency edge
+without changing dependency versions. Initial locked check failed on that stale
+edge; it was reconciled offline. Subsequent change-caused 65 then 3 fixture
+compile errors (Core self-crate paths/five formatter arguments) were repaired.
+No extra Astra consultation, branch, worktree, destructive Git, test restart,
+job/profile/timeout change, or source mutation during live validation occurred.
+
+Validation on final source:
+
+- Workspace/all-targets/all-features/locked check: native 0, 49.92 s.
+- Workspace/all-targets/all-features/locked Clippy: native 0, 7m13s including
+  ordinary build lock wait.
+- cargo fmt --all -- --check, git diff --check, structural dry-run: native 0;
+  blocking findings 0, no report writes.
+- Initial Core/runtime-plan/compiler/Sema library owner nextest: native 0,
+  2,357/2,357 passed, 0 skipped, 22.853 s after 10m08s ordinary test build.
+  After-run inventory exactly matches all passed IDs, missing/unexpected 0.
+- Fresh locked/all-feature Cargo metadata and target-all Core inverse tree:
+  50 workspace packages, including all nine changed Rust owners.
+- Final 50-package transitive closure nextest: native 100; 5,437 run, 5,160
+  passed (6 slow), 277 failed, 39 skipped; 689.495 s after 6m03s ordinary build.
+  Unique failed IDs exactly equal the preceding base's CLI::check baseline:
+  new failures 0, resolved failures 0. Whole run is not green. IME artifact test
+  passed 379.723 s, REPL API compile 335.357 s, LSP API compile 103.038 s.
+- After-run exact inventory: native 0, 5,437 selected IDs across 183 nonempty
+  selected binaries exactly match every actual PASS/FAIL ID (missing/unexpected
+  0), covering 47 packages. Case-less compile-covered closure packages:
+  `arcweft`, `arcweft-bundle-assets`, `arcweft-render-web`.
+
+Ownership review: identity projections belong to accepted Sema path and Core
+definition owners; AWBC inventory only reserves/transports them. Existing large
+schema/codec/expression/control owners remain cohesive, with no side table, debug
+label/body/type hash, or allocation-ordinal identity. Existing embedded tests
+exercise the private codec/coordinate grammar; fiber/bundle/cache changes are
+fixture-only. Reviewed physical LOC: codec 2898, Core function_sites 589, Sema
+semantic_coordinate 2643, AWBC flow 4049/inventory 2455, final_expr 3496,
+final_flow 10081. Size triggers prompted owner review, not arbitrary splitting.
+
+Fetch confirmed HEAD=origin/main at the inspected base (0/0) before staging.
+Explicit 48-path staged diff and all hunks reviewed. This completes definition
+identity transport, not F/Q/E actual body/whole-image sealing. Static task quota
+preflight, restore/patch transactions, affine Line custody, retained View, and
+the rest of the convergence acceptance remain required. Full goal stays active
+and incomplete. Astra one-shot remains consumed and must not repeat.

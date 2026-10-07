@@ -35,3 +35,22 @@ types, runtime values, and debug labels do not replace semantic origins.
 
 The input-origin metadata transports identity. It does not by itself prove the
 complete function body transcript or whole-image seal.
+
+## Function definition identities
+
+Every AWBC function retains a mandatory `RuntimeFunctionDefinitionIdentity`.
+Canonical AWBC v1 writes its fixed 32 identity bytes immediately after the
+semantic-role tag. Binary truncation and missing JSON definitions are rejected;
+there is no default definition or legacy reader.
+
+Ordinary functions, helpers, methods, and Flow functions preserve the accepted
+Core definition. Formatter and TaskRequest recipes have an accepted expression
+owner. Generated Line functions have the accepted Line group as their parent.
+The owning typed recipe derives a child definition from its parent and its
+closed purpose: formatter parameter, TaskRequest, Line activation, source node,
+source cancellation rule, or cleanup exit. Source ordinals refer to the parent's
+declaration graph before AWBC allocation. Closed types, body bytes, frame and
+function table positions, and debug labels do not rename that definition.
+
+Definition identity is distinct from the actual body transcript and complete
+function/image seal. Transporting it through a codec is not admission evidence.

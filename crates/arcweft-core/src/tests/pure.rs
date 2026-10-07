@@ -231,6 +231,7 @@ fn pure_format_content_uses_selected_ambient_locale() {
         false,
         [
             RuntimeFormatContentOperandSeed::new(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.tests.pure.pure_format_content_uses_selected_ambient_locale.formatter.v1\0").as_bytes()).generated_child(crate::plan::RuntimeGeneratedFunctionRole::FormatOperand { parameter: RuntimeFmtParameterId::Value }),
                 RuntimeFmtParameterId::Value,
                 RuntimeExprSeed::new(
                     int_type,
@@ -238,6 +239,7 @@ fn pure_format_content_uses_selected_ambient_locale() {
                 ),
             ),
             RuntimeFormatContentOperandSeed::new(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.tests.pure.pure_format_content_uses_selected_ambient_locale.formatter.v1\0").as_bytes()).generated_child(crate::plan::RuntimeGeneratedFunctionRole::FormatOperand { parameter: RuntimeFmtParameterId::Style }),
                 RuntimeFmtParameterId::Style,
                 RuntimeExprSeed::new(
                     string_type,
@@ -278,6 +280,7 @@ fn pure_format_content_uses_selected_ambient_locale() {
                 false,
                 [
                     RuntimeFormatContentOperandSeed::new(
+                        crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.tests.pure.pure_format_content_uses_selected_ambient_locale.formatter.v1\0").as_bytes()).generated_child(crate::plan::RuntimeGeneratedFunctionRole::FormatOperand { parameter: RuntimeFmtParameterId::Value }),
                         RuntimeFmtParameterId::Value,
                         RuntimeExprSeed::new(
                             int_type,
@@ -288,6 +291,7 @@ fn pure_format_content_uses_selected_ambient_locale() {
                         ),
                     ),
                     RuntimeFormatContentOperandSeed::new(
+                        crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.tests.pure.pure_format_content_uses_selected_ambient_locale.formatter.v1\0").as_bytes()).generated_child(crate::plan::RuntimeGeneratedFunctionRole::FormatOperand { parameter: RuntimeFmtParameterId::Style }),
                         RuntimeFmtParameterId::Style,
                         RuntimeExprSeed::new(
                             string_type,

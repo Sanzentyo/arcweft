@@ -42,7 +42,7 @@ impl<'a, 'plan> AwbcTraitMethodLowerer<'a, 'plan> {
         }
 
         let public_label = trait_method_label(method);
-        let owner = self.inventory.reserve_function_slot();
+        let owner = self.inventory.reserve_function_slot(method.definition);
         let mut frame = FrameBuilder::new();
         let mut parameters = Vec::with_capacity(method.inputs.len());
         for input in &method.inputs {
@@ -72,6 +72,7 @@ impl<'a, 'plan> AwbcTraitMethodLowerer<'a, 'plan> {
         let function = self.inventory.replace_function(
             owner,
             AwbcFunction {
+                definition: method.definition,
                 semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
                 public_id: Some(public_id),
                 kind: AwbcFunctionKind::TraitMethod,

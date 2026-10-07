@@ -1442,16 +1442,19 @@ impl RuntimeFmtParameterId {
 /// One selected `fmt` operand retained in authored source order.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeFormatContentOperand {
+    definition: crate::plan::RuntimeFunctionDefinitionIdentity,
     parameter: RuntimeFmtParameterId,
     expression: RuntimeExpr,
 }
 
 impl RuntimeFormatContentOperand {
     pub(crate) const fn from_admitted_parts(
+        definition: crate::plan::RuntimeFunctionDefinitionIdentity,
         parameter: RuntimeFmtParameterId,
         expression: RuntimeExpr,
     ) -> Self {
         Self {
+            definition,
             parameter,
             expression,
         }
@@ -1460,6 +1463,11 @@ impl RuntimeFormatContentOperand {
     #[must_use]
     pub const fn parameter(&self) -> RuntimeFmtParameterId {
         self.parameter
+    }
+
+    #[must_use]
+    pub const fn definition(&self) -> crate::plan::RuntimeFunctionDefinitionIdentity {
+        self.definition
     }
 
     #[must_use]

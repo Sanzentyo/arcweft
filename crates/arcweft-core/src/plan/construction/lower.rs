@@ -898,6 +898,7 @@ impl RuntimePlanBodyConstruction<'_> {
                         });
                     }
                     lowered.push(RuntimeFormatContentOperand::from_admitted_parts(
+                        operand.definition,
                         operand.parameter,
                         expression,
                     ));
@@ -4715,6 +4716,7 @@ impl RuntimePlanBodyConstruction<'_> {
             });
         }
         Ok(crate::task::NeedProducerTemplate {
+            definition: template.definition,
             family: template.family,
             contract: template.contract,
             plan: template.plan,

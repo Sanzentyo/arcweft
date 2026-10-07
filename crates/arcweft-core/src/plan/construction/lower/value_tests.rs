@@ -246,6 +246,7 @@ fn format_content_lowering_keeps_operand_order_and_rejects_unwitnessed_values() 
         None,
         false,
         [RuntimeFormatContentOperandSeed::new(
+crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.plan.construction.lower.value_tests.format_content_lowering_keeps_operand_order_and_rejects_unwitnessed_values.formatter.v1\0").as_bytes()).generated_child(crate::plan::RuntimeGeneratedFunctionRole::FormatOperand { parameter: RuntimeFmtParameterId::Value }),
             RuntimeFmtParameterId::Value,
             RuntimeExprSeed::new(
                 tuple,
@@ -271,6 +272,7 @@ fn format_content_lowering_keeps_operand_order_and_rejects_unwitnessed_values() 
         false,
         [
             RuntimeFormatContentOperandSeed::new(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.plan.construction.lower.value_tests.format_content_lowering_keeps_operand_order_and_rejects_unwitnessed_values.formatter.v1\0").as_bytes()).generated_child(crate::plan::RuntimeGeneratedFunctionRole::FormatOperand { parameter: RuntimeFmtParameterId::Style }),
                 RuntimeFmtParameterId::Style,
                 RuntimeExprSeed::new(
                     string,
@@ -278,6 +280,7 @@ fn format_content_lowering_keeps_operand_order_and_rejects_unwitnessed_values() 
                 ),
             ),
             RuntimeFormatContentOperandSeed::new(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.plan.construction.lower.value_tests.format_content_lowering_keeps_operand_order_and_rejects_unwitnessed_values.formatter.v1\0").as_bytes()).generated_child(crate::plan::RuntimeGeneratedFunctionRole::FormatOperand { parameter: RuntimeFmtParameterId::Value }),
                 RuntimeFmtParameterId::Value,
                 RuntimeExprSeed::new(integer, RuntimeExprSeedKind::Value(RuntimeValue::i64(42))),
             ),

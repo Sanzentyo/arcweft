@@ -275,9 +275,11 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                         let expression = operand.expression();
                         let captures = self.control_expr_captures(expression);
                         let captures = self.materialize_control_expr_captures(captures);
-                        let function = self.inventory.reserve_function_slot();
+                        let definition = operand.definition();
+                        let function = self.inventory.reserve_function_slot(definition);
                         self.inventory
                             .push_pending_closure(PendingAwbcClosure::FormatOperand {
+                                definition,
                                 function,
                                 captures: captures
                                     .iter()
@@ -1019,6 +1021,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
     while let Some(closure) = inventory.pop_pending_closure() {
         match closure {
             PendingAwbcClosure::TaskRequest {
+                definition,
                 function,
                 inputs,
                 arguments,
@@ -1059,6 +1062,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                 inventory.replace_function(
                     function,
                     AwbcFunction {
+                        definition,
                         semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
                         public_id: None,
                         kind: AwbcFunctionKind::Ordinary,
@@ -1089,6 +1093,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                 );
             }
             PendingAwbcClosure::FunctionSite {
+                definition,
                 role,
                 function,
                 function_type,
@@ -1099,6 +1104,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
             } => {
                 super::flow::AwbcFlowLowerer::new(inventory, plan).lower_executable_function_site(
                     function,
+                    definition,
                     role,
                     function_type,
                     &inputs,
@@ -1108,6 +1114,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                 );
             }
             PendingAwbcClosure::FunctionSite {
+                definition,
                 role,
                 function,
                 function_type,
@@ -1156,6 +1163,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                 inventory.replace_function(
                     function,
                     AwbcFunction {
+                        definition,
                         semantic_role: role,
                         public_id: None,
                         kind: AwbcFunctionKind::Ordinary,
@@ -1170,6 +1178,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                 );
             }
             PendingAwbcClosure::FormatOperand {
+                definition,
                 function,
                 captures,
                 result,
@@ -1200,6 +1209,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                 inventory.replace_function(
                     function,
                     AwbcFunction {
+                        definition,
                         semantic_role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
                         public_id: None,
                         kind: AwbcFunctionKind::Synthetic,
@@ -1251,9 +1261,10 @@ fn ensure_function_site(
         return None;
     };
     let already_reserved = inventory.function_site_function(site).is_some();
-    let function = inventory.reserve_function_site_slot(site);
+    let function = inventory.reserve_function_site_slot(site, declaration.definition());
     if !already_reserved {
         inventory.push_pending_closure(PendingAwbcClosure::FunctionSite {
+            definition: declaration.definition(),
             role: declaration.role(),
             function,
             function_type: declaration.function_type(),
