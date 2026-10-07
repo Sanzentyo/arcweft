@@ -26,6 +26,15 @@ Arcweft keeps three ID domains separate:
   logs, diagnostics, and user-facing output. Runtime code must not recover a
   lookup ID by splitting one of these labels.
 
+Flow public labels also form the accepted selector registry for dynamic
+`goto`. The immutable Flow table owns source-ordered definitions and invocation
+schemas, plus derived identity/schema/selector indexes. An exact admitted
+runtime identity takes precedence; otherwise one unique public selector selects
+its existing definition, and multiple owners reject as ambiguous. This does
+not reconstruct a checked identity from label text. A selector is operational
+metadata: changing it can change target resolution and therefore changes the
+Flow executable transcript. Purely diagnostic labels remain excluded.
+
 If runtime-ID equality, hashing, or storage later becomes a measured hot path,
 the canonical path representation may be interned behind the typed ID API. That
 optimization must preserve the same source/runtime/public domain split and must

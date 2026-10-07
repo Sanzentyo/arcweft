@@ -67,7 +67,6 @@ pub struct Engine {
     latest_need_publications:
         BTreeMap<crate::task::TaskCorrelation, crate::task::RuntimeNeedPublicationRollbackImage>,
     need_publication_frontiers: BTreeMap<crate::task::TaskCorrelation, TaskPublicationCursor>,
-    flow_positions: BTreeMap<FlowRuntimeId, usize>,
     main_started: bool,
     root: Option<RootRuntime>,
     fiber: FlowFiber,
@@ -113,7 +112,6 @@ struct NativeEngineRollbackImage {
     latest_need_publications:
         BTreeMap<crate::task::TaskCorrelation, crate::task::RuntimeNeedPublicationRollbackImage>,
     need_publication_frontiers: BTreeMap<crate::task::TaskCorrelation, TaskPublicationCursor>,
-    flow_positions: BTreeMap<FlowRuntimeId, usize>,
     main_started: bool,
     root: Option<crate::root::RootRuntimeRollbackImage>,
     fiber: FlowFiberRollbackImage,
@@ -1631,7 +1629,6 @@ impl Engine {
                 .collect::<Result<_, String>>()?,
             latest_need_publications: self.latest_need_publications.clone(),
             need_publication_frontiers: self.need_publication_frontiers.clone(),
-            flow_positions: self.flow_positions.clone(),
             main_started: self.main_started,
             root: self
                 .root
@@ -1696,7 +1693,6 @@ impl Engine {
                 .collect::<Result<_, String>>()?,
             latest_need_publications: image.latest_need_publications,
             need_publication_frontiers: image.need_publication_frontiers,
-            flow_positions: image.flow_positions,
             main_started: image.main_started,
             root: image
                 .root
@@ -1791,12 +1787,6 @@ impl Engine {
     }
 
     fn new_with_shared_plan(plan: Arc<RuntimePlan>, generation: GenerationId) -> Self {
-        let flow_positions: BTreeMap<_, _> = plan
-            .flows
-            .iter()
-            .enumerate()
-            .map(|(index, flow)| (flow.id.clone(), index))
-            .collect();
         let main_started = plan.flows.is_empty();
         let status = if plan.is_empty() {
             FlowFiberStatus::Done(FlowExit::Done)
@@ -1824,7 +1814,6 @@ impl Engine {
             need_publications: BTreeMap::new(),
             latest_need_publications: BTreeMap::new(),
             need_publication_frontiers: BTreeMap::new(),
-            flow_positions,
             main_started,
             root: None,
             fiber: FlowFiber {
@@ -1983,14 +1972,11 @@ impl Engine {
 
     /// Selects one flow before the first flow execution step.
     pub fn start_flow(&mut self, flow: &FlowRuntimeId) -> Result<(), EngineStartError> {
-        let schema = self
-            .plan
-            .flow_schemas
-            .iter()
-            .find(|candidate| candidate.flow == *flow)
-            .ok_or_else(|| EngineStartError::InvalidFlowInvocation {
+        let schema = self.plan.flows.schema(flow).ok_or_else(|| {
+            EngineStartError::InvalidFlowInvocation {
                 message: format!("Flow `{flow}` has no invocation schema"),
-            })?;
+            }
+        })?;
         if !schema.parameters.is_empty() {
             return Err(EngineStartError::InvalidFlowInvocation {
                 message: format!(
@@ -2142,7 +2128,7 @@ impl Engine {
     }
 
     pub(super) fn flow_index(&self, flow: &FlowRuntimeId) -> Option<usize> {
-        self.flow_positions.get(flow).copied()
+        self.plan.flows.position(flow)
     }
 
     fn validate_current_flow_parameter_bindings<'a>(
@@ -2173,12 +2159,7 @@ impl Engine {
             });
         };
         let flow_label = flow.id.canonical_label();
-        let Some(schema) = self
-            .plan
-            .flow_schemas
-            .iter()
-            .find(|candidate| candidate.flow == flow.id)
-        else {
+        let Some(schema) = self.plan.flows.schema(&flow.id) else {
             return Err(RuntimeEvalError::MissingFlowBindingTarget {
                 flow: flow_label,
                 binding: binding_label,

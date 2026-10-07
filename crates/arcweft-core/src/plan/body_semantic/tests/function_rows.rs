@@ -39,24 +39,38 @@ fn executable_flow_row_reuses_root_and_ignores_function_arena_padding() {
 }
 
 #[test]
-fn executable_flow_row_commits_runtime_identity_and_excludes_public_label() {
+fn executable_flow_row_commits_runtime_identity_and_dynamic_target_selector() {
     let (plan, owner, function) =
         producer_expression_plan(false, true, crate::plan::RuntimeFunctionSemanticRole::Flow);
-    let expected = flow_row(&plan, &owner, function);
-    let mut diagnostic = plan.clone();
-    let identity = diagnostic.flows()[0].id.canonical_label();
-    let renamed =
-        crate::plan::FlowRuntimeId::from_runtime_contract(&identity, "diagnostic-only").unwrap();
-    diagnostic.inventory.flows[0].id = renamed.clone();
-    diagnostic.inventory.flow_schemas[0].flow = renamed;
-    diagnostic.verify().unwrap();
-    assert_eq!(expected, flow_row(&diagnostic, &owner, function));
-    let mut semantic = plan.clone();
-    let renamed = crate::plan::FlowRuntimeId::canonical("other_runtime_identity").unwrap();
-    semantic.inventory.flows[0].id = renamed.clone();
-    semantic.inventory.flow_schemas[0].flow = renamed;
-    semantic.verify().unwrap();
-    assert_ne!(expected, flow_row(&semantic, &owner, function));
+    let make = |identity, selector| {
+        let mut candidate = plan.clone();
+        let (mut rows, mut schemas) = candidate.inventory.flows.into_parts();
+        let id = crate::plan::FlowRuntimeId::from_checked_declaration_digest(identity, selector)
+            .unwrap();
+        rows[0].id = id.clone();
+        schemas[0].flow = id;
+        candidate.inventory.flows = crate::plan::flows::RuntimeFlowTable::from_rows(rows, schemas);
+        candidate.verify().unwrap();
+        candidate
+    };
+    let original = make([77; 32], "flow.original");
+    let renamed = make([77; 32], "flow.renamed");
+    let identity = make([88; 32], "flow.original");
+    let expected = flow_row(&original, &owner, function);
+    assert_ne!(expected, flow_row(&renamed, &owner, function));
+    assert_ne!(expected, flow_row(&identity, &owner, function));
+    assert_eq!(
+        original.resolve_flow_target_value("original").unwrap(),
+        original.flows()[0].id
+    );
+    assert!(matches!(
+        renamed.resolve_flow_target_value("original"),
+        Err(crate::plan::RuntimeFlowTargetError::Missing { .. })
+    ));
+    assert_eq!(
+        renamed.resolve_flow_target_value("renamed").unwrap(),
+        renamed.flows()[0].id
+    );
 }
 
 #[test]

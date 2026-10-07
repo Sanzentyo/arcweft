@@ -322,18 +322,13 @@ impl RuntimeBodySemanticContext<'_> {
         encoder: &mut TaskSemanticEncoder<'_>,
         target: &plan::FlowRuntimeId,
     ) -> Result<(), RuntimeBodySemanticError> {
-        let flow = self
-            .plan
-            .flows()
-            .iter()
-            .find(|flow| &flow.id == target)
-            .ok_or_else(|| {
-                encoder.reject_owner();
-                RuntimeBodySemanticError::MissingRow {
-                    table: "flow targets",
-                    ordinal: self.plan.flows().len(),
-                }
-            })?;
+        let flow = self.plan.flows.flow(target).ok_or_else(|| {
+            encoder.reject_owner();
+            RuntimeBodySemanticError::MissingRow {
+                table: "flow targets",
+                ordinal: self.plan.flows().len(),
+            }
+        })?;
         encoder.digest(flow.definition().as_bytes());
         encoder.status().map_err(Into::into)
     }

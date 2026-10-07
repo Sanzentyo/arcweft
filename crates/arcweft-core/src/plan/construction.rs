@@ -2767,9 +2767,8 @@ impl RuntimePlanBuilder {
             dialogue_content: self.dialogue_content.finish(),
             entries: self.entries,
             callable_executables: self.callable_executables,
-            flow_schemas: self.flow_schemas,
             flow_executables: self.flow_executables,
-            flows,
+            flows: super::flows::RuntimeFlowTable::from_rows(flows, self.flow_schemas),
             pure_helpers,
             pure_programs: super::pure_programs::RuntimePureProgramTable::from_rows(
                 self.pure_programs,

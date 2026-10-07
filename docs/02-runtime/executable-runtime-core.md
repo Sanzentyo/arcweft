@@ -601,6 +601,10 @@ Flow runtime contracts retain an identity path and a separate public label.
 Product decoding validates the identity through the runtime ID owner and
 preserves the label as text. A generated controller's label is not reparsed as
 an authored Flow name, and a label does not reconstruct a checked identity.
+The accepted Flow table indexes that label as a dynamic-target selector. Its
+binding participates in executable semantics alongside the identity path;
+debug-only text does not. Engines and rollback images borrow the table's
+lookup authority rather than retaining another Flow-position map.
 
 ```rust
 struct AwbcIntrinsic {

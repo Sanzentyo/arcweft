@@ -1972,8 +1972,9 @@ fn flow_owner_reuses_the_table_row_and_rejects_an_independent_equal_body() {
     assert!(std::ptr::eq(flow.function(), row));
     let cloned = plan.clone();
     assert!(std::ptr::eq(cloned.flows()[0].function(), row));
-    plan.inventory.flows[0].function =
-        std::sync::Arc::new(plan.inventory.flows[0].function.as_ref().clone());
+    let (mut flows, schemas) = plan.inventory.flows.into_parts();
+    flows[0].function = std::sync::Arc::new(flows[0].function.as_ref().clone());
+    plan.inventory.flows = crate::plan::flows::RuntimeFlowTable::from_rows(flows, schemas);
     assert!(matches!(
         plan.verify(),
         Err(crate::plan::RuntimePlanError::InvalidFlowFunctionOwner { .. })

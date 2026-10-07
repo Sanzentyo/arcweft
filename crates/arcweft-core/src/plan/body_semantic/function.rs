@@ -66,8 +66,8 @@ impl<'a> ProducerEndpoint<'a> {
 
 impl ProducerFunctionSemantic<'_> {
     /// Resolves the actual Flow row in constant time. Its accepted runtime
-    /// path is semantic identity; the separately stored public label is debug
-    /// metadata. Function/parameter indices are validated before reuse.
+    /// path is semantic identity; its public label also binds dynamic target
+    /// selection. Function/parameter indices are validated before reuse.
     pub(crate) fn executable_flow_row_digest(
         &self,
         context: &RuntimeBodySemanticContext<'_>,
@@ -103,6 +103,7 @@ impl ProducerFunctionSemantic<'_> {
             encoder.enter_element();
             encoder.string(segment.as_str());
         }
+        encoder.string(row.id.public_label_ref().as_str());
         encoder.count(row.params.len());
         for (ordinal, parameter) in row.params.iter().enumerate() {
             encoder.enter_element();

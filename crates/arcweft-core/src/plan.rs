@@ -11,6 +11,7 @@ pub mod entry_inventory;
 mod executable_body;
 mod flow_ops;
 pub(crate) use flow_ops::{RuntimeFlowTreeEvent, try_visit_ops_events};
+mod flows;
 mod format_attempt;
 mod function_inputs;
 mod function_sites;
@@ -547,7 +548,7 @@ impl FlowRuntimeId {
         public_id: &str,
     ) -> Result<Self, RuntimeIdError> {
         let path = RuntimeIdPath::from_runtime_contract_str(RuntimeIdFamily::Flow, identity)?;
-        // The contract stores diagnostic text separately from its identity.
+        // The contract stores its public target selector separately from identity.
         // Generated controller labels are valid runtime labels even though
         // their reserved segments cannot be authored as source Flow names.
         let public_label = RuntimePublicLabel::new(public_id);

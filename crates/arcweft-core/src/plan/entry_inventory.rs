@@ -339,20 +339,18 @@ impl RuntimePlan {
         bindings: impl IntoIterator<Item = RuntimeFlowParameterBinding>,
     ) -> Result<RuntimeFlowInvocation, RuntimeFlowInvocationError> {
         let flow_label = flow.canonical_label();
-        let runtime_flow = self
-            .flows
-            .iter()
-            .find(|candidate| candidate.id == flow)
-            .ok_or_else(|| RuntimeFlowInvocationError::UnknownFlow {
-                flow: flow_label.clone(),
-            })?;
-        let schema = self
-            .flow_schemas
-            .iter()
-            .find(|candidate| candidate.flow == flow)
-            .ok_or_else(|| RuntimeFlowInvocationError::MissingSchema {
-                flow: flow_label.clone(),
-            })?;
+        let runtime_flow =
+            self.flows
+                .flow(&flow)
+                .ok_or_else(|| RuntimeFlowInvocationError::UnknownFlow {
+                    flow: flow_label.clone(),
+                })?;
+        let schema =
+            self.flows
+                .schema(&flow)
+                .ok_or_else(|| RuntimeFlowInvocationError::MissingSchema {
+                    flow: flow_label.clone(),
+                })?;
         let bindings = bindings.into_iter().collect::<Vec<_>>();
         if bindings.len() != schema.parameters.len() {
             return Err(RuntimeFlowInvocationError::BindingCount {
@@ -962,7 +960,7 @@ impl super::RuntimePlanInventory {
             }
         }
         let mut schema_flow_ids = BTreeSet::new();
-        for schema in &self.flow_schemas {
+        for schema in self.flow_schemas() {
             if !schema_flow_ids.insert(schema.flow.clone()) {
                 return Err(RuntimePlanError::DuplicateFlowSchema(
                     schema.flow.canonical_label(),
@@ -975,11 +973,7 @@ impl super::RuntimePlanInventory {
             }
         }
         for flow in &self.flows {
-            if let Some(schema) = self
-                .flow_schemas
-                .iter()
-                .find(|schema| schema.flow == flow.id)
-            {
+            if let Some(schema) = self.flows.schema(&flow.id) {
                 if !flow.matches_parameter_contract(schema) {
                     return Err(RuntimePlanError::FlowParameterContractMismatch {
                         flow: flow.id.canonical_label(),
@@ -1137,9 +1131,8 @@ impl super::RuntimePlanInventory {
                         flow: flow.canonical_label(),
                     })?;
                 let schema = self
-                    .flow_schemas
-                    .iter()
-                    .find(|row| row.flow == *flow)
+                    .flows
+                    .schema(flow)
                     .ok_or_else(|| RuntimePlanError::MissingFlowSchema(flow.canonical_label()))?;
                 if !schema.parameters.is_empty() {
                     return Err(RuntimePlanError::ParameterizedDirectEntryTarget {
@@ -1195,13 +1188,9 @@ impl super::RuntimePlanInventory {
                     entry: entry.canonical_label(),
                     flow: route.target.canonical_label(),
                 })?;
-            let schema = self
-                .flow_schemas
-                .iter()
-                .find(|row| row.flow == route.target)
-                .ok_or_else(|| {
-                    RuntimePlanError::MissingFlowSchema(route.target.canonical_label())
-                })?;
+            let schema = self.flows.schema(&route.target).ok_or_else(|| {
+                RuntimePlanError::MissingFlowSchema(route.target.canonical_label())
+            })?;
             let string_identity =
                 crate::pattern::RuntimeCheckedType::String.semantic_identity_digest();
             let mut captures = BTreeSet::new();
@@ -1292,11 +1281,7 @@ impl super::RuntimePlanInventory {
                 entry: entry.canonical_label(),
             });
         }
-        let Some(schema) = self
-            .flow_schemas
-            .iter()
-            .find(|schema| schema.flow == roles.initial_flow.flow)
-        else {
+        let Some(schema) = self.flows.schema(&roles.initial_flow.flow) else {
             return Err(RuntimePlanError::InvalidInitialFlowStateParameter {
                 entry: entry.canonical_label(),
             });

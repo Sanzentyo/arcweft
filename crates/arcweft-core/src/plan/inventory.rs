@@ -49,9 +49,8 @@ pub struct RuntimePlanInventory {
     pub(crate) dialogue_content: RuntimeDialogueContentPlanTable,
     pub(crate) entries: Vec<RuntimeEntrySpec>,
     pub(crate) callable_executables: Vec<RuntimeCallableExecutable>,
-    pub(crate) flow_schemas: Vec<RuntimeFlowSchema>,
     pub(crate) flow_executables: Vec<RuntimeFlowExecutable>,
-    pub(crate) flows: Vec<RuntimeFlow>,
+    pub(crate) flows: super::flows::RuntimeFlowTable,
     pub(crate) pure_helpers: Vec<RuntimePureHelper>,
     pub(crate) pure_programs: super::pure_programs::RuntimePureProgramTable,
     pub(crate) trait_methods: Vec<RuntimeTraitMethod>,
@@ -163,12 +162,12 @@ impl RuntimePlanInventory {
 
     #[must_use]
     pub fn flow_schemas(&self) -> &[RuntimeFlowSchema] {
-        &self.flow_schemas
+        self.flows.schemas()
     }
 
     #[must_use]
     pub fn flows(&self) -> &[RuntimeFlow] {
-        &self.flows
+        self.flows.as_slice()
     }
 
     #[must_use]
@@ -535,7 +534,6 @@ impl RuntimePlanInventory {
         &self,
         value: &str,
     ) -> Result<FlowRuntimeId, RuntimeFlowTargetError> {
-        FlowRuntimeId::resolve_runtime_target(value, self.flows.iter().map(|flow| &flow.id))
-            .cloned()
+        self.flows.resolve_target(value)
     }
 }

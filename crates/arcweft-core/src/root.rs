@@ -333,9 +333,8 @@ impl RootStartupContract {
                 RootRuntimeError::MissingInitialFlowExecutable(entry.id.canonical_label())
             })?;
         let initial_flow = plan
-            .flow_schemas
-            .iter()
-            .find(|schema| schema.flow == roles.initial_flow.flow)
+            .flows
+            .schema(&roles.initial_flow.flow)
             .cloned()
             .ok_or_else(|| {
                 RootRuntimeError::MissingInitialFlowExecutable(entry.id.canonical_label())

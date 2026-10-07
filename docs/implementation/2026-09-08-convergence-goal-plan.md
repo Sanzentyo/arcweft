@@ -9458,3 +9458,85 @@ CLI277/Tier2 acceptance remain unfinished. Whole goal ACTIVE/INCOMPLETE.
 Stream-row fmt49428 TERMINAL0/PASS and diff checks pass. All validation
 handles terminal, source3 hashes/99 inputs fixed. Exact4-path staged review
 and delivery next; whole goal remains ACTIVE/INCOMPLETE.
+
+### 2026-10-08 — Flow lookup ownership and operational selector correction
+
+Inspected clean main/origin fb7956186ca1a0f1063656697f436745ceb339a2.
+Supersedes the prior Flow-row claim that public_label is only diagnostic and
+may be excluded: actual FlowRuntimeId::resolve_runtime_target/plan dynamic
+goto uses public_label as an accepted selector, so renaming it changes lookup
+success/target ambiguity. E9 now commits that operational binding. The retained
+frozen package remains unchanged; its debug/source exclusion does not authorize
+ignoring fields actually used for target selection. Maintained runtime chapters
+now distinguish operational selector bindings from pure diagnostics.
+Actual Flow table owns original ordered definitions and invocation schemas plus
+derived identity/schema/selector indexes. Structural duplicate/error order
+retained, exact dynamic identity wins before unique selector; ambiguity/missing/
+invalid errors preserved. RuntimePlan slice getters unchanged. Engine and its
+rollback image no longer clone a second Flow-position map. Native invocation,
+parameter validation, root startup, plan verification and body target consumers
+use that owner. Only actual table construction owns index preparation; tests
+rebuild table after shadow mutation, no mutable indexed rows or stale side map.
+Core all-target/all-feature locked check22420 TERMINAL0/PASS41.94s before new
+index tests. Added real aggregate fixtures for row/schema/source order, exact
+selector priority/ambiguity/invalid input and existing structural rejection;
+corrected E9 regression also asserts actual dynamic target resolution.
+Pre-run discovery61026 currently live; no Rust edits while Cargo live.
+This cut affects live native/restore/lookup and shared semantic ownership, so
+workspace all-target/all-feature locked check/Clippy, full Core50 reverse closure
+and exact CLI baseline comparison required after final source. No private/leaf
+omission for this cut. Whole goal ACTIVE/INCOMPLETE; remaining E/actualTable14/
+image/global memo/common seal/all14 protected publication and original
+View/nominal/scheduler/Rust ownership/CLI277/Tier2 acceptance remain.
+No new Astra/advice, existing main only; preserve unrelated WIP.
+
+Flow lookup validation update: workspace locked/all-target/all-feature check
+PASS1m41s, Clippy PASS1m44s, fmt check PASS (95662 TERMINAL0); structure
+gate PASS, no blocking graph violation (92668 first phase). Focus17/17PASS
+0.074s after restored selector hash; deliberate prior exclusion regression
+0/1FAIL reproduced equal digest03e8037e29c8b03c5c5f7816c60ef4dff0275c7a3480a43ae06290adb08c06e2.
+Final12 Rust hashes fixed,99 graph/build inputs unchanged. Derived table125LOC/
+4132bytes and matching tests125LOC/4659bytes own one Flow lookup responsibility.
+Engine4226LOC(-19), construction3902LOC(-1), entry1550LOC(-15), root1304LOC(-1),
+plan1460LOC(+1) remain their existing execution/aggregate/entry/startup/API roles;
+this cut removes duplicate state without widening facade APIs or mixing I/O.
+Core fan-in complete50 package closure/fan-out unchanged; existing cohesive
+owner dispositions retained. Public AWBC product keeps its own persisted Flow
+bindings and shared typed target projection; this cut migrates RuntimePlan
+and native lookup, does not claim AWBC index migration or common task seal.
+Full final-source rdeps discovery running92668; no Rust edits while live.
+
+Final Flow lookup rdeps evidence (supersedes pending discovery): initial
+discovery92668 TERMINAL0/build9m17s; corrected only2 test pointer-style
+warnings (&raw const, no assertion change) after terminal, final Core
+all-target/all-feature/locked Clippy78432 PASS35.16s/new Flow warnings0;
+final list78432 TERMINAL0/build21.96s selected4947 across46 runnable
+non-CLI Core consumers. Run19564 TERMINAL0:4947/4947PASS558.890s,4slow,
+16GPU ignored. Exact4947 selected/terminal/unique IDs verified,missing0/
+unexpected0/nonpass0; actual4 Flow regressions and50 Core restore/rollback
+cases pass. First workspace check/Clippy precede only those2 test spelling
+changes, unchanged production evidence retained; final Core Clippy and full
+rdeps cover final syntax. Earlier aca4 closure remains earlier bytes only.
+Final CLI597 discovery56086 running; exact277 failure baseline comparison
+required, full-green acceptance not yet established. Goal ACTIVE/INCOMPLETE.
+
+Final Flow lookup delivery evidence (supersedes pending CLI): CLI list56086
+TERMINAL0/build3m14s, actual9 inventory binaries/8 case-bearing selected
+binaries597 IDs match previous nominal-row baseline. Run67315 TERMINAL100:
+320PASS/277FAIL/23ignored122.759s. All597 selected/terminal/unique IDs
+matched,missing0/unexpected0/duplicates0/newFailures0/resolved0; exact277
+failures equal prior observed baseline. This is regression comparison, not
+a green CLI run or full convergence acceptance. Core4947 full closure passes;
+workspace check/Clippy and structure0 blocking retained as scoped above.
+Final12 Rust hashes/99 Cargo+build inputs unchanged, no Flow introduced
+non-dead-code lint after pointer-style repair. Frozen package unmodified;
+maintained docs explicitly adjudicate operational selector inclusion. Runtime
+lookup now uses one immutable Flow/Schema owner, original order and errors
+preserved, no copied engine/rollback index. Algorithmic lookup cost improved
+by derived ordered indexes; no measured latency/throughput claim. Public
+AWBC persisted table lookup/index and protected common task publication still
+remaining work. Fmt/diff51923 completion then exact15-path staged hunk/blob
+review/coherent commit/normal main push required. E1/5/6/7/8/12/global memo/
+actualTable14/private image/common seal/all14 protected Cut5 and original
+View/nominal/scheduler/Rust borrowing/CLI277/Tier2 unfinished. Goal ACTIVE/
+INCOMPLETE; no new Astra/advice/branch/worktree/marker changes.
