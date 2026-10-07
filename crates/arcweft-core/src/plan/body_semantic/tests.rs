@@ -450,3 +450,241 @@ fn stream_body_work_quota_poison_prevents_digest_publication() {
         Err(TaskSemanticEncodingError::SemanticWork)
     );
 }
+
+fn flow_plan(reverse: bool, branch: bool) -> RuntimePlan {
+    use crate::plan::{
+        RuntimeEffectSet, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed as Op,
+        RuntimeFlowSeed, RuntimeFunctionDefinitionIdentity,
+    };
+    let mut builder = RuntimePlanBuilder::new();
+    let boolean = RuntimeSemanticTypeId::from_bytes([61; 32]);
+    builder
+        .admit_type_batch(
+            [RuntimePlanTypeSeed::new(
+                boolean,
+                RuntimePlanTypeProjection::Bool,
+            )],
+            [],
+        )
+        .unwrap();
+    let mut body = vec![
+        Op::ReturnExpr(RuntimeExprSeed::new(
+            boolean,
+            RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(true)),
+        )),
+        Op::Noop,
+    ];
+    if reverse {
+        body.reverse();
+    }
+    builder
+        .push_flow_schema(crate::entry::RuntimeFlowSchema {
+            flow: crate::plan::FlowRuntimeId::canonical("body").unwrap(),
+            parameters: vec![],
+        })
+        .unwrap();
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            RuntimeFunctionDefinitionIdentity::from_accepted_identity([70; 32]),
+            crate::plan::FlowRuntimeId::canonical("body").unwrap(),
+            [],
+            RuntimeEffectSet::empty(),
+            vec![Op::If {
+                condition: RuntimeExprSeed::new(
+                    boolean,
+                    RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(true)),
+                ),
+                then_ops: if branch { body.clone() } else { vec![] },
+                else_ops: if branch { vec![] } else { body },
+            }],
+        ))
+        .unwrap();
+    builder.finish().unwrap()
+}
+
+#[test]
+fn flow_body_operation_order_empty_branch_and_static_literal_are_committed() {
+    let owner = RuntimePlanBuilder::new().task_coordinate_owner(0);
+    let hash = |plan: &RuntimePlan| {
+        let mut meter = TaskSemanticMeter::new(1000, 10000);
+        let mut encoder = TaskSemanticEncoder::new(b"flow-body.v1\0", &mut meter);
+        RuntimeBodySemanticContext::new(plan)
+            .write_flow(
+                &mut encoder,
+                plan.flows()[0].body().ops(),
+                &owner,
+                &mut |_| panic!("no task edge in this body"),
+            )
+            .unwrap();
+        encoder.finish().unwrap()
+    };
+    assert_ne!(hash(&flow_plan(false, true)), hash(&flow_plan(true, true)));
+    assert_ne!(
+        hash(&flow_plan(false, true)),
+        hash(&flow_plan(false, false))
+    );
+}
+
+#[test]
+fn engine_only_flow_continuation_is_rejected_and_poisoned() {
+    let (plan, _) = plan(false);
+    let owner = RuntimePlanBuilder::new().task_coordinate_owner(0);
+    let mut meter = TaskSemanticMeter::new(1000, 10000);
+    let mut encoder = TaskSemanticEncoder::new(b"flow-body.v1\0", &mut meter);
+    assert!(matches!(
+        RuntimeBodySemanticContext::new(&plan).write_flow(
+            &mut encoder,
+            &[crate::plan::FlowOp::Bind(vec![])],
+            &owner,
+            &mut |_| panic!("no task edge")
+        ),
+        Err(RuntimeBodySemanticError::RuntimeFlowContinuation)
+    ));
+    assert_eq!(
+        encoder.finish(),
+        Err(TaskSemanticEncodingError::OwnerRejected)
+    );
+}
+
+#[test]
+fn task_coordinates_share_the_aggregate_issuer_and_reject_foreign_same_ordinal() {
+    let builder = RuntimePlanBuilder::new();
+    let owner = builder.task_coordinate_owner(2);
+    let same = builder.task_coordinate_owner(2);
+    let foreign = RuntimePlanBuilder::new().task_coordinate_owner(2);
+    let coordinate = owner.resolve(1).unwrap();
+    assert_eq!(coordinate.ordinal(), 1);
+    assert!(same.contains(&coordinate));
+    assert!(!foreign.contains(&coordinate));
+    assert!(owner.resolve(2).is_none());
+}
+
+#[test]
+fn flow_effect_metadata_changes_the_body_transcript() {
+    let (plan, _) = plan(false);
+    let owner = RuntimePlanBuilder::new().task_coordinate_owner(0);
+    let hash = |delay| {
+        let mut meter = TaskSemanticMeter::new(1000, 10000);
+        let mut encoder = TaskSemanticEncoder::new(b"flow-body.v1\0", &mut meter);
+        RuntimeBodySemanticContext::new(&plan)
+            .write_flow(
+                &mut encoder,
+                &[crate::plan::FlowOp::Effect(
+                    crate::effect::LineEffectRequest::Wait(
+                        crate::effect::RuntimeWaitTarget::Duration(
+                            crate::time::LogicalDuration::from_nanos(delay),
+                        ),
+                    ),
+                )],
+                &owner,
+                &mut |_| panic!("no task edge"),
+            )
+            .unwrap();
+        encoder.finish().unwrap()
+    };
+    assert_ne!(hash(10), hash(11));
+}
+
+#[test]
+fn flow_host_edge_rejects_foreign_coordinate_and_never_reads_completed_plan_digest() {
+    use crate::plan::body_semantic::flow::RuntimeBodyTaskSource;
+    let (plan, _) = plan(false);
+    let ty = crate::runtime_id::RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN);
+    let owner = RuntimePlanBuilder::new().task_coordinate_owner(1);
+    let foreign = RuntimePlanBuilder::new().task_coordinate_owner(1);
+    let target = |digest| crate::plan::RuntimeHostCallTarget {
+        producer: crate::task::HostCallProducerDefinition {
+            contract: crate::task::NeedProducerContractDigest::from_bytes([1; 32]),
+            plan: crate::task::TaskPlanSemanticDigest::from_bytes([digest; 32]),
+            site: crate::task::NeedProducerSiteDigest::from_bytes([3; 32]),
+        },
+        public_id: "test.notify".to_owned(),
+        capability: "test".to_owned(),
+        operation: "notify".to_owned(),
+        contract: None,
+        args: vec![],
+        result: ty,
+        mode: crate::step::RuntimeHostCallMode::Suspend,
+        deterministic: false,
+    };
+    let hash = |digest| {
+        let mut meter = TaskSemanticMeter::new(1000, 10000);
+        let mut encoder = TaskSemanticEncoder::new(b"host-coordinate.v1\0", &mut meter);
+        RuntimeBodySemanticContext::new(&plan)
+            .write_flow(
+                &mut encoder,
+                &[crate::plan::FlowOp::HostCall {
+                    binding: None,
+                    target: target(digest),
+                }],
+                &owner,
+                &mut |source| {
+                    assert!(matches!(source, RuntimeBodyTaskSource::Host(_)));
+                    Ok(owner.resolve(0).unwrap())
+                },
+            )
+            .unwrap();
+        encoder.finish().unwrap()
+    };
+    assert_eq!(hash(2), hash(9));
+    let mut meter = TaskSemanticMeter::new(1000, 10000);
+    let mut encoder = TaskSemanticEncoder::new(b"host-coordinate.v1\0", &mut meter);
+    assert!(matches!(
+        RuntimeBodySemanticContext::new(&plan).write_flow(
+            &mut encoder,
+            &[crate::plan::FlowOp::HostCall {
+                binding: None,
+                target: target(2)
+            }],
+            &owner,
+            &mut |_| Ok(foreign.resolve(0).unwrap())
+        ),
+        Err(RuntimeBodySemanticError::ForeignTaskCoordinate)
+    ));
+    assert_eq!(
+        encoder.finish(),
+        Err(TaskSemanticEncodingError::OwnerRejected)
+    );
+}
+
+#[test]
+fn audio_loop_and_microphone_constraints_enter_static_effect_metadata() {
+    let hash = |command: crate::audio::RuntimeAudioCommand| {
+        let mut meter = TaskSemanticMeter::new(1000, 10000);
+        let mut encoder = TaskSemanticEncoder::new(b"audio-metadata.v1\0", &mut meter);
+        crate::effect::LineEffectRequest::Audio(Box::new(command))
+            .encode_body_metadata(&mut encoder);
+        encoder.finish().unwrap()
+    };
+    let expr = || {
+        crate::value::RuntimeExpr::from_admitted_parts(
+            crate::runtime_id::RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN),
+            crate::value::RuntimeExprKind::Value(crate::value::RuntimeValue::Bool(true)),
+        )
+    };
+    let microphone = |channels| crate::audio::RuntimeAudioCommand::RequestMicrophone {
+        capture: expr(),
+        constraints: arcweft_interaction_model::audio::MicrophoneConstraints {
+            channels,
+            preferred_sample_rate_hz: Some(48_000),
+            echo_cancellation: false,
+            noise_suppression: true,
+            auto_gain_control: false,
+        },
+    };
+    assert_ne!(hash(microphone(1)), hash(microphone(2)));
+    let play = |end| crate::audio::RuntimeAudioCommand::Play {
+        voice: expr(),
+        resource: expr(),
+        bus: expr(),
+        gain_db_milli: expr(),
+        pan_milli: expr(),
+        loop_mode: arcweft_interaction_model::audio::AudioLoopMode::Region {
+            start_frame: 1,
+            end_frame: end,
+        },
+        start_frame: expr(),
+        fade_in_millis: expr(),
+    };
+    assert_ne!(hash(play(10)), hash(play(11)));
+}

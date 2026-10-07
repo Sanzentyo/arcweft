@@ -548,3 +548,174 @@ pub struct RuntimeField {
     pub name: String,
     pub value: String,
 }
+
+impl RuntimeEffectExpr {
+    pub(crate) fn encode_body_metadata(
+        &self,
+        encoder: &mut crate::task::semantic::TaskSemanticEncoder<'_>,
+    ) {
+        encoder.tag(match self {
+            Self::Log { .. } => 0,
+            Self::SignalWrite { .. } => 1,
+            Self::MetricWrite { .. } => 2,
+            Self::EmitEvent { .. } => 3,
+            Self::Panic(_) => 4,
+            Self::Fail(_) => 5,
+            Self::Bail(_) => 6,
+            Self::Ensure { .. } => 7,
+            Self::Drop { .. } => 8,
+            Self::Assert { .. } => 9,
+        });
+        match self {
+            Self::Log { level, fields, .. } => {
+                encoder.string(level);
+                encoder.count(fields.len());
+                for field in fields {
+                    encoder.enter_element();
+                    encoder.string(&field.name);
+                }
+            }
+            Self::EmitEvent { fields, .. } => {
+                encoder.count(fields.len());
+                for field in fields {
+                    encoder.enter_element();
+                    encoder.string(&field.name);
+                }
+            }
+            Self::Drop { policy, .. } => encoder.tag(match policy {
+                RuntimeDropPolicyExpr::Default => 0,
+                RuntimeDropPolicyExpr::Cancel => 1,
+                RuntimeDropPolicyExpr::Stop { .. } => 2,
+                RuntimeDropPolicyExpr::Finish => 3,
+                RuntimeDropPolicyExpr::Release => 4,
+                RuntimeDropPolicyExpr::Detach => 5,
+            }),
+            Self::Assert {
+                guard,
+                message,
+                profile,
+                ..
+            } => {
+                encoder.identity_128(guard.as_bytes());
+                encoder.string(message);
+                encoder.tag(match profile {
+                    RuntimeAssertionProfile::Always => 0,
+                    RuntimeAssertionProfile::DebugOnly => 1,
+                });
+            }
+            Self::SignalWrite { .. }
+            | Self::MetricWrite { .. }
+            | Self::Panic(_)
+            | Self::Fail(_)
+            | Self::Bail(_)
+            | Self::Ensure { .. } => {}
+        }
+    }
+}
+
+impl LineEffectRequest {
+    pub(crate) fn encode_body_metadata(
+        &self,
+        encoder: &mut crate::task::semantic::TaskSemanticEncoder<'_>,
+    ) {
+        encoder.tag(match self {
+            Self::Wait(_) => 0,
+            Self::Audio(_) => 1,
+            Self::Call(_) => 2,
+            Self::Log(_) => 3,
+            Self::SignalWrite(_) => 4,
+            Self::MetricWrite(_) => 5,
+            Self::EmitEvent(_) => 6,
+            Self::Out(_) => 7,
+            Self::Return(_) => 8,
+            Self::Goto(_) => 9,
+            Self::Panic(_) => 10,
+            Self::Fail(_) => 11,
+            Self::Bail(_) => 12,
+            Self::Ensure { .. } => 13,
+            Self::Assert(_) => 14,
+            Self::Close(_) => 15,
+            Self::Select(_) => 16,
+            Self::Break { .. } => 17,
+            Self::Continue { .. } => 18,
+        });
+        match self {
+            Self::Wait(RuntimeWaitTarget::Duration(value)) => encoder.scalar_u64(value.as_nanos()),
+            Self::Audio(command) => command.encode_body_metadata(encoder),
+            Self::Call(call) => {
+                encoder.string(&call.callee);
+                encoder.count(call.args.len());
+                for argument in &call.args {
+                    encoder.enter_element();
+                    encoder.string(argument);
+                }
+            }
+            Self::Log(log) => {
+                encoder.string(&log.level);
+                encoder.string(&log.message);
+                encoder.count(log.fields.len());
+                for field in &log.fields {
+                    encoder.enter_element();
+                    encoder.string(&field.name);
+                    encoder.string(&field.value);
+                }
+            }
+            Self::SignalWrite(value) | Self::MetricWrite(value) => {
+                encoder.string(&value.target);
+                encoder.string(&value.value);
+            }
+            Self::EmitEvent(event) => {
+                encoder.string(&event.event);
+                encoder.count(event.fields.len());
+                for field in &event.fields {
+                    encoder.enter_element();
+                    encoder.string(&field.name);
+                    encoder.string(&field.value);
+                }
+            }
+            Self::Out(out) => {
+                encoder.tag(u8::from(out.label.is_some()));
+                if let Some(label) = &out.label {
+                    encoder.string(label);
+                }
+                encoder.string(&out.value);
+            }
+            Self::Return(value)
+            | Self::Goto(value)
+            | Self::Panic(value)
+            | Self::Fail(value)
+            | Self::Bail(value)
+            | Self::Close(value)
+            | Self::Select(value) => encoder.string(value),
+            Self::Ensure { condition, message } => {
+                encoder.string(condition);
+                encoder.string(message);
+            }
+            Self::Assert(assertion) => {
+                encoder.identity_128(assertion.guard().as_bytes());
+                encoder.string(assertion.condition());
+                encoder.string(assertion.message());
+                encoder.tag(match assertion.profile() {
+                    RuntimeAssertionProfile::Always => 0,
+                    RuntimeAssertionProfile::DebugOnly => 1,
+                });
+            }
+            Self::Break { label, value } => {
+                encoder.tag(u8::from(label.is_some()));
+                if let Some(label) = label {
+                    encoder.string(label);
+                }
+                encoder.tag(u8::from(value.is_some()));
+                if let Some(value) = value {
+                    encoder.string(value);
+                }
+            }
+            Self::Continue { label } => {
+                encoder.tag(u8::from(label.is_some()));
+                if let Some(label) = label {
+                    encoder.string(label);
+                }
+            }
+        }
+    }
+}

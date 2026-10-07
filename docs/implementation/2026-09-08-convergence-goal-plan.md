@@ -7453,3 +7453,95 @@ Reran cargo nextest list in the original PowerShell environment after all
 handles terminal: terminal0,12.94sbuild,934caseIDs exactlymatch final owner
 execution,0missing. No semantic edits after934-passreceipt. Fmt/diff/staged
 4-path review passed. Normal main commit/push follows; fullgoalactive.
+
+### 2026-10-07 — exhaustive private Flow body metadata
+
+Inspected main/origin base4aa4bf0eb2e5d7ed318e57c27e3d629810ef800c,
+clean at continuation start. Prior turn delivered two verified commits and
+normal pushes, therefore progress. Current dirty10Corepaths +thisnote are
+private Cut4 preparation; no public task table or seal/codec switch exists.
+No Astra consultation repeated; no branches/worktrees/agents.
+
+Flow body now uses existing balanced operation/body walker and existing
+borrowed value-root visitor. All47operation variants have explicit inherent
+tags and exhaustive metadata handling: formatter/assignment/line/dialogue/
+Choice/Await/producer/Host/Thread/AwaitMany/project-call/Match/iterator/defer/
+cleanup/control roles. Engine-only continuation variants are explicitly
+rejected and poisonmeter; not language feature rejections. Typed leaf
+metadata encoders live inherently on existing effect/audio owners; audio
+loop/constraints and ordered static effectfields commit executable behavior.
+Task reference writes a checked sourceordinal only; completed producer plan
+digest is excluded. Private coordinate plumbing uses the existing aggregate
+RuntimePlanConstructionIssuer, detects foreign sameordinal, and lives on
+construction; body visitor has no independent token constructor. Current
+task_coordinate_owner(rows) preparation seam is not yet backed by actual
+finaltaskcandidate rows; MUST integrate it into one static candidate table
+and existing builder/decoded image issuer at Cut5, remove caller row-count
+and resolver scaffolding then. Not a completed T06/F/Q/E proof.
+
+Plan-resolved metadata context handles project-call exact physical operand/
+logicalfixed-rest/attachedpresence ABI, iterator builtin/witness types and
+methods, line handle source roles/captures, fullfunction signature input
+origin/transfer/formal/ownership/patterns, dialogue values/effects/marks/
+linegroup accepted definitions. Body references still use accepted
+definition references rather than referenced completedbody digests.
+Fullfunction F, endpointpath/sourceorder, Q, E fifteen tableowners/memo/cycle/
+quotas, private image/common seal/upperView protocol/atomic publication,
+consumer legacy deletion and fullreverseconsumer acceptance remain required.
+
+First Flow check missing actual dialogue accessor; repaired to existing
+RuntimePlan::dialogue_content. Coordinate type migration exposed callback
+signature/argument omissions; repaired all, finalcoordinatecheck terminal0
+23.02s. Initialfocusednextest14tests:13pass1fail (MissingFlowSchemafixture),
+repaired test using normal push_flow_schema and retained builder validation.
+Finalfocused14/14pass0.072s/924skipped. Added actualHostedge foreigncoordinate
+rejection +completedplan digestmutationinvariance; audio loop and microphone
+metadata sensitivity. Core allfeaturelockedlib final nextestterminal0:
+940/940pass0skipped6.139sbuild22.29s. Existing copy/traversal consumers
+covered by same full Core run. InitialClippy terminal0,31.35s; lint-only
+semicolon/inspect_err/numeric separators and unfulfilled expectations fixed.
+Finalcheck/lint handles pending; Rustsourcefrozen.
+
+Validation scope remains private visitors/plumbing with no production common
+sealer caller and no changed publicschema/codec/Cargoedges. Investigate
+complete fresh Core reverseclosure; unchangedconsumerbehavior receipts
+reused from delivered207f cut, not relabeled as rerun/currentfullacceptance.
+Protected public Cut5 will exercise complete50packageclosure again.
+Currentgoalactive/incomplete.
+
+Flow finalcheckterminal0,11.95s;finalClippyterminal0,17.02s.
+Clippy is not -Dwarnings; existing diagnostics and intentionally unused
+private preparation remain visible. Onlybehavior-equivalent inspect_err/
+semicolon/lintattribute/numericspelling repairs after940pass; reuse same
+owner receipt. Fresh resolved metadata/inverse confirm Core50closure, no
+Cargochange. Canonical structuregate terminal0, no blockingtypedviolation.
+
+Ownership review for new >300LOC owners: executable_metadata holds only
+plan-resolved leaf-reference/ABI projection methods on the same borrowing
+RuntimeBodySemanticContext; flow holds only one exhaustive Flowbody visitor/
+metadata algebra. No duplicated AST/value traversal, no I/O, no cloned
+catalog/independentruntime model, no public visibility widened for splitting.
+Task coordinate plumbing shares the pre-existing constructionissuer and has
+no other state; source ordinal is diagnostic/source role only. Current
+rows-count/resolver seam is explicitly private preparation and removed when
+final static table admits coordinates. Tests correspond to actual builder,
+body/effectsemantic mutations, excludedcompletedplanhash, foreigntoken and
+stickyerror behavior. Existing effect/audio owners gain inherent metadata
+behavior. Corefan-in/fan-out remains unchanged by resolvedCargo evidence.
+Current measurements:
+- crates/arcweft-core/src/audio.rs: 7694 bytes, 228 physical LOC.
+- crates/arcweft-core/src/effect.rs: 23481 bytes, 721 physical LOC.
+- crates/arcweft-core/src/plan/body_semantic.rs: 32943 bytes, 816 physical LOC.
+- crates/arcweft-core/src/plan/body_semantic/executable_metadata.rs: 13004 bytes, 310 physical LOC.
+- crates/arcweft-core/src/plan/body_semantic/flow.rs: 12998 bytes, 319 physical LOC.
+- crates/arcweft-core/src/plan/construction/task_coordinates.rs: 1469 bytes, 44 physical LOC.
+- crates/arcweft-core/src/plan/body_semantic/tests.rs: 25769 bytes, 690 physical LOC.
+- crates/arcweft-core/src/plan/flow_ops.rs: 25470 bytes, 698 physical LOC.
+
+All run/check/lint handles terminal; inventory after terminal pending.
+Next fullfunction F withactualbodyroot/endpointpaths, Q and common E row
+memoizedencoder/privateimage finaltable transition. No goalcompletionclaim.
+
+Inventory terminal0 after run/check/lint:940caseIDs exactlymatch executed
+Coreowner,0missing. fmt/diff/explicit11-path stagedreview follow; private
+Cut4commit includes no new public row/codec/proof. Fullgoalactive/incomplete.

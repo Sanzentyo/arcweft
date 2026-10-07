@@ -13,6 +13,7 @@ mod control_effect;
 mod lower;
 mod nominal_schema;
 mod seed;
+pub(crate) mod task_coordinates;
 
 pub use callable_specialization::{
     RuntimeCallableSpecializationSeed, RuntimeCallableSpecializationSeedId,

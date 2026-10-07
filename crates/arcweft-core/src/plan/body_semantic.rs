@@ -2,6 +2,9 @@
 //! No public seal proof is minted by this preparation owner.
 
 use super::RuntimePlan;
+
+mod executable_metadata;
+pub(crate) mod flow;
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticEncodingError};
 use crate::value::{
@@ -19,6 +22,10 @@ pub(crate) enum RuntimeBodySemanticError {
     Encoding(TaskSemanticEncodingError),
     #[error("body contains a runtime value which is not a static literal")]
     InvalidStaticLiteral,
+    #[error("body contains an engine-only Flow continuation")]
+    RuntimeFlowContinuation,
+    #[error("body task coordinate belongs to another candidate inventory")]
+    ForeignTaskCoordinate,
     #[error("body references missing {table} row {ordinal}")]
     MissingRow { table: &'static str, ordinal: usize },
     #[error("callable semantic graph has a cycle at state {state}")]
@@ -90,10 +97,6 @@ impl<'a> RuntimeBodySemanticContext<'a> {
 
     /// Stream bodies use the same typed expression/pattern context. An explicit
     /// work stack retains empty-body boundaries and source arm/child positions.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "one iterative Stream body transcript owns all seven operation kinds and ordered child boundaries"
-    )]
     pub(crate) fn write_stream(
         &self,
         encoder: &mut TaskSemanticEncoder<'_>,

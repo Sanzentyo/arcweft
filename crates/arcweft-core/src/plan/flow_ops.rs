@@ -98,6 +98,129 @@ pub enum RuntimeFlowValueRole {
     },
 }
 
+impl RuntimeFlowValueRole {
+    pub(crate) fn encode_semantic_path(
+        self,
+        encoder: &mut crate::task::semantic::TaskSemanticEncoder<'_>,
+    ) {
+        match self {
+            Self::Pattern => encoder.tag(0),
+            Self::Value => encoder.tag(1),
+            Self::Target => encoder.tag(2),
+            Self::Result => encoder.tag(3),
+            Self::Source => encoder.tag(4),
+            Self::Condition => encoder.tag(5),
+            Self::Guard => encoder.tag(6),
+            Self::Callee => encoder.tag(7),
+            Self::Scrutinee => encoder.tag(8),
+            Self::Argument { ordinal } => {
+                encoder.tag(9);
+                encoder.count(ordinal);
+            }
+            Self::AwaitObserverPattern { ordinal } => {
+                encoder.tag(10);
+                encoder.count(ordinal);
+            }
+            Self::MatchPattern { arm } => {
+                encoder.tag(11);
+                encoder.count(arm);
+            }
+            Self::MatchGuard { arm } => {
+                encoder.tag(12);
+                encoder.count(arm);
+            }
+            Self::BaseRequestArgument { ordinal } => {
+                encoder.tag(13);
+                encoder.count(ordinal);
+            }
+            Self::ChildRequestArgument { ordinal } => {
+                encoder.tag(14);
+                encoder.count(ordinal);
+            }
+            Self::Capture { ordinal } => {
+                encoder.tag(15);
+                encoder.count(ordinal);
+            }
+            Self::LineArgument { ordinal } => {
+                encoder.tag(16);
+                encoder.count(ordinal);
+            }
+            Self::EffectArgument { ordinal } => {
+                encoder.tag(17);
+                encoder.count(ordinal);
+            }
+            Self::AudioArgument { ordinal } => {
+                encoder.tag(18);
+                encoder.count(ordinal);
+            }
+            Self::ChoiceAudioArgument {
+                option,
+                effect,
+                argument,
+            } => {
+                encoder.tag(19);
+                encoder.count(option);
+                encoder.count(effect);
+                encoder.count(argument);
+            }
+        }
+    }
+}
+
+impl FlowOp {
+    pub(crate) const fn semantic_tag(&self) -> u8 {
+        match self {
+            Self::Bind(_) => 0,
+            Self::Let { .. } => 1,
+            Self::FormatOperandAttempt { .. } => 2,
+            Self::CompleteFormatOperand { .. } => 3,
+            Self::LetElse { .. } => 4,
+            Self::Assign { .. } => 5,
+            Self::LineOperation { .. } => 6,
+            Self::CommitDialogueResult { .. } => 7,
+            Self::SelectDialogueResult { .. } => 8,
+            Self::Dialogue { .. } => 9,
+            Self::Choice { .. } => 10,
+            Self::Await { .. } => 11,
+            Self::StartNeedProducer { .. } => 12,
+            Self::AwaitMany { .. } => 13,
+            Self::HostCall { .. } => 14,
+            Self::ProjectCall { .. } => 15,
+            Self::ApplyGroup { .. } => 16,
+            Self::If { .. } => 17,
+            Self::IfLet { .. } => 18,
+            Self::Match { .. } => 19,
+            Self::Loop { .. } => 20,
+            Self::LoopNext { .. } => 21,
+            Self::While { .. } => 22,
+            Self::WhileNext { .. } => 23,
+            Self::WhileLet { .. } => 24,
+            Self::WhileLetNext { .. } => 25,
+            Self::For { .. } => 26,
+            Self::ForNext { .. } => 27,
+            Self::Thread { .. } => 28,
+            Self::Scope { .. } => 29,
+            Self::LetScope { .. } => 30,
+            Self::Break(_) => 31,
+            Self::Continue => 32,
+            Self::Goto(_) => 33,
+            Self::GotoExpr(_) => 34,
+            Self::Return(_) => 35,
+            Self::ReturnExpr(_) => 36,
+            Self::Effect(_) => 37,
+            Self::EvaluatedEffect(_) => 38,
+            Self::RegisterDefer { .. } => 39,
+            Self::RegisterCleanup { .. } => 40,
+            Self::CancelCleanup { .. } => 41,
+            Self::EnterScope { .. } => 42,
+            Self::ExitScope => 43,
+            Self::CompleteAwaitObserver => 44,
+            Self::ExitScopeBind { .. } => 45,
+            Self::Noop => 46,
+        }
+    }
+}
+
 impl FlowOp {
     /// Borrows directly owned value/pattern roots in source order. Referenced
     /// project-call/default/content definitions remain catalog edges.

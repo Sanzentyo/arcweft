@@ -124,6 +124,10 @@ impl<'a> TaskSemanticEncoder<'a> {
         self.atom(&[tag]);
     }
 
+    pub(crate) fn identity_128(&mut self, identity: &[u8; 16]) {
+        self.atom(identity);
+    }
+
     pub(crate) fn scalar_u64(&mut self, value: u64) {
         self.atom(&value.to_le_bytes());
     }
