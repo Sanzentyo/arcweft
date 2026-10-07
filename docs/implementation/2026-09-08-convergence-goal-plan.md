@@ -9649,3 +9649,74 @@ source review/commit/normal push required. E0/2/3/4/7/8/9/10/11/12/13 privately
 prepared; E1/5/6/global15-table memo/actualTable14/private image/common seal/
 all14 Cut5 and original View/nominal/scheduler/Rust borrowing/CLI277/Tier2
 unfinished. Full goal ACTIVE/INCOMPLETE, no new Astra/advice/branch/worktree.
+
+
+### 2026-10-08 — E6 actual Entry/route/policy transcript preparation
+
+Inspected main/origin2058473f97f37b3080672193d20e8da3c53f80a4, initially
+clean. E6 now visits actual Entry rows with closed kind/target/role matches,
+accepted path/binding/custom capability identity, exact Flow schema ABI and
+function signature/effects, canonical route method/path/capture/parameter
+mapping, Stateful nominal/callable/Flow roles and commands/root limits, Agent
+controller/policy and all8 budget fields. Body traversal remains on existing
+F/E4/E8/E9 owners; E6 commits references and ABI, no second body walk.
+Flow schema owns one parameter writer shared by E6/E8; E8 byte grammar is
+unchanged. Nominal identity/layout are accepted leaves checked against the
+original plan by structural admission. Command payload_layout is also a
+structurally checked leaf: verify_stateful_command_contracts recomputes the
+actual payload_schema using the existing sole iterative schema owner and
+rejects mismatches. The final common seal must retain structural-before-
+semantic order; this private visitor does not grant unchecked publication.
+No copied schema grammar, linear nominal lookup, caller-byte proof factory,
+new public reader, runtime/codec/Cargo/feature change or compatibility marker.
+
+Initial4 discovery32323 PASS; focus4 had2PASS/2FAIL because the actual
+Reduction fixture used SnapshotOnly instead of its required
+ConstantAndSnapshot persistence. Fixture repaired to the existing typed
+contract; no production admission weakened. Extended6 discovery38875 PASS;
+6/6PASS0.048s. Root-limit test covers all6 schema and4 execution limit fields;
+Agent binding/policy/ABI/budget changes participate; body/debug parameter
+spelling/unused arena padding exclusions verified. Valid Bool/String command
+schemas differ; forged schema/layout pair rejects. Real aggregate Stateful,
+Agent, direct/stateless/custom and route fixtures all pass builder.finish/
+verify. Invalid route ordering and out-of-range capture binding reject.
+Exact meter boundaries, missing owner before bytes and first-error poison
+remain covered. Stateful fixture decomposed at actual type/nominal admission,
+callable code, Flow and Entry-role boundaries to remove new long-function
+lint without an allow or test API widening.
+
+Final Core all-target/all-feature/locked check12673 PASS8.53s and
+Clippy14.64s; new non-dead-code diagnostics0 (private unused prep warnings
+remain until integration). Adjacent pre-run nextest inventory98547 selected94;
+94/94PASS0.462s,981skipped, exact selected/terminal/unique IDs94, missing0,
+unexpected0,duplicates0,nonpass0. Includes all6 new Entry cases and existing
+F/Flow/Line/Stream/helper/method/nominal/type/meter/coordinate owners. Final6
+Rust hashes retained in TEMP arcweft-1008-entry-row-source-final.json; actual
+94-case IDs/receipt retained under entry-row adjacent-selected/coverage.
+Cargo metadata transitive Core reverse closure50 recomputed from recorded
+resolved graph; all99 manifests/lock/config/toolchain build inputs unchanged.
+Private unused Cut4 leaf preparation has no live/public consumer, so isolated
+Core owner check/Clippy/adjacent selection satisfies this cut's impact policy;
+full-rdeps and CLI omission is explicit. Prior Flow4947PASS/CLI320PASS+
+277sameFAIL are earlier final bytes, not a new E6 whole-goal pass. CLI277
+remain actual unresolved goal repairs, not green by same-set comparison.
+
+Owner review: production entries.rs239LOC/9261bytes owns only Entry metadata,
+borrows immutable original inventory and typed owners, no I/O/dependency/API
+widening/alternate resolver. New unit child entries/tests.rs619LOC/22502bytes
+(+619) triggers growth review: same Entry acceptance/transcript/meter owner,
+actual typed builders and targeted mutation/rejection evidence, no unrelated
+state clusters or duplicated production authority; cohesive retention justified.
+Shared cfg(test) entry_fixtures.rs139LOC/5167bytes extracts actual Agent
+aggregate for E6/E7/E8 without production export; executable role unit child
+478->347LOC, schema owner158->164LOC, context631->634LOC. Core transitive reverse closure50,
+dependency edges and layer direction unchanged; prior structure0-blocking evidence
+reused for unchanged graph. No blanket workspace scanner trigger.
+
+Fmt/diff and exact7-path staged hunk/blob/tested-source review then coherent
+commit/normal main push required. E0/2/3/4/6/7/8/9/10/11/12/13 prepared
+privately; E1/E5/global15-table memo/actualTable14/private image/common seal/
+all14 protected Cut5 and original View/nominal/scheduler/Rust move+borrowing/
+CLI277/Tier2/final legacy deletion acceptance remain. Goal ACTIVE/INCOMPLETE.
+One-shot Astra already consumed (4b076ec754b45a86a28a6fa185131ccd9ef49136);
+no repeat consultation, new branch/worktree or version-marker change.

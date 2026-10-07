@@ -4,6 +4,9 @@
 use super::RuntimePlanInventory;
 
 mod callable;
+mod entries;
+#[cfg(test)]
+mod entry_fixtures;
 mod executable_metadata;
 mod executable_roles;
 pub(crate) mod flow;

@@ -4,7 +4,7 @@
 use super::function::ProducerFunctionSemantic;
 use super::pure_rows::PureHelperSemantic;
 use super::{RuntimeBodySemanticContext, RuntimeBodySemanticError};
-use crate::entry::{RuntimeCallableExecutableCode, RuntimeFlowParameterMode};
+use crate::entry::{RuntimeCallableExecutableCode, RuntimeFlowParameterMode, RuntimeFlowSchema};
 use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticMeter};
 
 /// The exhaustive semantic substrates of an admitted entry callable.
@@ -101,16 +101,7 @@ impl RuntimeBodySemanticContext<'_> {
         encoder.tag(0);
         row.flow.write_executable_identity(&mut encoder);
         encoder.digest(row.contract.as_bytes());
-        encoder.count(schema.parameters.len());
-        for (ordinal, parameter) in schema.parameters.iter().enumerate() {
-            encoder.enter_element();
-            encoder.count(ordinal);
-            encoder.digest(parameter.identity.as_bytes());
-            encoder.ordinal(parameter.coordinate.position());
-            encoder.tag(parameter.mode.semantic_tag());
-            encoder.tag(parameter.passing.semantic_tag());
-            encoder.digest(parameter.semantic_identity.as_bytes());
-        }
+        schema.write_executable_parameters(&mut encoder);
         // F commits the exact return type, checked invocation effects, input
         // patterns/captures and complete body of this same Flow definition.
         encoder.digest(producer.digest().as_bytes());
@@ -120,6 +111,21 @@ impl RuntimeBodySemanticContext<'_> {
             encoder.digest(controller.contract.as_bytes());
         }
         encoder.finish().map_err(Into::into)
+    }
+}
+
+impl RuntimeFlowSchema {
+    pub(super) fn write_executable_parameters(&self, encoder: &mut TaskSemanticEncoder<'_>) {
+        encoder.count(self.parameters.len());
+        for (ordinal, parameter) in self.parameters.iter().enumerate() {
+            encoder.enter_element();
+            encoder.count(ordinal);
+            encoder.digest(parameter.identity.as_bytes());
+            encoder.ordinal(parameter.coordinate.position());
+            encoder.tag(parameter.mode.semantic_tag());
+            encoder.tag(parameter.passing.semantic_tag());
+            encoder.digest(parameter.semantic_identity.as_bytes());
+        }
     }
 }
 
