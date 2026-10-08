@@ -153,6 +153,7 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
     ) -> Result<(), RuntimeBodySemanticError> {
         for table in ExecutableTable::ORDER {
             encoder.status()?;
+            encoder.enter_role(); // fixed table header visit
             encoder.tag(table.tag());
             let count = self.rows[table.tag() as usize].len();
             encoder.count(count);
@@ -238,6 +239,7 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
                 });
             }
         }
+        meter.charge_work(1)?; // first executable row visit, before owner work
         self.rows[table.tag() as usize][ordinal] = RowState::Visiting;
         let digest = self
             .complete_owner(table, ordinal, meter, task_reference)

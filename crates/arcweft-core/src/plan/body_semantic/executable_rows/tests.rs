@@ -54,6 +54,7 @@ fn shared_function_is_walked_once_for_callable_flow_and_function_rows() {
     let flow = proof
         .executable_flow_row_digest(&rows.context, &mut expected_meter, 0)
         .unwrap();
+    expected_meter.charge_work(3).unwrap(); // three first executable row visits
     let before = meter.totals();
     assert_eq!(
         callable,
@@ -274,6 +275,10 @@ fn global_prefix_shares_exact_limits_and_charges_reused_digest_atoms() {
         after.1 - before.1,
         b"test-executable-prefix.v1\0".len() as u64 + 14 * 5 + 7 * 37
     );
+    // Each table visits its header and emits tag/count (3 units); each
+    // source row enters the list and emits ordinal/kind/digest (4 units).
+    // All seven owner rows were completed already, so no body/row re-visit.
+    assert_eq!(after.0 - before.0, 14 * 3 + 7 * 4);
     assert!(after.0 - before.0 < before.0);
 }
 
@@ -344,4 +349,66 @@ fn actual_line_rows_join_the_same_global_prefix_meter() {
     );
     let changed = super::super::tests::actual_line_plan(false, true, "cancel", "mark");
     assert_ne!(expected, run(&changed.0, &changed.1, limits).0.unwrap());
+}
+
+#[test]
+fn empty_executable_tables_require_exact_header_visit_work() {
+    let builder = crate::plan::RuntimePlanBuilder::new();
+    let owner = builder.task_coordinate_owner(0);
+    let plan = builder.finish().unwrap();
+    let limits = RuntimeTaskPlanSealLimits {
+        max_semantic_work: 14 * 3,
+        max_transcript_bytes: b"test-executable-prefix.v1\0".len() as u64 + 14 * 5,
+        ..RuntimeTaskPlanSealLimits::default()
+    };
+    let mut bytes = b"test-executable-prefix.v1\0".to_vec();
+    for tag in 0..14 {
+        bytes.push(tag);
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+    }
+    let (digest, totals) = run(&plan, &owner, limits);
+    assert_eq!(digest.unwrap(), blake3::hash(&bytes));
+    assert_eq!(
+        totals,
+        (limits.max_semantic_work, limits.max_transcript_bytes)
+    );
+    assert!(matches!(
+        run(
+            &plan,
+            &owner,
+            RuntimeTaskPlanSealLimits {
+                max_semantic_work: 14 * 3 - 1,
+                ..limits
+            }
+        )
+        .0,
+        Err(RuntimeBodySemanticError::Encoding(
+            TaskSemanticEncodingError::SemanticWork
+        ))
+    ));
+}
+
+#[test]
+fn row_visit_budget_fails_before_owner_state_or_function_proof_changes() {
+    let (plan, owner, _) =
+        controller_plan(false, true, RuntimeFunctionParameterPassing::Value, "input");
+    let mut meter = TaskSemanticMeter::new(0, 100_000);
+    let mut rows = RuntimeExecutableSemanticRows::new(
+        &plan,
+        &owner,
+        RuntimeTaskPlanSealLimits::default(),
+        &mut meter,
+    )
+    .unwrap();
+    assert!(matches!(
+        rows.complete(ExecutableTable::Functions, 0, &mut meter, &mut |_| panic!(
+            "body must not be visited"
+        )),
+        Err(RuntimeBodySemanticError::Encoding(
+            TaskSemanticEncodingError::SemanticWork
+        ))
+    ));
+    assert!(matches!(rows.rows[4][0], RowState::Unvisited));
+    assert!(rows.functions[0].is_none());
+    assert_eq!(meter.totals(), (0, 0));
 }
