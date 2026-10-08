@@ -17,12 +17,14 @@ use std::collections::BTreeSet;
 use thiserror::Error;
 
 mod binding;
+mod declarations;
 
 pub use binding::{
     MAX_RUNTIME_PATTERN_BINDING_DEPTH, RuntimePatternBindingCoordinate,
     RuntimePatternBindingCoordinateError, RuntimePatternBindingPath,
     RuntimePatternBindingPathError, RuntimePatternBindingStep, RuntimePatternBindingWireError,
 };
+pub use declarations::{RuntimePatternBindingDeclaration, RuntimePatternBindingDeclarations};
 
 /// Canonical semantic-type identity encoder shared by semantic producers.
 ///

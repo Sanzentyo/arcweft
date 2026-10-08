@@ -4,7 +4,7 @@ use super::{
     RuntimeCallArgument, RuntimeExpr, RuntimeExprKind, RuntimeLocalReadMode, RuntimeMutablePlace,
     RuntimeStandardMapOperandOrder,
 };
-use crate::pattern::{RuntimePattern, RuntimePatternKind};
+use crate::pattern::RuntimePatternBindingDeclaration;
 use crate::plan::RuntimePlan;
 use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLocalDeclarationId};
 use thiserror::Error;
@@ -229,7 +229,11 @@ impl RuntimeExpr {
             } => {
                 expr.collect_evaluation_free_locals(plan, bound, locals)?;
                 let mut branch_bound = bound.to_vec();
-                collect_pattern_bindings(pattern, &mut branch_bound);
+                branch_bound.extend(
+                    pattern
+                        .binding_declarations()
+                        .map(RuntimePatternBindingDeclaration::local),
+                );
                 if let Some(guard) = guard {
                     guard.collect_evaluation_free_locals(plan, &branch_bound, locals)?;
                 }
@@ -240,7 +244,11 @@ impl RuntimeExpr {
                 scrutinee.collect_evaluation_free_locals(plan, bound, locals)?;
                 for arm in arms {
                     let mut arm_bound = bound.to_vec();
-                    collect_pattern_bindings(arm.pattern(), &mut arm_bound);
+                    arm_bound.extend(
+                        arm.pattern()
+                            .binding_declarations()
+                            .map(RuntimePatternBindingDeclaration::local),
+                    );
                     if let Some(guard) = arm.guard() {
                         guard.collect_evaluation_free_locals(plan, &arm_bound, locals)?;
                     }
@@ -277,52 +285,6 @@ fn collect_argument_free_locals(
             .collect_evaluation_free_locals(plan, bound, locals)?;
     }
     Ok(())
-}
-
-fn collect_pattern_bindings(pattern: &RuntimePattern, bound: &mut Vec<RuntimeLocalDeclarationId>) {
-    match pattern.kind() {
-        RuntimePatternKind::Bind { binding, .. } | RuntimePatternKind::Typed { binding } => {
-            bound.push(binding.local());
-        }
-        RuntimePatternKind::Discard
-        | RuntimePatternKind::Literal(_)
-        | RuntimePatternKind::Entity(_) => {}
-        RuntimePatternKind::Or(items) => {
-            if let Some(first) = items.first() {
-                collect_pattern_bindings(first, bound);
-            }
-        }
-        RuntimePatternKind::Tuple(items) => {
-            for item in items {
-                collect_pattern_bindings(item, bound);
-            }
-        }
-        RuntimePatternKind::Record { fields, rest } => {
-            for field in fields {
-                collect_pattern_bindings(field.pattern(), bound);
-            }
-            if let Some(binding) = rest.binding() {
-                bound.push(binding.local());
-            }
-        }
-        RuntimePatternKind::Sequence { items, rest } => {
-            for item in items {
-                collect_pattern_bindings(item, bound);
-            }
-            if let Some(binding) = rest.binding() {
-                bound.push(binding.local());
-            }
-        }
-        RuntimePatternKind::Variant { payload, .. } => {
-            if let Some(payload) = payload {
-                collect_pattern_bindings(payload, bound);
-            }
-        }
-        RuntimePatternKind::Whole { binding, pattern } => {
-            bound.push(binding.local());
-            collect_pattern_bindings(pattern, bound);
-        }
-    }
 }
 
 fn push_free_local(

@@ -1,4 +1,6 @@
-//! Recursive admission from semantic seeds into the sole executable carriers.
+//! Admission from semantic seeds into the sole executable carriers.
+
+mod pattern;
 
 #[cfg(test)]
 mod agent_tests;
@@ -17,8 +19,8 @@ use crate::effect::{
 };
 use crate::pattern::{
     RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimePattern,
-    RuntimePatternBindingCoordinate, RuntimePatternBindingPath, RuntimePatternBindingStep,
-    RuntimePatternKind, RuntimePatternRest, RuntimeRecordPatternField,
+    RuntimePatternBindingCoordinate, RuntimePatternBindingDeclaration, RuntimePatternBindingPath,
+    RuntimePatternBindingStep, RuntimePatternKind, RuntimePatternRest, RuntimeRecordPatternField,
 };
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::stream::{StreamMatchArm, StreamOp, StreamPlan};
@@ -2641,229 +2643,6 @@ impl RuntimePlanBodyConstruction<'_> {
 }
 
 impl RuntimePlanBodyConstruction<'_> {
-    #[allow(
-        clippy::too_many_lines,
-        reason = "the match is the exhaustive pattern-admission authority"
-    )]
-    fn lower_pattern(
-        &self,
-        seed: RuntimePatternSeed,
-        admission: &mut PatternAdmission,
-        path: &mut Vec<RuntimePatternBindingStep>,
-    ) -> Result<RuntimePattern, RuntimePlanBuildError> {
-        let (semantic_ty, kind) = seed.into_parts();
-        let ty = self.resolve_seed_type("pattern", semantic_ty)?;
-        let kind = match kind {
-            RuntimePatternSeedKind::Bind { mutable, local } => RuntimePatternKind::Bind {
-                mutable,
-                binding: self.lower_pattern_binding(&local, ty, admission, path)?,
-            },
-            RuntimePatternSeedKind::Discard => RuntimePatternKind::Discard,
-            RuntimePatternSeedKind::Literal(value) => {
-                self.validate_plan_value("pattern literal", ty, &value)?;
-                RuntimePatternKind::Literal(value)
-            }
-            RuntimePatternSeedKind::Entity(entity) => {
-                self.require_projection("entity-reference pattern", ty, |projection| {
-                    matches!(projection, RuntimePlanTypeProjection::EntityReference)
-                })?;
-                RuntimePatternKind::Entity(entity)
-            }
-            RuntimePatternSeedKind::Or(alternatives) => {
-                if alternatives.len() < 2 {
-                    return invalid_projection("Or alternative count", ty);
-                }
-                let initial = admission.bindings.clone();
-                let mut shared = None;
-                let mut lowered = Vec::with_capacity(alternatives.len());
-                for seed in alternatives.into_vec() {
-                    let mut current = PatternAdmission {
-                        bindings: initial.clone(),
-                    };
-                    let alternative = self.lower_pattern(seed, &mut current, path)?;
-                    require_same("Or alternative", ty, alternative.ty())?;
-                    if let Some(expected) = &shared {
-                        if expected != &current.bindings {
-                            return invalid_projection("Or binding inventory", ty);
-                        }
-                    } else {
-                        shared = Some(current.bindings);
-                    }
-                    lowered.push(alternative);
-                }
-                admission.bindings = shared.expect("at least two alternatives");
-                RuntimePatternKind::Or(lowered.into_boxed_slice())
-            }
-            RuntimePatternSeedKind::Tuple(items) => {
-                let expected = match self.projection(ty)? {
-                    RuntimePlanTypeProjection::Tuple(items) => items.as_ref(),
-                    _ => return invalid_projection("tuple pattern", ty),
-                };
-                if expected.len() != items.len() {
-                    return invalid_projection("tuple pattern arity", ty);
-                }
-                let mut lowered = Vec::with_capacity(items.len());
-                for (index, (item, expected)) in
-                    items.into_vec().into_iter().zip(expected).enumerate()
-                {
-                    let step = u32::try_from(index).map_err(|_| {
-                        RuntimePlanBuildError::InvalidTypeProjection {
-                            context: "tuple pattern ordinal",
-                            ty,
-                        }
-                    })?;
-                    path.push(RuntimePatternBindingStep::TupleElement(step));
-                    let item = self.lower_pattern(item, admission, path);
-                    path.pop();
-                    let item = item?;
-                    require_same("tuple pattern element", *expected, item.ty())?;
-                    lowered.push(item);
-                }
-                RuntimePatternKind::Tuple(lowered.into_boxed_slice())
-            }
-            RuntimePatternSeedKind::Record { fields, rest } => {
-                let field_count = match self.projection(ty)? {
-                    RuntimePlanTypeProjection::Record(fields) => fields.len(),
-                    RuntimePlanTypeProjection::Nominal { .. } => self
-                        .nominal_record_domains
-                        .get(ty)
-                        .map(|domain| domain.fields().len())
-                        .ok_or(RuntimePlanBuildError::UnknownNominalRecordDomain { owner: ty })?,
-                    _ => return invalid_projection("record pattern owner", ty),
-                };
-                let exact = matches!(&rest, RuntimePatternRestSeed::Exact);
-                let mut admitted_fields = BTreeSet::new();
-                let mut lowered = Vec::with_capacity(fields.len());
-                for (pattern_ordinal, field) in fields.into_vec().into_iter().enumerate() {
-                    let (field, pattern) = field.into_parts();
-                    let (field, field_ty) = self.resolve_pattern_record_field(ty, field)?;
-                    if !admitted_fields.insert(field) {
-                        return Err(RuntimePlanBuildError::DuplicateRecordField {
-                            owner: ty,
-                            field,
-                        });
-                    }
-                    let step = u32::try_from(pattern_ordinal).map_err(|_| {
-                        RuntimePlanBuildError::InvalidTypeProjection {
-                            context: "record pattern ordinal",
-                            ty,
-                        }
-                    })?;
-                    path.push(RuntimePatternBindingStep::RecordField(step));
-                    let pattern = self.lower_pattern(pattern, admission, path);
-                    path.pop();
-                    let pattern = pattern?;
-                    require_same("record pattern field", field_ty, pattern.ty())?;
-                    lowered.push(RuntimeRecordPatternField::from_admitted_parts(
-                        field, pattern,
-                    ));
-                }
-                if exact && admitted_fields.len() != field_count {
-                    for ordinal in 0..field_count {
-                        let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)?;
-                        if !admitted_fields.contains(&field) {
-                            return Err(RuntimePlanBuildError::MissingRecordField {
-                                owner: ty,
-                                field,
-                            });
-                        }
-                    }
-                }
-                let rest = self.lower_pattern_rest(
-                    rest,
-                    ty,
-                    RuntimePatternBindingStep::RecordRest,
-                    admission,
-                    path,
-                )?;
-                RuntimePatternKind::Record {
-                    fields: lowered.into_boxed_slice(),
-                    rest,
-                }
-            }
-            RuntimePatternSeedKind::Sequence { items, rest } => {
-                let (item_ty, fixed_len) = self.sequence_projection(ty, "sequence pattern")?;
-                if fixed_len.is_some() && matches!(&rest, RuntimePatternRestSeed::Bind(_)) {
-                    return invalid_projection("array rest-binding pattern", ty);
-                }
-                if let Some(expected) = fixed_len {
-                    let actual = items.len();
-                    if matches!(&rest, RuntimePatternRestSeed::Exact) {
-                        validate_sequence_length(expected, actual)?;
-                    } else if u64::try_from(actual).map_or(true, |actual| actual > expected) {
-                        return Err(RuntimePlanBuildError::SequenceLengthMismatch {
-                            expected,
-                            actual,
-                        });
-                    }
-                }
-                let mut lowered = Vec::with_capacity(items.len());
-                for (index, item) in items.into_vec().into_iter().enumerate() {
-                    let step = u32::try_from(index).map_err(|_| {
-                        RuntimePlanBuildError::InvalidTypeProjection {
-                            context: "sequence pattern ordinal",
-                            ty,
-                        }
-                    })?;
-                    path.push(RuntimePatternBindingStep::SequenceElement(step));
-                    let item = self.lower_pattern(item, admission, path);
-                    path.pop();
-                    let item = item?;
-                    require_same("sequence pattern element", item_ty, item.ty())?;
-                    lowered.push(item);
-                }
-                let rest = self.lower_pattern_rest(
-                    rest,
-                    ty,
-                    RuntimePatternBindingStep::SequenceRest,
-                    admission,
-                    path,
-                )?;
-                RuntimePatternKind::Sequence {
-                    items: lowered.into_boxed_slice(),
-                    rest,
-                }
-            }
-            RuntimePatternSeedKind::Variant { ordinal, payload } => {
-                let expected = self.variant_case(ty, ordinal)?.payload();
-                let payload = if let Some(payload) = payload {
-                    path.push(RuntimePatternBindingStep::VariantPayload);
-                    let payload = self.lower_pattern(*payload, admission, path);
-                    path.pop();
-                    Some(payload?)
-                } else {
-                    None
-                };
-                let actual = payload.as_ref().map(RuntimePattern::ty);
-                if expected != actual {
-                    return Err(RuntimePlanBuildError::VariantPayloadMismatch {
-                        owner: ty,
-                        ordinal,
-                        expected,
-                        actual,
-                    });
-                }
-                RuntimePatternKind::Variant {
-                    ordinal,
-                    payload: payload.map(Box::new),
-                }
-            }
-            RuntimePatternSeedKind::Whole { local, pattern } => {
-                let binding = self.lower_pattern_binding(&local, ty, admission, path)?;
-                let pattern = self.lower_pattern(*pattern, admission, path)?;
-                require_same("whole pattern child", ty, pattern.ty())?;
-                RuntimePatternKind::Whole {
-                    binding,
-                    pattern: Box::new(pattern),
-                }
-            }
-            RuntimePatternSeedKind::Typed { local } => RuntimePatternKind::Typed {
-                binding: self.lower_pattern_binding(&local, ty, admission, path)?,
-            },
-        };
-        Ok(RuntimePattern::from_admitted_parts(ty, kind))
-    }
-
     fn lower_pattern_rest(
         &self,
         rest: RuntimePatternRestSeed,
@@ -3119,7 +2898,12 @@ impl RuntimePlanBodyConstruction<'_> {
                 else_expr,
             } => {
                 self.validate_expression_locals(expr, scope, used)?;
-                let nested = extend_scope(scope, pattern_binding_locals(pattern))?;
+                let nested = extend_scope(
+                    scope,
+                    pattern
+                        .binding_declarations()
+                        .map(RuntimePatternBindingDeclaration::local),
+                )?;
                 if let Some(guard) = guard {
                     self.validate_expression_locals(guard, &nested, used)?;
                 }
@@ -3129,7 +2913,12 @@ impl RuntimePlanBodyConstruction<'_> {
             RuntimeExprKind::Match { scrutinee, arms } => {
                 self.validate_expression_locals(scrutinee, scope, used)?;
                 for arm in arms {
-                    let nested = extend_scope(scope, pattern_binding_locals(arm.pattern()))?;
+                    let nested = extend_scope(
+                        scope,
+                        arm.pattern()
+                            .binding_declarations()
+                            .map(RuntimePatternBindingDeclaration::local),
+                    )?;
                     if let Some(guard) = arm.guard() {
                         self.validate_expression_locals(guard, &nested, used)?;
                     }
@@ -3295,7 +3084,12 @@ impl RuntimePlanBodyConstruction<'_> {
             match op {
                 StreamOp::Let { pattern, expr } => {
                     self.validate_expression_locals(expr, scope, used)?;
-                    *scope = extend_scope(scope, pattern_binding_locals(pattern))?;
+                    *scope = extend_scope(
+                        scope,
+                        pattern
+                            .binding_declarations()
+                            .map(RuntimePatternBindingDeclaration::local),
+                    )?;
                 }
                 StreamOp::ForNext {
                     pattern,
@@ -3303,7 +3097,12 @@ impl RuntimePlanBodyConstruction<'_> {
                     body,
                 } => {
                     self.validate_expression_locals(source, scope, used)?;
-                    let mut nested = extend_scope(scope, pattern_binding_locals(pattern))?;
+                    let mut nested = extend_scope(
+                        scope,
+                        pattern
+                            .binding_declarations()
+                            .map(RuntimePatternBindingDeclaration::local),
+                    )?;
                     self.validate_stream_ops_locals_inner(body, &mut nested, used)?;
                 }
                 StreamOp::Yield { expr } | StreamOp::Close { source: expr } => {
@@ -3323,8 +3122,12 @@ impl RuntimePlanBodyConstruction<'_> {
                 StreamOp::Match { scrutinee, arms } => {
                     self.validate_expression_locals(scrutinee, scope, used)?;
                     for arm in arms {
-                        let mut arm_scope =
-                            extend_scope(scope, pattern_binding_locals(&arm.pattern))?;
+                        let mut arm_scope = extend_scope(
+                            scope,
+                            arm.pattern
+                                .binding_declarations()
+                                .map(RuntimePatternBindingDeclaration::local),
+                        )?;
                         if let Some(guard) = &arm.guard {
                             self.validate_expression_locals(guard, &arm_scope, used)?;
                         }
@@ -5141,7 +4944,12 @@ impl RuntimePlanBodyConstruction<'_> {
                     let Some(arm) = arms.next() else {
                         continue;
                     };
-                    let arm_scope = extend_scope(&scope, pattern_binding_locals(&arm.pattern))?;
+                    let arm_scope = extend_scope(
+                        &scope,
+                        arm.pattern
+                            .binding_declarations()
+                            .map(RuntimePatternBindingDeclaration::local),
+                    )?;
                     work.push(FlowLocalValidationWork::MatchArms {
                         arms,
                         scope: scope.clone(),
@@ -5213,7 +5021,12 @@ impl RuntimePlanBodyConstruction<'_> {
             match op {
                 FlowOp::Let { pattern, expr } => {
                     self.validate_expression_locals(expr, scope, used)?;
-                    *scope = extend_scope(scope, pattern_binding_locals(pattern))?;
+                    *scope = extend_scope(
+                        scope,
+                        pattern
+                            .binding_declarations()
+                            .map(RuntimePatternBindingDeclaration::local),
+                    )?;
                 }
                 FlowOp::FormatOperandAttempt {
                     attempt,
@@ -5265,7 +5078,12 @@ impl RuntimePlanBodyConstruction<'_> {
                         used,
                         &mut else_frames,
                     )?;
-                    *scope = extend_scope(scope, pattern_binding_locals(pattern))?;
+                    *scope = extend_scope(
+                        scope,
+                        pattern
+                            .binding_declarations()
+                            .map(RuntimePatternBindingDeclaration::local),
+                    )?;
                 }
                 FlowOp::Assign { place, value } => {
                     require_local_in_scope(place.local(), scope)?;
@@ -5281,7 +5099,12 @@ impl RuntimePlanBodyConstruction<'_> {
                         self.validate_expression_locals(expression, scope, used)?;
                     }
                     if let Some(binding) = binding {
-                        *scope = extend_scope(scope, pattern_binding_locals(binding))?;
+                        *scope = extend_scope(
+                            scope,
+                            binding
+                                .binding_declarations()
+                                .map(RuntimePatternBindingDeclaration::local),
+                        )?;
                     }
                 }
                 FlowOp::CommitDialogueResult { value } | FlowOp::SelectDialogueResult { value } => {
@@ -5299,8 +5122,13 @@ impl RuntimePlanBodyConstruction<'_> {
                 } => {
                     self.validate_expression_locals(&target.source, scope, used)?;
                     for observer in observers {
-                        let mut observer_scope =
-                            extend_scope(scope, pattern_binding_locals(&observer.pattern))?;
+                        let mut observer_scope = extend_scope(
+                            scope,
+                            observer
+                                .pattern
+                                .binding_declarations()
+                                .map(RuntimePatternBindingDeclaration::local),
+                        )?;
                         self.validate_flow_operation_locals_inner(
                             &observer.ops,
                             &mut observer_scope,
@@ -5309,14 +5137,24 @@ impl RuntimePlanBodyConstruction<'_> {
                         )?;
                     }
                     if let Some(binding) = binding {
-                        *scope = extend_scope(scope, pattern_binding_locals(binding))?;
+                        *scope = extend_scope(
+                            scope,
+                            binding
+                                .binding_declarations()
+                                .map(RuntimePatternBindingDeclaration::local),
+                        )?;
                     }
                 }
                 FlowOp::StartNeedProducer { binding, target } => {
                     for argument in target.arguments() {
                         self.validate_expression_locals(argument.value(), scope, used)?;
                     }
-                    *scope = extend_scope(scope, pattern_binding_locals(binding))?;
+                    *scope = extend_scope(
+                        scope,
+                        binding
+                            .binding_declarations()
+                            .map(RuntimePatternBindingDeclaration::local),
+                    )?;
                 }
                 FlowOp::AwaitMany {
                     binding,
@@ -5329,13 +5167,23 @@ impl RuntimePlanBodyConstruction<'_> {
                     self.validate_task_request_locals(&target.base.request, scope, used)?;
                     self.validate_line_effect_locals(pending, scope, used)?;
                     if let Some(binding) = binding {
-                        *scope = extend_scope(scope, pattern_binding_locals(binding))?;
+                        *scope = extend_scope(
+                            scope,
+                            binding
+                                .binding_declarations()
+                                .map(RuntimePatternBindingDeclaration::local),
+                        )?;
                     }
                 }
                 FlowOp::HostCall { binding, target } => {
                     self.validate_host_argument_locals(&target.args, scope, used)?;
                     if let Some(binding) = binding {
-                        *scope = extend_scope(scope, pattern_binding_locals(binding))?;
+                        *scope = extend_scope(
+                            scope,
+                            binding
+                                .binding_declarations()
+                                .map(RuntimePatternBindingDeclaration::local),
+                        )?;
                     }
                 }
                 FlowOp::ApplyGroup {
@@ -5347,7 +5195,12 @@ impl RuntimePlanBodyConstruction<'_> {
                     for argument in args {
                         self.validate_expression_locals(argument.value(), scope, used)?;
                     }
-                    *scope = extend_scope(scope, pattern_binding_locals(result))?;
+                    *scope = extend_scope(
+                        scope,
+                        result
+                            .binding_declarations()
+                            .map(RuntimePatternBindingDeclaration::local),
+                    )?;
                 }
                 FlowOp::ProjectCall { site } => {
                     let row = self.project_call_sites.borrow().get(*site).cloned().ok_or(
@@ -5360,7 +5213,12 @@ impl RuntimePlanBodyConstruction<'_> {
                     for operand in plan.operands() {
                         self.validate_expression_locals(operand.value(), scope, used)?;
                     }
-                    *scope = extend_scope(scope, pattern_binding_locals(row.result()))?;
+                    *scope = extend_scope(
+                        scope,
+                        row.result()
+                            .binding_declarations()
+                            .map(RuntimePatternBindingDeclaration::local),
+                    )?;
                 }
                 FlowOp::If {
                     condition,
@@ -5393,7 +5251,12 @@ impl RuntimePlanBodyConstruction<'_> {
                     else_ops,
                 } => {
                     self.validate_expression_locals(expr, scope, used)?;
-                    let mut then_scope = extend_scope(scope, pattern_binding_locals(pattern))?;
+                    let mut then_scope = extend_scope(
+                        scope,
+                        pattern
+                            .binding_declarations()
+                            .map(RuntimePatternBindingDeclaration::local),
+                    )?;
                     if let Some(guard) = guard {
                         self.validate_expression_locals(guard, &then_scope, used)?;
                     }
@@ -5427,7 +5290,12 @@ impl RuntimePlanBodyConstruction<'_> {
                         &mut nested_frames,
                     )?;
                     if let Some(result) = result {
-                        *scope = extend_scope(scope, pattern_binding_locals(result))?;
+                        *scope = extend_scope(
+                            scope,
+                            result
+                                .binding_declarations()
+                                .map(RuntimePatternBindingDeclaration::local),
+                        )?;
                     }
                 }
                 FlowOp::Thread { body, .. } => {
@@ -5475,7 +5343,12 @@ impl RuntimePlanBodyConstruction<'_> {
                     body,
                 } => {
                     self.validate_expression_locals(expr, scope, used)?;
-                    let mut nested = extend_scope(scope, pattern_binding_locals(pattern))?;
+                    let mut nested = extend_scope(
+                        scope,
+                        pattern
+                            .binding_declarations()
+                            .map(RuntimePatternBindingDeclaration::local),
+                    )?;
                     if let Some(guard) = guard {
                         self.validate_expression_locals(guard, &nested, used)?;
                     }
@@ -5494,7 +5367,12 @@ impl RuntimePlanBodyConstruction<'_> {
                     ..
                 } => {
                     self.validate_expression_locals(source, scope, used)?;
-                    let mut nested = extend_scope(scope, pattern_binding_locals(pattern))?;
+                    let mut nested = extend_scope(
+                        scope,
+                        pattern
+                            .binding_declarations()
+                            .map(RuntimePatternBindingDeclaration::local),
+                    )?;
                     let mut nested_frames = scope_frames.clone();
                     self.validate_flow_operation_locals_inner(
                         body,
@@ -5546,7 +5424,12 @@ impl RuntimePlanBodyConstruction<'_> {
                             .ok_or(RuntimePlanBuildError::FlowScopeUnderflow {
                                 operation: "ExitScopeBind",
                             })?;
-                    *scope = extend_scope(&parent, pattern_binding_locals(pattern))?;
+                    *scope = extend_scope(
+                        &parent,
+                        pattern
+                            .binding_declarations()
+                            .map(RuntimePatternBindingDeclaration::local),
+                    )?;
                 }
                 FlowOp::Bind(_) => {
                     return Err(RuntimePlanBuildError::NonCanonicalFlowOperation {
@@ -5562,7 +5445,13 @@ impl RuntimePlanBodyConstruction<'_> {
                     if self.dialogue_content.get(*content).is_none() {
                         return Err(RuntimePlanBuildError::ForeignDialogueContentSeed);
                     }
-                    *scope = extend_scope(scope, pattern_binding_locals(result.pattern()))?;
+                    *scope = extend_scope(
+                        scope,
+                        result
+                            .pattern()
+                            .binding_declarations()
+                            .map(RuntimePatternBindingDeclaration::local),
+                    )?;
                 }
                 FlowOp::LoopNext { .. } => {
                     return Err(RuntimePlanBuildError::NonCanonicalFlowOperation {
@@ -5666,12 +5555,6 @@ fn extend_scope(
     Ok(nested)
 }
 
-fn pattern_binding_locals(pattern: &RuntimePattern) -> Vec<RuntimeLocalDeclarationId> {
-    let mut locals = Vec::new();
-    collect_pattern_binding_locals(pattern, &mut locals);
-    locals
-}
-
 pub(super) fn function_input_scope(
     inputs: &[RuntimeFunctionInputBinding],
 ) -> BTreeSet<RuntimeLocalDeclarationId> {
@@ -5680,58 +5563,14 @@ pub(super) fn function_input_scope(
         // The input local names the ABI carrier. Only locals actually bound by
         // its pattern are live in the function body; binding the carrier too
         // would duplicate an affine destructured value.
-        scope.extend(pattern_binding_locals(input.pattern()));
+        scope.extend(
+            input
+                .pattern()
+                .binding_declarations()
+                .map(RuntimePatternBindingDeclaration::local),
+        );
     }
     scope
-}
-
-fn collect_pattern_binding_locals(
-    pattern: &RuntimePattern,
-    locals: &mut Vec<RuntimeLocalDeclarationId>,
-) {
-    match pattern.kind() {
-        RuntimePatternKind::Bind { binding, .. } | RuntimePatternKind::Typed { binding } => {
-            locals.push(binding.local());
-        }
-        RuntimePatternKind::Discard
-        | RuntimePatternKind::Literal(_)
-        | RuntimePatternKind::Entity(_) => {}
-        RuntimePatternKind::Or(alternatives) => {
-            if let Some(first) = alternatives.first() {
-                collect_pattern_binding_locals(first, locals);
-            }
-        }
-        RuntimePatternKind::Tuple(items) => {
-            for item in items {
-                collect_pattern_binding_locals(item, locals);
-            }
-        }
-        RuntimePatternKind::Record { fields, rest } => {
-            for field in fields {
-                collect_pattern_binding_locals(field.pattern(), locals);
-            }
-            if let Some(binding) = rest.binding() {
-                locals.push(binding.local());
-            }
-        }
-        RuntimePatternKind::Sequence { items, rest } => {
-            for item in items {
-                collect_pattern_binding_locals(item, locals);
-            }
-            if let Some(binding) = rest.binding() {
-                locals.push(binding.local());
-            }
-        }
-        RuntimePatternKind::Variant { payload, .. } => {
-            if let Some(payload) = payload {
-                collect_pattern_binding_locals(payload, locals);
-            }
-        }
-        RuntimePatternKind::Whole { binding, pattern } => {
-            locals.push(binding.local());
-            collect_pattern_binding_locals(pattern, locals);
-        }
-    }
 }
 
 impl RuntimePlanBodyConstruction<'_> {

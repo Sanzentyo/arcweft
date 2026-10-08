@@ -548,6 +548,12 @@ pub enum RuntimePlanBuildError {
     },
     #[error("pattern binds local declaration {local} more than once")]
     DuplicatePatternBinding { local: RuntimeLocalDeclarationId },
+    #[error("Or binding {local} has inconsistent mutability: expected {expected}, actual {actual}")]
+    OrBindingMutabilityMismatch {
+        local: RuntimeLocalDeclarationId,
+        expected: bool,
+        actual: bool,
+    },
     #[error(transparent)]
     PatternBindingPath(#[from] RuntimePatternBindingPathError),
     #[error(transparent)]

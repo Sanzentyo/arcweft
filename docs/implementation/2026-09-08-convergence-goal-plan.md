@@ -9940,3 +9940,176 @@ private image/common seal/all14 protected Cut5, original View/nominal/
 scheduler/Rust move+borrowing/CLI277/Tier2/old-path deletion/final matrix
 remain. One-shot Astra consultation is consumed; do not repeat after context
 compaction. No new delegation, branch/worktree or contract-marker change.
+
+
+2026-10-08 Core E1 pattern declaration boundary — IN PROGRESS
+(parent e202f637f75514acadd3e0372a5877d43f2a54f1).
+The admitted RuntimePattern now owns an iterative borrowed declaration
+inventory (exact coordinate, type, mutability). Whole/typed/rest sites are
+immutable by the closed grammar, not guessed metadata. Or admission checks
+all alternatives agree on local mutability as well as the existing local
+identity inventory. Same local identities with different mutability previously
+passed; the new typed OrBindingMutabilityMismatch rejects both directions.
+Alternative binding positions may differ while declaration identity/attributes
+agree. Scope admission and expression free-local projection share this owner;
+the two old recursive ID-only pattern walkers are removed. Wire coordinate
+grammar and contract markers remain1. Actual runtime local body ownership,
+initialization/storage schema, per-emission-root allocation and E1 transcript
+are still required; this boundary is a necessary producer prerequisite.
+
+Focused new tests5PASS0.030s (initial4PASS/1FAIL was incorrect Some ordinal1
+in the fixture, repaired to actual admitted ordinal0; failure log preserved).
+Complete selected scope includes all50 resolved workspace transitive Core
+rdeps; all99 metadata/build inputs still unchanged. Sources frozen under
+TEMP arcweft-1008-pattern-declarations-source-final.json. Workspace check
+is running; workspace Clippy, exact nextest inventories/runs, CLI actual
+baseline comparison, structural evidence and Git delivery remain pending.
+No Rust/source edit or additional Cargo started while a source-sensitive
+command remains live. No new delegation/Astra, profile/jobs/timeout/stack
+overrides, branch/worktree, marker evolution or compatibility fallback.
+
+Owner review: pattern.rs4166->4168LOC/161130bytes only wires the declaration
+API at its existing owner. construction.rs3902->3908LOC/159491bytes adds the
+closed mutability mismatch error. lower.rs6092->6174LOC/263552bytes migrates
+23 scope consumers and checks the same admitted Or inventory; no added
+source reconstruction or parallel final declaration model. expression_locals
+352->314LOC/13127bytes removes its second recursive walker. New declaration
+owner137LOC/4922bytes is an iterative borrowed traversal; tests child
+243LOC/8763bytes uses real aggregate-admitted Tuple/Whole/Typed/Sequence/
+Record/rest/Option payloads and differing-position Or alternatives. Existing
+large aggregate lowerer/schema owners remain cohesive; changes add no
+dependency edge, feature, manifest, released compatibility path or marker.
+No existing owner grows300LOC; decomposition triggers are review aids, not
+source-spelling gates.
+
+Final workspace check TERMINAL0/48.96s and Clippy TERMINAL0/1m06s. Exact
+warning-family comparison to pinned source-bridge workspace Clippy adds0
+new warnings after normalized existing function-size counters. Initial new
+redundant-closure diagnostics were repaired at all25 consumers by method
+references, without semantic changes or lint suppression. Full selected
+Core50 nextest inventory is building; no final test/CLI acceptance claimed.
+
+While final test inventory rebuilds, pinned current View consumers were
+rechecked against the referenced Handoff declined preview. RepeatKeyed's
+authored ViewRepeat owns ViewBindingProgram source + ViewExpressionProgram
+key, and the retained evaluator consumes its Core binding program. The old
+preview's RepeatKeyed/ViewValueProgramId claim is stale after delivered
+ded6d68b1ece5b38e0ab401e0f07bb8c8da9aff3. ValueProgramInventory remains in
+ViewProgram for ViewFxArgumentSource::Reactive and Fx application key;
+compiler/view, runtime-driver/evaluator/catalog/fingerprint and bundle
+View codec/model/merge still own program-ID references. runtime-driver/value
+contains RuntimeValue-to-FxRuntimeValue typed conversion, which alone is not
+evidence of a legacy scalar VM. Their actual semantic
+purpose/admission/performance must be audited during remaining View.1.4;
+no blanket table deletion or phase-completion inference from spelling.
+
+Concrete remaining scalar owner: runtime-driver view_runtime/evaluator.rs
+evaluate_value accepts ViewValueProgramId, checks initialized parameter/state
+dependencies, then mounted.state.evaluate with FxEvaluationBudget returns
+FxRuntimeValue. This is a live program path to inspect for Fx argument/key
+semantics and cache/fuel transparency. RuntimeValue-to-Fx conversion is a
+separate typed boundary and is not by itself an obsolete evaluator.
+
+The referenced initial cache/fuel problem also needs current-state handling:
+View value_program.rs::ViewMountState::evaluate charges cached instruction
+count through FxEvaluationBudget::charge_operations, and the existing
+cached_and_restored_values_obey_the_same_budget_as_cold_evaluation test
+checks insufficient-budget error/remaining equality across cold/warm/restore
+and sufficient-budget reused remaining0. This is static current-source
+evidence; that View-only test is not newly claimed executed in the Core50
+selection. Do not reintroduce a stale unresolved-bug claim. Whole View.1.4
+acceptance/performance/remaining scalar ownership still requires final audit.
+
+FINAL RDEPS RUN FAILED — acceptance is NOT complete. New5 declaration cases
+pass, but existing Core binding_path_accepts_depth_64_and_rejects_depth_65
+ABORTS with Windows0xc00000fd / native stack overflow. Pinned delivered
+arcweft-1008-flow-owner-rdeps.log has PASS for the same ID. Thus this is a
+change-caused depth regression, not one of the CLI277 baseline failures.
+Final run remains live; no Rust edit/new Cargo until terminal. Replace the
+recursive lower_pattern construction with one private explicit work-stack
+state machine, preserving type/path/local/source-order/error precedence
+and Or inventory checks. Do not hide it with stack/profile/jobs/timeout/
+ignore overrides, fixture weakening, or an inline/stack workaround. Final
+source freeze/checks/rdeps/CLI/structure/Git delivery must be refreshed after
+the root repair; current6 frozen hashes are failed-run evidence only.
+
+Root repair now implemented: sole recursive lower_pattern path deleted;
+construction/lower/pattern.rs owns one private iterative preparation/
+completion state machine. Native call depth no longer follows pattern depth.
+Shared path is restored on success/error; child types, source order, record
+ordinal/missing/duplicate-field precedence, sequence/rest constraints and
+Or branch inventories retain their existing meaning. Record field state and
+Whole coordinate transfer own their transitions; coordinate is moved once,
+not cloned. RuntimePattern wire/final algebra and marker1 remain unchanged.
+New declaration test also covers256 nested Or branches and64 Whole wrappers
+with65 distinct declarations. Final Core1032/1032PASS11.052s including the
+previous depth64/65 regression and new6 declaration cases. Workspace Clippy
+TERMINAL0; only the existing shared152-byte RuntimePlanBuildError large-Err
+family appears at relocated/new private construction return sites. No new
+ordinary warning, size/style allow or suppression; wildcard/clone/style
+issues repaired on the real owners. Workspace check TERMINAL0/42.61s. Sources
+frozen7 final Rust paths; failed6-source full-run534.703s/4969PASS+1ABORT
+receipt remains archived as before-repair, NOT final acceptance. Refresh full
+Core50 exact inventory/run, CLI baseline comparison, structure and delivery.
+
+Final owner sizing supersedes initial pre-repair measurements: lower.rs
+6092->5931LOC/251527bytes deletes obsolete recursive construction and both
+ID-only declaration walks, while retaining its existing lexical/control
+admission authority. New lower/pattern.rs522LOC/20025bytes is one closed
+transient construction state machine, including record/whole ownership and
+sequence admission. Its>300LOC trigger is reviewed: all6 composite pattern
+kinds require the same typed context/path/binding ledger and ordered
+prepare/complete transitions; there is no second final pattern model or
+private test facade. Field/order/type/error validation is not split into
+parallel source walks. declaration owner137LOC/4922bytes returns borrowed
+coordinates/type/mutability; tests284LOC/10322bytes cover real admitted
+patterns and deep Or/Whole. Existing pattern4168LOC and construction3908LOC
+retain their established algebras; expression_locals352->314LOC/13127bytes
+removes its duplicate walk. No dependency/build input/feature/manifest or
+I/O boundary changes; no blanket size/style/lint suppression. Shared
+RuntimePlanBuildError TypeGraph remains152bytes; extra return sites of
+the same established large-error family are documented, not relabeled as
+new ordinary diagnostics or repaired by an unrelated error API migration.
+All7 final Rust hashes remain frozen during repaired matrix compilation.
+
+Repaired full Core50 matrix TERMINAL0:4971/4971PASS517.227s,4slow,
+16skipped. Exact selected/terminal/unique IDs4971;missing0/unexpected0/
+duplicate0/nonpass0. Selected46 runnable packages; all50 transitive
+workspace consumers retained by actual resolved graph and unchanged99
+build inputs. Final Core depth64/65 and new deep Or/Whole are PASS in the
+complete matrix. Failed534.703s prior run and source hashes are archived
+separately, with no reused false acceptance. Final7 Rust hashes unchanged.
+Final workspace check0/42.61s, Clippy0 (same established shared152-byte
+error family at new private construction sites; no new ordinary warning).
+CLI exact inventory/run/baseline comparison and structure/tree/explicit
+stage/blob review/normal commit+push remain pending. Goal ACTIVE/INCOMPLETE;
+E1 complete body-slot ownership/storage/initialization/codec+transcript,
+global15-table memo/actual14 table/private image/commonseal/protectedall14
+Cut5 and original View/nominal/scheduler/Rust borrowing/CLI277/Tier2/
+legacy-deletion/final acceptance remain required.
+
+Final pattern-boundary delivery acceptance (supersedes pending checks):
+Core1032PASS11.052s; complete Core50 nonCLI4971/4971PASS517.227s with
+exact selected/terminal/unique4971,missing0/unexpected0/duplicate0/nonpass0.
+CLI inventory597/8runnablebinaries (9 listed), runTERMINAL100:320PASS/
+277sameFAIL/23ignored; new0/resolved0 and exact597 terminal IDs. Actual
+summary: Summary [ 120.970s] 597 tests run: 320 passed, 277 failed, 23 skipped. This is baseline comparison, NOT CLI green;
+all277 remain required goal repairs. Final workspace check0/42.61s and
+Clippy0, final Core+render-web wasm32-unknown-unknown all-target/all-feature
+check0/59.56s, finalfmtcheck0/diffcheck0. Host invert tree49, all-target tree50
+exactly matches resolved Core50; target-only render-web was actually checked.
+All99 build/graph inputs unchanged, final7 Rust SHA256 frozen through checks.
+Structure gate0: files scanned: 2771; Rust files: 2641; Rust physical LOC: 1536118; workspace packages: 97; review triggers: 355; blocking violations: 0.
+Typed work-stack/declaration/private record+whole-state cohesion review is
+recorded above; no environment/jobs/profile/stack/timeout/ignore override,
+version change, fallback owner, new delegation or second Astra consultation.
+
+Tier2 is omitted for this compile/admission/declaration-projection boundary:
+no execution scheduling/protocol/hotpatch/observe/render behavior changed.
+The original milestone's Tier2 remains required; wasm compile is not runtime
+render acceptance. Explicit8-path full stage/hunk/blob/tested-byte review
+followed by coherent commit and non-forced main push remains to deliver this
+cut. Parent pinned e202f637f75514acadd3e0372a5877d43f2a54f1. Whole goal
+remains ACTIVE/INCOMPLETE with all remaining E1/body ownership/initialization/
+storage/codec/row-transcript and global15 memo/protectedall14 Cut5/other
+original View/nominal/scheduler/borrow/CLI277/Tier2/old-path/final acceptance.
