@@ -69,3 +69,49 @@ fn deep_stream_child_count_uses_cursors_without_recursive_rust_calls() {
         }
     }
 }
+
+#[test]
+fn expression_and_pattern_literal_children_precede_invalid_types_and_hash_limits() {
+    let ty = crate::runtime_id::RuntimePlanTypeId::from_accepted_ordinal(
+        std::num::NonZeroU32::new(99).unwrap(),
+    );
+    for in_pattern in [false, true] {
+        let literal = crate::value::RuntimeValue::Tuple(vec![
+            crate::value::RuntimeValue::Tuple(vec![crate::value::RuntimeValue::Unit; 3]),
+            crate::value::RuntimeValue::NeedHandle(crate::tests::reusable_need(
+                "need.invalid_literal",
+            )),
+        ]);
+        let mut meter = TaskSemanticMeter::new(0, 0);
+        let mut check = Children {
+            table: 4,
+            ordinal: 7,
+            maximum: 2,
+            meter: &mut meter,
+        };
+        let result = if in_pattern {
+            let pattern = crate::pattern::RuntimePattern::from_admitted_parts(
+                ty,
+                crate::pattern::RuntimePatternKind::Literal(literal),
+            );
+            check.node(RuntimeExpressionNode::Pattern(&pattern))
+        } else {
+            let expression = crate::value::RuntimeExpr::from_admitted_parts(
+                ty,
+                crate::value::RuntimeExprKind::Value(literal),
+            );
+            check.node(RuntimeExpressionNode::Expression(&expression))
+        };
+        assert!(matches!(
+            result,
+            Err(RuntimeTaskPlanImageError::Children {
+                table: 4,
+                ordinal: 7,
+                actual: 3,
+                maximum: 2
+            })
+        ));
+        assert!(meter.status().is_err());
+        assert_eq!(meter.totals(), (0, 0));
+    }
+}

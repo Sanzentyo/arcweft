@@ -76,6 +76,13 @@ fn agent_predicate_order_and_nested_literal_bits_change_semantics() {
         RuntimeAgentPredicate::try_all(vec![predicate(2.0), predicate(1.0)]).unwrap(),
     ));
     assert_ne!(digest(&a), digest(&b));
+    let mut widths = Vec::new();
+    a.try_visit_static_literal_child_counts(&mut |count| {
+        widths.push(count);
+        Ok::<(), ()>(())
+    })
+    .unwrap();
+    assert_eq!(widths, [1, 2, 1, 1]);
 }
 
 #[test]
@@ -99,8 +106,124 @@ fn deep_static_tuple_literals_use_the_iterative_owner() {
     for _ in 0..20_000 {
         value = RuntimeValue::Tuple(vec![value]);
     }
+    let mut lists = 0;
+    value
+        .try_visit_static_literal_child_counts(&mut |count| {
+            assert_eq!(count, 1);
+            lists += 1;
+            Ok::<(), ()>(())
+        })
+        .unwrap();
+    assert_eq!(lists, 20_000);
     let _ = digest(&value);
     while let RuntimeValue::Tuple(mut items) = value {
         value = items.pop().unwrap();
     }
+}
+
+#[test]
+fn literal_columnar_rows_share_logical_children_and_golden_transcript() {
+    use crate::value::TupleSeq;
+    let columnar = RuntimeValue::Seq(RuntimeSeq::TupleColumns(
+        TupleSeq::new(
+            2,
+            vec![
+                RuntimeSeq::dense_bool(vec![true, false]),
+                RuntimeSeq::dense_f32(vec![-0.0, 2.0]),
+            ],
+        )
+        .unwrap(),
+    ));
+    let values = RuntimeValue::Seq(RuntimeSeq::Values(vec![
+        RuntimeValue::Tuple(vec![RuntimeValue::Bool(true), RuntimeValue::F32(-0.0)]),
+        RuntimeValue::Tuple(vec![RuntimeValue::Bool(false), RuntimeValue::F32(2.0)]),
+    ]));
+    let mut expected = b"literal-test.v1\0".to_vec();
+    expected.push(13);
+    expected.extend(2_u32.to_le_bytes());
+    for (boolean, float) in [(1, -0.0_f32), (0, 2.0_f32)] {
+        expected.push(12);
+        expected.extend(2_u32.to_le_bytes());
+        expected.extend([1, boolean, 4]);
+        expected.extend(float.to_bits().to_le_bytes());
+    }
+    for value in [&columnar, &values] {
+        let mut widths = Vec::new();
+        value
+            .try_visit_static_literal_child_counts(&mut |count| {
+                widths.push(count);
+                Ok::<(), ()>(())
+            })
+            .unwrap();
+        assert_eq!(widths, [2, 2, 2]);
+        assert_eq!(digest(value), blake3::hash(&expected));
+    }
+}
+
+#[test]
+fn literal_count_stops_at_first_nested_width_without_semantic_admission() {
+    let value = RuntimeValue::Tuple(vec![
+        RuntimeValue::Tuple(vec![RuntimeValue::Unit; 3]),
+        RuntimeValue::Tuple(vec![
+            RuntimeValue::NeedHandle(crate::tests::reusable_need(
+                "need.unvisited"
+            ));
+            4
+        ]),
+    ]);
+    let mut widths = Vec::new();
+    let error = value.try_visit_static_literal_child_counts(&mut |count| {
+        widths.push(count);
+        if count > 2 { Err(count) } else { Ok(()) }
+    });
+    assert_eq!(error, Err(3));
+    assert_eq!(widths, [2, 3]);
+}
+
+#[test]
+fn reduction_literal_preserves_state_then_command_payload_order() {
+    use crate::pattern::{
+        RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
+    };
+    use crate::value::{RuntimePayload, RuntimeReductionValue};
+    let value = RuntimeValue::Reduction(
+        RuntimeReductionValue::try_from_admitted_parts(
+            RuntimeOpaqueTypeOwner::exact(
+                RuntimeOpaqueTypeProducerId::try_new("std.reduction").unwrap(),
+                RuntimeSemanticTypeId::from_bytes([7; 32]),
+            ),
+            RuntimeValue::Tuple(vec![RuntimeValue::Bool(true), RuntimeValue::Bool(false)]),
+            [RuntimeCommand::new_accepted(
+                crate::entry::RuntimeCommandConstructorId::try_new("command.test").unwrap(),
+                crate::entry::RuntimeCommandTargetId::try_new("target.test").unwrap(),
+                RuntimePayload::new(RuntimeValue::Tuple(vec![RuntimeValue::Unit])),
+            )],
+        )
+        .unwrap(),
+    );
+    let mut widths = Vec::new();
+    value
+        .try_visit_static_literal_child_counts(&mut |count| {
+            widths.push(count);
+            Ok::<(), ()>(())
+        })
+        .unwrap();
+    assert_eq!(widths, [1, 1, 2, 1]);
+    let mut expected = b"literal-test.v1\0".to_vec();
+    expected.push(19);
+    expected.extend(13_u32.to_le_bytes());
+    expected.extend(b"std.reduction");
+    expected.extend([7; 32]);
+    expected.extend(1_u32.to_le_bytes());
+    expected.push(12);
+    expected.extend(2_u32.to_le_bytes());
+    expected.extend([1, 1, 1, 0]);
+    expected.extend(12_u32.to_le_bytes());
+    expected.extend(b"command.test");
+    expected.extend(11_u32.to_le_bytes());
+    expected.extend(b"target.test");
+    expected.push(12);
+    expected.extend(1_u32.to_le_bytes());
+    expected.push(0);
+    assert_eq!(digest(&value), blake3::hash(&expected));
 }

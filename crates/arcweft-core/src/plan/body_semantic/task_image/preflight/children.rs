@@ -31,6 +31,25 @@ impl Children<'_> {
         root.try_visit_owned_events(&mut |event| {
             if let RuntimeExpressionTreeEvent::Enter { node, .. } = event {
                 self.count(node.owned_children().count())?;
+                let literal = match node {
+                    RuntimeExpressionNode::Expression(expression) => {
+                        if let crate::value::RuntimeExprKind::Value(value) = expression.kind() {
+                            Some(value)
+                        } else {
+                            None
+                        }
+                    }
+                    RuntimeExpressionNode::Pattern(pattern) => {
+                        if let crate::pattern::RuntimePatternKind::Literal(value) = pattern.kind() {
+                            Some(value)
+                        } else {
+                            None
+                        }
+                    }
+                };
+                if let Some(value) = literal {
+                    value.try_visit_static_literal_child_counts(&mut |count| self.count(count))?;
+                }
             }
             Ok(())
         })

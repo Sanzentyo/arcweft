@@ -1,6 +1,8 @@
 //! Static literal semantic encoding over the existing borrowed logical views.
 //! Persistence digests normalize floating zero; executable literals retain bits.
 
+mod traversal;
+
 use super::{
     RuntimeAgentAction, RuntimeAgentActionDispatch, RuntimeAgentCaptureTarget,
     RuntimeAgentCompareOp, RuntimeAgentPredicate, RuntimeAgentProbe, RuntimeAgentValue,
@@ -13,6 +15,88 @@ use crate::plan::body_semantic::RuntimeBodySemanticError;
 use crate::task::semantic::TaskSemanticEncoder;
 
 impl RuntimeValue {
+    /// Visits direct child-list widths from the same logical graph used by
+    /// static encoding. Invalid runtime-only values remain semantic admission
+    /// errors; this count pass never constructs a payload or digest.
+    pub(crate) fn try_visit_static_literal_child_counts<E>(
+        &self,
+        visitor: &mut impl FnMut(usize) -> Result<(), E>,
+    ) -> Result<(), E> {
+        use traversal::LiteralEvent as Event;
+        for event in traversal::LiteralEvents::new(self) {
+            match event {
+                Event::Value(value) => match value {
+                    RuntimeValueView::Tuple(value) => visitor(value.len())?,
+                    RuntimeValueView::Sequence(value) => visitor(value.len())?,
+                    RuntimeValueView::Record(value) => visitor(value.len())?,
+                    RuntimeValueView::NominalRecord(value) => visitor(value.fields().len())?,
+                    RuntimeValueView::Opaque(_) | RuntimeValueView::Agent(_) => visitor(1)?,
+                    RuntimeValueView::Variant { payload, .. } => {
+                        visitor(usize::from(payload.is_some()))?;
+                    }
+                    RuntimeValueView::Reduction(value) => {
+                        visitor(value.commands().len())?;
+                        visitor(1)?;
+                    }
+                    RuntimeValueView::RuntimeOnly(value) => match value {
+                        RuntimeValue::MatrixF32(value) => visitor(value.values().len())?,
+                        RuntimeValue::MatrixF64(value) => visitor(value.values().len())?,
+                        RuntimeValue::TensorF32(value) => {
+                            visitor(value.shape().dims().len())?;
+                            visitor(value.values().len())?;
+                        }
+                        RuntimeValue::TensorF64(value) => {
+                            visitor(value.shape().dims().len())?;
+                            visitor(value.values().len())?;
+                        }
+                        RuntimeValue::Iterator(RuntimeIterator::Values { items }) => {
+                            visitor(items.len())?;
+                        }
+                        RuntimeValue::Range(_)
+                        | RuntimeValue::Iterator(
+                            RuntimeIterator::Range(_) | RuntimeIterator::Witness { .. },
+                        )
+                        | RuntimeValue::NeedHandle(_)
+                        | RuntimeValue::Callable(_)
+                        | RuntimeValue::Unit
+                        | RuntimeValue::Bool(_)
+                        | RuntimeValue::Int(_)
+                        | RuntimeValue::UInt(_)
+                        | RuntimeValue::F32(_)
+                        | RuntimeValue::F64(_)
+                        | RuntimeValue::String(_)
+                        | RuntimeValue::Color(_)
+                        | RuntimeValue::Char(_)
+                        | RuntimeValue::Duration(_)
+                        | RuntimeValue::Progress(_)
+                        | RuntimeValue::EntityRef(_)
+                        | RuntimeValue::Tuple(_)
+                        | RuntimeValue::Seq(_)
+                        | RuntimeValue::Record(_)
+                        | RuntimeValue::NominalRecord(_)
+                        | RuntimeValue::Opaque(_)
+                        | RuntimeValue::Reduction(_)
+                        | RuntimeValue::Agent(_)
+                        | RuntimeValue::Variant { .. } => {}
+                    },
+                    RuntimeValueView::Scalar(_) => {}
+                },
+                Event::Predicate(predicate) => match predicate {
+                    RuntimeAgentPredicate::All { predicates }
+                    | RuntimeAgentPredicate::Any { predicates } => visitor(predicates.len())?,
+                    RuntimeAgentPredicate::Compare { .. } | RuntimeAgentPredicate::Not { .. } => {
+                        visitor(1)?;
+                    }
+                    RuntimeAgentPredicate::Exists { .. }
+                    | RuntimeAgentPredicate::ActionEnabled { .. }
+                    | RuntimeAgentPredicate::DiagnosticsHasError => {}
+                },
+                Event::Agent(_) | Event::Child(_) | Event::Command(_) => {}
+            }
+        }
+        Ok(())
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "one iterative exhaustive logical literal visitor keeps all child traversal on its owning value algebra"
@@ -21,68 +105,25 @@ impl RuntimeValue {
         &self,
         encoder: &mut TaskSemanticEncoder<'_>,
     ) -> Result<(), RuntimeBodySemanticError> {
-        enum Work<'a> {
-            Value(RuntimeValueView<'a>),
-            Tuple(RuntimeTupleView<'a>, usize),
-            Sequence(&'a RuntimeSeq, usize),
-            Record(RuntimeRecordView<'a>, usize),
-            Values(std::slice::Iter<'a, RuntimeValue>),
-            Commands(std::slice::Iter<'a, RuntimeCommand>),
-            Deque(std::collections::vec_deque::Iter<'a, RuntimeValue>),
-            Agent(&'a RuntimeAgentValue),
-            Predicate(&'a RuntimeAgentPredicate),
-            Predicates(std::slice::Iter<'a, RuntimeAgentPredicate>),
-        }
-        let mut work = vec![Work::Value(self.view())];
-        while let Some(next) = work.pop() {
+        let mut events = traversal::LiteralEvents::new(self);
+        loop {
             encoder.status()?;
-            match next {
-                Work::Tuple(tuple, index) => {
-                    if let Some(child) = tuple.get(index) {
-                        encoder.enter_element();
-                        work.push(Work::Tuple(tuple, index + 1));
-                        work.push(Work::Value(child));
-                    }
-                }
-                Work::Sequence(sequence, index) => {
-                    if let Some(child) = sequence.value_view(index) {
-                        encoder.enter_element();
-                        work.push(Work::Sequence(sequence, index + 1));
-                        work.push(Work::Value(child));
-                    }
-                }
-                Work::Record(record, index) => {
-                    if let Some((field, _, child)) = record.get(index) {
-                        encoder.enter_element();
+            let Some(event) = events.next() else {
+                break;
+            };
+            match event {
+                traversal::LiteralEvent::Child(field) => {
+                    encoder.enter_element();
+                    if let Some(field) = field {
                         encoder.ordinal(field.zero_based());
-                        work.push(Work::Record(record, index + 1));
-                        work.push(Work::Value(child));
                     }
                 }
-                Work::Values(mut values) => {
-                    if let Some(child) = values.next() {
-                        encoder.enter_element();
-                        work.push(Work::Values(values));
-                        work.push(Work::Value(child.view()));
-                    }
+                traversal::LiteralEvent::Command(command) => {
+                    encoder.enter_element();
+                    encoder.string(command.constructor().as_str());
+                    encoder.string(command.target().as_str());
                 }
-                Work::Commands(mut commands) => {
-                    if let Some(command) = commands.next() {
-                        encoder.enter_element();
-                        encoder.string(command.constructor().as_str());
-                        encoder.string(command.target().as_str());
-                        work.push(Work::Commands(commands));
-                        work.push(Work::Value(command.payload().value().view()));
-                    }
-                }
-                Work::Deque(mut values) => {
-                    if let Some(child) = values.next() {
-                        encoder.enter_element();
-                        work.push(Work::Deque(values));
-                        work.push(Work::Value(child.view()));
-                    }
-                }
-                Work::Agent(agent) => {
+                traversal::LiteralEvent::Agent(agent) => {
                     use RuntimeAgentValue as A;
                     match agent {
                         A::ActionTarget(value) => {
@@ -129,9 +170,8 @@ impl RuntimeValue {
                             probe.encode_static_probe(encoder);
                         }
                         A::Diagnostics => encoder.tag(5),
-                        A::Predicate(predicate) => {
+                        A::Predicate(_) => {
                             encoder.tag(6);
-                            work.push(Work::Predicate(predicate));
                         }
                         A::ViewportPoint { x, y } => {
                             encoder.tag(7);
@@ -148,10 +188,10 @@ impl RuntimeValue {
                         }
                     }
                 }
-                Work::Predicate(predicate) => {
+                traversal::LiteralEvent::Predicate(predicate) => {
                     use RuntimeAgentPredicate as P;
                     match predicate {
-                        P::Compare { probe, op, value } => {
+                        P::Compare { probe, op, .. } => {
                             encoder.tag(0);
                             probe.encode_static_probe(encoder);
                             encoder.tag(match op {
@@ -162,7 +202,6 @@ impl RuntimeValue {
                                 RuntimeAgentCompareOp::Less => 4,
                                 RuntimeAgentCompareOp::LessOrEqual => 5,
                             });
-                            work.push(Work::Value(value.view()));
                         }
                         P::Exists { probe } => {
                             encoder.tag(1);
@@ -180,44 +219,31 @@ impl RuntimeValue {
                                 5
                             });
                             encoder.count(predicates.len());
-                            work.push(Work::Predicates(predicates.iter()));
                         }
-                        P::Not { predicate } => {
+                        P::Not { .. } => {
                             encoder.tag(6);
-                            work.push(Work::Predicate(predicate));
                         }
                     }
                 }
-                Work::Predicates(mut predicates) => {
-                    if let Some(predicate) = predicates.next() {
-                        encoder.enter_element();
-                        work.push(Work::Predicates(predicates));
-                        work.push(Work::Predicate(predicate));
-                    }
-                }
-                Work::Value(value) => match value {
+                traversal::LiteralEvent::Value(value) => match value {
                     RuntimeValueView::Scalar(value) => value.encode_static_literal(encoder)?,
                     RuntimeValueView::Tuple(tuple) => {
                         encoder.tag(12);
                         encoder.count(tuple.len());
-                        work.push(Work::Tuple(tuple, 0));
                     }
                     RuntimeValueView::Sequence(sequence) => {
                         encoder.tag(13);
                         encoder.count(sequence.len());
-                        work.push(Work::Sequence(sequence, 0));
                     }
                     RuntimeValueView::Record(record) => {
                         encoder.tag(14);
                         encoder.count(record.len());
-                        work.push(Work::Record(record, 0));
                     }
                     RuntimeValueView::NominalRecord(record) => {
                         encoder.tag(15);
                         encoder.digest(record.semantic_identity().as_bytes());
                         encoder.digest(record.layout().as_bytes());
                         encoder.count(record.fields().len());
-                        work.push(Work::Values(record.fields().iter()));
                     }
                     RuntimeValueView::Opaque(value) => {
                         if value.persistence() == RuntimeOpaquePersistence::SnapshotOnly
@@ -234,7 +260,6 @@ impl RuntimeValue {
                         encoder.digest(value.semantic_identity().as_bytes());
                         encoder.tag(value.value_class().semantic_tag());
                         encoder.tag(value.persistence().semantic_tag());
-                        work.push(Work::Value(value.payload().view()));
                     }
                     RuntimeValueView::Variant {
                         owner,
@@ -258,9 +283,6 @@ impl RuntimeValue {
                         }
                         encoder.ordinal(ordinal);
                         encoder.tag(u8::from(payload.is_some()));
-                        if let Some(payload) = payload {
-                            work.push(Work::Value(payload.view()));
-                        }
                     }
                     RuntimeValueView::RuntimeOnly(value) => match value {
                         RuntimeValue::Range(range) => {
@@ -316,7 +338,6 @@ impl RuntimeValue {
                         RuntimeValue::Iterator(RuntimeIterator::Values { items }) => {
                             encoder.tag(25);
                             encoder.count(items.len());
-                            work.push(Work::Deque(items.iter()));
                         }
                         RuntimeValue::Iterator(RuntimeIterator::Range(range)) => {
                             encoder.tag(26);
@@ -354,12 +375,9 @@ impl RuntimeValue {
                         encoder.string(value.owner().producer().as_str());
                         encoder.digest(value.owner().semantic_identity().as_bytes());
                         encoder.count(value.commands().len());
-                        work.push(Work::Commands(value.commands().iter()));
-                        work.push(Work::Value(value.state().view()));
                     }
-                    RuntimeValueView::Agent(value) => {
+                    RuntimeValueView::Agent(_) => {
                         encoder.tag(24);
-                        work.push(Work::Agent(value));
                     }
                 },
             }
