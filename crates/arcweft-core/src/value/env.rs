@@ -1111,6 +1111,9 @@ mod tests {
             ))
             .unwrap();
         let source = pattern.binding_declarations().next().unwrap().local();
+        builder
+            .declare_test_input_locals(admitted.local_ids())
+            .unwrap();
         let owner = RuntimeProgramOwner::Plan(std::sync::Arc::new(builder.finish().unwrap()));
         let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap();
         let other = RuntimeRecordFieldId::try_from_zero_based_ordinal(1).unwrap();

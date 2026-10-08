@@ -3707,6 +3707,9 @@ mod tests {
         };
         let bool_local = bool_binding.local();
         let string_local = string_binding.local();
+        builder
+            .declare_test_input_locals(admitted.local_ids())
+            .unwrap();
         let plan = builder.finish().expect("plan");
         let value = RuntimeValue::Tuple(vec![
             RuntimeValue::Bool(true),
@@ -3797,6 +3800,9 @@ mod tests {
         };
         let scalar = scalar.local();
         let affine = affine.local();
+        builder
+            .declare_test_input_locals(admitted.local_ids())
+            .unwrap();
         let plan = builder.finish().expect("plan");
         let value = RuntimeValue::Tuple(vec![
             RuntimeValue::i64(7),
@@ -3910,6 +3916,9 @@ mod tests {
             .binding()
             .expect("structural record rest binding")
             .local();
+        builder
+            .declare_test_input_locals(admission.local_ids())
+            .unwrap();
         let plan = builder.finish().expect("structural record plan");
         let value = RuntimeValue::try_record(vec![
             ("first".to_owned(), RuntimeValue::Bool(true)),
@@ -4097,6 +4106,9 @@ mod tests {
             panic!("record binding kind");
         };
         let local = binding.local();
+        builder
+            .declare_test_input_locals(admitted.local_ids())
+            .unwrap();
         let plan = builder.finish().expect("plan");
         let value = RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
             nominal,
@@ -4136,6 +4148,9 @@ mod tests {
                 local: admitted.local_ids()[0].clone(),
             },
         ));
+        builder
+            .declare_test_input_locals(admitted.local_ids())
+            .unwrap();
         let plan = builder.finish().expect("plan");
         let bool_ty = plan
             .type_table()

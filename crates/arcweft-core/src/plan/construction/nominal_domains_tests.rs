@@ -200,6 +200,9 @@ fn invalid_source_shapes_leave_types_locals_and_domains_unpublished() {
                 },
             ))
             .unwrap();
+        builder
+            .declare_test_input_locals(admission.local_ids())
+            .unwrap();
         let plan = builder.finish().unwrap();
         assert_eq!(plan.type_table().len(), 2);
         assert_eq!(plan.local_declarations().len(), 1);

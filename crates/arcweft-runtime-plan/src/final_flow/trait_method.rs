@@ -6,12 +6,12 @@ use super::*;
 pub(super) struct ReservedTraitMethodDefinition {
     checked: RuntimeTraitMethodFact,
     method: RuntimeTraitMethodSeedId,
+    locals: ProjectFunctionFrameLocals,
 }
 
 pub(super) fn reserve_trait_methods(
     project: HirAnalysisProjectView<'_>,
     facts: &RuntimePlanSemanticFacts,
-    locals: &BTreeMap<LocalId, RuntimeLocalSeedId>,
     closed_locals: &BTreeMap<RuntimeTraitMethodInstanceKey, ProjectFunctionFrameLocals>,
     builder: &mut RuntimePlanBuilder,
     errors: &mut Vec<RuntimePlanLowerError>,
@@ -30,17 +30,26 @@ pub(super) fn reserve_trait_methods(
                 )));
                 continue;
             };
-            &frame.hir
+            frame.clone()
         } else {
-            locals
+            match ProjectFunctionFrameLocals::admit_view(
+                crate::semantic_facts::RuntimeExecutableSemanticFactView::global(facts),
+                None,
+                builder,
+            ) {
+                Ok(frame) => frame,
+                Err(error) => {
+                    errors.push(error);
+                    continue;
+                }
+            }
         };
-        match trait_method_declaration(project, facts, method_locals, checked, position).and_then(
-            |declaration| {
+        match trait_method_declaration(project, facts, &method_locals.hir, checked, position)
+            .and_then(|declaration| {
                 builder
                     .reserve_trait_method_seed(declaration)
                     .map_err(|error| RuntimePlanLowerError::new(error.to_string()))
-            },
-        ) {
+            }) {
             Ok(method) => {
                 if methods
                     .insert(checked.key().clone(), method.clone())
@@ -54,6 +63,7 @@ pub(super) fn reserve_trait_methods(
                 definitions.push(ReservedTraitMethodDefinition {
                     checked: checked.clone(),
                     method,
+                    locals: method_locals,
                 });
             }
             Err(error) => errors.push(error),
@@ -256,19 +266,29 @@ pub(super) fn define_trait_methods(
             ));
             continue;
         };
-        let body = match definition.checked.closed_semantics() {
-            Some(semantics) => context
-                .scoped_expr_lowerer(
-                    module,
-                    RuntimeScopedExecutableSemanticFactView::trait_method(
-                        definition.checked.key(),
-                        semantics,
-                    ),
-                )
-                .map_err(|error| error.to_string())
-                .and_then(|lowerer| lowerer.lower_function_body(body_owner)),
-            None => context.expr_lowerer(module).lower_function_body(body_owner),
+        let lowerer = match definition.checked.closed_semantics() {
+            Some(semantics) => context.scoped_expr_lowerer(
+                module,
+                RuntimeScopedExecutableSemanticFactView::trait_method(
+                    definition.checked.key(),
+                    semantics,
+                ),
+            ),
+            None => Ok(context.expr_lowerer(module)),
         };
+        let body = lowerer
+            .map_err(|error| error.to_string())
+            .and_then(|lowerer| {
+                lowerer
+                    .with_locals(&definition.locals.hir)
+                    .with_control_locals(
+                        &definition.locals.control.pipes,
+                        &definition.locals.control.tries,
+                    )
+                    .with_scope_locals(&definition.locals.control.scopes)
+                    .with_specialized_operand_locals(&definition.locals.specialized_operands)
+                    .lower_function_body(body_owner)
+            });
         match body.and_then(|body| {
             builder
                 .define_trait_method_seed(&definition.method, body)

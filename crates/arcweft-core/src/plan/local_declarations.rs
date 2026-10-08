@@ -7,7 +7,12 @@ use thiserror::Error;
 
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 
+mod placement;
 mod source;
+pub use placement::{
+    RuntimeLineLocalBody, RuntimeLocalInitialization, RuntimeLocalOwner, RuntimeLocalPlacement,
+    RuntimeLocalPlacementError, RuntimeLocalStorage,
+};
 pub use source::{
     RuntimeLocalBindingDeclaration, RuntimeLocalBindingKind, RuntimeLocalBindingStorage,
     RuntimeLocalDeclarationSource,
@@ -59,9 +64,14 @@ pub struct RuntimeLocalDeclaration {
     source: RuntimeLocalDeclarationSource,
     ty: RuntimePlanTypeId,
     context: Option<RuntimePlanTypeId>,
+    placement: RuntimeLocalPlacement,
 }
 
 impl RuntimeLocalDeclaration {
+    #[must_use]
+    pub const fn placement(self) -> RuntimeLocalPlacement {
+        self.placement
+    }
     #[must_use]
     pub const fn source(self) -> RuntimeLocalDeclarationSource {
         self.source
@@ -120,10 +130,19 @@ impl RuntimeLocalDeclarationTable {
 /// Sole internal issuer for final typed local identities.
 #[derive(Debug)]
 pub(crate) struct RuntimeLocalDeclarationTableBuilder {
-    declarations: Vec<RuntimeLocalDeclaration>,
+    declarations: Vec<PendingRuntimeLocalDeclaration>,
     maximum: u32,
     reserved: u32,
     sealed: bool,
+}
+
+/// Placement is incomplete only inside the construction authority.
+#[derive(Debug)]
+struct PendingRuntimeLocalDeclaration {
+    source: RuntimeLocalDeclarationSource,
+    ty: RuntimePlanTypeId,
+    context: Option<RuntimePlanTypeId>,
+    placement: Option<RuntimeLocalPlacement>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]
@@ -194,27 +213,58 @@ impl RuntimeLocalDeclarationTableBuilder {
         }
         let ordinal = u32::try_from(self.declarations.len().checked_add(1)?).ok()?;
         let ordinal = NonZeroU32::new(ordinal)?;
-        self.declarations.push(RuntimeLocalDeclaration {
+        self.declarations.push(PendingRuntimeLocalDeclaration {
             source,
             ty,
             context,
+            placement: None,
         });
         Some(RuntimeLocalDeclarationId::from_accepted_ordinal(ordinal))
     }
 
-    pub(crate) fn take_finish(&mut self) -> RuntimeLocalDeclarationTable {
-        self.sealed = true;
-        RuntimeLocalDeclarationTable {
-            declarations: std::mem::take(&mut self.declarations).into_boxed_slice(),
+    pub(crate) fn take_finish(
+        &mut self,
+    ) -> Result<RuntimeLocalDeclarationTable, RuntimeLocalPlacementError> {
+        // Check every row before taking any of them. Rejection publishes none.
+        for (index, declaration) in self.declarations.iter().enumerate() {
+            if declaration.placement.is_none() {
+                return Err(RuntimeLocalPlacementError::Unowned {
+                    local: RuntimeLocalDeclarationId::from_accepted_ordinal(
+                        NonZeroU32::new(
+                            u32::try_from(index)
+                                .map_err(|_| RuntimeLocalPlacementError::CoordinateOverflow)?
+                                .checked_add(1)
+                                .ok_or(RuntimeLocalPlacementError::CoordinateOverflow)?,
+                        )
+                        .expect("materialized ordinal is positive"),
+                    ),
+                });
+            }
         }
+        self.sealed = true;
+        Ok(RuntimeLocalDeclarationTable {
+            declarations: std::mem::take(&mut self.declarations)
+                .into_iter()
+                .map(|row| RuntimeLocalDeclaration {
+                    source: row.source,
+                    ty: row.ty,
+                    context: row.context,
+                    placement: row
+                        .placement
+                        .expect("all placements checked before publication"),
+                })
+                .collect(),
+        })
     }
 
     #[must_use]
     #[cfg(test)]
-    pub(crate) fn finish(self) -> RuntimeLocalDeclarationTable {
-        RuntimeLocalDeclarationTable {
-            declarations: self.declarations.into_boxed_slice(),
+    pub(crate) fn finish(mut self) -> RuntimeLocalDeclarationTable {
+        for row in &mut self.declarations {
+            row.placement = Some(RuntimeLocalPlacement::test_fixture());
         }
+        self.take_finish()
+            .expect("test table supplies explicit fixture placements")
     }
 
     #[cfg(test)]

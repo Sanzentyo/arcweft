@@ -1673,7 +1673,6 @@ pub fn lower_runtime_plan_with_stats(
     let (trait_methods, trait_definitions) = reserve_trait_methods(
         project,
         facts,
-        &locals,
         &trait_method_locals,
         &mut builder,
         &mut errors,

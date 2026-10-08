@@ -137,9 +137,20 @@ fn content_plan(options: &ContentFixture<'_>) -> RuntimePlan {
             literal(true),
         )
         .unwrap();
+    let fresh = builder
+        .admit_type_batch(
+            [],
+            (0..2).map(|_| {
+                RuntimeLocalDeclarationSeed::new(
+                    fixture_binding_source([4; 32], false),
+                    semantic(2),
+                )
+            }),
+        )
+        .unwrap();
     let mut effects = [
-        effect_function(&mut builder, local.clone(), 12),
-        effect_function(&mut builder, local, 13),
+        effect_function(&mut builder, fresh.local_ids()[0].clone(), 12),
+        effect_function(&mut builder, fresh.local_ids()[1].clone(), 13),
     ];
     if options.reverse_effects {
         effects.reverse();

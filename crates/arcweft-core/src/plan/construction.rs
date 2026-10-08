@@ -147,6 +147,8 @@ pub enum RuntimePlanTable {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimePlanBuildError {
+    #[error(transparent)]
+    LocalPlacement(#[from] super::RuntimeLocalPlacementError),
     #[error("runtime executable inventory count overflow")]
     ExecutableInventoryArithmeticOverflow,
     #[error("runtime executable inventory has {actual} rows, exceeding maximum {maximum}")]
@@ -760,6 +762,59 @@ pub struct RuntimePlanBuilder {
 }
 
 impl RuntimePlanBuilder {
+    /// Supplies real callable ingress for tests that exercise a standalone
+    /// pattern/env with externally provided values. This is explicit fixture
+    /// construction, never a production orphan-slot fallback.
+    #[cfg(test)]
+    pub(crate) fn declare_test_input_locals(
+        &mut self,
+        locals: &[RuntimeLocalSeedId],
+    ) -> Result<(), RuntimePlanBuildError> {
+        let Some(first) = locals.first() else {
+            return Ok(());
+        };
+        let (_, ty) = first
+            .resolve(&self.issuer)
+            .ok_or(RuntimePlanBuildError::ForeignLocalSeed)?;
+        let semantic = self
+            .types
+            .get(ty)
+            .ok_or(RuntimePlanBuildError::UnknownFunctionLocal {
+                local: first.resolve(&self.issuer).expect("checked request").0,
+            })?
+            .semantic_identity();
+        let mut inputs = Vec::with_capacity(locals.len());
+        for (position, local) in locals.iter().enumerate() {
+            let mut identity = [0; 32];
+            identity[..4].copy_from_slice(
+                &u32::try_from(position)
+                    .map_err(|_| super::RuntimeLocalPlacementError::CoordinateOverflow)?
+                    .to_le_bytes(),
+            );
+            inputs.push(RuntimeCallableParameterSeed {
+                identity: super::RuntimeFunctionParameterIdentity::from_accepted_identity(identity),
+                local: local.clone(),
+                passing: super::RuntimeFunctionParameterPassing::Value,
+                abi: super::RuntimePureInputType::Value,
+            });
+        }
+        self.push_pure_helper_seed(RuntimePureHelperSeed {
+            definition: super::RuntimeFunctionDefinitionIdentity::from_accepted_identity([93; 32]),
+            name: "external_fixture_inputs".into(),
+            inputs: inputs.into_boxed_slice(),
+            output_abi: super::RuntimePureOutputType::Value,
+            body: RuntimeExprSeed::new(
+                semantic,
+                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                    first.clone(),
+                    crate::value::RuntimeLocalReadMode::Move,
+                )),
+            ),
+            scalar_eval_supported: false,
+            origin: super::RuntimePureHelperOrigin::Annotated,
+        })?;
+        Ok(())
+    }
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -2690,7 +2745,7 @@ impl RuntimePlanBuilder {
                 body,
             })?;
         }
-        let pure_helpers = self
+        let pure_helpers: Vec<RuntimePureHelper> = self
             .pure_helpers
             .into_iter()
             .enumerate()
@@ -2710,7 +2765,7 @@ impl RuntimePlanBuilder {
                 }
             })
             .collect();
-        let trait_methods = self
+        let trait_methods: Vec<RuntimeTraitMethod> = self
             .trait_methods
             .into_iter()
             .enumerate()
@@ -2765,11 +2820,21 @@ impl RuntimePlanBuilder {
             &mut meter,
         )?;
         let project_call_sites = self.project_call_sites.into_inner().finish();
-        let local_declarations = self
-            .locals
-            .lock()
-            .expect("local request table only runs checked, callback-free transitions")
-            .take_finish();
+        let local_declarations = {
+            let mut locals = self
+                .locals
+                .lock()
+                .expect("local request table only runs checked, callback-free transitions");
+            locals.admit_executable_placements(
+                &function_sites,
+                &project_call_sites,
+                &pure_helpers,
+                &trait_methods,
+                &self.line_task_groups,
+                &self.stream_plans,
+            )?;
+            locals.take_finish()?
+        };
         validate_flow_parameters(&flows, &self.flow_schemas, &local_declarations, &type_table)?;
         let inventory = super::RuntimePlanInventory {
             type_table,
@@ -3456,6 +3521,9 @@ mod tests {
                 },
             ))
             .unwrap();
+        builder
+            .declare_test_input_locals(admitted.local_ids())
+            .unwrap();
         let plan = builder.finish().expect("sealed plan");
         let record_ty = plan
             .type_table()
@@ -3632,9 +3700,12 @@ mod tests {
                 ))
                 .unwrap();
             builder
+                .declare_test_input_locals(admitted.local_ids())
+                .unwrap();
+            builder
         };
         let limits = super::super::RuntimeTaskPlanSealLimits {
-            max_executable_rows: 2,
+            max_executable_rows: 3,
             ..super::super::RuntimeTaskPlanSealLimits::default()
         };
         let plan = make().finish_with_seal_limits(limits).unwrap();
@@ -3642,12 +3713,12 @@ mod tests {
         assert_eq!(plan.local_declarations().len(), 1);
         assert!(matches!(
             make().finish_with_seal_limits(super::super::RuntimeTaskPlanSealLimits {
-                max_executable_rows: 1,
+                max_executable_rows: 2,
                 ..limits
             }),
             Err(RuntimePlanBuildError::ExecutableInventoryRowsLimit {
-                actual: 2,
-                maximum: 1
+                actual: 3,
+                maximum: 2
             })
         ));
     }
@@ -3800,6 +3871,9 @@ mod tests {
                     local: admitted.local_ids()[0].clone(),
                 },
             ))
+            .unwrap();
+        builder
+            .declare_test_input_locals(admitted.local_ids())
             .unwrap();
         let plan = builder.finish().expect("unpoisoned preflight failure");
         assert_eq!(plan.type_table().len(), 2);
@@ -4000,6 +4074,27 @@ mod tests {
             local
         );
         assert_eq!(builder.locals.lock().unwrap().len(), 1);
+        builder
+            .push_function_site_seed(
+                super::super::RuntimeFunctionDefinitionIdentity::from_accepted_identity([86; 32]),
+                super::super::RuntimeFunctionSemanticRole::Ordinary,
+                [],
+                RuntimeExprSeed::new(
+                    boolean,
+                    RuntimeExprSeedKind::Let {
+                        binding: first.clone(),
+                        expr: Box::new(RuntimeExprSeed::new(
+                            boolean,
+                            RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(true)),
+                        )),
+                        body: Box::new(RuntimeExprSeed::new(
+                            boolean,
+                            RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(true)),
+                        )),
+                    },
+                ),
+            )
+            .unwrap();
         let issuer = Arc::clone(&builder.issuer);
         let plan = builder.finish().unwrap();
         assert_eq!(plan.local_declarations().len(), 1);

@@ -22,6 +22,19 @@ fn source_iterator_witness_lowers_trait_methods_and_for_evidence() {
             panic!("witnessed method has one complete receiver formal")
         };
         assert_eq!(receiver.abi(), RuntimePureInputType::Value);
+        let placement = plan
+            .local_declarations()
+            .get(receiver.local())
+            .unwrap()
+            .placement();
+        assert_eq!(
+            placement.owner(),
+            arcweft_core::plan::RuntimeLocalOwner::TraitMethod(method.id)
+        );
+        assert_eq!(
+            placement.initialization(),
+            arcweft_core::plan::RuntimeLocalInitialization::CallableParameter { position: 0 }
+        );
         assert_eq!(
             receiver.passing(),
             match method.receiver {

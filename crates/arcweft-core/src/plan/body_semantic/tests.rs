@@ -36,6 +36,10 @@ fn plan(padding: bool) -> (RuntimePlan, RuntimeLocalDeclarationId) {
         )
         .unwrap();
     let mut target = None;
+    let mut body = crate::plan::RuntimeExprSeed::new(
+        semantic,
+        crate::plan::RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(true)),
+    );
     for local in admission.local_ids() {
         let pattern = builder
             .lower_pattern_seed_for_test(crate::plan::RuntimePatternSeed::new(
@@ -47,7 +51,26 @@ fn plan(padding: bool) -> (RuntimePlan, RuntimeLocalDeclarationId) {
             ))
             .unwrap();
         target = Some(pattern.binding_declarations().next().unwrap().local());
+        body = crate::plan::RuntimeExprSeed::new(
+            semantic,
+            crate::plan::RuntimeExprSeedKind::Let {
+                binding: local.clone(),
+                expr: Box::new(crate::plan::RuntimeExprSeed::new(
+                    semantic,
+                    crate::plan::RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(true)),
+                )),
+                body: Box::new(body),
+            },
+        );
     }
+    builder
+        .push_function_site_seed(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([83; 32]),
+            crate::plan::RuntimeFunctionSemanticRole::Ordinary,
+            [],
+            body,
+        )
+        .unwrap();
     (builder.finish().unwrap(), target.unwrap())
 }
 
@@ -2027,6 +2050,9 @@ fn private_inventory_resolves_body_and_type_authority_before_plan_publication() 
             crate::value::RuntimeLocalReadMode::Copy,
         )),
     );
+    builder
+        .declare_test_input_locals(admission.local_ids())
+        .unwrap();
     let inventory = builder.prepare_inventory(Default::default()).unwrap();
     inventory.verify().unwrap();
     let types = crate::program_types::RuntimeProgramTypes::Plan(&inventory);
@@ -2113,6 +2139,9 @@ fn complete_local_source_properties_enter_the_resolved_body_transcript() {
                     ))
                     .unwrap();
                 let local = pattern.binding_declarations().next().unwrap().local();
+                builder
+                    .declare_test_input_locals(admitted.local_ids())
+                    .unwrap();
                 let plan = builder.finish().unwrap();
                 assert_eq!(
                     plan.local_declarations().get(local).unwrap().origin(),

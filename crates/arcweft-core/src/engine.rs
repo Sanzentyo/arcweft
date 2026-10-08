@@ -4152,6 +4152,9 @@ mod rollback_tests {
             ))
             .unwrap();
         let local = pattern.binding_declarations().next().unwrap().local();
+        builder
+            .declare_test_input_locals(admitted.local_ids())
+            .unwrap();
         let plan = builder.finish().expect("typed owner plan");
         let mut engine = Engine::new(plan);
         let local_need = crate::tests::reusable_need_with_outcome(

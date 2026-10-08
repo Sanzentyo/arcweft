@@ -3272,6 +3272,9 @@ mod tests {
                 pattern.binding_declarations().next().unwrap().local()
             })
             .collect::<Vec<_>>();
+        builder
+            .declare_test_input_locals(admitted.local_ids())
+            .unwrap();
         let mut engine = Engine::new(builder.finish().expect("plan"));
         let id = activation_id();
         let source = locals[0];

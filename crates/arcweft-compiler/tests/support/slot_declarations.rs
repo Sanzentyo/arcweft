@@ -39,9 +39,12 @@ pub(super) fn function_body_declarations(
                 while let Some(operations) = pending.pop() {
                     for operation in operations {
                         if let arcweft_core::plan::FlowOp::ProjectCall { site } = operation {
-                            visit(Node::Pattern(
-                                plan.project_call_sites().get(*site).unwrap().result(),
-                            ));
+                            let call = plan.project_call_sites().get(*site).unwrap();
+                            visit(Node::Expression(call.plan().callee()));
+                            for operand in call.plan().operands() {
+                                visit(Node::Expression(operand.value()));
+                            }
+                            visit(Node::Pattern(call.result()));
                         }
                         operation
                             .try_visit_value_roots(&mut |_, root| {

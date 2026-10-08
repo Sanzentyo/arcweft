@@ -1083,6 +1083,15 @@ fn structured_closure_captures_the_exact_owning_plan() {
     let parameter = admission.local_ids()[2].clone();
     let capture_input = admission.local_ids()[3].clone();
     let parameter_input = admission.local_ids()[4].clone();
+    let own_capture = builder
+        .admit_type_batch(
+            [],
+            [RuntimeLocalDeclarationSeed::new(
+                manual_local_source("arcweft-core.fixture.tests.pure.closure_capture_destination"),
+                i64_semantic_type(),
+            )],
+        )
+        .unwrap();
     let site = builder
         .push_function_site_seed(
             crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
@@ -1101,7 +1110,7 @@ fn structured_closure_captures_the_exact_owning_plan() {
                         i64_semantic_type(),
                         RuntimePatternSeedKind::Bind {
                             mutable: false,
-                            local: captured.clone(),
+                            local: own_capture.local_ids()[0].clone(),
                         },
                     ),
                 },
@@ -1131,7 +1140,7 @@ fn structured_closure_captures_the_exact_owning_plan() {
             i64_binary(
                 i64_local(parameter),
                 RuntimeBinaryOp::Add,
-                i64_local(captured.clone()),
+                i64_local(own_capture.local_ids()[0].clone()),
             ),
         )
         .expect("typed closure site");

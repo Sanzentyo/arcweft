@@ -132,9 +132,12 @@ fn referenced_slots(
     }
     plan.visit_flow_ops(&mut |operation| {
         if let arcweft_core::plan::FlowOp::ProjectCall { site } = operation {
-            visit(Node::Pattern(
-                plan.project_call_sites().get(*site).unwrap().result(),
-            ));
+            let call = plan.project_call_sites().get(*site).unwrap();
+            visit(Node::Expression(call.plan().callee()));
+            for operand in call.plan().operands() {
+                visit(Node::Expression(operand.value()));
+            }
+            visit(Node::Pattern(call.result()));
         }
         operation
             .try_visit_value_roots(&mut |_, root| {
@@ -205,6 +208,7 @@ fn closed_frames_declare_each_materialized_slot_in_one_body() {
         r#"view Main() { let caption = "hello"; Text(caption); Text(caption) }"#,
         "fn identity<T>(input: T) -> T { let value = input; value }
 flow main() -> i64 { let left = identity(7i64); return identity(left) }",
+        "fn identity(input: i64) -> i64 { input }\nflow main() -> i64 { return identity({ let value = 7i64; value }) }",
         "flow main() -> i64 { let mut value = 7i64; let compute = || value; return compute() }",
         "flow main() -> i64 { let value = 7i64; let compute = || { let inner = || value; inner() }; return compute() }",
         "fn make(value: i64) -> (i64 -> i64 effects {}) { _ + value }\nflow main() -> i64 { let compute = make(7i64); return compute(0i64) }",
@@ -233,5 +237,46 @@ flow main() -> i64 { let left = identity(7i64); return identity(left) }",
             "{source}: slots declared by multiple actual bodies: {multiple:?}"
         );
         assert_eq!(declared.len(), compiled.plan.local_declarations().len());
+        for (local, owners) in declared {
+            let row = compiled.plan.local_declarations().get(local).unwrap();
+            let arcweft_core::plan::RuntimeLocalOwner::Function(owner) = row.placement().owner()
+            else {
+                panic!("function declaration has another owner: {row:?}");
+            };
+            assert_eq!(owner.get().get() as usize - 1, *owners.first().unwrap());
+            assert_eq!(
+                row.placement().storage(),
+                arcweft_core::plan::RuntimeLocalStorage::InvocationFrame
+            );
+        }
     }
+}
+
+#[test]
+fn capture_slot_mutability_is_independent_of_the_captured_source_declaration() {
+    let compiled = compile_source(
+        "flow main() -> i64 { let mut value = 7i64; let compute = || value; return compute() }",
+    )
+    .unwrap();
+    let closure = compiled
+        .plan
+        .function_sites()
+        .iter()
+        .find(|site| site.role() == arcweft_core::plan::RuntimeFunctionSemanticRole::Closure)
+        .unwrap();
+    let capture = closure.capture_inputs().next().unwrap();
+    let row = compiled
+        .plan
+        .local_declarations()
+        .get(capture.input_local())
+        .unwrap();
+    assert!(row.source().binding().unwrap().is_mutable());
+    assert!(!row.placement().is_mutable());
+    assert!(matches!(
+        row.placement().initialization(),
+        arcweft_core::plan::RuntimeLocalInitialization::Input {
+            source: arcweft_core::plan::RuntimeFunctionInputSource::Capture { position: 0 },
+            ..
+        }
+    ));
 }

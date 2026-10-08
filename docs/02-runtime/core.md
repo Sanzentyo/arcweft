@@ -43,10 +43,30 @@ source.
 
 ### Plan-local declaration origins
 
-Every `RuntimeLocalDeclaration` retains its semantic `RuntimeLocalOrigin`, type,
-and optional function type context. Its table ordinal only addresses the row;
-it does not define the declaration's semantic identity. The seed requires the
-origin before the builder admits and publishes the declaration batch.
+Every `RuntimeLocalDeclaration` retains its complete checked declaration source,
+type, optional function type context, and immutable `RuntimeLocalPlacement`.
+The source carries the origin plus authored binding kind, mutability and retained
+storage policy. Placement carries the actual executable owner, physical frame
+lifetime, slot mutability, and static first-initialization role. An input carrier
+and its destructured pattern bindings have separate initialization roles; a
+capture's source declaration does not by itself define its destination slot's
+mutability. Its table ordinal only addresses the row and is not semantic identity.
+
+Semantic admission issues checked construction requests. A Core use materializes
+one dense slot per request; cloning the request retains that slot, while a fresh
+body request creates an independent destination. Unused requests create no final
+rows. Before publication, actual FunctionSite, helper, method, Line and Stream
+bodies claim their declarations in the sole construction table. Missing or
+conflicting owners reject the complete publication. A Flow aliases its owning
+FunctionSite body. ProjectCall callee/operand expressions and result declarations
+belong to the caller. Line capture packets are explicit imports across frames.
+
+Initialization roles describe static ingress or declaration, independently of
+runtime occupancy and checked move/drop/replacement evidence. Whole-local
+assignment can statically reinitialize a moved place according to the language's
+ownership rules. Semantic transcripts resolve owner coordinates to accepted
+definition identities and roles; they never descend back into completed body
+digests or hash frame addresses.
 
 The origin grammar distinguishes an accepted binding coordinate, a whole
 function parameter identity, an evaluated result's function definition identity,
@@ -83,7 +103,8 @@ pub struct RuntimePlan {
 pub struct RuntimeFlow {
     pub id: FlowRuntimeId,
     pub params: Box<[RuntimeLocalDeclarationId]>,
-    body: RuntimeExecutableBody,
+    function_site: RuntimeFunctionSiteId,
+    function: Arc<RuntimeFunctionSite>,
 }
 
 pub struct RuntimeExecutableBody {

@@ -45,6 +45,27 @@ impl Fixture {
         }
     }
 
+    fn fresh_method_inputs(
+        builder: &mut RuntimePlanBuilder,
+        inputs: &mut [RuntimeCallableParameterSeed],
+        boolean: RuntimeSemanticTypeId,
+    ) {
+        let fresh = builder
+            .admit_type_batch(
+                [],
+                inputs.iter().enumerate().map(|(ordinal, _)| {
+                    RuntimeLocalDeclarationSeed::new(
+                        fixture_binding_source([11 + u8::try_from(ordinal).unwrap(); 32], false),
+                        boolean,
+                    )
+                }),
+            )
+            .unwrap();
+        for (input, local) in inputs.iter_mut().zip(fresh.local_ids()) {
+            input.local = local.clone();
+        }
+    }
+
     fn inventory(&self) -> RuntimePlanInventory {
         let mut builder = RuntimePlanBuilder::new();
         let boolean = RuntimeSemanticTypeId::from_bytes([1; 32]);
@@ -111,6 +132,7 @@ impl Fixture {
                 padding.definition =
                     RuntimeFunctionDefinitionIdentity::from_accepted_identity([99; 32]);
                 padding.identity.method_name = "padding".into();
+                Self::fresh_method_inputs(&mut builder, &mut padding.inputs, boolean);
                 builder.push_trait_method_seed(padding).unwrap();
             }
             builder.push_trait_method_seed(seed).unwrap();

@@ -7,6 +7,7 @@ pub(super) struct ReservedGlobalDeferDefinition {
     body: ExprId,
     function: RuntimeFunctionSiteSeedId,
     effects: RuntimeEffectSet,
+    locals: ProjectFunctionFrameLocals,
 }
 
 pub(super) fn reserve_global_defer_sites(
@@ -62,6 +63,17 @@ pub(super) fn reserve_global_defer_sites(
         .collect::<BTreeMap<_, _>>();
 
     for (statement, fact) in context.facts.defers() {
+        let mut frame = match ProjectFunctionFrameLocals::admit_view(
+            crate::semantic_facts::RuntimeExecutableSemanticFactView::global(context.facts),
+            None,
+            builder,
+        ) {
+            Ok(frame) => frame,
+            Err(error) => {
+                errors.push(error);
+                continue;
+            }
+        };
         let declaration = (|| -> Result<_, RuntimePlanLowerError> {
             let result = context.facts.expression_type(fact.body()).ok_or_else(|| {
                 RuntimePlanLowerError::new(format!(
@@ -75,7 +87,7 @@ pub(super) fn reserve_global_defer_sites(
                 .iter()
                 .enumerate()
                 .map(|(position, capture)| {
-                    let source = context.locals.get(&capture.local()).ok_or_else(|| {
+                    context.locals.get(&capture.local()).ok_or_else(|| {
                         RuntimePlanLowerError::new(format!(
                             "defer {statement:?} capture {:?} has no admitted local",
                             capture.local()
@@ -89,6 +101,7 @@ pub(super) fn reserve_global_defer_sites(
                                 "defer {statement:?} capture {position} has no input local"
                             ))
                         })?;
+                    frame.hir.insert(capture.local(), input_local.clone());
                     let position = u32::try_from(position).map_err(|_| {
                         RuntimePlanLowerError::new("defer capture position exceeds checked limits")
                     })?;
@@ -108,17 +121,17 @@ pub(super) fn reserve_global_defer_sites(
                             capture.input_ownership(),
                             RuntimeFunctionInputOwnershipRequirement::Unrestricted
                         ) {
-                            Box::new([source.clone()])
+                            Box::new([input_local.clone()])
                         } else {
                             Box::new([])
                         },
                         source: RuntimeFunctionInputSource::Capture { position },
-                        input_local,
+                        input_local: input_local.clone(),
                         pattern: RuntimePatternSeed::new(
                             capture.ty().identity(),
                             RuntimePatternSeedKind::Bind {
                                 mutable: false,
-                                local: source.clone(),
+                                local: input_local,
                             },
                         ),
                     })
@@ -164,6 +177,7 @@ pub(super) fn reserve_global_defer_sites(
             body: fact.body(),
             function,
             effects,
+            locals: frame,
         });
     }
     (sites, definitions)
@@ -199,6 +213,12 @@ pub(super) fn define_global_defer_sites(
                 module,
                 context,
                 RuntimeAssertionOwner::Defer(definition.statement),
+            )
+            .with_executable_scope(
+                RuntimeScopedExecutableSemanticFactView::global(context.facts),
+                &definition.locals.control,
+                &definition.locals.hir,
+                &definition.locals.specialized_operands,
             );
             let ops = lowerer.lower_statement_ids_with_tail(
                 block.statements(),

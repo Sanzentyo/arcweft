@@ -118,6 +118,17 @@ fn plan() -> RuntimePlan {
     for (index, (argument, function_type)) in
         [(boolean, id(3)), (string, id(4))].into_iter().enumerate()
     {
+        let frame = builder
+            .admit_type_batch(
+                [],
+                [integer, integer].into_iter().map(|ty| {
+                    RuntimeLocalDeclarationSeed::new(
+                        manual_local_source("arcweft-core.fixture.callable-specialization.capture"),
+                        ty,
+                    )
+                }),
+            )
+            .unwrap();
         let site = builder
             .push_function_site_seed(
                 crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
@@ -131,12 +142,12 @@ fn plan() -> RuntimePlan {
                         ownership: Default::default(),
                         unrestricted_bindings: Box::new([]),
                         source: RuntimeFunctionInputSource::Capture { position: 0 },
-                        input_local: locals.local_ids()[3].clone(),
+                        input_local: frame.local_ids()[1].clone(),
                         pattern: RuntimePatternSeed::new(
                             integer,
                             RuntimePatternSeedKind::Bind {
                                 mutable: false,
-                                local: locals.local_ids()[0].clone(),
+                                local: frame.local_ids()[0].clone(),
                             },
                         ),
                     },
@@ -160,7 +171,7 @@ fn plan() -> RuntimePlan {
                 RuntimeExprSeed::new(
                     integer,
                     RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                        locals.local_ids()[0].clone(),
+                        frame.local_ids()[0].clone(),
                         RuntimeLocalReadMode::Copy,
                     )),
                 ),

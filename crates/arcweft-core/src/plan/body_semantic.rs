@@ -11,6 +11,7 @@ mod executable_metadata;
 mod executable_roles;
 pub(crate) mod flow;
 pub(crate) mod function;
+mod local_rows;
 mod nominal;
 mod pure_rows;
 mod request;
@@ -274,7 +275,8 @@ impl<'a> RuntimeBodySemanticContext<'a> {
             RuntimeBodySemanticError::UnknownLocal { local }
         })?;
         row.source().encode_semantic_source(encoder);
-        self.write_type(encoder, row.ty())
+        self.write_type(encoder, row.ty())?;
+        self.write_local_placement(encoder, row.placement())
     }
 
     pub(crate) fn write_fields(
