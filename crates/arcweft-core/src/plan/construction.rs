@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use thiserror::Error;
 
@@ -729,7 +729,7 @@ pub struct RuntimePlanBuilder {
     issuer: Arc<RuntimePlanConstructionIssuer>,
     poisoned: bool,
     types: RuntimePlanTypeTableBuilder,
-    locals: RuntimeLocalDeclarationTableBuilder,
+    locals: Arc<Mutex<RuntimeLocalDeclarationTableBuilder>>,
     nominal_record_domains: RuntimeNominalRecordDomainTableBuilder,
     variant_domains: RuntimeVariantDomainTableBuilder,
     function_sites: Vec<ReservedFunctionSite>,
@@ -766,7 +766,7 @@ impl RuntimePlanBuilder {
             issuer: Arc::new(RuntimePlanConstructionIssuer),
             poisoned: false,
             types: RuntimePlanTypeTableBuilder::new(),
-            locals: RuntimeLocalDeclarationTableBuilder::new(),
+            locals: Arc::new(Mutex::new(RuntimeLocalDeclarationTableBuilder::new())),
             nominal_record_domains: RuntimeNominalRecordDomainTableBuilder::new(),
             variant_domains: RuntimeVariantDomainTableBuilder::new(),
             function_sites: Vec::new(),
@@ -792,12 +792,17 @@ impl RuntimePlanBuilder {
         }
     }
 
-    /// Atomically rewrites semantic type, local, record-domain, and
-    /// variant-domain seeds into final plan-local tables, correlated with the
-    /// complete source nominal schema graph for this batch.
+    /// Atomically admits semantic types, checked local requests, and nominal
+    /// domains against the complete source nominal schema graph for this batch.
+    /// Local coordinates are materialized when a Core consumer uses a request.
     ///
     /// Every subtable is prepared before any issuer commits. Consequently a
     /// failure in the last domain leaves type and local row counts unchanged.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an earlier panic poisoned the private local request table.
+    /// Its checked transitions execute no caller code while holding the lock.
     pub fn admit_semantic_batch(
         &mut self,
         types: impl IntoIterator<Item = RuntimePlanTypeSeed>,
@@ -836,7 +841,9 @@ impl RuntimePlanBuilder {
             .collect::<Result<Box<[_]>, _>>()?;
         let prepared_locals = self
             .locals
-            .prepare_batch(declared_local_types.iter().copied())?;
+            .lock()
+            .expect("local request table only runs checked, callback-free transitions")
+            .prepare_request_count(declared_local_types.len())?;
 
         let record_domains = nominal_record_domains
             .into_iter()
@@ -888,14 +895,18 @@ impl RuntimePlanBuilder {
         prepared_types.retain_nominal_declarations(nominal_schema);
 
         let type_ids = self.types.commit_batch(prepared_types);
-        let admitted_local_ids = self.locals.commit_batch(prepared_locals);
+        self.locals
+            .lock()
+            .expect("local request table only runs checked, callback-free transitions")
+            .commit_request_count(prepared_locals);
         self.nominal_record_domains.commit_batch(prepared_records);
         self.variant_domains.commit_batch(prepared_variants);
-        let local_ids = admitted_local_ids
+        let local_ids = declared_local_types
             .into_vec()
             .into_iter()
-            .zip(declared_local_types)
-            .map(|(local, (_, ty, _))| RuntimeLocalSeedId::issued(&self.issuer, local, ty))
+            .map(|(source, ty, context)| {
+                RuntimeLocalSeedId::issued(&self.issuer, &self.locals, source, ty, context)
+            })
             .collect::<Vec<_>>()
             .into_boxed_slice();
         Ok(RuntimePlanSemanticAdmission {
@@ -2754,7 +2765,11 @@ impl RuntimePlanBuilder {
             &mut meter,
         )?;
         let project_call_sites = self.project_call_sites.into_inner().finish();
-        let local_declarations = self.locals.finish();
+        let local_declarations = self
+            .locals
+            .lock()
+            .expect("local request table only runs checked, callback-free transitions")
+            .take_finish();
         validate_flow_parameters(&flows, &self.flow_schemas, &local_declarations, &type_table)?;
         let inventory = super::RuntimePlanInventory {
             type_table,
@@ -2794,7 +2809,10 @@ impl RuntimePlanBuilder {
         // Auxiliary implementation tables are not extra semantic image rows.
         let counts = [
             self.types.len(),
-            self.locals.len(),
+            self.locals
+                .lock()
+                .expect("local request table only runs checked, callback-free transitions")
+                .len(),
             self.nominal_record_domains.len(),
             self.variant_domains.len(),
             self.function_sites.len(),
@@ -2954,7 +2972,12 @@ impl RuntimePlanBuilder {
             let (local, ty) = local
                 .resolve(&self.issuer)
                 .ok_or(RuntimePlanBuildError::ForeignLocalSeed)?;
-            if !self.locals.contains(local) {
+            if !self
+                .locals
+                .lock()
+                .expect("local request table only runs checked, callback-free transitions")
+                .contains(local)
+            {
                 return Err(RuntimePlanBuildError::UnknownFunctionLocal { local });
             }
             if !unique.insert(local) {
@@ -3424,6 +3447,15 @@ mod tests {
             )
             .expect("failed transaction committed nothing");
         assert_eq!(admitted.local_ids().len(), 1);
+        let _pattern = builder
+            .lower_pattern_seed_for_test(crate::plan::RuntimePatternSeed::new(
+                identity(2),
+                crate::plan::RuntimePatternSeedKind::Bind {
+                    mutable: false,
+                    local: admitted.local_ids()[0].clone(),
+                },
+            ))
+            .unwrap();
         let plan = builder.finish().expect("sealed plan");
         let record_ty = plan
             .type_table()
@@ -3571,7 +3603,7 @@ mod tests {
         let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
         let make = || {
             let mut builder = RuntimePlanBuilder::new();
-            builder
+            let admitted = builder
                 .admit_type_batch(
                     [RuntimePlanTypeSeed::new(
                         unit,
@@ -3589,6 +3621,15 @@ mod tests {
                         unit,
                     )],
                 )
+                .unwrap();
+            let _pattern = builder
+                .lower_pattern_seed_for_test(crate::plan::RuntimePatternSeed::new(
+                    unit,
+                    crate::plan::RuntimePatternSeedKind::Bind {
+                        mutable: false,
+                        local: admitted.local_ids()[0].clone(),
+                    },
+                ))
                 .unwrap();
             builder
         };
@@ -3742,7 +3783,7 @@ mod tests {
             ))
         ));
 
-        builder
+        let admitted = builder
             .admit_type_batch(
                 [RuntimePlanTypeSeed::new(
                     identity(2),
@@ -3751,6 +3792,15 @@ mod tests {
                 [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.plan.construction.conflicting_batch_does_not_commit_local_rows.binding_b"), identity(2))],
             )
             .expect("failed batch left no local row");
+        let _pattern = builder
+            .lower_pattern_seed_for_test(crate::plan::RuntimePatternSeed::new(
+                identity(2),
+                crate::plan::RuntimePatternSeedKind::Bind {
+                    mutable: false,
+                    local: admitted.local_ids()[0].clone(),
+                },
+            ))
+            .unwrap();
         let plan = builder.finish().expect("unpoisoned preflight failure");
         assert_eq!(plan.type_table().len(), 2);
         assert_eq!(plan.local_declarations().len(), 1);
@@ -3901,6 +3951,107 @@ mod tests {
             Err(RuntimePlanBuildError::ForeignLocalSeed)
         );
         assert_eq!(second.finish(), Err(RuntimePlanBuildError::Poisoned));
+    }
+    #[test]
+    fn local_requests_materialize_once_preserve_clone_identity_and_seal_unused_requests() {
+        fn send_sync<T: Send + Sync>() {}
+        fn send<T: Send>() {}
+        send_sync::<RuntimeLocalSeedId>();
+        send::<RuntimePlanBuilder>();
+        let mut builder = RuntimePlanBuilder::new();
+        let boolean = identity(1);
+        let source = manual_local_source("arcweft-core.fixture.local-request.binding");
+        let admitted = builder
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    boolean,
+                    RuntimePlanTypeProjection::Bool,
+                )],
+                [
+                    RuntimeLocalDeclarationSeed::new(source, boolean),
+                    RuntimeLocalDeclarationSeed::new(source, boolean),
+                ],
+            )
+            .unwrap();
+        let first = admitted.local_ids()[0].clone();
+        let unused = admitted.local_ids()[1].clone();
+        assert_eq!(first, first.clone());
+        assert_ne!(first, unused);
+        assert_eq!(builder.locals.lock().unwrap().len(), 0);
+        let pattern = |local| {
+            RuntimePatternSeed::new(
+                boolean,
+                RuntimePatternSeedKind::Bind {
+                    mutable: false,
+                    local,
+                },
+            )
+        };
+        let binding = builder
+            .lower_pattern_seed_for_test(pattern(first.clone()))
+            .unwrap();
+        let local = binding.binding_declarations().next().unwrap().local();
+        assert_eq!(builder.locals.lock().unwrap().len(), 1);
+        let repeated = builder
+            .lower_pattern_seed_for_test(pattern(first.clone()))
+            .unwrap();
+        assert_eq!(
+            repeated.binding_declarations().next().unwrap().local(),
+            local
+        );
+        assert_eq!(builder.locals.lock().unwrap().len(), 1);
+        let issuer = Arc::clone(&builder.issuer);
+        let plan = builder.finish().unwrap();
+        assert_eq!(plan.local_declarations().len(), 1);
+        assert_eq!(
+            plan.local_declarations().get(local).unwrap().source(),
+            source
+        );
+        assert_eq!(unused.resolve(&issuer), None);
+        assert_eq!(first.resolve(&issuer).unwrap().0, local);
+        assert_eq!(plan.local_declarations().len(), 1);
+    }
+
+    #[test]
+    fn foreign_local_request_is_rejected_before_either_table_materializes() {
+        let mut first = RuntimePlanBuilder::new();
+        let mut second = RuntimePlanBuilder::new();
+        let boolean = identity(1);
+        let request = first
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    boolean,
+                    RuntimePlanTypeProjection::Bool,
+                )],
+                [RuntimeLocalDeclarationSeed::new(
+                    manual_local_source("arcweft-core.fixture.local-request.foreign"),
+                    boolean,
+                )],
+            )
+            .unwrap()
+            .local_ids()[0]
+            .clone();
+        second
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    boolean,
+                    RuntimePlanTypeProjection::Bool,
+                )],
+                [],
+            )
+            .unwrap();
+        let error = second
+            .lower_pattern_seed_for_test(RuntimePatternSeed::new(
+                boolean,
+                RuntimePatternSeedKind::Bind {
+                    mutable: false,
+                    local: request,
+                },
+            ))
+            .unwrap_err();
+        assert!(matches!(error, RuntimePlanBuildError::ForeignLocalSeed));
+        assert_eq!(first.locals.lock().unwrap().len(), 0);
+        assert_eq!(second.locals.lock().unwrap().len(), 0);
     }
 }
 

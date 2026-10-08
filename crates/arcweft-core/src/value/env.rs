@@ -764,7 +764,7 @@ mod tests {
             EffectFormula::literal(Default::default(), Some(scope.bound_effect(0, 0).unwrap()));
         let predicate = io.subset(&variable, &mut Work).unwrap();
         let mut builder = RuntimePlanBuilder::new();
-        builder
+        let admitted = builder
             .admit_type_batch(
                 [
                     RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
@@ -812,7 +812,27 @@ mod tests {
             builder
                 .define_function_site_seed(
                     &site,
-                    RuntimeExprSeed::new(unit, RuntimeExprSeedKind::Value(RuntimeValue::Unit)),
+                    if function_type.is_some() {
+                        RuntimeExprSeed::new(
+                            unit,
+                            RuntimeExprSeedKind::Let {
+                                binding: admitted.local_ids()[0].clone(),
+                                expr: Box::new(RuntimeExprSeed::new(
+                                    scoped_tuple,
+                                    RuntimeExprSeedKind::Tuple(Box::new([RuntimeExprSeed::new(
+                                        unit,
+                                        RuntimeExprSeedKind::Value(RuntimeValue::Unit),
+                                    )])),
+                                )),
+                                body: Box::new(RuntimeExprSeed::new(
+                                    unit,
+                                    RuntimeExprSeedKind::Value(RuntimeValue::Unit),
+                                )),
+                            },
+                        )
+                    } else {
+                        RuntimeExprSeed::new(unit, RuntimeExprSeedKind::Value(RuntimeValue::Unit))
+                    },
                 )
                 .unwrap();
             sites.push(site);
@@ -836,7 +856,22 @@ mod tests {
         let mut env = RuntimeEnv::default();
         env.push_function_scope(sites[0], 0, Some(binding.clone()));
         env.push_scope();
-        let declaration = local(1);
+        let crate::value::RuntimeExprKind::Let {
+            binding: declaration,
+            ..
+        } = plan
+            .function_sites()
+            .iter()
+            .next()
+            .unwrap()
+            .body()
+            .expression()
+            .unwrap()
+            .kind()
+        else {
+            panic!("scoped function declares its local");
+        };
+        let declaration = *declaration;
         let value = RuntimeValue::Tuple(vec![RuntimeValue::Unit]);
         env.set(declaration, value.clone());
         assert_eq!(env.function_instantiation(), Some(binding.as_ref()));
@@ -1044,7 +1079,39 @@ mod tests {
             RuntimeLocalDeclarationSeed, RuntimePlanBuilder, RuntimePlanRecordField,
             RuntimePlanTypeProjection, RuntimePlanTypeSeed,
         };
-        let source = local(1);
+        let identity = |value| RuntimeSemanticTypeId::from_bytes([value; 32]);
+        let mut builder = RuntimePlanBuilder::new();
+        let admitted = builder
+            .admit_type_batch(
+                [
+                    RuntimePlanTypeSeed::new(identity(1), RuntimePlanTypeProjection::Unit),
+                    RuntimePlanTypeSeed::new(identity(2), RuntimePlanTypeProjection::Bool),
+                    RuntimePlanTypeSeed::new(
+                        identity(3),
+                        RuntimePlanTypeProjection::Need(identity(1)),
+                    ),
+                    RuntimePlanTypeSeed::new(
+                        identity(4),
+                        RuntimePlanTypeProjection::Record(Box::new([
+                            RuntimePlanRecordField::new("owner", identity(3)),
+                            RuntimePlanRecordField::new("other", identity(2)),
+                        ])),
+                    ),
+                ],
+                [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.value.env.partial_field_move_preserves_siblings_and_rollback_then_restores_the_slot.binding_a"), identity(4))],
+            )
+            .unwrap();
+        let pattern = builder
+            .lower_pattern_seed_for_test(crate::plan::RuntimePatternSeed::new(
+                identity(4),
+                crate::plan::RuntimePatternSeedKind::Bind {
+                    mutable: true,
+                    local: admitted.local_ids()[0].clone(),
+                },
+            ))
+            .unwrap();
+        let source = pattern.binding_declarations().next().unwrap().local();
+        let owner = RuntimeProgramOwner::Plan(std::sync::Arc::new(builder.finish().unwrap()));
         let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap();
         let other = RuntimeRecordFieldId::try_from_zero_based_ordinal(1).unwrap();
         let mut env = RuntimeEnv::default();
@@ -1080,29 +1147,6 @@ mod tests {
         assert_eq!(env.bindings().count(), 1);
         assert_eq!(env.bindings_snapshot().len(), 1);
         assert!(!env.bindings_snapshot()[0].storage().is_vacant());
-        let identity = |value| RuntimeSemanticTypeId::from_bytes([value; 32]);
-        let mut builder = RuntimePlanBuilder::new();
-        builder
-            .admit_type_batch(
-                [
-                    RuntimePlanTypeSeed::new(identity(1), RuntimePlanTypeProjection::Unit),
-                    RuntimePlanTypeSeed::new(identity(2), RuntimePlanTypeProjection::Bool),
-                    RuntimePlanTypeSeed::new(
-                        identity(3),
-                        RuntimePlanTypeProjection::Need(identity(1)),
-                    ),
-                    RuntimePlanTypeSeed::new(
-                        identity(4),
-                        RuntimePlanTypeProjection::Record(Box::new([
-                            RuntimePlanRecordField::new("owner", identity(3)),
-                            RuntimePlanRecordField::new("other", identity(2)),
-                        ])),
-                    ),
-                ],
-                [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.value.env.partial_field_move_preserves_siblings_and_rollback_then_restores_the_slot.binding_a"), identity(4))],
-            )
-            .unwrap();
-        let owner = RuntimeProgramOwner::Plan(std::sync::Arc::new(builder.finish().unwrap()));
         let image = env.inert_rollback_image(&owner).unwrap();
         let mut wrong_child = image.clone();
         let encoded = serde_json::to_value(&wrong_child.scopes[0].slots[0].value).unwrap();

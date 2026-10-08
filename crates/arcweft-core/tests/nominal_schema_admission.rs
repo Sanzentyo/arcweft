@@ -183,7 +183,7 @@ fn name_type_case_and_layout_mismatches_publish_nothing() {
     let graph = graph();
     for problem in 0..4 {
         let mut builder = RuntimePlanBuilder::new();
-        builder
+        let admission = builder
             .admit_type_batch(
                 [seed(9, Type::Unit)],
                 [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.tests.nominal_schema_admission.name_type_case_and_layout_mismatches_publish_nothing.binding_a"), semantic(9))],
@@ -235,6 +235,43 @@ fn name_type_case_and_layout_mismatches_publish_nothing() {
             | (3, Err(RuntimePlanBuildError::NominalSchema(Error::Layout { .. }))) => {}
             (_, actual) => panic!("unexpected failure for {problem}: {actual:?}"),
         }
+        let site = builder
+            .reserve_function_site_seed(arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed {
+                definition:
+                    arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                        [9; 32],
+                    ),
+                role: arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
+                function_type: None,
+                inputs: Box::new([]),
+                result: semantic(9),
+                body_kind: arcweft_core::plan::RuntimeFunctionSiteBodyKind::Expression,
+                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+            })
+            .unwrap();
+        builder
+            .define_function_site_seed(
+                &site,
+                arcweft_core::plan::RuntimeExprSeed::new(
+                    semantic(9),
+                    arcweft_core::plan::RuntimeExprSeedKind::Let {
+                        binding: admission.local_ids()[0].clone(),
+                        expr: Box::new(arcweft_core::plan::RuntimeExprSeed::new(
+                            semantic(9),
+                            arcweft_core::plan::RuntimeExprSeedKind::Value(
+                                arcweft_core::value::RuntimeValue::Unit,
+                            ),
+                        )),
+                        body: Box::new(arcweft_core::plan::RuntimeExprSeed::new(
+                            semantic(9),
+                            arcweft_core::plan::RuntimeExprSeedKind::Value(
+                                arcweft_core::value::RuntimeValue::Unit,
+                            ),
+                        )),
+                    },
+                ),
+            )
+            .unwrap();
         let plan = builder.finish().unwrap();
         assert_eq!(plan.type_table().declarations().len(), 1);
         assert_eq!(plan.local_declarations().len(), 1);

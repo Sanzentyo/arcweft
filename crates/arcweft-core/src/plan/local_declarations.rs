@@ -122,11 +122,8 @@ impl RuntimeLocalDeclarationTable {
 pub(crate) struct RuntimeLocalDeclarationTableBuilder {
     declarations: Vec<RuntimeLocalDeclaration>,
     maximum: u32,
-}
-
-pub(crate) struct PreparedRuntimeLocalDeclarationBatch {
-    ids: Box<[RuntimeLocalDeclarationId]>,
-    declarations: Vec<RuntimeLocalDeclaration>,
+    reserved: u32,
+    sealed: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]
@@ -145,6 +142,8 @@ impl RuntimeLocalDeclarationTableBuilder {
         Self {
             declarations: Vec::new(),
             maximum: u32::MAX,
+            reserved: 0,
+            sealed: false,
         }
     }
 
@@ -160,63 +159,58 @@ impl RuntimeLocalDeclarationTableBuilder {
         source: RuntimeLocalDeclarationSource,
         ty: RuntimePlanTypeId,
     ) -> Result<RuntimeLocalDeclarationId, RuntimeLocalDeclarationTableError> {
-        let prepared = self.prepare_batch([(source, ty, None)])?;
-        self.commit_batch(prepared)
-            .first()
-            .copied()
+        let prepared = self.prepare_request_count(1)?;
+        self.commit_request_count(prepared);
+        self.materialize(source, ty, None)
             .ok_or(RuntimeLocalDeclarationTableError::IdentityExhausted)
     }
 
-    pub(crate) fn prepare_batch(
+    /// Reserves capacity atomically without minting unused slot coordinates.
+    pub(crate) fn prepare_request_count(
         &self,
-        types: impl IntoIterator<
-            Item = (
-                RuntimeLocalDeclarationSource,
-                RuntimePlanTypeId,
-                Option<RuntimePlanTypeId>,
-            ),
-        >,
-    ) -> Result<PreparedRuntimeLocalDeclarationBatch, RuntimeLocalDeclarationTableError> {
-        let types = types.into_iter().collect::<Box<[_]>>();
-        let final_len = self
-            .declarations
-            .len()
-            .checked_add(types.len())
-            .and_then(|value| u32::try_from(value).ok())
-            .filter(|value| *value <= self.maximum)
-            .ok_or(RuntimeLocalDeclarationTableError::IdentityExhausted)?;
-        let _ = final_len;
-        let mut declarations = self.declarations.clone();
-        let mut ids = Vec::with_capacity(types.len());
-        for (source, ty, context) in types {
-            let ordinal = declarations
-                .len()
-                .checked_add(1)
-                .and_then(|value| u32::try_from(value).ok())
-                .and_then(NonZeroU32::new)
-                .ok_or(RuntimeLocalDeclarationTableError::IdentityExhausted)?;
-            declarations.push(RuntimeLocalDeclaration {
-                source,
-                ty,
-                context,
-            });
-            ids.push(RuntimeLocalDeclarationId::from_accepted_ordinal(ordinal));
-        }
-        Ok(PreparedRuntimeLocalDeclarationBatch {
-            ids: ids.into_boxed_slice(),
-            declarations,
-        })
+        count: usize,
+    ) -> Result<u32, RuntimeLocalDeclarationTableError> {
+        let count = u32::try_from(count)
+            .map_err(|_| RuntimeLocalDeclarationTableError::IdentityExhausted)?;
+        self.reserved
+            .checked_add(count)
+            .filter(|value| *value <= self.maximum && !self.sealed)
+            .ok_or(RuntimeLocalDeclarationTableError::IdentityExhausted)
     }
 
-    pub(crate) fn commit_batch(
+    pub(crate) fn commit_request_count(&mut self, prepared: u32) {
+        self.reserved = prepared;
+    }
+
+    /// Only an admitted, not-yet-materialized request may consume one reservation.
+    pub(crate) fn materialize(
         &mut self,
-        prepared: PreparedRuntimeLocalDeclarationBatch,
-    ) -> Box<[RuntimeLocalDeclarationId]> {
-        self.declarations = prepared.declarations;
-        prepared.ids
+        source: RuntimeLocalDeclarationSource,
+        ty: RuntimePlanTypeId,
+        context: Option<RuntimePlanTypeId>,
+    ) -> Option<RuntimeLocalDeclarationId> {
+        if self.sealed || self.declarations.len() >= self.reserved as usize {
+            return None;
+        }
+        let ordinal = u32::try_from(self.declarations.len().checked_add(1)?).ok()?;
+        let ordinal = NonZeroU32::new(ordinal)?;
+        self.declarations.push(RuntimeLocalDeclaration {
+            source,
+            ty,
+            context,
+        });
+        Some(RuntimeLocalDeclarationId::from_accepted_ordinal(ordinal))
+    }
+
+    pub(crate) fn take_finish(&mut self) -> RuntimeLocalDeclarationTable {
+        self.sealed = true;
+        RuntimeLocalDeclarationTable {
+            declarations: std::mem::take(&mut self.declarations).into_boxed_slice(),
+        }
     }
 
     #[must_use]
+    #[cfg(test)]
     pub(crate) fn finish(self) -> RuntimeLocalDeclarationTable {
         RuntimeLocalDeclarationTable {
             declarations: self.declarations.into_boxed_slice(),

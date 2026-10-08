@@ -1579,21 +1579,39 @@ fn collect_expr_refs_free_locals(
 /// from being interpreted as the same plan-local ordinal.
 #[derive(Clone)]
 pub struct RuntimeLocalSeedId {
+    request: Arc<RuntimeLocalDeclarationRequest>,
+}
+
+struct RuntimeLocalDeclarationRequest {
     issuer: Arc<RuntimePlanConstructionIssuer>,
-    local: RuntimeLocalDeclarationId,
+    table: Arc<
+        std::sync::Mutex<super::super::local_declarations::RuntimeLocalDeclarationTableBuilder>,
+    >,
+    source: super::super::RuntimeLocalDeclarationSource,
     ty: RuntimePlanTypeId,
+    context: Option<RuntimePlanTypeId>,
+    local: std::sync::OnceLock<Option<RuntimeLocalDeclarationId>>,
 }
 
 impl RuntimeLocalSeedId {
     pub(super) fn issued(
         issuer: &Arc<RuntimePlanConstructionIssuer>,
-        local: RuntimeLocalDeclarationId,
+        table: &Arc<
+            std::sync::Mutex<super::super::local_declarations::RuntimeLocalDeclarationTableBuilder>,
+        >,
+        source: super::super::RuntimeLocalDeclarationSource,
         ty: RuntimePlanTypeId,
+        context: Option<RuntimePlanTypeId>,
     ) -> Self {
         Self {
-            issuer: Arc::clone(issuer),
-            local,
-            ty,
+            request: Arc::new(RuntimeLocalDeclarationRequest {
+                issuer: Arc::clone(issuer),
+                table: Arc::clone(table),
+                source,
+                ty,
+                context,
+                local: std::sync::OnceLock::new(),
+            }),
         }
     }
 
@@ -1601,22 +1619,37 @@ impl RuntimeLocalSeedId {
         &self,
         issuer: &Arc<RuntimePlanConstructionIssuer>,
     ) -> Option<(RuntimeLocalDeclarationId, RuntimePlanTypeId)> {
-        Arc::ptr_eq(&self.issuer, issuer).then_some((self.local, self.ty))
+        if !Arc::ptr_eq(&self.request.issuer, issuer) {
+            return None;
+        }
+        // The table transition runs no user callbacks or fallible arithmetic.
+        // Only this private issuer reaches the mutex; poison violates its
+        // construction invariant. OnceLock keeps clones on one exact slot.
+        let local = *self.request.local.get_or_init(|| {
+            self.request
+                .table
+                .lock()
+                .expect("local request table only runs checked, callback-free transitions")
+                .materialize(self.request.source, self.request.ty, self.request.context)
+        });
+        local.map(|local| (local, self.request.ty))
     }
 }
 
 impl fmt::Debug for RuntimeLocalSeedId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_tuple("RuntimeLocalSeedId")
-            .field(&self.local)
+            .debug_struct("RuntimeLocalSeedId")
+            .field("local", &self.request.local.get())
+            .field("source", &self.request.source)
+            .field("type", &self.request.ty)
             .finish()
     }
 }
 
 impl PartialEq for RuntimeLocalSeedId {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.issuer, &other.issuer) && self.local == other.local && self.ty == other.ty
+        Arc::ptr_eq(&self.request, &other.request)
     }
 }
 

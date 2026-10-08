@@ -1491,7 +1491,12 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
         let (local, ty) = local
             .resolve(&self.issuer)
             .ok_or(RuntimePlanBuildError::ForeignLocalSeed)?;
-        if !self.locals.contains(local) {
+        if !self
+            .locals
+            .lock()
+            .expect("local request table only runs checked, callback-free transitions")
+            .contains(local)
+        {
             return Err(RuntimePlanBuildError::UnknownFunctionLocal { local });
         }
         Ok((local, ty))

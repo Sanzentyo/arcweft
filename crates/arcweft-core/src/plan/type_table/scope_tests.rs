@@ -160,7 +160,7 @@ fn contextual_local_admission_requires_its_function_scope_and_remains_atomic() {
                     EffectPredicate::unconstrained(),
                     EffectFormula::empty(),
                 ),
-                parameters: Box::new([identity(2)]),
+                parameters: Box::new([identity(if id == 3 { 1 } else { 2 })]),
                 result: identity(2),
             },
         )
@@ -197,6 +197,47 @@ fn contextual_local_admission_requires_its_function_scope_and_remains_atomic() {
         )
         .unwrap();
     assert_eq!(admitted.local_ids().len(), 1);
+    let site = builder
+        .reserve_function_site_seed(crate::plan::RuntimeFunctionSiteDeclarationSeed {
+            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                [41; 32],
+            ),
+            role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
+            function_type: Some(identity(3)),
+            inputs: Box::new([crate::plan::RuntimeFunctionInputBindingSeed {
+                transfer: crate::plan::RuntimeFunctionInputTransfer::Formal,
+                origin: crate::plan::RuntimeFunctionInputOrigin::Parameter(
+                    crate::plan::RuntimeFunctionParameterIdentity::from_accepted_identity([81; 32]),
+                ),
+                source: crate::plan::RuntimeFunctionInputSource::Parameter {
+                    position: 0,
+                    passing: crate::plan::RuntimeFunctionParameterPassing::Affine,
+                },
+                input_local: admitted.local_ids()[0].clone(),
+                pattern: crate::plan::RuntimePatternSeed::new(
+                    identity(1),
+                    crate::plan::RuntimePatternSeedKind::Bind {
+                        mutable: false,
+                        local: admitted.local_ids()[0].clone(),
+                    },
+                ),
+                ownership: Default::default(),
+                unrestricted_bindings: Box::new([]),
+            }]),
+            result: identity(2),
+            body_kind: crate::plan::RuntimeFunctionSiteBodyKind::Expression,
+            effects: crate::plan::RuntimeEffectSet::empty(),
+        })
+        .unwrap();
+    builder
+        .define_function_site_seed(
+            &site,
+            crate::plan::RuntimeExprSeed::new(
+                identity(2),
+                crate::plan::RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(true)),
+            ),
+        )
+        .unwrap();
     let plan = builder.finish().unwrap();
     let declaration = plan.local_declarations().declarations().next().unwrap();
     assert_eq!(plan.local_declarations().len(), 1);

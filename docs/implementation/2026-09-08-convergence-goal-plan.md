@@ -10351,3 +10351,151 @@ physical storage, E1 complete row codec/transcript, lowerer global source-
 template/unused rows removal, global15 memo/commonseal/privateimage/protected
 all14Cut5 and original View/nominal/scheduler/Rust borrowing/CLI277/Tier2/
 legacy-deletion/final acceptance remain required. No second Astra consultation.
+
+
+### 2026-10-08: E1 actual executable slot ownership migration — in progress
+
+Base main/origin/main730ab0f43e8bdb041cb84a7ddb793c85fc6652ea, clean at start.
+Previous turn delivered Source-Core/capture4c4f9b31ba97238f3d777957182ffb7d96b985cf
+and private source transcript730ab0f43e8bdb041cb84a7ddb793c85fc6652ea.
+
+Fresh source changes the next action: compiler lower.rs already omits locals
+whose type owners belong to closed project/closure/method catalogs; program
+type owners retain ordinary or input locals. Do not assume every global local
+is unused from the existence of the map. Program scopes uniformly require
+their own admitted semantic catalog; no external consumer reads a returned
+global local map (RuntimePlanLowerReport does not expose one).
+Iteration trait methods still publish RuntimeTraitMethodFact::try_new with
+closed_semantics=None and retain the global-local/body fallback; DisplayText
+methods use complete closed semantics. Both paths must be handled by actual
+body ownership, with no guessed/default/fabricated owner.
+
+An executable regression probe now compares actual Core function inputs,
+expression/pattern children and owned Flow value roots against local table
+rows for authored View state, generic function and captured closure fixtures.
+Scope is deliberately these pure/flow/closure fixtures (assert no standalone
+helper/method/Line/Stream); it is not full E1 ownership proof. It will establish
+which source-template/unreferenced row defects actually exist before changing
+allocation. Not yet claimed compiling/passing. Full goal ACTIVE/INCOMPLETE,
+including E1 all real code substrates/initialization/codec/transcript and all
+original acceptance. Astra one-shot consumed; no new consultation/delegation.
+
+Probe TERMINAL100/build1m34s:3 prior propagation tests PASS; new actual
+reference probe FAILS for authored View:8 local table rows versus4 actual
+referenced slots. This is a real source-template/unreferenced allocation
+counterexample, not just inference from a global map. Preserve failing test;
+report all3 fixtures and exact unused row/source/type IDs before root repair.
+
+
+Detailed probe TERMINAL100:View8/4 referenced, generic function7/5,
+captured closure8/5. Unused rows are one authored View parameter and generated
+expression temporaries. Compiler already filters most closed source-template
+locals; the general defect is eager materialization of admitted requests.
+
+Implementing one construction-only checked local request with shared source,
+admitted type/context, issuer, and OnceCell final coordinate. Semantic admission
+validates all types/source contracts and reserves request capacity atomically,
+but only actual Core consumer resolution materializes a final dense local row,
+once per request. Unused requests never enter the immutable table. Source,
+coordinate identity and equality remain distinct: request clones share identity;
+different requests (including equal source identities in different frames) do
+not alias. Final row order is deterministic actual Core materialization order,
+not unordered-map iteration. No copied table, fallback owner or post-finish
+ordinal remapping. Builder still owns the sole table; finish seals and takes it.
+This is foundation for actual per-emission-body placement/initialization, not
+E1 completion. Required full public/live Core50 validation will be refreshed.
+
+First request workspace check TERMINAL101: ordinary production compilation
+found the table builder alias was cfg(test)-only. Use its owning module path.
+Also preserve original Send/Sync construction-handle capabilities: shared
+table Arc<Mutex>, request Arc and OnceLock<Option<coordinate>>, not Rc/RefCell.
+Mutex is a named private invariant boundary: transitions execute no user
+callback/fallible arithmetic; poison is invariant failure. OnceLock guarantees
+one slot across handle clones; sealed requests cannot allocate after finish.
+
+Request check2 TERMINAL101:2 stale formatted RefCell borrow call sites in
+request commit and function-local containment. Migrated to the mutex owner;
+no validation has passed yet for this live boundary.
+
+Request workspace check3 TERMINAL0/1m24s. Actual request laws added:
+clones reuse one coordinate; equal-source different requests do not alias;
+unused requests never create rows; closed publication refuses unused request
+resolution; foreign issuer rejection happens before either table allocation;
+public handle Send+Sync and builder Send are compile-checked. Not yet passing
+test evidence. Existing fixtures with unconsumed declared rows may need migration
+to actual admitted binding coordinates; do not fake rows or weaken the contract.
+
+Request targeted nextest TERMINAL0/build1m59s:6/6PASS0.162s.
+All3 actual referenced-slot counterexamples now pass, along with prior
+shadow/retained/capture source propagation and2 exact request-law cases.
+Handle Send+Sync/builder Send compile checks pass. Complete Core library
+run now live; public/live Core50 full matrix/CLI/targets remains required.
+
+Core whole-library initial run TERMINAL100: 1022/1036 PASS, 14 fixtures FAIL
+because they assumed semantic admission minted final ordinal rows without
+an actual consumer. Migrated binding coordinates through admitted patterns,
+function inputs and function bodies; no fake/eager rows, row-limit relaxation,
+or rollback/custody/scope/partial-move assertion deletion. Intermediate run
+1034/1036 PASS; corrected scoped fixture signatures and tuple expression
+construction. One subsequent test build failed from a missing derived local
+binding after fixture reordering; repaired it before validation.
+Final Core nextest TERMINAL0: 1036/1036 PASS, 0 skipped, 6.822s.
+Current source freeze: 11 Rust paths; 99 Cargo/build graph inputs unchanged.
+Full workspace and Core transitive reverse-dependency validation in progress.
+Whole goal remains ACTIVE/INCOMPLETE; no repeated Astra consultation.
+
+### 2026-10-08: checked deferred local request cut — verified delivery
+
+Construction admission now validates source/type/context and reserves request
+capacity before commitment, but mints a dense final slot only when an actual
+Core consumer uses that request. Clones share one slot; foreign issuers cannot
+materialize it; unused requests cannot create rows after finish. The sole final
+table remains immutable and requires no runtime mutex. Removed the old
+whole-table cloning local batch path. No owner is guessed, no IDs are remapped
+after publication, and no compatibility reader/version bump was introduced.
+
+Migrated 14 Core-library fixtures and one Core integration fixture to actual
+admitted patterns, function inputs, or function bodies. Preserve row-limit,
+atomic admission, custody, scoped restore, partial move, and Rust-compatible
+whole-local reinitialization assertions. Source-sensitive Cargo/test handles
+were terminal before every subsequent Rust edit or Cargo invocation.
+
+Verification at the final 12-Rust-path source freeze:
+- Core library: 1036/1036 PASS, 6.822s.
+- Resolved Cargo graph: 845 packages/97 workspace members; Core transitive
+  reverse dependencies 50, independently matched by all-target cargo tree.
+  99 Cargo/build inputs unchanged.
+- Non-CLI affected nextest selection: 4980 unique tests across 175 runnable
+  binaries/46 packages. Full run TERMINAL100: 4979 PASS (4 slow), one fixture
+  FAIL, 16 skipped, 567.018s. Repaired that sole integration fixture through a
+  real function-body Let and reran exactly it: TERMINAL0/1 PASS/0.015s.
+  Combined exact-ID coverage is 4980/4980 PASS, no missing/extra/duplicate
+  selected IDs and no unresolved failure. Do not describe the original whole
+  run as exit0. Only the failing test fixture changed after that whole run.
+  Umbrella arcweft, bundle-assets and render-web have no selected tests; CLI
+  is separately tested, and render-web is additionally checked on wasm.
+- CLI: same exact 597-test set, 9 listed/8 runnable binaries; TERMINAL100:
+  320 PASS/277 FAIL/23 skipped, 127.823s. Failed IDs exactly match the retained
+  277 baseline: new0/resolved0/missing0. CLI is not green and its repairs remain
+  required by the whole goal.
+- Final workspace all-target/all-feature locked check: TERMINAL0/11.47s;
+  Clippy: TERMINAL0/7.93s. No new diagnostic labels versus delivered baseline;
+  existing diagnostics remain, with no suppression.
+- Core/render-web wasm32 all-target/all-feature locked check: TERMINAL0/35.70s.
+- Structure audit: TERMINAL0, no blocking finding. Format/diff/source-byte and
+  explicit staged-blob checks precede normal main commit/push.
+
+Evidence receipts: TEMP arcweft-1008-owned-local-requests- source-final,
+coverage-final, cli-comparison-final, lint-comparison-final, rdeps/tree,
+check-delivery, clippy-delivery, wasm-final and structure-final files.
+Base main/origin/main 730ab0f43e8bdb041cb84a7ddb793c85fc6652ea.
+
+Whole goal remains ACTIVE/INCOMPLETE. This removes real unused-row defects in
+authored View, generic-function and captured-closure execution; it does not
+complete E1. Next required work is actual per-emission-body slot ownership and
+initialization/physical storage with complete row codec/transcript across real
+Function/Flow/Line/Stream/helper/method substrates, including the remaining
+iteration-method global fallback. Global15 memo/common seal/private image,
+protected all14 Cut5, original View/nominal/scheduler/borrowing/Tier2/CLI277/
+old-path deletion/final acceptance remain pending. Astra one-shot remains
+consumed; do not repeat it after compaction.

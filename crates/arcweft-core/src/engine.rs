@@ -4092,7 +4092,6 @@ fn line_effect_is_visible(effect: &LineEffectRequest) -> bool {
 mod rollback_tests {
     use super::*;
     use crate::plan::RuntimePlanBuilder;
-    use crate::runtime_id::RuntimeLocalDeclarationId;
     use crate::task::{LogicalEpoch, RuntimeNeedState, TaskSequence};
     use arcweft_need::Need;
     use std::num::NonZeroU32;
@@ -4134,7 +4133,7 @@ mod rollback_tests {
         let unit = crate::pattern::RuntimeSemanticTypeId::from_bytes([0xe1; 32]);
         let need = crate::pattern::RuntimeSemanticTypeId::from_bytes([0xe2; 32]);
         let mut builder = RuntimePlanBuilder::new();
-        builder
+        let admitted = builder
             .admit_type_batch(
                 [
                     RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
@@ -4143,11 +4142,18 @@ mod rollback_tests {
                 [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.engine.native_rollback_round_trips_distinct_affine_env_and_ready_owners.binding_a"), need)],
             )
             .expect("admitted affine local");
+        let pattern = builder
+            .lower_pattern_seed_for_test(crate::plan::RuntimePatternSeed::new(
+                need,
+                crate::plan::RuntimePatternSeedKind::Bind {
+                    mutable: false,
+                    local: admitted.local_ids()[0].clone(),
+                },
+            ))
+            .unwrap();
+        let local = pattern.binding_declarations().next().unwrap().local();
         let plan = builder.finish().expect("typed owner plan");
         let mut engine = Engine::new(plan);
-        let local = RuntimeLocalDeclarationId::from_accepted_ordinal(
-            NonZeroU32::new(1).expect("nonzero local"),
-        );
         let local_need = crate::tests::reusable_need_with_outcome(
             "local input",
             crate::task::TaskOutcomeContract::program(unit),

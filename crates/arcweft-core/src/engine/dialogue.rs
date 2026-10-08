@@ -3235,7 +3235,7 @@ mod tests {
             .try_producer()
             .expect("producer");
         let mut builder = RuntimePlanBuilder::new();
-        builder
+        let admitted = builder
             .admit_type_batch(
                 [RuntimePlanTypeSeed::new(
                     actor_type,
@@ -3256,12 +3256,26 @@ mod tests {
                 ],
             )
             .expect("local declaration");
+        let locals = admitted
+            .local_ids()
+            .iter()
+            .map(|local| {
+                let pattern = builder
+                    .lower_pattern_seed_for_test(crate::plan::RuntimePatternSeed::new(
+                        actor_type,
+                        crate::plan::RuntimePatternSeedKind::Bind {
+                            mutable: true,
+                            local: local.clone(),
+                        },
+                    ))
+                    .unwrap();
+                pattern.binding_declarations().next().unwrap().local()
+            })
+            .collect::<Vec<_>>();
         let mut engine = Engine::new(builder.finish().expect("plan"));
         let id = activation_id();
-        let source = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
-        let destination = RuntimeLocalDeclarationId::from_accepted_ordinal(
-            NonZeroU32::new(2).expect("second local"),
-        );
+        let source = locals[0];
+        let destination = locals[1];
         let mut frame = activation_frame(source);
         frame.locals = crate::value::RuntimeEnv::default();
         frame.locals.push_scope();
@@ -3347,8 +3361,7 @@ mod tests {
             )
         );
 
-        let incoming_local =
-            RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::new(3).unwrap());
+        let incoming_local = locals[2];
         let mut ledger = line.ledger().clone();
         let incoming = ledger
             .issue(

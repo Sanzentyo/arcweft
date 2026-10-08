@@ -26,7 +26,7 @@ fn plan(padding: bool) -> (RuntimePlan, RuntimeLocalDeclarationId) {
         fixture_binding_source([12; 32], false),
         semantic,
     ));
-    builder
+    let admission = builder
         .admit_type_batch(
             [RuntimePlanTypeSeed::new(
                 semantic,
@@ -35,12 +35,20 @@ fn plan(padding: bool) -> (RuntimePlan, RuntimeLocalDeclarationId) {
             locals,
         )
         .unwrap();
-    (
-        builder.finish().unwrap(),
-        RuntimeLocalDeclarationId::from_accepted_ordinal(
-            NonZeroU32::new(if padding { 2 } else { 1 }).unwrap(),
-        ),
-    )
+    let mut target = None;
+    for local in admission.local_ids() {
+        let pattern = builder
+            .lower_pattern_seed_for_test(crate::plan::RuntimePatternSeed::new(
+                semantic,
+                crate::plan::RuntimePatternSeedKind::Bind {
+                    mutable: false,
+                    local: local.clone(),
+                },
+            ))
+            .unwrap();
+        target = Some(pattern.binding_declarations().next().unwrap().local());
+    }
+    (builder.finish().unwrap(), target.unwrap())
 }
 
 fn assignment_digest(plan: &RuntimePlan, assignment: &RuntimeAssignment) -> blake3::Hash {
@@ -2002,7 +2010,16 @@ fn private_inventory_resolves_body_and_type_authority_before_plan_publication() 
         )
         .unwrap();
     let ty = admission.type_ids()[0];
-    let local = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
+    let pattern = builder
+        .lower_pattern_seed_for_test(crate::plan::RuntimePatternSeed::new(
+            semantic,
+            crate::plan::RuntimePatternSeedKind::Bind {
+                mutable: false,
+                local: admission.local_ids()[0].clone(),
+            },
+        ))
+        .unwrap();
+    let local = pattern.binding_declarations().next().unwrap().local();
     let expression = crate::value::RuntimeExpr::from_admitted_parts(
         ty,
         crate::value::RuntimeExprKind::Local(crate::value::RuntimeLocalRead::from_admitted_parts(
