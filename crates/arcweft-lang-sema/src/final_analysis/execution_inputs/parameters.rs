@@ -135,6 +135,13 @@ impl CheckedExecutionParameter {
     pub const fn runtime_input_origin(&self) -> arcweft_core::plan::RuntimeFunctionInputOrigin {
         arcweft_core::plan::RuntimeFunctionInputOrigin::Parameter(self.identity.runtime_identity())
     }
+    pub const fn runtime_local_declaration_source(
+        &self,
+    ) -> arcweft_core::plan::RuntimeLocalDeclarationSource {
+        arcweft_core::plan::RuntimeLocalDeclarationSource::Parameter(
+            self.identity.runtime_identity(),
+        )
+    }
     pub const fn definition_identity(&self) -> super::CheckedExecutionDefinitionIdentity {
         self.definition
     }

@@ -45,7 +45,7 @@ pub(crate) fn returning_function_plan(body_kind: RuntimeFunctionSiteBodyKind) ->
                 ),
             ],
             [RuntimeLocalDeclarationSeed::new(
-                manual_local_origin("arcweft-core.fixture.tests.function_application.returning_function_plan.binding_a"),
+                manual_local_source("arcweft-core.fixture.tests.function_application.returning_function_plan.binding_a"),
                 unit,
             )],
         )
@@ -178,11 +178,18 @@ pub(crate) fn returning_function_result(plan: &RuntimePlan) -> RuntimePattern {
     result.clone()
 }
 
-fn manual_local_origin(declaration: &str) -> crate::plan::RuntimeLocalOrigin {
+fn manual_local_source(declaration: &str) -> crate::plan::RuntimeLocalDeclarationSource {
     // This fixture declares a semantic binding name independent of its value,
     // type, source offset, and builder-issued local ordinal.
     let mut identity = blake3::Hasher::new();
     identity.update(b"arcweft.manual-fixture-binding.v1\0");
     identity.update(declaration.as_bytes());
-    crate::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
+    crate::plan::RuntimeLocalDeclarationSource::Binding {
+        identity: *identity.finalize().as_bytes(),
+        declaration: crate::plan::RuntimeLocalBindingDeclaration::new(
+            crate::plan::RuntimeLocalBindingKind::PatternBinding,
+            false,
+            crate::plan::RuntimeLocalBindingStorage::Derived,
+        ),
+    }
 }

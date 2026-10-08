@@ -92,7 +92,7 @@ fn counter_plan(return_when: IteratorReturn) -> RuntimePlan {
                 RuntimePlanTypeSeed::new(bool_type, RuntimePlanTypeProjection::Bool),
             ],
             [RuntimeLocalDeclarationSeed::new(
-                manual_local_origin("arcweft-runtime-plan.fixture.tests.iterator_witness_awbc.counter_plan.binding_a"),
+                manual_local_source("arcweft-runtime-plan.fixture.tests.iterator_witness_awbc.counter_plan.binding_a"),
                 item_type,
             )],
         )
@@ -275,11 +275,18 @@ fn builtin_iterator_exits_after_owned_source_is_exhausted() {
     );
 }
 
-fn manual_local_origin(declaration: &str) -> arcweft_core::plan::RuntimeLocalOrigin {
+fn manual_local_source(declaration: &str) -> arcweft_core::plan::RuntimeLocalDeclarationSource {
     // This fixture declares a semantic binding name independent of its value,
     // type, source offset, and builder-issued local ordinal.
     let mut identity = blake3::Hasher::new();
     identity.update(b"arcweft.manual-fixture-binding.v1\0");
     identity.update(declaration.as_bytes());
-    arcweft_core::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
+    arcweft_core::plan::RuntimeLocalDeclarationSource::Binding {
+        identity: *identity.finalize().as_bytes(),
+        declaration: arcweft_core::plan::RuntimeLocalBindingDeclaration::new(
+            arcweft_core::plan::RuntimeLocalBindingKind::PatternBinding,
+            false,
+            arcweft_core::plan::RuntimeLocalBindingStorage::Derived,
+        ),
+    }
 }

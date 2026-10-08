@@ -3250,9 +3250,9 @@ mod tests {
                     },
                 )],
                 [
-                    RuntimeLocalDeclarationSeed::new(crate::engine::dialogue::manual_local_origin("arcweft-core.fixture.engine.dialogue.init_scope_let_and_assignment_move_custody_and_journal_exact_release.binding_a"), actor_type),
-                    RuntimeLocalDeclarationSeed::new(crate::engine::dialogue::manual_local_origin("arcweft-core.fixture.engine.dialogue.init_scope_let_and_assignment_move_custody_and_journal_exact_release.binding_b"), actor_type),
-                    RuntimeLocalDeclarationSeed::new(crate::engine::dialogue::manual_local_origin("arcweft-core.fixture.engine.dialogue.init_scope_let_and_assignment_move_custody_and_journal_exact_release.binding_c"), actor_type),
+                    RuntimeLocalDeclarationSeed::new(crate::engine::dialogue::manual_local_source("arcweft-core.fixture.engine.dialogue.init_scope_let_and_assignment_move_custody_and_journal_exact_release.binding_a"), actor_type),
+                    RuntimeLocalDeclarationSeed::new(crate::engine::dialogue::manual_local_source("arcweft-core.fixture.engine.dialogue.init_scope_let_and_assignment_move_custody_and_journal_exact_release.binding_b"), actor_type),
+                    RuntimeLocalDeclarationSeed::new(crate::engine::dialogue::manual_local_source("arcweft-core.fixture.engine.dialogue.init_scope_let_and_assignment_move_custody_and_journal_exact_release.binding_c"), actor_type),
                 ],
             )
             .expect("local declaration");
@@ -3446,11 +3446,18 @@ mod tests {
 }
 
 #[cfg(test)]
-fn manual_local_origin(declaration: &str) -> crate::plan::RuntimeLocalOrigin {
+fn manual_local_source(declaration: &str) -> crate::plan::RuntimeLocalDeclarationSource {
     // This fixture declares a semantic binding name independent of its value,
     // type, source offset, and builder-issued local ordinal.
     let mut identity = blake3::Hasher::new();
     identity.update(b"arcweft.manual-fixture-binding.v1\0");
     identity.update(declaration.as_bytes());
-    crate::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
+    crate::plan::RuntimeLocalDeclarationSource::Binding {
+        identity: *identity.finalize().as_bytes(),
+        declaration: crate::plan::RuntimeLocalBindingDeclaration::new(
+            crate::plan::RuntimeLocalBindingKind::PatternBinding,
+            false,
+            crate::plan::RuntimeLocalBindingStorage::Derived,
+        ),
+    }
 }

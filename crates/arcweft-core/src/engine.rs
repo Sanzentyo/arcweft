@@ -4140,7 +4140,7 @@ mod rollback_tests {
                     RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
                     RuntimePlanTypeSeed::new(need, RuntimePlanTypeProjection::Need(unit)),
                 ],
-                [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.engine.native_rollback_round_trips_distinct_affine_env_and_ready_owners.binding_a"), need)],
+                [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.engine.native_rollback_round_trips_distinct_affine_env_and_ready_owners.binding_a"), need)],
             )
             .expect("admitted affine local");
         let plan = builder.finish().expect("typed owner plan");
@@ -4216,11 +4216,18 @@ mod rollback_tests {
 }
 
 #[cfg(test)]
-fn manual_local_origin(declaration: &str) -> crate::plan::RuntimeLocalOrigin {
+fn manual_local_source(declaration: &str) -> crate::plan::RuntimeLocalDeclarationSource {
     // This fixture declares a semantic binding name independent of its value,
     // type, source offset, and builder-issued local ordinal.
     let mut identity = blake3::Hasher::new();
     identity.update(b"arcweft.manual-fixture-binding.v1\0");
     identity.update(declaration.as_bytes());
-    crate::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
+    crate::plan::RuntimeLocalDeclarationSource::Binding {
+        identity: *identity.finalize().as_bytes(),
+        declaration: crate::plan::RuntimeLocalBindingDeclaration::new(
+            crate::plan::RuntimeLocalBindingKind::PatternBinding,
+            false,
+            crate::plan::RuntimeLocalBindingStorage::Derived,
+        ),
+    }
 }

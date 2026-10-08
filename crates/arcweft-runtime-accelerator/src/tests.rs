@@ -271,7 +271,7 @@ fn admit_helper(
                 .enumerate()
                 .map(|(source_ordinal, ty)| {
                     RuntimeLocalDeclarationSeed::new(
-                        manual_local_origin(&format!(
+                        manual_local_source(&format!(
                             "arcweft-runtime-accelerator.fixture.tests.program.inputs[{source_ordinal}]"
                         )),
                         ty,
@@ -410,7 +410,7 @@ fn admit_add_helpers(
                 .flat_map(|(helper_source, (_, input_type, _))| {
                     (0..2).map(move |input_source| {
                         RuntimeLocalDeclarationSeed::new(
-                            manual_local_origin(&format!(
+                            manual_local_source(&format!(
                                 "arcweft-runtime-accelerator.fixture.tests.add-helper[{helper_source}].input[{input_source}]"
                             )),
                             helper_type_identity(*input_type),
@@ -2032,7 +2032,7 @@ fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
             ],
             (0..3).map(|source_ordinal| {
                 RuntimeLocalDeclarationSeed::new(
-                    manual_local_origin(&format!(
+                    manual_local_source(&format!(
                         "arcweft-runtime-accelerator.fixture.tests.dense-map.input[{source_ordinal}]"
                     )),
                     u32_ty,
@@ -2671,11 +2671,18 @@ fn vm_batch_uses_i64_args_without_value_vec_allocation() {
     assert_eq!(accelerator.stats().thread_pool_jobs, 2);
 }
 
-fn manual_local_origin(declaration: &str) -> arcweft_core::plan::RuntimeLocalOrigin {
+fn manual_local_source(declaration: &str) -> arcweft_core::plan::RuntimeLocalDeclarationSource {
     // This fixture declares a semantic binding name independent of its value,
     // type, source offset, and builder-issued local ordinal.
     let mut identity = blake3::Hasher::new();
     identity.update(b"arcweft.manual-fixture-binding.v1\0");
     identity.update(declaration.as_bytes());
-    arcweft_core::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
+    arcweft_core::plan::RuntimeLocalDeclarationSource::Binding {
+        identity: *identity.finalize().as_bytes(),
+        declaration: arcweft_core::plan::RuntimeLocalBindingDeclaration::new(
+            arcweft_core::plan::RuntimeLocalBindingKind::PatternBinding,
+            false,
+            arcweft_core::plan::RuntimeLocalBindingStorage::Derived,
+        ),
+    }
 }

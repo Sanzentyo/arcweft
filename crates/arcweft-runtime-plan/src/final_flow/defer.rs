@@ -28,8 +28,8 @@ pub(super) fn reserve_global_defer_sites(
                 .enumerate()
                 .map(move |(position, capture)| {
                     capture
-                        .origin()
-                        .runtime_local_origin()
+                        .checked_origin()
+                        .runtime_local_declaration_source()
                         .map(|origin| {
                             (
                                 statement,

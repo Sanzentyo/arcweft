@@ -6,8 +6,7 @@ mod stream_rows;
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::RuntimePlan;
 use crate::plan::{
-    RuntimeLocalDeclarationSeed, RuntimeLocalOrigin, RuntimePlanBuilder, RuntimePlanTypeProjection,
-    RuntimePlanTypeSeed,
+    RuntimeLocalDeclarationSeed, RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
 };
 use crate::task::semantic::TaskSemanticMeter;
 use crate::value::RuntimeDisplacedField;
@@ -19,12 +18,12 @@ fn plan(padding: bool) -> (RuntimePlan, RuntimeLocalDeclarationId) {
     let mut locals = Vec::new();
     if padding {
         locals.push(RuntimeLocalDeclarationSeed::new(
-            RuntimeLocalOrigin::Binding([9; 32]),
+            fixture_binding_source([9; 32], false),
             semantic,
         ));
     }
     locals.push(RuntimeLocalDeclarationSeed::new(
-        RuntimeLocalOrigin::Binding([12; 32]),
+        fixture_binding_source([12; 32], false),
         semantic,
     ));
     builder
@@ -1412,11 +1411,11 @@ fn actual_host_request_recognizes_typed_capture_prologue_bindings() {
                 [],
                 [
                     RuntimeLocalDeclarationSeed::new(
-                        RuntimeLocalOrigin::Binding([31; 32]),
+                        fixture_binding_source([31; 32], false),
                         boolean,
                     ),
                     RuntimeLocalDeclarationSeed::new(
-                        RuntimeLocalOrigin::Binding([32; 32]),
+                        fixture_binding_source([32; 32], false),
                         boolean,
                     ),
                 ],
@@ -1997,7 +1996,7 @@ fn private_inventory_resolves_body_and_type_authority_before_plan_publication() 
                 RuntimePlanTypeProjection::Bool,
             )],
             [RuntimeLocalDeclarationSeed::new(
-                RuntimeLocalOrigin::Binding([72; 32]),
+                fixture_binding_source([72; 32], false),
                 semantic,
             )],
         )
@@ -2038,4 +2037,18 @@ fn private_inventory_resolves_body_and_type_authority_before_plan_publication() 
     assert_eq!(plan.artifact(), None);
     assert_eq!(prepared, digest(&plan));
     assert!(std::ptr::eq(plan.type_table(), plan.inventory.type_table()));
+}
+
+fn fixture_binding_source(
+    identity: [u8; 32],
+    mutable: bool,
+) -> crate::plan::RuntimeLocalDeclarationSource {
+    crate::plan::RuntimeLocalDeclarationSource::Binding {
+        identity,
+        declaration: crate::plan::RuntimeLocalBindingDeclaration::new(
+            crate::plan::RuntimeLocalBindingKind::PatternBinding,
+            mutable,
+            crate::plan::RuntimeLocalBindingStorage::Derived,
+        ),
+    }
 }

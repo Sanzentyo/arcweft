@@ -71,15 +71,18 @@ pub(in crate::app) enum JitBuiltinCase {
 }
 
 impl JitBuiltinCase {
-    fn local_origin(
+    fn local_source(
         self,
         source_position: usize,
         formal_count: usize,
-    ) -> arcweft_core::plan::RuntimeLocalOrigin {
+    ) -> arcweft_core::plan::RuntimeLocalDeclarationSource {
         if source_position < formal_count {
-            return arcweft_core::plan::RuntimeLocalOrigin::Parameter(self.parameter_identity(
-                u32::try_from(source_position).expect("builtin formal source position fits u32"),
-            ));
+            return arcweft_core::plan::RuntimeLocalDeclarationSource::Parameter(
+                self.parameter_identity(
+                    u32::try_from(source_position)
+                        .expect("builtin formal source position fits u32"),
+                ),
+            );
         }
         // This position addresses the authored builtin recipe's declaration
         // list before any builder local identity is issued.
@@ -89,7 +92,7 @@ impl JitBuiltinCase {
         hash.update(b"arcweft.cli.jit-builtin-local.v1\0");
         hash.update(self.definition_identity().as_bytes());
         hash.update(&declaration.to_le_bytes());
-        arcweft_core::plan::RuntimeLocalOrigin::Generated(
+        arcweft_core::plan::RuntimeLocalDeclarationSource::Generated(
             arcweft_core::plan::RuntimeGeneratedLocalOrigin::from_accepted_identity(
                 *hash.finalize().as_bytes(),
             ),
@@ -1049,7 +1052,7 @@ impl JitCheckTarget {
                 ],
                 (0..N + local_count).map(|source_position| {
                     RuntimeLocalDeclarationSeed::new(
-                        definition.local_origin(source_position, N),
+                        definition.local_source(source_position, N),
                         i64_type,
                     )
                 }),

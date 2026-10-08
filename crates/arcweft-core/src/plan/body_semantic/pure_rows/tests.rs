@@ -3,10 +3,10 @@ use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::{
     RuntimeCallableParameterSeed, RuntimeExprSeed, RuntimeExprSeedKind,
     RuntimeFunctionDefinitionIdentity, RuntimeFunctionParameterIdentity,
-    RuntimeFunctionParameterPassing, RuntimeLocalDeclarationSeed, RuntimeLocalOrigin,
-    RuntimePlanBuilder, RuntimePlanInventory, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
-    RuntimePureHelperOrigin, RuntimePureHelperSeed, RuntimeTaskPlanSealLimits,
-    RuntimeTraitMethodIdentity, RuntimeTraitMethodSeed,
+    RuntimeFunctionParameterPassing, RuntimeLocalDeclarationSeed, RuntimePlanBuilder,
+    RuntimePlanInventory, RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimePureHelperOrigin,
+    RuntimePureHelperSeed, RuntimeTaskPlanSealLimits, RuntimeTraitMethodIdentity,
+    RuntimeTraitMethodSeed,
 };
 use crate::task::semantic::TaskSemanticEncodingError;
 use crate::value::RuntimeValue;
@@ -56,11 +56,11 @@ impl Fixture {
                 )],
                 [
                     RuntimeLocalDeclarationSeed::new(
-                        RuntimeLocalOrigin::Binding([11; 32]),
+                        fixture_binding_source([11; 32], false),
                         boolean,
                     ),
                     RuntimeLocalDeclarationSeed::new(
-                        RuntimeLocalOrigin::Binding([12; 32]),
+                        fixture_binding_source([12; 32], false),
                         boolean,
                     ),
                 ],
@@ -309,5 +309,19 @@ fn pure_rows_share_exact_limits_and_reject_foreign_owner_or_inherited_poison() {
             ))
         ));
         assert_eq!(poisoned.totals(), before);
+    }
+}
+
+fn fixture_binding_source(
+    identity: [u8; 32],
+    mutable: bool,
+) -> crate::plan::RuntimeLocalDeclarationSource {
+    crate::plan::RuntimeLocalDeclarationSource::Binding {
+        identity,
+        declaration: crate::plan::RuntimeLocalBindingDeclaration::new(
+            crate::plan::RuntimeLocalBindingKind::PatternBinding,
+            mutable,
+            crate::plan::RuntimeLocalBindingStorage::Derived,
+        ),
     }
 }

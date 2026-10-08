@@ -299,9 +299,15 @@ mod tests {
         let ty = RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN);
         let local = builder
             .push(
-                crate::plan::RuntimeLocalOrigin::Binding(
-                    *blake3::hash(b"arcweft.core.fixture.pattern-binding.local.v1\0").as_bytes(),
-                ),
+                crate::plan::RuntimeLocalDeclarationSource::Binding {
+                    identity: *blake3::hash(b"arcweft.core.fixture.pattern-binding.local.v1\0")
+                        .as_bytes(),
+                    declaration: crate::plan::RuntimeLocalBindingDeclaration::new(
+                        crate::plan::RuntimeLocalBindingKind::PatternBinding,
+                        false,
+                        crate::plan::RuntimeLocalBindingStorage::Derived,
+                    ),
+                },
                 ty,
             )
             .expect("first local identity");

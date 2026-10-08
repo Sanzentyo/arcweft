@@ -185,7 +185,7 @@ fn identity_program_plan(
                 .enumerate()
                 .map(|(source_ordinal, ty)| {
                     RuntimeLocalDeclarationSeed::new(
-                        manual_local_origin(&format!(
+                        manual_local_source(&format!(
                             "arcweft-core.fixture.program-custody.input[{source_ordinal}]"
                         )),
                         ty,
@@ -597,11 +597,18 @@ fn detached_nested_handle_reports_its_original_path_and_preserves_ledger() {
     assert_eq!(fixture.ledger, before);
 }
 
-fn manual_local_origin(declaration: &str) -> crate::plan::RuntimeLocalOrigin {
+fn manual_local_source(declaration: &str) -> crate::plan::RuntimeLocalDeclarationSource {
     let mut identity = blake3::Hasher::new();
     identity.update(b"arcweft.manual-fixture-binding.v1\0");
     identity.update(declaration.as_bytes());
-    crate::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
+    crate::plan::RuntimeLocalDeclarationSource::Binding {
+        identity: *identity.finalize().as_bytes(),
+        declaration: crate::plan::RuntimeLocalBindingDeclaration::new(
+            crate::plan::RuntimeLocalBindingKind::PatternBinding,
+            false,
+            crate::plan::RuntimeLocalBindingStorage::Derived,
+        ),
+    }
 }
 
 fn manual_awbc_formal_identity(declaration: &str) -> crate::plan::RuntimeFunctionParameterIdentity {

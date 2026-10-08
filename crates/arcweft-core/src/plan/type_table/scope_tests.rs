@@ -108,7 +108,7 @@ fn executable_slots_reject_scoped_descendants_but_accept_closed_schemes() {
     assert!(matches!(
         builder.admit_type_batch(
             seeds.clone(),
-            [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.plan.type_table.scope_tests.executable_slots_reject_scoped_descendants_but_accept_closed_schemes.binding_a"), identity(1))],
+            [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.plan.type_table.scope_tests.executable_slots_reject_scoped_descendants_but_accept_closed_schemes.binding_a"), identity(1))],
         ),
         Err(RuntimePlanBuildError::InvalidTypeProjection {
             context: "scoped local declaration type",
@@ -117,7 +117,7 @@ fn executable_slots_reject_scoped_descendants_but_accept_closed_schemes() {
     ));
     // Reusing the same builder also verifies failed local admission is atomic.
     builder
-        .admit_type_batch(seeds, [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.plan.type_table.scope_tests.executable_slots_reject_scoped_descendants_but_accept_closed_schemes.binding_b"), identity(2))])
+        .admit_type_batch(seeds, [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.plan.type_table.scope_tests.executable_slots_reject_scoped_descendants_but_accept_closed_schemes.binding_b"), identity(2))])
         .unwrap();
     assert!(matches!(
         builder.reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
@@ -176,7 +176,7 @@ fn contextual_local_admission_requires_its_function_scope_and_remains_atomic() {
         assert!(matches!(
             builder.admit_type_batch(
                 seeds.clone(),
-                [RuntimeLocalDeclarationSeed::in_function(manual_local_origin("arcweft-core.fixture.plan.type_table.scope_tests.contextual_local_admission_requires_its_function_scope_and_remains_atomic.binding_a"),
+                [RuntimeLocalDeclarationSeed::in_function(manual_local_source("arcweft-core.fixture.plan.type_table.scope_tests.contextual_local_admission_requires_its_function_scope_and_remains_atomic.binding_a"),
                     identity(1),
                     context
                 )]
@@ -190,7 +190,7 @@ fn contextual_local_admission_requires_its_function_scope_and_remains_atomic() {
     let admitted = builder
         .admit_type_batch(
             seeds,
-            [RuntimeLocalDeclarationSeed::in_function(manual_local_origin("arcweft-core.fixture.plan.type_table.scope_tests.contextual_local_admission_requires_its_function_scope_and_remains_atomic.binding_b"),
+            [RuntimeLocalDeclarationSeed::in_function(manual_local_source("arcweft-core.fixture.plan.type_table.scope_tests.contextual_local_admission_requires_its_function_scope_and_remains_atomic.binding_b"),
                 identity(1),
                 identity(3),
             )],
@@ -242,7 +242,7 @@ fn quantified_function_frame_retains_its_header_through_pattern_and_body_admissi
                     },
                 ),
             ],
-            [RuntimeLocalDeclarationSeed::in_function(manual_local_origin("arcweft-core.fixture.plan.type_table.scope_tests.quantified_function_frame_retains_its_header_through_pattern_and_body_admission.binding_a"),
+            [RuntimeLocalDeclarationSeed::in_function(manual_local_source("arcweft-core.fixture.plan.type_table.scope_tests.quantified_function_frame_retains_its_header_through_pattern_and_body_admission.binding_a"),
                 identity(1),
                 identity(2),
             )],
@@ -314,11 +314,18 @@ fn quantified_function_frame_retains_its_header_through_pattern_and_body_admissi
     assert_eq!(frame.inputs()[0].pattern().ty(), frame.result());
 }
 
-fn manual_local_origin(declaration: &str) -> crate::plan::RuntimeLocalOrigin {
+fn manual_local_source(declaration: &str) -> crate::plan::RuntimeLocalDeclarationSource {
     // This fixture declares a semantic binding name independent of its value,
     // type, source offset, and builder-issued local ordinal.
     let mut identity = blake3::Hasher::new();
     identity.update(b"arcweft.manual-fixture-binding.v1\0");
     identity.update(declaration.as_bytes());
-    crate::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
+    crate::plan::RuntimeLocalDeclarationSource::Binding {
+        identity: *identity.finalize().as_bytes(),
+        declaration: crate::plan::RuntimeLocalBindingDeclaration::new(
+            crate::plan::RuntimeLocalBindingKind::PatternBinding,
+            false,
+            crate::plan::RuntimeLocalBindingStorage::Derived,
+        ),
+    }
 }

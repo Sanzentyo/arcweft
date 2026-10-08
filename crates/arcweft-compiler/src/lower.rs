@@ -4937,7 +4937,11 @@ fn runtime_dialogue_effect(
             };
             RuntimeExecutableCaptureFact::try_new(
                 capture.local(),
-                capture.origin().clone(),
+                analysis
+                    .local_binding_origin(capture.local())
+                    .map_err(|error| RuntimeSemanticProjectionError::Type {
+                        reason: error.to_string(),
+                    })?,
                 local_uses.value_transfer_at(site).ok_or_else(|| {
                     RuntimeSemanticProjectionError::Dialogue {
                         owner: Some(owner),
@@ -4996,7 +5000,11 @@ fn runtime_defer(
             };
             RuntimeExecutableCaptureFact::try_new(
                 capture.local(),
-                capture.origin().clone(),
+                analysis
+                    .local_binding_origin(capture.local())
+                    .map_err(|error| RuntimeSemanticProjectionError::Type {
+                        reason: error.to_string(),
+                    })?,
                 local_uses.value_transfer_at(site).ok_or_else(|| {
                     RuntimeSemanticProjectionError::Type {
                         reason: "defer capture has no selected value transfer".to_owned(),

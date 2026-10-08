@@ -1363,6 +1363,12 @@ impl RuntimeClosureCaptureFact {
         self.origin.source()
     }
 
+    pub const fn checked_origin(
+        &self,
+    ) -> &arcweft_lang_sema::semantic_coordinate::CheckedLocalBindingOrigin {
+        self.origin.checked_origin()
+    }
+
     pub const fn origin(
         &self,
     ) -> &arcweft_lang_sema::semantic_coordinate::StableCheckedBindingCoordinate {

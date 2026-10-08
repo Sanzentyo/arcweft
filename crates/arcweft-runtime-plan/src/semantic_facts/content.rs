@@ -166,7 +166,7 @@ impl RuntimeDialogueEffectCaptureKey {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeExecutableCaptureFact {
     local: LocalId,
-    origin: StableCheckedBindingCoordinate,
+    origin: arcweft_lang_sema::semantic_coordinate::CheckedLocalBindingOrigin,
     transfer: arcweft_lang_sema::final_analysis::CheckedLocalValueTransfer,
     ty: RuntimeNormalizedType,
 }
@@ -174,11 +174,12 @@ pub struct RuntimeExecutableCaptureFact {
 impl RuntimeExecutableCaptureFact {
     pub fn try_new(
         local: LocalId,
-        origin: StableCheckedBindingCoordinate,
+        origin: arcweft_lang_sema::semantic_coordinate::CheckedLocalBindingOrigin,
         transfer: arcweft_lang_sema::final_analysis::CheckedLocalValueTransfer,
         ty: RuntimeNormalizedType,
     ) -> Result<Self, RuntimeExecutableCaptureFactError> {
-        if transfer.local() != local
+        if origin.declaration().local() != local
+            || transfer.local() != local
             || !transfer.fields().is_empty()
             || matches!(
                 transfer.mode(),
@@ -199,8 +200,13 @@ impl RuntimeExecutableCaptureFact {
         self.local
     }
 
-    pub const fn origin(&self) -> &StableCheckedBindingCoordinate {
+    pub const fn checked_origin(
+        &self,
+    ) -> &arcweft_lang_sema::semantic_coordinate::CheckedLocalBindingOrigin {
         &self.origin
+    }
+    pub const fn origin(&self) -> &StableCheckedBindingCoordinate {
+        self.origin.coordinate()
     }
 
     pub const fn transfer(&self) -> &arcweft_lang_sema::final_analysis::CheckedLocalValueTransfer {
@@ -231,7 +237,7 @@ impl RuntimeExecutableCaptureFact {
         &self,
         capture: &arcweft_lang_sema::final_analysis::CheckedExecutableCapture,
     ) -> bool {
-        self.local == capture.local() && self.origin == *capture.origin()
+        self.local == capture.local() && self.origin() == capture.origin()
     }
 
     pub const fn ty(&self) -> &RuntimeNormalizedType {

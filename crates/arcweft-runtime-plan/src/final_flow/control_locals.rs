@@ -53,7 +53,7 @@ impl ControlLocals {
                             "generated local has no accepted structural coordinate",
                         )
                     })?
-                    .runtime_generated_local_origin(role)
+                    .runtime_generated_local_source(role)
                     .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
                 Ok::<_, RuntimePlanLowerError>(match function.filter(|_| !ty.scope().is_root()) {
                     Some(function) => RuntimeLocalDeclarationSeed::in_function(

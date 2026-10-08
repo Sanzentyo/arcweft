@@ -164,7 +164,7 @@ fn admit_stateful_types(
             types,
             [(3, 31), (2, 32), (1, 33)].map(|(ty, id)| {
                 RuntimeLocalDeclarationSeed::new(
-                    RuntimeLocalOrigin::Parameter(
+                    crate::plan::RuntimeLocalDeclarationSource::Parameter(
                         RuntimeFunctionParameterIdentity::from_accepted_identity([id; 32]),
                     ),
                     semantic(ty),
@@ -469,7 +469,10 @@ fn stateless_plan(kind: RuntimeEntryKind, routed: bool) -> RuntimePlan {
                 RuntimePlanTypeSeed::new(string, RuntimePlanTypeProjection::String),
             ],
             routed.then(|| {
-                RuntimeLocalDeclarationSeed::new(RuntimeLocalOrigin::Parameter(identity), string)
+                RuntimeLocalDeclarationSeed::new(
+                    crate::plan::RuntimeLocalDeclarationSource::Parameter(identity),
+                    string,
+                )
             }),
         )
         .unwrap();

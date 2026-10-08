@@ -234,8 +234,9 @@ fn build_while_let_plan(
                 ),
             ],
             [RuntimeLocalDeclarationSeed::new(
-                manual_local_origin(
+                manual_local_source(
                     "arcweft-runtime-plan.fixture.awbc_lower.tests.build_while_let_plan.binding_a",
+                    false,
                 ),
                 bool_type,
             )],
@@ -356,15 +357,11 @@ fn build_while_let_pop_front_plan() -> RuntimePlan {
             ],
             [
                 RuntimeLocalDeclarationSeed::new(
-                    manual_local_origin(
-                        "arcweft-runtime-plan.fixture.awbc_lower.tests.build_while_let_pop_front_plan.binding_a",
-                    ),
+                    manual_local_source("arcweft-runtime-plan.fixture.awbc_lower.tests.build_while_let_pop_front_plan.binding_a", true),
                     sequence_type,
                 ),
                 RuntimeLocalDeclarationSeed::new(
-                    manual_local_origin(
-                        "arcweft-runtime-plan.fixture.awbc_lower.tests.build_while_let_pop_front_plan.binding_b",
-                    ),
+                    manual_local_source("arcweft-runtime-plan.fixture.awbc_lower.tests.build_while_let_pop_front_plan.binding_b", false),
                     bool_type,
                 ),
             ],
@@ -474,9 +471,7 @@ fn build_vec_push_pop_plan() -> RuntimePlan {
                 ),
             ],
             [RuntimeLocalDeclarationSeed::new(
-                manual_local_origin(
-                    "arcweft-runtime-plan.fixture.awbc_lower.tests.build_vec_push_pop_plan.binding_a",
-                ),
+                manual_local_source("arcweft-runtime-plan.fixture.awbc_lower.tests.build_vec_push_pop_plan.binding_a", true),
                 sequence_type,
             )],
         )
@@ -784,7 +779,7 @@ fn line_activation_local_is_exported_only_to_post_reveal_work() {
                 type_id(1),
                 RuntimePlanTypeProjection::String,
             )],
-            [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-runtime-plan.fixture.awbc_lower.tests.line_activation_local_is_exported_only_to_post_reveal_work.binding_a"), type_id(1))],
+            [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-runtime-plan.fixture.awbc_lower.tests.line_activation_local_is_exported_only_to_post_reveal_work.binding_a", false), type_id(1))],
         )
         .expect("line result and activation local admit");
     let local = admission.local_ids()[0].clone();
@@ -1150,8 +1145,9 @@ fn foreign_local_seed() -> RuntimeLocalSeedId {
                 RuntimePlanTypeProjection::Bool,
             )],
             [RuntimeLocalDeclarationSeed::new(
-                manual_local_origin(
+                manual_local_source(
                     "arcweft-runtime-plan.fixture.awbc_lower.tests.foreign_local_seed.binding_a",
+                    false,
                 ),
                 type_id(1),
             )],
@@ -1169,8 +1165,9 @@ fn builder_with_local() -> (RuntimePlanBuilder, RuntimeLocalSeedId) {
                 RuntimePlanTypeProjection::Bool,
             )],
             [RuntimeLocalDeclarationSeed::new(
-                manual_local_origin(
+                manual_local_source(
                     "arcweft-runtime-plan.fixture.awbc_lower.tests.builder_with_local.binding_a",
+                    false,
                 ),
                 type_id(1),
             )],
@@ -1202,8 +1199,9 @@ fn plan_with_local() -> (
                 RuntimePlanTypeProjection::String,
             )],
             [RuntimeLocalDeclarationSeed::new(
-                manual_local_origin(
+                manual_local_source(
                     "arcweft-runtime-plan.fixture.awbc_lower.tests.plan_with_local.binding_a",
+                    false,
                 ),
                 type_id(1),
             )],
@@ -1660,7 +1658,7 @@ fn loop_break_paths_initialize_one_typed_result_before_binding() {
                 RuntimePlanTypeSeed::new(type_id(1), RuntimePlanTypeProjection::String),
                 RuntimePlanTypeSeed::new(type_id(3), RuntimePlanTypeProjection::Bool),
             ],
-            [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-runtime-plan.fixture.awbc_lower.tests.loop_break_paths_initialize_one_typed_result_before_binding.binding_a"), type_id(1))],
+            [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-runtime-plan.fixture.awbc_lower.tests.loop_break_paths_initialize_one_typed_result_before_binding.binding_a", false), type_id(1))],
         )
         .expect("loop result facts admit");
     let result = admission.local_ids()[0].clone();
@@ -1746,8 +1744,8 @@ fn nested_loops_bind_the_nearest_break_result() {
                 RuntimePlanTypeProjection::String,
             )],
             [
-                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-runtime-plan.fixture.awbc_lower.tests.nested_loops_bind_the_nearest_break_result.binding_a"), type_id(1)),
-                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-runtime-plan.fixture.awbc_lower.tests.nested_loops_bind_the_nearest_break_result.binding_b"), type_id(1)),
+                RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-runtime-plan.fixture.awbc_lower.tests.nested_loops_bind_the_nearest_break_result.binding_a", false), type_id(1)),
+                RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-runtime-plan.fixture.awbc_lower.tests.nested_loops_bind_the_nearest_break_result.binding_b", false), type_id(1)),
             ],
         )
         .expect("nested loop result facts admit");
@@ -2206,7 +2204,7 @@ fn await_observers_lower_to_progress_dispatch_and_rewait_backedge() {
                 RuntimePlanTypeSeed::new(progress_type, RuntimePlanTypeProjection::Progress),
                 RuntimePlanTypeSeed::new(need_type, RuntimePlanTypeProjection::Need(type_id(1))),
             ],
-            [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-runtime-plan.fixture.awbc_lower.tests.await_observers_lower_to_progress_dispatch_and_rewait_backedge.binding_a"), need_type)],
+            [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-runtime-plan.fixture.awbc_lower.tests.await_observers_lower_to_progress_dispatch_and_rewait_backedge.binding_a", false), need_type)],
         )
         .expect("Await observer types admit");
     let need_local = admission.local_ids()[0].clone();
@@ -2401,13 +2399,23 @@ fn function_semantic_roles_survive_expression_and_executable_awbc_lowering() {
     }
 }
 
-fn manual_local_origin(declaration: &str) -> arcweft_core::plan::RuntimeLocalOrigin {
+fn manual_local_source(
+    declaration: &str,
+    mutable: bool,
+) -> arcweft_core::plan::RuntimeLocalDeclarationSource {
     // This fixture declares a semantic binding name independent of its value,
     // type, source offset, and builder-issued local ordinal.
     let mut identity = blake3::Hasher::new();
     identity.update(b"arcweft.manual-fixture-binding.v1\0");
     identity.update(declaration.as_bytes());
-    arcweft_core::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
+    arcweft_core::plan::RuntimeLocalDeclarationSource::Binding {
+        identity: *identity.finalize().as_bytes(),
+        declaration: arcweft_core::plan::RuntimeLocalBindingDeclaration::new(
+            arcweft_core::plan::RuntimeLocalBindingKind::PatternBinding,
+            mutable,
+            arcweft_core::plan::RuntimeLocalBindingStorage::Derived,
+        ),
+    }
 }
 
 #[test]

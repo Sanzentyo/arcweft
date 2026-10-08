@@ -1,0 +1,98 @@
+//! Static declaration source, independent of runtime slot occupancy.
+
+use serde::{Deserialize, Serialize};
+
+use super::{RuntimeGeneratedLocalOrigin, RuntimeLocalOrigin};
+
+/// Semantic kind of an authored binding declaration.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub enum RuntimeLocalBindingKind {
+    Parameter,
+    LetBinding,
+    PatternBinding,
+    ClosureParameter,
+    LoopBinding,
+    MatchBinding,
+    PostconditionResult,
+}
+
+/// Authored lifetime policy; execution-frame placement is a separate authority.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub enum RuntimeLocalBindingStorage {
+    Derived,
+    RetainedState,
+}
+
+/// Exact authored properties carried from the checked declaration owner.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeLocalBindingDeclaration {
+    kind: RuntimeLocalBindingKind,
+    mutable: bool,
+    storage: RuntimeLocalBindingStorage,
+}
+
+impl RuntimeLocalBindingDeclaration {
+    #[must_use]
+    pub const fn new(
+        kind: RuntimeLocalBindingKind,
+        mutable: bool,
+        storage: RuntimeLocalBindingStorage,
+    ) -> Self {
+        Self {
+            kind,
+            mutable,
+            storage,
+        }
+    }
+
+    #[must_use]
+    pub const fn kind(self) -> RuntimeLocalBindingKind {
+        self.kind
+    }
+
+    #[must_use]
+    pub const fn is_mutable(self) -> bool {
+        self.mutable
+    }
+
+    #[must_use]
+    pub const fn storage(self) -> RuntimeLocalBindingStorage {
+        self.storage
+    }
+}
+
+/// Complete static source of one runtime declaration request.
+/// An identity-only Binding cannot be admitted without its declared properties.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
+pub enum RuntimeLocalDeclarationSource {
+    Binding {
+        identity: [u8; 32],
+        declaration: RuntimeLocalBindingDeclaration,
+    },
+    Parameter(crate::plan::RuntimeFunctionParameterIdentity),
+    EvaluatedResult(crate::plan::RuntimeFunctionDefinitionIdentity),
+    Generated(RuntimeGeneratedLocalOrigin),
+}
+
+impl RuntimeLocalDeclarationSource {
+    /// Identity projection for existing coordinate/correlation consumers.
+    #[must_use]
+    pub const fn origin(self) -> RuntimeLocalOrigin {
+        match self {
+            Self::Binding { identity, .. } => RuntimeLocalOrigin::Binding(identity),
+            Self::Parameter(parameter) => RuntimeLocalOrigin::Parameter(parameter),
+            Self::EvaluatedResult(definition) => RuntimeLocalOrigin::EvaluatedResult(definition),
+            Self::Generated(origin) => RuntimeLocalOrigin::Generated(origin),
+        }
+    }
+
+    #[must_use]
+    pub const fn binding(self) -> Option<RuntimeLocalBindingDeclaration> {
+        match self {
+            Self::Binding { declaration, .. } => Some(declaration),
+            Self::Parameter(_) | Self::EvaluatedResult(_) | Self::Generated(_) => None,
+        }
+    }
+}

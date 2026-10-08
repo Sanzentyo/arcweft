@@ -48,7 +48,7 @@ pub(super) fn reserve(
                     if needs_flow {
                         let origin = scope.expression_coordinate(expression)
                             .ok_or_else(|| RuntimePlanLowerError::new("formatter call has no accepted coordinate"))?
-                            .runtime_generated_local_origin(arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::FormatOperand { parameter })
+                            .runtime_generated_local_source(arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::FormatOperand { parameter })
                             .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
                         flow_sources.push((parameter, RuntimeLocalDeclarationSeed::new(origin, operand.ty().identity())));
                     }

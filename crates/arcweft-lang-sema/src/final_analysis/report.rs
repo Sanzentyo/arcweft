@@ -199,7 +199,7 @@ pub struct CheckedClosureCaptureOrigin {
     position: u32,
     capture: CaptureId,
     source: LocalId,
-    origin: crate::semantic_coordinate::StableCheckedBindingCoordinate,
+    origin: crate::semantic_coordinate::CheckedLocalBindingOrigin,
 }
 
 impl CheckedClosureCaptureOrigin {
@@ -212,8 +212,11 @@ impl CheckedClosureCaptureOrigin {
     pub const fn source(&self) -> LocalId {
         self.source
     }
-    pub const fn origin(&self) -> &crate::semantic_coordinate::StableCheckedBindingCoordinate {
+    pub const fn checked_origin(&self) -> &crate::semantic_coordinate::CheckedLocalBindingOrigin {
         &self.origin
+    }
+    pub const fn origin(&self) -> &crate::semantic_coordinate::StableCheckedBindingCoordinate {
+        self.origin.coordinate()
     }
 }
 
@@ -592,8 +595,9 @@ impl FinalAnalysisExecutionProjection<'_> {
                     position: u32::try_from(position).map_err(|_| invalid())?,
                     capture: capture.capture(),
                     source: capture.local(),
-                    origin: coordinates
-                        .binding(capture.local())
+                    origin: self
+                        .analysis
+                        .local_binding_origin(capture.local())
                         .map_err(|_| invalid())?,
                 })
             })

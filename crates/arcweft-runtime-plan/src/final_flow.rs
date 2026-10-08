@@ -404,8 +404,7 @@ impl ProjectFunctionFrameLocals {
                     origin,
                 } => Some(
                     origin
-                        .coordinate()
-                        .runtime_local_origin()
+                        .runtime_local_declaration_source()
                         .map(|origin| {
                             (
                                 ProjectFunctionFrameLocal::Hir(*local),
@@ -438,7 +437,7 @@ impl ProjectFunctionFrameLocals {
                     declaration(
                         semantics.expression_coordinate(expression.owner())
                             .ok_or_else(|| RuntimePlanLowerError::new("call operand has no accepted expression coordinate"))?
-                            .runtime_generated_local_origin(
+                            .runtime_generated_local_source(
                                 arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::CallOperand { source_ordinal: source_index }
                             ).map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
                         operand.ty(),
@@ -827,8 +826,7 @@ pub fn lower_runtime_plan_with_stats(
                 .ok_or_else(|| {
                     RuntimePlanLowerError::new("local declaration has no accepted binding origin")
                 })?
-                .coordinate()
-                .runtime_local_origin()
+                .runtime_local_declaration_source()
                 .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
             Ok(match facts.local_context(*local) {
                 Some(context) => RuntimeLocalDeclarationSeed::in_function(
@@ -861,7 +859,7 @@ pub fn lower_runtime_plan_with_stats(
     }
     local_seeds.extend(implicit_callable_facts.iter().map(|(_, _, _, callable)| {
         RuntimeLocalDeclarationSeed::new(
-            callable.formal().runtime_input_origin().into(),
+            callable.formal().runtime_local_declaration_source(),
             callable.parameter().identity(),
         )
     }));
@@ -907,7 +905,7 @@ pub fn lower_runtime_plan_with_stats(
             Ok((
                 callable.role().callable.clone(),
                 RuntimeLocalDeclarationSeed::new(
-                    arcweft_core::plan::RuntimeLocalOrigin::EvaluatedResult(
+                    arcweft_core::plan::RuntimeLocalDeclarationSource::EvaluatedResult(
                         instance.definition_identity().runtime_identity(),
                     ),
                     result.identity(),
@@ -962,7 +960,7 @@ pub fn lower_runtime_plan_with_stats(
                     })?;
                     let origin = facts.expression_coordinate(expression)
                         .ok_or_else(|| RuntimePlanLowerError::new("specialized call has no accepted coordinate"))?
-                        .runtime_generated_local_origin(arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::CallOperand { source_ordinal: source_index })
+                        .runtime_generated_local_source(arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::CallOperand { source_ordinal: source_index })
                         .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
                     specs.push(((expression, source_index), RuntimeLocalDeclarationSeed::new(origin, operand.ty().identity())));
                 }
@@ -991,7 +989,7 @@ pub fn lower_runtime_plan_with_stats(
                     RuntimeProjectFunctionTypeProjection::Local {
                         owner: local,
                         ty, origin
-                    } => Some(origin.coordinate().runtime_local_origin().map(|origin| (ProjectFunctionFrameLocal::Hir(*local), RuntimeLocalDeclarationSeed::new(origin, ty.identity()))).map_err(|error| RuntimePlanLowerError::new(error.to_string()))),
+                    } => Some(origin.runtime_local_declaration_source().map(|origin| (ProjectFunctionFrameLocal::Hir(*local), RuntimeLocalDeclarationSeed::new(origin, ty.identity()))).map_err(|error| RuntimePlanLowerError::new(error.to_string()))),
                     RuntimeProjectFunctionTypeProjection::Value { .. }
                     | RuntimeProjectFunctionTypeProjection::SemanticOnlyExpression { .. } => None,
                 })
@@ -1009,7 +1007,7 @@ pub fn lower_runtime_plan_with_stats(
                         group,
                         parameter: parameter.parameter(),
                     },
-                    RuntimeLocalDeclarationSeed::new(parameter.definition().runtime_input_origin().into(), parameter.binding_ty().identity()),
+                    RuntimeLocalDeclarationSeed::new(parameter.definition().runtime_local_declaration_source(), parameter.binding_ty().identity()),
                 ));
             }
             if let Some(attached) = instance.callable().attached_content_abi()
@@ -1019,7 +1017,7 @@ pub fn lower_runtime_plan_with_stats(
                     .ok_or_else(|| RuntimePlanLowerError::new("attached input has no accepted whole formal"))?;
                 locals.push((
                     ProjectFunctionFrameLocal::AttachedAbi,
-                    RuntimeLocalDeclarationSeed::new(formal.runtime_input_origin().into(), attached.binding_ty().identity()),
+                    RuntimeLocalDeclarationSeed::new(formal.runtime_local_declaration_source(), attached.binding_ty().identity()),
                 ));
             }
             for expression in instance.semantics().expressions() {
@@ -1052,7 +1050,7 @@ pub fn lower_runtime_plan_with_stats(
                         RuntimeLocalDeclarationSeed::new(
                             instance.semantics().expression_coordinate(expression.owner())
                                 .ok_or_else(|| RuntimePlanLowerError::new("source-row operand has no accepted coordinate"))?
-                                .runtime_generated_local_origin(arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::CallOperand { source_ordinal: source_index })
+                                .runtime_generated_local_source(arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::CallOperand { source_ordinal: source_index })
                                 .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
                             operand.ty().identity(),
                         ),
@@ -1071,7 +1069,7 @@ pub fn lower_runtime_plan_with_stats(
                 match projection {
                     RuntimeProjectFunctionTypeProjection::Local {
                         owner: local, ty, origin
-                    } => Some(origin.coordinate().runtime_local_origin().map(|origin| (ProjectFunctionFrameLocal::Hir(*local), RuntimeLocalDeclarationSeed::new(origin, ty.identity()))).map_err(|error| RuntimePlanLowerError::new(error.to_string()))),
+                    } => Some(origin.runtime_local_declaration_source().map(|origin| (ProjectFunctionFrameLocal::Hir(*local), RuntimeLocalDeclarationSeed::new(origin, ty.identity()))).map_err(|error| RuntimePlanLowerError::new(error.to_string()))),
                     _ => None,
                 }
             }).collect::<Result<Vec<_>, _>>()?;
@@ -1093,7 +1091,7 @@ pub fn lower_runtime_plan_with_stats(
                         RuntimeLocalDeclarationSeed::new(
                             semantics.expression_coordinate(expression.owner())
                                 .ok_or_else(|| RuntimePlanLowerError::new("source-row operand has no accepted coordinate"))?
-                                .runtime_generated_local_origin(arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::CallOperand { source_ordinal: source_index })
+                                .runtime_generated_local_source(arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::CallOperand { source_ordinal: source_index })
                                 .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
                             operand.ty().identity(),
                         ),
@@ -1122,7 +1120,7 @@ pub fn lower_runtime_plan_with_stats(
                     RuntimeProjectFunctionTypeProjection::Local {
                         owner: local,
                         ty, origin
-                    } if !captured.contains(local) => Some(origin.coordinate().runtime_local_origin().map(|origin| (ClosureFrameLocal::Hir(*local), RuntimeLocalDeclarationSeed::new(origin, ty.identity()))).map_err(|error| RuntimePlanLowerError::new(error.to_string()))),
+                    } if !captured.contains(local) => Some(origin.runtime_local_declaration_source().map(|origin| (ClosureFrameLocal::Hir(*local), RuntimeLocalDeclarationSeed::new(origin, ty.identity()))).map_err(|error| RuntimePlanLowerError::new(error.to_string()))),
                     RuntimeProjectFunctionTypeProjection::Local { .. }
                     | RuntimeProjectFunctionTypeProjection::Value { .. }
                     | RuntimeProjectFunctionTypeProjection::SemanticOnlyExpression { .. } => None,
@@ -1133,7 +1131,7 @@ pub fn lower_runtime_plan_with_stats(
                     ClosureFrameLocal::ParameterInput {
                         position: parameter.position(),
                     },
-                    RuntimeLocalDeclarationSeed::new(parameter.definition().runtime_input_origin().into(), parameter.ty().identity()),
+                    RuntimeLocalDeclarationSeed::new(parameter.definition().runtime_local_declaration_source(), parameter.ty().identity()),
                 )
             }));
             rows.extend(closure.captures().iter().map(|capture| {
@@ -1141,7 +1139,7 @@ pub fn lower_runtime_plan_with_stats(
                     ClosureFrameLocal::CaptureInput {
                         position: capture.position(),
                     },
-                    RuntimeLocalDeclarationSeed::new(capture.origin().runtime_local_origin().map_err(|error| RuntimePlanLowerError::new(error.to_string()))?, capture.ty().identity()),
+                    RuntimeLocalDeclarationSeed::new(capture.checked_origin().runtime_local_declaration_source().map_err(|error| RuntimePlanLowerError::new(error.to_string()))?, capture.ty().identity()),
                 ))
             }).collect::<Result<Vec<_>, _>>()?);
             for expression in closure.semantics().expressions() {
@@ -1174,7 +1172,7 @@ pub fn lower_runtime_plan_with_stats(
                         RuntimeLocalDeclarationSeed::new(
                             closure.semantics().expression_coordinate(expression.owner())
                                 .ok_or_else(|| RuntimePlanLowerError::new("source-row operand has no accepted coordinate"))?
-                                .runtime_generated_local_origin(arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::CallOperand { source_ordinal: source_index })
+                                .runtime_generated_local_source(arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::CallOperand { source_ordinal: source_index })
                                 .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
                             operand.ty().identity(),
                         ),
@@ -1205,7 +1203,7 @@ pub fn lower_runtime_plan_with_stats(
                             })?;
                             Ok((
                                 (instance.key().clone(), position),
-                                RuntimeLocalDeclarationSeed::new(capture.formal().definition().runtime_input_origin().into(), capture.binding_ty().identity()),
+                                RuntimeLocalDeclarationSeed::new(capture.formal().definition().runtime_local_declaration_source(), capture.binding_ty().identity()),
                             ))
                         })
                 })
@@ -1232,8 +1230,7 @@ pub fn lower_runtime_plan_with_stats(
                                     "implicit capture has no accepted binding origin",
                                 )
                             })?
-                            .coordinate()
-                            .runtime_local_origin()
+                            .runtime_local_declaration_source()
                             .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
                         ty.identity(),
                     ),
@@ -1824,7 +1821,7 @@ pub fn lower_runtime_plan_with_stats(
                 };
                 let seed = (|| -> Result<_, RuntimePlanLowerError> {
                     let coordinate = scope.expression_coordinate(value.expression()).ok_or_else(|| RuntimePlanLowerError::new("dialogue display source has no accepted coordinate"))?;
-                    let origin = coordinate.runtime_generated_local_origin(arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::DialogueDisplaySource)
+                    let origin = coordinate.runtime_generated_local_source(arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::DialogueDisplaySource)
                         .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
                     Ok(RuntimeLocalDeclarationSeed::new(origin, project.source_type().identity()))
                 })();
@@ -3388,9 +3385,9 @@ fn reserve_pure_programs<'facts>(
             .enumerate()
             .map(|(position, (parameter, ty))| {
                 let declaration = if ty.scope().is_root() {
-                    RuntimeLocalDeclarationSeed::new(parameter.runtime_input_origin().into(), ty.identity())
+                    RuntimeLocalDeclarationSeed::new(parameter.runtime_local_declaration_source(), ty.identity())
                 } else {
-                    RuntimeLocalDeclarationSeed::in_function(parameter.runtime_input_origin().into(), ty.identity(), program.function_type().identity())
+                    RuntimeLocalDeclarationSeed::in_function(parameter.runtime_local_declaration_source(), ty.identity(), program.function_type().identity())
                 };
                 let admitted = builder
                     .admit_type_batch([], [declaration])
@@ -3507,7 +3504,7 @@ fn reserve_pure_programs<'facts>(
             match builder.admit_type_batch(
                 [],
                 [RuntimeLocalDeclarationSeed::new(
-                    arcweft_core::plan::RuntimeLocalOrigin::EvaluatedResult(
+                    arcweft_core::plan::RuntimeLocalDeclarationSource::EvaluatedResult(
                         program.definition_identity().runtime_identity(),
                     ),
                     program.result().identity(),
@@ -4379,7 +4376,7 @@ fn collect_dialogue_value_capture_specs(
                     continue;
                 };
                 let seed = RuntimeLocalDeclarationSeed::new(
-                    arcweft_core::plan::RuntimeLocalOrigin::EvaluatedResult(definition),
+                    arcweft_core::plan::RuntimeLocalDeclarationSource::EvaluatedResult(definition),
                     value.ty().identity(),
                 );
                 if value_specs.insert(key, seed).is_some() {
@@ -4441,7 +4438,7 @@ fn collect_dialogue_effect_capture_specs(
                         continue;
                     }
                     let key = RuntimeDialogueEffectCaptureKey::new(program, position);
-                    let origin = match capture.origin().runtime_local_origin() {
+                    let origin = match capture.checked_origin().runtime_local_declaration_source() {
                         Ok(origin) => origin,
                         Err(error) => {
                             errors.push(RuntimePlanLowerError::new(error.to_string()));

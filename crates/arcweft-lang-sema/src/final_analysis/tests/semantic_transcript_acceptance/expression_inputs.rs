@@ -453,10 +453,71 @@ fn checked_binding_origin_borrows_exact_declaration_metadata_and_rejects_a_forei
         assert_eq!(declaration.local(), local);
         assert!(origin.validate_owner(project, local));
         assert!(!origin.validate_owner(foreign_project, local));
+        let projected = origin.runtime_local_declaration_source().unwrap();
+        assert_eq!(
+            projected.origin(),
+            origin.coordinate().runtime_local_origin().unwrap()
+        );
+        let properties = projected.binding().unwrap();
+        assert_eq!(properties.is_mutable(), declaration.is_mutable_binding());
+        assert_eq!(
+            properties.storage(),
+            arcweft_core::plan::RuntimeLocalBindingStorage::Derived
+        );
+        if declaration.kind() == arcweft_lang_hir::scope::HirLocalKind::LetBinding {
+            assert_eq!(
+                properties.kind(),
+                arcweft_core::plan::RuntimeLocalBindingKind::LetBinding
+            );
+        }
+
         if declaration.kind() == arcweft_lang_hir::scope::HirLocalKind::LetBinding {
             mutabilities.push(declaration.is_mutable_binding());
         }
     }
     assert_eq!(mutabilities.len(), 2);
     assert_ne!(mutabilities[0], mutabilities[1]);
+}
+
+#[test]
+fn checked_retained_binding_projects_exact_storage_and_mutability() {
+    let world = super::fixture(
+        r#"view Main(initial: String) { local state caption: String = initial; let suffix = "!"; }"#,
+        None,
+    );
+    let report = super::analyze(&world).expect("retained declaration is checked");
+    let mut retained = 0;
+    let mut derived_lets = 0;
+    for (local, _) in report.locals() {
+        let origin = report.local_binding_origin(local).unwrap();
+        let properties = origin
+            .runtime_local_declaration_source()
+            .unwrap()
+            .binding()
+            .unwrap();
+        assert_eq!(
+            properties.is_mutable(),
+            origin.declaration().is_mutable_binding()
+        );
+        match origin.declaration().storage() {
+            arcweft_lang_hir::stmt::HirBindingStorage::RetainedState => {
+                assert_eq!(
+                    properties.storage(),
+                    arcweft_core::plan::RuntimeLocalBindingStorage::RetainedState
+                );
+                retained += 1;
+            }
+            arcweft_lang_hir::stmt::HirBindingStorage::Derived => {
+                assert_eq!(
+                    properties.storage(),
+                    arcweft_core::plan::RuntimeLocalBindingStorage::Derived
+                );
+                if properties.kind() == arcweft_core::plan::RuntimeLocalBindingKind::LetBinding {
+                    derived_lets += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(retained, 1);
+    assert_eq!(derived_lets, 1);
 }

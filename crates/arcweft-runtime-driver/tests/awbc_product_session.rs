@@ -1558,7 +1558,7 @@ fn restartable_need_awfb_bytes() -> Vec<u8> {
                 RuntimePlanTypeSeed::new(need_ty, RuntimePlanTypeProjection::Need(string_ty)),
             ],
             [RuntimeLocalDeclarationSeed::new(
-                manual_local_origin(
+                manual_local_source(
                     "arcweft-runtime-driver.fixture.tests.awbc_product_session.restartable_need_awfb_bytes.binding_a",
                 ),
                 need_ty,
@@ -2098,13 +2098,20 @@ fn minimal_awbc_entry(entry: &str) -> AwbcEntry {
     }
 }
 
-fn manual_local_origin(declaration: &str) -> arcweft_core::plan::RuntimeLocalOrigin {
+fn manual_local_source(declaration: &str) -> arcweft_core::plan::RuntimeLocalDeclarationSource {
     // This fixture declares a semantic binding name independent of its value,
     // type, source offset, and builder-issued local ordinal.
     let mut identity = blake3::Hasher::new();
     identity.update(b"arcweft.manual-fixture-binding.v1\0");
     identity.update(declaration.as_bytes());
-    arcweft_core::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
+    arcweft_core::plan::RuntimeLocalDeclarationSource::Binding {
+        identity: *identity.finalize().as_bytes(),
+        declaration: arcweft_core::plan::RuntimeLocalBindingDeclaration::new(
+            arcweft_core::plan::RuntimeLocalBindingKind::PatternBinding,
+            false,
+            arcweft_core::plan::RuntimeLocalBindingStorage::Derived,
+        ),
+    }
 }
 
 fn manual_awbc_capture_origin(declaration: &str) -> arcweft_core::plan::RuntimeLocalOrigin {

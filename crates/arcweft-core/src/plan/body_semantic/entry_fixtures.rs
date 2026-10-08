@@ -62,7 +62,7 @@ pub(super) fn controller_plan(
                 RuntimePlanTypeProjection::Bool,
             )],
             [RuntimeLocalDeclarationSeed::new(
-                RuntimeLocalOrigin::Parameter(parameter),
+                crate::plan::RuntimeLocalDeclarationSource::Parameter(parameter),
                 boolean,
             )],
         )

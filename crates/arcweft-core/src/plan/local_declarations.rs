@@ -7,6 +7,12 @@ use thiserror::Error;
 
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 
+mod source;
+pub use source::{
+    RuntimeLocalBindingDeclaration, RuntimeLocalBindingKind, RuntimeLocalBindingStorage,
+    RuntimeLocalDeclarationSource,
+};
+
 /// Stable origin issued by the semantic owner, separate from the plan-local ordinal.
 /// Transporting this identity does not prove executable body admission.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -50,15 +56,20 @@ impl RuntimeGeneratedLocalOrigin {
 /// One sealed plan-local declaration row.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RuntimeLocalDeclaration {
-    origin: RuntimeLocalOrigin,
+    source: RuntimeLocalDeclarationSource,
     ty: RuntimePlanTypeId,
     context: Option<RuntimePlanTypeId>,
 }
 
 impl RuntimeLocalDeclaration {
     #[must_use]
+    pub const fn source(self) -> RuntimeLocalDeclarationSource {
+        self.source
+    }
+
+    #[must_use]
     pub const fn origin(self) -> RuntimeLocalOrigin {
-        self.origin
+        self.source.origin()
     }
 
     #[must_use]
@@ -146,10 +157,10 @@ impl RuntimeLocalDeclarationTableBuilder {
     #[cfg(test)]
     pub(crate) fn push(
         &mut self,
-        origin: RuntimeLocalOrigin,
+        source: RuntimeLocalDeclarationSource,
         ty: RuntimePlanTypeId,
     ) -> Result<RuntimeLocalDeclarationId, RuntimeLocalDeclarationTableError> {
-        let prepared = self.prepare_batch([(origin, ty, None)])?;
+        let prepared = self.prepare_batch([(source, ty, None)])?;
         self.commit_batch(prepared)
             .first()
             .copied()
@@ -160,7 +171,7 @@ impl RuntimeLocalDeclarationTableBuilder {
         &self,
         types: impl IntoIterator<
             Item = (
-                RuntimeLocalOrigin,
+                RuntimeLocalDeclarationSource,
                 RuntimePlanTypeId,
                 Option<RuntimePlanTypeId>,
             ),
@@ -177,7 +188,7 @@ impl RuntimeLocalDeclarationTableBuilder {
         let _ = final_len;
         let mut declarations = self.declarations.clone();
         let mut ids = Vec::with_capacity(types.len());
-        for (origin, ty, context) in types {
+        for (source, ty, context) in types {
             let ordinal = declarations
                 .len()
                 .checked_add(1)
@@ -185,7 +196,7 @@ impl RuntimeLocalDeclarationTableBuilder {
                 .and_then(NonZeroU32::new)
                 .ok_or(RuntimeLocalDeclarationTableError::IdentityExhausted)?;
             declarations.push(RuntimeLocalDeclaration {
-                origin,
+                source,
                 ty,
                 context,
             });
@@ -259,13 +270,35 @@ mod tests {
     #[test]
     fn builder_seals_typed_rows_in_contiguous_order() {
         let mut builder = RuntimeLocalDeclarationTableBuilder::new();
-        let first_origin = RuntimeLocalOrigin::Binding([0x31; 32]);
-        let second_origin = RuntimeLocalOrigin::Parameter(
+        let declaration = RuntimeLocalBindingDeclaration::new(
+            RuntimeLocalBindingKind::LetBinding,
+            true,
+            RuntimeLocalBindingStorage::RetainedState,
+        );
+        let first_source = RuntimeLocalDeclarationSource::Binding {
+            identity: [0x31; 32],
+            declaration,
+        };
+        let first_origin = first_source.origin();
+        let second_source = RuntimeLocalDeclarationSource::Parameter(
             super::super::RuntimeFunctionParameterIdentity::from_accepted_identity([0x71; 32]),
         );
-        let first = builder.push(first_origin, ty(3)).expect("first local");
-        let second = builder.push(second_origin, ty(7)).expect("second local");
+        let second_origin = second_source.origin();
+        let first = builder.push(first_source, ty(3)).expect("first local");
+        let second = builder.push(second_source, ty(7)).expect("second local");
         let table = builder.finish();
+        assert_eq!(
+            table.get(first).map(RuntimeLocalDeclaration::source),
+            Some(first_source)
+        );
+        assert_eq!(
+            table.get(first).and_then(|row| row.source().binding()),
+            Some(declaration)
+        );
+        assert_eq!(
+            table.get(second).map(RuntimeLocalDeclaration::source),
+            Some(second_source)
+        );
 
         assert_eq!(first.get(), NonZeroU32::MIN);
         assert_eq!(second.get(), NonZeroU32::new(2).unwrap());
@@ -290,10 +323,28 @@ mod tests {
     #[test]
     fn exhaustion_does_not_append_an_untyped_row() {
         let mut builder = RuntimeLocalDeclarationTableBuilder::with_maximum_for_test(1);
-        let origin = RuntimeLocalOrigin::Binding([0x11; 32]);
-        let first = builder.push(origin, ty(1)).expect("bounded first local");
+        let source = RuntimeLocalDeclarationSource::Binding {
+            identity: [0x11; 32],
+            declaration: RuntimeLocalBindingDeclaration::new(
+                RuntimeLocalBindingKind::PatternBinding,
+                false,
+                RuntimeLocalBindingStorage::Derived,
+            ),
+        };
+        let origin = source.origin();
+        let first = builder.push(source, ty(1)).expect("bounded first local");
         assert_eq!(
-            builder.push(RuntimeLocalOrigin::Binding([0x22; 32]), ty(2)),
+            builder.push(
+                RuntimeLocalDeclarationSource::Binding {
+                    identity: [0x22; 32],
+                    declaration: RuntimeLocalBindingDeclaration::new(
+                        RuntimeLocalBindingKind::PatternBinding,
+                        false,
+                        RuntimeLocalBindingStorage::Derived
+                    )
+                },
+                ty(2)
+            ),
             Err(RuntimeLocalDeclarationTableError::IdentityExhausted)
         );
         let table = builder.finish();

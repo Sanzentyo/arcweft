@@ -1253,6 +1253,40 @@ pub struct CheckedLocalBindingOrigin {
 }
 
 impl CheckedLocalBindingOrigin {
+    /// Carries the identity and authored properties from this exact admitted
+    /// declaration into Core. Slot placement and occupancy remain separate.
+    pub fn runtime_local_declaration_source(
+        &self,
+    ) -> Result<arcweft_core::plan::RuntimeLocalDeclarationSource, StableCheckedBindingDigestError>
+    {
+        use arcweft_core::plan::{
+            RuntimeLocalBindingDeclaration, RuntimeLocalBindingKind as Kind,
+            RuntimeLocalBindingStorage as Storage, RuntimeLocalDeclarationSource,
+        };
+        let declaration = self.declaration();
+        let kind = match declaration.kind() {
+            arcweft_lang_hir::scope::HirLocalKind::Parameter => Kind::Parameter,
+            arcweft_lang_hir::scope::HirLocalKind::LetBinding => Kind::LetBinding,
+            arcweft_lang_hir::scope::HirLocalKind::PatternBinding => Kind::PatternBinding,
+            arcweft_lang_hir::scope::HirLocalKind::ClosureParameter => Kind::ClosureParameter,
+            arcweft_lang_hir::scope::HirLocalKind::LoopBinding => Kind::LoopBinding,
+            arcweft_lang_hir::scope::HirLocalKind::MatchBinding => Kind::MatchBinding,
+            arcweft_lang_hir::scope::HirLocalKind::PostconditionResult => Kind::PostconditionResult,
+        };
+        let storage = match declaration.storage() {
+            arcweft_lang_hir::stmt::HirBindingStorage::Derived => Storage::Derived,
+            arcweft_lang_hir::stmt::HirBindingStorage::RetainedState => Storage::RetainedState,
+        };
+        Ok(RuntimeLocalDeclarationSource::Binding {
+            identity: *self.coordinate().semantic_digest()?.as_bytes(),
+            declaration: RuntimeLocalBindingDeclaration::new(
+                kind,
+                declaration.is_mutable_binding(),
+                storage,
+            ),
+        })
+    }
+
     pub(crate) fn try_new(
         local: LocalId,
         topology: std::sync::Arc<arcweft_lang_hir::project::HirProjectEvaluationTopology>,
@@ -1397,6 +1431,16 @@ impl CheckedSemanticPath {
         &self,
         role: CheckedGeneratedLocalRole,
     ) -> Result<arcweft_core::plan::RuntimeLocalOrigin, CheckedGeneratedLocalOriginError> {
+        self.runtime_generated_local_source(role)
+            .map(arcweft_core::plan::RuntimeLocalDeclarationSource::origin)
+    }
+
+    /// Retains the generated source category alongside its accepted identity.
+    pub fn runtime_generated_local_source(
+        &self,
+        role: CheckedGeneratedLocalRole,
+    ) -> Result<arcweft_core::plan::RuntimeLocalDeclarationSource, CheckedGeneratedLocalOriginError>
+    {
         let bytes = self
             .canonical_bytes()
             .map_err(|source| CheckedGeneratedLocalOriginError { source })?;
@@ -1404,11 +1448,13 @@ impl CheckedSemanticPath {
         hasher.update(b"arcweft.lang.generated-local-coordinate.v1\0");
         hasher.update(&bytes);
         role.encode(&mut hasher);
-        Ok(arcweft_core::plan::RuntimeLocalOrigin::Generated(
-            arcweft_core::plan::RuntimeGeneratedLocalOrigin::from_accepted_identity(
-                *hasher.finalize().as_bytes(),
+        Ok(
+            arcweft_core::plan::RuntimeLocalDeclarationSource::Generated(
+                arcweft_core::plan::RuntimeGeneratedLocalOrigin::from_accepted_identity(
+                    *hasher.finalize().as_bytes(),
+                ),
             ),
-        ))
+        )
     }
 }
 

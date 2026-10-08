@@ -10113,3 +10113,160 @@ cut. Parent pinned e202f637f75514acadd3e0372a5877d43f2a54f1. Whole goal
 remains ACTIVE/INCOMPLETE with all remaining E1/body ownership/initialization/
 storage/codec/row-transcript and global15 memo/protectedall14 Cut5/other
 original View/nominal/scheduler/borrow/CLI277/Tier2/old-path/final acceptance.
+
+
+### 2026-10-08: E1 complete declaration source into Core local rows — in progress
+
+Base main/origin/main 06e19974e1d4526f44f1a289bb8e12e12b37e397.
+RuntimeLocalDeclarationSource replaces identity-only admission for all local
+seeds and final Core rows. Binding stores exact checked kind/mutability/storage;
+Parameter/EvaluatedResult/Generated remain explicit non-authored sources.
+RuntimeLocalOrigin remains only the legitimate identity projection. No blanket
+From<RuntimeLocalOrigin>, guessed authored defaults, parallel source registry,
+or compatibility reader. Sema closure and normalized content/closure captures
+now carry the complete same-topology CheckedLocalBindingOrigin. Their existing
+coordinate-only definition joins remain identity joins, not source admission.
+All production allocation and affected fixture/builtin consumers migrated.
+
+Workspace check4 TERMINAL0/31.00s after three repaired compile failures
+(check/check2/check3 logs retained under TEMP arcweft-1008-local-source-row-).
+The first failed due malformed namespace/fixture source arguments; second
+revealed two lossy capture paths; third a stale full-origin/coordinate comparison.
+Three introduced unused imports removed. Pattern fixtures explicitly own their
+source mutability, including accepted true/false Or inventory and deep cases.
+Authored Sema retained-state and compiler shadow/retained/capture propagation
+tests added; NOT yet claimed passing. No new Cargo is started or Rust edited
+while another source-sensitive command is live.
+
+This is source preservation, NOT completed E1 executable body-slot ownership:
+actual Function/Line/Stream/helper/method ownership, slot initialization/storage,
+removal of global source-template allocation, E1 codec/transcript, global15 memo,
+private image/common seal, protected atomic all14 Cut5 remain pending.
+Whole goal ACTIVE/INCOMPLETE; original View/nominal/scheduler/Rust borrowing/
+CLI277/Tier2/legacy removal/final acceptance remain required. Astra one-shot
+was consumed earlier and is not repeated after compaction.
+
+Targeted first attempt TERMINAL101: new retained test used wrong enum module
+(scope instead of stmt); fixed after all children terminated. Compiler capture
+test now observes the actual closure input local row, not a global source row.
+
+Targeted2 TERMINAL0:24/24PASS0.249s, including3 compiler actual-row
+propagation cases and2 Sema source cases. AWBC manual fixtures now explicitly
+mark the2 mutable vec declarations and all immutable declarations. Full
+required matrix is pending; targeted24 is not reverse-dependency coverage.
+
+
+Final Rust source freeze:52files. Final workspace check TERMINAL0/10.82s;
+all three introduced unused RuntimeLocalOrigin imports are removed. New sole
+declaration-source owner98LOC/3097bytes and actual compiler propagation tests
+89LOC/2981bytes. Binding kind/mutability/authored lifetime storage remain
+separate from physical runtime input pattern mutability (captures can have
+different placement); no inference from current slot occupancy.
+
+Resolved all-target Core50 includes Sema/capture compiler/runtime consumers
+and target-only render-web;99 graph/build inputs SHA256 unchanged. Required
+full matrix will be exact nextest-selected/terminal ID reconciled. Prior CLI
+baseline597 cases/277 failures pinned to previous pattern-cut actual log.
+
+Clippy first final attempt TERMINAL0/1m58s;2 new test function-length
+diagnostics are repaired by one explicit fixture binding-source owner per
+existing test module, with mutability an explicit argument. No lint suppression.
+Full52-source freeze superseded for these2 test files; refresh before matrix.
+
+Final repaired workspace Clippy TERMINAL0/16.34s; exact message/path
+comparison with previous delivered cut has introduced ordinary diagnostics0
+(existing long-function numeric counts normalized, same owner/path only).
+New redundant closure also repaired using RuntimeFunctionSite::inputs.
+No suppressions or unrelated large-error API changes.52 final Rust hashes
+refrozen; complete Core50 nextest inventory build now live.
+
+Verification scope: live Core source/seed API and checked capture-source
+issuers changed, so complete workspace check/Clippy and full Core50 rdeps
+(including compiler/CLI) are required; no isolated-leaf omission applies.
+Wasm Core/render-web checks the actual target-only consumer. Tier2 render/
+protocol acceptance remains required for the original goal, but this source
+projection cut changes no scheduler/render/protocol behavior; no new Tier2
+claim. Full52 frozen hashes unchanged during inventory build.
+
+
+Read-only CLI baseline triage:277 actual failed case blocks, not duplicate
+summary entries. First diagnostic groups include101 source launch requiring
+explicit --entry;9 unexpected top-level old sample declarations;4 obsolete
+--value options; other groups include current semantic-type and observation
+fixture assertions. Counts are a diagnostic first-marker grouping, not a root
+cause proof or a waiver. No CLI/sample source edits in this source-row cut;
+all277 are still required original-goal repairs.
+
+Core50 fresh nextest inventory TERMINAL0:build9m09s;4975selected in
+46 runnable workspace packages, all within the verified Core50 closure.
+New3 compiler actual-row propagation and1 Sema retained-state cases included;
+previous pattern-depth receipt is inventory-repaired4971, NOT the older
+misnamed inventory-final4970. Current acceptance uses fresh current inventory
+only. Full --no-fail-fast run live; no Rust edits/new Cargo until terminal.
+
+During full run:all3 new compiler actual-row cases, new Sema retained-storage
+case, and existing depth64/65 boundary PASS. Run is still live; not full
+acceptance. Static declaration source kind/mutability/storage is authoritative
+without conflating physical capture/input pattern placement or occupancy.
+
+Full Core50 nonCLI nextest TERMINAL0:4975/4975PASS556.620s,4slow,
+16skipped. Exact selected/terminal/unique4975;missing0/unexpected0/
+duplicate0/nonpass0. New4 cases and prior depth64/65 are included and PASS.
+CLI fresh inventory/run/comparison, finaltarget/check/tree/structure and
+explicit staged/tested-byte review + normal publication remain pending.
+
+CLI fresh inventory TERMINAL0/build3m10s:597selected,9listed/8runnable
+binaries. CLI run live with explicit existing targets and Core reverse-dependency
+filter, --no-fail-fast; no feature/profile/jobs/timeout/ignore/stack overrides.
+Current progress324terminal/115same failure IDs/new0 is partial only, not CLI
+acceptance. Core50 exact final receipt remains4975/4975PASS556.620s.
+
+
+Final CLI comparison TERMINAL100:597actual cases/320PASS/277sameFAIL/
+23ignored125.859s. Exact selected/terminal/unique597,missing0/unexpected0/
+duplicates0/newFailures0/resolved0. This is the unchanged actual failed baseline,
+NOT CLI green. All277 are still required original-goal repairs. Full nonCLI
+Core50 receipt is4975/4975PASS556.620s,4slow,16skipped. All52 tested Rust
+hashes remain unchanged; final source check/target/tree/structure precede
+explicit53-path stage/blob review and normal main publication.
+
+Final workspace check delivery TERMINAL0/18.95s with introduced ordinary
+warning0 against prior cut. Final Core+render-web wasm32-unknown-unknown
+all-target/all-feature check TERMINAL0/39.31s. The target-only Core consumer
+is actually compiled; wasm compilation is not Tier2 runtime/render acceptance.
+No manifest/feature/build-input/version-marker/compatibility changes.
+
+
+Final source-preservation cut acceptance:
+- Full Core50 nonCLI4975/4975PASS556.620s; exact selected/terminal/unique
+ 4975,missing0/unexpected0/duplicates0/nonpass0.
+- CLI597actual/320PASS/277sameFAIL/23ignored125.859s; exact coverage,
+ new0/resolved0. CLI remains failed;277 required goal repairs are not waived.
+- Workspace delivery check0/18.95s, repaired workspace Clippy0/16.34s with
+ introduced ordinary warning0; Core+render-web wasm check0/39.31s.
+- Current all-target invert tree50 equals resolved Core50;99 build/graph
+ input hashes unchanged. Finalfmtcheck0/diffcheck0;52 Rust hashes frozen.
+- Structure gate0: files scanned: 2773; Rust files: 2643; Rust physical LOC: 1536764; workspace packages: 97; review triggers: 355; blocking violations: 0.
+
+Ownership/cohesion review: one explicit source grammar98LOC/3097bytes;
+existing local table361LOC/11510bytes owns final typed row/order/admission
+and its source-retention/exhaustion tests. Sema projection stays on the actual
+CheckedLocalBindingOrigin (2709LOC existing coordinate owner; exact same-
+topology declaration borrow); no shadow metadata inventory or HIR rescan.
+Transient seed algebra3035LOC remains its existing builder input grammar.
+New actual compiler row/capture tests89LOC/3008bytes exercise production
+authored lowering. Changed fixture producers retain existing identities and
+declare fixture properties explicitly; accepted mutable cases match their
+fixture declaration. No fallback source, no identity-only Binding admission,
+no compatibility reader, raw task hash factory or contract marker change.
+
+Normal publication is this coherent53-path cut on main, after full explicit
+stage/hunk/blob/tested-byte review. Fetched remote base remains
+06e19974e1d4526f44f1a289bb8e12e12b37e397. Whole goal ACTIVE/INCOMPLETE:
+complete E1 actual executable body-slot ownership/initialization/storage/codec/
+transcript, global15 memo/actual14 task table/private image/common seal/
+protected atomic all14 Cut5, original View/nominal/scheduler/Rust borrowing/
+CLI277/Tier2/legacy removal/final acceptance remain required. Astra one-shot
+is consumed and is never replayed after compaction. Subsequent implementation
+continues on the resulting main commit; no branch/worktree or unrelated WIP
+operation is authorized or needed.

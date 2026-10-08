@@ -147,7 +147,7 @@ fn recursive_record_variant_graph_is_correlated_and_discarded_before_plan_seal()
     let admission = builder
         .admit_semantic_batch(
             types(&graph),
-            [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.nominal_schema_admission.recursive_record_variant_graph_is_correlated_and_discarded_before_plan_seal.binding_a"), semantic(1))],
+            [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.tests.nominal_schema_admission.recursive_record_variant_graph_is_correlated_and_discarded_before_plan_seal.binding_a"), semantic(1))],
             [record("head", 2)],
             [variant(&graph, "Link")],
             &graph,
@@ -162,7 +162,7 @@ fn recursive_record_variant_graph_is_correlated_and_discarded_before_plan_seal()
     builder
         .admit_type_batch(
             [seed(8, Type::Tuple(Box::new([semantic(1), semantic(5)])))],
-            [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.nominal_schema_admission.recursive_record_variant_graph_is_correlated_and_discarded_before_plan_seal.binding_b"), semantic(5))],
+            [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.tests.nominal_schema_admission.recursive_record_variant_graph_is_correlated_and_discarded_before_plan_seal.binding_b"), semantic(5))],
         )
         .unwrap();
     let plan = builder.finish().unwrap();
@@ -186,7 +186,7 @@ fn name_type_case_and_layout_mismatches_publish_nothing() {
         builder
             .admit_type_batch(
                 [seed(9, Type::Unit)],
-                [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.nominal_schema_admission.name_type_case_and_layout_mismatches_publish_nothing.binding_a"), semantic(9))],
+                [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.tests.nominal_schema_admission.name_type_case_and_layout_mismatches_publish_nothing.binding_a"), semantic(9))],
             )
             .unwrap();
         let mut candidate_types = types(&graph);
@@ -202,7 +202,7 @@ fn name_type_case_and_layout_mismatches_publish_nothing() {
         }
         let result = builder.admit_semantic_batch(
             candidate_types,
-            [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.nominal_schema_admission.name_type_case_and_layout_mismatches_publish_nothing.binding_b"), semantic(1))],
+            [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.tests.nominal_schema_admission.name_type_case_and_layout_mismatches_publish_nothing.binding_b"), semantic(1))],
             [record(
                 if problem == 0 { "renamed" } else { "head" },
                 if problem == 1 { 7 } else { 2 },
@@ -316,11 +316,18 @@ fn every_proof_definition_needs_a_type_and_correlation_work_is_bounded() {
     }
 }
 
-fn manual_local_origin(declaration: &str) -> arcweft_core::plan::RuntimeLocalOrigin {
+fn manual_local_source(declaration: &str) -> arcweft_core::plan::RuntimeLocalDeclarationSource {
     // This fixture declares a semantic binding name independent of its value,
     // type, source offset, and builder-issued local ordinal.
     let mut identity = blake3::Hasher::new();
     identity.update(b"arcweft.manual-fixture-binding.v1\0");
     identity.update(declaration.as_bytes());
-    arcweft_core::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
+    arcweft_core::plan::RuntimeLocalDeclarationSource::Binding {
+        identity: *identity.finalize().as_bytes(),
+        declaration: arcweft_core::plan::RuntimeLocalBindingDeclaration::new(
+            arcweft_core::plan::RuntimeLocalBindingKind::PatternBinding,
+            false,
+            arcweft_core::plan::RuntimeLocalBindingStorage::Derived,
+        ),
+    }
 }

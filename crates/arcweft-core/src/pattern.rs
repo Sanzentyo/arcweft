@@ -3652,13 +3652,13 @@ mod tests {
                 ],
                 [
                     RuntimeLocalDeclarationSeed::new(
-                        manual_local_origin(
+                        manual_local_source(
                             "arcweft-core.fixture.pattern.tuple_pattern_binds_plan_local_ids.binding_a",
                         ),
                         identity(1),
                     ),
                     RuntimeLocalDeclarationSeed::new(
-                        manual_local_origin(
+                        manual_local_source(
                             "arcweft-core.fixture.pattern.tuple_pattern_binds_plan_local_ids.binding_b",
                         ),
                         identity(2),
@@ -3751,8 +3751,8 @@ mod tests {
                     ),
                 ],
                 [
-                    RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.pattern.guard_copies_only_selected_scalar_sibling_before_moving_affine_tuple.binding_a"), identity(102)),
-                    RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.pattern.guard_copies_only_selected_scalar_sibling_before_moving_affine_tuple.binding_b"), identity(103)),
+                    RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.pattern.guard_copies_only_selected_scalar_sibling_before_moving_affine_tuple.binding_a"), identity(102)),
+                    RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.pattern.guard_copies_only_selected_scalar_sibling_before_moving_affine_tuple.binding_b"), identity(103)),
                 ],
             )
             .expect("typed affine tuple admission");
@@ -3873,9 +3873,9 @@ mod tests {
                     RuntimePlanTypeSeed::new(identity(3), RuntimePlanTypeProjection::String),
                 ],
                 [
-                    RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.pattern.structural_record_pattern_binds_selected_field_and_complete_rest_record.binding_a"), identity(2)),
-                    RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.pattern.structural_record_pattern_binds_selected_field_and_complete_rest_record.binding_b"), identity(1)),
-                    RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.pattern.structural_record_pattern_binds_selected_field_and_complete_rest_record.binding_c"), identity(3)),
+                    RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.pattern.structural_record_pattern_binds_selected_field_and_complete_rest_record.binding_a"), identity(2)),
+                    RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.pattern.structural_record_pattern_binds_selected_field_and_complete_rest_record.binding_b"), identity(1)),
+                    RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.pattern.structural_record_pattern_binds_selected_field_and_complete_rest_record.binding_c"), identity(3)),
                 ],
             )
             .expect("structural record type graph");
@@ -3949,8 +3949,8 @@ mod tests {
                     RuntimePlanTypeSeed::new(identity(3), RuntimePlanTypeProjection::String),
                 ],
                 [
-                    RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.pattern.structural_record_pattern_rejects_unknown_field_and_wrong_field_type.binding_a"), identity(2)),
-                    RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.pattern.structural_record_pattern_rejects_unknown_field_and_wrong_field_type.binding_b"), identity(3)),
+                    RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.pattern.structural_record_pattern_rejects_unknown_field_and_wrong_field_type.binding_a"), identity(2)),
+                    RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.pattern.structural_record_pattern_rejects_unknown_field_and_wrong_field_type.binding_b"), identity(3)),
                 ],
             )
             .expect("structural record type graph");
@@ -4049,7 +4049,7 @@ mod tests {
                     RuntimePlanTypeSeed::new(identity(2), RuntimePlanTypeProjection::Bool),
                     RuntimePlanTypeSeed::new(identity(3), RuntimePlanTypeProjection::String),
                 ],
-                [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.pattern.nominal_record_pattern_uses_owner_domain_and_field_id.binding_a"), identity(2))],
+                [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.pattern.nominal_record_pattern_uses_owner_domain_and_field_id.binding_a"), identity(2))],
                 [RuntimeNominalRecordDomainSeed::new(
                     identity(1),
                     crate::entry::RuntimeNominalRecordShape::Record,
@@ -4126,7 +4126,7 @@ mod tests {
                     RuntimePlanTypeSeed::new(identity(1), RuntimePlanTypeProjection::Bool),
                     RuntimePlanTypeSeed::new(identity(2), RuntimePlanTypeProjection::String),
                 ],
-                [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.pattern.binding_local_type_must_equal_the_pattern_node_type.binding_a"), identity(2))],
+                [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.pattern.binding_local_type_must_equal_the_pattern_node_type.binding_a"), identity(2))],
             )
             .expect("local admission");
         let result = builder.lower_pattern_seed_for_test(RuntimePatternSeed::new(
@@ -4158,11 +4158,18 @@ mod tests {
 }
 
 #[cfg(test)]
-fn manual_local_origin(declaration: &str) -> crate::plan::RuntimeLocalOrigin {
+fn manual_local_source(declaration: &str) -> crate::plan::RuntimeLocalDeclarationSource {
     // This fixture declares a semantic binding name independent of its value,
     // type, source offset, and builder-issued local ordinal.
     let mut identity = blake3::Hasher::new();
     identity.update(b"arcweft.manual-fixture-binding.v1\0");
     identity.update(declaration.as_bytes());
-    crate::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
+    crate::plan::RuntimeLocalDeclarationSource::Binding {
+        identity: *identity.finalize().as_bytes(),
+        declaration: crate::plan::RuntimeLocalBindingDeclaration::new(
+            crate::plan::RuntimeLocalBindingKind::PatternBinding,
+            false,
+            crate::plan::RuntimeLocalBindingStorage::Derived,
+        ),
+    }
 }

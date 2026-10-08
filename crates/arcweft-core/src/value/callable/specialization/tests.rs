@@ -86,7 +86,7 @@ fn plan() -> RuntimePlan {
                 .enumerate()
                 .map(|(source_ordinal, ty)| {
                     RuntimeLocalDeclarationSeed::new(
-                        manual_local_origin(&format!(
+                        manual_local_source(&format!(
                             "arcweft-core.fixture.callable-specialization.input[{source_ordinal}]"
                         )),
                         ty,
@@ -272,9 +272,16 @@ fn specialization_requires_the_exact_program_lease_and_an_admitted_relation() {
     ));
 }
 
-fn manual_local_origin(declaration: &str) -> crate::plan::RuntimeLocalOrigin {
+fn manual_local_source(declaration: &str) -> crate::plan::RuntimeLocalDeclarationSource {
     let mut identity = blake3::Hasher::new();
     identity.update(b"arcweft.manual-fixture-binding.v1\0");
     identity.update(declaration.as_bytes());
-    crate::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
+    crate::plan::RuntimeLocalDeclarationSource::Binding {
+        identity: *identity.finalize().as_bytes(),
+        declaration: crate::plan::RuntimeLocalBindingDeclaration::new(
+            crate::plan::RuntimeLocalBindingKind::PatternBinding,
+            false,
+            crate::plan::RuntimeLocalBindingStorage::Derived,
+        ),
+    }
 }

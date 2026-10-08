@@ -46,16 +46,19 @@ pub(super) struct RuntimePlanConstructionIssuer;
 /// One local declaration request in canonical semantic-fact order.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RuntimeLocalDeclarationSeed {
-    origin: super::super::RuntimeLocalOrigin,
+    source: super::super::RuntimeLocalDeclarationSource,
     ty: RuntimeSemanticTypeId,
     context: Option<RuntimeSemanticTypeId>,
 }
 
 impl RuntimeLocalDeclarationSeed {
     #[must_use]
-    pub const fn new(origin: super::super::RuntimeLocalOrigin, ty: RuntimeSemanticTypeId) -> Self {
+    pub const fn new(
+        source: super::super::RuntimeLocalDeclarationSource,
+        ty: RuntimeSemanticTypeId,
+    ) -> Self {
         Self {
-            origin,
+            source,
             ty,
             context: None,
         }
@@ -64,19 +67,23 @@ impl RuntimeLocalDeclarationSeed {
     /// Declares a slot under the lexical binder of a function-shaped contract.
     #[must_use]
     pub const fn in_function(
-        origin: super::super::RuntimeLocalOrigin,
+        source: super::super::RuntimeLocalDeclarationSource,
         ty: RuntimeSemanticTypeId,
         context: RuntimeSemanticTypeId,
     ) -> Self {
         Self {
-            origin,
+            source,
             ty,
             context: Some(context),
         }
     }
 
+    pub const fn source(self) -> super::super::RuntimeLocalDeclarationSource {
+        self.source
+    }
+
     pub const fn origin(self) -> super::super::RuntimeLocalOrigin {
-        self.origin
+        self.source.origin()
     }
 
     pub const fn context(self) -> Option<RuntimeSemanticTypeId> {

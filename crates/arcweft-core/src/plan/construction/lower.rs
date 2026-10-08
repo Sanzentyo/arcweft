@@ -5690,7 +5690,7 @@ mod tests {
                     ),
                     RuntimePlanTypeSeed::new(field_type, RuntimePlanTypeProjection::String),
                 ],
-                [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.plan.construction.lower.opaque_record_projection_retains_the_complete_exact_owner.binding_a"), semantic_owner)],
+                [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.plan.construction.lower.opaque_record_projection_retains_the_complete_exact_owner.binding_a"), semantic_owner)],
             )
             .expect("opaque record graph");
         let expression = builder
@@ -5775,7 +5775,7 @@ mod tests {
                     ),
                     RuntimePlanTypeSeed::new(identity(2), RuntimePlanTypeProjection::Bool),
                 ],
-                [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.plan.construction.lower.record_binding_path_uses_retained_pattern_order_not_domain_ordinal.binding_a"), identity(2))],
+                [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.plan.construction.lower.record_binding_path_uses_retained_pattern_order_not_domain_ordinal.binding_a"), identity(2))],
                 [RuntimeNominalRecordDomainSeed::new(
                     identity(1),
                     crate::entry::RuntimeNominalRecordShape::Record,
@@ -5870,7 +5870,7 @@ mod tests {
                         arguments: Box::new([]),
                     },
                 )],
-                [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.plan.construction.lower.binding_path_accepts_depth_64_and_rejects_depth_65.binding_a"), identity(1))],
+                [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.plan.construction.lower.binding_path_accepts_depth_64_and_rejects_depth_65.binding_a"), identity(1))],
                 [],
                 [RuntimeVariantDomainSeed::new(
                     identity(1),
@@ -5921,11 +5921,18 @@ mod tests {
 }
 
 #[cfg(test)]
-fn manual_local_origin(declaration: &str) -> crate::plan::RuntimeLocalOrigin {
+fn manual_local_source(declaration: &str) -> crate::plan::RuntimeLocalDeclarationSource {
     // This fixture declares a semantic binding name independent of its value,
     // type, source offset, and builder-issued local ordinal.
     let mut identity = blake3::Hasher::new();
     identity.update(b"arcweft.manual-fixture-binding.v1\0");
     identity.update(declaration.as_bytes());
-    crate::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
+    crate::plan::RuntimeLocalDeclarationSource::Binding {
+        identity: *identity.finalize().as_bytes(),
+        declaration: crate::plan::RuntimeLocalBindingDeclaration::new(
+            crate::plan::RuntimeLocalBindingKind::PatternBinding,
+            false,
+            crate::plan::RuntimeLocalBindingStorage::Derived,
+        ),
+    }
 }

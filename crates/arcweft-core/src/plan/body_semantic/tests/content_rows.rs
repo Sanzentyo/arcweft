@@ -106,7 +106,14 @@ fn content_plan(options: &ContentFixture<'_>) -> RuntimePlan {
                 ),
             ],
             [RuntimeLocalDeclarationSeed::new(
-                RuntimeLocalOrigin::Binding([4; 32]),
+                crate::plan::RuntimeLocalDeclarationSource::Binding {
+                    identity: [4; 32],
+                    declaration: crate::plan::RuntimeLocalBindingDeclaration::new(
+                        crate::plan::RuntimeLocalBindingKind::PatternBinding,
+                        false,
+                        crate::plan::RuntimeLocalBindingStorage::Derived,
+                    ),
+                },
                 semantic(2),
             )],
         )

@@ -24,12 +24,12 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
                 RuntimePlanTypeSeed::new(need_string, RuntimePlanTypeProjection::Need(string)),
             ],
             [
-                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.flow.function_call.executable_function_value_retains_captures_and_return_binding_across_await.binding_a"), string),
-                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.flow.function_call.executable_function_value_retains_captures_and_return_binding_across_await.binding_b"), string),
-                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.flow.function_call.executable_function_value_retains_captures_and_return_binding_across_await.binding_c"), need_string),
-                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.flow.function_call.executable_function_value_retains_captures_and_return_binding_across_await.binding_d"), need_string),
-                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.flow.function_call.executable_function_value_retains_captures_and_return_binding_across_await.binding_e"), string),
-                RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.tests.flow.function_call.executable_function_value_retains_captures_and_return_binding_across_await.binding_f"), need_string),
+                RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.tests.flow.function_call.executable_function_value_retains_captures_and_return_binding_across_await.binding_a"), string),
+                RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.tests.flow.function_call.executable_function_value_retains_captures_and_return_binding_across_await.binding_b"), string),
+                RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.tests.flow.function_call.executable_function_value_retains_captures_and_return_binding_across_await.binding_c"), need_string),
+                RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.tests.flow.function_call.executable_function_value_retains_captures_and_return_binding_across_await.binding_d"), need_string),
+                RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.tests.flow.function_call.executable_function_value_retains_captures_and_return_binding_across_await.binding_e"), string),
+                RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.tests.flow.function_call.executable_function_value_retains_captures_and_return_binding_across_await.binding_f"), need_string),
             ],
         )
         .expect("callback ABI admits");
@@ -275,11 +275,18 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
     assert!(matches!(engine.fiber().status, FlowFiberStatus::Done(_)));
 }
 
-fn manual_local_origin(declaration: &str) -> crate::plan::RuntimeLocalOrigin {
+fn manual_local_source(declaration: &str) -> crate::plan::RuntimeLocalDeclarationSource {
     // This fixture declares a semantic binding name independent of its value,
     // type, source offset, and builder-issued local ordinal.
     let mut identity = blake3::Hasher::new();
     identity.update(b"arcweft.manual-fixture-binding.v1\0");
     identity.update(declaration.as_bytes());
-    crate::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
+    crate::plan::RuntimeLocalDeclarationSource::Binding {
+        identity: *identity.finalize().as_bytes(),
+        declaration: crate::plan::RuntimeLocalBindingDeclaration::new(
+            crate::plan::RuntimeLocalBindingKind::PatternBinding,
+            false,
+            crate::plan::RuntimeLocalBindingStorage::Derived,
+        ),
+    }
 }

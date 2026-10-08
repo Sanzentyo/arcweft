@@ -226,7 +226,7 @@ fn admit(
             ],
             (0..locals).map(|source_ordinal| {
                 RuntimeLocalDeclarationSeed::new(
-                    manual_local_origin(&format!(
+                    manual_local_source(&format!(
                         "arcweft-lang-jit-cranelift.fixture.tests.helper.input[{source_ordinal}]"
                     )),
                     scalar.ty(),
@@ -842,11 +842,18 @@ fn cranelift_unary_and_unsupported_typed_values_have_deterministic_boundaries() 
     ));
 }
 
-fn manual_local_origin(declaration: &str) -> arcweft_core::plan::RuntimeLocalOrigin {
+fn manual_local_source(declaration: &str) -> arcweft_core::plan::RuntimeLocalDeclarationSource {
     // This fixture declares a semantic binding name independent of its value,
     // type, source offset, and builder-issued local ordinal.
     let mut identity = blake3::Hasher::new();
     identity.update(b"arcweft.manual-fixture-binding.v1\0");
     identity.update(declaration.as_bytes());
-    arcweft_core::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
+    arcweft_core::plan::RuntimeLocalDeclarationSource::Binding {
+        identity: *identity.finalize().as_bytes(),
+        declaration: arcweft_core::plan::RuntimeLocalBindingDeclaration::new(
+            arcweft_core::plan::RuntimeLocalBindingKind::PatternBinding,
+            false,
+            arcweft_core::plan::RuntimeLocalBindingStorage::Derived,
+        ),
+    }
 }

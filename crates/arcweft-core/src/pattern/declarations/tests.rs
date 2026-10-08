@@ -1,8 +1,8 @@
 use super::*;
 use crate::pattern::{RuntimePatternBindingStep as Step, RuntimeSemanticTypeId};
 use crate::plan::{
-    RuntimeLocalDeclarationSeed, RuntimeLocalOrigin, RuntimeLocalSeedId, RuntimePatternRestSeed,
-    RuntimePatternSeed, RuntimePatternSeedKind as Kind, RuntimePlanBuildError, RuntimePlanBuilder,
+    RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, RuntimePatternRestSeed, RuntimePatternSeed,
+    RuntimePatternSeedKind as Kind, RuntimePlanBuildError, RuntimePlanBuilder,
     RuntimePlanRecordField, RuntimePlanSequenceKind, RuntimePlanTypeProjection as Type,
     RuntimePlanTypeSeed, RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed,
 };
@@ -11,7 +11,7 @@ fn semantic(tag: u8) -> RuntimeSemanticTypeId {
     RuntimeSemanticTypeId::from_bytes([tag; 32])
 }
 
-fn fixture(local_types: &[u8]) -> (RuntimePlanBuilder, Vec<RuntimeLocalSeedId>) {
+fn fixture(local_types: &[(u8, bool)]) -> (RuntimePlanBuilder, Vec<RuntimeLocalSeedId>) {
     let mut builder = RuntimePlanBuilder::new();
     let types = [
         (1, Type::Bool),
@@ -44,13 +44,23 @@ fn fixture(local_types: &[u8]) -> (RuntimePlanBuilder, Vec<RuntimeLocalSeedId>) 
             types
                 .into_iter()
                 .map(|(tag, ty)| RuntimePlanTypeSeed::new(semantic(tag), ty)),
-            local_types.iter().enumerate().map(|(ordinal, ty)| {
-                let name = format!("arcweft.pattern-declarations.fixture.local.{ordinal}");
-                RuntimeLocalDeclarationSeed::new(
-                    RuntimeLocalOrigin::Binding(*blake3::hash(name.as_bytes()).as_bytes()),
-                    semantic(*ty),
-                )
-            }),
+            local_types
+                .iter()
+                .enumerate()
+                .map(|(ordinal, (ty, mutable))| {
+                    let name = format!("arcweft.pattern-declarations.fixture.local.{ordinal}");
+                    RuntimeLocalDeclarationSeed::new(
+                        crate::plan::RuntimeLocalDeclarationSource::Binding {
+                            identity: *blake3::hash(name.as_bytes()).as_bytes(),
+                            declaration: crate::plan::RuntimeLocalBindingDeclaration::new(
+                                crate::plan::RuntimeLocalBindingKind::PatternBinding,
+                                *mutable,
+                                crate::plan::RuntimeLocalBindingStorage::Derived,
+                            ),
+                        },
+                        semantic(*ty),
+                    )
+                }),
         )
         .expect("admitted complete pattern fixture");
     (builder, admission.local_ids().to_vec())
@@ -68,7 +78,7 @@ fn bind(tag: u8, local: &RuntimeLocalSeedId, mutable: bool) -> RuntimePatternSee
 
 #[test]
 fn whole_and_tuple_declarations_retain_borrowed_coordinates_types_and_mutability() {
-    let (builder, locals) = fixture(&[2, 1, 1]);
+    let (builder, locals) = fixture(&[(2, false), (1, true), (1, false)]);
     let pattern = builder
         .lower_pattern_seed_for_test(RuntimePatternSeed::new(
             semantic(2),
@@ -120,7 +130,7 @@ fn whole_and_tuple_declarations_retain_borrowed_coordinates_types_and_mutability
 #[test]
 fn sequence_and_record_rest_declarations_follow_items_and_keep_the_whole_type() {
     for (owner, step) in [(3, Step::SequenceRest), (4, Step::RecordRest)] {
-        let (builder, locals) = fixture(&[1, owner]);
+        let (builder, locals) = fixture(&[(1, true), (owner, false)]);
         let kind = if owner == 3 {
             Kind::Sequence {
                 items: Box::new([bind(1, &locals[0], true)]),
@@ -158,7 +168,7 @@ fn sequence_and_record_rest_declarations_follow_items_and_keep_the_whole_type() 
 
 #[test]
 fn variant_payload_declarations_preserve_the_full_binding_path() {
-    let (builder, locals) = fixture(&[1]);
+    let (builder, locals) = fixture(&[(1, true)]);
     let pattern = builder
         .lower_pattern_seed_for_test(RuntimePatternSeed::new(
             semantic(6),
@@ -183,7 +193,7 @@ fn variant_payload_declarations_preserve_the_full_binding_path() {
 
 #[test]
 fn or_alternatives_reject_mutability_mismatch_and_do_not_poison_later_admission() {
-    let (builder, locals) = fixture(&[1]);
+    let (builder, locals) = fixture(&[(1, true)]);
     for (expected, actual) in [(true, false), (false, true)] {
         assert!(
             matches!(builder.lower_pattern_seed_for_test(RuntimePatternSeed::new(
@@ -211,7 +221,7 @@ fn or_alternatives_reject_mutability_mismatch_and_do_not_poison_later_admission(
 
 #[test]
 fn or_inventory_equivalence_is_by_local_declaration_not_binding_position() {
-    let (builder, locals) = fixture(&[1, 1]);
+    let (builder, locals) = fixture(&[(1, true), (1, false)]);
     let arm = |reversed| {
         RuntimePatternSeed::new(
             semantic(2),
@@ -244,7 +254,7 @@ fn or_inventory_equivalence_is_by_local_declaration_not_binding_position() {
 
 #[test]
 fn deep_or_and_whole_patterns_keep_declaration_semantics_without_native_recursion() {
-    let (builder, locals) = fixture(&[1]);
+    let (builder, locals) = fixture(&[(1, true)]);
     let mut seed = bind(1, &locals[0], true);
     for _ in 0..256 {
         seed = RuntimePatternSeed::new(
@@ -258,7 +268,9 @@ fn deep_or_and_whole_patterns_keep_declaration_semantics_without_native_recursio
     assert!(declarations[0].is_mutable());
     assert_eq!(declarations[0].coordinate().path().steps(), [Step::Whole]);
 
-    let (builder, locals) = fixture(&[1; 65]);
+    let mut local_specs = [(1, false); 65];
+    local_specs[64].1 = true;
+    let (builder, locals) = fixture(&local_specs);
     let mut seed = bind(1, &locals[64], true);
     for local in locals[..64].iter().rev() {
         seed = RuntimePatternSeed::new(

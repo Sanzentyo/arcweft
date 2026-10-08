@@ -831,7 +831,7 @@ impl RuntimePlanBuilder {
                         ty,
                     });
                 }
-                Ok((local.origin(), ty, context))
+                Ok((local.source(), ty, context))
             })
             .collect::<Result<Box<[_]>, _>>()?;
         let prepared_locals = self
@@ -3392,7 +3392,7 @@ mod tests {
         assert!(matches!(
             builder.admit_semantic_batch(
                 type_seeds(&schema),
-                [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.plan.construction.record_domain_failure_rolls_back_types_and_locals.binding_a"), identity(2))],
+                [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.plan.construction.record_domain_failure_rolls_back_types_and_locals.binding_a"), identity(2))],
                 [invalid],
                 [],
                 &schema,
@@ -3417,7 +3417,7 @@ mod tests {
         let admitted = builder
             .admit_semantic_batch(
                 type_seeds(&schema),
-                [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.plan.construction.record_domain_failure_rolls_back_types_and_locals.binding_b"), identity(2))],
+                [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.plan.construction.record_domain_failure_rolls_back_types_and_locals.binding_b"), identity(2))],
                 [valid],
                 [],
                 &schema,
@@ -3578,7 +3578,14 @@ mod tests {
                         RuntimePlanTypeProjection::Unit,
                     )],
                     [RuntimeLocalDeclarationSeed::new(
-                        super::super::RuntimeLocalOrigin::Binding([0x41; 32]),
+                        crate::plan::RuntimeLocalDeclarationSource::Binding {
+                            identity: [0x41; 32],
+                            declaration: crate::plan::RuntimeLocalBindingDeclaration::new(
+                                crate::plan::RuntimeLocalBindingKind::PatternBinding,
+                                false,
+                                crate::plan::RuntimeLocalBindingStorage::Derived,
+                            ),
+                        },
                         unit,
                     )],
                 )
@@ -3728,7 +3735,7 @@ mod tests {
                     identity(1),
                     RuntimePlanTypeProjection::String,
                 )],
-                [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.plan.construction.conflicting_batch_does_not_commit_local_rows.binding_a"), identity(1))],
+                [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.plan.construction.conflicting_batch_does_not_commit_local_rows.binding_a"), identity(1))],
             ),
             Err(RuntimePlanBuildError::TypeGraph(
                 RuntimePlanTypeTableError::ConflictingProjection { .. }
@@ -3741,7 +3748,7 @@ mod tests {
                     identity(2),
                     RuntimePlanTypeProjection::String,
                 )],
-                [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.plan.construction.conflicting_batch_does_not_commit_local_rows.binding_b"), identity(2))],
+                [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.plan.construction.conflicting_batch_does_not_commit_local_rows.binding_b"), identity(2))],
             )
             .expect("failed batch left no local row");
         let plan = builder.finish().expect("unpoisoned preflight failure");
@@ -3804,7 +3811,7 @@ mod tests {
                         identity(1),
                         RuntimePlanTypeProjection::Bool,
                     )],
-                    [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.plan.construction.function_input_origin_rejects_an_unrelated_semantic_role_atomically.binding_a"), identity(1))],
+                    [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.plan.construction.function_input_origin_rejects_an_unrelated_semantic_role_atomically.binding_a"), identity(1))],
                 )
                 .unwrap();
             let result = builder.reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
@@ -3844,7 +3851,7 @@ mod tests {
                     identity(1),
                     RuntimePlanTypeProjection::Bool,
                 )],
-                [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.plan.construction.cross_builder_local_injection_poisoned_the_target_builder.binding_a"), identity(1))],
+                [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.plan.construction.cross_builder_local_injection_poisoned_the_target_builder.binding_a"), identity(1))],
             )
             .expect("first admission")
             .local_ids()[0]
@@ -3856,7 +3863,7 @@ mod tests {
                     identity(1),
                     RuntimePlanTypeProjection::Bool,
                 )],
-                [RuntimeLocalDeclarationSeed::new(manual_local_origin("arcweft-core.fixture.plan.construction.cross_builder_local_injection_poisoned_the_target_builder.binding_b"), identity(1))],
+                [RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.plan.construction.cross_builder_local_injection_poisoned_the_target_builder.binding_b"), identity(1))],
             )
             .expect("second admission");
 
@@ -3898,11 +3905,18 @@ mod tests {
 }
 
 #[cfg(test)]
-fn manual_local_origin(declaration: &str) -> crate::plan::RuntimeLocalOrigin {
+fn manual_local_source(declaration: &str) -> crate::plan::RuntimeLocalDeclarationSource {
     // This fixture declares a semantic binding name independent of its value,
     // type, source offset, and builder-issued local ordinal.
     let mut identity = blake3::Hasher::new();
     identity.update(b"arcweft.manual-fixture-binding.v1\0");
     identity.update(declaration.as_bytes());
-    crate::plan::RuntimeLocalOrigin::Binding(*identity.finalize().as_bytes())
+    crate::plan::RuntimeLocalDeclarationSource::Binding {
+        identity: *identity.finalize().as_bytes(),
+        declaration: crate::plan::RuntimeLocalBindingDeclaration::new(
+            crate::plan::RuntimeLocalBindingKind::PatternBinding,
+            false,
+            crate::plan::RuntimeLocalBindingStorage::Derived,
+        ),
+    }
 }
