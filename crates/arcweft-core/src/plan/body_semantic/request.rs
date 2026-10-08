@@ -244,33 +244,21 @@ impl RuntimeBodySemanticContext<'_> {
                     RuntimeRequestValueSource::Projection
                 }
                 Expr::Local(read) => {
-                    let mut captured = false;
-                    for input in endpoint.function().capture_inputs() {
-                        meter.charge_work(1)?;
-                        if input.input_local() == read.local() {
-                            captured = true;
-                            break;
-                        }
-                        crate::value::RuntimeExpressionNode::Pattern(input.pattern()).try_visit_owned_events(&mut |event| {
-                            meter.charge_work(1)?;
-                            if let crate::value::expression_tree::RuntimeExpressionTreeEvent::Enter { node: crate::value::RuntimeExpressionNode::Pattern(pattern), .. } = event {
-                                match pattern.kind() {
-                                    crate::pattern::RuntimePatternKind::Bind { binding, .. }
-                                    | crate::pattern::RuntimePatternKind::Whole { binding, .. }
-                                    | crate::pattern::RuntimePatternKind::Typed { binding } => { captured |= binding.local() == read.local(); }
-                                    crate::pattern::RuntimePatternKind::Record { rest, .. }
-                                    | crate::pattern::RuntimePatternKind::Sequence { rest, .. } => { captured |= rest.binding().is_some_and(|binding| binding.local() == read.local()); }
-                                    crate::pattern::RuntimePatternKind::Discard | crate::pattern::RuntimePatternKind::Literal(_)
-                                    | crate::pattern::RuntimePatternKind::Entity(_) | crate::pattern::RuntimePatternKind::Tuple(_)
-                                    | crate::pattern::RuntimePatternKind::Or(_) | crate::pattern::RuntimePatternKind::Variant { .. } => {}
-                                }
+                    meter.charge_work(1)?;
+                    let local = self
+                        .plan
+                        .local_declarations()
+                        .get(read.local())
+                        .ok_or_else(|| {
+                            meter.reject_owner();
+                            RuntimeBodySemanticError::UnknownLocal {
+                                local: read.local(),
                             }
-                            Ok::<(), crate::task::semantic::TaskSemanticEncodingError>(())
                         })?;
-                        if captured {
-                            break;
-                        }
-                    }
+                    let captured = local
+                        .placement()
+                        .function_capture_position(endpoint.function_id())
+                        .is_some();
                     if captured {
                         RuntimeRequestValueSource::Capture
                     } else {

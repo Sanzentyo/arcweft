@@ -26,7 +26,7 @@ pub(crate) struct ProducerFunctionSemantic<'a> {
 pub(crate) struct ProducerEndpoint<'a> {
     digest: ProducerFunctionSemanticDigest,
     plan: &'a super::RuntimePlanInventory,
-    function: &'a plan::RuntimeFunctionSite,
+    function_id: crate::runtime_id::RuntimeFunctionSiteId,
     operation: &'a plan::FlowOp,
     ordinal: u32,
     kind: EndpointKind,
@@ -59,8 +59,8 @@ impl<'a> ProducerEndpoint<'a> {
             _ => None,
         }
     }
-    pub(crate) const fn function(&self) -> &'a plan::RuntimeFunctionSite {
-        self.function
+    pub(crate) const fn function_id(&self) -> crate::runtime_id::RuntimeFunctionSiteId {
+        self.function_id
     }
 }
 
@@ -168,7 +168,7 @@ impl ProducerFunctionSemantic<'_> {
             .map(|(kind, _, operation)| ProducerEndpoint {
                 digest: self.digest,
                 plan: self.plan,
-                function: self.function,
+                function_id: self.function_id,
                 operation,
                 ordinal,
                 kind: *kind,

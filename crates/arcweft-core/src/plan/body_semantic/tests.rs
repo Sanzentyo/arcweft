@@ -2,6 +2,7 @@ use super::*;
 mod content_rows;
 mod function_rows;
 mod line_rows;
+mod request_capture_rows;
 mod stream_rows;
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::RuntimePlan;

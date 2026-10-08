@@ -83,6 +83,27 @@ impl RuntimeLocalPlacement {
     pub const fn initialization(self) -> RuntimeLocalInitialization {
         self.initialization
     }
+    /// Resolves physical ingress, independently of the binding's authored
+    /// provenance. Pattern destinations retain the carrier's capture source.
+    pub(crate) fn function_capture_position(self, function: RuntimeFunctionSiteId) -> Option<u32> {
+        if self.owner != RuntimeLocalOwner::Function(function) {
+            return None;
+        }
+        match self.initialization {
+            RuntimeLocalInitialization::Input { source, .. }
+            | RuntimeLocalInitialization::InputPattern { source, .. } => match source {
+                RuntimeFunctionInputSource::Capture { position }
+                | RuntimeFunctionInputSource::CapturedParameter { position, .. } => Some(position),
+                RuntimeFunctionInputSource::Parameter { .. } => None,
+            },
+            RuntimeLocalInitialization::CallableParameter { .. }
+            | RuntimeLocalInitialization::Pattern
+            | RuntimeLocalInitialization::ExpressionLet
+            | RuntimeLocalInitialization::ProjectCallResult
+            | RuntimeLocalInitialization::ScheduledCapture
+            | RuntimeLocalInitialization::MatchCandidate => None,
+        }
+    }
     #[must_use]
     pub const fn is_mutable(self) -> bool {
         self.mutable

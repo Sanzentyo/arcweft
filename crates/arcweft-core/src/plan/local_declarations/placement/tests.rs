@@ -8,6 +8,56 @@ use crate::plan::{
 };
 use crate::value::RuntimeValue;
 
+#[test]
+fn capture_ingress_belongs_to_its_actual_function_and_not_source_provenance() {
+    let function = RuntimeFunctionSiteId::from_accepted_ordinal(std::num::NonZeroU32::MIN);
+    let other = RuntimeFunctionSiteId::from_accepted_ordinal(std::num::NonZeroU32::new(2).unwrap());
+    let transfer =
+        RuntimeFunctionInputTransfer::Transferred(crate::plan::RuntimeFunctionCaptureMode::Copy);
+    for initialization in [
+        RuntimeLocalInitialization::Input {
+            source: RuntimeFunctionInputSource::Capture { position: 7 },
+            transfer,
+        },
+        RuntimeLocalInitialization::InputPattern {
+            source: RuntimeFunctionInputSource::Capture { position: 7 },
+            transfer,
+        },
+        RuntimeLocalInitialization::InputPattern {
+            source: RuntimeFunctionInputSource::CapturedParameter {
+                position: 7,
+                passing: crate::plan::RuntimeFunctionParameterPassing::Value,
+            },
+            transfer: RuntimeFunctionInputTransfer::Formal,
+        },
+    ] {
+        let placement = RuntimeLocalPlacement {
+            owner: RuntimeLocalOwner::Function(function),
+            initialization,
+            mutable: false,
+        };
+        assert_eq!(placement.function_capture_position(function), Some(7));
+        assert_eq!(placement.function_capture_position(other), None);
+    }
+    for initialization in [
+        RuntimeLocalInitialization::ExpressionLet,
+        RuntimeLocalInitialization::Input {
+            source: RuntimeFunctionInputSource::Parameter {
+                position: 7,
+                passing: crate::plan::RuntimeFunctionParameterPassing::Value,
+            },
+            transfer: RuntimeFunctionInputTransfer::Formal,
+        },
+    ] {
+        let placement = RuntimeLocalPlacement {
+            owner: RuntimeLocalOwner::Function(function),
+            initialization,
+            mutable: false,
+        };
+        assert_eq!(placement.function_capture_position(function), None);
+    }
+}
+
 fn fixture() -> (
     RuntimePlanBuilder,
     crate::plan::RuntimeLocalSeedId,
