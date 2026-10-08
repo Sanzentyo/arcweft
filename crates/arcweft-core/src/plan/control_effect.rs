@@ -12,6 +12,8 @@ use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticEncodingError, Task
 
 use super::{RuntimePlanTypeTable, RuntimeTaskPlanSealLimits};
 
+pub(crate) mod semantic;
+
 const CONTROL_EFFECT_DOMAIN: &[u8] = b"arcweft.task.control-effect-contract.v1\0";
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -299,140 +301,33 @@ impl RuntimeControlEffectContractTable {
         limits: RuntimeTaskPlanSealLimits,
         meter: &mut TaskSemanticMeter,
     ) -> Result<Self, RuntimeControlEffectContractError> {
-        Self::preflight(&rows, limits, meter)?;
-        let mut state = vec![VisitState::Unvisited; rows.len()];
-        let mut digests = vec![None; rows.len()];
-        let mut stack = Vec::new();
-        for root in 0..rows.len() {
-            stack.push(Visit::Enter(root));
-            while let Some(visit) = stack.pop() {
-                match visit {
-                    Visit::Enter(index) => match state[index] {
-                        VisitState::Done => {}
-                        VisitState::Visiting => {
-                            return Err(RuntimeControlEffectContractError::Cycle { index });
-                        }
-                        VisitState::Unvisited => {
-                            meter.charge_work(1)?; // contract row visit, once
-                            state[index] = VisitState::Visiting;
-                            stack.push(Visit::Finish(index));
-                            for child in rows[index].children().iter().rev() {
-                                meter.charge_work(1)?; // source-order child edge
-                                if child.index() >= rows.len() {
-                                    return Err(RuntimeControlEffectContractError::UnknownChild {
-                                        index: child.index(),
-                                    });
-                                }
-                                stack.push(Visit::Enter(child.index()));
-                            }
-                        }
-                    },
-                    Visit::Finish(index) => {
-                        digests[index] = Some(rows[index].semantic_digest(types, &digests, meter)?);
-                        state[index] = VisitState::Done;
-                    }
-                }
+        let digests = {
+            let mut pass =
+                semantic::RuntimeControlEffectSemanticPass::from_rows(&rows, types, limits, meter)?;
+            let mut digests = Vec::with_capacity(rows.len());
+            for index in 0..rows.len() {
+                let id = RuntimeControlEffectContractId::for_index(index)
+                    .ok_or(RuntimeControlEffectContractError::IdentityExhausted)?;
+                digests.push(pass.complete(id, meter)?);
             }
-        }
+            digests
+        };
         let rows = rows
             .into_iter()
             .zip(digests)
-            .map(|(contract, digest)| {
-                let digest = digest.ok_or(RuntimeControlEffectContractError::UnsealedChild)?;
-                Ok(SealedContract { contract, digest })
-            })
-            .collect::<Result<Box<[_]>, RuntimeControlEffectContractError>>()?;
+            .map(|(contract, digest)| SealedContract { contract, digest })
+            .collect::<Box<[_]>>();
         Ok(Self { rows: rows.into() })
     }
-
-    /// C-owned fields follow the common preflight order: child counts, total
-    /// control/effect rows, then the known byte bound. Arithmetic precedes each
-    /// corresponding limit. Whole-image fields stay on the common seal owner.
-    fn preflight(
-        rows: &[RuntimeControlEffectContract],
-        limits: RuntimeTaskPlanSealLimits,
-        meter: &mut TaskSemanticMeter,
-    ) -> Result<(), RuntimeControlEffectContractError> {
-        meter.status()?;
-        for (index, row) in rows.iter().enumerate() {
-            let actual = u32::try_from(row.children().len())
-                .map_err(|_| RuntimeControlEffectContractError::ArithmeticOverflow)?;
-            if actual > limits.max_children_per_row {
-                return Err(RuntimeControlEffectContractError::ChildrenLimit {
-                    index,
-                    actual,
-                    maximum: limits.max_children_per_row,
-                });
-            }
-        }
-        let mut effect_rows = 0_u32;
-        for row in rows {
-            let count = u32::try_from(row.effects().len())
-                .map_err(|_| RuntimeControlEffectContractError::ArithmeticOverflow)?;
-            effect_rows = effect_rows
-                .checked_add(count)
-                .ok_or(RuntimeControlEffectContractError::ArithmeticOverflow)?;
-        }
-        if effect_rows > limits.max_control_effect_rows {
-            return Err(RuntimeControlEffectContractError::EffectRowsLimit {
-                actual: effect_rows,
-                maximum: limits.max_control_effect_rows,
-            });
-        }
-        let mut bytes = 0_u64;
-        for row in rows {
-            // Domain + mode + effect count + child count; all scalar fields
-            // use the same framing as the actual inherent row visitor.
-            let fixed = u64::try_from(CONTROL_EFFECT_DOMAIN.len())
-                .ok()
-                .and_then(|count| count.checked_add(9))
-                .ok_or(RuntimeControlEffectContractError::ArithmeticOverflow)?;
-            bytes = bytes
-                .checked_add(fixed)
-                .ok_or(RuntimeControlEffectContractError::ArithmeticOverflow)?;
-            for effect in row.effects() {
-                let inputs = u32::try_from(effect.inputs.len())
-                    .map_err(|_| RuntimeControlEffectContractError::ArithmeticOverflow)?;
-                let payloads = u64::from(inputs)
-                    .checked_add(u64::from(effect.identity.is_some()))
-                    .and_then(|count| count.checked_add(u64::from(effect.output.is_some())))
-                    .ok_or(RuntimeControlEffectContractError::ArithmeticOverflow)?;
-                let row_bytes = payloads
-                    .checked_mul(32)
-                    .and_then(|count| count.checked_add(15))
-                    .ok_or(RuntimeControlEffectContractError::ArithmeticOverflow)?;
-                bytes = bytes
-                    .checked_add(row_bytes)
-                    .ok_or(RuntimeControlEffectContractError::ArithmeticOverflow)?;
-            }
-            let children = u64::try_from(row.children().len())
-                .ok()
-                .and_then(|count| count.checked_mul(36))
-                .ok_or(RuntimeControlEffectContractError::ArithmeticOverflow)?;
-            bytes = bytes
-                .checked_add(children)
-                .ok_or(RuntimeControlEffectContractError::ArithmeticOverflow)?;
-        }
-        meter.preflight_bytes(bytes)?;
-        Ok(())
-    }
 }
 
-#[derive(Clone, Copy)]
-enum VisitState {
-    Unvisited,
-    Visiting,
-    Done,
-}
-enum Visit {
-    Enter(usize),
-    Finish(usize),
-}
 impl RuntimeControlEffectContract {
     fn semantic_digest(
         &self,
         types: &RuntimePlanTypeTable,
-        children: &[Option<ControlEffectContractDigest>],
+        mut child_digest: impl FnMut(
+            RuntimeControlEffectContractId,
+        ) -> Option<ControlEffectContractDigest>,
         meter: &mut TaskSemanticMeter,
     ) -> Result<ControlEffectContractDigest, RuntimeControlEffectContractError> {
         let mut encoder = TaskSemanticEncoder::new(CONTROL_EFFECT_DOMAIN, meter);
@@ -467,10 +362,8 @@ impl RuntimeControlEffectContract {
             encoder.enter_role(); // child contract reference; edge was entered above
             encoder.count(ordinal);
             encoder.status()?;
-            let digest = children
-                .get(child.index())
-                .and_then(|value| *value)
-                .ok_or(RuntimeControlEffectContractError::UnsealedChild)?;
+            let digest =
+                child_digest(*child).ok_or(RuntimeControlEffectContractError::UnsealedChild)?;
             encoder.digest(digest.as_bytes());
         }
         encoder
