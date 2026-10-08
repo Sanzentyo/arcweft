@@ -6548,6 +6548,37 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
         }
     }
 
+    pub(crate) fn visit_local_declarations(
+        self,
+        visitor: &mut impl FnMut(
+            LocalId,
+            &'facts RuntimeNormalizedType,
+            &'facts arcweft_lang_sema::semantic_coordinate::CheckedLocalBindingOrigin,
+            Option<&'facts RuntimeNormalizedType>,
+        ),
+    ) {
+        match self {
+            Self::Global(facts) => {
+                for local in &facts.local_declaration_order {
+                    let fact = facts
+                        .local_declarations
+                        .get(local)
+                        .expect("accepted local order and fact map remain correlated");
+                    visitor(*local, &fact.ty, &fact.origin, fact.context.as_ref());
+                }
+            }
+            Self::ProjectInstance(facts) => {
+                for projection in facts.type_projection() {
+                    if let RuntimeProjectFunctionTypeProjection::Local { owner, ty, origin } =
+                        projection
+                    {
+                        visitor(*owner, ty, origin, None);
+                    }
+                }
+            }
+        }
+    }
+
     pub fn local_type(self, owner: LocalId) -> Option<&'facts RuntimeNormalizedType> {
         match self {
             Self::Global(facts) => facts.local_type(owner),

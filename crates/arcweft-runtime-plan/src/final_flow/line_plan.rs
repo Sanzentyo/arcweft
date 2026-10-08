@@ -1058,8 +1058,46 @@ impl LinePlanLowerer<'_, '_> {
                 "scheduled callback capture local-use row targets another binding",
             ));
         }
+        let destination = match self
+            .module
+            .resolve_expr(callback)
+            .map_err(|error| {
+                RuntimePlanLowerError::new(format!(
+                    "scheduled callback {callback:?} is absent: {error}"
+                ))
+            })?
+            .kind()
+        {
+            HirExprKind::Closure(_) => {
+                let fact = self
+                    .flow
+                    .semantic_facts
+                    .closure_instance(callback)
+                    .ok_or_else(|| {
+                        RuntimePlanLowerError::new("scheduled closure has no closed instance")
+                    })?;
+                self.closure_locals
+                    .get(fact.key())
+                    .and_then(|frame| frame.hir.get(&local))
+                    .cloned()
+                    .ok_or_else(|| {
+                        RuntimePlanLowerError::new(
+                            "scheduled closure capture has no destination slot",
+                        )
+                    })?
+            }
+            HirExprKind::Call(_)
+            | HirExprKind::Block(_)
+            | HirExprKind::NamedBlock(_)
+            | HirExprKind::ComputationBlock(_) => seed.clone(),
+            _ => {
+                return Err(RuntimePlanLowerError::new(
+                    "scheduled capture has no admitted callback body",
+                ));
+            }
+        };
         Ok(RuntimeScheduledCaptureSeed {
-            local: seed.clone(),
+            local: destination,
             value: RuntimeExprSeed::new(
                 ty.identity(),
                 RuntimeExprSeedKind::Local(arcweft_core::plan::RuntimeLocalReadSeed::new(

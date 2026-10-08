@@ -1,3 +1,6 @@
+#[path = "support/slot_declarations.rs"]
+mod slot_declarations;
+
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use arcweft_character::catalog::{CharacterCatalog, CharacterVisualManifestEvidence};
@@ -1182,6 +1185,15 @@ entry cli @entry.main { goto @flow.main }
         "recursive generic default closure retains its lexical capture and content partition",
     );
     assert_attached_default_formal_authority(&compiled);
+    let declared = slot_declarations::function_body_declarations(&compiled.runtime_plan().plan);
+    let shared: Vec<_> = declared
+        .iter()
+        .filter(|(_, owners)| owners.len() != 1)
+        .collect();
+    assert!(
+        shared.is_empty(),
+        "default and dialogue callbacks share caller slots: {shared:?}"
+    );
     let runtime = compiled.runtime_plan();
     let report = AwbcLowerer::new(
         &runtime.plan,

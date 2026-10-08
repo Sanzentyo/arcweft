@@ -1,3 +1,7 @@
+#[path = "support/slot_declarations.rs"]
+mod slot_declarations;
+use slot_declarations::function_body_declarations;
+
 use arcweft_compiler::source::compile_source;
 use arcweft_core::plan::{
     RuntimeLocalBindingDeclaration, RuntimeLocalBindingKind as Kind,
@@ -127,6 +131,11 @@ fn referenced_slots(
         }
     }
     plan.visit_flow_ops(&mut |operation| {
+        if let arcweft_core::plan::FlowOp::ProjectCall { site } = operation {
+            visit(Node::Pattern(
+                plan.project_call_sites().get(*site).unwrap().result(),
+            ));
+        }
         operation
             .try_visit_value_roots(&mut |_, root| {
                 visit(root);
@@ -187,4 +196,42 @@ fn closed_program_and_function_frames_do_not_leave_global_template_slots() {
         mismatches.is_empty(),
         "unreferenced actual slot rows: {mismatches:#?}"
     );
+}
+
+#[test]
+fn closed_frames_declare_each_materialized_slot_in_one_body() {
+    for source in [
+        r"view Main(initial: String) { local state caption: String = initial; Text(caption); Text(caption) }",
+        r#"view Main() { let caption = "hello"; Text(caption); Text(caption) }"#,
+        "fn identity<T>(input: T) -> T { let value = input; value }
+flow main() -> i64 { let left = identity(7i64); return identity(left) }",
+        "flow main() -> i64 { let mut value = 7i64; let compute = || value; return compute() }",
+        "flow main() -> i64 { let value = 7i64; let compute = || { let inner = || value; inner() }; return compute() }",
+        "fn make(value: i64) -> (i64 -> i64 effects {}) { _ + value }\nflow main() -> i64 { let compute = make(7i64); return compute(0i64) }",
+    ] {
+        let compiled = compile_source(source).expect("actual body ownership fixture compiles");
+        assert!(compiled.plan.pure_helpers().is_empty());
+        assert!(compiled.plan.trait_methods().is_empty());
+        assert!(compiled.plan.line_task_groups().is_empty());
+        assert!(compiled.plan.stream_plans().is_empty());
+        let declared = function_body_declarations(&compiled.plan);
+        let referenced = referenced_slots(&compiled.plan);
+        let undeclared: Vec<_> = referenced
+            .iter()
+            .filter(|local| !declared.contains_key(local))
+            .collect();
+        let multiple: Vec<_> = declared
+            .iter()
+            .filter(|(_, owners)| owners.len() != 1)
+            .collect();
+        assert!(
+            undeclared.is_empty(),
+            "{source}: referenced slots without a declaration: {undeclared:?}"
+        );
+        assert!(
+            multiple.is_empty(),
+            "{source}: slots declared by multiple actual bodies: {multiple:?}"
+        );
+        assert_eq!(declared.len(), compiled.plan.local_declarations().len());
+    }
 }

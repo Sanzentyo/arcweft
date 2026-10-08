@@ -1384,22 +1384,35 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     let value = if let Some(value) = values_by_function.get(&function) {
                         *value
                     } else if let Some(function_site) = self.plan.function_sites().get(function) {
-                        let value = AwbcExprLowerer::new(
+                        let result_type =
+                            admitted_plan_type(self.inventory, self.plan, function_site.result());
+                        let Some(callback) = self.prepare_function_site(function, path) else {
+                            return;
+                        };
+                        let args = site
+                            .captures()
+                            .iter()
+                            .map(|capture| {
+                                AwbcExprLowerer::new(
+                                    self.inventory,
+                                    frame,
+                                    format!("{path}.dialogue.{function}.capture"),
+                                    self.plan,
+                                )
+                                .lower(capture)
+                            })
+                            .collect();
+                        let value = frame.root_temp(result_type);
+                        body.suspend(
                             self.inventory,
-                            frame,
-                            format!("{path}.dialogue.{function}"),
-                            self.plan,
-                        )
-                        .lower(match function_site.body() {
-                            arcweft_core::plan::RuntimeFunctionSiteBody::Expression(body) => body,
-                            arcweft_core::plan::RuntimeFunctionSiteBody::Executable(_) => {
-                                self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                                    format!("{path}.dialogue.{function}"),
-                                    "dialogue value site must use an expression function body",
-                                ));
-                                return;
-                            }
-                        });
+                            AwbcSafePointKind::CallableBoundary,
+                            |resume| AwbcTerminator::CallFunction {
+                                function: callback,
+                                args,
+                                dst: Some(value),
+                                resume,
+                            },
+                        );
                         values_by_function.insert(function, value);
                         value
                     } else {

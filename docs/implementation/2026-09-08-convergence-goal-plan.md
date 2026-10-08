@@ -10499,3 +10499,168 @@ iteration-method global fallback. Global15 memo/common seal/private image,
 protected all14 Cut5, original View/nominal/scheduler/borrowing/Tier2/CLI277/
 old-path deletion/final acceptance remain pending. Astra one-shot remains
 consumed; do not repeat it after compaction.
+
+### 2026-10-08: E1 capture frame ownership — current WIP
+
+Checked-request cut delivered at 0e72e0cc53a9f296fcb9af13a996d72b8f443d6f;
+main/origin/main clean after normal push. Its complete coverage and known
+CLI277 failure receipts are TEMP arcweft-1008-owned-local-requests-*.
+
+New actual-body probe covers View multiple uses, repeated generic calls,
+ordinary/nested closures and implicit callables. Traverse owning function
+inputs, Core expression/pattern trees, structured Flow bodies, plus typed
+ProjectCallSite result patterns owned by the caller. The ordinary value
+visitor deliberately excludes that catalog reference: initially missing
+generic call output declarations were a probe omission, not a product bug.
+A fixture also initially omitted the required empty View parameter group;
+corrected before testing the ownership invariant.
+
+Actual counterexamples: captured closure and implicit callable reused one
+slot in two actual function bodies (each probe reports local2 owned by0/1).
+Closure frame.hir imported the parent's request even though its own capture
+input request existed. Mapped it to capture_inputs[position], retained parent
+source existence/type authority, and kept parent capture value production.
+Nested and escaping closure behavior PASS in native and canonical decoded
+AWBC; body declaration probe PASS before adding implicit case. The added
+implicit case FAILS identically and must be repaired, not weakened.
+
+Generalization in progress: RuntimeExecutableSemanticFactView now borrows
+typed local declarations; ProjectFunctionFrameLocals::admit_view creates
+fresh local/operand/control requests from that authority, without cloning
+the parent's slot map. Program admission delegates to it. Implicit definition
+now retains its own frame, binds captures to own input slots, and uses that
+frame for expression and structured lowering. Current workspace check2
+TERMINAL0/57.53s, but it overlapped an unfinished cargo fmt handle because
+terminal status was not checked before the next invocation. Both handles
+are now terminal; invalidate that run as final evidence and repeat with a
+fixed4-Rust-file source snapshot. No further Cargo/Rust overlap is permitted.
+
+Fresh resolved runtime-plan reverse dependencies:16 (including CLI), from
+unchanged845/97 Cargo graph. New probe/targeted native+AWBC2/2 PASS for the
+closure-only repair; that evidence predates implicit/general frame changes.
+The first Clippy pass found one unnecessary raw literal hash; fixed.
+Full16 rdeps/cargo tree/CLI/target/final checks are not yet run for this WIP.
+
+Read-only audit also found parent-bound inputs in implicit, attached-default,
+and dialogue effect/value extraction paths. Do not publish closure-only
+example fixes or declare full E1 done. Finish fresh per-emission frames and
+capture destination mapping across all affected producers/consumers, then
+actual owner/init/storage/codec/transcript on final rows and the rest of the
+goal. Astra one-shot consumed; no new consultation after compaction.
+
+Capture frame migration has progressed beyond the initial closure patch.
+One borrowed local projection on the executable fact view feeds the existing
+ProjectFunctionFrameLocals::admit_view authority. It issues fresh local,
+specialized-operand and control requests for each emitted body; program,
+implicit callable, attached-default, and dialogue effect frames use it.
+No parent slot map clone or alternate source/type resolver was added.
+Closure captures use their own capture input. Implicit/effect input patterns
+and body local maps use the same admitted destination; defaults retain a
+fresh frame for patterns and both expression/executable bodies. Dialogue
+identity callbacks read own inputs; their caller ANF results remain capture
+value sources only.
+
+New caller/callee separation exposed AWBC dialogue lowering directly reading
+callback bodies in the caller frame (actual recursive generic default test
+panicked on unallocated local45). Replaced that path with the existing
+CallFunction ABI: evaluated captures, callback function's own frame and a
+caller result destination. No opcode/schema/version/legacy path was added.
+A standalone default probe hit an unrelated final-type constraint; replaced
+it with the maintained registered-world default/dialogue fixture and shared
+structural test visitor, rather than weakening the ownership assertion.
+
+Peer targeted nextest TERMINAL0:4/4 PASS/0.346s. Covers actual body slot
+uniqueness for multiple View uses, repeated generic calls, ordinary/nested/
+implicit closures, actual registered-world generic attached defaults and
+dialogue callbacks; nested and escaping closures execute identically in native
+and canonical decoded AWBC. These are frame separation proofs, not full E1
+owner/init/physical storage/codec/transcript completion.
+
+Current freeze includes7 Rust paths and one plan note (including new test
+support/slot_declarations.rs). Workspace check-final TERMINAL0/15.73s and
+Clippy-final TERMINAL0/28.55s; no new diagnostic labels. cargo tree all-target
+normal/build/dev reverse dependencies matches resolved graph16 exactly.
+Full16 nextest inventory/build now running; its broad tests, CLI comparison,
+wasm/structure/final staged-byte validation and commit/push remain required.
+No final/complete claim; one-shot Astra remains consumed.
+
+Full runtime-plan16 nextest run TERMINAL0:1466/1466 PASS,0 skipped,90.803s;
+exact selected/terminal/unique1466 with missing0/extra0/nonpass0.
+First CLI refresh TERMINAL100:319 PASS/278 FAIL/23 skipped,134.195s.
+One new failure, spec_should_pass_check_fixtures_pass_after_refactor, named
+actual maintained045_dialogue_sugar_ruby_timed_cancel fixture. This is a
+change-caused regression and was not waived as part of CLI277 baseline.
+
+Its scheduled capture packet used the caller local as destination while the
+callback now reads its own slot. Existing RuntimeScheduledCaptureSeed already
+owns a callback-local/value pair. For closed closure callbacks resolve the
+destination from their admitted frame; evaluate value from the caller using
+the existing checked transfer/borrow evidence. For admitted inline call/block/
+named/computation bodies, keep the existing enclosing frame. Invalid callback
+kinds or missing closed frames reject explicitly. No source-name fallback,
+invented owner, or weakened borrow/custody check.
+
+Repaired actual CLI fixture test TERMINAL0:1/1 PASS,9.040s (all its maintained
+check fixtures exercised). An extra compiler actor probe did not include CLI
+AdapterSemanticRegistration and failed before runtime lowering on missing
+final type; reachability and source isolation did not change that. Removed
+only the unpublished extra probe and retain the actual CLI regression test.
+Do not describe those test-environment failures as product acceptance.
+
+Current final freeze:8 Rust paths+plan note, including new shared structural
+test visitor and scheduled line producer migration. Repaired workspace check
+TERMINAL0/19.27s; Clippy live. Full16 revalidation, CLI fresh comparison, wasm,
+structure/format/staged byte checks and coherent commit/push remain required.
+No E1/whole-goal completion or repeated Astra consultation.
+
+### 2026-10-08: capture frame separation — verified coherent cut
+
+Final source8-path freeze (plus one plan note) is byte-stable. One typed
+executable-fact declaration projection and one fresh frame admission feed
+program, implicit, attached-default and dialogue effect emission. Closure
+input destinations, dialogue identity callback inputs, and scheduled callback
+destination/value pairs preserve caller/callee separation. AWBC dialogue
+value callbacks now use the existing CallFunction/capture ABI instead of
+reading their bodies through the caller's register map. Canonical codec,
+native/decoded AWBC, actual body declaration and registered-world default/
+callback evidence covers the resulting behavior. All contracts stay at1;
+no raw task hash factory, invented owner, compatibility reader, source-name
+fallback, or lint suppression was added. Full E1 row metadata is not done.
+
+Final required validation:
+- Cargo resolved graph845/97, unchanged99 build inputs; actual all-target
+  normal/build/dev runtime-plan reverse dependencies16, matched by cargo tree.
+- Final affected nextest selection/run1466 unique tests across81 binaries/
+  15 non-CLI packages: TERMINAL0,1466/1466 PASS,0 skipped,84.239s.
+  Exact-ID selected/terminal/unique coverage has missing0/extra0/nonpass0.
+  Core-only tests are outside this producer's reverse dependencies and were
+  not redundantly rerun; the earlier checked-request Core50 receipts remain
+  the evidence for that separate delivered cut.
+- Final CLI597 exact baseline IDs across9 listed/8 runnable binaries:
+  TERMINAL100,320 PASS/277 FAIL/23 skipped,123.703s; failed IDs exactly baseline,
+  new0/resolved0/missing0. Earlier278-failure run and timed-callback regression
+  are retained as failure history. The affected fixture additionally passes
+  its targeted rerun. CLI277 repairs still required; do not claim CLI green.
+- Repaired workspace all-target/all-feature locked check TERMINAL0/19.27s;
+  Clippy TERMINAL0/22.30s; no new diagnostic labels versus delivered baseline.
+  Existing diagnostics remain, without suppression.
+- Runtime-plan wasm32 all-target/all-feature locked check TERMINAL0/1m22s.
+- Structure audit TERMINAL0:2774 files/2644 Rust/1537577 physical LOC/
+  97 workspace packages/355 review triggers/0 blocking violations.
+- Format/diff/full staged path/blob/source freeze review precedes normal
+  main publication; base0e72e0cc53a9f296fcb9af13a996d72b8f443d6f.
+
+Receipts: TEMP arcweft-1008-capture-frame- source-final, tree/rdeps,
+inventory-final/rdeps-final/coverage-final, cli-final/cli-comparison-final,
+check-repaired/clippy-repaired/lint-comparison, wasm, structure, and eventual
+staged-blob/delivered files. Test-only declaration visitor is shared under
+compiler tests/support and does not add a public API.
+
+Whole goal remains ACTIVE/INCOMPLETE. Next E1 work is final typed executable
+owner, initialization/physical storage, complete codec/transcript for every
+actual Function/Flow/Line/Stream/helper/method slot, including iteration-method
+global fallback. Review fresh frame request costs while closing actual body
+ownership; no unmeasured performance claim is made. Global15 memo/commonseal/
+privateimage/protected all14 Cut5, original View/nominal/scheduler/borrowing/
+Tier2/CLI277/legacy deletion/final acceptance remain required.
+Astra one-shot consumed: do not repeat after compaction.

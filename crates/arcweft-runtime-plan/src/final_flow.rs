@@ -339,6 +339,7 @@ struct ReservedFunctionSiteDefinition<'facts> {
     body: ExprId,
     site: RuntimeFunctionSiteSeedId,
     implicit_parameter: RuntimeLocalSeedId,
+    locals: ProjectFunctionFrameLocals,
 }
 
 #[derive(Clone)]
@@ -351,6 +352,7 @@ struct ReservedProjectFunctionDefinition<'facts> {
 struct ReservedProjectDefaultFunctionDefinition<'facts> {
     instance: &'facts RuntimeProjectFunctionInstanceFact,
     site: RuntimeFunctionSiteSeedId,
+    locals: ProjectFunctionFrameLocals,
 }
 
 #[derive(Clone)]
@@ -386,95 +388,94 @@ impl ProjectFunctionFrameLocals {
         program: &crate::semantic_facts::RuntimePureProgramFact,
         builder: &mut RuntimePlanBuilder,
     ) -> Result<Self, RuntimePlanLowerError> {
-        let context = program.function_type().identity();
-        let declaration = |origin, ty: &crate::semantic_facts::RuntimeNormalizedType| {
-            if ty.scope().is_root() {
-                RuntimeLocalDeclarationSeed::new(origin, ty.identity())
-            } else {
-                RuntimeLocalDeclarationSeed::in_function(origin, ty.identity(), context)
-            }
-        };
-        let mut rows = semantics
-            .type_projection()
-            .iter()
-            .filter_map(|projection| match projection {
-                RuntimeProjectFunctionTypeProjection::Local {
-                    owner: local,
-                    ty,
-                    origin,
-                } => Some(
-                    origin
-                        .runtime_local_declaration_source()
-                        .map(|origin| {
-                            (
-                                ProjectFunctionFrameLocal::Hir(*local),
-                                declaration(origin, ty),
-                            )
-                        })
-                        .map_err(|error| RuntimePlanLowerError::new(error.to_string())),
-                ),
-                _ => None,
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        for expression in semantics.expressions() {
-            let Some(call) = semantics.call(expression.owner()) else {
-                continue;
-            };
-            if !call.requires_specialized_operand_anf() {
-                continue;
-            }
-            for (position, operand) in call.operands().iter().enumerate() {
-                let source_index = u32::try_from(position).map_err(|_| {
-                    RuntimePlanLowerError::new(
-                        "program source operand coordinate exceeds checked limits",
-                    )
-                })?;
-                rows.push((
-                    ProjectFunctionFrameLocal::SpecializedOperand {
-                        owner: expression.owner(),
-                        source_index,
-                    },
-                    declaration(
-                        semantics.expression_coordinate(expression.owner())
-                            .ok_or_else(|| RuntimePlanLowerError::new("call operand has no accepted expression coordinate"))?
-                            .runtime_generated_local_source(
-                                arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::CallOperand { source_ordinal: source_index }
-                            ).map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
-                        operand.ty(),
+        Self::admit_view(
+            crate::semantic_facts::RuntimeExecutableSemanticFactView::project_instance(semantics),
+            Some(program.function_type()),
+            builder,
+        )
+    }
+
+    fn admit_view(
+        facts: crate::semantic_facts::RuntimeExecutableSemanticFactView<'_>,
+        function: Option<&RuntimeNormalizedType>,
+        builder: &mut RuntimePlanBuilder,
+    ) -> Result<Self, RuntimePlanLowerError> {
+        let declaration =
+            |source, ty: &RuntimeNormalizedType, context: Option<&RuntimeNormalizedType>| {
+                match function.or(context).filter(|_| !ty.scope().is_root()) {
+                    Some(function) => RuntimeLocalDeclarationSeed::in_function(
+                        source,
+                        ty.identity(),
+                        function.identity(),
                     ),
-                ));
+                    None => RuntimeLocalDeclarationSeed::new(source, ty.identity()),
+                }
+            };
+        let mut rows = Vec::new();
+        let mut errors = Vec::new();
+        facts.visit_local_declarations(&mut |local, ty, origin, context| match origin
+            .runtime_local_declaration_source()
+        {
+            Ok(source) => rows.push((
+                ProjectFunctionFrameLocal::Hir(local),
+                declaration(source, ty, context),
+            )),
+            Err(error) => errors.push(RuntimePlanLowerError::new(error.to_string())),
+        });
+        facts.visit_runtime_expression_types(&mut |owner, _| {
+            let Some(call) = facts.call(owner) else { return; };
+            if !call.requires_specialized_operand_anf() { return; }
+            for (position, operand) in call.operands().iter().enumerate() {
+                let row = (|| {
+                    let source_index = u32::try_from(position).map_err(|_| RuntimePlanLowerError::new(
+                        "body source operand coordinate exceeds checked limits"
+                    ))?;
+                    let source = facts.expression_coordinate(owner)
+                        .ok_or_else(|| RuntimePlanLowerError::new("body call operand has no accepted expression coordinate"))?
+                        .runtime_generated_local_source(
+                            arcweft_lang_sema::semantic_coordinate::CheckedGeneratedLocalRole::CallOperand { source_ordinal: source_index }
+                        ).map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
+                    Ok::<_, RuntimePlanLowerError>((
+                        ProjectFunctionFrameLocal::SpecializedOperand { owner, source_index },
+                        declaration(source, operand.ty(), None),
+                    ))
+                })();
+                match row { Ok(row) => rows.push(row), Err(error) => errors.push(error) }
             }
+        });
+        if let Some(error) = errors.into_iter().next() {
+            return Err(error);
         }
         let admitted = builder
             .admit_type_batch([], rows.iter().map(|(_, declaration)| *declaration))
             .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
         let mut frame = Self::default();
         for ((owner, _), local) in rows.into_iter().zip(admitted.local_ids()) {
-            match owner {
+            let duplicate = match owner {
                 ProjectFunctionFrameLocal::Hir(owner) => {
-                    frame.hir.insert(owner, local.clone());
+                    frame.hir.insert(owner, local.clone()).is_some()
                 }
                 ProjectFunctionFrameLocal::SpecializedOperand {
                     owner,
                     source_index,
-                } => {
-                    frame
-                        .specialized_operands
-                        .insert((owner, source_index), local.clone());
-                }
+                } => frame
+                    .specialized_operands
+                    .insert((owner, source_index), local.clone())
+                    .is_some(),
                 ProjectFunctionFrameLocal::ParameterInput { .. }
                 | ProjectFunctionFrameLocal::AttachedAbi => {
                     return Err(RuntimePlanLowerError::new(
-                        "program catalog contains a declaration parameter input",
+                        "body catalog contains a declaration parameter input",
                     ));
                 }
+            };
+            if duplicate {
+                return Err(RuntimePlanLowerError::new(
+                    "body catalog repeats a local request",
+                ));
             }
         }
-        frame.control = ControlLocals::admit(
-            crate::semantic_facts::RuntimeExecutableSemanticFactView::project_instance(semantics),
-            Some(program.function_type()),
-            builder,
-        )?;
+        frame.control = ControlLocals::admit(facts, function, builder)?;
         Ok(frame)
     }
 }
@@ -530,6 +531,7 @@ struct PendingDialogueEffectDefinition<'facts> {
     site: RuntimeFunctionSiteSeedId,
     effects: RuntimeEffectSet,
     operation: RuntimeDialogueEffectOperationFact,
+    locals: ProjectFunctionFrameLocals,
 }
 
 type ControllerResultLocalKey = RuntimeCallableId;
@@ -1541,13 +1543,24 @@ pub fn lower_runtime_plan_with_stats(
             ))]
         })?;
         for capture in closure.captures() {
-            let local = parent_hir.get(&capture.source()).cloned().ok_or_else(|| {
+            parent_hir.get(&capture.source()).ok_or_else(|| {
                 vec![RuntimePlanLowerError::new(format!(
                     "project closure {:?} capture source {:?} is absent from its parent frame",
                     key,
                     capture.source()
                 ))]
             })?;
+            let local = frame
+                .capture_inputs
+                .get(&capture.position())
+                .cloned()
+                .ok_or_else(|| {
+                    vec![RuntimePlanLowerError::new(format!(
+                        "project closure {:?} capture {} has no admitted input slot",
+                        key,
+                        capture.position()
+                    ))]
+                })?;
             if frame.hir.insert(capture.source(), local).is_some() {
                 return Err(vec![RuntimePlanLowerError::new(
                     "project closure capture source collides with a local declaration",
@@ -2559,11 +2572,18 @@ fn reserve_implicit_function_sites<'facts>(
         } else {
             RuntimeFunctionInputOwnershipRequirement::Owned
         };
+        let mut frame = match ProjectFunctionFrameLocals::admit_view(scope.facts(), None, builder) {
+            Ok(frame) => frame,
+            Err(error) => {
+                errors.push(error);
+                continue;
+            }
+        };
         let captures = callable
             .captures()
             .iter()
             .map(|capture| -> Result<_, String> {
-                let binding = selected_locals.get(&capture.local()).cloned().ok_or_else(|| {
+                selected_locals.get(&capture.local()).ok_or_else(|| {
                     format!("implicit callable {owner:?} capture {capture:?} is absent")
                 })?;
                 let position = capture.position();
@@ -2578,6 +2598,7 @@ fn reserve_implicit_function_sites<'facts>(
                 let ty = scope.local_type(capture.local()).ok_or_else(|| {
                     format!("implicit callable {owner:?} capture {capture:?} has no accepted type")
                 })?;
+                frame.hir.insert(capture.local(), input_local.clone());
                 Ok(RuntimeFunctionInputBindingSeed {
                     transfer: arcweft_core::plan::RuntimeFunctionInputTransfer::Transferred(capture.transfer().runtime_capture_mode().expect("accepted capture is a value transfer")),
                     origin: capture.origin().runtime_input_origin().map_err(|error| error.to_string())?,
@@ -2589,7 +2610,7 @@ fn reserve_implicit_function_sites<'facts>(
                         ty.identity(),
                         RuntimePatternSeedKind::Bind {
                             mutable: false,
-                            local: binding,
+                            local: input_local,
                         },
                     ),
                 })
@@ -2670,6 +2691,7 @@ fn reserve_implicit_function_sites<'facts>(
                     body: owner,
                     site,
                     implicit_parameter: parameter,
+                    locals: frame,
                 });
             }
             Err(error) => {
@@ -2732,7 +2754,7 @@ fn reserve_closure_sites<'facts>(
                     })?;
                 let local = locals.hir.get(&capture.source()).cloned().ok_or_else(|| {
                     RuntimePlanLowerError::new(format!(
-                        "project closure {:?} capture source {:?} has no parent local",
+                        "project closure {:?} capture source {:?} has no closure input binding",
                         key,
                         capture.source()
                     ))
@@ -3188,7 +3210,7 @@ fn reserve_project_default_function_sites<'facts>(
             continue;
         };
         let key = instance.key().clone();
-        let Some(local_map) = instance_locals.get(&key) else {
+        let Some(_parent_frame) = instance_locals.get(&key) else {
             errors.push(RuntimePlanLowerError::new(format!(
                 "project-function instance {:?} default has no admitted substituted local frame",
                 key
@@ -3202,7 +3224,20 @@ fn reserve_project_default_function_sites<'facts>(
             )));
             continue;
         };
-        let pattern_lowerer = FinalPatternLowerer::new(module, facts, &local_map.hir)
+        let frame = match ProjectFunctionFrameLocals::admit_view(
+            crate::semantic_facts::RuntimeExecutableSemanticFactView::project_instance(
+                instance.semantics(),
+            ),
+            None,
+            builder,
+        ) {
+            Ok(frame) => frame,
+            Err(error) => {
+                errors.push(error);
+                continue;
+            }
+        };
+        let pattern_lowerer = FinalPatternLowerer::new(module, facts, &frame.hir)
             .with_project_semantics(instance.semantics());
         let inputs = default
             .captures()
@@ -3290,7 +3325,11 @@ fn reserve_project_default_function_sites<'facts>(
                     )));
                     continue;
                 }
-                definitions.push(ReservedProjectDefaultFunctionDefinition { instance, site });
+                definitions.push(ReservedProjectDefaultFunctionDefinition {
+                    instance,
+                    site,
+                    locals: frame,
+                });
             }
             Err(error) => errors.push(RuntimePlanLowerError::new(format!(
                 "project-function instance {:?} default site reservation failed: {error}",
@@ -3543,7 +3582,14 @@ fn define_function_sites(
             continue;
         };
         let lowerer = match context.scoped_expr_lowerer(module, definition.scope) {
-            Ok(lowerer) => lowerer,
+            Ok(lowerer) => lowerer
+                .with_locals(&definition.locals.hir)
+                .with_control_locals(
+                    &definition.locals.control.pipes,
+                    &definition.locals.control.tries,
+                )
+                .with_scope_locals(&definition.locals.control.scopes)
+                .with_specialized_operand_locals(&definition.locals.specialized_operands),
             Err(error) => {
                 errors.push(error);
                 continue;
@@ -3598,9 +3644,9 @@ fn define_function_sites(
                     module, context, RuntimeAssertionOwner::ImplicitCallable(callable.identity()),
                 ).with_executable_scope(
                     definition.scope,
-                    context.executable_control_locals(definition.scope.scope()).map_err(|error| error.to_string())?,
-                    context.executable_locals(definition.scope.scope()).map_err(|error| error.to_string())?,
-                    context.executable_specialized_operand_locals(definition.scope.scope()).map_err(|error| error.to_string())?,
+                    &definition.locals.control,
+                    &definition.locals.hir,
+                    &definition.locals.specialized_operands,
                 );
                 flow.expression_overrides = overrides;
                 flow.implicit_body_root = Some(definition.owner);
@@ -3813,13 +3859,7 @@ fn define_project_default_function_sites(
 ) {
     for definition in definitions {
         let instance = definition.instance;
-        let Some(locals) = context.project_function_locals.get(instance.key()) else {
-            errors.push(RuntimePlanLowerError::new(format!(
-                "project-function instance {:?} default has no admitted substituted local frame",
-                instance.key()
-            )));
-            continue;
-        };
+        let locals = &definition.locals;
         let Some(default) = instance.attached_default() else {
             errors.push(RuntimePlanLowerError::new(format!(
                 "project-function instance {:?} default site has no checked default fact",
@@ -4762,6 +4802,10 @@ fn reserve_dialogue_effect_sites<'facts>(
                 fragment.template().id(),
                 effect.site(),
             );
+            let mut frame = match ProjectFunctionFrameLocals::admit_view(scope.facts(), None, builder) {
+                Ok(frame) => frame,
+                Err(error) => { errors.push(error); continue; }
+            };
             let captures = effect
                 .captures()
                 .iter()
@@ -4771,9 +4815,8 @@ fn reserve_dialogue_effect_sites<'facts>(
                         "dialogue content effect capture position exceeds checked limits"
                             .to_owned()
                     })?;
-                    let local = locals
+                    locals
                         .get(&capture.local())
-                        .cloned()
                         .ok_or_else(|| {
                             format!(
                                 "dialogue content effect site {:?} capture {:?} has no admitted local",
@@ -4806,7 +4849,8 @@ fn reserve_dialogue_effect_sites<'facts>(
                             effect.site()
                         ));
                     }
-                    Ok((local, input_local, capture.ty().identity(), capture.input_ownership(), capture.origin().runtime_input_origin().map_err(|error| error.to_string())?, arcweft_core::plan::RuntimeFunctionInputTransfer::Transferred(capture.transfer().runtime_capture_mode().expect("accepted effect capture is a value transfer"))))
+                    frame.hir.insert(capture.local(), input_local.clone());
+                    Ok((input_local.clone(), input_local, capture.ty().identity(), capture.input_ownership(), capture.origin().runtime_input_origin().map_err(|error| error.to_string())?, arcweft_core::plan::RuntimeFunctionInputTransfer::Transferred(capture.transfer().runtime_capture_mode().expect("accepted effect capture is a value transfer"))))
                 })
                 .collect::<Result<Vec<_>, _>>();
             let result = effect.operation().result().clone();
@@ -4899,6 +4943,7 @@ fn reserve_dialogue_effect_sites<'facts>(
                 site,
                 effects,
                 operation: effect.operation().clone(),
+                locals: frame,
             });
         }
     });
@@ -4924,7 +4969,14 @@ fn define_dialogue_effect_sites<'facts>(
         let ops = match &definition.operation {
             RuntimeDialogueEffectOperationFact::EvaluatedEffect(effect) => {
                 let expr = match context.scoped_expr_lowerer(module, scope) {
-                    Ok(expr) => expr,
+                    Ok(expr) => expr
+                        .with_locals(&definition.locals.hir)
+                        .with_control_locals(
+                            &definition.locals.control.pipes,
+                            &definition.locals.control.tries,
+                        )
+                        .with_scope_locals(&definition.locals.control.scopes)
+                        .with_specialized_operand_locals(&definition.locals.specialized_operands),
                     Err(error) => {
                         errors.push(error);
                         continue;
@@ -4946,28 +4998,6 @@ fn define_dialogue_effect_sites<'facts>(
                 application,
                 result,
             } => {
-                let control = match context.executable_control_locals(scope.scope()) {
-                    Ok(control) => control,
-                    Err(error) => {
-                        errors.push(error);
-                        continue;
-                    }
-                };
-                let locals = match context.executable_locals(scope.scope()) {
-                    Ok(locals) => locals,
-                    Err(error) => {
-                        errors.push(error);
-                        continue;
-                    }
-                };
-                let specialized_operand_locals =
-                    match context.executable_specialized_operand_locals(scope.scope()) {
-                        Ok(locals) => locals,
-                        Err(error) => {
-                            errors.push(error);
-                            continue;
-                        }
-                    };
                 let mut flow = FinalFlowLowerer::new(
                     module,
                     context,
@@ -4975,9 +5005,9 @@ fn define_dialogue_effect_sites<'facts>(
                 )
                 .with_executable_scope(
                     scope,
-                    &control,
-                    &locals,
-                    &specialized_operand_locals,
+                    &definition.locals.control,
+                    &definition.locals.hir,
+                    &definition.locals.specialized_operands,
                 );
                 let Some(call) = flow.call(*application) else {
                     errors.push(RuntimePlanLowerError::new(format!(
@@ -5149,7 +5179,7 @@ fn lower_dialogue_application<'facts>(
                 expression_type,
                 RuntimePatternSeedKind::Bind {
                     mutable: false,
-                    local: result_local.clone(),
+                    local: input_local.clone(),
                 },
             ),
         }];
@@ -5167,7 +5197,7 @@ fn lower_dialogue_application<'facts>(
         let body = RuntimeExprSeed::new(
             expression_type,
             arcweft_core::plan::RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                result_local.clone(),
+                input_local,
                 RuntimeLocalReadMode::Move,
             )),
         );

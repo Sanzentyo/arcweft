@@ -1557,3 +1557,19 @@ flow main() -> i64 {
     RuntimeValue::i64(42),
     "42"
 );
+
+#[test]
+fn nested_closure_captures_bind_to_their_own_frame_in_native_and_decoded_awbc() {
+    for body in [
+        "let value = 7i64; let compute = || { let inner = || value; inner() }; return compute()",
+        "let value = 7i64; let factory = || { || value }; let compute = factory(); return compute()",
+    ] {
+        let source = format!(
+            "entry cli @entry.main {{ goto @flow.main }}
+flow main() -> i64 {{ {body} }}
+"
+        );
+        assert_native_return(&source, "7");
+        assert_awbc_return(&source, RuntimeValue::i64(7));
+    }
+}
