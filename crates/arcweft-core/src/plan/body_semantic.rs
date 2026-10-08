@@ -16,6 +16,7 @@ mod local_rows;
 mod nominal;
 mod pure_rows;
 mod request;
+mod task_image;
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticEncodingError};
 use crate::value::{

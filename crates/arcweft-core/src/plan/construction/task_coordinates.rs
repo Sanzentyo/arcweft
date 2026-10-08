@@ -21,6 +21,9 @@ impl RuntimeTaskPlanBuildCoordinate {
 }
 
 impl RuntimeTaskPlanCoordinateOwner {
+    pub(crate) const fn len(&self) -> u32 {
+        self.rows
+    }
     pub(crate) fn resolve(&self, ordinal: u32) -> Option<RuntimeTaskPlanBuildCoordinate> {
         (ordinal < self.rows).then(|| RuntimeTaskPlanBuildCoordinate {
             issuer: Arc::clone(&self.issuer),
