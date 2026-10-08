@@ -1,6 +1,8 @@
 //! Private task candidate ownership shared by construction and strict decode.
 //! There is one executable inventory; expected keys remain untrusted assertions.
 
+mod preflight;
+
 use super::request::RuntimeTaskRequestTemplate;
 use crate::plan::{
     RuntimeControlEffectContractId, RuntimePlanInventory, RuntimeTaskPlanCoordinateOwner,
@@ -66,12 +68,26 @@ pub(super) struct UnsealedRuntimePlanImage {
     expected_task_plan_keys: Option<Box<[ExpectedTaskPlanKey]>>,
 }
 
-#[derive(Debug, Eq, PartialEq, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 pub(super) enum RuntimeTaskPlanImageError {
+    #[error("task rows {actual} exceed {maximum}")]
+    TaskRows { actual: usize, maximum: u32 },
+    #[error(transparent)]
+    Body(#[from] super::RuntimeBodySemanticError),
+    #[error(transparent)]
+    Control(#[from] crate::plan::RuntimeControlEffectContractError),
+    #[error("task image count encoding failed: {0:?}")]
+    Encoding(crate::task::semantic::TaskSemanticEncodingError),
     #[error("task image rows {rows} do not match its coordinate owner {coordinates}")]
     CoordinateCount { rows: usize, coordinates: u32 },
     #[error("task image expected key count {keys} differs from {rows} task rows")]
     ExpectedKeyCount { rows: usize, keys: usize },
+}
+
+impl From<crate::task::semantic::TaskSemanticEncodingError> for RuntimeTaskPlanImageError {
+    fn from(error: crate::task::semantic::TaskSemanticEncodingError) -> Self {
+        Self::Encoding(error)
+    }
 }
 
 impl UnsealedRuntimePlanImage {

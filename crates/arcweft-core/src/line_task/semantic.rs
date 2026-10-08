@@ -21,21 +21,10 @@ impl LinePlanSemanticDigest {
 }
 
 impl LineTaskGroup {
-    pub(crate) fn semantic_digest(
+    pub(crate) fn semantic_child_count(
         &self,
-        context: &RuntimeBodySemanticContext<'_>,
         meter: &mut TaskSemanticMeter,
-        group: crate::runtime_id::RuntimeLineTaskGroupId,
-        task_owner: &RuntimeTaskPlanCoordinateOwner,
-        task_reference: &mut impl FnMut(
-            RuntimeBodyTaskSource<'_>,
-        ) -> Result<
-            RuntimeTaskPlanBuildCoordinate,
-            RuntimeBodySemanticError,
-        >,
-        limits: crate::plan::RuntimeTaskPlanSealLimits,
-    ) -> Result<LinePlanSemanticDigest, RuntimeBodySemanticError> {
-        meter.status()?;
+    ) -> Result<usize, RuntimeBodySemanticError> {
         let mut actual = 0;
         for count in [
             self.captures.len(),
@@ -76,6 +65,25 @@ impl LineTaskGroup {
                 Ok::<(), RuntimeBodySemanticError>(())
             })?;
         }
+        Ok(actual)
+    }
+
+    pub(crate) fn semantic_digest(
+        &self,
+        context: &RuntimeBodySemanticContext<'_>,
+        meter: &mut TaskSemanticMeter,
+        group: crate::runtime_id::RuntimeLineTaskGroupId,
+        task_owner: &RuntimeTaskPlanCoordinateOwner,
+        task_reference: &mut impl FnMut(
+            RuntimeBodyTaskSource<'_>,
+        ) -> Result<
+            RuntimeTaskPlanBuildCoordinate,
+            RuntimeBodySemanticError,
+        >,
+        limits: crate::plan::RuntimeTaskPlanSealLimits,
+    ) -> Result<LinePlanSemanticDigest, RuntimeBodySemanticError> {
+        meter.status()?;
+        let actual = self.semantic_child_count(meter)?;
         if actual > limits.max_children_per_row as usize {
             meter.reject_owner();
             return Err(RuntimeBodySemanticError::LineChildren {

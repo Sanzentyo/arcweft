@@ -49,6 +49,91 @@ pub(crate) struct RuntimeControlEffectSemanticPass<'a> {
     state: BTreeMap<usize, State>,
 }
 
+/// Count-only owner before common preflight. It has no completion method.
+/// Success consumes it into the sole C semantic pass without copying rows.
+pub(crate) struct RuntimeControlEffectPreflight<'a> {
+    pass: RuntimeControlEffectSemanticPass<'a>,
+}
+
+impl<'a> RuntimeControlEffectPreflight<'a> {
+    /// Count-only preparation for the common image. Checks are called in the
+    /// global field order; no C proof or completed-table cache is read here.
+    pub(crate) fn new(
+        table: &'a RuntimeControlEffectContractTable,
+        types: &'a RuntimePlanTypeTable,
+        roots: impl IntoIterator<Item = RuntimeControlEffectContractId>,
+        meter: &mut TaskSemanticMeter,
+    ) -> Result<Self, RuntimeControlEffectContractError> {
+        meter.status()?;
+        meter.checked_count_sum(table.len(), 0)?;
+        let rows = Rows::Admitted(table);
+        let admitted = RuntimeControlEffectSemanticPass::reachable(
+            rows,
+            roots.into_iter().map(RuntimeControlEffectContractId::index),
+        );
+        Ok(Self {
+            pass: RuntimeControlEffectSemanticPass {
+                rows,
+                types,
+                admitted,
+                state: BTreeMap::new(),
+            },
+        })
+    }
+
+    pub(crate) fn check_children(
+        &self,
+        limits: RuntimeTaskPlanSealLimits,
+        meter: &mut TaskSemanticMeter,
+    ) -> Result<(), RuntimeControlEffectContractError> {
+        meter.status()?;
+        RuntimeControlEffectSemanticPass::preflight_children(
+            self.pass.rows,
+            &self.pass.admitted,
+            limits,
+        )
+        .inspect_err(|_| meter.reject_owner())
+    }
+
+    pub(crate) fn check_effects(
+        &self,
+        limits: RuntimeTaskPlanSealLimits,
+        meter: &mut TaskSemanticMeter,
+    ) -> Result<(), RuntimeControlEffectContractError> {
+        meter.status()?;
+        RuntimeControlEffectSemanticPass::preflight_effects(
+            self.pass.rows,
+            &self.pass.admitted,
+            limits,
+        )
+        .inspect_err(|_| meter.reject_owner())
+    }
+
+    pub(crate) fn known_transcript_bytes(
+        &self,
+        meter: &mut TaskSemanticMeter,
+    ) -> Result<u64, RuntimeControlEffectContractError> {
+        meter.status()?;
+        RuntimeControlEffectSemanticPass::known_bytes(self.pass.rows, &self.pass.admitted)
+            .inspect_err(|_| meter.reject_owner())
+    }
+
+    pub(crate) fn finish(
+        self,
+        limits: RuntimeTaskPlanSealLimits,
+        meter: &mut TaskSemanticMeter,
+    ) -> Result<RuntimeControlEffectSemanticPass<'a>, RuntimeControlEffectContractError> {
+        RuntimeControlEffectSemanticPass::preflight(
+            self.pass.rows,
+            &self.pass.admitted,
+            limits,
+            meter,
+        )
+        .inspect_err(|_| meter.reject_owner())?;
+        Ok(self.pass)
+    }
+}
+
 impl<'a> RuntimeControlEffectSemanticPass<'a> {
     pub(super) fn from_rows(
         rows: &'a [RuntimeControlEffectContract],
@@ -205,6 +290,17 @@ impl<'a> RuntimeControlEffectSemanticPass<'a> {
         limits: RuntimeTaskPlanSealLimits,
         meter: &mut TaskSemanticMeter,
     ) -> Result<(), RuntimeControlEffectContractError> {
+        Self::preflight_children(rows, admitted, limits)?;
+        Self::preflight_effects(rows, admitted, limits)?;
+        meter.preflight_bytes(Self::known_bytes(rows, admitted)?)?;
+        Ok(())
+    }
+
+    fn preflight_children(
+        rows: Rows<'_>,
+        admitted: &BTreeSet<usize>,
+        limits: RuntimeTaskPlanSealLimits,
+    ) -> Result<(), RuntimeControlEffectContractError> {
         let row = |index| rows.get(index).expect("reachable rows were resolved");
         for &index in admitted {
             let actual = u32::try_from(row(index).children().len())
@@ -217,6 +313,15 @@ impl<'a> RuntimeControlEffectSemanticPass<'a> {
                 });
             }
         }
+        Ok(())
+    }
+
+    fn preflight_effects(
+        rows: Rows<'_>,
+        admitted: &BTreeSet<usize>,
+        limits: RuntimeTaskPlanSealLimits,
+    ) -> Result<(), RuntimeControlEffectContractError> {
+        let row = |index| rows.get(index).expect("reachable rows were resolved");
         let mut effect_rows = 0_u32;
         for &index in admitted {
             let count = u32::try_from(row(index).effects().len())
@@ -231,6 +336,14 @@ impl<'a> RuntimeControlEffectSemanticPass<'a> {
                 maximum: limits.max_control_effect_rows,
             });
         }
+        Ok(())
+    }
+
+    fn known_bytes(
+        rows: Rows<'_>,
+        admitted: &BTreeSet<usize>,
+    ) -> Result<u64, RuntimeControlEffectContractError> {
+        let row = |index| rows.get(index).expect("reachable rows were resolved");
         let mut bytes = 0_u64;
         for &index in admitted {
             let row = row(index);
@@ -264,8 +377,7 @@ impl<'a> RuntimeControlEffectSemanticPass<'a> {
                 .checked_add(children)
                 .ok_or(RuntimeControlEffectContractError::ArithmeticOverflow)?;
         }
-        meter.preflight_bytes(bytes)?;
-        Ok(())
+        Ok(bytes)
     }
 }
 

@@ -360,6 +360,51 @@ impl<R> RuntimePlanTypeProjection<R> {
         Ok(incoming.clone())
     }
 
+    /// Counts canonical direct type references without allocating the child list.
+    pub(crate) fn child_count(&self) -> Option<usize> {
+        Some(match self {
+            Self::Range(_)
+            | Self::Iterator(_)
+            | Self::ThreadHandle(_)
+            | Self::Shared(_)
+            | Self::Reference(_)
+            | Self::Need(_)
+            | Self::Sequence { .. }
+            | Self::Array { .. }
+            | Self::Agent(
+                RuntimeAgentTypeProjection::Probe(_) | RuntimeAgentTypeProjection::DataShape(_),
+            ) => 1,
+            Self::BuiltinVariant { cases, .. } => {
+                cases.iter().filter(|case| case.is_some()).count()
+            }
+            Self::Map { .. } | Self::Stream { .. } | Self::Option { .. } => 2,
+            Self::Result { .. } => 4,
+            Self::Function { parameters, .. } => parameters.len().checked_add(1)?,
+            Self::Nominal { arguments, .. }
+            | Self::Opaque { arguments, .. }
+            | Self::Tuple(arguments)
+            | Self::Choice(arguments) => arguments.len(),
+            Self::Record(fields) => fields.len(),
+            Self::BoundType(_)
+            | Self::Never
+            | Self::Unit
+            | Self::Bool
+            | Self::Signed(_)
+            | Self::Unsigned(_)
+            | Self::F32
+            | Self::F64
+            | Self::String
+            | Self::Color
+            | Self::Char
+            | Self::Bytes
+            | Self::Duration
+            | Self::Progress
+            | Self::EntityReference
+            | Self::AgentValue
+            | Self::Agent(_) => 0,
+        })
+    }
+
     /// Child references in canonical declaration order.
     pub fn children(&self) -> Box<[&R]> {
         match self {
@@ -778,5 +823,42 @@ mod tests {
             RuntimeAgentOperationalType::from_semantic_tag(u8::MAX),
             None
         );
+    }
+    #[test]
+    fn direct_type_child_count_matches_the_canonical_reference_roles() {
+        use super::{RuntimeAgentTypeProjection, RuntimePlanTypeProjection as Type};
+        let cases: Vec<Type<u8>> = vec![
+            Type::Unit,
+            Type::Bool,
+            Type::Range(1),
+            Type::Iterator(1),
+            Type::ThreadHandle(1),
+            Type::Shared(1),
+            Type::Reference(1),
+            Type::Need(1),
+            Type::Map {
+                kind: crate::entry::RuntimeMapKind::Ordered,
+                key: 1,
+                value: 2,
+            },
+            Type::Stream { item: 1, error: 2 },
+            Type::Result {
+                value: 1,
+                error: 2,
+                value_payload: 3,
+                error_payload: 4,
+            },
+            Type::Option {
+                item: 1,
+                some_payload: 2,
+            },
+            Type::Tuple(Box::new([1, 2, 3])),
+            Type::Choice(Box::new([1, 2])),
+            Type::Agent(RuntimeAgentTypeProjection::Probe(1)),
+            Type::Agent(RuntimeAgentTypeProjection::DataShape(1)),
+        ];
+        for projection in cases {
+            assert_eq!(projection.child_count(), Some(projection.children().len()));
+        }
     }
 }

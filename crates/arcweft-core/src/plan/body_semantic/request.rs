@@ -156,6 +156,19 @@ pub(crate) struct RuntimeTaskRequestTemplate {
 }
 
 impl RuntimeTaskRequestTemplate {
+    pub(super) const fn endpoint(&self) -> u32 {
+        self.endpoint
+    }
+
+    pub(super) fn role_count(
+        &self,
+        meter: &mut TaskSemanticMeter,
+    ) -> Result<usize, RuntimeBodySemanticError> {
+        meter
+            .checked_count_sum(self.arguments.len(), self.fields.len())
+            .map_err(Into::into)
+    }
+
     pub(crate) fn new(
         endpoint: u32,
         arguments: Box<[RuntimeRequestArgument]>,

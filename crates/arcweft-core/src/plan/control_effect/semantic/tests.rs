@@ -231,3 +231,57 @@ fn deep_control_graph_uses_an_iterative_count_and_completion_stack() {
             .all(|state| matches!(state, State::Done(_)))
     );
 }
+
+#[test]
+fn count_only_control_preflight_preserves_global_order_before_proof_completion() {
+    let (plan, ids) = fixture();
+    let mut meter = TaskSemanticMeter::new(100_000, 1_000_000);
+    let counted = RuntimeControlEffectPreflight::new(
+        plan.control_effect_contracts(),
+        plan.type_table(),
+        [ids[1]],
+        &mut meter,
+    )
+    .unwrap();
+    assert_eq!(meter.totals(), (0, 0));
+    counted
+        .check_children(RuntimeTaskPlanSealLimits::default(), &mut meter)
+        .unwrap();
+    counted
+        .check_effects(RuntimeTaskPlanSealLimits::default(), &mut meter)
+        .unwrap();
+    let known = counted.known_transcript_bytes(&mut meter).unwrap();
+    assert!(known > 0);
+    assert_eq!(meter.totals(), (0, 0));
+    let mut pass = counted
+        .finish(RuntimeTaskPlanSealLimits::default(), &mut meter)
+        .unwrap();
+    assert!(pass.state.is_empty());
+    assert_eq!(
+        pass.complete(ids[1], &mut meter).unwrap(),
+        plan.control_effect_contracts().digest(ids[1]).unwrap()
+    );
+    assert!(!pass.state.contains_key(&ids[2].index()));
+    let mut meter = TaskSemanticMeter::new(0, 0);
+    let counted = RuntimeControlEffectPreflight::new(
+        plan.control_effect_contracts(),
+        plan.type_table(),
+        [ids[1]],
+        &mut meter,
+    )
+    .unwrap();
+    assert!(matches!(
+        counted.check_effects(
+            RuntimeTaskPlanSealLimits {
+                max_control_effect_rows: 0,
+                ..RuntimeTaskPlanSealLimits::default()
+            },
+            &mut meter
+        ),
+        Err(RuntimeControlEffectContractError::EffectRowsLimit {
+            actual: 1,
+            maximum: 0
+        })
+    ));
+    assert!(meter.status().is_err());
+}

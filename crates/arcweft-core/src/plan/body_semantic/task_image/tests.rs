@@ -81,3 +81,118 @@ fn task_image_coordinate_count_precedes_expected_key_count() {
     let plan = builder.finish().unwrap();
     UnsealedRuntimePlanImage::new(plan.inventory, owner, Box::new([]), None).unwrap();
 }
+
+#[test]
+fn task_preflight_counts_table_fourteen_before_any_reference_resolution() {
+    let (plan, owner, function) = super::super::tests::producer_host_plan(true);
+    let task = row(&plan, &owner, function);
+    let image =
+        UnsealedRuntimePlanImage::new(plan.inventory, owner, Box::new([task]), None).unwrap();
+    let mut meter = TaskSemanticMeter::new(0, 0);
+    assert!(matches!(
+        image.preflight_rows(
+            crate::plan::RuntimeTaskPlanSealLimits {
+                max_task_plan_rows: 0,
+                max_executable_rows: 0,
+                ..crate::plan::RuntimeTaskPlanSealLimits::default()
+            },
+            &mut meter
+        ),
+        Err(RuntimeTaskPlanImageError::TaskRows {
+            actual: 1,
+            maximum: 0
+        })
+    ));
+    assert_eq!(meter.totals(), (0, 0));
+    let mut meter = TaskSemanticMeter::new(0, 0);
+    assert!(matches!(
+        image.preflight_rows(
+            crate::plan::RuntimeTaskPlanSealLimits {
+                max_executable_rows: 3,
+                ..crate::plan::RuntimeTaskPlanSealLimits::default()
+            },
+            &mut meter
+        ),
+        Err(RuntimeTaskPlanImageError::Body(
+            super::super::RuntimeBodySemanticError::ExecutableRows {
+                actual: 4,
+                maximum: 3
+            }
+        ))
+    ));
+    let mut meter = TaskSemanticMeter::new(0, 0);
+    image
+        .preflight_rows(
+            crate::plan::RuntimeTaskPlanSealLimits {
+                max_executable_rows: 4,
+                ..crate::plan::RuntimeTaskPlanSealLimits::default()
+            },
+            &mut meter,
+        )
+        .unwrap();
+    // The fixture intentionally has no C row; count passes without resolving it.
+    assert_eq!(meter.totals(), (0, 0));
+}
+
+#[test]
+fn global_function_roles_precede_request_roles_and_semantic_type_errors() {
+    let (plan, owner, function) = super::super::tests::producer_host_plan(true);
+    let mut task = row(&plan, &owner, function);
+    task.request_template = super::super::request::RuntimeTaskRequestTemplate::new(
+        0,
+        Box::new([super::super::request::RuntimeRequestArgument {
+            role: super::super::request::RuntimeRequestArgumentRole::Positional,
+            identity: None,
+            ty: crate::runtime_id::RuntimePlanTypeId::from_accepted_ordinal(
+                std::num::NonZeroU32::new(99).unwrap(),
+            ),
+            source: super::super::request::RuntimeRequestValueSource::Literal,
+            path: Box::new([]),
+        }]),
+        Box::new([]),
+    );
+    let image =
+        UnsealedRuntimePlanImage::new(plan.inventory, owner, Box::new([task]), None).unwrap();
+    let mut meter = TaskSemanticMeter::new(0, 0);
+    assert!(matches!(
+        image.preflight_roles(
+            crate::plan::RuntimeTaskPlanSealLimits {
+                max_function_roles: 0,
+                max_request_roles: 0,
+                ..crate::plan::RuntimeTaskPlanSealLimits::default()
+            },
+            &mut meter
+        ),
+        Err(RuntimeTaskPlanImageError::Body(
+            super::super::RuntimeBodySemanticError::FunctionRoles {
+                actual: 1,
+                maximum: 0
+            }
+        ))
+    ));
+    assert!(meter.status().is_err());
+    let mut meter = TaskSemanticMeter::new(0, 0);
+    assert!(matches!(
+        image.preflight_roles(
+            crate::plan::RuntimeTaskPlanSealLimits {
+                max_request_roles: 0,
+                ..crate::plan::RuntimeTaskPlanSealLimits::default()
+            },
+            &mut meter
+        ),
+        Err(RuntimeTaskPlanImageError::Body(
+            super::super::RuntimeBodySemanticError::RequestRoles {
+                actual: 1,
+                maximum: 0
+            }
+        ))
+    ));
+    let mut meter = TaskSemanticMeter::new(0, 0);
+    image
+        .preflight_roles(
+            crate::plan::RuntimeTaskPlanSealLimits::default(),
+            &mut meter,
+        )
+        .unwrap();
+    assert_eq!(meter.totals(), (0, 0));
+}

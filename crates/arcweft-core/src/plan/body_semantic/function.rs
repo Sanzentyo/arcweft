@@ -338,7 +338,7 @@ impl<'a> RuntimeBodySemanticContext<'a> {
         })
     }
 
-    fn endpoint_count(
+    pub(super) fn endpoint_count(
         body: &RuntimeFunctionSiteBody,
         inputs: usize,
         maximum: u32,

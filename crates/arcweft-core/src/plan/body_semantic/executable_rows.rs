@@ -115,22 +115,7 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
         limits: RuntimeTaskPlanSealLimits,
         meter: &mut TaskSemanticMeter,
     ) -> Result<Self, RuntimeBodySemanticError> {
-        let counts = [
-            plan.type_table().len(),
-            plan.local_declarations().len(),
-            plan.nominal_record_domains().len(),
-            plan.variant_domains().len(),
-            plan.function_sites().len(),
-            plan.dialogue_content().rows().len(),
-            plan.entries().len(),
-            plan.callable_executables().len(),
-            plan.flow_executables().len(),
-            plan.flows().len(),
-            plan.pure_helpers().len(),
-            plan.trait_methods().len(),
-            plan.line_task_groups().len(),
-            plan.stream_plans().len(),
-        ];
+        let counts = Self::table_counts(plan);
         let mut total = 0;
         for count in counts {
             total = meter.checked_count_sum(total, count)?;
@@ -152,6 +137,25 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
             functions: (0..counts[4]).map(|_| FunctionState::Unvisited).collect(),
             helpers: (0..counts[10]).map(|_| None).collect(),
         })
+    }
+
+    pub(super) fn table_counts(plan: &super::RuntimePlanInventory) -> [usize; 14] {
+        [
+            plan.type_table().len(),
+            plan.local_declarations().len(),
+            plan.nominal_record_domains().len(),
+            plan.variant_domains().len(),
+            plan.function_sites().len(),
+            plan.dialogue_content().rows().len(),
+            plan.entries().len(),
+            plan.callable_executables().len(),
+            plan.flow_executables().len(),
+            plan.flows().len(),
+            plan.pure_helpers().len(),
+            plan.trait_methods().len(),
+            plan.line_task_groups().len(),
+            plan.stream_plans().len(),
+        ]
     }
 
     /// Appends only the fixed E0..E13 prefix. The caller must append the actual
