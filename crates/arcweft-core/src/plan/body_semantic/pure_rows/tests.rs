@@ -212,6 +212,21 @@ fn admitted_pure_rows_exclude_diagnostics_backend_choice_and_arena_padding() {
 }
 
 #[test]
+fn helpers_and_methods_enter_the_complete_executable_prefix() {
+    use crate::plan::body_semantic::executable_rows::fixture_prefix;
+    for method in [false, true] {
+        let first = Fixture::new(method).inventory();
+        let expected = fixture_prefix(&first);
+        let mut diagnostic = Fixture::new(method);
+        diagnostic.diagnostic = 700;
+        assert_eq!(expected, fixture_prefix(&diagnostic.inventory()));
+        let mut changed = Fixture::new(method);
+        changed.value = false;
+        assert_ne!(expected, fixture_prefix(&changed.inventory()));
+    }
+}
+
+#[test]
 fn admitted_definition_input_order_result_abi_and_typed_body_change_the_row() {
     for method in [false, true] {
         let baseline = Fixture::new(method);

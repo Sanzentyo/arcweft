@@ -226,6 +226,17 @@ fn unit_record_row_has_exact_owner_layout_and_empty_domain_bytes() {
 }
 
 #[test]
+fn nominal_rows_enter_the_complete_source_ordered_executable_prefix() {
+    use crate::plan::body_semantic::executable_rows::fixture_prefix;
+    let record = record_inventory(Shape::Record, &[true, false], Some("record"));
+    let changed = record_inventory(Shape::Record, &[false, true], Some("record"));
+    assert_ne!(fixture_prefix(&record), fixture_prefix(&changed));
+    let variant = variant_inventory(&[None, Some(true)]);
+    let changed = variant_inventory(&[None, Some(false)]);
+    assert_ne!(fixture_prefix(&variant), fixture_prefix(&changed));
+}
+
+#[test]
 fn variant_row_has_exact_case_identity_and_optional_payload_coordinates() {
     let inventory = variant_inventory(&[None, Some(true)]);
     let owner = inventory.type_table().id_for_semantic(semantic(1)).unwrap();

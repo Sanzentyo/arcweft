@@ -1647,7 +1647,7 @@ fn callable_deep_acyclic_graph_uses_an_iterative_stack() {
     assert!(meter.totals().0 < 1_500_000);
 }
 
-fn actual_line_plan(
+pub(super) fn actual_line_plan(
     value: bool,
     cleanup_value: bool,
     trigger: &str,

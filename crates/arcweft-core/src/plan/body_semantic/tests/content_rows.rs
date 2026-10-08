@@ -159,6 +159,22 @@ fn content_plan(options: &ContentFixture<'_>) -> RuntimePlan {
     builder.finish().unwrap()
 }
 
+#[test]
+fn content_rows_enter_the_complete_executable_prefix_with_actual_effect_bodies() {
+    use crate::plan::body_semantic::executable_rows::fixture_prefix;
+    let first = content_plan(&ContentFixture::default());
+    let changed = content_plan(&ContentFixture {
+        value: false,
+        ..ContentFixture::default()
+    });
+    assert_ne!(fixture_prefix(&first), fixture_prefix(&changed));
+    let changed = content_plan(&ContentFixture {
+        effect: false,
+        ..ContentFixture::default()
+    });
+    assert_ne!(fixture_prefix(&first), fixture_prefix(&changed));
+}
+
 fn admit_content(
     builder: &mut RuntimePlanBuilder,
     options: &ContentFixture<'_>,

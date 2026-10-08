@@ -21,6 +21,14 @@ fn executable_stream_row_commits_operation_order_and_empty_arm_role() {
 }
 
 #[test]
+fn streams_enter_the_complete_source_ordered_executable_prefix() {
+    use crate::plan::body_semantic::executable_rows::fixture_prefix;
+    let first = fixture_prefix(&stream_plan(false, true));
+    assert_ne!(first, fixture_prefix(&stream_plan(true, true)));
+    assert_ne!(first, fixture_prefix(&stream_plan(false, false)));
+}
+
+#[test]
 fn executable_stream_row_commits_actual_runtime_identity_and_error_type() {
     let first = stream_plan(false, true);
     let expected = digest(&first, 10_000, 100_000).0.unwrap();

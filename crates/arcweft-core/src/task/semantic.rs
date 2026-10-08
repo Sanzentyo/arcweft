@@ -220,6 +220,19 @@ impl<'a> TaskSemanticEncoder<'a> {
         child.finish().map_err(Into::into)
     }
 
+    /// Completes an actual row owner while retaining this outer transcript.
+    /// Both use the same sticky quota; the returned digest is written by the
+    /// caller as a separate, fully charged atom, including on memo reuse.
+    pub(crate) fn owner_child<E: From<TaskSemanticEncodingError>>(
+        &mut self,
+        complete: impl FnOnce(&mut TaskSemanticMeter) -> Result<blake3::Hash, E>,
+    ) -> Result<blake3::Hash, E> {
+        self.status()?;
+        let digest = complete(self.meter).inspect_err(|_| self.meter.reject_owner())?;
+        self.status()?;
+        Ok(digest)
+    }
+
     pub(crate) fn finish(self) -> Result<blake3::Hash, TaskSemanticEncodingError> {
         match self.meter.error {
             Some(error) => Err(error),
@@ -267,6 +280,22 @@ impl crate::effect_row::MembershipEncoding<crate::plan::RuntimeBoundEffectRefere
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn owner_child_cannot_return_a_digest_after_ignored_meter_failure() {
+        let mut meter = TaskSemanticMeter::new(0, 1000);
+        let mut encoder = TaskSemanticEncoder::new(b"owner-child-test.v1\0", &mut meter);
+        let result: Result<blake3::Hash, TaskSemanticEncodingError> =
+            encoder.owner_child(|meter| {
+                let _ = meter.charge_work(1);
+                Ok(blake3::hash(b"not an issued proof"))
+            });
+        assert_eq!(result, Err(TaskSemanticEncodingError::SemanticWork));
+        assert_eq!(
+            encoder.finish(),
+            Err(TaskSemanticEncodingError::SemanticWork)
+        );
+    }
 
     fn meter() -> TaskSemanticMeter {
         TaskSemanticMeter::new(4_194_304, 67_108_864)

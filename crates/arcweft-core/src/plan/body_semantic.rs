@@ -9,6 +9,7 @@ mod entries;
 mod entry_fixtures;
 mod executable_metadata;
 mod executable_roles;
+mod executable_rows;
 pub(crate) mod flow;
 pub(crate) mod function;
 mod local_rows;
@@ -82,6 +83,10 @@ pub(crate) enum RuntimeBodySemanticError {
     InvalidCallableExecutableProducer { ordinal: usize },
     #[error("Flow executable row {ordinal} has no matching completed producer transcript")]
     InvalidFlowExecutableProducer { ordinal: usize },
+    #[error("executable rows {actual} exceed limit {maximum}")]
+    ExecutableRows { actual: usize, maximum: u32 },
+    #[error("executable semantic graph has a cycle at table {table}, row {ordinal}")]
+    ExecutableCycle { table: u8, ordinal: usize },
 }
 
 impl From<TaskSemanticEncodingError> for RuntimeBodySemanticError {
