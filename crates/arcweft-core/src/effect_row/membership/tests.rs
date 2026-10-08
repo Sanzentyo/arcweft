@@ -201,3 +201,30 @@ fn substitutions_include_labels_introduced_only_by_replacements() {
         variable(1)
     );
 }
+
+#[test]
+fn semantic_child_counts_use_owner_lists_instead_of_encoded_reference_ordinals() {
+    let formula = variable(0)
+        .union(
+            &row(&["fs.read", "fs.write", "io.read"]),
+            &mut Meter::default(),
+        )
+        .unwrap();
+    let mut widths = Vec::new();
+    formula
+        .try_visit_semantic_child_counts(&mut |count| {
+            widths.push(count);
+            Ok::<(), ()>(())
+        })
+        .unwrap();
+    assert_eq!(widths, [1, 3, 0, 0, 0]);
+    let mut visited = Vec::new();
+    assert_eq!(
+        formula.try_visit_semantic_child_counts(&mut |count| {
+            visited.push(count);
+            if count > 2 { Err(count) } else { Ok(()) }
+        }),
+        Err(3)
+    );
+    assert_eq!(visited, [1, 3]);
+}

@@ -145,6 +145,50 @@ pub struct RuntimeCallableStateDefinition<T, F, S = RuntimeCallableStateId> {
 }
 
 impl<T, F, S> RuntimeCallableStateDefinition<T, F, S> {
+    /// Ordered direct metadata list widths; no type/function/state lookup.
+    pub(crate) fn try_visit_semantic_child_counts<E>(
+        &self,
+        visitor: &mut impl FnMut(usize) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match &self.position {
+            RuntimeCallablePosition::WithinGroup { bound, .. } => visitor(bound.len())?,
+            RuntimeCallablePosition::Unapplied | RuntimeCallablePosition::AfterGroup { .. } => {}
+        }
+        visitor(self.retained.len())?;
+        visitor(self.parameters.len())?;
+        match &self.attached {
+            RuntimeCallableAttachedContract::Defaulted {
+                default: RuntimeCallableDefault::Body { captures, .. },
+                ..
+            } => visitor(captures.len())?,
+            RuntimeCallableAttachedContract::None
+            | RuntimeCallableAttachedContract::Required { .. }
+            | RuntimeCallableAttachedContract::Optional { .. }
+            | RuntimeCallableAttachedContract::Defaulted {
+                default: RuntimeCallableDefault::RequiresSpecialization,
+                ..
+            } => {}
+        }
+        match &self.transition {
+            RuntimeCallableTransition::Retain { values, .. } => visitor(values.len())?,
+            RuntimeCallableTransition::Invoke {
+                captures,
+                arguments,
+                ..
+            } => {
+                visitor(captures.len())?;
+                visitor(arguments.len())?;
+            }
+            RuntimeCallableTransition::RequiresSpecialization => {}
+        }
+        visitor(self.partials.len())?;
+        for partial in &self.partials {
+            visitor(partial.parameters.len())?;
+            visitor(partial.values.len())?;
+        }
+        Ok(())
+    }
+
     /// Rewrites all references together at the program construction boundary.
     pub fn try_map<U, G, R, E>(
         self,

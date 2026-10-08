@@ -4,6 +4,7 @@
 use super::{RuntimeTaskPlanImageError, UnsealedRuntimePlanImage};
 use crate::plan::RuntimeFunctionSiteBody;
 use crate::plan::RuntimeTaskPlanSealLimits;
+use crate::plan::body_semantic::callable::preflight::RuntimeCallableChildPreflight;
 use crate::task::semantic::TaskSemanticMeter;
 use crate::value::{RuntimeExpressionNode, expression_tree::RuntimeExpressionTreeEvent};
 
@@ -27,7 +28,11 @@ impl Children<'_> {
         }
         Ok(())
     }
-    fn node(&mut self, root: RuntimeExpressionNode<'_>) -> Result<(), RuntimeTaskPlanImageError> {
+    fn node(
+        &mut self,
+        auxiliary: &mut RuntimeCallableChildPreflight<'_>,
+        root: RuntimeExpressionNode<'_>,
+    ) -> Result<(), RuntimeTaskPlanImageError> {
         root.try_visit_owned_events(&mut |event| {
             if let RuntimeExpressionTreeEvent::Enter { node, .. } = event {
                 self.count(node.owned_children().count())?;
@@ -47,6 +52,9 @@ impl Children<'_> {
                         }
                     }
                 };
+                if let RuntimeExpressionNode::Expression(expression) = node {
+                    auxiliary.expression(expression, &mut |count| self.count(count))?;
+                }
                 if let Some(value) = literal {
                     value.try_visit_static_literal_child_counts(&mut |count| self.count(count))?;
                 }
@@ -56,6 +64,7 @@ impl Children<'_> {
     }
     fn stream(
         &mut self,
+        auxiliary: &mut RuntimeCallableChildPreflight<'_>,
         root: &[crate::stream::StreamOp],
     ) -> Result<(), RuntimeTaskPlanImageError> {
         use crate::stream::StreamOp;
@@ -75,9 +84,9 @@ impl Children<'_> {
                 Frame::Arms(mut arms) => {
                     if let Some(arm) = arms.next() {
                         stack.push(Frame::Arms(arms));
-                        self.node(RuntimeExpressionNode::Pattern(&arm.pattern))?;
+                        self.node(auxiliary, RuntimeExpressionNode::Pattern(&arm.pattern))?;
                         if let Some(guard) = &arm.guard {
-                            self.node(RuntimeExpressionNode::Expression(guard))?;
+                            self.node(auxiliary, RuntimeExpressionNode::Expression(guard))?;
                         }
                         stack.push(Frame::Body(&arm.ops));
                     }
@@ -87,37 +96,37 @@ impl Children<'_> {
                         stack.push(Frame::Ops(ops));
                         match op {
                             StreamOp::Let { pattern, expr } => {
-                                self.node(RuntimeExpressionNode::Pattern(pattern))?;
-                                self.node(RuntimeExpressionNode::Expression(expr))?;
+                                self.node(auxiliary, RuntimeExpressionNode::Pattern(pattern))?;
+                                self.node(auxiliary, RuntimeExpressionNode::Expression(expr))?;
                             }
                             StreamOp::ForNext {
                                 pattern,
                                 source,
                                 body,
                             } => {
-                                self.node(RuntimeExpressionNode::Pattern(pattern))?;
-                                self.node(RuntimeExpressionNode::Expression(source))?;
+                                self.node(auxiliary, RuntimeExpressionNode::Pattern(pattern))?;
+                                self.node(auxiliary, RuntimeExpressionNode::Expression(source))?;
                                 stack.push(Frame::Body(body));
                             }
                             StreamOp::Yield { expr } => {
-                                self.node(RuntimeExpressionNode::Expression(expr))?;
+                                self.node(auxiliary, RuntimeExpressionNode::Expression(expr))?;
                             }
                             StreamOp::If {
                                 condition,
                                 then_ops,
                                 else_ops,
                             } => {
-                                self.node(RuntimeExpressionNode::Expression(condition))?;
+                                self.node(auxiliary, RuntimeExpressionNode::Expression(condition))?;
                                 stack.push(Frame::Body(else_ops));
                                 stack.push(Frame::Body(then_ops));
                             }
                             StreamOp::Match { scrutinee, arms } => {
-                                self.node(RuntimeExpressionNode::Expression(scrutinee))?;
+                                self.node(auxiliary, RuntimeExpressionNode::Expression(scrutinee))?;
                                 self.count(arms.len())?;
                                 stack.push(Frame::Arms(arms.iter()));
                             }
                             StreamOp::Close { source } => {
-                                self.node(RuntimeExpressionNode::Expression(source))?;
+                                self.node(auxiliary, RuntimeExpressionNode::Expression(source))?;
                             }
                             StreamOp::Return => {}
                         }
@@ -127,7 +136,11 @@ impl Children<'_> {
         }
         Ok(())
     }
-    fn flow(&mut self, ops: &[crate::plan::FlowOp]) -> Result<(), RuntimeTaskPlanImageError> {
+    fn flow(
+        &mut self,
+        auxiliary: &mut RuntimeCallableChildPreflight<'_>,
+        ops: &[crate::plan::FlowOp],
+    ) -> Result<(), RuntimeTaskPlanImageError> {
         crate::plan::try_visit_ops_events(ops, &mut |event| {
             match event {
                 crate::plan::RuntimeFlowTreeEvent::EnterBody { ops, .. } => {
@@ -141,7 +154,7 @@ impl Children<'_> {
                         Ok::<(), RuntimeTaskPlanImageError>(())
                     })?;
                     self.count(values)?;
-                    op.try_visit_value_roots(&mut |_, node| self.node(node))?;
+                    op.try_visit_value_roots(&mut |_, node| self.node(auxiliary, node))?;
                 }
                 crate::plan::RuntimeFlowTreeEvent::ExitBody
                 | crate::plan::RuntimeFlowTreeEvent::ExitOperation => {}
@@ -157,9 +170,10 @@ impl UnsealedRuntimePlanImage {
         limits: RuntimeTaskPlanSealLimits,
         meter: &mut TaskSemanticMeter,
     ) -> Result<(), RuntimeTaskPlanImageError> {
+        let mut auxiliary = RuntimeCallableChildPreflight::new(&self.inventory);
         self.preflight_layout_children(limits, meter)?;
-        self.preflight_execution_children(limits, meter)?;
-        self.preflight_owned_body_children(limits, meter)
+        self.preflight_execution_children(limits, meter, &mut auxiliary)?;
+        self.preflight_owned_body_children(limits, meter, &mut auxiliary)
     }
 
     fn preflight_layout_children(
@@ -223,6 +237,7 @@ impl UnsealedRuntimePlanImage {
         &self,
         limits: RuntimeTaskPlanSealLimits,
         meter: &mut TaskSemanticMeter,
+        auxiliary: &mut RuntimeCallableChildPreflight<'_>,
     ) -> Result<(), RuntimeTaskPlanImageError> {
         let plan = &self.inventory;
         for (ordinal, row) in plan.function_sites().iter().enumerate() {
@@ -234,15 +249,15 @@ impl UnsealedRuntimePlanImage {
             };
             check.count(row.inputs().len())?;
             for input in row.inputs() {
-                check.node(RuntimeExpressionNode::Pattern(input.pattern()))?;
+                check.node(auxiliary, RuntimeExpressionNode::Pattern(input.pattern()))?;
             }
             match row.body() {
                 RuntimeFunctionSiteBody::Expression(body) => {
-                    check.node(RuntimeExpressionNode::Expression(body))?;
+                    check.node(auxiliary, RuntimeExpressionNode::Expression(body))?;
                 }
                 RuntimeFunctionSiteBody::Executable(body) => {
                     check.count(body.effects().len())?;
-                    check.flow(body.ops())?;
+                    check.flow(auxiliary, body.ops())?;
                 }
             }
         }
@@ -259,13 +274,13 @@ impl UnsealedRuntimePlanImage {
             for value in row.values() {
                 check.count(value.captures().len())?;
                 for expression in value.captures() {
-                    check.node(RuntimeExpressionNode::Expression(expression))?;
+                    check.node(auxiliary, RuntimeExpressionNode::Expression(expression))?;
                 }
             }
             for effect in row.effect_sites() {
                 check.count(effect.captures().len())?;
                 for expression in effect.captures() {
-                    check.node(RuntimeExpressionNode::Expression(expression))?;
+                    check.node(auxiliary, RuntimeExpressionNode::Expression(expression))?;
                 }
             }
         }
@@ -318,6 +333,7 @@ impl UnsealedRuntimePlanImage {
         &self,
         limits: RuntimeTaskPlanSealLimits,
         meter: &mut TaskSemanticMeter,
+        auxiliary: &mut RuntimeCallableChildPreflight<'_>,
     ) -> Result<(), RuntimeTaskPlanImageError> {
         let plan = &self.inventory;
         for (ordinal, row) in plan.pure_helpers().iter().enumerate() {
@@ -328,7 +344,7 @@ impl UnsealedRuntimePlanImage {
                 meter,
             };
             check.count(row.inputs.len())?;
-            check.node(RuntimeExpressionNode::Expression(&row.expr))?;
+            check.node(auxiliary, RuntimeExpressionNode::Expression(&row.expr))?;
         }
         for (ordinal, row) in plan.trait_methods().iter().enumerate() {
             let mut check = Children {
@@ -338,7 +354,7 @@ impl UnsealedRuntimePlanImage {
                 meter,
             };
             check.count(row.inputs.len())?;
-            check.node(RuntimeExpressionNode::Expression(&row.body))?;
+            check.node(auxiliary, RuntimeExpressionNode::Expression(&row.body))?;
         }
         for (ordinal, row) in plan.line_task_groups().iter().enumerate() {
             let count = row.semantic_child_count(meter)?;
@@ -355,21 +371,21 @@ impl UnsealedRuntimePlanImage {
                 maximum: limits.max_children_per_row,
                 meter,
             };
-            check.flow(row.activation_ops())?;
+            check.flow(auxiliary, row.activation_ops())?;
             for node in row.nodes() {
                 if let crate::line_task::LineTaskNode::Action(ops) = node {
-                    check.flow(ops)?;
+                    check.flow(auxiliary, ops)?;
                 }
             }
             for rule in row.cancel_rules() {
-                check.flow(rule.action())?;
+                check.flow(auxiliary, rule.action())?;
             }
             for exit in [
                 crate::line_task::ScopeExit::Completed,
                 crate::line_task::ScopeExit::Cancelled,
                 crate::line_task::ScopeExit::Failed,
             ] {
-                check.flow(row.cleanup().actions(exit))?;
+                check.flow(auxiliary, row.cleanup().actions(exit))?;
             }
         }
         // Stream and task-request child grammars are checked by their owners
@@ -382,7 +398,7 @@ impl UnsealedRuntimePlanImage {
                 meter,
             };
             check.count(row.id().path().segments().len())?;
-            check.stream(row.ops())?;
+            check.stream(auxiliary, row.ops())?;
         }
         for (ordinal, row) in self.task_plans.iter().enumerate() {
             let mut check = Children {

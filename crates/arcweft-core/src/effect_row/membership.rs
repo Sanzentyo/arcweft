@@ -47,6 +47,17 @@ enum Operation {
 }
 
 impl<V: Clone + Ord> Membership<V> {
+    fn try_visit_semantic_child_counts<E>(
+        &self,
+        visitor: &mut impl FnMut(usize) -> Result<(), E>,
+    ) -> Result<(), E> {
+        visitor(self.default.node_count())?;
+        visitor(self.overrides.len())?;
+        for decision in self.overrides.values() {
+            visitor(decision.node_count())?;
+        }
+        Ok(())
+    }
     fn encode<E: MembershipEncoding<V>>(&self, encoder: &mut E) -> Result<(), E::Error> {
         self.default.encode(encoder)?;
         encoder.count(self.overrides.len())?;
@@ -171,6 +182,13 @@ impl<V: Clone + Ord> Membership<V> {
 }
 
 impl<V: Clone + Ord> EffectFormula<V> {
+    pub(crate) fn try_visit_semantic_child_counts<E>(
+        &self,
+        visitor: &mut impl FnMut(usize) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.0.try_visit_semantic_child_counts(visitor)
+    }
+
     pub fn encode<E: MembershipEncoding<V>>(&self, encoder: &mut E) -> Result<(), E::Error> {
         self.0.encode(encoder)
     }

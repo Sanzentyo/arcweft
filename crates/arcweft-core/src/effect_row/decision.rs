@@ -137,6 +137,10 @@ struct DecisionBuilder<'c, V, C> {
 }
 
 impl<V: Clone + Ord> EffectDecision<V> {
+    pub(super) fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+
     pub(super) fn encode<E: DecisionEncoding<V>>(&self, encoder: &mut E) -> Result<(), E::Error> {
         fn reference<V, E: DecisionEncoding<V>>(
             root: Root,

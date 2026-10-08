@@ -22,6 +22,9 @@ fn stream_child_preflight_preserves_then_before_else_and_poison() {
             then_ops: vec![StreamOp::Return; then_count],
             else_ops: vec![StreamOp::Return; else_count],
         }];
+        let builder = crate::plan::RuntimePlanBuilder::new();
+        let plan = builder.finish().unwrap();
+        let mut auxiliary = RuntimeCallableChildPreflight::new(&plan.inventory);
         let mut meter = TaskSemanticMeter::new(0, 0);
         let mut check = Children {
             table: 13,
@@ -30,9 +33,9 @@ fn stream_child_preflight_preserves_then_before_else_and_poison() {
             meter: &mut meter,
         };
         assert!(
-            matches!(check.stream(&ops),Err(RuntimeTaskPlanImageError::Children{table:13,ordinal:0,actual,maximum:2}) if actual==then_count)
+            matches!(check.stream(&mut auxiliary, &ops),Err(RuntimeTaskPlanImageError::Children{table:13,ordinal:0,actual,maximum:2}) if actual==then_count)
         );
-        assert!(check.stream(&[]).is_err());
+        assert!(check.stream(&mut auxiliary, &[]).is_err());
         assert_eq!(meter.totals(), (0, 0));
     }
 }
@@ -52,6 +55,9 @@ fn deep_stream_child_count_uses_cursors_without_recursive_rust_calls() {
             body: ops,
         }];
     }
+    let builder = crate::plan::RuntimePlanBuilder::new();
+    let plan = builder.finish().unwrap();
+    let mut auxiliary = RuntimeCallableChildPreflight::new(&plan.inventory);
     let mut meter = TaskSemanticMeter::new(0, 0);
     Children {
         table: 13,
@@ -59,7 +65,7 @@ fn deep_stream_child_count_uses_cursors_without_recursive_rust_calls() {
         maximum: 1,
         meter: &mut meter,
     }
-    .stream(&ops)
+    .stream(&mut auxiliary, &ops)
     .unwrap();
     assert_eq!(meter.totals(), (0, 0));
     // Drop the deliberately deep owned fixture iteratively too.
@@ -82,6 +88,9 @@ fn expression_and_pattern_literal_children_precede_invalid_types_and_hash_limits
                 "need.invalid_literal",
             )),
         ]);
+        let builder = crate::plan::RuntimePlanBuilder::new();
+        let plan = builder.finish().unwrap();
+        let mut auxiliary = RuntimeCallableChildPreflight::new(&plan.inventory);
         let mut meter = TaskSemanticMeter::new(0, 0);
         let mut check = Children {
             table: 4,
@@ -94,13 +103,16 @@ fn expression_and_pattern_literal_children_precede_invalid_types_and_hash_limits
                 ty,
                 crate::pattern::RuntimePatternKind::Literal(literal),
             );
-            check.node(RuntimeExpressionNode::Pattern(&pattern))
+            check.node(&mut auxiliary, RuntimeExpressionNode::Pattern(&pattern))
         } else {
             let expression = crate::value::RuntimeExpr::from_admitted_parts(
                 ty,
                 crate::value::RuntimeExprKind::Value(literal),
             );
-            check.node(RuntimeExpressionNode::Expression(&expression))
+            check.node(
+                &mut auxiliary,
+                RuntimeExpressionNode::Expression(&expression),
+            )
         };
         assert!(matches!(
             result,
@@ -114,4 +126,59 @@ fn expression_and_pattern_literal_children_precede_invalid_types_and_hash_limits
         assert!(meter.status().is_err());
         assert_eq!(meter.totals(), (0, 0));
     }
+}
+
+#[test]
+fn callable_metadata_counts_reach_expression_row_and_keep_sticky_error() {
+    let (mut plan, root) = crate::plan::body_semantic::tests::callable_graph_fixture(2, 1);
+    let mut rows = plan.callable_states().iter().cloned().collect::<Vec<_>>();
+    rows[root.index()].position = crate::plan::RuntimeCallablePosition::WithinGroup {
+        group: 0,
+        bound: (0..3)
+            .map(
+                |parameter| crate::plan::RuntimeCallableParameterCoordinate {
+                    group: 0,
+                    parameter,
+                },
+            )
+            .collect(),
+    };
+    let ty = rows[root.index()].function_type;
+    plan.inventory.callable_states = crate::plan::RuntimeCallableStateTable::from_admitted(rows);
+    let expression = crate::value::RuntimeExpr::from_admitted_parts(
+        ty,
+        crate::value::RuntimeExprKind::MakeCallable {
+            state: root,
+            captures: vec![],
+        },
+    );
+    let mut auxiliary = RuntimeCallableChildPreflight::new(&plan.inventory);
+    let mut meter = TaskSemanticMeter::new(0, 0);
+    let mut check = Children {
+        table: 10,
+        ordinal: 2,
+        maximum: 2,
+        meter: &mut meter,
+    };
+    assert!(matches!(
+        check.node(
+            &mut auxiliary,
+            RuntimeExpressionNode::Expression(&expression)
+        ),
+        Err(RuntimeTaskPlanImageError::Children {
+            table: 10,
+            ordinal: 2,
+            actual: 3,
+            maximum: 2
+        })
+    ));
+    assert!(
+        check
+            .node(
+                &mut auxiliary,
+                RuntimeExpressionNode::Expression(&expression)
+            )
+            .is_err()
+    );
+    assert_eq!(meter.totals(), (0, 0));
 }

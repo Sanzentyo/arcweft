@@ -1537,7 +1537,7 @@ fn actual_host_request_recognizes_typed_capture_prologue_bindings() {
 
 /// Private image fixture probes graph termination independently of structural
 /// admission: all references use actual plan rows, including deliberate cycles.
-fn callable_graph_fixture(
+pub(super) fn callable_graph_fixture(
     depth: usize,
     edges: usize,
 ) -> (RuntimePlan, crate::runtime_id::RuntimeCallableStateId) {

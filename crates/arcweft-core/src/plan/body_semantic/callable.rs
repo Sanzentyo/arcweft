@@ -2,6 +2,8 @@
 //! private memo keys; accepted code/type references and ordered child digests
 //! supply the bytes. One borrowed graph and one meter own the whole traversal.
 
+pub(super) mod preflight;
+
 use super::{RuntimeBodySemanticContext, RuntimeBodySemanticError};
 use crate::runtime_id::RuntimeCallableStateId;
 use crate::task::semantic::TaskSemanticEncoder;
