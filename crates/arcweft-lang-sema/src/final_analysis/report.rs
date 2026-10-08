@@ -2414,16 +2414,16 @@ impl FinalSemanticAnalysis {
     > {
         crate::semantic_coordinate::SemanticCoordinateIndex::new(self.accepted_root_catalog(), self)
             .binding(owner)
-            .map(|coordinate| {
-                crate::semantic_coordinate::CheckedLocalBindingOrigin::new(
+            .map_err(
+                |_| crate::semantic_coordinate::CheckedLocalBindingOriginError { local: owner },
+            )
+            .and_then(|coordinate| {
+                crate::semantic_coordinate::CheckedLocalBindingOrigin::try_new(
                     owner,
                     Arc::clone(self.hir_topology()),
                     coordinate,
                 )
             })
-            .map_err(
-                |_| crate::semantic_coordinate::CheckedLocalBindingOriginError { local: owner },
-            )
     }
 
     pub fn capture(&self, owner: CaptureId) -> Option<&CheckedBinding> {

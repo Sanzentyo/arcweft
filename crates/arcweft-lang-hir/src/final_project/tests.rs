@@ -5623,3 +5623,68 @@ fn styles_iterate_without_flattening() {
         assert!(std::ptr::eq(style.style(), expected));
     }
 }
+
+#[test]
+fn topology_binding_origins_retain_declaration_mutability_storage_and_shadow_identity() {
+    let package = package();
+    let root = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/local-declaration-properties",
+        "local-declaration-properties.arcw",
+        concat!(
+            "fn accepted(input: Unit) -> Unit { let mut value = input; let value = input; value }\n",
+            "view Main(initial: String) { local state caption: String = initial; let suffix = \"!\"; }\n",
+        ),
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root);
+    let retained = Arc::clone(&module);
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root, module)],
+    )
+    .unwrap();
+    let symbols = symbols_for_project(&project, parsed.document(), "local-declaration-properties");
+    let topology = project
+        .analysis_view()
+        .unwrap()
+        .accept_symbol_generation(&symbols)
+        .unwrap()
+        .into_evaluation_topology()
+        .unwrap();
+    let origins = topology.modules()[0].local_origins();
+    let mut values = Vec::new();
+    for (local, declaration) in retained.locals() {
+        let binding = origins.binding(local).unwrap();
+        assert_eq!(binding.kind(), declaration.kind());
+        assert_eq!(
+            binding.is_mutable_binding(),
+            declaration.is_mutable_binding()
+        );
+        match declaration.name().as_str() {
+            "caption" => assert_eq!(
+                binding.storage(),
+                crate::stmt::HirBindingStorage::RetainedState
+            ),
+            "value" => {
+                values.push((local, binding.is_mutable_binding()));
+                assert_eq!(binding.storage(), crate::stmt::HirBindingStorage::Derived);
+            }
+            "input" | "initial" | "suffix" => {
+                assert_eq!(binding.storage(), crate::stmt::HirBindingStorage::Derived);
+            }
+            unexpected => panic!("unexpected fixture binding {unexpected}"),
+        }
+    }
+    assert_eq!(values.len(), 2);
+    assert_ne!(values[0].0, values[1].0);
+    assert_ne!(values[0].1, values[1].1);
+}

@@ -1470,10 +1470,10 @@ fn local_declarations_use_one_complete_contiguous_canonical_projection() {
         .expect("complete canonical local projection");
     let analysis = analyze_identity_fixture(&project);
     for (owner, _) in facts.local_declarations() {
-        assert_eq!(
-            facts.local_origin(owner),
-            Some(analysis.local_binding_origin(owner).unwrap().coordinate())
-        );
+        let actual = facts.local_origin(owner).unwrap();
+        let expected = analysis.local_binding_origin(owner).unwrap();
+        assert_eq!(actual.coordinate(), expected.coordinate());
+        assert_eq!(actual.declaration(), expected.declaration());
     }
 
     let locals = facts.local_declarations().collect::<Vec<_>>();

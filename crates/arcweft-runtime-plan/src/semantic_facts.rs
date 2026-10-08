@@ -5132,6 +5132,12 @@ impl RuntimeCheckedCapture {
         self.origin.coordinate()
     }
 
+    pub const fn checked_origin(
+        &self,
+    ) -> &arcweft_lang_sema::semantic_coordinate::CheckedLocalBindingOrigin {
+        &self.origin
+    }
+
     pub const fn ty(&self) -> &RuntimeNormalizedType {
         &self.ty
     }
@@ -6237,8 +6243,7 @@ impl<'facts> RuntimeScopedExecutableSemanticFactView<'facts> {
     pub fn local_origin(
         self,
         owner: LocalId,
-    ) -> Option<&'facts arcweft_lang_sema::semantic_coordinate::StableCheckedBindingCoordinate>
-    {
+    ) -> Option<&'facts arcweft_lang_sema::semantic_coordinate::CheckedLocalBindingOrigin> {
         self.facts.local_origin(owner)
     }
 
@@ -6553,8 +6558,7 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
     pub fn local_origin(
         self,
         owner: LocalId,
-    ) -> Option<&'facts arcweft_lang_sema::semantic_coordinate::StableCheckedBindingCoordinate>
-    {
+    ) -> Option<&'facts arcweft_lang_sema::semantic_coordinate::CheckedLocalBindingOrigin> {
         match self {
             Self::Global(facts) => facts.local_origin(owner),
             Self::ProjectInstance(facts) => facts.local_origin(owner),
@@ -9516,10 +9520,8 @@ impl RuntimePlanSemanticFacts {
     pub fn local_origin(
         &self,
         local: LocalId,
-    ) -> Option<&arcweft_lang_sema::semantic_coordinate::StableCheckedBindingCoordinate> {
-        self.local_declarations
-            .get(&local)
-            .map(|fact| fact.origin.coordinate())
+    ) -> Option<&arcweft_lang_sema::semantic_coordinate::CheckedLocalBindingOrigin> {
+        self.local_declarations.get(&local).map(|fact| &fact.origin)
     }
 
     /// Runtime-domain locals in canonical final-HIR inventory order.

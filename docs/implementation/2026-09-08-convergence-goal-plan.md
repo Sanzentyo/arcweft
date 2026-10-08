@@ -9793,3 +9793,150 @@ actualTable14/private image/common seal/all14 protected Cut5 and original
 View/nominal/scheduler/Rust move+borrowing/CLI277/Tier2/final legacy deletion
 acceptance remain. Goal ACTIVE/INCOMPLETE. No new Astra/delegation/branch/
 worktree; one-shot advice remains consumed and must not rerun after compaction.
+
+
+### 2026-10-08 — E1 checked declaration metadata: source-to-facts bridge
+
+Inspected clean main/originaaa319d567c0969aa79a8e02ba5f97ed79e25aa2;
+previous goal turn delivered E6/E5 code, nextest94/97PASS, two commits/normal
+pushes with full parent/path/blob verification; it was progress, not a wait
+or no-progress turn. Current authorized E1 WIP changes the existing HIR
+binding-origin row to retain exact local kind/mutability/storage from the
+same immutable module snapshot. Let storage comes from the typed Let site;
+all other closed binding-site cases are Derived by their actual grammar.
+Let membership is checked, future site/role variants require an explicit
+match. Existing source initialization classification/site/path remain on
+this same row. No new side table, source-name resolver, default metadata or
+copied final binding model. CheckedLocalBindingOrigin issuance now requires
+its declaration row to exist and borrows that exact original topology row.
+Runtime facts/scoped/project-instance views return the complete checked
+origin; captures expose their already-retained checked origin. Coordinate-
+only identity consumers project explicitly at their final identity use.
+
+Source tests75397 discovery PASS/build2m06s,3/3PASS: authored mutable vs
+immutable shadow bindings, retained state vs derived declarations, same-row
+pointer borrow and foreign-generation rejection. Initial workspace
+check19733 TERMINAL101 exposed the remaining project-instance/capture
+coordinate projection; that consumer migrated. Retry99959 all-workspace/
+all-target/all-feature/locked check PASS23.01s. Workspace Clippy88156
+PASS1m31s; new panic documentation warning fixed and final Sema owner
+Clippy87521 PASS1m46s,new Sema non-dead diagnostics0. One new HIR unit-test
+semicolon style repair still pending until live test build completes.
+Compiler long generic-closure scenario warning already exists at the pinned
+Flow baseline (227->233 lines); numeric growth is not a new lint family or
+reason to weaken/split its coupled closure/capture assertions. Structure
+87521 PASS:2768files/2638Rust/1535366RustLOC/97workspace packages/355review
+triggers/0blocking violations. Actual cargo tree --invert HIR and resolved
+metadata agree on23 transitive workspace reverse dependencies; all99
+build/graph inputs unchanged. Full non-CLI rdeps nextest discovery52672
+confirmed live; no Rust edits or other Cargo/test invocations while live.
+This is shared source/admission/API work, so broad validation is required;
+private leaf omission does not apply. CLI matrix/comparison and final exact
+selected/terminal receipts, style repair, owner review and commit/push are
+not yet complete. Existing CLI277 failures remain real goal repairs.
+
+E1 owner decision for the remaining migration: preserve authored declaration
+properties separately from actual runtime-slot initialization/placement.
+Runtime slots must be owned by an actual admitted executable body root,
+including the real Function/Line/Stream/helper/method substrates, not by a
+fabricated hash of a local or a default root. Private construction requests
+may await ownership; typed input/binder declarations claim them under the
+actual body owner, and final admission rejects unowned or conflicting rows.
+Captured slots use explicit frame-local ingress aliases; source provenance
+stays on the checked origin, not a global shared runtime slot. Migrate the
+lowerer's current global base-local admission to per-emission-root allocation
+using its existing checked body/capture/formal contexts; remove unused
+source-template/duplicate rows rather than assigning guessed owners. Body
+root references are identity/coordinate leaves to preserve the cycle proof.
+The complete closed owner algebra, Core local row/codec/source producers/
+consumers and E1 transcript still need implementation and acceptance; this
+source bridge is not E1 completion. Use actual typed body/slot owners to
+resolve details; no further design request or new Astra consultation.
+
+The original complete convergence scope, all14 protected Cut5, version1,
+existing main, regular coherent commit/normal push, latest Rust move-after-
+move reinitialization/borrow semantics and one-shot advice-consumed marker
+remain unchanged. Goal ACTIVE/INCOMPLETE; no new delegation/branch/worktree.
+
+
+E1 source bridge validation continuation (supersedes pending build/style):
+52672 discovery TERMINAL0 selected3826 cases/22 runnable non-CLI packages.
+HIR unit semicolon repaired only after it ended. Final owner HIR Clippy49332
+PASS34.71s, final rdeps discovery PASS14.83s with the same3826 actual IDs.
+All10 final Rust input SHA256/size/physical LOC fixed under TEMP
+arcweft-1008-local-declaration-source-final.json. Run13648 confirmed live,
+not stopped or restarted; no new Cargo/test commands or source edits while
+live. Final Sema panic-doc repair is documentation only; workspace check/
+Clippy executable-source evidence retained with final Sema/HIR owner lints.
+
+Touched-owner review: HIR semantic_paths6656->6727LOC/252135bytes owns one
+snapshot topology builder and its closed path/binding algebras; new metadata
+belongs to its existing binding row, not a new map/state cluster. Sema
+semantic_coordinate2642->2663LOC/94257bytes owns exact accepted-coordinate/
+generation issuance; report2852LOC/114600bytes keeps its existing final
+publication transaction. Runtime facts14277->14279LOC/557711bytes retains
+one typed fact authority and now borrows the whole already-owned origin;
+project-function facts3056->3054LOC/115646bytes preserves local/capture
+partition ownership. final_flow10183->10185LOC/434256bytes only projects
+identity at the existing final consumer. No I/O, dependency direction,
+new public test facade, copied schema or parallel source traversal added.
+Their existing large cohesive algebras/publication owners remain justified;
+the change is coupled only to declaration-origin preservation. Actual graph
+and0-blocking structural gate support this disposition; size alone is not
+a decomposition mandate. HIR unit owner5625->5690LOC/206411bytes follows its
+existing project topology tests; new65-line authored source test covers
+retained/derived storage and mutable shadowing. Sema unit child431->462LOC/
+16897bytes tests exact row borrow/foreign generation. Compiler unit owner
+4269->4275LOC/158718bytes and runtime-facts unit4095LOC/148171bytes adapt
+existing canonical/closed-instance assertions without weakening identity or
+metadata equality. No file growth>300 in this cut; existing unit/scenario
+cohesion preserved, no blanket lint suppression or file-placement gate.
+
+For the remaining Core E1 owner migration, claim slots through the typed
+input/binder declarations of their actual executable body root. Include
+all real Function/Line/Stream/helper/method body substrates in the closed
+owner grammar, with explicit capture/export ingress rather than implicit
+cross-root local sharing. Private unowned construction state is not final
+admission: final rows require an actual owner, and conflicts/unowned rows
+reject. Per-emission-root allocation must replace the current global base
+source-local runtime admission. This owner migration/codec/E1 transcript is
+still unimplemented and remains required; do not confuse source-to-facts
+completion with the complete E1 or protected all14 publication cut.
+
+
+Final E1 source-to-facts bridge acceptance (supersedes pending verification):
+non-CLI run13648 TERMINAL0,3826/3826PASS463.256s across22 runnable packages,
+5slow/8ignored; exact selected/terminal/unique IDs3826,missing0/unexpected0/
+duplicate0/nonpass0. Source HIR/Sema cases and canonical runtime fact/closed
+project-closure consumers are included. CLI list92457 TERMINAL0,597 actual
+cases/9 inventory binaries(8 runnable); run49470 TERMINAL100 with320PASS/
+277FAIL/23ignored125.607s. Complete ID comparison to pinned Flow receipt:
+newFailures0,resolved0,missing0/unexpected0/duplicate0. This is baseline-
+comparison evidence, NOT a CLI pass; all277 failures remain required goal
+repairs. Exact10 final Rust hashes remained unchanged through both runs.
+Final HIR/Sema owner lints have0 new non-dead diagnostics; workspace Clippy
+has the documented existing generic-closure length family (227->233), not
+a new semantic warning. Full workspace check/Clippy/structure and actual
+HIR-invert tree/metadata23 closure receipts retained under TEMP
+arcweft-1008-local-declaration-source-*. All99 build/graph inputs unchanged.
+No source edit/Cargo restart occurred during live validation. No environment/
+profile/jobs/timeout/ignore/stack overrides or resource deletion workaround.
+
+Tier2 is omitted for this source/admission/API boundary: it adds declaration
+properties/whole-origin borrowing, with unchanged execution, scheduling,
+protocol, observe/capture/readback/render or production-limit behavior.
+Original milestone Tier2 remains unfinished; this is not its acceptance.
+The source-to-facts bridge itself is complete and validated: one snapshot
+binding row, one checked origin, same scoped/instance/capture fact authority,
+no fallback/duplicated metadata owner or private-API weakening. Frame-local
+runtime ownership/initialization/storage, Core local schema/codec, all real
+body-root ownership and E1 row transcript remain required next work. No
+placeholder owner or metadata defaults were added to bypass that migration.
+
+Fmt/diff then explicit11-path full stage/hunk/blob/tested-byte review,
+coherent commit/normal main push required. Existing whole goal stays ACTIVE/
+INCOMPLETE: E1 full runtime migration/global15-table memo/actualTable14/
+private image/common seal/all14 protected Cut5, original View/nominal/
+scheduler/Rust move+borrowing/CLI277/Tier2/old-path deletion/final matrix
+remain. One-shot Astra consultation is consumed; do not repeat after context
+compaction. No new delegation, branch/worktree or contract-marker change.

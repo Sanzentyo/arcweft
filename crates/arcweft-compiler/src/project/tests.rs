@@ -685,11 +685,17 @@ flow main() -> i64 {
         );
         assert_eq!(capture.origin(), definition.captures()[0].origin());
         assert_eq!(
-            closure.semantics().local_origin(capture.source()),
+            closure
+                .semantics()
+                .local_origin(capture.source())
+                .map(|origin| origin.coordinate()),
             Some(capture.origin())
         );
         assert_eq!(
-            instance.semantics().local_origin(capture.source()),
+            instance
+                .semantics()
+                .local_origin(capture.source())
+                .map(|origin| origin.coordinate()),
             Some(capture.origin())
         );
         let [formal] = closure.parameters() else {

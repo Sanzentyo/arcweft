@@ -1570,6 +1570,9 @@ pub enum HirLocalValueOrigin {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirLocalBindingOrigin {
     local: LocalId,
+    kind: HirLocalKind,
+    mutable_binding: bool,
+    storage: crate::stmt::HirBindingStorage,
     site: HirBindingSite,
     binding_expression: Option<ExprId>,
     pattern: Option<PatternId>,
@@ -1651,6 +1654,63 @@ pub enum HirMemberBindingRole {
 impl HirLocalBindingOrigin {
     pub const fn local(&self) -> LocalId {
         self.local
+    }
+
+    /// Exact declaration properties from the snapshot that owns this row.
+    pub const fn kind(&self) -> HirLocalKind {
+        self.kind
+    }
+
+    pub const fn is_mutable_binding(&self) -> bool {
+        self.mutable_binding
+    }
+
+    pub const fn storage(&self) -> crate::stmt::HirBindingStorage {
+        self.storage
+    }
+
+    fn declaration_storage(
+        module: &HirModule,
+        local: LocalId,
+        site: &HirBindingSite,
+    ) -> Result<crate::stmt::HirBindingStorage, HirSemanticPathError> {
+        use crate::stmt::HirBindingStorage;
+        match site {
+            HirBindingSite::Statement {
+                statement,
+                role: HirLocalBindingStatementRole::Let,
+            } => {
+                let statement = module
+                    .resolve_stmt(*statement)
+                    .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
+                match statement.kind() {
+                    HirStmtKind::Let {
+                        storage, locals, ..
+                    } if locals.contains(&local) => Ok(*storage),
+                    _ => Err(HirSemanticPathError::InvalidOwnerPath {
+                        owner: local.into(),
+                    }),
+                }
+            }
+            HirBindingSite::Statement {
+                role:
+                    HirLocalBindingStatementRole::LetElse
+                    | HirLocalBindingStatementRole::IfLet
+                    | HirLocalBindingStatementRole::MatchArm { .. }
+                    | HirLocalBindingStatementRole::WhileLet
+                    | HirLocalBindingStatementRole::For
+                    | HirLocalBindingStatementRole::SelectPattern { .. }
+                    | HirLocalBindingStatementRole::SelectBinding { .. }
+                    | HirLocalBindingStatementRole::OnTrigger,
+                ..
+            }
+            | HirBindingSite::DeclarationParameter { .. }
+            | HirBindingSite::DeclarationAttachedContent { .. }
+            | HirBindingSite::Expression { .. }
+            | HirBindingSite::Member { .. }
+            | HirBindingSite::FlowResult { .. }
+            | HirBindingSite::PostconditionResult { .. } => Ok(HirBindingStorage::Derived),
+        }
     }
 
     pub fn site(&self) -> HirBindingSite {
@@ -6160,10 +6220,18 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
         pattern: Option<PatternId>,
         origin: HirLocalValueOrigin,
     ) -> Result<(), HirSemanticPathError> {
+        let declaration = self
+            .module
+            .resolve_local(local)
+            .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
+        let storage = HirLocalBindingOrigin::declaration_storage(self.module, local, &site)?;
         match self.local_origins.entry(local) {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(HirLocalBindingOrigin {
                     local,
+                    kind: declaration.kind(),
+                    mutable_binding: declaration.is_mutable_binding(),
+                    storage,
                     site,
                     binding_expression,
                     pattern,
@@ -6174,6 +6242,9 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
             std::collections::btree_map::Entry::Occupied(mut entry) => {
                 let existing = entry.get_mut();
                 if existing.site != site
+                    || existing.kind != declaration.kind()
+                    || existing.mutable_binding != declaration.is_mutable_binding()
+                    || existing.storage != storage
                     || existing.binding_expression != binding_expression
                     || existing.pattern != pattern
                 {

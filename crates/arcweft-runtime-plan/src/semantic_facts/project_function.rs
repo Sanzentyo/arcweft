@@ -1954,7 +1954,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
     pub fn local_origin(
         &self,
         owner: LocalId,
-    ) -> Option<&arcweft_lang_sema::semantic_coordinate::StableCheckedBindingCoordinate> {
+    ) -> Option<&arcweft_lang_sema::semantic_coordinate::CheckedLocalBindingOrigin> {
         if self.partition.locals().binary_search(&owner).is_ok()
             || self.partition.input_locals().binary_search(&owner).is_ok()
         {
@@ -1966,16 +1966,14 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                 )
                 .ok()?;
             match &self.type_projection[index] {
-                RuntimeProjectFunctionTypeProjection::Local { origin, .. } => {
-                    Some(origin.coordinate())
-                }
+                RuntimeProjectFunctionTypeProjection::Local { origin, .. } => Some(origin),
                 _ => None,
             }
         } else {
             self.captures
                 .iter()
                 .find(|capture| capture.source() == owner)
-                .map(RuntimeCheckedCapture::origin)
+                .map(RuntimeCheckedCapture::checked_origin)
         }
     }
 

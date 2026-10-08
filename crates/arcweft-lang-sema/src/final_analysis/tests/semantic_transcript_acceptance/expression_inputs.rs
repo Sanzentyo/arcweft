@@ -429,3 +429,34 @@ fn checked_request_roles_are_formal_owned_and_source_independent() {
     assert_eq!(repeated.len(), 2);
     assert_eq!(repeated[0], repeated[1]);
 }
+
+#[test]
+fn checked_binding_origin_borrows_exact_declaration_metadata_and_rejects_a_foreign_generation() {
+    let source = "fn root(input: i64) -> i64 { let mut value = input; let value = input; value }";
+    let world = super::fixture(source, None);
+    let report = super::analyze(&world).unwrap();
+    let foreign = super::fixture(source, None);
+    let project = world.project.analysis_view().unwrap();
+    let foreign_project = foreign.project.analysis_view().unwrap();
+    let mut mutabilities = Vec::new();
+    for (local, _) in report.locals() {
+        let origin = report.local_binding_origin(local).unwrap();
+        let declaration = origin.declaration();
+        let actual = report
+            .hir_topology()
+            .module(local.module())
+            .unwrap()
+            .local_origins()
+            .binding(local)
+            .unwrap();
+        assert!(std::ptr::eq(declaration, actual));
+        assert_eq!(declaration.local(), local);
+        assert!(origin.validate_owner(project, local));
+        assert!(!origin.validate_owner(foreign_project, local));
+        if declaration.kind() == arcweft_lang_hir::scope::HirLocalKind::LetBinding {
+            mutabilities.push(declaration.is_mutable_binding());
+        }
+    }
+    assert_eq!(mutabilities.len(), 2);
+    assert_ne!(mutabilities[0], mutabilities[1]);
+}

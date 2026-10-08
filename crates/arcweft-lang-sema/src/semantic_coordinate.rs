@@ -1253,16 +1253,23 @@ pub struct CheckedLocalBindingOrigin {
 }
 
 impl CheckedLocalBindingOrigin {
-    pub(crate) fn new(
+    pub(crate) fn try_new(
         local: LocalId,
         topology: std::sync::Arc<arcweft_lang_hir::project::HirProjectEvaluationTopology>,
         coordinate: StableCheckedBindingCoordinate,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, CheckedLocalBindingOriginError> {
+        if topology
+            .module(local.module())
+            .and_then(|module| module.local_origins().binding(local))
+            .is_none()
+        {
+            return Err(CheckedLocalBindingOriginError { local });
+        }
+        Ok(Self {
             local,
             topology,
             coordinate,
-        }
+        })
     }
 
     pub fn validate_owner(
@@ -1289,6 +1296,20 @@ impl CheckedLocalBindingOrigin {
 
     pub const fn coordinate(&self) -> &StableCheckedBindingCoordinate {
         &self.coordinate
+    }
+
+    /// Declaration properties and initialization site from the same accepted
+    /// topology as this coordinate. No fresh HIR scan or copied fact map.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the private issuer invariant is violated. Issuance
+    /// verifies that this immutable topology contains the declaration row.
+    pub fn declaration(&self) -> &arcweft_lang_hir::project::HirLocalBindingOrigin {
+        self.topology
+            .module(self.local.module())
+            .and_then(|module| module.local_origins().binding(self.local))
+            .expect("checked binding origin retains its admitted declaration row")
     }
 }
 

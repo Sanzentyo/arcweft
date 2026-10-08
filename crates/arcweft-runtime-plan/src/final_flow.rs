@@ -827,6 +827,7 @@ pub fn lower_runtime_plan_with_stats(
                 .ok_or_else(|| {
                     RuntimePlanLowerError::new("local declaration has no accepted binding origin")
                 })?
+                .coordinate()
                 .runtime_local_origin()
                 .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
             Ok(match facts.local_context(*local) {
@@ -1231,6 +1232,7 @@ pub fn lower_runtime_plan_with_stats(
                                     "implicit capture has no accepted binding origin",
                                 )
                             })?
+                            .coordinate()
                             .runtime_local_origin()
                             .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
                         ty.identity(),
