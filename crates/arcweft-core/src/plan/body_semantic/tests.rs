@@ -2052,3 +2052,97 @@ fn fixture_binding_source(
         ),
     }
 }
+
+#[test]
+fn complete_local_source_properties_enter_the_resolved_body_transcript() {
+    use crate::plan::{
+        RuntimeLocalBindingDeclaration, RuntimeLocalBindingKind as Kind,
+        RuntimeLocalBindingStorage as Storage, RuntimeLocalDeclarationSource,
+    };
+    let mut digests = std::collections::BTreeSet::new();
+    for kind in [
+        Kind::Parameter,
+        Kind::LetBinding,
+        Kind::PatternBinding,
+        Kind::ClosureParameter,
+        Kind::LoopBinding,
+        Kind::MatchBinding,
+        Kind::PostconditionResult,
+    ] {
+        for mutable in [false, true] {
+            for storage in [Storage::Derived, Storage::RetainedState] {
+                let source = RuntimeLocalDeclarationSource::Binding {
+                    identity: [12; 32],
+                    declaration: RuntimeLocalBindingDeclaration::new(kind, mutable, storage),
+                };
+                let mut builder = RuntimePlanBuilder::new();
+                let semantic = RuntimeSemanticTypeId::from_bytes([11; 32]);
+                let admitted = builder
+                    .admit_type_batch(
+                        [RuntimePlanTypeSeed::new(
+                            semantic,
+                            RuntimePlanTypeProjection::Bool,
+                        )],
+                        [RuntimeLocalDeclarationSeed::new(source, semantic)],
+                    )
+                    .unwrap();
+                let pattern = builder
+                    .lower_pattern_seed_for_test(crate::plan::RuntimePatternSeed::new(
+                        semantic,
+                        crate::plan::RuntimePatternSeedKind::Bind {
+                            mutable,
+                            local: admitted.local_ids()[0].clone(),
+                        },
+                    ))
+                    .unwrap();
+                let local = pattern.binding_declarations().next().unwrap().local();
+                let plan = builder.finish().unwrap();
+                assert_eq!(
+                    plan.local_declarations().get(local).unwrap().origin(),
+                    crate::plan::RuntimeLocalOrigin::Binding([12; 32])
+                );
+                let mut meter = TaskSemanticMeter::new(100, 1000);
+                let mut encoder = TaskSemanticEncoder::new(b"local-source-test.v1\0", &mut meter);
+                RuntimeBodySemanticContext::new(&plan)
+                    .write_local(&mut encoder, local)
+                    .unwrap();
+                assert!(
+                    digests.insert(*encoder.finish().unwrap().as_bytes()),
+                    "every declared property tuple is distinct"
+                );
+            }
+        }
+    }
+    assert_eq!(digests.len(), 28);
+}
+
+#[test]
+fn complete_local_source_transcript_uses_the_shared_exact_byte_budget() {
+    let (plan, local) = plan(false);
+    let mut meter = TaskSemanticMeter::new(100, 1000);
+    let mut encoder = TaskSemanticEncoder::new(b"local-source-budget.v1\0", &mut meter);
+    RuntimeBodySemanticContext::new(&plan)
+        .write_local(&mut encoder, local)
+        .unwrap();
+    let expected = encoder.finish().unwrap();
+    let (work, bytes) = meter.totals();
+    for (maximum, succeeds) in [(bytes, true), (bytes - 1, false)] {
+        let mut meter = TaskSemanticMeter::new(work, maximum);
+        let mut encoder = TaskSemanticEncoder::new(b"local-source-budget.v1\0", &mut meter);
+        let result = RuntimeBodySemanticContext::new(&plan).write_local(&mut encoder, local);
+        if succeeds {
+            result.unwrap();
+            assert_eq!(encoder.finish(), Ok(expected));
+        } else {
+            assert!(result.is_err());
+            assert_eq!(
+                encoder.finish(),
+                Err(TaskSemanticEncodingError::TranscriptBytes)
+            );
+            assert_eq!(
+                meter.status(),
+                Err(TaskSemanticEncodingError::TranscriptBytes)
+            );
+        }
+    }
+}

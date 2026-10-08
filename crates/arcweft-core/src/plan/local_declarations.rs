@@ -232,32 +232,6 @@ impl RuntimeLocalDeclarationTableBuilder {
     }
 }
 
-impl RuntimeLocalOrigin {
-    pub(crate) fn encode_semantic_origin(
-        self,
-        encoder: &mut crate::task::semantic::TaskSemanticEncoder<'_>,
-    ) {
-        match self {
-            Self::Binding(bytes) => {
-                encoder.tag(0);
-                encoder.digest(&bytes);
-            }
-            Self::Parameter(identity) => {
-                encoder.tag(1);
-                encoder.digest(identity.as_bytes());
-            }
-            Self::EvaluatedResult(identity) => {
-                encoder.tag(2);
-                encoder.digest(identity.as_bytes());
-            }
-            Self::Generated(identity) => {
-                encoder.tag(3);
-                encoder.digest(identity.as_bytes());
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

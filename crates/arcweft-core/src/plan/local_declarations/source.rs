@@ -33,6 +33,26 @@ pub struct RuntimeLocalBindingDeclaration {
 }
 
 impl RuntimeLocalBindingDeclaration {
+    fn encode_semantic_properties(
+        self,
+        encoder: &mut crate::task::semantic::TaskSemanticEncoder<'_>,
+    ) {
+        encoder.tag(match self.kind {
+            RuntimeLocalBindingKind::Parameter => 0,
+            RuntimeLocalBindingKind::LetBinding => 1,
+            RuntimeLocalBindingKind::PatternBinding => 2,
+            RuntimeLocalBindingKind::ClosureParameter => 3,
+            RuntimeLocalBindingKind::LoopBinding => 4,
+            RuntimeLocalBindingKind::MatchBinding => 5,
+            RuntimeLocalBindingKind::PostconditionResult => 6,
+        });
+        encoder.tag(u8::from(self.mutable));
+        encoder.tag(match self.storage {
+            RuntimeLocalBindingStorage::Derived => 0,
+            RuntimeLocalBindingStorage::RetainedState => 1,
+        });
+    }
+
     #[must_use]
     pub const fn new(
         kind: RuntimeLocalBindingKind,
@@ -77,6 +97,34 @@ pub enum RuntimeLocalDeclarationSource {
 }
 
 impl RuntimeLocalDeclarationSource {
+    pub(crate) fn encode_semantic_source(
+        self,
+        encoder: &mut crate::task::semantic::TaskSemanticEncoder<'_>,
+    ) {
+        match self {
+            Self::Binding {
+                identity,
+                declaration,
+            } => {
+                encoder.tag(0);
+                encoder.digest(&identity);
+                declaration.encode_semantic_properties(encoder);
+            }
+            Self::Parameter(identity) => {
+                encoder.tag(1);
+                encoder.digest(identity.as_bytes());
+            }
+            Self::EvaluatedResult(identity) => {
+                encoder.tag(2);
+                encoder.digest(identity.as_bytes());
+            }
+            Self::Generated(identity) => {
+                encoder.tag(3);
+                encoder.digest(identity.as_bytes());
+            }
+        }
+    }
+
     /// Identity projection for existing coordinate/correlation consumers.
     #[must_use]
     pub const fn origin(self) -> RuntimeLocalOrigin {

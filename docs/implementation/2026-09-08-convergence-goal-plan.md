@@ -10270,3 +10270,84 @@ CLI277/Tier2/legacy removal/final acceptance remain required. Astra one-shot
 is consumed and is never replayed after compaction. Subsequent implementation
 continues on the resulting main commit; no branch/worktree or unrelated WIP
 operation is authorized or needed.
+
+
+### 2026-10-08: E1 source properties in private body transcript — in progress
+
+Previous cut delivered main/origin/main:
+4c4f9b31ba97238f3d777957182ffb7d96b985cf (53paths,52testedRust,
+Core50 4975PASS556.620s; CLI320PASS/277sameFAIL125.859s; clean after push).
+
+Actual remaining read found RuntimeBodySemanticContext::write_local used only
+origin+type, discarding the newly preserved authored source properties.
+Move the private static source grammar to RuntimeLocalDeclarationSource;
+delete the identity-only local row encoder and route the sole body reader
+through complete source encoding. Binding kind7/mutability/storage are
+exhaustive typed tags; Parameter/EvaluatedResult/Generated retain their exact
+category/identity leaves. Contract domains stay1. RuntimeFunctionInputOrigin
+is a different ABI projection and retains its legitimate own encoder.
+
+Two tests added:28 same-identity/same-type declaration property tuples must
+have distinct actual table-resolved body transcripts; exact shared byte limit
+accepts at the boundary and rejects one byte short with sticky failure.
+Not yet claimed compiling/passing. Full E1 body-slot owner/initialization/
+physicalstorage/codec/transcript/global15/all14Cut5 remains incomplete.
+No new Astra, delegation, branch or worktree. No Cargo/test currently live
+at this edit; source-sensitive validation follows.
+
+Private source transcript validation boundary: no public API/codec/table shape
+changed after4c4f9b31ba97238f3d777957182ffb7d96b985cf. RuntimeBodySemanticContext
+construction is only observed in tests; existing prepare_inventory/task_semantic
+public publication does not construct it. Its producer/content/Line/Stream
+proofs remain private Cut4 preparation pending protected all14 Cut5.
+Resolved transitive Core50 and99 unchanged build inputs retain the impact
+inventory, but repeating full consumers/CLI/Tier2 for this private encoder is
+omitted with this real call-path rationale. Run complete Core library tests
+and Core all-target/all-feature checks/Clippy, structure, fmt/diff and stage
+review for this closed private preparation cut. If a live consumer is found,
+expand actual validation instead of relying on pub(crate) spelling alone.
+
+Private Core test first compile TERMINAL101: blake3::Hash has no Ord;
+uniqueness assertion now stores its exact32-byte digest array. Encoding and
+source semantics unchanged. Failed log retained; no test success claimed.
+
+Private source encoder final Core library run TERMINAL0:1034/1034PASS
+7.087s,0skipped; terminal/unique1034/nonpass0. Both new tests PASS through
+actual admitted pattern local coordinates/table rows and the shared meter.
+No type/source identity change is needed for declaration property changes
+to affect the resolved body transcript. Current4 Rust hashes frozen.
+Core checks/Clippy/structure/fmt/diff/stage/publication remain pending.
+
+Private Core check TERMINAL0/30.40s; Core Clippy TERMINAL0/35.94s.
+Comparison has2 private-preparation dead-code diagnostics on moved
+encode_semantic_source and its exact-property owner helper; the removed
+identity-only RuntimeLocalOrigin encoder no longer remains. This is not a
+claim of warning0: these private methods are deliberately unused on the live
+publication path until protected Cut5, like the rest of private body context.
+No new style/type/import/large-error diagnostic and no allow/expect/suppression
+added. Actual Core1034PASS evidence covers execution of these private owners.
+
+
+Private source-property transcript cut final acceptance:
+Core1034/1034PASS7.087s/0skipped; terminal/unique1034/nonpass0.
+Core all-target/all-feature check0/30.40s and Clippy0/35.94s;
+2 deliberate private-preparation dead-code diagnostics are recorded above.
+Finalfmtcheck0/diffcheck0; unchanged99 dependency/build inputs; actual Core50
+impact graph and omission rationale retained. Structure gate0: files scanned: 2773; Rust files: 2643; Rust physical LOC: 1536880; workspace packages: 97; review triggers: 355; blocking violations: 0.
+
+Cohesion: source owner146LOC/4752bytes owns category/identity and exact
+declaration property byte grammar; original identity-only encoder deleted.
+Existing local table335LOC/10754bytes retains only final row/admission/order;
+body context634LOC resolves this exact table once; existing test owner2148LOC
+contains2 additional actual-row metamorphic/budget cases94LOC. No mirrored
+source resolver, public API/test facade, compatibility/version/marker change,
+or lint/size/style suppression. Private F/Line/Stream/entry/body preparation
+uses this sole source encoder; no live publication path was changed.
+
+Coherent5-path publication on main follows explicit stage/blob/frozen-byte
+review. Parent4c4f9b31ba97238f3d777957182ffb7d96b985cf. Whole goal remains
+ACTIVE/INCOMPLETE: actual per-emission-body slot ownership, initialization/
+physical storage, E1 complete row codec/transcript, lowerer global source-
+template/unused rows removal, global15 memo/commonseal/privateimage/protected
+all14Cut5 and original View/nominal/scheduler/Rust borrowing/CLI277/Tier2/
+legacy-deletion/final acceptance remain required. No second Astra consultation.

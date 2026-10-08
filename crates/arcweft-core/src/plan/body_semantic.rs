@@ -273,7 +273,7 @@ impl<'a> RuntimeBodySemanticContext<'a> {
             encoder.reject_owner();
             RuntimeBodySemanticError::UnknownLocal { local }
         })?;
-        row.origin().encode_semantic_origin(encoder);
+        row.source().encode_semantic_source(encoder);
         self.write_type(encoder, row.ty())
     }
 
