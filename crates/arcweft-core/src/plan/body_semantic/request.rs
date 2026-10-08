@@ -156,6 +156,62 @@ pub(crate) struct RuntimeTaskRequestTemplate {
 }
 
 impl RuntimeTaskRequestTemplate {
+    pub(super) fn try_visit_path_lengths<E>(
+        &self,
+        visitor: &mut impl FnMut(usize) -> Result<(), E>,
+    ) -> Result<(), E> {
+        for argument in &self.arguments {
+            visitor(argument.path.len())?;
+        }
+        for field in &self.fields {
+            visitor(field.path.len())?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn known_transcript_bytes(
+        &self,
+    ) -> Result<u64, crate::task::semantic::TaskSemanticEncodingError> {
+        use crate::task::semantic::TaskSemanticEncodingError::ArithmeticOverflow;
+        let add = |left: u64, right: u64| left.checked_add(right).ok_or(ArithmeticOverflow);
+        let path_bytes = |path: &[RuntimeRequestPathStep]| {
+            path.iter().try_fold(0_u64, |bytes, step| {
+                let payload = match step {
+                    RuntimeRequestPathStep::Operand(_)
+                    | RuntimeRequestPathStep::Tuple(_)
+                    | RuntimeRequestPathStep::CallArgument(_)
+                    | RuntimeRequestPathStep::SpreadArgument(_)
+                    | RuntimeRequestPathStep::Capture(_)
+                    | RuntimeRequestPathStep::LineChild(_) => 4,
+                    RuntimeRequestPathStep::Record(_)
+                    | RuntimeRequestPathStep::Variant(_)
+                    | RuntimeRequestPathStep::NamedArgument(_) => 32,
+                    RuntimeRequestPathStep::AwaitManyItem
+                    | RuntimeRequestPathStep::TimeoutSource
+                    | RuntimeRequestPathStep::TimeoutLimit => 0,
+                };
+                add(bytes, 1 + payload)
+            })
+        };
+        // domain + F/endpoint/kind + argument and field counts
+        let mut bytes = add(
+            b"arcweft.task.request-template.v1\0".len() as u64,
+            32 + 4 + 1 + 4 + 4,
+        )?;
+        for argument in &self.arguments {
+            bytes = add(
+                bytes,
+                4 + 1 + 1 + u64::from(argument.identity.is_some()) * 32 + 32 + 1 + 4,
+            )?;
+            bytes = add(bytes, path_bytes(&argument.path)?)?;
+        }
+        for field in &self.fields {
+            bytes = add(bytes, 4 + 32 + 1 + 32 + 4)?;
+            bytes = add(bytes, path_bytes(&field.path)?)?;
+        }
+        Ok(bytes)
+    }
+
     pub(super) const fn endpoint(&self) -> u32 {
         self.endpoint
     }

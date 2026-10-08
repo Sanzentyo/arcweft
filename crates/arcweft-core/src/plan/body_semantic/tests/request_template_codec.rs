@@ -53,6 +53,7 @@ fn decoded_request_definition_recomputes_q_under_the_actual_f_endpoint() {
             crate::plan::RuntimeTaskPlanSealLimits::default(),
         )
         .unwrap();
+    assert_known_q_bytes(&context, endpoint, &definition);
     let bytes = definition.encode(limits).unwrap();
     let decoded = RuntimeTaskRequestTemplate::decode(&bytes, limits).unwrap();
     assert_eq!(
@@ -109,4 +110,24 @@ fn decoded_request_definition_recomputes_q_under_the_actual_f_endpoint() {
         })
     ));
     assert_eq!(meter.totals(), (0, 0));
+}
+
+fn assert_known_q_bytes(
+    context: &RuntimeBodySemanticContext<'_>,
+    endpoint: crate::plan::body_semantic::function::ProducerEndpoint<'_>,
+    definition: &RuntimeTaskRequestTemplate,
+) {
+    let mut exact_meter = TaskSemanticMeter::new(100_000, 1_000_000);
+    context
+        .request_template_digest(
+            &mut exact_meter,
+            endpoint,
+            definition,
+            crate::plan::RuntimeTaskPlanSealLimits::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        definition.known_transcript_bytes().unwrap(),
+        exact_meter.totals().1
+    );
 }

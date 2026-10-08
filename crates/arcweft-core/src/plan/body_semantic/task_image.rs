@@ -70,6 +70,15 @@ pub(super) struct UnsealedRuntimePlanImage {
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum RuntimeTaskPlanImageError {
+    #[error("executable table {table} row {ordinal} has {actual} children; maximum {maximum}")]
+    Children {
+        table: u8,
+        ordinal: usize,
+        actual: usize,
+        maximum: u32,
+    },
+    #[error("View marker rows {actual} exceed {maximum}")]
+    ViewRows { actual: usize, maximum: u32 },
     #[error("task rows {actual} exceed {maximum}")]
     TaskRows { actual: usize, maximum: u32 },
     #[error(transparent)]
