@@ -150,8 +150,11 @@ fn projection_cost(count: u32, transport: Transport) -> (u64, u64) {
         .request_template_digest(
             &mut meter,
             endpoint,
-            &arguments,
-            &[],
+            &RuntimeTaskRequestTemplate::new(
+                endpoint.ordinal(),
+                arguments.into_boxed_slice(),
+                Box::new([]),
+            ),
             RuntimeTaskPlanSealLimits::default(),
         )
         .unwrap();

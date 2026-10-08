@@ -4,6 +4,8 @@ use super::function::ProducerEndpoint;
 use super::{RuntimeBodySemanticContext, RuntimeBodySemanticError};
 use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticMeter};
 
+pub(crate) mod codec;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct TaskRequestTemplateDigest([u8; 32]);
 impl TaskRequestTemplateDigest {
@@ -77,47 +79,35 @@ pub(crate) enum RuntimeRequestPathStep {
     LineChild(u32),
 }
 impl RuntimeRequestPathStep {
-    fn encode(&self, encoder: &mut TaskSemanticEncoder<'_>) {
+    fn semantic_tag(&self) -> u8 {
         match self {
-            Self::Operand(ordinal) => {
-                encoder.tag(0);
-                encoder.ordinal(*ordinal);
-            }
-            Self::Tuple(ordinal) => {
-                encoder.tag(1);
-                encoder.ordinal(*ordinal);
-            }
-            Self::Record(identity) => {
-                encoder.tag(2);
+            Self::Operand(_) => 0,
+            Self::Tuple(_) => 1,
+            Self::Record(_) => 2,
+            Self::Variant(_) => 3,
+            Self::CallArgument(_) => 4,
+            Self::NamedArgument(_) => 5,
+            Self::SpreadArgument(_) => 6,
+            Self::Capture(_) => 7,
+            Self::AwaitManyItem => 8,
+            Self::TimeoutSource => 9,
+            Self::TimeoutLimit => 10,
+            Self::LineChild(_) => 11,
+        }
+    }
+    fn encode(&self, encoder: &mut TaskSemanticEncoder<'_>) {
+        encoder.tag(self.semantic_tag());
+        match self {
+            Self::Operand(value)
+            | Self::Tuple(value)
+            | Self::CallArgument(value)
+            | Self::SpreadArgument(value)
+            | Self::Capture(value)
+            | Self::LineChild(value) => encoder.ordinal(*value),
+            Self::Record(identity) | Self::Variant(identity) | Self::NamedArgument(identity) => {
                 encoder.digest(identity.as_bytes());
             }
-            Self::Variant(identity) => {
-                encoder.tag(3);
-                encoder.digest(identity.as_bytes());
-            }
-            Self::CallArgument(ordinal) => {
-                encoder.tag(4);
-                encoder.ordinal(*ordinal);
-            }
-            Self::NamedArgument(identity) => {
-                encoder.tag(5);
-                encoder.digest(identity.as_bytes());
-            }
-            Self::SpreadArgument(ordinal) => {
-                encoder.tag(6);
-                encoder.ordinal(*ordinal);
-            }
-            Self::Capture(ordinal) => {
-                encoder.tag(7);
-                encoder.ordinal(*ordinal);
-            }
-            Self::AwaitManyItem => encoder.tag(8),
-            Self::TimeoutSource => encoder.tag(9),
-            Self::TimeoutLimit => encoder.tag(10),
-            Self::LineChild(ordinal) => {
-                encoder.tag(11);
-                encoder.ordinal(*ordinal);
-            }
+            Self::AwaitManyItem | Self::TimeoutSource | Self::TimeoutLimit => {}
         }
     }
 }
@@ -156,6 +146,29 @@ pub(crate) struct RuntimeRequestField {
     pub(crate) path: Box<[RuntimeRequestPathStep]>,
 }
 
+/// The static request definition owned by a private task image. Runtime
+/// argument values stay on their execution owner; this row owns only checked
+/// endpoint/role/type/path meaning. Codec data does not mint a Q proof.
+pub(crate) struct RuntimeTaskRequestTemplate {
+    endpoint: u32,
+    arguments: Box<[RuntimeRequestArgument]>,
+    fields: Box<[RuntimeRequestField]>,
+}
+
+impl RuntimeTaskRequestTemplate {
+    pub(crate) fn new(
+        endpoint: u32,
+        arguments: Box<[RuntimeRequestArgument]>,
+        fields: Box<[RuntimeRequestField]>,
+    ) -> Self {
+        Self {
+            endpoint,
+            arguments,
+            fields,
+        }
+    }
+}
+
 impl RuntimeBodySemanticContext<'_> {
     /// Reads actual HostCall/MakeNeed arguments through F's opaque endpoint.
     /// Literal/evaluated payloads and display names never supply Q evidence.
@@ -165,6 +178,18 @@ impl RuntimeBodySemanticContext<'_> {
         endpoint: ProducerEndpoint<'_>,
         limits: crate::plan::RuntimeTaskPlanSealLimits,
     ) -> Result<TaskRequestTemplateDigest, RuntimeBodySemanticError> {
+        let template = self.host_request_template(meter, endpoint, limits)?;
+        self.request_template_digest(meter, endpoint, &template, limits)
+    }
+
+    /// Extracts the static definition for storage/codec from the same actual
+    /// endpoint used by the Q transcript. Extraction issues no digest proof.
+    pub(crate) fn host_request_template(
+        &self,
+        meter: &mut TaskSemanticMeter,
+        endpoint: ProducerEndpoint<'_>,
+        limits: crate::plan::RuntimeTaskPlanSealLimits,
+    ) -> Result<RuntimeTaskRequestTemplate, RuntimeBodySemanticError> {
         meter.status()?;
         if !endpoint.belongs_to(self.plan) {
             meter.reject_owner();
@@ -214,7 +239,11 @@ impl RuntimeBodySemanticContext<'_> {
                 path: path.into_boxed_slice(),
             });
         }
-        self.request_template_digest(meter, endpoint, &arguments, &[], limits)
+        Ok(RuntimeTaskRequestTemplate::new(
+            endpoint.ordinal(),
+            arguments.into_boxed_slice(),
+            Box::new([]),
+        ))
     }
 
     fn request_value_source(
@@ -307,11 +336,12 @@ impl RuntimeBodySemanticContext<'_> {
         &self,
         meter: &mut TaskSemanticMeter,
         endpoint: ProducerEndpoint<'_>,
-        arguments: &[RuntimeRequestArgument],
-        fields: &[RuntimeRequestField],
+        template: &RuntimeTaskRequestTemplate,
         limits: crate::plan::RuntimeTaskPlanSealLimits,
     ) -> Result<TaskRequestTemplateDigest, RuntimeBodySemanticError> {
         meter.status()?;
+        let arguments = &template.arguments;
+        let fields = &template.fields;
         let actual = meter.checked_count_sum(arguments.len(), fields.len())?;
         if actual > limits.max_request_roles as usize {
             meter.reject_owner();
@@ -323,6 +353,13 @@ impl RuntimeBodySemanticContext<'_> {
         if !endpoint.belongs_to(self.plan) {
             meter.reject_owner();
             return Err(RuntimeBodySemanticError::InvalidHostRequestEndpoint);
+        }
+        if template.endpoint != endpoint.ordinal() {
+            meter.reject_owner();
+            return Err(RuntimeBodySemanticError::InvalidRequestEndpoint {
+                expected: endpoint.ordinal(),
+                actual: template.endpoint,
+            });
         }
         let mut encoder = TaskSemanticEncoder::new(b"arcweft.task.request-template.v1\0", meter);
         encoder.digest(endpoint.producer_digest().as_bytes());

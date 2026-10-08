@@ -3,6 +3,7 @@ mod content_rows;
 mod function_rows;
 mod line_rows;
 mod request_capture_rows;
+mod request_template_codec;
 mod stream_rows;
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::RuntimePlan;
@@ -1199,8 +1200,7 @@ fn request_template_commits_static_role_order_and_paths_under_actual_producer_en
             .request_template_digest(
                 &mut meter,
                 producer.endpoint(0).unwrap(),
-                &arguments,
-                &[],
+                &RuntimeTaskRequestTemplate::new(0, Box::new(arguments), Box::new([])),
                 crate::plan::RuntimeTaskPlanSealLimits::default(),
             )
             .unwrap()
@@ -1237,8 +1237,7 @@ fn request_role_quota_poison_precedes_type_resolution() {
         RuntimeBodySemanticContext::new(&plan).request_template_digest(
             &mut meter,
             producer.endpoint(0).unwrap(),
-            &args,
-            &[],
+            &RuntimeTaskRequestTemplate::new(0, Box::new(args), Box::new([])),
             crate::plan::RuntimeTaskPlanSealLimits {
                 max_request_roles: 0,
                 ..Default::default()
@@ -1282,8 +1281,11 @@ fn request_template_field_identity_roles_and_shared_budget_affect_acceptance() {
             .request_template_digest(
                 &mut meter,
                 producer.endpoint(0).unwrap(),
-                &[],
-                &[field(identity, role)],
+                &RuntimeTaskRequestTemplate::new(
+                    0,
+                    Box::new([]),
+                    Box::new([field(identity, role)]),
+                ),
                 crate::plan::RuntimeTaskPlanSealLimits::default(),
             )
             .unwrap()
@@ -1301,8 +1303,11 @@ fn request_template_field_identity_roles_and_shared_budget_affect_acceptance() {
         RuntimeBodySemanticContext::new(&plan).request_template_digest(
             &mut meter,
             producer.endpoint(0).unwrap(),
-            &[],
-            &[field(1, RuntimeRequestFieldRole::Required)],
+            &RuntimeTaskRequestTemplate::new(
+                0,
+                Box::new([]),
+                Box::new([field(1, RuntimeRequestFieldRole::Required)])
+            ),
             crate::plan::RuntimeTaskPlanSealLimits::default(),
         ),
         Err(RuntimeBodySemanticError::Encoding(
@@ -1506,8 +1511,11 @@ fn actual_host_request_recognizes_typed_capture_prologue_bindings() {
         .request_template_digest(
             &mut meter,
             endpoint,
-            &[argument(RuntimeRequestValueSource::Capture)],
-            &[],
+            &RuntimeTaskRequestTemplate::new(
+                0,
+                Box::new([argument(RuntimeRequestValueSource::Capture)]),
+                Box::new([]),
+            ),
             Default::default(),
         )
         .unwrap();
@@ -1515,8 +1523,11 @@ fn actual_host_request_recognizes_typed_capture_prologue_bindings() {
         .request_template_digest(
             &mut meter,
             endpoint,
-            &[argument(RuntimeRequestValueSource::Local)],
-            &[],
+            &RuntimeTaskRequestTemplate::new(
+                0,
+                Box::new([argument(RuntimeRequestValueSource::Local)]),
+                Box::new([]),
+            ),
             Default::default(),
         )
         .unwrap();

@@ -45,6 +45,8 @@ pub(crate) enum RuntimeBodySemanticError {
     InvalidHostRequestEndpoint,
     #[error("request template roles {actual} exceed limit {maximum}")]
     RequestRoles { actual: usize, maximum: u32 },
+    #[error("request template endpoint {actual} does not match completed F endpoint {expected}")]
+    InvalidRequestEndpoint { expected: u32, actual: u32 },
 
     #[error("Line row {ordinal} children {actual} exceed limit {maximum}")]
     LineChildren {
