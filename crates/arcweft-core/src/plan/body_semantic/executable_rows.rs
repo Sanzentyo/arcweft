@@ -15,6 +15,21 @@ use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLocalDeclarationId, Runtim
 use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticMeter};
 use std::num::NonZeroU32;
 
+enum FunctionState<'plan> {
+    Unvisited,
+    Visiting,
+    Done(ProducerFunctionSemantic<'plan>),
+}
+
+impl<'plan> FunctionState<'plan> {
+    fn proof(&self) -> Option<&ProducerFunctionSemantic<'plan>> {
+        match self {
+            Self::Done(proof) => Some(proof),
+            Self::Unvisited | Self::Visiting => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 enum RowState {
     Unvisited,
@@ -89,7 +104,7 @@ pub(super) struct RuntimeExecutableSemanticRows<'plan, 'owner> {
     rows: [Vec<RowState>; 14],
     records: Vec<&'plan RuntimeNominalRecordDomain>,
     variants: Vec<&'plan RuntimeVariantDomain>,
-    functions: Vec<Option<ProducerFunctionSemantic<'plan>>>,
+    functions: Vec<FunctionState<'plan>>,
     helpers: Vec<Option<PureHelperSemantic<'plan>>>,
 }
 
@@ -134,7 +149,7 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
             rows: counts.map(|count| vec![RowState::Unvisited; count]),
             records: plan.nominal_record_domains().domains().collect(),
             variants: plan.variant_domains().domains().collect(),
-            functions: (0..counts[4]).map(|_| None).collect(),
+            functions: (0..counts[4]).map(|_| FunctionState::Unvisited).collect(),
             helpers: (0..counts[10]).map(|_| None).collect(),
         })
     }
@@ -278,16 +293,15 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
                 self.variants[ordinal].executable_semantic_row_digest(&self.context, meter)
             }
             ExecutableTable::Functions => {
-                let proof = self.context.producer_function(
-                    meter,
+                self.prepare_function(
                     RuntimeFunctionSiteId::from_accepted_ordinal(Self::id(ordinal)),
-                    self.task_owner,
+                    meter,
                     task_reference,
-                    self.limits,
                 )?;
-                let digest = proof.executable_row_digest(&self.context, meter)?;
-                self.functions[ordinal] = Some(proof);
-                Ok(digest)
+                self.functions[ordinal]
+                    .proof()
+                    .expect("completed producer function")
+                    .executable_row_digest(&self.context, meter)
             }
             ExecutableTable::Content => self.context.dialogue_content_row_digest(meter, ordinal),
             ExecutableTable::Entries => self.context.entry_row_digest(meter, ordinal),
@@ -311,7 +325,7 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
                     meter,
                     ordinal,
                     self.functions[index]
-                        .as_ref()
+                        .proof()
                         .expect("completed function proof"),
                 )
             }
@@ -319,7 +333,7 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
                 let index = plan.flows()[ordinal].function_site().get().get() as usize - 1;
                 self.complete(ExecutableTable::Functions, index, meter, task_reference)?;
                 self.functions[index]
-                    .as_ref()
+                    .proof()
                     .expect("completed function proof")
                     .executable_flow_row_digest(&self.context, meter, ordinal)
             }
@@ -346,6 +360,55 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
                 .executable_row_digest(&self.context, meter),
             ExecutableTable::Streams => self.context.stream_row_digest(meter, ordinal),
         }
+    }
+
+    /// Completes F before a task row's Q/C without completing or emitting E4.
+    /// Both task-child resolution and E rows use this same function proof.
+    pub(super) fn prepare_function(
+        &mut self,
+        function: RuntimeFunctionSiteId,
+        meter: &mut TaskSemanticMeter,
+        task_reference: &mut impl FnMut(
+            super::flow::RuntimeBodyTaskSource<'_>,
+        ) -> Result<
+            RuntimeTaskPlanBuildCoordinate,
+            RuntimeBodySemanticError,
+        >,
+    ) -> Result<&ProducerFunctionSemantic<'plan>, RuntimeBodySemanticError> {
+        meter.status()?;
+        let ordinal = function.get().get() as usize - 1;
+        match self.functions.get(ordinal) {
+            Some(FunctionState::Done(_)) => {}
+            Some(FunctionState::Visiting) => {
+                meter.reject_owner();
+                return Err(RuntimeBodySemanticError::ExecutableCycle {
+                    table: ExecutableTable::Functions.tag(),
+                    ordinal,
+                });
+            }
+            Some(FunctionState::Unvisited) => {
+                self.functions[ordinal] = FunctionState::Visiting;
+                let proof = self
+                    .context
+                    .producer_function(
+                        meter,
+                        function,
+                        self.task_owner,
+                        task_reference,
+                        self.limits,
+                    )
+                    .inspect_err(|_| meter.reject_owner())?;
+                self.functions[ordinal] = FunctionState::Done(proof);
+            }
+            None => {
+                meter.reject_owner();
+                return Err(RuntimeBodySemanticError::MissingRow {
+                    table: "producer functions",
+                    ordinal,
+                });
+            }
+        }
+        Ok(self.functions[ordinal].proof().expect("completed F proof"))
     }
 
     /// Resolves the admitted callable substrate through the common row memo.
@@ -383,7 +446,7 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
                     ordinal,
                     ExecutableCallableCodeSemantic::FunctionSite(
                         self.functions[index]
-                            .as_ref()
+                            .proof()
                             .expect("completed function proof"),
                     ),
                 )
@@ -406,7 +469,7 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
                     ordinal,
                     ExecutableCallableCodeSemantic::ControllerFlow(
                         self.functions[index]
-                            .as_ref()
+                            .proof()
                             .expect("completed function proof"),
                     ),
                 )

@@ -34,7 +34,7 @@ fn shared_function_is_walked_once_for_callable_flow_and_function_rows() {
         &mut no_tasks,
     )
     .unwrap();
-    let proof = rows.functions[ordinal].as_ref().unwrap();
+    let proof = rows.functions[ordinal].proof().unwrap();
     // Compute the exact cost of E7/E8/E9 from the completed F owner, without
     // its body. The global traversal must have precisely that same cost.
     let mut expected_meter =
@@ -409,6 +409,82 @@ fn row_visit_budget_fails_before_owner_state_or_function_proof_changes() {
         ))
     ));
     assert!(matches!(rows.rows[4][0], RowState::Unvisited));
-    assert!(rows.functions[0].is_none());
+    assert!(matches!(rows.functions[0], FunctionState::Unvisited));
     assert_eq!(meter.totals(), (0, 0));
+}
+
+#[test]
+fn first_f_and_q_complete_before_e4_and_e4_reuses_the_body_proof() {
+    let (plan, owner, function) = super::super::tests::producer_host_plan(true);
+    let limits = RuntimeTaskPlanSealLimits::default();
+    let mut meter = TaskSemanticMeter::new(limits.max_semantic_work, limits.max_transcript_bytes);
+    let mut rows = RuntimeExecutableSemanticRows::new(&plan, &owner, limits, &mut meter).unwrap();
+    let mut references = 0;
+    let mut task_reference = |_: super::super::flow::RuntimeBodyTaskSource<'_>| {
+        references += 1;
+        Ok(owner.resolve(0).unwrap())
+    };
+    let context = RuntimeBodySemanticContext::new(&plan);
+    let proof = rows
+        .prepare_function(function, &mut meter, &mut task_reference)
+        .unwrap();
+    let expected_f = proof.digest();
+    context
+        .host_request_template_digest(&mut meter, proof.endpoint(0).unwrap(), limits)
+        .unwrap();
+    let mut expected_meter =
+        TaskSemanticMeter::new(limits.max_semantic_work, limits.max_transcript_bytes);
+    let expected_e4 = proof
+        .executable_row_digest(&context, &mut expected_meter)
+        .unwrap();
+    expected_meter.charge_work(1).unwrap(); // first E4 row visit
+    assert!(matches!(rows.rows[4][0], RowState::Unvisited));
+    let before = meter.totals();
+    assert_eq!(
+        expected_f,
+        rows.prepare_function(function, &mut meter, &mut task_reference)
+            .unwrap()
+            .digest()
+    );
+    assert_eq!(before, meter.totals());
+    assert_eq!(
+        expected_e4,
+        rows.complete(
+            ExecutableTable::Functions,
+            0,
+            &mut meter,
+            &mut task_reference
+        )
+        .unwrap()
+    );
+    let after = meter.totals();
+    assert_eq!(
+        (after.0 - before.0, after.1 - before.1),
+        expected_meter.totals()
+    );
+    assert_eq!(references, 1); // one body task edge; E4 never revisits it
+}
+
+#[test]
+fn first_f_failure_poison_precedes_e4_row_completion() {
+    let (plan, owner, function) = super::super::tests::producer_host_plan(true);
+    let limits = RuntimeTaskPlanSealLimits::default();
+    let mut meter = TaskSemanticMeter::new(0, limits.max_transcript_bytes);
+    let mut rows = RuntimeExecutableSemanticRows::new(&plan, &owner, limits, &mut meter).unwrap();
+    assert!(matches!(
+        rows.prepare_function(function, &mut meter, &mut |_| panic!(
+            "budget must reject before task edge"
+        )),
+        Err(RuntimeBodySemanticError::Encoding(
+            TaskSemanticEncodingError::SemanticWork
+        ))
+    ));
+    assert!(matches!(rows.functions[0], FunctionState::Visiting));
+    assert!(matches!(rows.rows[4][0], RowState::Unvisited));
+    assert!(
+        rows.prepare_function(function, &mut meter, &mut |_| panic!(
+            "poison must not revisit body"
+        ))
+        .is_err()
+    );
 }

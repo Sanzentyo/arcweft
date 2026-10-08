@@ -982,7 +982,7 @@ fn producer_digest_meter_is_shared_and_poisoned_on_body_failure() {
     );
 }
 
-fn producer_host_plan(
+pub(super) fn producer_host_plan(
     in_then: bool,
 ) -> (
     RuntimePlan,
