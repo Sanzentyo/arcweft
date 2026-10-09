@@ -211,7 +211,7 @@ impl AwbcInventory {
         self.intern_string(&format!("local.{local}"))
     }
 
-    pub fn new(source_label: &str, options: AwbcLowerOptions) -> Self {
+    pub fn new(options: AwbcLowerOptions) -> Self {
         let program = AwbcProgram::default();
         let semantic_types = program
             .runtime_types
@@ -225,7 +225,7 @@ impl AwbcInventory {
         let dynamic_type = *semantic_types
             .get(&AwbcSyntheticRuntimeTypeKind::Dynamic.semantic_identity())
             .expect("default AWBC inventory owns its canonical Dynamic row");
-        let mut this = Self {
+        Self {
             program,
             diagnostics: Vec::new(),
             options,
@@ -250,9 +250,7 @@ impl AwbcInventory {
             function_sites: BTreeMap::new(),
             pending_closures: Vec::new(),
             block_emission: None,
-        };
-        this.intern_string(source_label);
-        this
+        }
     }
 
     pub fn finish(mut self) -> AwbcProgram {

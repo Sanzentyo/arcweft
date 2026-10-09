@@ -673,7 +673,7 @@ fn awbc_cancellation_result_selection_uses_typed_terminal_and_fallthrough_keeps_
         .expect("entry admits");
 
     let plan = builder.finish().expect("runtime plan seals");
-    let mut inventory = AwbcInventory::new("test.arcw", AwbcLowerOptions::default());
+    let mut inventory = AwbcInventory::new(AwbcLowerOptions::default());
     inventory.intern_runtime_primitives();
     super::pattern::preflight_plan_types(&mut inventory, &plan)
         .expect("line-task result type admits in the AWBC type table");
@@ -848,7 +848,7 @@ fn line_activation_local_is_exported_only_to_post_reveal_work() {
         .attach_line_task_group_seed(&content, &group)
         .expect("content owns line task");
     let plan = builder.finish().expect("line task plan seals");
-    let mut inventory = AwbcInventory::new("test.arcw", AwbcLowerOptions::default());
+    let mut inventory = AwbcInventory::new(AwbcLowerOptions::default());
     inventory.intern_runtime_primitives();
     super::pattern::preflight_plan_types(&mut inventory, &plan).expect("line type admits to AWBC");
     let diagnostics = {
@@ -1244,7 +1244,7 @@ fn plan_with_local() -> (
 fn missing_local_type_is_reported_instead_of_becoming_a_success_type() {
     let (_, missing) = plan_with_local();
     let plan = build_plan(type_id(2), [], []);
-    let mut inventory = AwbcInventory::new("test.arcw", AwbcLowerOptions::default());
+    let mut inventory = AwbcInventory::new(AwbcLowerOptions::default());
     let dynamic = inventory.dynamic_ty();
 
     assert_eq!(
@@ -2479,4 +2479,69 @@ fn typed_unit_flow_completion_is_distinct_from_explicit_return_and_round_trips()
             );
         }
     }
+}
+
+#[test]
+fn code_free_library_has_no_fabricated_source_map_location() {
+    let plan = RuntimePlanBuilder::new().finish().unwrap();
+    let report = AwbcLowerer::new(&plan, &DialogueContentCatalog::default(), "empty.arcw")
+        .lower()
+        .expect("code-free library verifies without a code location");
+    assert!(report.program.blocks.is_empty());
+    assert!(report.program.instructions.is_empty());
+    assert!(report.program.source_map.is_empty());
+    let relabeled = AwbcLowerer::new(
+        &plan,
+        &DialogueContentCatalog::default(),
+        "relabeled-empty.arcw",
+    )
+    .lower()
+    .unwrap();
+    assert_eq!(report.program, relabeled.program);
+}
+
+#[test]
+fn emitted_source_map_uses_actual_block_and_interned_source_file() {
+    let flow = flow_id("source_map");
+    let plan = build_plan(
+        type_id(2),
+        [(
+            flow.clone(),
+            vec![RuntimeFlowOpSeed::ReturnExpr(unit_expr())],
+        )],
+        [flow_entry("source_map", flow)],
+    );
+    let catalog = DialogueContentCatalog::default();
+    let report = AwbcLowerer::new(&plan, &catalog, "source-map.arcw")
+        .lower()
+        .expect("emitted code and source map verify");
+    assert!(!report.program.blocks.is_empty());
+    let [entry] = report.program.source_map.as_slice() else {
+        panic!("expected one coarse source-map entry");
+    };
+    assert_eq!(
+        entry.location,
+        arcweft_core::awbc::schema::AwbcCodeLocation::Block(AwbcBlockId(0))
+    );
+    assert_eq!(
+        report.program.strings[entry.source_file.0 as usize],
+        "source-map.arcw"
+    );
+    let disabled = AwbcLowerer::new(&plan, &catalog, "source-map.arcw")
+        .with_options(AwbcLowerOptions {
+            emit_source_map: false,
+            ..AwbcLowerOptions::default()
+        })
+        .lower()
+        .expect("source-map emission can be disabled");
+    assert!(!disabled.program.blocks.is_empty());
+    assert!(disabled.program.source_map.is_empty());
+    let relabeled = AwbcLowerer::new(&plan, &catalog, "relabeled-source-map.arcw")
+        .with_options(AwbcLowerOptions {
+            emit_source_map: false,
+            ..AwbcLowerOptions::default()
+        })
+        .lower()
+        .unwrap();
+    assert_eq!(disabled.program, relabeled.program);
 }

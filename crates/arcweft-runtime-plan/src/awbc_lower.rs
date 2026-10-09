@@ -134,7 +134,7 @@ impl<'a> AwbcLowerer<'a> {
             entry,
             options,
         } = self;
-        let mut inventory = AwbcInventory::new(source_label, options);
+        let mut inventory = AwbcInventory::new(options);
         inventory.intern_runtime_primitives();
         pattern::preflight_plan_types(&mut inventory, plan).map_err(AwbcLowerError::Lowering)?;
         let join_diagnostics = validate_dialogue_content_join(plan, dialogue_content);
@@ -160,16 +160,14 @@ impl<'a> AwbcLowerer<'a> {
         if diagnostics.iter().any(AwbcLowerDiagnostic::is_error) {
             return Err(AwbcLowerError::Lowering(diagnostics));
         }
-        let mut program = inventory.finish();
-        program.plain_text_context_template = plan.dialogue_content().plain_text_context_template();
-        if options.emit_source_map && program.source_map.is_empty() {
-            let source_file = program
-                .strings
-                .iter()
-                .position(|value| value == source_label)
-                .map(|index| arcweft_core::awbc::schema::AwbcStringId(table_index(index)))
-                .unwrap_or_default();
-            program.source_map.push(AwbcSourceMapEntry {
+        // A source identity belongs to an emitted map location. Libraries
+        // without code and map-disabled products retain no unused label.
+        if options.emit_source_map
+            && inventory.program.source_map.is_empty()
+            && !inventory.program.blocks.is_empty()
+        {
+            let source_file = inventory.intern_string(source_label);
+            inventory.program.source_map.push(AwbcSourceMapEntry {
                 location: arcweft_core::awbc::schema::AwbcCodeLocation::Block(
                     arcweft_core::awbc::schema::AwbcBlockId(0),
                 ),
@@ -179,6 +177,8 @@ impl<'a> AwbcLowerer<'a> {
                 anchor: None,
             });
         }
+        let mut program = inventory.finish();
+        program.plain_text_context_template = plan.dialogue_content().plain_text_context_template();
         program.canonicalize_string_table();
 
         program

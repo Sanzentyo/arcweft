@@ -6,7 +6,7 @@ use arcweft_core::plan::{RuntimePlanBuilder, RuntimePlanTypeSeed};
 
 #[test]
 fn agent_probe_results_remain_distinct_through_awbc_interning() {
-    let mut inventory = AwbcInventory::new("probe-projection", AwbcLowerOptions::default());
+    let mut inventory = AwbcInventory::new(AwbcLowerOptions::default());
     let probes: Vec<_> = [RuntimeCheckedType::Bool, RuntimeCheckedType::String]
         .into_iter()
         .map(|result| {
@@ -25,7 +25,7 @@ fn agent_probe_results_remain_distinct_through_awbc_interning() {
 
 #[test]
 fn data_shape_children_remain_exact_through_awbc_interning() {
-    let mut inventory = AwbcInventory::new("data-shape-projection", AwbcLowerOptions::default());
+    let mut inventory = AwbcInventory::new(AwbcLowerOptions::default());
     let shapes: Vec<_> = [RuntimeCheckedType::Bool, RuntimeCheckedType::String]
         .into_iter()
         .map(|value| {
@@ -57,7 +57,7 @@ fn data_shape_children_remain_exact_through_awbc_interning() {
 
 #[test]
 fn checked_array_lengths_remain_distinct_through_awbc_interning_and_projection() {
-    let mut inventory = AwbcInventory::new("array-projection", AwbcLowerOptions::default());
+    let mut inventory = AwbcInventory::new(AwbcLowerOptions::default());
     let arrays: Vec<_> = [0, 1, 2, u64::MAX]
         .into_iter()
         .map(|length| {
@@ -102,7 +102,7 @@ fn plan_map_ordering_kind_survives_awbc_type_preflight() {
             )
             .expect("map type graph admits");
         let plan = builder.finish().expect("map-only plan seals");
-        let mut inventory = AwbcInventory::new("map-kind", AwbcLowerOptions::default());
+        let mut inventory = AwbcInventory::new(AwbcLowerOptions::default());
         preflight_plan_types(&mut inventory, &plan).expect("plan types preflight");
         let program = inventory.finish();
         let row = program
