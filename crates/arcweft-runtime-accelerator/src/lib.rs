@@ -47,8 +47,8 @@ mod native_jit {
         CompiledPureF32Inputs, CompiledPureF64Inputs, CompiledPureI8Inputs, CompiledPureI16Inputs,
         CompiledPureI32Inputs, CompiledPureI64Inputs, CompiledPureI128BatchInputs,
         CompiledPureU8Inputs, CompiledPureU16Inputs, CompiledPureU32Inputs, CompiledPureU64Inputs,
-        CompiledPureU128BatchInputs, CraneliftPureFunctionBackend, PureObjectBundleRequest,
-        PureObjectInputKind,
+        CompiledPureU128BatchInputs, CraneliftCodegenError, CraneliftPureFunctionBackend,
+        PureObjectBundleRequest, PureObjectInputKind,
     };
 }
 
@@ -56,6 +56,7 @@ mod native_jit {
 mod native_jit {
     use arcweft_core::{
         pure::{PureFunctionRequest, RuntimeFixedArgs},
+        runtime_id::RuntimeLocalDeclarationId,
         value::{RuntimeISizeValue, RuntimeUSizeValue},
     };
     use std::fmt;
@@ -70,6 +71,19 @@ mod native_jit {
     }
 
     impl std::error::Error for NativeJitUnavailable {}
+
+    pub type CraneliftCodegenError = NativeJitUnavailable;
+    impl NativeJitUnavailable {
+        pub const fn completed_rows(&self) -> Option<usize> {
+            None
+        }
+        pub fn into_runtime_eval_error(self, helper: &str) -> super::RuntimeEvalError {
+            super::RuntimeEvalError::UnsupportedPure {
+                name: helper.to_owned(),
+                reason: self.to_string(),
+            }
+        }
+    }
 
     pub struct CraneliftPureFunctionBackend;
 
@@ -220,7 +234,7 @@ mod native_jit {
     }
 
     impl CompiledPureI64Inputs {
-        pub fn param_names(&self) -> &[String] {
+        pub fn input_locals(&self) -> &[RuntimeLocalDeclarationId] {
             &[]
         }
 
@@ -704,9 +718,8 @@ fn helper_native_kind(helper: RuntimePureFunctionRef<'_>) -> Option<RuntimePureN
 
 fn call_jit_exact_int_slice<T: RuntimePureScalarInteger>(
     entry: &RuntimePureCacheEntry,
-    helper: RuntimePureFunctionRef<'_>,
     args: &[T],
-) -> Option<Result<Option<T>, RuntimeEvalError>> {
+) -> Option<Result<RuntimeValue, native_jit::CraneliftCodegenError>> {
     let value = match (T::exact_slice(args), entry) {
         (RuntimeExactIntegerSlice::I8(args), RuntimePureCacheEntry::JitI8(compiled)) => {
             compiled.call(args).map(RuntimeValue::i8)
@@ -747,22 +760,14 @@ fn call_jit_exact_int_slice<T: RuntimePureScalarInteger>(
         }
         _ => return None,
     };
-    Some(
-        value
-            .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                name: helper.name.to_owned(),
-                reason: error.to_string(),
-            })
-            .and_then(|value| T::try_from_runtime_value(helper.name, value).map(Some)),
-    )
+    Some(value)
 }
 
 fn call_jit_exact_int_flat_batch<T: RuntimePureScalarInteger>(
     entry: &RuntimePureCacheEntry,
-    helper: RuntimePureFunctionRef<'_>,
     flat_inputs: &[T],
     out: &mut [T],
-) -> Option<Result<(), RuntimeEvalError>> {
+) -> Option<Result<(), native_jit::CraneliftCodegenError>> {
     let result = match (T::exact_slice(flat_inputs), T::exact_slice_mut(out), entry) {
         (
             RuntimeExactIntegerSlice::ISize(inputs),
@@ -776,18 +781,14 @@ fn call_jit_exact_int_flat_batch<T: RuntimePureScalarInteger>(
         ) => compiled.call_usize_flat_batch(inputs, out),
         _ => return None,
     };
-    Some(result.map_err(|error| RuntimeEvalError::UnsupportedPure {
-        name: helper.name.to_owned(),
-        reason: error.to_string(),
-    }))
+    Some(result)
 }
 
 fn call_jit_exact_int_flat_batch_sum<T: RuntimePureScalarInteger>(
     entry: &RuntimePureCacheEntry,
-    helper: RuntimePureFunctionRef<'_>,
     flat_inputs: &[T],
     rows: usize,
-) -> Option<Result<i64, RuntimeEvalError>> {
+) -> Option<Result<i64, native_jit::CraneliftCodegenError>> {
     let result = match (T::exact_slice(flat_inputs), entry) {
         (RuntimeExactIntegerSlice::ISize(inputs), RuntimePureCacheEntry::JitISize(compiled)) => {
             compiled.call_isize_flat_batch_sum(inputs, rows)
@@ -797,10 +798,7 @@ fn call_jit_exact_int_flat_batch_sum<T: RuntimePureScalarInteger>(
         }
         _ => return None,
     };
-    Some(result.map_err(|error| RuntimeEvalError::UnsupportedPure {
-        name: helper.name.to_owned(),
-        reason: error.to_string(),
-    }))
+    Some(result)
 }
 
 enum RuntimePureAotPlan {

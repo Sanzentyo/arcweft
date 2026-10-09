@@ -29,7 +29,7 @@ use arcweft_core::{
         RuntimePlanTypeSeed, RuntimePureHelperOrigin, RuntimePureHelperSeed,
     },
     program_types::RuntimeProgramTypes,
-    pure::{PureFunctionRequest, RuntimePureFunctionRef},
+    pure::{PureFunctionBackend, PureFunctionRequest, RuntimePureFunctionRef},
     step::{RuntimeStepInput, RuntimeStepOptions},
     task::RuntimeProgramOwner,
     value::RuntimeRecordFieldId,
@@ -312,6 +312,14 @@ fn admit_helper(
 }
 
 fn admitted_ordinary_add_with_unused_formal(offset: i64) -> AdmittedHelper {
+    admitted_ordinary_body_with_unused_formal(offset, false)
+}
+
+fn admitted_ordinary_executable_with_unused_formal(offset: i64) -> AdmittedHelper {
+    admitted_ordinary_body_with_unused_formal(offset, true)
+}
+
+fn admitted_ordinary_body_with_unused_formal(offset: i64, executable: bool) -> AdmittedHelper {
     use arcweft_core::plan::{
         RuntimeEffectSet, RuntimeFunctionDefinitionIdentity, RuntimeFunctionInputOrigin,
         RuntimeFunctionInputTransfer, RuntimeFunctionParameterIdentity,
@@ -370,24 +378,37 @@ fn admitted_ordinary_add_with_unused_formal(offset: i64) -> AdmittedHelper {
             function_type: None,
             inputs,
             result: ty,
-            body_kind: RuntimeFunctionSiteBodyKind::Expression,
+            body_kind: if executable {
+                RuntimeFunctionSiteBodyKind::Executable
+            } else {
+                RuntimeFunctionSiteBodyKind::Expression
+            },
             effects: RuntimeEffectSet::empty(),
         })
         .expect("ordinary function site is reserved");
+    let result = binary_expr(
+        ty,
+        local_expr(
+            ty,
+            admission.local_ids()[0].clone(),
+            RuntimeLocalReadMode::Copy,
+        ),
+        RuntimeBinaryOp::Add,
+        value_expr(ty, RuntimeValue::i64(offset)),
+    );
+    let body = if executable {
+        RuntimeFunctionSiteBodySeed::Executable(arcweft_core::plan::RuntimeExecutableBodySeed {
+            effects: RuntimeEffectSet::empty(),
+            ops: Box::new([
+                RuntimeFlowOpSeed::Noop,
+                RuntimeFlowOpSeed::ReturnExpr(result),
+            ]),
+        })
+    } else {
+        RuntimeFunctionSiteBodySeed::Expression(result)
+    };
     builder
-        .define_function_site_seed(
-            &site,
-            RuntimeFunctionSiteBodySeed::Expression(binary_expr(
-                ty,
-                local_expr(
-                    ty,
-                    admission.local_ids()[0].clone(),
-                    RuntimeLocalReadMode::Copy,
-                ),
-                RuntimeBinaryOp::Add,
-                value_expr(ty, RuntimeValue::i64(offset)),
-            )),
-        )
+        .define_function_site_seed(&site, body)
         .expect("ordinary function body is defined without helper copies");
     let plan = Arc::new(builder.finish().expect("ordinary function plan is sealed"));
     let site = plan
@@ -2199,6 +2220,7 @@ fn auto_promotes_wide_integer_flat_batches_to_native_jit() {
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
 fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
     let u32_ty = helper_type_identity(RuntimePureInputType::U32);
+    let i64_ty = helper_type_identity(RuntimePureInputType::I64);
     let u32_seq_ty = RuntimeSemanticTypeId::from_bytes([17; 32]);
     let u32_mapping_ty = RuntimeSemanticTypeId::from_bytes([18; 32]);
     let mut builder = RuntimePlanBuilder::new();
@@ -2206,6 +2228,7 @@ fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
         .admit_type_batch(
             [
                 helper_type_seed(RuntimePureInputType::U32),
+                helper_type_seed(RuntimePureInputType::I64),
                 RuntimePlanTypeSeed::new(
                     u32_seq_ty,
                     RuntimePlanTypeProjection::Sequence {
@@ -2326,13 +2349,13 @@ fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
                 ),
                 None,
                 Box::new([]),
-                u32_ty,
+                i64_ty,
                 arcweft_core::plan::RuntimeEffectSet::empty(),
             ),
             arcweft_core::plan::RuntimeExecutableBodySeed {
                 effects: arcweft_core::plan::RuntimeEffectSet::empty(),
                 ops: (vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
-                    u32_ty,
+                    i64_ty,
                     RuntimeExprSeedKind::Sum {
                         source: Box::new(RuntimeExprSeed::new(
                             u32_seq_ty,
@@ -2881,5 +2904,516 @@ fn manual_local_source(declaration: &str) -> arcweft_core::plan::RuntimeLocalDec
             false,
             arcweft_core::plan::RuntimeLocalBindingStorage::Derived,
         ),
+    }
+}
+
+#[test]
+fn executable_source_function_accelerates_scalar_batch_and_fusion_with_complete_formals() {
+    let owner = admitted_ordinary_executable_with_unused_formal(1);
+    let function = owner.function_ref();
+    assert!(owner.plan().pure_helpers().is_empty());
+    assert_eq!(owner.plan().pure_function_candidate_count(), 1);
+    assert!(function.body.is_executable());
+    assert_eq!(function.inputs.len(), 2);
+    assert!(
+        PureFunctionRequest::try_new(
+            Arc::clone(owner.plan()),
+            function.id(),
+            [RuntimeValue::i64(4)]
+        )
+        .is_err()
+    );
+    let modes = [RuntimePureBackendMode::Aot].into_iter().chain(
+        cfg!(all(feature = "native-jit", not(target_arch = "wasm32")))
+            .then_some(RuntimePureBackendMode::Jit),
+    );
+    for mode in modes {
+        let mut accelerator = RuntimePureAccelerator::new(mode, owner.plan());
+        assert_eq!(accelerator.summary().aot + accelerator.summary().jit, 1);
+        assert_eq!(
+            accelerator.call_i64_slice(function, &[4, 999]).unwrap(),
+            Some(5)
+        );
+        let flat = [4, 999, 10, 333];
+        let mut output = [0; 2];
+        accelerator
+            .call_i64_flat_batch(function, &flat, 2, &mut output)
+            .unwrap();
+        assert_eq!(output, [5, 11]);
+        assert_eq!(
+            accelerator
+                .call_i64_flat_batch_sum(function, &flat, 2, 2)
+                .unwrap(),
+            16
+        );
+        assert_eq!(accelerator.stats().pure_calls, 5);
+        assert_eq!(accelerator.stats().vm_calls, 0);
+        assert_eq!(accelerator.stats().fallbacks, 0);
+        assert_eq!(
+            accelerator.stats().aot_calls + accelerator.stats().jit_calls,
+            5
+        );
+        assert_eq!(accelerator.stats().arg_vec_allocations, 0);
+        assert_eq!(accelerator.stats().arg_bytes_copied, 0);
+    }
+}
+
+#[test]
+fn executable_source_function_foreign_capabilities_decline_without_bypassing_vm_continuation() {
+    let owner = admitted_ordinary_executable_with_unused_formal(1);
+    let changed = admitted_ordinary_executable_with_unused_formal(10);
+    let cloned_plan = Arc::new(owner.plan().as_ref().clone());
+    let cloned = RuntimePureFunctionRef::resolve(&cloned_plan, owner.function_ref().id()).unwrap();
+    assert_eq!(owner.function_ref().id(), changed.function_ref().id());
+    assert_eq!(owner.function_ref().id(), cloned.id());
+    let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Aot, owner.plan());
+    let arguments = RuntimeI64Args::new([4, 999, 0, 0], 2);
+    assert_eq!(accelerator.call_i64(cloned, arguments).unwrap(), None);
+    assert_eq!(
+        accelerator
+            .call_i64(changed.function_ref(), arguments)
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        accelerator.stats().pure_calls,
+        0,
+        "decline grants no synchronous VM execution"
+    );
+    let changed_request = PureFunctionRequest::try_new(
+        Arc::clone(changed.plan()),
+        changed.function_ref().id(),
+        [RuntimeValue::i64(4), RuntimeValue::i64(999)],
+    )
+    .unwrap();
+    let vm = arcweft_core::pure::VmPureFunctionBackend
+        .evaluate_invocation(
+            &changed_request,
+            arcweft_core::step::RuntimeStepBudget { max_ops: 64 },
+        )
+        .unwrap();
+    assert_eq!(vm.value, RuntimeValue::i64(14));
+    assert!(vm.stats.evaluated_exprs > 0);
+    assert_eq!(
+        accelerator
+            .call_i64(owner.function_ref(), arguments)
+            .unwrap(),
+        Some(5)
+    );
+    assert_eq!(accelerator.stats().aot_calls, 1);
+    assert_eq!(accelerator.stats().vm_calls, 0);
+}
+
+#[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
+#[test]
+fn executable_source_function_auto_promotion_keeps_the_exact_plan_lease() {
+    let owner = admitted_ordinary_executable_with_unused_formal(1);
+    let foreign = admitted_ordinary_executable_with_unused_formal(10);
+    let mut accelerator = RuntimePureAccelerator::with_config(
+        RuntimePureAcceleratorConfig {
+            backend: RuntimePureBackendMode::Auto,
+            workers: RuntimePureWorkerCount::Fixed(1),
+            batch_min_len: 1024,
+            ..RuntimePureAcceleratorConfig::default()
+        },
+        owner.plan(),
+    );
+    let attempts = accelerator.compile_stats().jit_attempts;
+    for _ in 0..1024 {
+        assert_eq!(
+            accelerator
+                .call_i64(
+                    foreign.function_ref(),
+                    RuntimeI64Args::new([4, 999, 0, 0], 2)
+                )
+                .unwrap(),
+            None
+        );
+    }
+    assert_eq!(accelerator.compile_stats().auto_jit_promotions, 0);
+    assert_eq!(accelerator.compile_stats().jit_attempts, attempts);
+    let flat = (0..128)
+        .flat_map(|value| [value, 999])
+        .collect::<Vec<i64>>();
+    let mut output = [0; 128];
+    accelerator
+        .call_i64_flat_batch(owner.function_ref(), &flat, 2, &mut output)
+        .unwrap();
+    assert_eq!(output[0], 1);
+    assert_eq!(output[127], 128);
+    assert_eq!(accelerator.compile_stats().auto_jit_promotions, 1);
+    assert_eq!(accelerator.summary().jit, 1);
+    assert_eq!(accelerator.stats().jit_calls, 128);
+    assert_eq!(accelerator.stats().aot_calls, 0);
+    assert_eq!(accelerator.stats().vm_calls, 0);
+}
+
+#[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
+#[test]
+fn u32_division_fault_is_terminal_and_matches_aot_vm_with_wrapped_denominator() {
+    use arcweft_core::value::RuntimeExpressionFailure;
+    let helper = conditional_div_helper(
+        "u32_checked_fault",
+        RuntimePureInputType::U32,
+        RuntimePureOutputType::U32,
+        RuntimeValue::u32(1),
+        RuntimeValue::u32(1),
+        RuntimeValue::u32(0),
+    );
+    for mode in [
+        RuntimePureBackendMode::Jit,
+        RuntimePureBackendMode::Aot,
+        RuntimePureBackendMode::Vm,
+    ] {
+        let mut accelerator = RuntimePureAccelerator::new(mode, helper.plan());
+        let expected =
+            RuntimeEvalError::RecoverableExpression(RuntimeExpressionFailure::DivisionByZero);
+        assert_eq!(
+            accelerator.call_u32_slice(helper.function_ref(), &[10, u32::MAX]),
+            Err(expected.clone())
+        );
+        assert_eq!(
+            accelerator.call_u32_slice(helper.function_ref(), &[0, u32::MAX]),
+            Ok(Some(0)),
+            "an unselected division must not execute"
+        );
+        let mut out = [77; 3];
+        assert_eq!(
+            accelerator.call_u32_flat_batch(
+                helper.function_ref(),
+                &[12, 1, 10, u32::MAX, 20, 1],
+                2,
+                &mut out
+            ),
+            Err(expected.clone())
+        );
+        assert_eq!(out, [6, 77, 77]);
+        assert_eq!(
+            accelerator.call_u32_flat_batch_sum(
+                helper.function_ref(),
+                &[12, 1, 10, u32::MAX, 20, 1],
+                2,
+                3
+            ),
+            Err(expected)
+        );
+        assert_eq!(
+            accelerator.call_u32_slice(helper.function_ref(), &[8, 1]),
+            Ok(Some(4)),
+            "a per-call fault cannot poison the retained native helper"
+        );
+        if mode == RuntimePureBackendMode::Jit {
+            assert_eq!(accelerator.stats().pure_calls, 7);
+            assert_eq!(
+                accelerator.stats().result_bytes_copied,
+                std::mem::size_of_val(&out[..1]),
+                "only the successful output prefix is written"
+            );
+            assert_eq!(
+                accelerator.stats().jit_calls,
+                7,
+                "two scalar attempts, two attempted prefix rows, two reduction rows and one resumed call"
+            );
+            assert_eq!(
+                accelerator.stats().aot_calls,
+                0,
+                "a native execution fault is not retried"
+            );
+            assert_eq!(
+                accelerator.stats().vm_calls,
+                0,
+                "a native execution fault is not a soft decline"
+            );
+            assert_eq!(accelerator.stats().fallbacks, 0);
+            assert_eq!(accelerator.summary().jit, 1);
+        }
+    }
+}
+
+#[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
+#[test]
+fn u64_division_fault_is_terminal_and_matches_aot_vm_with_wrapped_denominator() {
+    use arcweft_core::value::RuntimeExpressionFailure;
+    let helper = conditional_div_helper(
+        "u64_checked_fault",
+        RuntimePureInputType::U64,
+        RuntimePureOutputType::U64,
+        RuntimeValue::u64(1),
+        RuntimeValue::u64(1),
+        RuntimeValue::u64(0),
+    );
+    for mode in [
+        RuntimePureBackendMode::Jit,
+        RuntimePureBackendMode::Aot,
+        RuntimePureBackendMode::Vm,
+    ] {
+        let mut accelerator = RuntimePureAccelerator::new(mode, helper.plan());
+        let expected =
+            RuntimeEvalError::RecoverableExpression(RuntimeExpressionFailure::DivisionByZero);
+        assert_eq!(
+            accelerator.call_u64_slice(helper.function_ref(), &[10, u64::MAX]),
+            Err(expected.clone())
+        );
+        assert_eq!(
+            accelerator.call_u64_slice(helper.function_ref(), &[0, u64::MAX]),
+            Ok(Some(0)),
+            "an unselected division must not execute"
+        );
+        let mut out = [77; 3];
+        assert_eq!(
+            accelerator.call_u64_flat_batch(
+                helper.function_ref(),
+                &[12, 1, 10, u64::MAX, 20, 1],
+                2,
+                &mut out
+            ),
+            Err(expected.clone())
+        );
+        assert_eq!(out, [6, 77, 77]);
+        assert_eq!(
+            accelerator.call_u64_flat_batch_sum(
+                helper.function_ref(),
+                &[12, 1, 10, u64::MAX, 20, 1],
+                2,
+                3
+            ),
+            Err(expected)
+        );
+        assert_eq!(
+            accelerator.call_u64_slice(helper.function_ref(), &[8, 1]),
+            Ok(Some(4)),
+            "a per-call fault cannot poison the retained native helper"
+        );
+        if mode == RuntimePureBackendMode::Jit {
+            assert_eq!(accelerator.stats().pure_calls, 7);
+            assert_eq!(
+                accelerator.stats().result_bytes_copied,
+                std::mem::size_of_val(&out[..1]),
+                "only the successful output prefix is written"
+            );
+            assert_eq!(
+                accelerator.stats().jit_calls,
+                7,
+                "two scalar attempts, two attempted prefix rows, two reduction rows and one resumed call"
+            );
+            assert_eq!(
+                accelerator.stats().aot_calls,
+                0,
+                "a native execution fault is not retried"
+            );
+            assert_eq!(
+                accelerator.stats().vm_calls,
+                0,
+                "a native execution fault is not a soft decline"
+            );
+            assert_eq!(accelerator.stats().fallbacks, 0);
+            assert_eq!(accelerator.summary().jit, 1);
+        }
+    }
+}
+
+#[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
+#[test]
+fn checked_native_unsigned_sum_keeps_wide_refusal_and_wrapping_fold_parity() {
+    let helper = conditional_div_helper(
+        "u64_checked_sum",
+        RuntimePureInputType::U64,
+        RuntimePureOutputType::U64,
+        RuntimeValue::u64(1),
+        RuntimeValue::u64(1),
+        RuntimeValue::u64(0),
+    );
+    for mode in [
+        RuntimePureBackendMode::Jit,
+        RuntimePureBackendMode::Aot,
+        RuntimePureBackendMode::Vm,
+    ] {
+        let mut accelerator = RuntimePureAccelerator::new(mode, helper.plan());
+        let result = accelerator.call_u64_flat_batch_sum(
+            helper.function_ref(),
+            &[12, 1, u64::MAX, 0, 20, 1],
+            2,
+            3,
+        );
+        assert!(
+            matches!(result,Err(RuntimeEvalError::UnsupportedPure {reason,..})
+            if reason.contains(&u64::MAX.to_string()) && reason.contains("i64 sum"))
+        );
+        assert_eq!(
+            accelerator.call_u64_slice(helper.function_ref(), &[u64::MAX, 0]),
+            Ok(Some(u64::MAX))
+        );
+        assert_eq!(
+            accelerator
+                .call_u64_flat_batch_sum(helper.function_ref(), &[i64::MAX as u64, 0, 1, 0], 2, 2)
+                .unwrap(),
+            i64::MIN
+        );
+        if mode == RuntimePureBackendMode::Jit {
+            assert_eq!(accelerator.stats().aot_calls, 0);
+            assert_eq!(accelerator.stats().vm_calls, 0);
+            assert_eq!(accelerator.stats().jit_calls, 5);
+        }
+    }
+}
+
+#[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
+#[test]
+fn exact_integer_native_faults_keep_the_owned_error_channel_and_target_width() {
+    use arcweft_core::value::RuntimeExpressionFailure;
+    let expected =
+        RuntimeEvalError::RecoverableExpression(RuntimeExpressionFailure::DivisionByZero);
+    let scalar = conditional_div_helper(
+        "generic_u64_fault",
+        RuntimePureInputType::U64,
+        RuntimePureOutputType::U64,
+        RuntimeValue::u64(1),
+        RuntimeValue::u64(1),
+        RuntimeValue::u64(0),
+    );
+    let mut backend = RuntimePureAccelerator::new(RuntimePureBackendMode::Jit, scalar.plan());
+    assert_eq!(
+        backend.call_exact_int_slice::<u64>(scalar.function_ref(), &[10, u64::MAX]),
+        Err(expected.clone())
+    );
+    assert_eq!(backend.stats().jit_calls, 1);
+    assert_eq!(
+        backend.stats().aot_calls + backend.stats().vm_calls + backend.stats().fallbacks,
+        0
+    );
+
+    let helper = conditional_div_helper(
+        "target_unsigned_fault",
+        RuntimePureInputType::USize,
+        RuntimePureOutputType::USize,
+        RuntimeValue::usize(1),
+        RuntimeValue::usize(1),
+        RuntimeValue::usize(0),
+    );
+    let size = RuntimeUSizeValue::new;
+    for mode in [
+        RuntimePureBackendMode::Jit,
+        RuntimePureBackendMode::Aot,
+        RuntimePureBackendMode::Vm,
+    ] {
+        let mut backend = RuntimePureAccelerator::new(mode, helper.plan());
+        assert_eq!(
+            backend.call_exact_int_slice(helper.function_ref(), &[size(10), size(u64::MAX)]),
+            Err(expected.clone())
+        );
+        assert_eq!(
+            backend.call_exact_int_slice(helper.function_ref(), &[size(0), size(u64::MAX)]),
+            Ok(Some(size(0)))
+        );
+        let inputs = [
+            size(12),
+            size(1),
+            size(10),
+            size(u64::MAX),
+            size(20),
+            size(1),
+        ];
+        let mut output = [size(77); 3];
+        assert_eq!(
+            backend.call_exact_int_flat_batch(helper.function_ref(), &inputs, 2, &mut output),
+            Err(expected.clone())
+        );
+        assert_eq!(output, [size(6), size(77), size(77)]);
+        let sum_inputs = [
+            size(12),
+            size(1),
+            size(u64::MAX),
+            size(0),
+            size(20),
+            size(1),
+        ];
+        assert!(
+            matches!(backend.call_exact_int_flat_batch_sum(helper.function_ref(), &sum_inputs, 2, 3),
+            Err(RuntimeEvalError::UnsupportedPure {reason, ..})
+                if reason.contains(&u64::MAX.to_string()) && reason.contains("i64 sum"))
+        );
+        if mode == RuntimePureBackendMode::Jit {
+            assert_eq!(backend.stats().jit_calls, 6);
+            assert_eq!(backend.stats().pure_calls, 6);
+            assert_eq!(
+                backend.stats().result_bytes_copied,
+                std::mem::size_of::<RuntimeUSizeValue>()
+            );
+            assert_eq!(
+                backend.stats().aot_calls + backend.stats().vm_calls + backend.stats().fallbacks,
+                0
+            );
+            assert_eq!(backend.summary().jit, 1);
+        }
+    }
+}
+
+#[test]
+fn ordinary_function_repeated_and_flat_sums_match_wrapping_core_reduction() {
+    let owner = admitted_ordinary_add_with_unused_formal(0);
+    let function = owner.function_ref();
+    assert!(owner.plan().pure_helpers().is_empty());
+    assert_eq!(function.inputs.len(), 2);
+    let repeated_expected = RuntimeSeq::dense_i64(vec![i64::MAX, i64::MAX])
+        .sum_as_i64()
+        .unwrap();
+    let flat_expected = RuntimeSeq::dense_i64(vec![i64::MAX, 1])
+        .sum_as_i64()
+        .unwrap();
+    assert_eq!(repeated_expected, -2);
+    assert_eq!(flat_expected, i64::MIN);
+    let row = [i64::MAX, 999];
+    let flat = [i64::MAX, 999, 1, 333];
+    let mut core_vm = arcweft_core::pure::VmRuntimePureCallBackend::default();
+    assert_eq!(
+        RuntimePureCallBackend::call_i64_repeated_flat_batch_sum(&mut core_vm, function, &row, 2)
+            .unwrap(),
+        repeated_expected
+    );
+    assert_eq!(
+        RuntimePureCallBackend::call_i64_flat_batch_sum(&mut core_vm, function, &flat, 2, 2)
+            .unwrap(),
+        flat_expected
+    );
+    assert_eq!(core_vm.stats().pure_calls, 4);
+    let modes = [RuntimePureBackendMode::Vm, RuntimePureBackendMode::Aot]
+        .into_iter()
+        .chain(
+            cfg!(all(feature = "native-jit", not(target_arch = "wasm32")))
+                .then_some(RuntimePureBackendMode::Jit),
+        );
+    for mode in modes {
+        let mut backend = RuntimePureAccelerator::with_config(
+            RuntimePureAcceleratorConfig {
+                backend: mode,
+                workers: RuntimePureWorkerCount::Fixed(2),
+                batch_min_len: 1,
+                ..RuntimePureAcceleratorConfig::default()
+            },
+            owner.plan(),
+        );
+        assert_eq!(
+            backend
+                .call_i64_repeated_flat_batch_sum(function, &row, 2)
+                .unwrap(),
+            repeated_expected
+        );
+        assert_eq!(
+            backend
+                .call_i64_flat_batch_sum(function, &flat, 2, 2)
+                .unwrap(),
+            flat_expected
+        );
+        assert_eq!(backend.stats().pure_calls, 4);
+        assert_eq!(
+            backend.stats().vm_calls + backend.stats().aot_calls + backend.stats().jit_calls,
+            4
+        );
+        assert_eq!(backend.stats().batch_calls, 2);
+        assert_eq!(backend.stats().flat_batch_items, 4);
+        assert_eq!(backend.stats().arg_bytes_borrowed, 48);
+        assert_eq!(backend.stats().arg_bytes_copied, 0);
+        assert_eq!(backend.stats().arg_vec_allocations, 0);
+        assert_eq!(backend.stats().result_bytes_copied, 0);
     }
 }

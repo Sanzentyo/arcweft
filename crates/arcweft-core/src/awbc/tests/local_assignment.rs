@@ -7,6 +7,7 @@ fn replacement_program() -> AwbcProgram {
     program.signatures[0].result = Some(AwbcTypeId(0));
     program.frame_layouts[0] = AwbcFrameLayout {
         scopes: vec![AwbcScopeDefinition {
+            kind: crate::scope::RuntimeScopeFrameKind::EmittedLexical,
             parent: None,
             identity: crate::scope::RuntimeScopeIdentity::Anonymous,
         }],

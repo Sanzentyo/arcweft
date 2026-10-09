@@ -18,6 +18,11 @@ use arcweft_interaction_model::dialogue::{
 };
 
 impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCallBackend<E> {
+    fn record_interpreted_function_call(&mut self, _: RuntimePureFunctionRef<'_>) {
+        self.stats.pure_calls = self.stats.pure_calls.saturating_add(1);
+        self.stats.vm_calls = self.stats.vm_calls.saturating_add(1);
+    }
+
     fn record_awbc_pure_program_call(&mut self) {
         self.stats.awbc_pure_program_calls = self.stats.awbc_pure_program_calls.saturating_add(1);
     }
@@ -103,6 +108,9 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
         helper: RuntimePureFunctionRef<'_>,
         args: RuntimeI32Args,
     ) -> Result<Option<i32>, RuntimeEvalError> {
+        if helper.body.is_executable() {
+            return Ok(None);
+        }
         self.stats.pure_calls += 1;
         self.stats.vm_calls += 1;
         self.stats.arg_stack_packs += 1;
@@ -118,6 +126,9 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
         helper: RuntimePureFunctionRef<'_>,
         args: &[i32],
     ) -> Result<Option<i32>, RuntimeEvalError> {
+        if helper.body.is_executable() {
+            return Ok(None);
+        }
         if args.len() > RuntimeI32Args::MAX {
             return Err(RuntimeEvalError::TooManyPureArgs {
                 helper: helper.name.to_owned(),
@@ -226,7 +237,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
                 let value = self
                     .scratch
                     .evaluate_i32_slice(helper.plan(), helper.id(), &[])?;
-                sum += i64::from(runtime_value_into_i32_result(helper, value)?);
+                sum = sum.wrapping_add(i64::from(runtime_value_into_i32_result(helper, value)?));
             }
             return Ok(sum);
         }
@@ -234,7 +245,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
             let value = self
                 .scratch
                 .evaluate_i32_slice(helper.plan(), helper.id(), row)?;
-            sum += i64::from(runtime_value_into_i32_result(helper, value)?);
+            sum = sum.wrapping_add(i64::from(runtime_value_into_i32_result(helper, value)?));
         }
         Ok(sum)
     }
@@ -376,6 +387,9 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
         helper: RuntimePureFunctionRef<'_>,
         args: &[T],
     ) -> Result<Option<T>, RuntimeEvalError> {
+        if helper.body.is_executable() {
+            return Ok(None);
+        }
         if args.len() > RuntimeFixedArgs::<T>::MAX {
             return Err(RuntimeEvalError::TooManyPureArgs {
                 helper: helper.name.to_owned(),
@@ -463,8 +477,9 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
                 let value =
                     self.scratch
                         .evaluate_exact_int_slice::<T>(helper.plan(), helper.id(), &[])?;
-                sum +=
-                    T::try_from_runtime_value(helper.name, value)?.try_sum_as_i64(helper.name)?;
+                sum = sum.wrapping_add(
+                    T::try_from_runtime_value(helper.name, value)?.try_sum_as_i64(helper.name)?,
+                );
             }
             return Ok(sum);
         }
@@ -472,7 +487,9 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
             let value =
                 self.scratch
                     .evaluate_exact_int_slice::<T>(helper.plan(), helper.id(), row)?;
-            sum += T::try_from_runtime_value(helper.name, value)?.try_sum_as_i64(helper.name)?;
+            sum = sum.wrapping_add(
+                T::try_from_runtime_value(helper.name, value)?.try_sum_as_i64(helper.name)?,
+            );
         }
         Ok(sum)
     }
@@ -482,6 +499,9 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
         helper: RuntimePureFunctionRef<'_>,
         args: RuntimeI64Args,
     ) -> Result<Option<i64>, RuntimeEvalError> {
+        if helper.body.is_executable() {
+            return Ok(None);
+        }
         self.stats.pure_calls += 1;
         self.stats.vm_calls += 1;
         self.stats.arg_stack_packs += 1;
@@ -502,6 +522,9 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
         helper: RuntimePureFunctionRef<'_>,
         args: &[i64],
     ) -> Result<Option<i64>, RuntimeEvalError> {
+        if helper.body.is_executable() {
+            return Ok(None);
+        }
         if args.len() > RuntimeI64Args::MAX {
             return Err(RuntimeEvalError::TooManyPureArgs {
                 helper: helper.name.to_owned(),
@@ -679,11 +702,11 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
                     .evaluate_i64_slice(helper.plan(), helper.id(), &[])?
                 {
                     RuntimeValue::Int(value) => {
-                        sum += value.exact_i64().ok_or_else(|| {
+                        sum = sum.wrapping_add(value.exact_i64().ok_or_else(|| {
                             RuntimeEvalError::ExpectedInt(runtime_value_label(&RuntimeValue::Int(
                                 value,
                             )))
-                        })?;
+                        })?);
                     }
                     value => {
                         return Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value)));
@@ -698,11 +721,11 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
                 .evaluate_i64_slice(helper.plan(), helper.id(), row)?
             {
                 RuntimeValue::Int(value) => {
-                    sum += value.exact_i64().ok_or_else(|| {
+                    sum = sum.wrapping_add(value.exact_i64().ok_or_else(|| {
                         RuntimeEvalError::ExpectedInt(runtime_value_label(&RuntimeValue::Int(
                             value,
                         )))
-                    })?;
+                    })?);
                 }
                 value => return Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
             }
@@ -747,12 +770,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
             name: helper.name.to_owned(),
             reason: "pure repeated batch row count must fit i64".to_owned(),
         })?;
-        value
-            .checked_mul(rows)
-            .ok_or_else(|| RuntimeEvalError::UnsupportedPure {
-                name: helper.name.to_owned(),
-                reason: "pure repeated batch sum overflowed i64".to_owned(),
-            })
+        Ok(value.wrapping_mul(rows))
     }
 
     fn call_f32_slice(
@@ -760,6 +778,9 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
         helper: RuntimePureFunctionRef<'_>,
         args: &[f32],
     ) -> Result<Option<f32>, RuntimeEvalError> {
+        if helper.body.is_executable() {
+            return Ok(None);
+        }
         if args.len() > RuntimeFloat32Args::MAX {
             return Err(RuntimeEvalError::TooManyPureArgs {
                 helper: helper.name.to_owned(),
@@ -827,6 +848,9 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
         helper: RuntimePureFunctionRef<'_>,
         args: &[f64],
     ) -> Result<Option<f64>, RuntimeEvalError> {
+        if helper.body.is_executable() {
+            return Ok(None);
+        }
         if args.len() > RuntimeFloat64Args::MAX {
             return Err(RuntimeEvalError::TooManyPureArgs {
                 helper: helper.name.to_owned(),

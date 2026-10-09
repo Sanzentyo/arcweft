@@ -2085,3 +2085,127 @@ fn manual_local_source(declaration: &str) -> crate::plan::RuntimeLocalDeclaratio
         ),
     }
 }
+
+#[test]
+fn executable_value_backend_moves_the_original_affine_formal_into_its_return() {
+    use crate::plan::{
+        RuntimeEffectSet, RuntimeExecutableBodySeed, RuntimeFlowOpSeed,
+        RuntimeFunctionDefinitionIdentity, RuntimeFunctionInputOrigin,
+        RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionInputTransfer,
+        RuntimeFunctionParameterIdentity, RuntimeFunctionParameterPassing,
+        RuntimeFunctionSemanticRole, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteBodySeed,
+        RuntimeFunctionSiteDeclarationSeed,
+    };
+    let boolean = RuntimeSemanticTypeId::from_bytes([0xf8; 32]);
+    let need = RuntimeSemanticTypeId::from_bytes([0xf9; 32]);
+    let parameter = RuntimeFunctionParameterIdentity::from_accepted_identity([0xfa; 32]);
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(boolean, RuntimePlanTypeProjection::Bool),
+                RuntimePlanTypeSeed::new(need, RuntimePlanTypeProjection::Need(boolean)),
+            ],
+            [RuntimeLocalDeclarationSeed::new(
+                crate::plan::RuntimeLocalDeclarationSource::Parameter(parameter),
+                need,
+            )],
+        )
+        .unwrap();
+    let local = admission.local_ids()[0].clone();
+    let site = builder
+        .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xfb; 32]),
+            role: RuntimeFunctionSemanticRole::Ordinary,
+            function_type: None,
+            inputs: Box::new([RuntimeFunctionInputBindingSeed {
+                transfer: RuntimeFunctionInputTransfer::Formal,
+                origin: RuntimeFunctionInputOrigin::Parameter(parameter),
+                source: RuntimeFunctionInputSource::Parameter {
+                    position: 0,
+                    passing: RuntimeFunctionParameterPassing::Affine,
+                },
+                input_local: local.clone(),
+                pattern: RuntimePatternSeed::new(
+                    need,
+                    RuntimePatternSeedKind::Bind {
+                        mutable: false,
+                        local: local.clone(),
+                    },
+                ),
+                ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
+                unrestricted_bindings: Box::new([]),
+            }]),
+            result: need,
+            body_kind: RuntimeFunctionSiteBodyKind::Executable,
+            effects: RuntimeEffectSet::empty(),
+        })
+        .unwrap();
+    builder
+        .define_function_site_seed(
+            &site,
+            RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::empty(),
+                ops: Box::new([
+                    RuntimeFlowOpSeed::Noop,
+                    RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                        need,
+                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                            local,
+                            RuntimeLocalReadMode::Move,
+                        )),
+                    )),
+                ]),
+            }),
+        )
+        .unwrap();
+    let plan = Arc::new(builder.finish().unwrap());
+    let site = plan.function_sites().iter_with_ids().next().unwrap().0;
+    let function = RuntimePureFunctionRef::resolve(&plan, site).unwrap();
+    assert!(function.body.is_executable());
+    assert_eq!(
+        function.inputs.get(0).unwrap().passing(),
+        Some(RuntimeFunctionParameterPassing::Affine)
+    );
+    assert!(!function.scalar_eval_supported);
+    let value = RuntimeValue::NeedHandle(crate::tests::reusable_need("need.executable.affine"));
+    assert!(!value.ownership().permits_copy());
+    let mut backend = VmRuntimePureCallBackend::default();
+    assert!(
+        matches!(backend.call_values(function, vec![RuntimeValue::NeedHandle(crate::tests::reusable_need("need.executable.sync-decline"))]), Err(RuntimeEvalError::UnsupportedPure { reason, .. }) if reason.contains("requires function-call control transfer"))
+    );
+    let mut engine = crate::engine::Engine::for_function_invocation(function, vec![value]).unwrap();
+    assert_eq!(
+        engine
+            .step(
+                Default::default(),
+                crate::step::RuntimeStepOptions {
+                    mode: crate::step::RuntimeStepMode::OneOp,
+                    budget: crate::step::RuntimeStepBudget { max_ops: 1 },
+                    ..Default::default()
+                }
+            )
+            .stats
+            .executed_ops,
+        1
+    );
+    assert!(engine.take_function_result(site).unwrap().is_none());
+    let output = engine.step(
+        Default::default(),
+        crate::step::RuntimeStepOptions {
+            mode: crate::step::RuntimeStepMode::OneOp,
+            budget: crate::step::RuntimeStepBudget { max_ops: 1 },
+            ..Default::default()
+        },
+    );
+    assert!(output.output.diagnostics.is_empty());
+    let result = engine.take_function_result(site).unwrap().unwrap();
+    assert!(engine.take_function_result(site).unwrap().is_none());
+    assert_eq!(
+        result,
+        RuntimeValue::NeedHandle(crate::tests::reusable_need("need.executable.affine"))
+    );
+    assert!(!result.ownership().permits_copy());
+    let mut scratch = VmPureFunctionScratch::default();
+    assert!(scratch.evaluate_values(&plan, site, vec![]).is_err());
+}

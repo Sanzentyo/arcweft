@@ -315,7 +315,7 @@ impl RuntimePlanLowerReport {
 /// Runtime-plan counters retained by compiler and profile output.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct RuntimePlanLowerStats {
-    pub pure_helpers: usize,
+    pub pure_function_candidates: usize,
     pub pure_candidate_functions_seen: usize,
     pub pure_candidate_lower_attempts: usize,
     pub pure_candidate_lower_failures_inferred: usize,
@@ -2226,7 +2226,7 @@ pub fn lower_runtime_plan_with_stats(
                 ))]
             })?;
     }
-    let pure_helper_count = plan.pure_helpers().len();
+    let pure_function_candidate_count = plan.pure_function_candidate_count();
     let character_dialogue_generation = facts
         .character_dialogue_generation()
         .map(|declaration| {
@@ -2239,7 +2239,7 @@ pub fn lower_runtime_plan_with_stats(
     Ok(RuntimePlanLowerReport {
         plan,
         stats: RuntimePlanLowerStats {
-            pure_helpers: pure_helper_count,
+            pure_function_candidates: pure_function_candidate_count,
             pure_candidate_functions_seen: 0,
             pure_candidate_lower_attempts: 0,
             ..RuntimePlanLowerStats::default()

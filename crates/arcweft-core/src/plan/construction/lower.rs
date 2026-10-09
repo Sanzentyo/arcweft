@@ -1248,8 +1248,18 @@ impl RuntimePlanBodyConstruction<'_> {
             RuntimeExprSeedKind::Sum { source } => {
                 let source = self.lower_expression(*source)?;
                 let (item, _) = self.sequence_projection(source.ty(), "sum source expression")?;
-                self.require_numeric("sum element", item)?;
-                require_same("sum result", item, ty)?;
+                if !matches!(
+                    self.projection(item)?,
+                    RuntimePlanTypeProjection::Signed(_) | RuntimePlanTypeProjection::Unsigned(_)
+                ) {
+                    return invalid_projection("sum element", item);
+                }
+                if !matches!(
+                    self.projection(ty)?,
+                    RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::I64)
+                ) {
+                    return invalid_projection("sum result", ty);
+                }
                 RuntimeExprKind::Sum {
                     source: Box::new(source),
                 }
@@ -5573,6 +5583,11 @@ impl RuntimePlanBodyConstruction<'_> {
                 FlowOp::Bind(_) => {
                     return Err(RuntimePlanBuildError::NonCanonicalFlowOperation {
                         operation: "Bind",
+                    });
+                }
+                FlowOp::EnterScheduledScope { .. } | FlowOp::ExitScheduledScope { .. } => {
+                    return Err(RuntimePlanBuildError::NonCanonicalFlowOperation {
+                        operation: "native control scope marker",
                     });
                 }
                 FlowOp::Dialogue {

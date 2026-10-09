@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use arcweft_id::runtime_program::RuntimePureProgramId;
 
-use super::{Engine, FlowFiberStatus, FunctionCallFrame, FunctionReturnContinuation};
+use super::{
+    Engine, FlowFiberStatus, FunctionCallFrame, FunctionReturnContinuation, NativeInvocationRoot,
+};
 use crate::pattern::inspect_runtime_pattern_owned;
 use crate::plan::{RuntimeFunctionInputSource, RuntimePlan};
 use crate::value::{RuntimeEvalError, RuntimeValue};
@@ -40,13 +42,26 @@ fn prepare_program_inputs(
         })
     })?;
     let site = binding.site();
+    prepare_function_inputs(plan, site, inputs, &program.to_string())
+}
+
+fn prepare_function_inputs(
+    plan: &RuntimePlan,
+    site: crate::runtime_id::RuntimeFunctionSiteId,
+    inputs: &[&RuntimeValue],
+    label: &str,
+) -> Result<crate::runtime_id::RuntimeFunctionSiteId, RuntimeEvalError> {
+    let error = |reason: &str| RuntimeEvalError::UnsupportedPure {
+        name: label.to_owned(),
+        reason: reason.to_owned(),
+    };
     let declaration = plan
         .function_sites()
         .get(site)
         .ok_or_else(|| error("program function site is absent"))?;
     if inputs.len() != declaration.inputs().len() {
         return Err(RuntimeEvalError::TooManyPureArgs {
-            helper: program.to_string(),
+            helper: label.to_owned(),
             max: declaration.inputs().len(),
             found: inputs.len(),
         });
@@ -81,7 +96,7 @@ fn prepare_program_inputs(
             admission.type_instantiation.as_deref(),
         )? {
             return Err(RuntimeEvalError::PatternMismatch(format!(
-                "program {program} input {:?}",
+                "function {site} input {:?}",
                 input.source()
             )));
         }
@@ -90,6 +105,60 @@ fn prepare_program_inputs(
 }
 
 impl Engine {
+    /// Internal deterministic evaluation enters the exact site on its retained
+    /// Arc. Inputs are owned packets; all full formals, patterns and detached
+    /// custody are checked before transfer into the normal Engine.
+    pub(crate) fn for_function_invocation(
+        function: crate::pure::RuntimePureFunctionRef<'_>,
+        inputs: Vec<RuntimeValue>,
+    ) -> Result<Self, RuntimeEvalError> {
+        let crate::pure::RuntimePureFunctionId::Function(site) = function.id() else {
+            return Err(RuntimeEvalError::UnsupportedPure {
+                name: function.name.to_owned(),
+                reason: "a synthetic recipe has no structured function root".to_owned(),
+            });
+        };
+        for (position, value) in inputs.iter().enumerate() {
+            value.validate_detached_custody().map_err(|reason| {
+                RuntimeEvalError::UnsupportedPure {
+                    name: function.name.to_owned(),
+                    reason: format!(
+                        "function input {position} has invalid detached custody: {reason}"
+                    ),
+                }
+            })?;
+        }
+        prepare_function_inputs(
+            function.plan(),
+            site,
+            &inputs.iter().collect::<Vec<_>>(),
+            function.name,
+        )?;
+        let mut engine = Self::new_with_shared_plan(
+            Arc::clone(function.plan()),
+            crate::task::GenerationId::new(0),
+        );
+        engine.activate_function_prepared(NativeInvocationRoot::Function(site), site, inputs);
+        Ok(engine)
+    }
+
+    pub(crate) fn take_function_result(
+        &mut self,
+        site: crate::runtime_id::RuntimeFunctionSiteId,
+    ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        let Some((target, value)) = &self.invocation_result else {
+            return Ok(None);
+        };
+        if *target != NativeInvocationRoot::Function(site) {
+            return Err(RuntimeEvalError::UnsupportedPure {
+                name: "structured.function".to_owned(),
+                reason: "function result belongs to a different invocation root".to_owned(),
+            });
+        }
+        value.validate_detached_custody()?;
+        Ok(self.invocation_result.take().map(|(_, value)| value))
+    }
+
     pub(super) fn main_fiber_line_handle_owners(
         &self,
     ) -> Result<
@@ -100,7 +169,7 @@ impl Engine {
         crate::line_task::LineRuntimeError,
     > {
         let mut owners = super::flow_fiber_line_handle_owners(&self.fiber)?;
-        if let Some((_, value)) = &self.program_result {
+        if let Some((_, value)) = &self.invocation_result {
             let owner = crate::value::ownership::RuntimeOwnedSlotId::ProgramResult {
                 execution: self.fiber.execution,
                 fiber: self.fiber.persistent_id,
@@ -152,6 +221,15 @@ impl Engine {
         site: crate::runtime_id::RuntimeFunctionSiteId,
         inputs: Vec<RuntimeValue>,
     ) {
+        self.activate_function_prepared(NativeInvocationRoot::Program(program), site, inputs);
+    }
+
+    fn activate_function_prepared(
+        &mut self,
+        root: NativeInvocationRoot,
+        site: crate::runtime_id::RuntimeFunctionSiteId,
+        inputs: Vec<RuntimeValue>,
+    ) {
         let mut captures = Vec::new();
         let mut parameters = Vec::new();
         for (input, value) in self
@@ -176,7 +254,18 @@ impl Engine {
         self.start_function_site_call(
             captures,
             parameters,
-            FunctionCallFrame::new(site, None, FunctionReturnContinuation::Program { program }),
+            FunctionCallFrame::new(
+                site,
+                None,
+                match root {
+                    NativeInvocationRoot::Program(program) => {
+                        FunctionReturnContinuation::Program { program }
+                    }
+                    NativeInvocationRoot::Function(site) => {
+                        FunctionReturnContinuation::Function { site }
+                    }
+                },
+            ),
             &mut output,
             &mut backend,
         )
@@ -207,10 +296,13 @@ impl Engine {
             {
                 return Err(RuntimeProgramContinuationFailure::NotCompleted);
             }
-            let (_, result) = self
-                .program_result
+            let (root, result) = self
+                .invocation_result
                 .as_ref()
                 .ok_or(RuntimeProgramContinuationFailure::NotCompleted)?;
+            if !matches!(root, NativeInvocationRoot::Program(_)) {
+                return Err(RuntimeProgramContinuationFailure::NotCompleted);
+            }
             let refs = input_refs(&inputs, result)?;
             let site = prepare_program_inputs(&self.plan, program, &refs)?;
             let before = self.main_fiber_line_handle_owners()?;
@@ -252,7 +344,7 @@ impl Engine {
         self.dialogue_activations =
             super::dialogue::DialogueActivationStore::from_published(custody);
         let (_, result) = self
-            .program_result
+            .invocation_result
             .take()
             .expect("borrowed continuation preflight retains its result");
         self.activate_program_prepared(program, site, into_values(inputs, result));

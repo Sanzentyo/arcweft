@@ -8,7 +8,10 @@ use super::{
 };
 use arcweft_core::value::{RuntimeLocalRead, RuntimeLocalReadMode};
 
-fn copy_local_id(
+// All physical body entrypoints use the Core-owned source-order place
+// projection. The lowered operand borrows its SSA value; a Move's availability
+// is consumed by that same projection before any compiled artifact is admitted.
+fn projected_local_id(
     read: &RuntimeLocalRead,
 ) -> Result<RuntimeLocalDeclarationId, CraneliftCodegenError> {
     if !read.fields().is_empty() {
@@ -17,11 +20,7 @@ fn copy_local_id(
         ));
     }
     match read.mode() {
-        RuntimeLocalReadMode::Copy => Ok(read.local()),
-        RuntimeLocalReadMode::Move => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-            "move local read `{}` is outside the scalar JIT subset",
-            read.local()
-        ))),
+        RuntimeLocalReadMode::Copy | RuntimeLocalReadMode::Move => Ok(read.local()),
     }
 }
 
@@ -306,7 +305,7 @@ pub(super) fn lower_expr(
             "literal {value:?} is not an i64-compatible integer"
         ))),
         RuntimeExprKind::Local(read) => {
-            let name = copy_local_id(read)?;
+            let name = projected_local_id(read)?;
             match bindings.get(&name) {
                 Some(LoweredIntBinding::Const(value)) => {
                     Ok(builder.ins().iconst(types::I64, *value))
@@ -348,7 +347,7 @@ pub(super) fn lower_expr(
                 RuntimeBinaryOp::Add => Ok(builder.ins().iadd(lhs, rhs)),
                 RuntimeBinaryOp::Sub => Ok(builder.ins().isub(lhs, rhs)),
                 RuntimeBinaryOp::Mul => Ok(builder.ins().imul(lhs, rhs)),
-                RuntimeBinaryOp::Div => Ok(builder.ins().sdiv(lhs, rhs)),
+                RuntimeBinaryOp::Div => Err(unsupported_integer_division()),
                 _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                     "binary operator `{op}` is outside the JIT subset"
                 ))),
@@ -397,7 +396,7 @@ pub(super) fn lower_i32_expr(
             "literal {value:?} is not an i32 integer"
         ))),
         RuntimeExprKind::Local(read) => {
-            let name = copy_local_id(read)?;
+            let name = projected_local_id(read)?;
             match bindings.get(&name) {
                 Some(LoweredIntBinding::Const(value)) => {
                     Ok(builder.ins().iconst(types::I32, *value))
@@ -439,7 +438,7 @@ pub(super) fn lower_i32_expr(
                 RuntimeBinaryOp::Add => Ok(builder.ins().iadd(lhs, rhs)),
                 RuntimeBinaryOp::Sub => Ok(builder.ins().isub(lhs, rhs)),
                 RuntimeBinaryOp::Mul => Ok(builder.ins().imul(lhs, rhs)),
-                RuntimeBinaryOp::Div => Ok(builder.ins().sdiv(lhs, rhs)),
+                RuntimeBinaryOp::Div => Err(unsupported_integer_division()),
                 _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                     "binary operator `{op}` is outside the i32 JIT subset"
                 ))),
@@ -497,7 +496,7 @@ pub(super) fn lower_small_int_expr(
                 ))
             }),
         RuntimeExprKind::Local(read) => {
-            let name = copy_local_id(read)?;
+            let name = projected_local_id(read)?;
             match bindings.get(&name) {
                 Some(LoweredSmallIntBinding::Const(value)) => {
                     Ok(small_int_const(builder, kind, *value))
@@ -541,8 +540,8 @@ pub(super) fn lower_small_int_expr(
                 RuntimeBinaryOp::Add => Ok(builder.ins().iadd(lhs, rhs)),
                 RuntimeBinaryOp::Sub => Ok(builder.ins().isub(lhs, rhs)),
                 RuntimeBinaryOp::Mul => Ok(builder.ins().imul(lhs, rhs)),
-                RuntimeBinaryOp::Div if kind.signed() => Ok(builder.ins().sdiv(lhs, rhs)),
-                RuntimeBinaryOp::Div => Ok(builder.ins().udiv(lhs, rhs)),
+                RuntimeBinaryOp::Div if kind.signed() => Err(unsupported_integer_division()),
+                RuntimeBinaryOp::Div => Err(unsupported_integer_division()),
                 _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                     "binary operator `{op}` is outside the {} JIT subset",
                     kind.label()
@@ -636,7 +635,7 @@ pub(super) fn lower_u32_expr(
             "literal {value:?} is not an u32 integer"
         ))),
         RuntimeExprKind::Local(read) => {
-            let name = copy_local_id(read)?;
+            let name = projected_local_id(read)?;
             match bindings.get(&name) {
                 Some(LoweredIntBinding::Const(value)) => {
                     Ok(builder.ins().iconst(types::I32, *value))
@@ -678,7 +677,7 @@ pub(super) fn lower_u32_expr(
                 RuntimeBinaryOp::Add => Ok(builder.ins().iadd(lhs, rhs)),
                 RuntimeBinaryOp::Sub => Ok(builder.ins().isub(lhs, rhs)),
                 RuntimeBinaryOp::Mul => Ok(builder.ins().imul(lhs, rhs)),
-                RuntimeBinaryOp::Div => Ok(builder.ins().udiv(lhs, rhs)),
+                RuntimeBinaryOp::Div => Ok(super::native_abi::unsigned_division(builder, lhs, rhs)),
                 _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                     "binary operator `{op}` is outside the u32 JIT subset"
                 ))),
@@ -725,7 +724,7 @@ pub(super) fn lower_u64_expr(
             "literal {value:?} is not an u64-compatible integer"
         ))),
         RuntimeExprKind::Local(read) => {
-            let name = copy_local_id(read)?;
+            let name = projected_local_id(read)?;
             match bindings.get(&name) {
                 Some(LoweredIntBinding::Const(value)) => {
                     Ok(builder.ins().iconst(types::I64, *value))
@@ -767,7 +766,7 @@ pub(super) fn lower_u64_expr(
                 RuntimeBinaryOp::Add => Ok(builder.ins().iadd(lhs, rhs)),
                 RuntimeBinaryOp::Sub => Ok(builder.ins().isub(lhs, rhs)),
                 RuntimeBinaryOp::Mul => Ok(builder.ins().imul(lhs, rhs)),
-                RuntimeBinaryOp::Div => Ok(builder.ins().udiv(lhs, rhs)),
+                RuntimeBinaryOp::Div => Ok(super::native_abi::unsigned_division(builder, lhs, rhs)),
                 _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                     "binary operator `{op}` is outside the u64 JIT subset"
                 ))),
@@ -809,7 +808,7 @@ pub(super) fn lower_f32_expr(
             "literal {value:?} is not an f32 value"
         ))),
         RuntimeExprKind::Local(read) => {
-            let name = copy_local_id(read)?;
+            let name = projected_local_id(read)?;
             match bindings.get(&name) {
                 Some(LoweredF32Binding::Const(value)) => Ok(builder.ins().f32const(*value)),
                 Some(LoweredF32Binding::Value(value)) => Ok(*value),
@@ -895,7 +894,7 @@ pub(super) fn lower_f64_expr(
             "literal {value:?} is not an f64 value"
         ))),
         RuntimeExprKind::Local(read) => {
-            let name = copy_local_id(read)?;
+            let name = projected_local_id(read)?;
             match bindings.get(&name) {
                 Some(LoweredF64Binding::Const(value)) => Ok(builder.ins().f64const(*value)),
                 Some(LoweredF64Binding::Value(value)) => Ok(*value),
@@ -1531,4 +1530,10 @@ pub(super) fn float_condition(op: RuntimeBinaryOp) -> Option<FloatCC> {
 
 pub(super) fn codegen_error(error: ModuleError) -> CraneliftCodegenError {
     CraneliftCodegenError::Backend(error.to_string())
+}
+
+fn unsupported_integer_division() -> CraneliftCodegenError {
+    CraneliftCodegenError::UnsupportedExpr(
+        "integer division requires the checked Core error and overflow result boundary".to_owned(),
+    )
 }

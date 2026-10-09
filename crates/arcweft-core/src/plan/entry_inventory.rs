@@ -945,6 +945,8 @@ impl super::RuntimePlanInventory {
             | FlowOp::CancelCleanup { .. }
             | FlowOp::EnterScope { .. }
             | FlowOp::ExitScope
+            | FlowOp::EnterScheduledScope { .. }
+            | FlowOp::ExitScheduledScope { .. }
             | FlowOp::CompleteAwaitObserver
             | FlowOp::ExitScopeBind { .. }
             | FlowOp::Noop => {}

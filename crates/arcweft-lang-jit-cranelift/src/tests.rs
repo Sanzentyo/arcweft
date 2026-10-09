@@ -377,7 +377,8 @@ fn cranelift_plan_qualified_i64_helper_matches_vm() {
         request
             .function_ref()
             .expect("helper reference")
-            .expr
+            .expression()
+            .expect("expression recipe")
             .kind(),
         RuntimeExprKind::If { .. }
     ));
@@ -419,7 +420,7 @@ fn cranelift_i64_entry_batch_and_benchmark_use_local_ids() {
     let caller =
         native_call::I64InputCaller::from_code(module.get_finalized_function(defined.entry), 2)
             .expect("ABI");
-    assert_eq!(caller.call(&[3, 4]), Some(18));
+    assert_eq!(caller.call(&[3, 4]).expect("checked ABI call"), Some(18));
     let mut module = object_module().expect("object module");
     let benchmark = define_i64_benchmark_batch(
         &mut module,
@@ -443,7 +444,8 @@ fn cranelift_i64_entry_batch_and_benchmark_use_local_ids() {
         CraneliftPureFunctionBackend
             .compile_i64(&constant.request([]))
             .expect("zero-input helper compiles")
-            .call(),
+            .call()
+            .expect("checked zero-input call"),
         42
     );
     assert_eq!(
@@ -835,13 +837,58 @@ fn cranelift_unary_and_unsupported_typed_values_have_deterministic_boundaries() 
         RuntimeValue::i64(0),
         RuntimeValue::i64(1),
     ]);
+    assert!(matches!(
+        CraneliftPureFunctionBackend
+            .compile_i64_with_inputs(&unary_request, unary.input_locals().iter().copied()),
+        Err(CraneliftCodegenError::UnsupportedExpr(_))
+    ));
+    let values = [
+        RuntimeValue::i64(21),
+        RuntimeValue::i64(9),
+        RuntimeValue::i64(3),
+    ];
+    assert_eq!(
+        aot_scalar_body_result(&unary_request, &values).unwrap(),
+        RuntimeValue::i64(-4)
+    );
+    assert_eq!(
+        arcweft_core::pure::VmPureFunctionScratch::default()
+            .evaluate_values(
+                unary_request.plan(),
+                unary_request.function_id(),
+                Vec::from(values)
+            )
+            .unwrap(),
+        RuntimeValue::i64(-4)
+    );
+    let pure_unary = ordinary_scope_request(Scalar::I64, |ids| {
+        expr(
+            Scalar::I64,
+            RuntimeExprSeedKind::Unary {
+                op: RuntimeUnaryOp::Neg,
+                expr: Box::new(binary(
+                    Scalar::I64,
+                    local(Scalar::I64, ids[0].clone()),
+                    RuntimeBinaryOp::Sub,
+                    local(Scalar::I64, ids[1].clone()),
+                )),
+            },
+        )
+    });
+    let locals = pure_unary
+        .function_ref()
+        .unwrap()
+        .inputs
+        .iter()
+        .map(arcweft_core::pure::RuntimePureFunctionInputRef::local)
+        .collect::<Vec<_>>();
     assert_eq!(
         CraneliftPureFunctionBackend
-            .compile_i64_with_inputs(&unary_request, unary.input_locals().iter().copied())
-            .expect("unary")
+            .compile_i64_with_inputs(&pure_unary, locals)
+            .unwrap()
             .call(&[21, 9, 3])
-            .expect("call"),
-        -4
+            .unwrap(),
+        -12
     );
     let string = admit(Scalar::String, "string", 0, 0, |_| {
         value(Scalar::String, RuntimeValue::String("x".to_owned()))
@@ -905,13 +952,42 @@ fn ordinary_scope_request(
     scalar: Scalar,
     body: impl FnOnce(&[RuntimeLocalSeedId]) -> RuntimeExprSeed,
 ) -> PureFunctionRequest {
+    ordinary_body_request(
+        scalar,
+        arcweft_core::plan::RuntimeFunctionSiteBodyKind::Expression,
+        |ids| arcweft_core::plan::RuntimeFunctionSiteBodySeed::Expression(body(ids)),
+    )
+}
+
+fn ordinary_executable_request(
+    scalar: Scalar,
+    body: impl FnOnce(&[RuntimeLocalSeedId]) -> Vec<arcweft_core::plan::RuntimeFlowOpSeed>,
+) -> PureFunctionRequest {
+    ordinary_body_request(
+        scalar,
+        arcweft_core::plan::RuntimeFunctionSiteBodyKind::Executable,
+        |ids| {
+            arcweft_core::plan::RuntimeFunctionSiteBodySeed::Executable(
+                arcweft_core::plan::RuntimeExecutableBodySeed {
+                    effects: arcweft_core::plan::RuntimeEffectSet::empty(),
+                    ops: body(ids).into(),
+                },
+            )
+        },
+    )
+}
+
+fn ordinary_body_request(
+    scalar: Scalar,
+    body_kind: arcweft_core::plan::RuntimeFunctionSiteBodyKind,
+    body: impl FnOnce(&[RuntimeLocalSeedId]) -> arcweft_core::plan::RuntimeFunctionSiteBodySeed,
+) -> PureFunctionRequest {
     use arcweft_core::plan::{
         RuntimeEffectSet, RuntimeFunctionDefinitionIdentity, RuntimeFunctionInputBindingSeed,
         RuntimeFunctionInputOrigin, RuntimeFunctionInputSource, RuntimeFunctionInputTransfer,
         RuntimeFunctionParameterIdentity, RuntimeFunctionParameterPassing,
-        RuntimeFunctionSemanticRole, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteBodySeed,
-        RuntimeFunctionSiteDeclarationSeed, RuntimeLocalDeclarationSource, RuntimePatternSeed,
-        RuntimePatternSeedKind,
+        RuntimeFunctionSemanticRole, RuntimeFunctionSiteDeclarationSeed,
+        RuntimeLocalDeclarationSource, RuntimePatternSeed, RuntimePatternSeedKind,
     };
     let parameters = [0x81, 0x82, 0x83]
         .map(|marker| RuntimeFunctionParameterIdentity::from_accepted_identity([marker; 32]));
@@ -962,15 +1038,12 @@ fn ordinary_scope_request(
             function_type: None,
             inputs,
             result: scalar.ty(),
-            body_kind: RuntimeFunctionSiteBodyKind::Expression,
+            body_kind,
             effects: RuntimeEffectSet::empty(),
         })
         .unwrap();
     builder
-        .define_function_site_seed(
-            &site,
-            RuntimeFunctionSiteBodySeed::Expression(body(admission.local_ids())),
-        )
+        .define_function_site_seed(&site, body(admission.local_ids()))
         .unwrap();
     let plan = Arc::new(builder.finish().unwrap());
     assert!(
@@ -1036,6 +1109,310 @@ fn numeric_scope_request(scalar: Scalar) -> PureFunctionRequest {
             ),
         )
     })
+}
+
+fn numeric_executable_request(scalar: Scalar) -> PureFunctionRequest {
+    use arcweft_core::plan::{RuntimeFlowOpSeed as Op, RuntimePatternSeed, RuntimePatternSeedKind};
+    ordinary_executable_request(scalar, |ids| {
+        vec![
+            Op::Scope {
+                identity: arcweft_core::scope::RuntimeScopeIdentity::Named(
+                    "outer".parse().unwrap(),
+                ),
+                body: vec![
+                    Op::Let {
+                        pattern: RuntimePatternSeed::new(
+                            scalar.ty(),
+                            RuntimePatternSeedKind::Bind {
+                                local: ids[3].clone(),
+                                mutable: false,
+                            },
+                        ),
+                        expr: binary(
+                            scalar,
+                            local(scalar, ids[0].clone()),
+                            RuntimeBinaryOp::Add,
+                            local(scalar, ids[1].clone()),
+                        ),
+                    },
+                    Op::If {
+                        condition: compare(
+                            local(scalar, ids[3].clone()),
+                            RuntimeBinaryOp::Lt,
+                            value(scalar, scalar_number(scalar, 10)),
+                        ),
+                        then_ops: vec![
+                            Op::EnterScope {
+                                identity: arcweft_core::scope::RuntimeScopeIdentity::Named(
+                                    "inner".parse().unwrap(),
+                                ),
+                            },
+                            Op::ReturnExpr(binary(
+                                scalar,
+                                local(scalar, ids[3].clone()),
+                                RuntimeBinaryOp::Mul,
+                                value(scalar, scalar_number(scalar, 2)),
+                            )),
+                            // Return unwinds this still-entered scope; no synthetic
+                            // ExitScope is needed by the admitted runtime body.
+                        ],
+                        else_ops: vec![Op::ReturnExpr(binary(
+                            scalar,
+                            local(scalar, ids[3].clone()),
+                            RuntimeBinaryOp::Add,
+                            value(scalar, scalar_number(scalar, 1)),
+                        ))],
+                    },
+                ],
+            },
+            // Both branches return from the function, so this value cannot escape.
+            Op::ReturnExpr(value(scalar, scalar_number(scalar, 99))),
+        ]
+    })
+}
+
+fn aot_scalar_body_result(
+    request: &PureFunctionRequest,
+    values: &[RuntimeValue],
+) -> Result<RuntimeValue, RuntimeEvalError> {
+    use arcweft_core::plan::RuntimePureOutputType;
+    use arcweft_core::pure::{AotPureFunctionBackend, RuntimePureFunctionInputRef};
+    use arcweft_core::value::{RuntimeExactInteger, RuntimeISizeValue, RuntimeUSizeValue};
+    let function = request.function_ref()?;
+    if function.output_type == RuntimePureOutputType::I64 {
+        let plan = AotPureFunctionBackend.compile_i64_with_inputs(
+            request,
+            function
+                .inputs
+                .iter()
+                .map(RuntimePureFunctionInputRef::local),
+        )?;
+        let values = values
+            .iter()
+            .map(|value| match value {
+                RuntimeValue::Int(value) => value.exact_i64().expect("exact i64 fixture input"),
+                _ => panic!("exact i64 fixture input"),
+            })
+            .collect::<Vec<_>>();
+        return plan
+            .call_with_inputs_scratch(&values, &mut Vec::new())
+            .map(|(value, _)| RuntimeValue::i64(value));
+    }
+    let input = function.inputs.first().unwrap().abi();
+    let plan = AotPureFunctionBackend.compile_scalar_with_inputs(
+        request,
+        function
+            .inputs
+            .iter()
+            .map(RuntimePureFunctionInputRef::local),
+        input,
+        function.output_type,
+    )?;
+    let mut slots = Vec::new();
+    macro_rules! exact {
+        ($ty:ty) => {{
+            let inputs = values
+                .iter()
+                .cloned()
+                .map(|value| {
+                    <$ty as RuntimeExactInteger>::try_from_runtime_value(function.name, value)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let (value, _) = plan.call_exact_int_with_inputs_scratch(&inputs, &mut slots)?;
+            Ok(value.into_runtime_value())
+        }};
+    }
+    match function.output_type {
+        RuntimePureOutputType::I8 => exact!(i8),
+        RuntimePureOutputType::I16 => exact!(i16),
+        RuntimePureOutputType::I32 => exact!(i32),
+        RuntimePureOutputType::I64 => unreachable!("i64 uses its dedicated admitted AOT ABI"),
+        RuntimePureOutputType::I128 => exact!(i128),
+        RuntimePureOutputType::ISize => exact!(RuntimeISizeValue),
+        RuntimePureOutputType::U8 => exact!(u8),
+        RuntimePureOutputType::U16 => exact!(u16),
+        RuntimePureOutputType::U32 => exact!(u32),
+        RuntimePureOutputType::U64 => exact!(u64),
+        RuntimePureOutputType::U128 => exact!(u128),
+        RuntimePureOutputType::USize => exact!(RuntimeUSizeValue),
+        RuntimePureOutputType::F32 => {
+            let values = values
+                .iter()
+                .map(|value| match value {
+                    RuntimeValue::F32(value) => *value,
+                    _ => panic!("exact f32 fixture input"),
+                })
+                .collect::<Vec<_>>();
+            plan.call_f32_with_inputs_scratch(&values, &mut slots)
+                .map(|(value, _)| RuntimeValue::F32(value))
+        }
+        RuntimePureOutputType::F64 => {
+            let values = values
+                .iter()
+                .map(|value| match value {
+                    RuntimeValue::F64(value) => *value,
+                    _ => panic!("exact f64 fixture input"),
+                })
+                .collect::<Vec<_>>();
+            plan.call_f64_with_inputs_scratch(&values, &mut slots)
+                .map(|(value, _)| RuntimeValue::F64(value))
+        }
+        RuntimePureOutputType::Bool | RuntimePureOutputType::Value => {
+            panic!("numeric fixture output")
+        }
+    }
+}
+
+fn vm_executable_result(
+    request: &PureFunctionRequest,
+    values: Vec<RuntimeValue>,
+) -> Result<RuntimeValue, RuntimeEvalError> {
+    let invocation =
+        PureFunctionRequest::try_new(Arc::clone(request.plan()), request.function_id(), values)?;
+    VmPureFunctionBackend
+        .evaluate_invocation(
+            &invocation,
+            arcweft_core::step::RuntimeStepBudget { max_ops: 64 },
+        )
+        .map(|result| result.value)
+}
+
+#[test]
+fn cranelift_executable_unsupported_child_retains_vm_and_aot_decline() {
+    let request = ordinary_executable_request(Scalar::I64, |ids| {
+        vec![arcweft_core::plan::RuntimeFlowOpSeed::Scope {
+            identity: arcweft_core::scope::RuntimeScopeIdentity::Named("outer".parse().unwrap()),
+            body: vec![arcweft_core::plan::RuntimeFlowOpSeed::ReturnExpr(expr(
+                Scalar::I64,
+                RuntimeExprSeedKind::IfLet {
+                    pattern: arcweft_core::plan::RuntimePatternSeed::new(
+                        Scalar::I64.ty(),
+                        arcweft_core::plan::RuntimePatternSeedKind::Literal(RuntimeValue::i64(0)),
+                    ),
+                    expr: Box::new(local(Scalar::I64, ids[0].clone())),
+                    guard: None,
+                    then_expr: Box::new(value(Scalar::I64, RuntimeValue::i64(7))),
+                    else_expr: Box::new(value(Scalar::I64, RuntimeValue::i64(9))),
+                },
+            ))],
+        }]
+    });
+    let function = request.function_ref().unwrap();
+    assert!(function.body.is_executable());
+    assert_eq!(
+        VmPureFunctionBackend
+            .evaluate_invocation(
+                &request,
+                arcweft_core::step::RuntimeStepBudget { max_ops: 64 }
+            )
+            .unwrap()
+            .value,
+        RuntimeValue::i64(7)
+    );
+    let locals = function
+        .inputs
+        .iter()
+        .map(arcweft_core::pure::RuntimePureFunctionInputRef::local)
+        .collect::<Vec<_>>();
+    assert!(matches!(
+        CraneliftPureFunctionBackend.compile_i64_with_inputs(&request, locals),
+        Err(CraneliftCodegenError::UnsupportedExpr(_))
+    ));
+    assert!(matches!(
+        aot_scalar_body_result(
+            &request,
+            &request
+                .bindings()
+                .iter()
+                .map(|binding| binding.value.clone())
+                .collect::<Vec<_>>()
+        ),
+        Err(RuntimeEvalError::UnsupportedPure { .. })
+    ));
+}
+
+#[test]
+fn cranelift_integer_division_declines_traps_and_retains_checked_core_results() {
+    use arcweft_core::pure::AotPureFunctionBackend;
+    use arcweft_core::value::RuntimeExpressionFailure;
+    let request = ordinary_executable_request(Scalar::I64, |ids| {
+        vec![arcweft_core::plan::RuntimeFlowOpSeed::ReturnExpr(binary(
+            Scalar::I64,
+            local(Scalar::I64, ids[0].clone()),
+            RuntimeBinaryOp::Div,
+            local(Scalar::I64, ids[1].clone()),
+        ))]
+    });
+    let function = request.function_ref().unwrap();
+    let locals = function
+        .inputs
+        .iter()
+        .map(arcweft_core::pure::RuntimePureFunctionInputRef::local)
+        .collect::<Vec<_>>();
+    assert!(matches!(
+        CraneliftPureFunctionBackend.compile_i64_with_inputs(&request, locals.iter().copied()),
+        Err(CraneliftCodegenError::UnsupportedExpr(_))
+    ));
+    let aot = AotPureFunctionBackend
+        .compile_i64_with_inputs(&request, locals)
+        .unwrap();
+    let mut vm = arcweft_core::pure::VmPureFunctionScratch::default();
+    let expression_request = ordinary_scope_request(Scalar::I64, |ids| {
+        binary(
+            Scalar::I64,
+            local(Scalar::I64, ids[0].clone()),
+            RuntimeBinaryOp::Div,
+            local(Scalar::I64, ids[1].clone()),
+        )
+    });
+    let expression = expression_request.function_ref().unwrap();
+    let zero = [
+        RuntimeValue::i64(12),
+        RuntimeValue::i64(0),
+        RuntimeValue::i64(99),
+    ];
+    assert!(matches!(
+        vm.evaluate_values(expression_request.plan(), expression.id(), Vec::from(zero)),
+        Err(RuntimeEvalError::RecoverableExpression(
+            RuntimeExpressionFailure::DivisionByZero
+        ))
+    ));
+    assert!(matches!(
+        aot.call_with_inputs(&[12, 0, 99]),
+        Err(RuntimeEvalError::RecoverableExpression(
+            RuntimeExpressionFailure::DivisionByZero
+        ))
+    ));
+    // RuntimeDeterministicNumeric in Core owns wrapping division when rhs !=0.
+    assert_eq!(
+        vm_executable_result(
+            &request,
+            vec![
+                RuntimeValue::i64(i64::MIN),
+                RuntimeValue::i64(-1),
+                RuntimeValue::i64(99)
+            ]
+        )
+        .unwrap(),
+        RuntimeValue::i64(i64::MIN)
+    );
+    assert_eq!(
+        aot.call_with_inputs(&[i64::MIN, -1, 99]).unwrap().0,
+        i64::MIN
+    );
+    assert_eq!(
+        vm_executable_result(
+            &request,
+            vec![
+                RuntimeValue::i64(21),
+                RuntimeValue::i64(3),
+                RuntimeValue::i64(99)
+            ]
+        )
+        .unwrap(),
+        RuntimeValue::i64(7)
+    );
+    assert_eq!(aot.call_with_inputs(&[21, 3, 99]).unwrap().0, 7);
 }
 
 #[test]
@@ -1212,4 +1589,245 @@ fn cranelift_scope_keeps_unsupported_child_decline() {
         CraneliftPureFunctionBackend.compile_i64_with_inputs(&request, locals),
         Err(CraneliftCodegenError::UnsupportedExpr(_))
     ));
+}
+
+#[test]
+fn cranelift_executable_returns_preserve_numeric_abis_batches_and_full_formals() {
+    macro_rules! check {
+        ($scalar:ident, $compile:ident, $rows:expr, $wrap:expr) => {{
+            let request = numeric_executable_request(Scalar::$scalar);
+            let function = request.function_ref().unwrap();
+            let locals = function
+                .inputs
+                .iter()
+                .map(arcweft_core::pure::RuntimePureFunctionInputRef::local)
+                .collect::<Vec<_>>();
+            assert_eq!(locals.len(), 3, "unused formal remains in the admitted ABI");
+            assert!(
+                PureFunctionRequest::try_new(
+                    Arc::clone(request.plan()),
+                    function.id(),
+                    (0..2).map(|_| scalar_number(Scalar::$scalar, 0))
+                )
+                .is_err()
+            );
+            let compiled = CraneliftPureFunctionBackend
+                .$compile(&request, locals.iter().copied())
+                .unwrap();
+            for (arguments, expected) in $rows {
+                assert!(
+                    compiled.call(&arguments[..2]).is_err(),
+                    "compiled full formal arity is enforced"
+                );
+                assert_eq!(compiled.call(&arguments).unwrap(), expected);
+                let mut batch = [expected; 2];
+                let flat = arguments.into_iter().chain(arguments).collect::<Vec<_>>();
+                compiled.call_flat_batch(&flat, &mut batch).unwrap();
+                assert_eq!(batch, [expected; 2]);
+                let values = arguments.into_iter().map($wrap).collect::<Vec<_>>();
+                assert_eq!(
+                    aot_scalar_body_result(&request, &values).unwrap(),
+                    $wrap(expected)
+                );
+                let expected = $wrap(expected);
+                let actual =
+                    vm_executable_result(&request, arguments.into_iter().map($wrap).collect())
+                        .unwrap();
+                assert_eq!(actual, expected);
+            }
+        }};
+    }
+    check!(
+        I8,
+        compile_i8_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::i8
+    );
+    check!(
+        I16,
+        compile_i16_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::i16
+    );
+    check!(
+        I32,
+        compile_i32_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::i32
+    );
+    check!(
+        I64,
+        compile_i64_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::i64
+    );
+    check!(
+        I128,
+        compile_i128_batch_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::i128
+    );
+    check!(
+        ISize,
+        compile_i64_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::isize
+    );
+    check!(
+        U8,
+        compile_u8_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::u8
+    );
+    check!(
+        U16,
+        compile_u16_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::u16
+    );
+    check!(
+        U32,
+        compile_u32_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::u32
+    );
+    check!(
+        U64,
+        compile_u64_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::u64
+    );
+    check!(
+        U128,
+        compile_u128_batch_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::u128
+    );
+    check!(
+        USize,
+        compile_u64_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::usize
+    );
+    check!(
+        F32,
+        compile_f32_with_inputs,
+        [([3.0, 4.0, 99.0], 14.0), ([11.0, 0.0, 77.0], 12.0)],
+        RuntimeValue::F32
+    );
+    check!(
+        F64,
+        compile_f64_with_inputs,
+        [([3.0, 4.0, 99.0], 14.0), ([11.0, 0.0, 77.0], 12.0)],
+        RuntimeValue::F64
+    );
+}
+
+#[test]
+fn checked_unsigned_native_outcomes_keep_fault_prefix_and_rejected_sum_values() {
+    use arcweft_core::value::RuntimeExpressionFailure;
+    let helper = admit(Scalar::U64, "checked_unsigned", 2, 2, |ids| {
+        binary(
+            Scalar::U64,
+            local(Scalar::U64, ids[0].clone()),
+            RuntimeBinaryOp::Div,
+            local(Scalar::U64, ids[1].clone()),
+        )
+    });
+    let request = helper.request([RuntimeValue::u64(12), RuntimeValue::u64(2)]);
+    let compiled = CraneliftPureFunctionBackend
+        .compile_u64_with_inputs(&request, helper.input_locals())
+        .expect("checked native division compiles");
+    assert_eq!(compiled.call(&[12, 2]).unwrap(), 6);
+    assert!(matches!(
+        compiled.call(&[12, 0]),
+        Err(CraneliftCodegenError::Execution {
+            error: RuntimeEvalError::RecoverableExpression(
+                RuntimeExpressionFailure::DivisionByZero
+            ),
+            completed_rows: 0,
+        })
+    ));
+    let mut out = [77; 3];
+    assert!(matches!(
+        compiled.call_flat_batch(&[12, 2, 9, 0, 20, 2], &mut out),
+        Err(CraneliftCodegenError::Execution {
+            error: RuntimeEvalError::RecoverableExpression(
+                RuntimeExpressionFailure::DivisionByZero
+            ),
+            completed_rows: 1,
+        })
+    ));
+    assert_eq!(out, [6, 77, 77], "failed row and suffix publish no output");
+    assert!(matches!(
+        compiled.call_flat_batch_sum(&[12, 2, 9, 0, 20, 2], 3),
+        Err(CraneliftCodegenError::Execution {
+            error: RuntimeEvalError::RecoverableExpression(
+                RuntimeExpressionFailure::DivisionByZero
+            ),
+            completed_rows: 1,
+        })
+    ));
+    assert!(
+        matches!(compiled.call_flat_batch_sum(&[12,2,u64::MAX,1,20,2],3),
+        Err(CraneliftCodegenError::Execution {
+            error:RuntimeEvalError::UnsupportedPure {reason,..},completed_rows:1,
+        }) if reason.contains(&u64::MAX.to_string()) && reason.contains("i64 sum"))
+    );
+    assert_eq!(compiled.call(&[u64::MAX, 1]).unwrap(), u64::MAX);
+    assert_eq!(compiled.call_flat_batch_sum(&[], 0).unwrap(), 0);
+    assert_eq!(NATIVE_PURE_CALL_ABI_VERSION, 1);
+    assert_eq!(NativePureCallOutcome::from_code(77), None);
+    assert!(matches!(
+        native_abi::check_outcome(77, 0, 1),
+        Err(CraneliftCodegenError::InvalidNativeOutcome { code: 77, .. })
+    ));
+    assert!(matches!(
+        native_abi::check_outcome(0, 0, 1),
+        Err(CraneliftCodegenError::InvalidNativeOutcome { code: 0, .. })
+    ));
+    assert!(matches!(
+        native_abi::check_outcome(1, 1, 1),
+        Err(CraneliftCodegenError::InvalidNativeOutcome { code: 1, .. })
+    ));
+}
+
+#[test]
+fn native_wide_sum_refusal_uses_the_exact_typed_conversion_without_narrowing() {
+    let signed = admit(Scalar::I128, "wide_signed_sum", 1, 1, |ids| {
+        local(Scalar::I128, ids[0].clone())
+    });
+    let request = signed.request([RuntimeValue::i128(1)]);
+    let compiled = CraneliftPureFunctionBackend
+        .compile_i128_batch_with_inputs(&request, signed.input_locals())
+        .unwrap();
+    for value in [
+        i128::MIN,
+        i128::from(i64::MIN) - 1,
+        i128::from(i64::MAX) + 1,
+        i128::MAX,
+    ] {
+        assert!(matches!(compiled.call_flat_batch_sum(&[1,value,2],3),
+            Err(CraneliftCodegenError::Execution {error:RuntimeEvalError::UnsupportedPure {reason,..},completed_rows:1})
+            if reason.contains(&value.to_string())));
+    }
+    assert_eq!(
+        compiled
+            .call_flat_batch_sum(&[i128::from(i64::MIN), i128::from(i64::MAX)], 2)
+            .unwrap(),
+        -1
+    );
+    let unsigned = admit(Scalar::U128, "wide_unsigned_sum", 1, 1, |ids| {
+        local(Scalar::U128, ids[0].clone())
+    });
+    let request = unsigned.request([RuntimeValue::u128(1)]);
+    let compiled = CraneliftPureFunctionBackend
+        .compile_u128_batch_with_inputs(&request, unsigned.input_locals())
+        .unwrap();
+    for value in [(i64::MAX as u128) + 1, u128::MAX] {
+        assert!(matches!(compiled.call_flat_batch_sum(&[1,value,2],3),
+            Err(CraneliftCodegenError::Execution {error:RuntimeEvalError::UnsupportedPure {reason,..},completed_rows:1})
+            if reason.contains(&value.to_string())));
+    }
+    assert_eq!(compiled.call_flat_batch_sum(&[1, 2, 3], 3).unwrap(), 6);
 }

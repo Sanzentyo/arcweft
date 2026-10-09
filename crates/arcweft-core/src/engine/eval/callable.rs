@@ -9,7 +9,7 @@ use std::sync::Arc;
 use crate::pattern::match_runtime_pattern_owned;
 use crate::plan::{RuntimeFunctionInputSource, RuntimeFunctionSiteBody};
 use crate::plan::{RuntimePureInputType, RuntimePureOutputType};
-use crate::pure::{RuntimeFixedArgs, RuntimeI32Args, RuntimeI64Args, RuntimePureFunctionRef};
+use crate::pure::{RuntimeFixedArgs, RuntimePureFunctionRef};
 use crate::runtime_id::{RuntimeCallableStateId, RuntimeFunctionSiteId};
 use crate::task::RuntimeProgramOwner;
 use crate::value::{
@@ -177,17 +177,10 @@ impl Engine {
         let plan = Arc::clone(&self.plan);
         let declaration = plan.validate_function_site_inputs(site, &captures, &arguments)?;
         let type_instantiation = declaration.type_instantiation.clone();
-        let RuntimeFunctionSiteBody::Expression(body) = declaration.body() else {
-            return Err(RuntimeEvalError::UnsupportedPure {
-                name: "structured.function".to_owned(),
-                reason: "an executable runtime function requires function-call control transfer"
-                    .to_owned(),
-            });
-        };
         if declaration.is_eager_pure_candidate()
             && let Ok(function) = RuntimePureFunctionRef::resolve(&plan, site)
-            && let Some(value) =
-                Self::evaluate_scalar_function_site(function, &captures, &arguments, backend)?
+            && let Some(value) = self
+                .evaluate_budgeted_scalar_function_site(function, &captures, &arguments, backend)?
         {
             if !plan.value_matches_type(declaration.result(), &value)? {
                 return Err(RuntimeEvalError::InvalidExpressionType(
@@ -196,6 +189,13 @@ impl Engine {
             }
             return Ok(value);
         }
+        let RuntimeFunctionSiteBody::Expression(body) = declaration.body() else {
+            return Err(RuntimeEvalError::UnsupportedPure {
+                name: "structured.function".to_owned(),
+                reason: "an executable runtime function requires function-call control transfer"
+                    .to_owned(),
+            });
+        };
         let mut captures = captures.into_iter().map(Some).collect::<Vec<_>>();
         let mut arguments = arguments.into_iter().map(Some).collect::<Vec<_>>();
         let mut staged = Vec::new();
@@ -254,7 +254,50 @@ impl Engine {
     /// The normal function ingress has already validated the complete packet.
     /// Scalar backends borrow only a fixed physical pack derived from those
     /// exact rows; every declared formal remains present, including discards.
-    fn evaluate_scalar_function_site(
+    /// Completes an executable scalar only inside the current owning dispatch.
+    /// All other fibers and OneOp retain their original scheduler/return
+    /// continuation even when a large numerical max_ops was supplied.
+    pub(in crate::engine) fn evaluate_budgeted_scalar_function_site(
+        &mut self,
+        function: RuntimePureFunctionRef<'_>,
+        captures: &[RuntimeValue],
+        arguments: &[RuntimeValue],
+        backend: &mut impl RuntimeCallBackend,
+    ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        let cost = if function.body.is_executable() {
+            let Some(cost) = function.exact_scalar_completion_control_ops() else {
+                return Ok(None);
+            };
+            let Some(charge) = self.scalar_step_charge else {
+                return Ok(None);
+            };
+            if charge.mode == crate::step::RuntimeStepMode::OneOp
+                || charge.fiber != self.fiber.id
+                || cost > charge.remaining
+                || self.has_executor_work()
+                || self.has_joined_work()
+                || self.fiber.await_observer.is_some()
+                || !matches!(self.fiber.status, super::super::FlowFiberStatus::Running)
+            {
+                return Ok(None);
+            }
+            cost
+        } else {
+            0
+        };
+        let value = Self::evaluate_scalar_function_site(function, captures, arguments, backend)?;
+        if cost != 0 && value.is_some() {
+            let charge = self
+                .scalar_step_charge
+                .as_mut()
+                .expect("a completed executable body retains its owning dispatch budget");
+            debug_assert!(cost <= charge.remaining);
+            charge.remaining -= cost;
+            charge.charged += cost;
+        }
+        Ok(value)
+    }
+    pub(in crate::engine) fn evaluate_scalar_function_site(
         function: RuntimePureFunctionRef<'_>,
         captures: &[RuntimeValue],
         arguments: &[RuntimeValue],
@@ -332,7 +375,7 @@ impl Engine {
                     *slot = i32::try_from_runtime_value(function.name, value(index)?.clone())?;
                 }
                 backend
-                    .call_i32(function, RuntimeI32Args::new(pack, arity))
+                    .call_i32_slice(function, &pack[..arity])
                     .map(|value| value.map(RuntimeValue::i32))
             }
             RuntimePureOutputType::I64 => {
@@ -355,7 +398,7 @@ impl Engine {
                         .ok_or_else(|| RuntimeEvalError::ExpectedInt(integer.to_string()))?;
                 }
                 backend
-                    .call_i64(function, RuntimeI64Args::new(pack, arity))
+                    .call_i64_slice(function, &pack[..arity])
                     .map(|value| value.map(RuntimeValue::i64))
             }
             RuntimePureOutputType::F32 => {

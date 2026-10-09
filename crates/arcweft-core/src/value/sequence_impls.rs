@@ -1932,34 +1932,88 @@ impl DenseSeq {
 
     pub fn sum_as_i64(&self) -> Option<i64> {
         match self {
-            Self::I8(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
-            Self::I16(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
-            Self::I32(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
-            Self::I64(values) => Some(values.as_slice().iter().sum()),
+            Self::I8(values) => Some(
+                values
+                    .as_slice()
+                    .iter()
+                    .copied()
+                    .map(i64::from)
+                    .fold(0_i64, i64::wrapping_add),
+            ),
+            Self::I16(values) => Some(
+                values
+                    .as_slice()
+                    .iter()
+                    .copied()
+                    .map(i64::from)
+                    .fold(0_i64, i64::wrapping_add),
+            ),
+            Self::I32(values) => Some(
+                values
+                    .as_slice()
+                    .iter()
+                    .copied()
+                    .map(i64::from)
+                    .fold(0_i64, i64::wrapping_add),
+            ),
+            Self::I64(values) => Some(
+                values
+                    .as_slice()
+                    .iter()
+                    .copied()
+                    .fold(0_i64, i64::wrapping_add),
+            ),
             Self::ISize(values) => Some(
                 values
                     .as_slice()
                     .iter()
                     .copied()
                     .map(RuntimeISizeValue::get)
-                    .sum(),
+                    .fold(0_i64, i64::wrapping_add),
             ),
             Self::I128(values) => values.as_slice().iter().try_fold(0_i64, |acc, value| {
-                i64::try_from(*value).ok().map(|value| acc + value)
+                i64::try_from(*value)
+                    .ok()
+                    .map(|value| acc.wrapping_add(value))
             }),
-            Self::U8(values) | Self::Bytes(values) => {
-                Some(values.as_slice().iter().copied().map(i64::from).sum())
-            }
-            Self::U16(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
-            Self::U32(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
+            Self::U8(values) | Self::Bytes(values) => Some(
+                values
+                    .as_slice()
+                    .iter()
+                    .copied()
+                    .map(i64::from)
+                    .fold(0_i64, i64::wrapping_add),
+            ),
+            Self::U16(values) => Some(
+                values
+                    .as_slice()
+                    .iter()
+                    .copied()
+                    .map(i64::from)
+                    .fold(0_i64, i64::wrapping_add),
+            ),
+            Self::U32(values) => Some(
+                values
+                    .as_slice()
+                    .iter()
+                    .copied()
+                    .map(i64::from)
+                    .fold(0_i64, i64::wrapping_add),
+            ),
             Self::U64(values) => values.as_slice().iter().try_fold(0_i64, |acc, value| {
-                i64::try_from(*value).ok().map(|value| acc + value)
+                i64::try_from(*value)
+                    .ok()
+                    .map(|value| acc.wrapping_add(value))
             }),
             Self::USize(values) => values.as_slice().iter().try_fold(0_i64, |acc, value| {
-                i64::try_from(value.get()).ok().map(|value| acc + value)
+                i64::try_from(value.get())
+                    .ok()
+                    .map(|value| acc.wrapping_add(value))
             }),
             Self::U128(values) => values.as_slice().iter().try_fold(0_i64, |acc, value| {
-                i64::try_from(*value).ok().map(|value| acc + value)
+                i64::try_from(*value)
+                    .ok()
+                    .map(|value| acc.wrapping_add(value))
             }),
             Self::Units(_)
             | Self::F32(_)

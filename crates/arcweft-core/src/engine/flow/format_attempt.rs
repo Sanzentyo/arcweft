@@ -192,7 +192,10 @@ impl Engine {
                 .pop()
                 .expect("bounded format unwind");
             match entry.kind {
-                FlowControlStackEntryKind::Scope { cleanups, .. } => {
+                FlowControlStackEntryKind::Scope {
+                    origin, cleanups, ..
+                } => {
+                    self.cancel_scheduled_scope_close(origin);
                     self.fiber.env.pop_scope();
                     self.emit_scope_cleanups(cleanups, output, pure_backend);
                 }

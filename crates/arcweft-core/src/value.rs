@@ -3389,26 +3389,22 @@ pub(crate) fn evaluate_numeric_op<T: RuntimeDeterministicNumeric>(
 
 pub(crate) fn sum_i64_sequence_ref(items: &[RuntimeValue]) -> Result<i64, RuntimeEvalError> {
     items.iter().try_fold(0_i64, |acc, item| match item {
-        RuntimeValue::Int(value) => {
-            value
-                .try_sum_as_i64()
-                .map(|value| acc + value)
-                .ok_or_else(|| RuntimeEvalError::UnsupportedBinary {
-                    op: "+",
-                    lhs: "int".to_owned(),
-                    rhs: runtime_value_label(item),
-                })
-        }
-        RuntimeValue::UInt(value) => {
-            value
-                .try_sum_as_i64()
-                .map(|value| acc + value)
-                .ok_or_else(|| RuntimeEvalError::UnsupportedBinary {
-                    op: "+",
-                    lhs: "int".to_owned(),
-                    rhs: runtime_value_label(item),
-                })
-        }
+        RuntimeValue::Int(value) => value
+            .try_sum_as_i64()
+            .map(|value| acc.wrapping_add(value))
+            .ok_or_else(|| RuntimeEvalError::UnsupportedBinary {
+                op: "+",
+                lhs: "int".to_owned(),
+                rhs: runtime_value_label(item),
+            }),
+        RuntimeValue::UInt(value) => value
+            .try_sum_as_i64()
+            .map(|value| acc.wrapping_add(value))
+            .ok_or_else(|| RuntimeEvalError::UnsupportedBinary {
+                op: "+",
+                lhs: "int".to_owned(),
+                rhs: runtime_value_label(item),
+            }),
         value => Err(RuntimeEvalError::UnsupportedBinary {
             op: "+",
             lhs: "int".to_owned(),

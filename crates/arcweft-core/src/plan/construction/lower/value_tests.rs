@@ -311,3 +311,191 @@ crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::
         [RuntimeFmtParameterId::Style, RuntimeFmtParameterId::Value]
     );
 }
+
+fn sum_expression_seed(result: u8, value: RuntimeValue) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        semantic(result),
+        RuntimeExprSeedKind::Sum {
+            source: Box::new(RuntimeExprSeed::new(
+                semantic(2),
+                RuntimeExprSeedKind::BracketSeq(Box::new([RuntimeExprSeed::new(
+                    semantic(1),
+                    RuntimeExprSeedKind::Value(value),
+                )])),
+            )),
+        },
+    )
+}
+
+#[test]
+fn sum_construction_accepts_all_integer_widths_with_an_i64_result() {
+    for (item, value) in [
+        (Type::Signed(RuntimeSignedIntWidth::I8), RuntimeValue::i8(7)),
+        (
+            Type::Signed(RuntimeSignedIntWidth::I16),
+            RuntimeValue::i16(7),
+        ),
+        (
+            Type::Signed(RuntimeSignedIntWidth::I32),
+            RuntimeValue::i32(7),
+        ),
+        (
+            Type::Signed(RuntimeSignedIntWidth::I64),
+            RuntimeValue::i64(7),
+        ),
+        (
+            Type::Signed(RuntimeSignedIntWidth::I128),
+            RuntimeValue::i128(7),
+        ),
+        (
+            Type::Signed(RuntimeSignedIntWidth::ISize),
+            RuntimeValue::isize(7),
+        ),
+        (
+            Type::Unsigned(RuntimeUnsignedIntWidth::U8),
+            RuntimeValue::u8(7),
+        ),
+        (
+            Type::Unsigned(RuntimeUnsignedIntWidth::U16),
+            RuntimeValue::u16(7),
+        ),
+        (
+            Type::Unsigned(RuntimeUnsignedIntWidth::U32),
+            RuntimeValue::u32(7),
+        ),
+        (
+            Type::Unsigned(RuntimeUnsignedIntWidth::U64),
+            RuntimeValue::u64(7),
+        ),
+        (
+            Type::Unsigned(RuntimeUnsignedIntWidth::U128),
+            RuntimeValue::u128(7),
+        ),
+        (
+            Type::Unsigned(RuntimeUnsignedIntWidth::USize),
+            RuntimeValue::usize(7),
+        ),
+    ] {
+        for sequence in [
+            Type::Sequence {
+                kind: RuntimePlanSequenceKind::Vec,
+                item: semantic(1),
+            },
+            Type::Array {
+                item: semantic(1),
+                length: 1.into(),
+            },
+        ] {
+            let mut builder = RuntimePlanBuilder::new();
+            builder
+                .admit_type_batch(
+                    [
+                        seed(1, item.clone()),
+                        seed(2, sequence),
+                        seed(3, Type::Signed(RuntimeSignedIntWidth::I64)),
+                    ],
+                    [],
+                )
+                .expect("exact integer and collection types admit");
+            let lowered = builder
+                .lower_expression(sum_expression_seed(3, value.clone()))
+                .expect("each integer width sums into the maintained i64 result");
+            assert_eq!(
+                builder.projection(lowered.ty()).unwrap(),
+                &Type::Signed(RuntimeSignedIntWidth::I64)
+            );
+            let RuntimeExprKind::Sum { source } = lowered.kind() else {
+                panic!("the admitted sum retains its source expression");
+            };
+            let (source_item, _) = builder
+                .root_body_context()
+                .sequence_projection(source.ty(), "test sum source")
+                .unwrap();
+            assert_eq!(
+                source_item,
+                builder
+                    .resolve_seed_type("test original sum element", semantic(1))
+                    .unwrap()
+            );
+        }
+    }
+}
+
+#[test]
+fn sum_construction_rejects_noninteger_elements_at_their_exact_type() {
+    for (item, value) in [
+        (Type::F32, RuntimeValue::f32(7.0)),
+        (Type::F64, RuntimeValue::f64(7.0)),
+        (Type::Bool, RuntimeValue::Bool(true)),
+        (Type::String, RuntimeValue::String("seven".to_owned())),
+    ] {
+        for result in [1, 3] {
+            let mut builder = RuntimePlanBuilder::new();
+            builder
+                .admit_type_batch(
+                    [
+                        seed(1, item.clone()),
+                        seed(
+                            2,
+                            Type::Sequence {
+                                kind: RuntimePlanSequenceKind::Vec,
+                                item: semantic(1),
+                            },
+                        ),
+                        seed(3, Type::Signed(RuntimeSignedIntWidth::I64)),
+                    ],
+                    [],
+                )
+                .unwrap();
+            let item_type = builder
+                .resolve_seed_type("test sum element", semantic(1))
+                .unwrap();
+            assert!(matches!(
+                builder.lower_expression(sum_expression_seed(result, value.clone())),
+                Err(RuntimePlanBuildError::InvalidTypeProjection {
+                    context: "sum element", ty
+                }) if ty == item_type
+            ));
+        }
+    }
+}
+
+#[test]
+fn sum_construction_rejects_a_forged_result_matching_the_source_width() {
+    for (item, value) in [
+        (
+            Type::Signed(RuntimeSignedIntWidth::I32),
+            RuntimeValue::i32(7),
+        ),
+        (
+            Type::Unsigned(RuntimeUnsignedIntWidth::U64),
+            RuntimeValue::u64(7),
+        ),
+    ] {
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [
+                    seed(1, item),
+                    seed(
+                        2,
+                        Type::Sequence {
+                            kind: RuntimePlanSequenceKind::Vec,
+                            item: semantic(1),
+                        },
+                    ),
+                ],
+                [],
+            )
+            .unwrap();
+        let result_type = builder
+            .resolve_seed_type("test sum result", semantic(1))
+            .unwrap();
+        assert!(matches!(
+            builder.lower_expression(sum_expression_seed(1, value)),
+            Err(RuntimePlanBuildError::InvalidTypeProjection {
+                context: "sum result", ty
+            }) if ty == result_type
+        ));
+    }
+}

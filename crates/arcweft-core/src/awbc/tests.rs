@@ -1660,14 +1660,17 @@ fn named_scope_layout_roundtrip_and_snapshot_admission_preserve_static_identity(
     };
     program.frame_layouts[0].scopes = vec![
         AwbcScopeDefinition {
+            kind: crate::scope::RuntimeScopeFrameKind::EmittedLexical,
             parent: None,
             identity: named("rain"),
         },
         AwbcScopeDefinition {
+            kind: crate::scope::RuntimeScopeFrameKind::EmittedLexical,
             parent: Some(AwbcScopeId(0)),
             identity: named("window"),
         },
         AwbcScopeDefinition {
+            kind: crate::scope::RuntimeScopeFrameKind::EmittedLexical,
             parent: Some(AwbcScopeId(0)),
             identity: crate::scope::RuntimeScopeIdentity::Anonymous,
         },
@@ -7103,6 +7106,7 @@ fn fiber_checkpoint_and_serde_preserve_cleanup_stacks() {
         resources: Vec::new(),
     });
     program.frame_layouts[0].scopes = vec![AwbcScopeDefinition {
+        kind: crate::scope::RuntimeScopeFrameKind::EmittedLexical,
         parent: None,
         identity: crate::scope::RuntimeScopeIdentity::Anonymous,
     }];

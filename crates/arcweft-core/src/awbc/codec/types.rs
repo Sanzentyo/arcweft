@@ -1212,6 +1212,7 @@ impl Wire for AwbcFrameLayout {
 impl Wire for AwbcScopeDefinition {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.parent.write_wire(writer)?;
+        (self.kind as u8).write_wire(writer)?;
         match &self.identity {
             crate::scope::RuntimeScopeIdentity::Anonymous => 0u8.write_wire(writer),
             crate::scope::RuntimeScopeIdentity::Named(name) => {
@@ -1223,6 +1224,18 @@ impl Wire for AwbcScopeDefinition {
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         let parent = Option::<AwbcScopeId>::read_wire(reader)?;
+        let offset = reader.offset();
+        let kind = match u8::read_wire(reader)? {
+            0 => crate::scope::RuntimeScopeFrameKind::EmittedLexical,
+            1 => crate::scope::RuntimeScopeFrameKind::Control,
+            tag => {
+                return Err(AwbcCodecError::UnknownTag {
+                    kind: "scope frame kind",
+                    tag,
+                    offset,
+                });
+            }
+        };
         let offset = reader.offset();
         let identity = match u8::read_wire(reader)? {
             0 => crate::scope::RuntimeScopeIdentity::Anonymous,
@@ -1243,7 +1256,11 @@ impl Wire for AwbcScopeDefinition {
                 });
             }
         };
-        Ok(Self { parent, identity })
+        Ok(Self {
+            parent,
+            kind,
+            identity,
+        })
     }
 }
 
@@ -1582,5 +1599,41 @@ mod map_kind_wire_tests {
             .finish()
             .expect("consume empty codec arguments");
         assert_eq!(decoded_empty.data_codec_arguments(), Some(&[][..]));
+    }
+}
+
+#[cfg(test)]
+mod scope_kind_tests {
+    use super::*;
+    use crate::scope::{RuntimeScopeFrameKind, RuntimeScopeIdentity};
+    #[test]
+    fn scope_frame_kind_roundtrips_and_rejects_an_unknown_wire_tag() {
+        for kind in [
+            RuntimeScopeFrameKind::EmittedLexical,
+            RuntimeScopeFrameKind::Control,
+        ] {
+            let value = AwbcScopeDefinition {
+                parent: None,
+                kind,
+                identity: RuntimeScopeIdentity::Anonymous,
+            };
+            let mut writer = Writer::default();
+            value.write_wire(&mut writer).unwrap();
+            let bytes = writer.into_bytes();
+            let mut reader = Reader::new(&bytes, &super::super::AwbcDecodeBudget::default());
+            assert_eq!(AwbcScopeDefinition::read_wire(&mut reader).unwrap(), value);
+            reader.finish().unwrap();
+        }
+        let mut writer = Writer::default();
+        Option::<AwbcScopeId>::None.write_wire(&mut writer).unwrap();
+        let offset = writer.len();
+        writer.write_u8(7);
+        writer.write_u8(0);
+        let bytes = writer.into_bytes();
+        let mut reader = Reader::new(&bytes, &super::super::AwbcDecodeBudget::default());
+        assert!(
+            matches!(AwbcScopeDefinition::read_wire(&mut reader),Err(AwbcCodecError::UnknownTag {kind:"scope frame kind",tag:7,offset:actual}) if actual==offset)
+        );
+        assert_eq!(crate::awbc::schema::AWBC_CODEC_VERSION, 1);
     }
 }

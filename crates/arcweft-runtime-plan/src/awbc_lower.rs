@@ -367,3 +367,6 @@ pub(crate) fn table_range_len(start: u32, end: usize) -> u32 {
         .checked_sub(start)
         .expect("AWBC table range end precedes start")
 }
+
+#[cfg(test)]
+mod scope_exit_tests;

@@ -468,6 +468,8 @@ impl<'a> RuntimeBodySemanticContext<'a> {
             | Op::RegisterCleanup { .. }
             | Op::CancelCleanup { .. }
             | Op::EnterScope { .. }
+            | Op::EnterScheduledScope { .. }
+            | Op::ExitScheduledScope { .. }
             | Op::ExitScope
             | Op::CompleteAwaitObserver
             | Op::ExitScopeBind { .. }

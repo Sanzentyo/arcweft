@@ -25,16 +25,32 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<(), RuntimeEvalError> {
         let site = frame.site;
-        let declaration = self
-            .plan
-            .validate_function_site_inputs(site, &captures, &args)?;
+        let plan_owner = Arc::clone(&self.plan);
+        let declaration = plan_owner.validate_function_site_inputs(site, &captures, &args)?;
         frame.type_instantiation = declaration.type_instantiation.clone();
-        let body = declaration.body().clone();
-        let inputs = declaration.inputs().to_vec();
-        if let RuntimeFunctionSiteBody::Expression(_) = &body
+        let executable = matches!(declaration.body(), RuntimeFunctionSiteBody::Executable(_));
+        if executable
+            && declaration.is_eager_pure_candidate()
+            && let Ok(function) = crate::pure::RuntimePureFunctionRef::resolve(&plan_owner, site)
+            && let Some(value) = self.evaluate_budgeted_scalar_function_site(
+                function,
+                &captures,
+                &args,
+                pure_backend,
+            )?
+        {
+            // VM runtime backends decline executable scalar calls so the
+            // original budgeted frame remains active. Only an admitted AOT/JIT
+            // capability can complete this physical fast path.
+            frame.caller_pending_ops = std::mem::take(&mut self.fiber.pending_ops);
+            self.complete_function_call_return(frame, value, output, pure_backend);
+            return Ok(());
+        }
+        if let RuntimeFunctionSiteBody::Expression(_) = declaration.body()
             && !matches!(
                 frame.continuation,
                 FunctionReturnContinuation::Program { .. }
+                    | FunctionReturnContinuation::Function { .. }
             )
         {
             let value = self.evaluate_function_site(site, captures, args, pure_backend)?;
@@ -42,6 +58,8 @@ impl Engine {
             self.complete_function_call_return(frame, value, output, pure_backend);
             return Ok(());
         }
+        let body = declaration.body().clone();
+        let inputs = declaration.inputs().to_vec();
         let ops = match body {
             RuntimeFunctionSiteBody::Expression(body) => {
                 vec![crate::plan::FlowOp::ReturnExpr(body)]
@@ -83,6 +101,15 @@ impl Engine {
             Ok::<Vec<crate::value::RuntimeLocalBinding>, RuntimeEvalError>(staged)
         })();
         let staged = setup?;
+        if executable
+            && let Ok(function) = crate::pure::RuntimePureFunctionRef::resolve(&plan_owner, site)
+            && function.scalar_eval_supported
+            && function
+                .function_site()
+                .is_some_and(|site| site.is_eager_pure_candidate())
+        {
+            pure_backend.record_interpreted_function_call(function);
+        }
         self.fiber
             .env
             .push_function_scope(site, staged.len(), frame.type_instantiation.clone());
@@ -151,7 +178,27 @@ impl Engine {
                     return;
                 }
                 self.fiber.cursor = None;
-                self.program_result = Some((program, value));
+                self.invocation_result =
+                    Some((crate::engine::NativeInvocationRoot::Program(program), value));
+                self.fiber.status = FlowFiberStatus::Done(crate::engine::FlowExit::Done);
+            }
+            FunctionReturnContinuation::Function { site } => {
+                if site != frame.site
+                    || crate::pure::RuntimePureFunctionRef::resolve(&plan_owner, site).is_err()
+                {
+                    self.fail_eval(
+                        RuntimeEvalError::UnsupportedPure {
+                            name: "structured.function".to_owned(),
+                            reason: "function return does not match its admitted invocation root"
+                                .to_owned(),
+                        },
+                        output,
+                    );
+                    return;
+                }
+                self.fiber.cursor = None;
+                self.invocation_result =
+                    Some((crate::engine::NativeInvocationRoot::Function(site), value));
                 self.fiber.status = FlowFiberStatus::Done(crate::engine::FlowExit::Done);
             }
             FunctionReturnContinuation::CallableDefault { pending, result } => {
@@ -207,7 +254,10 @@ impl Engine {
         }
         while let Some(entry) = self.fiber.control_stack.pop() {
             match entry.kind {
-                FlowControlStackEntryKind::Scope { cleanups, .. } => {
+                FlowControlStackEntryKind::Scope {
+                    origin, cleanups, ..
+                } => {
+                    self.cancel_scheduled_scope_close(origin);
                     self.fiber.env.pop_scope();
                     self.emit_scope_cleanups(cleanups, output, pure_backend);
                 }

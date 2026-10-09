@@ -217,6 +217,8 @@ impl FlowOp {
             Self::CompleteAwaitObserver => 44,
             Self::ExitScopeBind { .. } => 45,
             Self::Noop => 46,
+            Self::EnterScheduledScope { .. } => 47,
+            Self::ExitScheduledScope { .. } => 48,
         }
     }
 }
@@ -444,6 +446,8 @@ impl FlowOp {
             | FlowOp::CancelCleanup { .. }
             | FlowOp::EnterScope { .. }
             | FlowOp::ExitScope
+            | FlowOp::EnterScheduledScope { .. }
+            | FlowOp::ExitScheduledScope { .. }
             | FlowOp::CompleteAwaitObserver
             | FlowOp::Noop => {}
         }
@@ -455,7 +459,13 @@ impl FlowOp {
     /// values use their dedicated snapshot owners instead.
     pub(crate) fn literals_permit_copy(&self) -> bool {
         try_visit_ops(std::slice::from_ref(self), &mut |op| {
-            if matches!(op, FlowOp::Bind(_) | FlowOp::ForNext { .. }) {
+            if matches!(
+                op,
+                FlowOp::Bind(_)
+                    | FlowOp::ForNext { .. }
+                    | FlowOp::EnterScheduledScope { .. }
+                    | FlowOp::ExitScheduledScope { .. }
+            ) {
                 return Err(());
             }
             op.try_visit_value_roots(&mut |_, node| {
@@ -558,6 +568,8 @@ impl<'a> Iterator for RuntimeFlowOwnedBodies<'a> {
             | FlowOp::CancelCleanup { .. }
             | FlowOp::EnterScope { .. }
             | FlowOp::ExitScope
+            | FlowOp::EnterScheduledScope { .. }
+            | FlowOp::ExitScheduledScope { .. }
             | FlowOp::ExitScopeBind { .. }
             | FlowOp::CompleteAwaitObserver
             | FlowOp::Noop => None,

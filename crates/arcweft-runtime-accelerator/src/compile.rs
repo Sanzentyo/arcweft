@@ -9,7 +9,7 @@ use super::{
     RuntimePureFunctionId, RuntimePureFunctionRef, RuntimePureInputType, RuntimePureNativeKind,
     RuntimePureOutputType, RuntimePureScalar, RuntimePureScalarInteger, RuntimePureWorkerCount,
     RuntimeSeq, RuntimeValue, ThreadPool, ThreadPoolBuilder, VmPureFunctionScratch,
-    helper_native_kind, native_jit_enabled,
+    helper_native_kind, native_jit, native_jit_enabled,
 };
 
 pub(super) fn runtime_value_kind(value: &RuntimeValue) -> String {
@@ -799,8 +799,85 @@ pub(super) fn helper_work_unit_slots(
 ) -> std::collections::BTreeMap<RuntimePureFunctionId, usize> {
     helpers
         .iter()
-        .map(|helper| (helper.id, runtime_expr_work_units(helper.expr)))
+        .map(|helper| (helper.id, runtime_function_work_units(*helper)))
         .collect()
+}
+
+pub(super) fn runtime_function_work_units(function: RuntimePureFunctionRef<'_>) -> usize {
+    match function.body {
+        arcweft_core::pure::RuntimePureFunctionBodyRef::Expression(value) => {
+            runtime_expr_work_units(value)
+        }
+        arcweft_core::pure::RuntimePureFunctionBodyRef::Executable(body) => {
+            runtime_ops_work_units(body.ops())
+        }
+    }
+}
+
+fn runtime_ops_work_units(ops: &[arcweft_core::plan::FlowOp]) -> usize {
+    use arcweft_core::plan::FlowOp;
+    ops.iter()
+        .map(|op| match op {
+            FlowOp::Let { expr, .. } | FlowOp::ReturnExpr(expr) => {
+                1 + runtime_expr_work_units(expr)
+            }
+            FlowOp::If {
+                condition,
+                then_ops,
+                else_ops,
+            } => {
+                3 + runtime_expr_work_units(condition)
+                    + runtime_ops_work_units(then_ops)
+                    + runtime_ops_work_units(else_ops)
+            }
+            FlowOp::Scope { body, .. } => 2 + runtime_ops_work_units(body),
+            FlowOp::EnterScope { .. } | FlowOp::ExitScope | FlowOp::Noop => 1,
+            // These operations are outside the scalar physical subset. Their
+            // inventory weight cannot grant compilation or bypass control transfer.
+            FlowOp::EnterScheduledScope { .. }
+            | FlowOp::ExitScheduledScope { .. }
+            | FlowOp::Bind(_)
+            | FlowOp::FormatOperandAttempt { .. }
+            | FlowOp::CompleteFormatOperand { .. }
+            | FlowOp::LetElse { .. }
+            | FlowOp::Assign { .. }
+            | FlowOp::LineOperation { .. }
+            | FlowOp::CommitDialogueResult { .. }
+            | FlowOp::SelectDialogueResult { .. }
+            | FlowOp::Dialogue { .. }
+            | FlowOp::Choice { .. }
+            | FlowOp::Await { .. }
+            | FlowOp::StartNeedProducer { .. }
+            | FlowOp::AwaitMany { .. }
+            | FlowOp::HostCall { .. }
+            | FlowOp::ProjectCall { .. }
+            | FlowOp::ApplyGroup { .. }
+            | FlowOp::IfLet { .. }
+            | FlowOp::Match { .. }
+            | FlowOp::Loop { .. }
+            | FlowOp::LoopNext { .. }
+            | FlowOp::While { .. }
+            | FlowOp::WhileNext { .. }
+            | FlowOp::WhileLet { .. }
+            | FlowOp::WhileLetNext { .. }
+            | FlowOp::For { .. }
+            | FlowOp::ForNext { .. }
+            | FlowOp::Thread { .. }
+            | FlowOp::LetScope { .. }
+            | FlowOp::Break(_)
+            | FlowOp::Continue
+            | FlowOp::Goto(_)
+            | FlowOp::GotoExpr(_)
+            | FlowOp::Return(_)
+            | FlowOp::Effect(_)
+            | FlowOp::EvaluatedEffect(_)
+            | FlowOp::RegisterDefer { .. }
+            | FlowOp::RegisterCleanup { .. }
+            | FlowOp::CancelCleanup { .. }
+            | FlowOp::CompleteAwaitObserver
+            | FlowOp::ExitScopeBind { .. } => 8,
+        })
+        .sum()
 }
 
 pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
@@ -957,35 +1034,23 @@ pub(super) fn call_jit_batch(
     compiled: &CompiledPureI64Inputs,
     rows: &[RuntimeI64Args],
     out: &mut [i64],
-    helper: RuntimePureFunctionRef<'_>,
     flat_inputs: &mut Vec<i64>,
-) -> Result<(), RuntimeEvalError> {
+) -> Result<(), native_jit::CraneliftCodegenError> {
     let arity = compiled.input_locals().len();
     flat_inputs.clear();
     flat_inputs.reserve(rows.len().saturating_mul(arity));
     for row in rows {
         flat_inputs.extend_from_slice(row.as_slice());
     }
-    compiled
-        .call_flat_batch(flat_inputs, out)
-        .map_err(|error| RuntimeEvalError::UnsupportedPure {
-            name: helper.name.to_owned(),
-            reason: error.to_string(),
-        })
+    compiled.call_flat_batch(flat_inputs, out)
 }
 
 pub(super) fn call_jit_flat_batch_sum(
     compiled: &CompiledPureI64Inputs,
-    helper: RuntimePureFunctionRef<'_>,
     flat_inputs: &[i64],
     rows: usize,
-) -> Result<i64, RuntimeEvalError> {
-    compiled
-        .call_flat_batch_sum(flat_inputs, rows)
-        .map_err(|error| RuntimeEvalError::UnsupportedPure {
-            name: helper.name.to_owned(),
-            reason: error.to_string(),
-        })
+) -> Result<i64, native_jit::CraneliftCodegenError> {
+    compiled.call_flat_batch_sum(flat_inputs, rows)
 }
 
 pub(super) fn call_aot_batch(
@@ -1089,13 +1154,13 @@ pub(super) fn call_aot_flat_batch_sum(
     if arity == 0 {
         for _ in 0..rows {
             let (value, _) = compiled.call_with_inputs_scratch(&[], slots)?;
-            sum += value;
+            sum = sum.wrapping_add(value);
         }
         return Ok(sum);
     }
     for row in flat_inputs.chunks_exact(arity) {
         let (value, _) = compiled.call_with_inputs_scratch(row, slots)?;
-        sum += value;
+        sum = sum.wrapping_add(value);
     }
     Ok(sum)
 }
@@ -1115,11 +1180,11 @@ pub(super) fn call_aot_flat_batch_sum_parallel(
                     || (Vec::new(), 0i64),
                     |(mut slots, sum), _| {
                         let (value, _) = compiled.call_with_inputs_scratch(&[], &mut slots)?;
-                        Ok::<(Vec<i64>, i64), RuntimeEvalError>((slots, sum + value))
+                        Ok::<(Vec<i64>, i64), RuntimeEvalError>((slots, sum.wrapping_add(value)))
                     },
                 )
                 .map(|result| result.map(|(_, sum)| sum))
-                .try_reduce(|| 0, |lhs, rhs| Ok(lhs + rhs));
+                .try_reduce(|| 0, |lhs, rhs| Ok(lhs.wrapping_add(rhs)));
         }
         flat_inputs
             .par_chunks_exact(arity)
@@ -1127,11 +1192,11 @@ pub(super) fn call_aot_flat_batch_sum_parallel(
                 || (Vec::new(), 0i64),
                 |(mut slots, sum), row| {
                     let (value, _) = compiled.call_with_inputs_scratch(row, &mut slots)?;
-                    Ok::<(Vec<i64>, i64), RuntimeEvalError>((slots, sum + value))
+                    Ok::<(Vec<i64>, i64), RuntimeEvalError>((slots, sum.wrapping_add(value)))
                 },
             )
             .map(|result| result.map(|(_, sum)| sum))
-            .try_reduce(|| 0, |lhs, rhs| Ok(lhs + rhs))
+            .try_reduce(|| 0, |lhs, rhs| Ok(lhs.wrapping_add(rhs)))
     };
     match pool {
         Some(pool) => pool.install(run),
@@ -1259,18 +1324,18 @@ pub(super) fn call_vm_i32_flat_batch_sum(
     let mut sum = 0_i64;
     if arity == 0 {
         for _ in 0..rows {
-            sum += i64::from(vm_i32_result(
+            sum = sum.wrapping_add(i64::from(vm_i32_result(
                 helper,
                 scratch.evaluate_i32_slice(helper.plan(), helper.id(), &[])?,
-            )?);
+            )?));
         }
         return Ok(sum);
     }
     for row in flat_inputs.chunks_exact(arity) {
-        sum += i64::from(vm_i32_result(
+        sum = sum.wrapping_add(i64::from(vm_i32_result(
             helper,
             scratch.evaluate_i32_slice(helper.plan(), helper.id(), row)?,
-        )?);
+        )?));
     }
     Ok(sum)
 }
@@ -1286,13 +1351,17 @@ pub(super) fn call_vm_exact_int_flat_batch_sum<T: RuntimePureScalarInteger>(
     if arity == 0 {
         for _ in 0..rows {
             let value = scratch.evaluate_exact_int_slice::<T>(helper.plan(), helper.id(), &[])?;
-            sum += T::try_from_runtime_value(helper.name, value)?.try_sum_as_i64(helper.name)?;
+            sum = sum.wrapping_add(
+                T::try_from_runtime_value(helper.name, value)?.try_sum_as_i64(helper.name)?,
+            );
         }
         return Ok(sum);
     }
     for row in flat_inputs.chunks_exact(arity) {
         let value = scratch.evaluate_exact_int_slice::<T>(helper.plan(), helper.id(), row)?;
-        sum += T::try_from_runtime_value(helper.name, value)?.try_sum_as_i64(helper.name)?;
+        sum = sum.wrapping_add(
+            T::try_from_runtime_value(helper.name, value)?.try_sum_as_i64(helper.name)?,
+        );
     }
     Ok(sum)
 }
@@ -1356,13 +1425,13 @@ pub(super) fn call_aot_exact_int_flat_batch_sum<T: RuntimePureScalarInteger>(
     if arity == 0 {
         for _ in 0..rows {
             let (value, _) = compiled.call_exact_int_with_inputs_scratch::<T>(&[], slots)?;
-            sum += value.try_sum_as_i64("aot_exact_int_batch_sum")?;
+            sum = sum.wrapping_add(value.try_sum_as_i64("aot_exact_int_batch_sum")?);
         }
         return Ok(sum);
     }
     for row in flat_inputs.chunks_exact(arity) {
         let (value, _) = compiled.call_exact_int_with_inputs_scratch(row, slots)?;
-        sum += value.try_sum_as_i64("aot_exact_int_batch_sum")?;
+        sum = sum.wrapping_add(value.try_sum_as_i64("aot_exact_int_batch_sum")?);
     }
     Ok(sum)
 }
@@ -1569,13 +1638,20 @@ pub(super) fn call_vm_flat_batch_sum(
     let mut sum = 0i64;
     if arity == 0 {
         for _ in 0..rows {
-            sum +=
-                exact_i64_result(scratch.evaluate_i64_slice(helper.plan(), helper.id(), &[])?)?;
+            sum = sum.wrapping_add(exact_i64_result(scratch.evaluate_i64_slice(
+                helper.plan(),
+                helper.id(),
+                &[],
+            )?)?);
         }
         return Ok(sum);
     }
     for row in flat_inputs.chunks_exact(arity) {
-        sum += exact_i64_result(scratch.evaluate_i64_slice(helper.plan(), helper.id(), row)?)?;
+        sum = sum.wrapping_add(exact_i64_result(scratch.evaluate_i64_slice(
+            helper.plan(),
+            helper.id(),
+            row,
+        )?)?);
     }
     Ok(sum)
 }
@@ -1599,11 +1675,14 @@ pub(super) fn call_vm_flat_batch_sum_parallel(
                             helper.id(),
                             &[],
                         )?)?;
-                        Ok::<(VmPureFunctionScratch, i64), RuntimeEvalError>((scratch, sum + value))
+                        Ok::<(VmPureFunctionScratch, i64), RuntimeEvalError>((
+                            scratch,
+                            sum.wrapping_add(value),
+                        ))
                     },
                 )
                 .map(|result| result.map(|(_, sum)| sum))
-                .try_reduce(|| 0, |lhs, rhs| Ok(lhs + rhs));
+                .try_reduce(|| 0, |lhs, rhs| Ok(lhs.wrapping_add(rhs)));
         }
         flat_inputs
             .par_chunks_exact(arity)
@@ -1615,11 +1694,14 @@ pub(super) fn call_vm_flat_batch_sum_parallel(
                         helper.id(),
                         row,
                     )?)?;
-                    Ok::<(VmPureFunctionScratch, i64), RuntimeEvalError>((scratch, sum + value))
+                    Ok::<(VmPureFunctionScratch, i64), RuntimeEvalError>((
+                        scratch,
+                        sum.wrapping_add(value),
+                    ))
                 },
             )
             .map(|result| result.map(|(_, sum)| sum))
-            .try_reduce(|| 0, |lhs, rhs| Ok(lhs + rhs))
+            .try_reduce(|| 0, |lhs, rhs| Ok(lhs.wrapping_add(rhs)))
     };
     match pool {
         Some(pool) => pool.install(run),

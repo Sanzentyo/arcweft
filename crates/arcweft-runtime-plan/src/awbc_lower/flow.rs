@@ -97,12 +97,12 @@ struct WhileLetBodyInput<'a> {
 }
 
 struct BranchJoin {
-    fallthroughs: Vec<AwbcBlockId>,
+    fallthroughs: Vec<(AwbcBlockId, Vec<AwbcScopeId>)>,
 }
 
 struct GuardedCandidate {
     guard_false_jump: Option<AwbcBlockId>,
-    fallthrough: Option<AwbcBlockId>,
+    fallthrough: Option<(AwbcBlockId, Vec<AwbcScopeId>)>,
 }
 
 struct LoopLoweringTarget {
@@ -128,8 +128,8 @@ impl BranchJoin {
         }
     }
 
-    fn push(&mut self, block: AwbcBlockId) {
-        self.fallthroughs.push(block);
+    fn push(&mut self, block: AwbcBlockId, scopes: Vec<AwbcScopeId>) {
+        self.fallthroughs.push((block, scopes));
     }
 }
 
@@ -1232,17 +1232,19 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 let scoped_value =
                     AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(expr);
                 let ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
-                let value = frame.parent_temp(ty);
+                let value = frame.emitted_scope_parent_temp(ty);
                 self.inventory.push_instruction(AwbcInstruction::Move {
                     dst: value,
                     src: scoped_value,
                 });
-                let scope = frame
-                    .active_scope()
-                    .expect("scope result has an active lexical scope");
-                self.inventory
-                    .push_instruction(AwbcInstruction::ExitScope { scope });
-                frame.exit_scope();
+                let exit = frame
+                    .emitted_scope_exit()
+                    .expect("admitted result exits its emitted lexical scope");
+                for scope in exit.targets() {
+                    self.inventory
+                        .push_instruction(AwbcInstruction::ExitScope { scope: *scope });
+                    frame.exit_scope()
+                }
                 let pattern = lower_pattern(self.inventory, self.plan, frame, pattern);
                 self.inventory
                     .push_instruction(AwbcInstruction::BindPattern {
@@ -1741,15 +1743,19 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 identity,
                 body: ops,
             } => {
+                let outer_scopes = frame.scope_checkpoint();
                 let scope = frame.enter_scope_with_identity(identity.clone());
                 self.inventory
                     .push_instruction(AwbcInstruction::EnterScope { scope });
                 self.lower_ops(frame, body, ops, &format!("{path}.scope"));
-                if !body.terminated {
+                if !body.terminated && frame.contains_scope(scope) {
                     self.inventory
                         .push_instruction(AwbcInstruction::ExitScope { scope });
+                    frame.exit_scope();
                 }
-                frame.exit_scope();
+                if body.terminated {
+                    frame.restore_scopes_after_branch(outer_scopes);
+                }
             }
             FlowOp::LetScope {
                 identity,
@@ -1960,12 +1966,20 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     .push_instruction(AwbcInstruction::EnterScope { scope });
             }
             FlowOp::ExitScope => {
-                self.inventory.push_instruction(AwbcInstruction::ExitScope {
-                    scope: frame
-                        .active_scope()
-                        .expect("ExitScope has an active lexical scope"),
-                });
-                frame.exit_scope();
+                let exit = frame
+                    .emitted_scope_exit()
+                    .expect("admitted exit has an emitted lexical scope");
+                for scope in exit.targets() {
+                    self.inventory
+                        .push_instruction(AwbcInstruction::ExitScope { scope: *scope });
+                    frame.exit_scope()
+                }
+            }
+            FlowOp::EnterScheduledScope { .. } | FlowOp::ExitScheduledScope { .. } => {
+                self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                    path,
+                    "runtime-only native scope marker reached AWBC lowering",
+                ));
             }
             FlowOp::Noop => {
                 self.inventory.push_instruction(AwbcInstruction::Nop);
@@ -2314,7 +2328,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 },
                 AwbcSafePointKind::None,
             );
-            self.lower_scoped_branch_ops(
+            let _ = self.lower_scoped_branch_ops(
                 frame,
                 body,
                 Some((pattern, progress)),
@@ -2440,15 +2454,15 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 mode: AwbcBindMode::Declare,
             });
         let mut join = BranchJoin::new();
-        join.push(self.close_jump_to_join(body));
+        join.push(self.close_jump_to_join(body), frame.scope_checkpoint());
 
         let else_block = AwbcBlockId(table_index(self.inventory.program.blocks.len()));
         patch_branch_else_block(self.inventory, branch_block, else_block);
         self.lower_ops(frame, body, else_ops, &format!("{path}.else"));
         if !body.terminated {
-            join.push(self.close_jump_to_join(body));
+            join.push(self.close_jump_to_join(body), frame.scope_checkpoint());
         }
-        self.finish_join(body, join);
+        self.finish_join(frame, body, join);
     }
 
     fn lower_if(
@@ -2476,21 +2490,29 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         );
 
         let mut join = BranchJoin::new();
-        self.lower_scoped_branch_ops(frame, body, None, then_ops, &format!("{path}.then"));
+        let then_scopes =
+            self.lower_scoped_branch_ops(frame, body, None, then_ops, &format!("{path}.then"));
         if body.terminated {
             let else_block = body.reopen_after_terminated_branch(self.inventory);
             patch_branch_else_block(self.inventory, branch_block, else_block);
         } else {
-            join.push(self.close_jump_to_join(body));
+            join.push(
+                self.close_jump_to_join(body),
+                then_scopes.expect("a continuing arm retains its actual lexical scope stack"),
+            );
             let else_block = AwbcBlockId(table_index(self.inventory.program.blocks.len()));
             patch_branch_else_block(self.inventory, branch_block, else_block);
         }
 
-        self.lower_scoped_branch_ops(frame, body, None, else_ops, &format!("{path}.else"));
+        let else_scopes =
+            self.lower_scoped_branch_ops(frame, body, None, else_ops, &format!("{path}.else"));
         if !body.terminated {
-            join.push(self.close_jump_to_join(body));
+            join.push(
+                self.close_jump_to_join(body),
+                else_scopes.expect("a continuing arm retains its actual lexical scope stack"),
+            );
         }
-        self.finish_join(body, join);
+        self.finish_join(frame, body, join);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2540,8 +2562,8 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 then_ops,
                 path,
             );
-            if let Some(fallthrough) = guarded.fallthrough {
-                join.push(fallthrough);
+            if let Some((fallthrough, scopes)) = guarded.fallthrough {
+                join.push(fallthrough, scopes);
             }
             let else_block = AwbcBlockId(table_index(self.inventory.program.blocks.len()));
             patch_branch_else_block(self.inventory, branch_block, else_block);
@@ -2549,7 +2571,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 patch_jump_target(self.inventory, jump, else_block);
             }
         } else {
-            self.lower_scoped_branch_ops(
+            let then_scopes = self.lower_scoped_branch_ops(
                 frame,
                 body,
                 Some((pattern, value)),
@@ -2560,17 +2582,25 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 let else_block = body.reopen_after_terminated_branch(self.inventory);
                 patch_branch_else_block(self.inventory, branch_block, else_block);
             } else {
-                join.push(self.close_jump_to_join(body));
+                join.push(
+                    self.close_jump_to_join(body),
+                    then_scopes
+                        .expect("a continuing pattern arm retains its actual lexical scope stack"),
+                );
                 let else_block = AwbcBlockId(table_index(self.inventory.program.blocks.len()));
                 patch_branch_else_block(self.inventory, branch_block, else_block);
             }
         }
 
-        self.lower_scoped_branch_ops(frame, body, None, else_ops, &format!("{path}.else"));
+        let else_scopes =
+            self.lower_scoped_branch_ops(frame, body, None, else_ops, &format!("{path}.else"));
         if !body.terminated {
-            join.push(self.close_jump_to_join(body));
+            join.push(
+                self.close_jump_to_join(body),
+                else_scopes.expect("a continuing arm retains its actual lexical scope stack"),
+            );
         }
-        self.finish_join(body, join);
+        self.finish_join(frame, body, join);
     }
 
     fn lower_match(
@@ -2618,8 +2648,8 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     &arm.ops,
                     &format!("{path}.arm.{index}"),
                 );
-                if let Some(fallthrough) = guarded.fallthrough {
-                    join.push(fallthrough);
+                if let Some((fallthrough, scopes)) = guarded.fallthrough {
+                    join.push(fallthrough, scopes);
                 }
                 let next_arm_block = AwbcBlockId(table_index(self.inventory.program.blocks.len()));
                 patch_branch_else_block(self.inventory, branch_block, next_arm_block);
@@ -2627,7 +2657,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     patch_jump_target(self.inventory, jump, next_arm_block);
                 }
             } else {
-                self.lower_scoped_branch_ops(
+                let arm_scopes = self.lower_scoped_branch_ops(
                     frame,
                     body,
                     Some((pattern, scrutinee)),
@@ -2638,7 +2668,12 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     let next_arm_block = body.reopen_after_terminated_branch(self.inventory);
                     patch_branch_else_block(self.inventory, branch_block, next_arm_block);
                 } else {
-                    join.push(self.close_jump_to_join(body));
+                    join.push(
+                        self.close_jump_to_join(body),
+                        arm_scopes.expect(
+                            "a continuing Match arm retains its actual lexical scope stack",
+                        ),
+                    );
                     let next_arm_block =
                         AwbcBlockId(table_index(self.inventory.program.blocks.len()));
                     patch_branch_else_block(self.inventory, branch_block, next_arm_block);
@@ -2646,7 +2681,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             }
         }
         self.terminate_pattern_mismatch(body, "match pattern did not match");
-        self.finish_join(body, join);
+        self.finish_join(frame, body, join);
     }
 
     fn lower_scoped_branch_ops(
@@ -2656,7 +2691,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         binding: Option<(AwbcPatternId, AwbcRegisterId)>,
         ops: &[FlowOp],
         path: &str,
-    ) {
+    ) -> Option<Vec<AwbcScopeId>> {
         let restored_scopes = frame.scope_checkpoint();
         let scope = frame.enter_scope();
         self.inventory
@@ -2670,12 +2705,14 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 });
         }
         self.lower_ops(frame, body, ops, path);
-        if !body.terminated {
+        if !body.terminated && frame.contains_scope(scope) {
             self.inventory
                 .push_instruction(AwbcInstruction::ExitScope { scope });
             frame.exit_scope();
         }
+        let fallthrough = (!body.terminated).then(|| frame.scope_checkpoint());
         frame.restore_scopes_after_branch(restored_scopes);
+        fallthrough
     }
 
     fn lower_let_scope(
@@ -3277,18 +3314,17 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 mode: AwbcBindMode::Declare,
             });
         self.lower_ops(frame, body, ops, &format!("{path}.then"));
-        if !body.terminated {
+        if !body.terminated && frame.contains_scope(body_scope) {
             self.inventory
                 .push_instruction(AwbcInstruction::ExitScope { scope: body_scope });
             frame.exit_scope();
         }
-        frame.restore_scopes_after_branch(restored_scopes);
-
         let fallthrough = if body.terminated {
             None
         } else {
-            Some(self.close_jump_to_join(body))
+            Some((self.close_jump_to_join(body), frame.scope_checkpoint()))
         };
+        frame.restore_scopes_after_branch(restored_scopes);
         let guard_false_block = if body.terminated {
             body.reopen_after_terminated_branch(self.inventory)
         } else {
@@ -3320,16 +3356,54 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         )
     }
 
-    fn finish_join(&mut self, body: &mut FlowBodyBuilder, join: BranchJoin) {
-        if join.fallthroughs.is_empty() {
+    fn finish_join(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        join: BranchJoin,
+    ) {
+        let Some((_, scopes)) = join.fallthroughs.first() else {
+            return;
+        };
+        if join
+            .fallthroughs
+            .iter()
+            .any(|(_, candidate)| candidate != scopes)
+        {
+            let message =
+                "fallthrough branches do not retain the same active lexical scope targets";
+            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                format!("function.{}", body.owner.0),
+                message,
+            ));
+            let block = if body.terminated {
+                body.reopen_after_terminated_branch(self.inventory)
+            } else {
+                AwbcBlockId(table_index(self.inventory.program.blocks.len()))
+            };
+            for (source, _) in join.fallthroughs {
+                patch_jump_target(self.inventory, source, block);
+            }
+            let message = self.inventory.intern_string(message);
+            body.terminate(
+                self.inventory,
+                AwbcTerminator::Trap {
+                    code: AwbcTrapCode::InternalInvariant,
+                    message: Some(message),
+                },
+                AwbcSafePointKind::Trap,
+            );
             return;
         }
+        // This is an actual compile-time continuation stack produced by this
+        // FrameBuilder, not the sibling entry checkpoint or source namespace.
+        frame.restore_scopes_after_branch(scopes.clone());
         let join_block = if body.terminated {
             body.reopen_after_terminated_branch(self.inventory)
         } else {
             AwbcBlockId(table_index(self.inventory.program.blocks.len()))
         };
-        for block in join.fallthroughs {
+        for (block, _) in join.fallthroughs {
             patch_jump_target(self.inventory, block, join_block);
         }
     }
@@ -4003,6 +4077,8 @@ fn collect_flow_dependencies(
             | FlowOp::CancelCleanup { .. }
             | FlowOp::EnterScope { .. }
             | FlowOp::ExitScope
+            | FlowOp::EnterScheduledScope { .. }
+            | FlowOp::ExitScheduledScope { .. }
             | FlowOp::ExitScopeBind { .. }
             | FlowOp::CompleteAwaitObserver
             | FlowOp::Noop => false,

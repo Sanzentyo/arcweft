@@ -20,9 +20,22 @@ impl Engine {
         let mut runtime_input = RuntimeStepInput::default();
 
         while executed_ops < options.budget.max_ops && self.can_attempt_runtime_op() {
-            if !self.fiber.pending_ops.is_empty() {
-                self.step_runtime_op(&mut runtime_input, &[], &mut output, pure_backend);
-                executed_ops += 1;
+            // Fallback operations may spawn/goto while a linear prefix is
+            // active. Executor work always returns to the existing native
+            // scheduler, including detached work, join-deferred returns and an
+            // active function whose exhausted pending body must reject fallthrough.
+            if self.has_executor_work()
+                || self.has_active_project_call()
+                || !self.fiber.pending_ops.is_empty()
+            {
+                let (_, control_ops) = self.with_scalar_operation_budget(
+                    options.mode,
+                    options.budget.max_ops - executed_ops - 1,
+                    |engine| {
+                        engine.step_runtime_op(&mut runtime_input, &[], &mut output, pure_backend)
+                    },
+                );
+                executed_ops += 1 + control_ops;
                 if self.should_return_to_host(options.mode, &output, executed_ops) {
                     break;
                 }
@@ -47,7 +60,19 @@ impl Engine {
                 if cursor.op_index >= flow.ops {
                     self.finish(&mut output, pure_backend);
                 } else {
-                    self.step_runtime_op(&mut runtime_input, &[], &mut output, pure_backend);
+                    let (_, control_ops) = self.with_scalar_operation_budget(
+                        options.mode,
+                        options.budget.max_ops - executed_ops - 1,
+                        |engine| {
+                            engine.step_runtime_op(
+                                &mut runtime_input,
+                                &[],
+                                &mut output,
+                                pure_backend,
+                            )
+                        },
+                    );
+                    executed_ops += control_ops;
                 }
                 executed_ops += 1;
                 if self.should_return_to_host(options.mode, &output, executed_ops) {
@@ -56,8 +81,12 @@ impl Engine {
                 continue;
             };
             let next_op_index = cursor.op_index + 1;
-            self.step_aot_linear_op(op, next_op_index, &mut output, pure_backend);
-            executed_ops += 1;
+            let (_, control_ops) = self.with_scalar_operation_budget(
+                options.mode,
+                options.budget.max_ops - executed_ops - 1,
+                |engine| engine.step_aot_linear_op(op, next_op_index, &mut output, pure_backend),
+            );
+            executed_ops += 1 + control_ops;
             aot_fast_path_ops += 1;
             if self.should_return_to_host(options.mode, &output, executed_ops) {
                 break;
@@ -109,6 +138,7 @@ impl Engine {
         input.task_events.is_empty()
             && input.root_events.is_empty()
             && self.root.is_none()
+            && !self.has_executor_work()
             && self.plan.stream_plans.is_empty()
             && self.fiber.pending_ops.is_empty()
             && self.fiber.control_stack.is_empty()
@@ -172,13 +202,19 @@ impl Engine {
                 self.advance_aot_linear_cursor(next_op_index);
             }
             AotLinearOp::ExitScope => {
-                self.pop_scope_frame(output, pure_backend);
+                if let Err(error) = self.exit_emitted_scope(output, pure_backend) {
+                    self.fail_eval(error, output);
+                    return;
+                }
                 self.advance_aot_linear_cursor(next_op_index);
             }
             AotLinearOp::ExitScopeBind { pattern, expr } => {
                 match self.evaluate_expr_with_backend(expr, pure_backend) {
                     Ok(value) => {
-                        self.pop_scope_frame(output, pure_backend);
+                        if let Err(error) = self.exit_emitted_scope(output, pure_backend) {
+                            self.fail_eval(error, output);
+                            return;
+                        }
                         self.bind_value(pattern, value, output);
                         self.advance_aot_linear_cursor(next_op_index);
                     }

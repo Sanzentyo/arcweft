@@ -111,7 +111,7 @@ pub fn compile_checked_agent_bundle(
         });
     }
 
-    let pure_helpers = compiled.runtime_plan().plan.pure_helpers().len();
+    let pure_function_candidates = compiled.runtime_plan().plan.pure_function_candidate_count();
     let manifest =
         agent_artifact_manifest(compiled, checked, controller_facts, project, runtime_roles)?;
     let source_map = agent_bundle_source_map(compiled)?;
@@ -164,7 +164,7 @@ pub fn compile_checked_agent_bundle(
         execution_diagnostics: Arc::new(execution_diagnostics),
         analysis: Arc::clone(compiled.analysis_lease()),
         runtime_plan_stats: RuntimePlanLowerStats {
-            pure_helpers,
+            pure_function_candidates,
             ..RuntimePlanLowerStats::default()
         },
     })

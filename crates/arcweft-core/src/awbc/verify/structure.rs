@@ -702,6 +702,18 @@ fn verify_frame_layouts(
         }
         let mut scope_depths = Vec::<u32>::with_capacity(layout.scopes.len());
         for (scope_index, scope) in layout.scopes.iter().enumerate() {
+            if matches!(scope.kind, crate::scope::RuntimeScopeFrameKind::Control)
+                && !matches!(
+                    scope.identity,
+                    crate::scope::RuntimeScopeIdentity::Anonymous
+                )
+            {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: format!("frame layout {index} scope {scope_index}"),
+                    message: "generated control scope cannot carry an authored namespace"
+                        .to_owned(),
+                });
+            }
             let depth = match scope.parent {
                 None => 1,
                 Some(parent) => scope_depths

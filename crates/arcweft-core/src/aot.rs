@@ -111,7 +111,9 @@ impl AotLinearOp {
                 expr: expr.clone(),
             }),
             FlowOp::Noop => Some(Self::Noop),
-            FlowOp::LetElse { .. }
+            FlowOp::EnterScheduledScope { .. }
+            | FlowOp::ExitScheduledScope { .. }
+            | FlowOp::LetElse { .. }
             | FlowOp::FormatOperandAttempt { .. }
             | FlowOp::CompleteFormatOperand { .. }
             | FlowOp::LineOperation { .. }
@@ -249,7 +251,9 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
         | FlowOp::ExitScopeBind { .. }
         | FlowOp::Noop => true,
         FlowOp::Effect(effect) => !effect_changes_control(effect),
-        FlowOp::LetElse { .. }
+        FlowOp::EnterScheduledScope { .. }
+        | FlowOp::ExitScheduledScope { .. }
+        | FlowOp::LetElse { .. }
         | FlowOp::FormatOperandAttempt { .. }
         | FlowOp::CompleteFormatOperand { .. }
         | FlowOp::LineOperation { .. }
@@ -314,6 +318,8 @@ impl AotOpClass {
             | FlowOp::CancelCleanup { .. }
             | FlowOp::EnterScope { .. }
             | FlowOp::ExitScope
+            | FlowOp::EnterScheduledScope { .. }
+            | FlowOp::ExitScheduledScope { .. }
             | FlowOp::ExitScopeBind { .. }
             | FlowOp::Noop
             | FlowOp::CompleteAwaitObserver => Self::Linear,
@@ -420,6 +426,8 @@ impl AotProgramStats {
                 | FlowOp::CancelCleanup { .. }
                 | FlowOp::EnterScope { .. }
                 | FlowOp::ExitScope
+                | FlowOp::EnterScheduledScope { .. }
+                | FlowOp::ExitScheduledScope { .. }
                 | FlowOp::ExitScopeBind { .. }
                 | FlowOp::CompleteAwaitObserver
                 | FlowOp::Noop => {}

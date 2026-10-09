@@ -17,9 +17,9 @@ use arcweft_core::{
     },
     pure::{
         AotPureFunctionBackend, AotPureI64Plan, PureFunctionBackendKind, PureFunctionRequest,
-        PureFunctionResult, PureFunctionStats, RuntimeI64Args, RuntimePureFunctionId,
-        RuntimePureFunctionInputs, RuntimePureFunctionRef, VmPureFunctionBackend,
-        VmPureFunctionScratch, compare_pure_function_backend,
+        PureFunctionResult, PureFunctionStats, RuntimeI64Args, RuntimePureFunctionBodyRef,
+        RuntimePureFunctionId, RuntimePureFunctionInputs, RuntimePureFunctionRef,
+        VmPureFunctionBackend, VmPureFunctionScratch,
     },
     value::{
         DenseSeq, RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeCallTarget, RuntimeExpr,
@@ -57,6 +57,10 @@ pub(in crate::app) struct JitCheckOptions {
     pub(in crate::app) samples: usize,
     #[arg(long, default_value_t = 0)]
     pub(in crate::app) input_seed: u64,
+    /// Maximum owning VM control operations per standalone conformance or
+    /// measurement invocation. Runtime session budgets stay on their executor.
+    #[arg(long, default_value_t = 4096)]
+    pub(in crate::app) vm_max_ops: usize,
     #[arg(long)]
     pub(in crate::app) json: bool,
 }
@@ -469,7 +473,7 @@ pub(in crate::app) fn run_jit_check(
 ) -> Result<JitCheckReport, ExitCode> {
     let first_inputs = jit_check_inputs(options.input_seed, 0, 0, target.inputs().len());
     let request = target.request_with_inputs(&first_inputs)?;
-    let conformance = collect_jit_check_conformance(&request)?;
+    let conformance = collect_jit_check_conformance(&request, options.vm_max_ops)?;
     let compiled = compile_jit_check_helpers(&request, target)?;
     let measurement = measure_jit_check_helpers(options, target, &compiled)?;
     Ok(jit_check_report(
@@ -691,24 +695,32 @@ struct JitJuliaMeasurement {
 
 fn collect_jit_check_conformance(
     request: &PureFunctionRequest,
+    max_ops: usize,
 ) -> Result<JitCheckConformanceSet, ExitCode> {
-    let vm_backend = VmPureFunctionBackend;
-    let aot = compare_pure_function_backend(&vm_backend, &AotPureFunctionBackend::new(), request)
+    let vm = VmPureFunctionBackend
+        .evaluate_invocation(request, arcweft_core::step::RuntimeStepBudget { max_ops })
         .map_err(|error| {
-        eprintln!("error: AOT/VM conformance check failed: {error}");
-        ExitCode::FAILURE
-    })?;
-    let jit = compare_pure_function_backend(&vm_backend, &CraneliftPureFunctionBackend, request)
-        .map_err(|error| {
-            eprintln!("error: JIT/VM conformance check failed: {error}");
+            eprintln!("error: VM conformance invocation failed: {error}");
+            ExitCode::FAILURE
+        })?;
+    let aot =
+        arcweft_core::pure::PureFunctionBackend::evaluate(&AotPureFunctionBackend::new(), request)
+            .map_err(|error| {
+                eprintln!("error: AOT conformance check failed: {error}");
+                ExitCode::FAILURE
+            })?;
+    let jit =
+        arcweft_core::pure::PureFunctionBackend::evaluate(&CraneliftPureFunctionBackend, request)
+            .map_err(|error| {
+            eprintln!("error: JIT conformance check failed: {error}");
             ExitCode::FAILURE
         })?;
     Ok(JitCheckConformanceSet {
-        vm: jit.vm,
-        aot: aot.candidate,
-        jit: jit.candidate,
-        aot_matches_vm: aot.matches_vm,
-        jit_matches_vm: jit.matches_vm,
+        aot_matches_vm: aot.value == vm.value,
+        jit_matches_vm: jit.value == vm.value,
+        vm,
+        aot,
+        jit,
     })
 }
 
@@ -783,7 +795,12 @@ fn measure_jit_check_helpers(
         options.warmup,
         options.input_seed,
     )?;
-    warmup_jit_check_vm(target, options.warmup, options.input_seed)?;
+    warmup_jit_check_vm(
+        target,
+        options.warmup,
+        options.input_seed,
+        options.vm_max_ops,
+    )?;
 
     Ok(JitCheckMeasurements {
         aot: measure_jit_check_aot(
@@ -810,6 +827,7 @@ fn measure_jit_check_helpers(
             options.samples,
             options.iterations,
             options.input_seed,
+            options.vm_max_ops,
         )?,
         julia: options
             .julia
@@ -1478,24 +1496,46 @@ fn measure_jit_check_aot(
     })
 }
 
+fn evaluate_jit_check_vm(
+    target: &JitCheckTarget,
+    inputs: &[i64],
+    scratch: &mut VmPureFunctionScratch,
+    max_ops: usize,
+) -> Result<RuntimeValue, ExitCode> {
+    if target.helper().body.is_executable() {
+        let request = target.request_with_inputs(inputs)?;
+        VmPureFunctionBackend
+            .evaluate_invocation(&request, arcweft_core::step::RuntimeStepBudget { max_ops })
+            .map(|result| result.value)
+            .map_err(|error| {
+                eprintln!("error: VM invocation failed: {error}");
+                ExitCode::FAILURE
+            })
+    } else {
+        scratch
+            .evaluate_i64_slice(&target.plan, target.helper, inputs)
+            .map_err(|error| {
+                eprintln!("error: VM expression evaluation failed: {error}");
+                ExitCode::FAILURE
+            })
+    }
+}
+
 fn warmup_jit_check_vm(
     target: &JitCheckTarget,
     warmup: usize,
     input_seed: u64,
+    max_ops: usize,
 ) -> Result<(), ExitCode> {
     let mut scratch = VmPureFunctionScratch::default();
     for index in 0..warmup {
         let inputs = jit_check_input_array(input_seed, 0, index, target.inputs().len());
-        let _ = scratch
-            .evaluate_i64_slice(
-                &target.plan,
-                target.helper,
-                &inputs[..target.inputs().len()],
-            )
-            .map_err(|error| {
-                eprintln!("error: VM warmup failed: {error}");
-                ExitCode::FAILURE
-            })?;
+        let _ = evaluate_jit_check_vm(
+            target,
+            &inputs[..target.inputs().len()],
+            &mut scratch,
+            max_ops,
+        )?;
     }
     Ok(())
 }
@@ -1505,25 +1545,25 @@ fn measure_jit_check_vm(
     samples: usize,
     iterations: usize,
     input_seed: u64,
+    max_ops: usize,
 ) -> Result<JitRepeatedMeasurement, ExitCode> {
     let mut scratch = VmPureFunctionScratch::default();
     measure_repeated(samples, iterations, |sample, index| {
         let inputs = jit_check_input_array(input_seed, sample, index, target.inputs().len());
-        let value = scratch
-            .evaluate_i64_slice(
-                &target.plan,
-                target.helper,
-                &inputs[..target.inputs().len()],
-            )
-            .map_err(|error| {
-                eprintln!("error: VM evaluation failed: {error}");
-                ExitCode::FAILURE
-            })?;
-        if let RuntimeValue::Int(value) = value {
-            Ok(value.exact_i64().unwrap_or(0))
-        } else {
-            Ok(0)
-        }
+        let value = evaluate_jit_check_vm(
+            target,
+            &inputs[..target.inputs().len()],
+            &mut scratch,
+            max_ops,
+        )?;
+        let RuntimeValue::Int(value) = value else {
+            eprintln!("error: VM measurement returned a value outside the admitted i64 ABI");
+            return Err(ExitCode::FAILURE);
+        };
+        value.exact_i64().ok_or_else(|| {
+            eprintln!("error: VM measurement returned a different integer width");
+            ExitCode::FAILURE
+        })
     })
 }
 
@@ -1611,7 +1651,7 @@ fn julia_benchmark_source(
             eprintln!("error: {message}");
             ExitCode::from(2)
         })?;
-    let expr = julia_i64_expr(target.helper().expr, target.inputs(), &target.input_labels)
+    let body = julia_i64_body(target.helper().body, target.inputs(), &target.input_labels)
         .map_err(|message| {
             eprintln!(
                 "error: Julia baseline cannot lower helper `{}`: {message}",
@@ -1626,7 +1666,7 @@ fn julia_benchmark_source(
     Ok(format!(
         r#"
 function arcweft_score({params})::Int64
-    return {expr}
+    {body}
 end
 
 function arcweft_input(seed::UInt64, sample::Int, iteration::Int, index::Int)::Int64
@@ -1680,12 +1720,161 @@ println("max_ns\t", elapsed[end])
     ))
 }
 
+fn julia_i64_body(
+    body: RuntimePureFunctionBodyRef<'_>,
+    inputs: RuntimePureFunctionInputs<'_>,
+    input_labels: &[String],
+) -> Result<String, String> {
+    match body {
+        RuntimePureFunctionBodyRef::Expression(expr) => {
+            julia_i64_expr(expr, inputs, input_labels).map(|value| format!("return {value}"))
+        }
+        RuntimePureFunctionBodyRef::Executable(body) => {
+            julia_i64_ops(body.ops(), inputs, input_labels, 0)
+        }
+    }
+}
+
+/// Julia is a physical baseline emitter over the original checked body.
+/// It neither reconstructs Arcweft source nor creates synthetic helper bodies.
+fn julia_i64_ops(
+    ops: &[arcweft_core::plan::FlowOp],
+    inputs: RuntimePureFunctionInputs<'_>,
+    input_labels: &[String],
+    depth: usize,
+) -> Result<String, String> {
+    use arcweft_core::pattern::RuntimePatternKind;
+    use arcweft_core::plan::FlowOp;
+    if depth > 128 {
+        return Err("executable scalar nesting exceeds the Julia codegen budget".to_owned());
+    }
+    let mut output = String::new();
+    let mut scopes = 0_usize;
+    for op in ops {
+        let declined = match op {
+            FlowOp::Let { pattern, expr } => {
+                let value = julia_i64_expr(expr, inputs, input_labels)?;
+                match pattern.kind() {
+                    RuntimePatternKind::Bind { binding, .. }
+                    | RuntimePatternKind::Typed { binding } => {
+                        output.push_str(&format!(
+                            "{} = {value}\n",
+                            julia_local_identifier(binding.local(), inputs, input_labels)?
+                        ));
+                    }
+                    RuntimePatternKind::Discard => output.push_str(&format!("{value}\n")),
+                    _ => {
+                        return Err(
+                            "binding pattern is outside the Julia scalar body subset".to_owned()
+                        );
+                    }
+                }
+                None
+            }
+            FlowOp::If {
+                condition,
+                then_ops,
+                else_ops,
+            } => {
+                output.push_str(&format!(
+                    "if {}\n{}else\n{}end\n",
+                    julia_bool_expr(condition, inputs, input_labels)?,
+                    julia_i64_ops(then_ops, inputs, input_labels, depth + 1)?,
+                    julia_i64_ops(else_ops, inputs, input_labels, depth + 1)?
+                ));
+                None
+            }
+            FlowOp::Scope { body, .. } => {
+                output.push_str(&format!(
+                    "let\n{}end\n",
+                    julia_i64_ops(body, inputs, input_labels, depth + 1)?
+                ));
+                None
+            }
+            FlowOp::EnterScope { .. } => {
+                output.push_str("let\n");
+                scopes += 1;
+                None
+            }
+            FlowOp::ExitScope => {
+                scopes = scopes
+                    .checked_sub(1)
+                    .ok_or_else(|| "unbalanced Julia scalar scope exit".to_owned())?;
+                output.push_str("end\n");
+                None
+            }
+            FlowOp::ReturnExpr(expr) => {
+                output.push_str(&format!(
+                    "return {}\n",
+                    julia_i64_expr(expr, inputs, input_labels)?
+                ));
+                None
+            }
+            FlowOp::Noop => None,
+            FlowOp::EnterScheduledScope { .. } | FlowOp::ExitScheduledScope { .. } => {
+                Some("native scheduler scope marker")
+            }
+            FlowOp::Bind(_) => Some("prebound values"),
+            FlowOp::FormatOperandAttempt { .. } | FlowOp::CompleteFormatOperand { .. } => {
+                Some("format attempt")
+            }
+            FlowOp::LetElse { .. } => Some("refutable binding"),
+            FlowOp::Assign { .. } => Some("place assignment"),
+            FlowOp::LineOperation { .. }
+            | FlowOp::CommitDialogueResult { .. }
+            | FlowOp::SelectDialogueResult { .. }
+            | FlowOp::Dialogue { .. } => Some("line operation"),
+            FlowOp::Choice { .. } => Some("choice"),
+            FlowOp::Await { .. }
+            | FlowOp::StartNeedProducer { .. }
+            | FlowOp::AwaitMany { .. }
+            | FlowOp::CompleteAwaitObserver => Some("suspension"),
+            FlowOp::HostCall { .. } => Some("host call"),
+            FlowOp::ProjectCall { .. } | FlowOp::ApplyGroup { .. } => {
+                Some("nested function control transfer")
+            }
+            FlowOp::IfLet { .. } | FlowOp::Match { .. } => Some("pattern control flow"),
+            FlowOp::Loop { .. }
+            | FlowOp::LoopNext { .. }
+            | FlowOp::While { .. }
+            | FlowOp::WhileNext { .. }
+            | FlowOp::WhileLet { .. }
+            | FlowOp::WhileLetNext { .. }
+            | FlowOp::For { .. }
+            | FlowOp::ForNext { .. }
+            | FlowOp::Break(_)
+            | FlowOp::Continue => Some("loop control"),
+            FlowOp::Thread { .. } => Some("thread"),
+            FlowOp::LetScope { .. } | FlowOp::ExitScopeBind { .. } => Some("scope value binding"),
+            FlowOp::Goto(_) | FlowOp::GotoExpr(_) => Some("flow transfer"),
+            FlowOp::Return(_) => Some("flow label return"),
+            FlowOp::Effect(_)
+            | FlowOp::EvaluatedEffect(_)
+            | FlowOp::RegisterDefer { .. }
+            | FlowOp::RegisterCleanup { .. }
+            | FlowOp::CancelCleanup { .. } => Some("effect or cleanup"),
+        };
+        if let Some(operation) = declined {
+            return Err(format!(
+                "{operation} is outside the Julia scalar body subset"
+            ));
+        }
+    }
+    // Return unwinds an entered scope. Julia still requires its lexical `end`
+    // even when the owning Core body has no reached ExitScope operation.
+    for _ in 0..scopes {
+        output.push_str("end\n");
+    }
+    Ok(output)
+}
+
 fn julia_i64_expr(
     expr: &RuntimeExpr,
     inputs: RuntimePureFunctionInputs<'_>,
     input_labels: &[String],
 ) -> Result<String, String> {
     match expr.kind() {
+        RuntimeExprKind::Scope { body, .. } => julia_i64_expr(body, inputs, input_labels),
         RuntimeExprKind::Value(RuntimeValue::Int(value)) => Ok(value.to_string()),
         RuntimeExprKind::Local(read)
             if read.mode() == RuntimeLocalReadMode::Copy && read.fields().is_empty() =>
@@ -1757,6 +1946,7 @@ fn julia_bool_expr(
     input_labels: &[String],
 ) -> Result<String, String> {
     match expr.kind() {
+        RuntimeExprKind::Scope { body, .. } => julia_bool_expr(body, inputs, input_labels),
         RuntimeExprKind::Value(RuntimeValue::Bool(value)) => Ok(value.to_string()),
         RuntimeExprKind::Binary { lhs, op, rhs } => {
             let lhs = julia_i64_expr(lhs, inputs, input_labels)?;

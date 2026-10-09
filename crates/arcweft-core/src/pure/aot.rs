@@ -1,8 +1,9 @@
 use super::{
     AotPureFunctionBackend, AotPureI64Plan, AotPureScalarPlan, PureFunctionBackend,
     PureFunctionBackendKind, PureFunctionRequest, PureFunctionResult, PureFunctionStats,
-    RuntimePureFunctionRef, RuntimePureScalar, RuntimePureScalarInteger, evaluate_scalar_binary,
-    evaluate_scalar_unary, runtime_value_as_scalar,
+    RuntimePureControlBindings, RuntimePureFunctionRef, RuntimePureScalar,
+    RuntimePureScalarInteger, evaluate_scalar_binary, evaluate_scalar_unary,
+    runtime_value_as_scalar,
 };
 use crate::plan::{RuntimePureInputType, RuntimePureOutputType};
 use crate::runtime_id::RuntimeLocalDeclarationId;
@@ -13,8 +14,11 @@ use crate::value::{
 };
 use std::collections::BTreeMap;
 
+mod body;
+
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum AotI64Expr {
+    Executable(Box<[body::AotControlOp<Self, AotBoolExpr>]>),
     Const(i64),
     Local(usize),
     Let {
@@ -62,6 +66,7 @@ pub(super) enum AotBoolExpr {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum AotScalarExpr {
+    Executable(Box<[body::AotControlOp<Self, AotScalarBoolExpr>]>),
     Const(RuntimePureScalar),
     Local(usize),
     Let {
@@ -107,10 +112,16 @@ pub(super) enum AotScalarBoolExpr {
     },
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AotLocalReadPolicy {
+    CopyExpression,
+    ExecutableProjection,
+}
 #[derive(Clone, Debug)]
 struct AotCompileContext {
     slots: BTreeMap<RuntimeLocalDeclarationId, usize>,
     next_slot: usize,
+    read_policy: AotLocalReadPolicy,
 }
 
 impl AotPureFunctionBackend {
@@ -181,7 +192,7 @@ impl AotPureI64Plan {
             validate_input_abi(request, helper, local, RuntimePureInputType::I64)?;
         }
         let mut ctx = AotCompileContext::from_request(request)?;
-        let expr = compile_aot_i64_expr(helper.name, helper.expr, &mut ctx)?;
+        let expr = body::compile_i64(helper, &mut ctx)?;
         let slot_count = ctx.next_slot;
         let input_slots = input_locals
             .into_iter()
@@ -273,11 +284,20 @@ impl AotPureI64Plan {
         slots: &mut [i64],
     ) -> Result<(i64, PureFunctionStats), RuntimeEvalError> {
         let mut evaluator = AotI64Evaluator {
+            control: RuntimePureControlBindings::new(
+                RuntimePureFunctionRef::resolve(&self.plan, self.helper)?,
+                (),
+            ),
             slots,
             stats: PureFunctionStats::default(),
             scope_stack: Vec::new(),
         };
         let value = evaluator.eval_i64(&self.expr)?;
+        let active = evaluator.control.scope_count();
+        evaluator.control.finish_return();
+        for _ in 0..active {
+            evaluator.scope_stack.pop();
+        }
         Ok((value, evaluator.stats))
     }
 
@@ -308,7 +328,7 @@ impl AotPureScalarPlan {
             validate_input_abi(request, helper, local, input_type)?;
         }
         let mut ctx = AotCompileContext::from_scalar_request(request)?;
-        let expr = compile_aot_scalar_expr(helper.name, helper.expr, &mut ctx)?;
+        let expr = body::compile_scalar(helper, &mut ctx)?;
         let slot_count = ctx.next_slot;
         let input_slots = input_locals
             .into_iter()
@@ -458,12 +478,21 @@ impl AotPureScalarPlan {
         slots: &mut [RuntimePureScalar],
     ) -> Result<(RuntimePureScalar, PureFunctionStats), RuntimeEvalError> {
         let mut evaluator = AotScalarEvaluator {
+            control: RuntimePureControlBindings::new(
+                RuntimePureFunctionRef::resolve(&self.plan, self.helper)?,
+                (),
+            ),
             name: self.name(),
             slots,
             stats: PureFunctionStats::default(),
             scope_stack: Vec::new(),
         };
         let value = evaluator.eval_scalar(&self.expr)?;
+        let active = evaluator.control.scope_count();
+        evaluator.control.finish_return();
+        for _ in 0..active {
+            evaluator.scope_stack.pop();
+        }
         Ok((value, evaluator.stats))
     }
 
@@ -502,7 +531,11 @@ impl AotCompileContext {
             }
         }
         let next_slot = slots.len();
-        Ok(Self { slots, next_slot })
+        Ok(Self {
+            slots,
+            next_slot,
+            read_policy: AotLocalReadPolicy::CopyExpression,
+        })
     }
 
     fn initial_slots(request: &PureFunctionRequest) -> Result<Vec<i64>, RuntimeEvalError> {
@@ -543,7 +576,11 @@ impl AotCompileContext {
             }
         }
         let next_slot = slots.len();
-        Ok(Self { slots, next_slot })
+        Ok(Self {
+            slots,
+            next_slot,
+            read_policy: AotLocalReadPolicy::CopyExpression,
+        })
     }
 
     fn initial_scalar_slots(
@@ -600,6 +637,7 @@ impl AotCompileContext {
 }
 
 struct AotI64Evaluator<'a> {
+    control: RuntimePureControlBindings<'a, ()>,
     slots: &'a mut [i64],
     stats: PureFunctionStats,
     scope_stack: Vec<RuntimeScopeIdentity>,
@@ -607,8 +645,11 @@ struct AotI64Evaluator<'a> {
 
 impl AotI64Evaluator<'_> {
     fn eval_i64(&mut self, expr: &AotI64Expr) -> Result<i64, RuntimeEvalError> {
-        self.stats.evaluated_exprs += 1;
+        if !matches!(expr, AotI64Expr::Executable(_)) {
+            self.stats.evaluated_exprs += 1;
+        }
         match expr {
+            AotI64Expr::Executable(ops) => body::evaluate_i64(self, ops),
             AotI64Expr::Const(value) => Ok(*value),
             AotI64Expr::Local(slot) => Ok(self.slots[*slot]),
             AotI64Expr::Let { slot, expr, body } => {
@@ -704,6 +745,7 @@ impl AotI64Evaluator<'_> {
 }
 
 struct AotScalarEvaluator<'a> {
+    control: RuntimePureControlBindings<'a, ()>,
     name: &'a str,
     slots: &'a mut [RuntimePureScalar],
     stats: PureFunctionStats,
@@ -712,8 +754,11 @@ struct AotScalarEvaluator<'a> {
 
 impl AotScalarEvaluator<'_> {
     fn eval_scalar(&mut self, expr: &AotScalarExpr) -> Result<RuntimePureScalar, RuntimeEvalError> {
-        self.stats.evaluated_exprs += 1;
+        if !matches!(expr, AotScalarExpr::Executable(_)) {
+            self.stats.evaluated_exprs += 1;
+        }
         match expr {
+            AotScalarExpr::Executable(ops) => body::evaluate_scalar(self, ops),
             AotScalarExpr::Const(value) => Ok(*value),
             AotScalarExpr::Local(slot) => Ok(self.slots[*slot]),
             AotScalarExpr::Let { slot, expr, body } => {
@@ -758,7 +803,8 @@ impl AotScalarEvaluator<'_> {
             }
         }
         .map_err(|error| match error {
-            RuntimeEvalError::UnsupportedPure { .. } => error,
+            RuntimeEvalError::UnsupportedPure { .. }
+            | RuntimeEvalError::RecoverableExpression(_) => error,
             other => unsupported_aot(self.name, other.to_string()),
         })
     }
@@ -824,7 +870,9 @@ fn validate_output_abi(
     if helper.output_type == expected {
         Ok(())
     } else {
-        Err(RuntimeEvalError::InvalidExpressionType(helper.expr.ty()))
+        Err(RuntimeEvalError::InvalidExpressionType(
+            helper.result_type(),
+        ))
     }
 }
 
@@ -847,7 +895,9 @@ fn compile_aot_i64_expr(
             format!("literal {value:?} is not an i64 integer"),
         )),
         RuntimeExprKind::Local(read) => {
-            if read.mode() == crate::value::RuntimeLocalReadMode::Move || !read.fields().is_empty()
+            if (read.mode() == crate::value::RuntimeLocalReadMode::Move
+                && ctx.read_policy == AotLocalReadPolicy::CopyExpression)
+                || !read.fields().is_empty()
             {
                 return Err(unsupported_aot(helper_name, "consuming local read"));
             }
@@ -972,7 +1022,9 @@ fn compile_aot_scalar_expr(
                 )
             }),
         RuntimeExprKind::Local(read) => {
-            if read.mode() == crate::value::RuntimeLocalReadMode::Move || !read.fields().is_empty()
+            if (read.mode() == crate::value::RuntimeLocalReadMode::Move
+                && ctx.read_policy == AotLocalReadPolicy::CopyExpression)
+                || !read.fields().is_empty()
             {
                 return Err(unsupported_aot(helper_name, "consuming local read"));
             }
@@ -1117,24 +1169,69 @@ fn unsupported_aot(name: &str, reason: impl Into<String>) -> RuntimeEvalError {
 
 #[cfg(test)]
 mod division_tests {
-    use super::{AotI64Evaluator, AotI64Expr, PureFunctionStats};
-    use crate::value::{RuntimeBinaryOp, RuntimeEvalError, RuntimeExpressionFailure};
+    use super::{AotPureFunctionBackend, PureFunctionRequest};
+    use crate::pattern::RuntimeCheckedType;
+    use crate::plan::{
+        RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFunctionDefinitionIdentity,
+        RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+        RuntimePureHelperOrigin, RuntimePureHelperSeed, RuntimePureOutputType,
+    };
+    use crate::value::{
+        RuntimeBinaryOp, RuntimeEvalError, RuntimeExpressionFailure, RuntimeSignedIntWidth,
+        RuntimeValue,
+    };
+    use std::sync::Arc;
 
     #[test]
     fn aot_division_by_zero_returns_the_shared_expression_failure() {
-        let mut slots = [];
-        let mut evaluator = AotI64Evaluator {
-            slots: &mut slots,
-            stats: PureFunctionStats::default(),
-            scope_stack: Vec::new(),
+        let integer =
+            RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I64).semantic_identity_digest();
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    integer,
+                    RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::I64),
+                )],
+                [],
+            )
+            .expect("the original exact i64 type is admitted");
+        let constant = |value| {
+            RuntimeExprSeed::new(
+                integer,
+                RuntimeExprSeedKind::Value(RuntimeValue::i64(value)),
+            )
         };
-        let divide = AotI64Expr::Binary {
-            lhs: Box::new(AotI64Expr::Const(1)),
-            op: RuntimeBinaryOp::Div,
-            rhs: Box::new(AotI64Expr::Const(0)),
-        };
+        builder
+            .push_pure_helper_seed(RuntimePureHelperSeed {
+                definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    *blake3::hash(b"arcweft.core.fixture.aot.shared-division-failure.v1\0")
+                        .as_bytes(),
+                ),
+                name: "aot.shared-division-failure".to_owned(),
+                inputs: Box::new([]),
+                output_abi: RuntimePureOutputType::I64,
+                body: RuntimeExprSeed::new(
+                    integer,
+                    RuntimeExprSeedKind::Binary {
+                        lhs: Box::new(constant(1)),
+                        op: RuntimeBinaryOp::Div,
+                        rhs: Box::new(constant(0)),
+                    },
+                ),
+                scalar_eval_supported: true,
+                origin: RuntimePureHelperOrigin::Annotated,
+            })
+            .expect("the owning builder admits the typed division expression");
+        let plan = Arc::new(builder.finish().expect("the original helper plan seals"));
+        let helper = plan.pure_helpers()[0].id;
+        let request = PureFunctionRequest::try_new(plan, helper, [])
+            .expect("the request resolves the original admitted helper and full input frame");
+        let compiled = AotPureFunctionBackend::new()
+            .compile_i64(&request)
+            .expect("the original admitted division compiles through the owning AOT projection");
         assert_eq!(
-            evaluator.eval_i64(&divide),
+            compiled.call(),
             Err(RuntimeEvalError::RecoverableExpression(
                 RuntimeExpressionFailure::DivisionByZero,
             ))

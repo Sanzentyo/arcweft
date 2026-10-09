@@ -3337,6 +3337,7 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
     program.frame_layouts.extend([
         AwbcFrameLayout {
             scopes: vec![crate::awbc::schema::AwbcScopeDefinition {
+                kind: crate::scope::RuntimeScopeFrameKind::EmittedLexical,
                 parent: None,
                 identity: crate::scope::RuntimeScopeIdentity::Anonymous,
             }],

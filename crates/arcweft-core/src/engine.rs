@@ -52,17 +52,35 @@ pub mod program;
 pub mod stream;
 pub mod suspend;
 
+/// Ephemeral charge for the currently dispatched native operation. The driver
+/// reserves that dispatch first; physical bodies may consume only its actual
+/// remaining step budget. It is cleared before the next operation/host return.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct NativeScalarStepCharge {
+    mode: RuntimeStepMode,
+    fiber: FlowFiberId,
+    remaining: usize,
+    charged: usize,
+}
+/// One native root result authority. Function roots are internal deterministic
+/// invocations of the exact admitted site; program roots retain their public
+/// program binding. Both use the same frame, transaction and value custody.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum NativeInvocationRoot {
+    Program(arcweft_id::runtime_program::RuntimePureProgramId),
+    Function(crate::runtime_id::RuntimeFunctionSiteId),
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Engine {
-    program_result: Option<(
-        arcweft_id::runtime_program::RuntimePureProgramId,
-        RuntimeValue,
-    )>,
+    evaluation_stats: crate::pure::PureFunctionStats,
+    invocation_result: Option<(NativeInvocationRoot, RuntimeValue)>,
     plan: Arc<RuntimePlan>,
     format_context: crate::value::RuntimeFormatContext,
     generation: GenerationId,
     need_producers: NeedProducerRegistry,
     task_request_quota_remaining: usize,
+    scalar_step_charge: Option<NativeScalarStepCharge>,
     need_publications: BTreeMap<crate::task::TaskCorrelation, VecDeque<RuntimeNeedPublication>>,
     latest_need_publications:
         BTreeMap<crate::task::TaskCorrelation, crate::task::RuntimeNeedPublicationRollbackImage>,
@@ -72,6 +90,7 @@ pub struct Engine {
     fiber: FlowFiber,
     child_fibers: VecDeque<FlowFiber>,
     next_fiber_id: u64,
+    next_scheduled_scope_sequence: u64,
     dialogue_occurrences: BTreeMap<
         (
             RuntimePersistentFiberId,
@@ -96,15 +115,14 @@ pub struct Engine {
 /// image may coexist with a live Engine because it carries no live values.
 #[derive(Clone, Debug, PartialEq)]
 struct NativeEngineRollbackImage {
-    program_result: Option<(
-        arcweft_id::runtime_program::RuntimePureProgramId,
-        crate::value::AwbcRuntimeValueSnapshot,
-    )>,
+    evaluation_stats: crate::pure::PureFunctionStats,
+    invocation_result: Option<(NativeInvocationRoot, crate::value::AwbcRuntimeValueSnapshot)>,
     plan: Arc<RuntimePlan>,
     format_context: crate::value::RuntimeFormatContext,
     generation: GenerationId,
     need_producers: crate::task::NeedProducerRegistryRollbackImage,
     task_request_quota_remaining: usize,
+    scalar_step_charge: Option<NativeScalarStepCharge>,
     need_publications: BTreeMap<
         crate::task::TaskCorrelation,
         VecDeque<crate::task::RuntimeNeedPublicationRollbackImage>,
@@ -117,6 +135,7 @@ struct NativeEngineRollbackImage {
     fiber: FlowFiberRollbackImage,
     child_fibers: VecDeque<FlowFiberRollbackImage>,
     next_fiber_id: u64,
+    next_scheduled_scope_sequence: u64,
     dialogue_occurrences: BTreeMap<
         (
             RuntimePersistentFiberId,
@@ -317,6 +336,13 @@ impl FlowFiber {
 
 #[derive(Clone, Debug, PartialEq)]
 enum FlowOpRollbackImage {
+    EnterScheduledScope {
+        identity: crate::scope::RuntimeScopeIdentity,
+        token: crate::scope::RuntimeScheduledScopeToken,
+    },
+    ExitScheduledScope {
+        token: crate::scope::RuntimeScheduledScopeToken,
+    },
     Bind(
         Vec<(
             crate::runtime_id::RuntimeLocalDeclarationId,
@@ -353,6 +379,11 @@ impl FlowOpRollbackImage {
                 .map_err(|error| error.to_string())
         };
         Ok(match op {
+            FlowOp::EnterScheduledScope { identity, token } => Self::EnterScheduledScope {
+                identity: identity.clone(),
+                token: *token,
+            },
+            FlowOp::ExitScheduledScope { token } => Self::ExitScheduledScope { token: *token },
             FlowOp::Bind(bindings) => Self::Bind(
                 bindings
                     .iter()
@@ -405,6 +436,10 @@ impl FlowOpRollbackImage {
 
     fn into_live(self, owner: &crate::task::RuntimeProgramOwner) -> Result<FlowOp, String> {
         Ok(match self {
+            Self::EnterScheduledScope { identity, token } => {
+                FlowOp::EnterScheduledScope { identity, token }
+            }
+            Self::ExitScheduledScope { token } => FlowOp::ExitScheduledScope { token },
             Self::Bind(bindings) => FlowOp::Bind(
                 bindings
                     .into_iter()
@@ -604,6 +639,7 @@ impl FlowScopeCleanup {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum FlowControlStackEntryKind {
     Scope {
+        origin: crate::scope::RuntimeScopeFrameOrigin,
         cleanups: Vec<FlowScopeCleanup>,
         match_guard: Option<flow::match_guard::NativeMatchGuardContinuation>,
     },
@@ -872,6 +908,9 @@ pub(crate) enum FunctionReturnContinuation {
     Program {
         program: arcweft_id::runtime_program::RuntimePureProgramId,
     },
+    Function {
+        site: crate::runtime_id::RuntimeFunctionSiteId,
+    },
     CallableDefault {
         pending: crate::value::RuntimeCallablePendingGroup,
         result: RuntimePattern,
@@ -885,6 +924,9 @@ pub(crate) enum FunctionReturnContinuation {
 enum FunctionReturnContinuationRollbackImage {
     Program {
         program: arcweft_id::runtime_program::RuntimePureProgramId,
+    },
+    Function {
+        site: crate::runtime_id::RuntimeFunctionSiteId,
     },
     CallableDefault {
         pending: crate::value::RuntimeCallablePendingRollbackImage,
@@ -903,6 +945,9 @@ impl FunctionReturnContinuation {
         Ok(match self {
             Self::Program { program } => {
                 FunctionReturnContinuationRollbackImage::Program { program: *program }
+            }
+            Self::Function { site } => {
+                FunctionReturnContinuationRollbackImage::Function { site: *site }
             }
             Self::CallableDefault { pending, result } => {
                 FunctionReturnContinuationRollbackImage::CallableDefault {
@@ -933,6 +978,17 @@ impl FunctionReturnContinuation {
                     return Err("native program continuation is absent from its plan".to_owned());
                 }
                 Self::Program { program }
+            }
+            FunctionReturnContinuationRollbackImage::Function { site: target } => {
+                let crate::task::RuntimeProgramOwner::Plan(plan) = owner else {
+                    return Err("native function continuation requires its plan owner".to_owned());
+                };
+                if target != site
+                    || crate::pure::RuntimePureFunctionRef::resolve(plan, target).is_err()
+                {
+                    return Err("native function continuation is absent from its plan".to_owned());
+                }
+                Self::Function { site: target }
             }
             FunctionReturnContinuationRollbackImage::CallableDefault { pending, result } => {
                 Self::CallableDefault {
@@ -1598,8 +1654,9 @@ impl Engine {
         let publication_image =
             |publication: &RuntimeNeedPublication| publication.inert_rollback_image(&owner);
         Ok(NativeEngineRollbackImage {
-            program_result: self
-                .program_result
+            evaluation_stats: self.evaluation_stats.clone(),
+            invocation_result: self
+                .invocation_result
                 .as_ref()
                 .map(|(program, value)| {
                     crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
@@ -1614,6 +1671,7 @@ impl Engine {
             generation: self.generation,
             need_producers: self.need_producers.inert_rollback_image(&owner)?,
             task_request_quota_remaining: self.task_request_quota_remaining,
+            scalar_step_charge: self.scalar_step_charge,
             need_publications: self
                 .need_publications
                 .iter()
@@ -1642,6 +1700,7 @@ impl Engine {
                 .map(|child| child.inert_rollback_image(&owner))
                 .collect::<Result<_, String>>()?,
             next_fiber_id: self.next_fiber_id,
+            next_scheduled_scope_sequence: self.next_scheduled_scope_sequence,
             dialogue_occurrences: self.dialogue_occurrences.clone(),
             dialogue_activations: self.dialogue_activations.inert_rollback_image(&owner)?,
             expected_deferred_children,
@@ -1658,14 +1717,30 @@ impl Engine {
 
     fn from_rollback_image(image: NativeEngineRollbackImage) -> Result<Self, String> {
         let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&image.plan));
-        Ok(Self {
-            program_result: image
-                .program_result
-                .map(|(program, value)| {
-                    value
+        let restored = Self {
+            evaluation_stats: image.evaluation_stats,
+            invocation_result: image
+                .invocation_result
+                .map(|(root, value)| {
+                    let value = value
                         .into_runtime_value_for_program(&owner)
-                        .map(|value| (program, value))
-                        .map_err(|error| error.to_string())
+                        .map_err(|error| error.to_string())?;
+                    if let NativeInvocationRoot::Function(site) = root {
+                        let function =
+                            crate::pure::RuntimePureFunctionRef::resolve(&image.plan, site)
+                                .map_err(|error| error.to_string())?;
+                        if !image
+                            .plan
+                            .value_matches_type(function.result_type(), &value)
+                            .map_err(|error| error.to_string())?
+                        {
+                            return Err(
+                                "native function result disagrees with its admitted return type"
+                                    .to_owned(),
+                            );
+                        }
+                    }
+                    Ok((root, value))
                 })
                 .transpose()?,
             plan: image.plan,
@@ -1676,6 +1751,7 @@ impl Engine {
                 &owner,
             )?,
             task_request_quota_remaining: image.task_request_quota_remaining,
+            scalar_step_charge: image.scalar_step_charge,
             need_publications: image
                 .need_publications
                 .into_iter()
@@ -1705,6 +1781,7 @@ impl Engine {
                 .map(|child| FlowFiber::from_rollback_image(child, &owner))
                 .collect::<Result<_, String>>()?,
             next_fiber_id: image.next_fiber_id,
+            next_scheduled_scope_sequence: image.next_scheduled_scope_sequence,
             dialogue_occurrences: image.dialogue_occurrences,
             dialogue_activations: dialogue::DialogueActivationStore::from_rollback_image(
                 image.dialogue_activations,
@@ -1719,7 +1796,77 @@ impl Engine {
             audio_epoch: image.audio_epoch,
             next_audio_sequence: image.next_audio_sequence,
             next_host_call_sequence: image.next_host_call_sequence,
-        })
+        };
+        restored.validate_scheduled_scope_state()?;
+        Ok(restored)
+    }
+
+    fn validate_scheduled_scope_state(&self) -> Result<(), String> {
+        if self.next_scheduled_scope_sequence == 0 {
+            return Err("native control scope allocator is zero".into());
+        }
+        let mut opened = BTreeSet::new();
+        let mut closed = BTreeSet::new();
+        for fiber in std::iter::once(&self.fiber).chain(self.child_fibers.iter()) {
+            let valid = |token: crate::scope::RuntimeScheduledScopeToken| {
+                token.belongs_to(fiber.execution, fiber.persistent_id)
+                    && token.ordinal().get() < self.next_scheduled_scope_sequence
+            };
+            let mut pending = Vec::new();
+            pending.extend(fiber.pending_ops.iter());
+            for frame in &fiber.control_stack {
+                match &frame.kind {
+                    FlowControlStackEntryKind::Scope {
+                        origin: crate::scope::RuntimeScopeFrameOrigin::Scheduled(token),
+                        ..
+                    } => {
+                        if !valid(*token) || !opened.insert(*token) {
+                            return Err(
+                                "native scope frame has a foreign, repeated, or unallocated token"
+                                    .into(),
+                            );
+                        }
+                    }
+                    FlowControlStackEntryKind::FunctionCall(frame) => {
+                        pending.extend(frame.caller_pending_ops.iter())
+                    }
+                    FlowControlStackEntryKind::FormatAttempt(frame) => {
+                        if let Some(active) = &frame.active {
+                            pending.extend(active.caller_pending_ops.iter())
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            for op in &pending {
+                match op {
+                    FlowOp::EnterScheduledScope { identity, token } => {
+                        if token.kind() == crate::scope::RuntimeScopeFrameKind::Control
+                            && !matches!(identity, crate::scope::RuntimeScopeIdentity::Anonymous)
+                        {
+                            return Err(
+                                "native generated scope carries an authored namespace".into()
+                            );
+                        }
+                        if !valid(*token) || !opened.insert(*token) {
+                            return Err("native pending scope open has a foreign, repeated, or unallocated token".into());
+                        }
+                    }
+                    FlowOp::ExitScheduledScope { token } => {
+                        if !valid(*token) || !closed.insert(*token) {
+                            return Err("native pending scope close has a foreign, repeated, or unallocated token".into());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if opened != closed {
+            return Err(
+                "native scope frames and queued exact close markers are not bijective".into(),
+            );
+        }
+        Ok(())
     }
 
     #[must_use]
@@ -1808,12 +1955,14 @@ impl Engine {
             .collect();
         let pure_helper_i64_call_shapes = pure_helper_i64_call_shapes(&plan);
         Self {
-            program_result: None,
+            evaluation_stats: crate::pure::PureFunctionStats::default(),
+            invocation_result: None,
             plan,
             format_context: crate::value::RuntimeFormatContext::default(),
             generation,
             need_producers: NeedProducerRegistry::default(),
             task_request_quota_remaining: usize::MAX,
+            scalar_step_charge: None,
             need_publications: BTreeMap::new(),
             latest_need_publications: BTreeMap::new(),
             need_publication_frontiers: BTreeMap::new(),
@@ -1840,6 +1989,7 @@ impl Engine {
             },
             child_fibers: VecDeque::new(),
             next_fiber_id: 1,
+            next_scheduled_scope_sequence: 1,
             dialogue_occurrences: BTreeMap::new(),
             dialogue_activations: dialogue::DialogueActivationStore::default(),
             dialogue_effect_callback_activations: BTreeSet::new(),
@@ -1858,6 +2008,12 @@ impl Engine {
         self.format_context = context;
     }
 
+    /// Actual expression evaluation counters from this Engine's interpreter.
+    /// These counters are transactionally restored with its owning state.
+    pub(crate) fn evaluation_stats(&self) -> &crate::pure::PureFunctionStats {
+        &self.evaluation_stats
+    }
+
     /// Transfers a detached completed value once. A resource-bearing value
     /// remains in this executor until its ledger can be transferred with it.
     pub fn take_program_result(
@@ -1869,10 +2025,18 @@ impl Engine {
         )>,
         crate::value::ownership::RuntimeDetachedValueError,
     > {
-        if let Some((_, value)) = &self.program_result {
+        if let Some((_, value)) = &self.invocation_result {
             value.validate_detached_custody()?;
         }
-        Ok(self.program_result.take())
+        let Some((NativeInvocationRoot::Program(_), _)) = self.invocation_result.as_ref() else {
+            return Ok(None);
+        };
+        Ok(self.invocation_result.take().map(|(root, value)| {
+            let NativeInvocationRoot::Program(program) = root else {
+                unreachable!("the borrowed preflight selected this program result")
+            };
+            (program, value)
+        }))
     }
 
     #[must_use]
@@ -2513,8 +2677,12 @@ impl Engine {
         self.step_stream_plans(&mut output, pure_backend);
 
         while executed_ops < options.budget.max_ops && self.can_attempt_runtime_op() {
-            self.step_runtime_op(&mut input, &events, &mut output, pure_backend);
-            executed_ops += 1;
+            let (_, control_ops) = self.with_scalar_operation_budget(
+                options.mode,
+                options.budget.max_ops - executed_ops - 1,
+                |engine| engine.step_runtime_op(&mut input, &events, &mut output, pure_backend),
+            );
+            executed_ops += 1 + control_ops;
             if self.should_return_to_host(options.mode, &output, executed_ops) {
                 break;
             }
@@ -2540,6 +2708,29 @@ impl Engine {
         self.step_result(output, options, stats)
     }
 
+    /// Carries the owning driver's remaining budget through the existing
+    /// operation transaction. A body completion charges only after its actual
+    /// physical result is produced; declines leave the original frame intact.
+    fn with_scalar_operation_budget<R>(
+        &mut self,
+        mode: RuntimeStepMode,
+        remaining: usize,
+        action: impl FnOnce(&mut Self) -> R,
+    ) -> (R, usize) {
+        debug_assert!(self.scalar_step_charge.is_none());
+        self.scalar_step_charge = Some(NativeScalarStepCharge {
+            mode,
+            fiber: self.fiber.id,
+            remaining,
+            charged: 0,
+        });
+        let result = action(self);
+        let charged = self
+            .scalar_step_charge
+            .take()
+            .map_or(0, |charge| charge.charged);
+        (result, charged)
+    }
     fn run_root_phase(
         &mut self,
         events: Vec<RootEventInput>,

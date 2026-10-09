@@ -3957,7 +3957,10 @@ fn bench_json_measures_checked_in_scalar_for_pure_jit_perf_guard() {
         }),
         "bench source should stay path-free and identify the fixture: {json}"
     );
-    assert_eq!(json["compiler"]["runtime_plan"]["pure_helpers"], 1);
+    assert_eq!(
+        json["compiler"]["runtime_plan"]["pure_function_candidates"],
+        1
+    );
     assert_eq!(json["compiler"]["runtime_plan"]["pure_call_exprs"], 1);
 
     let measurement = &json["benches"][0]["sections"][0]["measurement"];
@@ -4122,7 +4125,10 @@ fn bench_json_measures_checked_in_mixed_width_for_iter_pure_jit_fixture() {
     );
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("bench output is structured JSON");
-    assert_eq!(json["compiler"]["runtime_plan"]["pure_helpers"], 5);
+    assert_eq!(
+        json["compiler"]["runtime_plan"]["pure_function_candidates"],
+        5
+    );
     let measurement = &json["benches"][0]["sections"][0]["measurement"];
     assert_eq!(measurement["executor"], "bytecode_vm");
     assert_eq!(
@@ -4211,7 +4217,10 @@ fn bench_json_measures_checked_in_wide_for_pure_jit_fixture() {
     );
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("bench output is structured JSON");
-    assert_eq!(json["compiler"]["runtime_plan"]["pure_helpers"], 2);
+    assert_eq!(
+        json["compiler"]["runtime_plan"]["pure_function_candidates"],
+        2
+    );
     let measurement = &json["benches"][0]["sections"][0]["measurement"];
     assert_eq!(measurement["deterministic"]["pure_calls_median"], 16);
     assert_eq!(measurement["deterministic"]["pure_batch_calls_median"], 0);
@@ -4272,7 +4281,10 @@ fn bench_json_measures_checked_in_hot_for_pure_auto_jit_fixture() {
     );
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("bench output is structured JSON");
-    assert_eq!(json["compiler"]["runtime_plan"]["pure_helpers"], 2);
+    assert_eq!(
+        json["compiler"]["runtime_plan"]["pure_function_candidates"],
+        2
+    );
     let measurement = &json["benches"][0]["sections"][0]["measurement"];
     assert_eq!(measurement["deterministic"]["pure_calls_median"], 256);
     assert_eq!(measurement["deterministic"]["pure_batch_calls_median"], 0);
@@ -4424,7 +4436,10 @@ fn bench_json_measures_checked_in_nonuniform_map_pure_batch_fixture() {
         json["compiler"]["runtime_type_validation"]["expressions"],
         5
     );
-    assert_eq!(json["compiler"]["runtime_plan"]["pure_helpers"], 1);
+    assert_eq!(
+        json["compiler"]["runtime_plan"]["pure_function_candidates"],
+        1
+    );
     assert_eq!(
         json["compiler"]["runtime_plan"]["pure_rewrite_expr_visits"],
         0
@@ -4507,7 +4522,10 @@ fn bench_json_measures_checked_in_dense_i32_map_pure_batch_fixture() {
     );
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("bench output is structured JSON");
-    assert_eq!(json["compiler"]["runtime_plan"]["pure_helpers"], 1);
+    assert_eq!(
+        json["compiler"]["runtime_plan"]["pure_function_candidates"],
+        1
+    );
     assert_eq!(
         json["compiler"]["runtime_plan"]["sequence_map_sum_fusions"],
         1
@@ -4586,7 +4604,10 @@ fn bench_json_measures_checked_in_small_dense_integer_map_pure_batch_fixtures() 
         );
         let json: serde_json::Value =
             serde_json::from_str(&stdout).expect("bench output is structured JSON");
-        assert_eq!(json["compiler"]["runtime_plan"]["pure_helpers"], 1);
+        assert_eq!(
+            json["compiler"]["runtime_plan"]["pure_function_candidates"],
+            1
+        );
         assert_eq!(
             json["compiler"]["runtime_plan"]["sequence_map_sum_fusions"],
             1
@@ -4657,7 +4678,10 @@ fn bench_json_measures_checked_in_dense_f32_map_pure_batch_fixture_with_auto_jit
     );
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("bench output is structured JSON");
-    assert_eq!(json["compiler"]["runtime_plan"]["pure_helpers"], 1);
+    assert_eq!(
+        json["compiler"]["runtime_plan"]["pure_function_candidates"],
+        1
+    );
     let measurement = &json["benches"][0]["sections"][0]["measurement"];
     assert_eq!(measurement["deterministic"]["pure_batch_calls_median"], 1);
     assert_eq!(measurement["deterministic"]["pure_batch_items_median"], 128);
@@ -4723,7 +4747,10 @@ fn bench_json_measures_checked_in_dense_f64_map_pure_batch_fixture_with_auto_jit
     );
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("bench output is structured JSON");
-    assert_eq!(json["compiler"]["runtime_plan"]["pure_helpers"], 1);
+    assert_eq!(
+        json["compiler"]["runtime_plan"]["pure_function_candidates"],
+        1
+    );
     let measurement = &json["benches"][0]["sections"][0]["measurement"];
     assert_eq!(measurement["deterministic"]["pure_batch_calls_median"], 1);
     assert_eq!(measurement["deterministic"]["pure_batch_items_median"], 128);
@@ -5106,7 +5133,10 @@ fn bench_json_measures_checked_in_dense_u32_map_pure_batch_fixture() {
     );
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("bench output is structured JSON");
-    assert_eq!(json["compiler"]["runtime_plan"]["pure_helpers"], 1);
+    assert_eq!(
+        json["compiler"]["runtime_plan"]["pure_function_candidates"],
+        1
+    );
     assert_eq!(
         json["compiler"]["runtime_plan"]["sequence_map_sum_fusions"],
         1
@@ -5178,7 +5208,10 @@ fn bench_json_measures_checked_in_dense_u64_map_pure_batch_fixture() {
     );
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("bench output is structured JSON");
-    assert_eq!(json["compiler"]["runtime_plan"]["pure_helpers"], 1);
+    assert_eq!(
+        json["compiler"]["runtime_plan"]["pure_function_candidates"],
+        1
+    );
     assert_eq!(
         json["compiler"]["runtime_plan"]["sequence_map_sum_fusions"],
         1
@@ -5275,7 +5308,10 @@ fn assert_wide_integer_map_pure_batch_fixture(relative_path: &str) {
     );
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("bench output is structured JSON");
-    assert_eq!(json["compiler"]["runtime_plan"]["pure_helpers"], 1);
+    assert_eq!(
+        json["compiler"]["runtime_plan"]["pure_function_candidates"],
+        1
+    );
     assert_eq!(
         json["compiler"]["runtime_plan"]["sequence_map_sum_fusions"],
         1
@@ -5345,7 +5381,10 @@ fn assert_target_size_integer_map_pure_batch_fixture(relative_path: &str, label:
     );
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("bench output is structured JSON");
-    assert_eq!(json["compiler"]["runtime_plan"]["pure_helpers"], 1);
+    assert_eq!(
+        json["compiler"]["runtime_plan"]["pure_function_candidates"],
+        1
+    );
     assert_eq!(
         json["compiler"]["runtime_plan"]["sequence_map_sum_fusions"],
         1

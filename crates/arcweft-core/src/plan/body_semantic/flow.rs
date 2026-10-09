@@ -251,6 +251,9 @@ impl RuntimeBodySemanticContext<'_> {
                 });
                 encoder.count(captures.len());
             }
+            FlowOp::EnterScheduledScope { .. } | FlowOp::ExitScheduledScope { .. } => {
+                unreachable!("native control markers cannot inhabit an admitted body")
+            }
             FlowOp::Let { .. }
             | FlowOp::LetElse { .. }
             | FlowOp::CommitDialogueResult { .. }

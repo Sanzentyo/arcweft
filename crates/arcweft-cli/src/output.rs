@@ -339,7 +339,7 @@ pub(crate) struct RuntimeProfileCompiler {
 
 #[derive(Clone, Copy, serde::Serialize)]
 pub(crate) struct RuntimePlanProfileStats {
-    pub(crate) pure_helpers: usize,
+    pub(crate) pure_function_candidates: usize,
     pub(crate) pure_candidate_functions_seen: usize,
     pub(crate) pure_candidate_lower_attempts: usize,
     pub(crate) pure_candidate_lower_failures_inferred: usize,
@@ -359,7 +359,7 @@ pub(crate) struct RuntimePlanProfileStats {
 impl From<RuntimePlanLowerStats> for RuntimePlanProfileStats {
     fn from(stats: RuntimePlanLowerStats) -> Self {
         Self {
-            pure_helpers: stats.pure_helpers,
+            pure_function_candidates: stats.pure_function_candidates,
             pure_candidate_functions_seen: stats.pure_candidate_functions_seen,
             pure_candidate_lower_attempts: stats.pure_candidate_lower_attempts,
             pure_candidate_lower_failures_inferred: stats.pure_candidate_lower_failures_inferred,

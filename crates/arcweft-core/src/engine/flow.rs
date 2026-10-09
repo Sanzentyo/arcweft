@@ -812,11 +812,47 @@ impl Engine {
                 self.push_scope_frame(identity);
                 self.advance_if_needed(next_op_index);
             }
-            FlowOp::ExitScope => {
+            FlowOp::EnterScheduledScope { identity, token } => {
+                if !token.belongs_to(self.fiber.execution, self.fiber.persistent_id)
+                    || token.ordinal().get() >= self.next_scheduled_scope_sequence
+                    || (token.kind() == crate::scope::RuntimeScopeFrameKind::Control
+                        && !matches!(identity, RuntimeScopeIdentity::Anonymous))
+                {
+                    self.fail_eval(
+                        crate::scope::RuntimeScopeExitError::ScheduledTargetMismatch,
+                        output,
+                    );
+                    return;
+                }
+                self.push_scope_frame_with_origin(
+                    identity,
+                    crate::scope::RuntimeScopeFrameOrigin::Scheduled(token),
+                );
+                self.advance_if_needed(next_op_index);
+            }
+            FlowOp::ExitScheduledScope { token } => {
+                let expected = Some(token);
+                let valid = crate::scope::RuntimeScopeExitTarget::Frame(expected)
+                    .resolve(self.active_scope_targets())
+                    .is_ok();
+                if !valid {
+                    self.fail_eval(
+                        crate::scope::RuntimeScopeExitError::ScheduledTargetMismatch,
+                        output,
+                    );
+                    return;
+                }
                 self.advance_if_needed(next_op_index);
                 if !self.complete_match_guard(output, pure_backend) {
-                    self.pop_scope_frame(output, pure_backend);
+                    self.pop_scope_frame(output, pure_backend)
                 }
+            }
+            FlowOp::ExitScope => {
+                if let Err(error) = self.exit_emitted_scope(output, pure_backend) {
+                    self.fail_eval(error, output);
+                    return;
+                }
+                self.advance_if_needed(next_op_index);
             }
             FlowOp::CompleteAwaitObserver => {
                 let Some(state) = self.fiber.await_observer.take() else {
@@ -838,7 +874,10 @@ impl Engine {
                         return;
                     }
                 };
-                self.pop_scope_frame(output, pure_backend);
+                if let Err(error) = self.exit_emitted_scope(output, pure_backend) {
+                    self.fail_eval(error, output);
+                    return;
+                }
                 self.bind_value(&pattern, value, output);
                 self.advance_if_needed(next_op_index);
             }
@@ -1150,13 +1189,86 @@ impl Engine {
     }
 
     pub(super) fn push_scope_frame(&mut self, identity: RuntimeScopeIdentity) {
+        self.push_scope_frame_with_origin(
+            identity,
+            crate::scope::RuntimeScopeFrameOrigin::EmittedLexical,
+        );
+    }
+
+    fn push_scope_frame_with_origin(
+        &mut self,
+        identity: RuntimeScopeIdentity,
+        origin: crate::scope::RuntimeScopeFrameOrigin,
+    ) {
         self.fiber.env.push_scope_with_identity(identity);
         self.fiber.control_stack.push(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::Scope {
+                origin,
                 cleanups: Vec::new(),
                 match_guard: None,
             },
         });
+    }
+
+    fn allocate_scheduled_scope(
+        &mut self,
+        kind: crate::scope::RuntimeScopeFrameKind,
+    ) -> Option<crate::scope::RuntimeScheduledScopeToken> {
+        let ordinal = std::num::NonZeroU64::new(self.next_scheduled_scope_sequence)?;
+        let Some(next) = self.next_scheduled_scope_sequence.checked_add(1) else {
+            self.fiber.status = FlowFiberStatus::Failed(
+                crate::scope::RuntimeScopeExitError::IdentityCapacityExhausted.to_string(),
+            );
+            return None;
+        };
+        self.next_scheduled_scope_sequence = next;
+        Some(crate::scope::RuntimeScheduledScopeToken::from_runtime(
+            self.fiber.execution,
+            self.fiber.persistent_id,
+            ordinal,
+            kind,
+        ))
+    }
+    pub(super) fn push_control_scope_frame(
+        &mut self,
+    ) -> Option<crate::scope::RuntimeScheduledScopeToken> {
+        let token = self.allocate_scheduled_scope(crate::scope::RuntimeScopeFrameKind::Control)?;
+        self.push_scope_frame_with_origin(
+            RuntimeScopeIdentity::Anonymous,
+            crate::scope::RuntimeScopeFrameOrigin::Scheduled(token),
+        );
+        Some(token)
+    }
+    fn active_scope_targets(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            Option<crate::scope::RuntimeScheduledScopeToken>,
+            crate::scope::RuntimeScopeFrameKind,
+        ),
+    > + '_ {
+        self.fiber
+            .control_stack
+            .iter()
+            .rev()
+            .map_while(|frame| match &frame.kind {
+                FlowControlStackEntryKind::Scope { origin, .. } => {
+                    Some((origin.token(), origin.kind()))
+                }
+                _ => None,
+            })
+    }
+    pub(super) fn exit_emitted_scope(
+        &mut self,
+        output: &mut RuntimeStepOutput,
+        backend: &mut impl RuntimeCallBackend,
+    ) -> Result<(), crate::scope::RuntimeScopeExitError> {
+        let exit = crate::scope::RuntimeScopeExitTarget::EmittedLexical
+            .resolve(self.active_scope_targets())?;
+        for _ in exit.targets() {
+            self.pop_scope_frame(output, backend);
+        }
+        Ok(())
     }
 
     pub(super) fn register_scope_cleanup(
@@ -1286,15 +1398,9 @@ impl Engine {
         item: RuntimeValue,
         output: &mut RuntimeStepOutput,
     ) {
-        self.fiber
-            .env
-            .push_scope_with_capacity(pattern_binding_capacity(&pattern));
-        self.fiber.control_stack.push(FlowControlStackEntry {
-            kind: FlowControlStackEntryKind::Scope {
-                cleanups: Vec::new(),
-                match_guard: None,
-            },
-        });
+        let Some(token) = self.push_control_scope_frame() else {
+            return;
+        };
         match self.try_bind_pattern_owned(&pattern, item) {
             Ok(None) => {}
             Ok(Some(item)) => {
@@ -1315,7 +1421,7 @@ impl Engine {
             evidence,
             body: Arc::clone(body),
         };
-        self.push_borrowed_ops_with_exit(body.as_ref(), Some(tail));
+        self.push_borrowed_ops_with_exit(body.as_ref(), Some(tail), token);
     }
 
     fn runtime_iterator_from_value_with_backend(
@@ -1374,7 +1480,29 @@ impl Engine {
     }
 
     fn push_owned_scoped_ops(&mut self, ops: Vec<FlowOp>, prefix: Option<FlowOp>) {
-        self.push_owned_scoped_ops_with_identity(ops, prefix, RuntimeScopeIdentity::Anonymous);
+        if ops.is_empty() && prefix.is_none() {
+            return;
+        }
+        let Some(token) =
+            self.allocate_scheduled_scope(crate::scope::RuntimeScopeFrameKind::Control)
+        else {
+            return;
+        };
+        self.fiber
+            .pending_ops
+            .push_front(FlowOp::ExitScheduledScope { token });
+        for op in ops.into_iter().rev() {
+            self.fiber.pending_ops.push_front(op)
+        }
+        if let Some(prefix) = prefix {
+            self.fiber.pending_ops.push_front(prefix)
+        }
+        self.fiber
+            .pending_ops
+            .push_front(FlowOp::EnterScheduledScope {
+                identity: RuntimeScopeIdentity::Anonymous,
+                token,
+            });
     }
 
     fn push_owned_scoped_ops_with_identity(
@@ -1386,19 +1514,26 @@ impl Engine {
         if ops.is_empty() && prefix.is_none() {
             return;
         }
+        let Some(token) =
+            self.allocate_scheduled_scope(crate::scope::RuntimeScopeFrameKind::EmittedLexical)
+        else {
+            return;
+        };
         self.fiber
             .pending_ops
             .reserve(ops.len() + usize::from(prefix.is_some()) + 2);
-        self.fiber.pending_ops.push_front(FlowOp::ExitScope);
+        self.fiber
+            .pending_ops
+            .push_front(FlowOp::ExitScheduledScope { token });
         for op in ops.into_iter().rev() {
-            self.fiber.pending_ops.push_front(op);
+            self.fiber.pending_ops.push_front(op)
         }
         if let Some(prefix) = prefix {
-            self.fiber.pending_ops.push_front(prefix);
+            self.fiber.pending_ops.push_front(prefix)
         }
         self.fiber
             .pending_ops
-            .push_front(FlowOp::EnterScope { identity });
+            .push_front(FlowOp::EnterScheduledScope { identity, token });
     }
 
     fn push_borrowed_scoped_ops(
@@ -1416,28 +1551,56 @@ impl Engine {
         if let Some(tail) = tail {
             self.fiber.pending_ops.push_front(tail);
         }
-        self.fiber.pending_ops.push_front(FlowOp::ExitScope);
+        let Some(token) =
+            self.allocate_scheduled_scope(crate::scope::RuntimeScopeFrameKind::Control)
+        else {
+            return;
+        };
+        self.fiber
+            .pending_ops
+            .push_front(FlowOp::ExitScheduledScope { token });
         for op in ops.iter().rev().cloned() {
             self.fiber.pending_ops.push_front(op);
         }
         if let Some(prefix) = prefix {
             self.fiber.pending_ops.push_front(prefix);
         }
-        self.fiber.pending_ops.push_front(FlowOp::EnterScope {
-            identity: RuntimeScopeIdentity::Anonymous,
-        });
+        self.fiber
+            .pending_ops
+            .push_front(FlowOp::EnterScheduledScope {
+                identity: RuntimeScopeIdentity::Anonymous,
+                token,
+            });
     }
 
-    fn push_borrowed_ops_with_exit(&mut self, ops: &[FlowOp], tail: Option<FlowOp>) {
+    fn push_borrowed_ops_with_exit(
+        &mut self,
+        ops: &[FlowOp],
+        tail: Option<FlowOp>,
+        token: crate::scope::RuntimeScheduledScopeToken,
+    ) {
         self.fiber
             .pending_ops
             .reserve(ops.len() + usize::from(tail.is_some()) + 1);
         if let Some(tail) = tail {
             self.fiber.pending_ops.push_front(tail);
         }
-        self.fiber.pending_ops.push_front(FlowOp::ExitScope);
+        self.fiber
+            .pending_ops
+            .push_front(FlowOp::ExitScheduledScope { token });
         for op in ops.iter().rev().cloned() {
             self.fiber.pending_ops.push_front(op);
+        }
+    }
+
+    pub(super) fn cancel_scheduled_scope_close(
+        &mut self,
+        origin: crate::scope::RuntimeScopeFrameOrigin,
+    ) {
+        if let crate::scope::RuntimeScopeFrameOrigin::Scheduled(token) = origin {
+            self.fiber.pending_ops.retain(
+                |op| !matches!(op,FlowOp::ExitScheduledScope {token:queued} if *queued==token),
+            );
         }
     }
 
@@ -1455,11 +1618,15 @@ impl Engine {
             return;
         }
         let Some(FlowControlStackEntry {
-            kind: FlowControlStackEntryKind::Scope { cleanups, .. },
+            kind:
+                FlowControlStackEntryKind::Scope {
+                    origin, cleanups, ..
+                },
         }) = self.fiber.control_stack.pop()
         else {
             return;
         };
+        self.cancel_scheduled_scope_close(origin);
         self.fiber.env.pop_scope();
         self.emit_scope_cleanups(cleanups, output, pure_backend);
     }
@@ -1718,3 +1885,7 @@ mod ownership_tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "flow/scope_tests.rs"]
+mod scope_tests;

@@ -146,6 +146,37 @@ impl FrameBuilder {
         self.slot_at_scope_depth(key, ty, AwbcFrameSlotRole::Temporary, depth)
     }
 
+    pub fn emitted_scope_exit(
+        &self,
+    ) -> Result<
+        arcweft_core::scope::RuntimeScopeExit<AwbcScopeId>,
+        arcweft_core::scope::RuntimeScopeExitError,
+    > {
+        arcweft_core::scope::RuntimeScopeExitTarget::EmittedLexical.resolve(
+            self.active_scopes
+                .iter()
+                .rev()
+                .map(|id| (*id, self.scopes[id.index()].kind)),
+        )
+    }
+    pub fn emitted_scope_parent_temp(&mut self, ty: AwbcTypeId) -> AwbcRegisterId {
+        let exit = self
+            .emitted_scope_exit()
+            .expect("admitted scope result has an emitted lexical frame");
+        let depth = u32::try_from(
+            self.active_scopes
+                .iter()
+                .position(|id| id == exit.target())
+                .expect("scope target is active"),
+        )
+        .expect("scope depth was admitted");
+        let key = FrameSlotKey::Temp(self.temp_counter);
+        self.temp_counter = self.temp_counter.saturating_add(1);
+        self.slot_at_scope_depth(key, ty, AwbcFrameSlotRole::Temporary, depth)
+    }
+    pub fn contains_scope(&self, scope: AwbcScopeId) -> bool {
+        self.active_scopes.contains(&scope)
+    }
     pub fn return_value(&mut self, ty: AwbcTypeId) -> AwbcRegisterId {
         let key = FrameSlotKey::ReturnValue(self.temp_counter);
         self.temp_counter = self.temp_counter.saturating_add(1);
@@ -159,12 +190,27 @@ impl FrameBuilder {
     }
 
     pub fn enter_scope(&mut self) -> AwbcScopeId {
-        self.enter_scope_with_identity(RuntimeScopeIdentity::Anonymous)
+        self.enter_scope_with_kind(
+            RuntimeScopeIdentity::Anonymous,
+            arcweft_core::scope::RuntimeScopeFrameKind::Control,
+        )
     }
 
     pub fn enter_scope_with_identity(&mut self, identity: RuntimeScopeIdentity) -> AwbcScopeId {
+        self.enter_scope_with_kind(
+            identity,
+            arcweft_core::scope::RuntimeScopeFrameKind::EmittedLexical,
+        )
+    }
+
+    fn enter_scope_with_kind(
+        &mut self,
+        identity: RuntimeScopeIdentity,
+        kind: arcweft_core::scope::RuntimeScopeFrameKind,
+    ) -> AwbcScopeId {
         let scope = AwbcScopeId(table_index(self.scopes.len()));
         self.scopes.push(AwbcScopeDefinition {
+            kind,
             parent: self.active_scopes.last().copied(),
             identity,
         });

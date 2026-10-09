@@ -864,6 +864,7 @@ fn presentation_handle_rollback_restores_tombstones() {
 fn awbc_save_load_preserves_cleanup_stacks() {
     let mut program = minimal_awbc_program("entry.main");
     program.frame_layouts[0].scopes = vec![arcweft_core::awbc::schema::AwbcScopeDefinition {
+        kind: arcweft_core::scope::RuntimeScopeFrameKind::EmittedLexical,
         parent: None,
         identity: arcweft_core::scope::RuntimeScopeIdentity::Named(
             arcweft_id::DeclarationName::try_new("rain").unwrap(),

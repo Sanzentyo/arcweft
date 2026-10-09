@@ -1056,6 +1056,117 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn authored_scalar_executable_retains_its_function_site_in_vm_aot_and_awbc() {
+        use arcweft_core::pure::{
+            AotPureFunctionBackend, PureFunctionBackend, PureFunctionRequest,
+            RuntimePureFunctionBodyRef, RuntimePureFunctionInputRef, VmPureFunctionBackend,
+        };
+        let selected = authored_map_program(
+            "pub fn root(base: i64, bonus: i64, unused: i64) -> i64 { let weighted: i64 = base * (bonus + 2i64); return if base >= 3i64 { weighted } else { weighted + 1i64 } }\nflow main() -> String { return \"ok\" }\n",
+        );
+        let site = selected.function_site().unwrap();
+        assert!(selected.plan().pure_helpers().is_empty());
+        assert_eq!(selected.plan().pure_function_candidate_count(), 1);
+        let omitted = PureFunctionRequest::try_new(
+            Arc::clone(selected.plan()),
+            site,
+            [RuntimeValue::i64(3), RuntimeValue::i64(4)],
+        );
+        assert!(matches!(
+            omitted,
+            Err(arcweft_core::value::RuntimeEvalError::FunctionApply(_))
+                | Err(arcweft_core::value::RuntimeEvalError::TooManyPureArgs { .. })
+        ));
+        let mut artifact = selected.plan().as_ref().clone();
+        artifact
+            .bind_artifact(
+                arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x76; 32])
+                    .unwrap(),
+            )
+            .unwrap();
+        let product = Arc::new(
+            arcweft_runtime_plan::awbc_lower::AwbcLowerer::new(
+                &artifact,
+                &selected.lowering_report().dialogue_content_catalog,
+                "scalar-executable.arcw",
+            )
+            .lower()
+            .unwrap()
+            .program,
+        );
+        for (values, expected) in [([3, 4, 99], 18), ([1, 3, 77], 6)] {
+            let values = values.map(RuntimeValue::i64);
+            let request =
+                PureFunctionRequest::try_new(Arc::clone(selected.plan()), site, values.clone())
+                    .unwrap();
+            let function = request.function_ref().unwrap();
+            assert!(matches!(
+                function.body,
+                RuntimePureFunctionBodyRef::Executable(_)
+            ));
+            assert!(std::ptr::eq(
+                function.function_site().unwrap(),
+                selected.plan().function_sites().get(site).unwrap()
+            ));
+            assert!(Arc::ptr_eq(function.plan(), selected.plan()));
+            assert_eq!(function.inputs.len(), 3);
+            assert_eq!(
+                function.inputs.get(2).unwrap().passing(),
+                Some(arcweft_core::plan::RuntimeFunctionParameterPassing::Value)
+            );
+            let vm = VmPureFunctionBackend
+                .evaluate_invocation(
+                    &request,
+                    arcweft_core::step::RuntimeStepBudget { max_ops: 64 },
+                )
+                .unwrap();
+            assert_eq!(vm.value, RuntimeValue::i64(expected));
+            assert!(
+                vm.stats.evaluated_exprs > 0,
+                "the existing Engine records actual interpreter expressions"
+            );
+            let aot = AotPureFunctionBackend
+                .compile_i64_with_inputs(
+                    &request,
+                    function
+                        .inputs
+                        .iter()
+                        .map(RuntimePureFunctionInputRef::local),
+                )
+                .unwrap();
+            assert!(
+                aot.call_with_inputs(&[3, 4]).is_err(),
+                "full unused formal remains in the physical ABI"
+            );
+            assert_eq!(
+                aot.call_with_inputs(
+                    &values
+                        .iter()
+                        .map(|value| match value {
+                            RuntimeValue::Int(value) => value.exact_i64().unwrap(),
+                            _ => unreachable!(),
+                        })
+                        .collect::<Vec<_>>()
+                )
+                .unwrap()
+                .0,
+                expected
+            );
+            let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
+            assert_eq!(
+                arcweft_core::awbc::product_step::evaluate_pure_program_with_backend(
+                    &product,
+                    selected.program(),
+                    &values,
+                    &mut backend
+                )
+                .unwrap(),
+                RuntimeValue::i64(expected)
+            );
+        }
+    }
+
     fn authored_map_program(source: &str) -> super::CompiledDeterministicProgram {
         let compiled = crate::source::compile_source(source).unwrap();
         let lease = &compiled.analysis;
@@ -1551,6 +1662,56 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn authored_recursive_executable_vm_invocation_charges_one_explicit_owner_budget() {
+        use arcweft_core::pure::{PureFunctionBackend, PureFunctionRequest, VmPureFunctionBackend};
+        let selected = authored_map_program(
+            "pub fn root(value: i64) -> i64 effects {} { return root(value) }\nflow main() -> String { return \"ok\" }\n",
+        );
+        let site = selected.function_site().unwrap();
+        let request =
+            PureFunctionRequest::try_new(Arc::clone(selected.plan()), site, [RuntimeValue::i64(4)])
+                .unwrap();
+        assert!(matches!(VmPureFunctionBackend.evaluate(&request),
+            Err(arcweft_core::value::RuntimeEvalError::UnsupportedPure { reason, .. })
+                if reason.contains("requires function-call control transfer")));
+        for max_ops in [0, 1, 7] {
+            let failure = VmPureFunctionBackend
+                .evaluate_invocation(&request, arcweft_core::step::RuntimeStepBudget { max_ops })
+                .unwrap_err();
+            assert!(matches!(failure,
+                arcweft_core::value::RuntimeEvalError::UnsupportedPure { reason, .. }
+                    if reason.contains(&format!("explicit {max_ops}-operation budget"))));
+            assert_eq!(request.bindings()[0].value, RuntimeValue::i64(4));
+        }
+        let mut engine = arcweft_core::engine::Engine::for_program_invocation(
+            Arc::clone(selected.plan()),
+            selected.program(),
+            vec![RuntimeValue::i64(4)],
+        )
+        .unwrap();
+        let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
+        let step = engine.step_with_pure_backend(
+            Default::default(),
+            arcweft_core::step::RuntimeStepOptions {
+                mode: arcweft_core::step::RuntimeStepMode::Drain,
+                budget: arcweft_core::step::RuntimeStepBudget { max_ops: 7 },
+                ..Default::default()
+            },
+            &mut backend,
+        );
+        assert_eq!(step.stats.executed_ops, 7);
+        assert_eq!(
+            step.stop_reason,
+            arcweft_core::step::RuntimeStepStopReason::BudgetExhausted
+        );
+        assert!(matches!(
+            step.fiber_status,
+            arcweft_core::engine::FlowFiberStatus::Running
+        ));
+        assert!(engine.take_program_result().unwrap().is_none());
     }
 
     #[test]

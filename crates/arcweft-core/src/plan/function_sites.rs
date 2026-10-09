@@ -492,13 +492,13 @@ pub struct RuntimeFunctionSite {
 }
 
 impl RuntimeFunctionSite {
-    /// Ordinary expression bodies may be offered to a scalar backend. Other
+    /// Effect-free ordinary bodies may be offered to a scalar backend. Other
     /// callable roles keep their invocation and return ownership in the Engine.
     #[must_use]
     pub fn is_eager_pure_candidate(&self) -> bool {
         self.role == RuntimeFunctionSemanticRole::Ordinary
             && self.invocation_effects.is_empty()
-            && self.body.expression().is_some()
+            && self.body.is_effect_free()
     }
 
     /// Declared invocation permissions; execution effects remain on the body.

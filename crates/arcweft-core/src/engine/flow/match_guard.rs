@@ -3,7 +3,7 @@
 
 use super::{
     Engine, FlowControlStackEntryKind, FlowOp, RuntimeCallBackend, RuntimeEvalError,
-    RuntimeScopeIdentity, RuntimeStepOutput, RuntimeValue,
+    RuntimeStepOutput, RuntimeValue,
 };
 use crate::plan::RuntimeMatchArm;
 use crate::runtime_id::RuntimeLocalDeclarationId;
@@ -49,7 +49,11 @@ impl Engine {
                     self.fiber.env.function_instantiation(),
                 )?
                 .expect("inspected guarded pattern remains matched");
-                self.push_scope_frame(RuntimeScopeIdentity::Anonymous);
+                let Some(token) = self.push_control_scope_frame() else {
+                    return Err(RuntimeEvalError::PatternMismatch(
+                        "native control scope identity capacity exhausted".into(),
+                    ));
+                };
                 self.fiber.env.set(guard.candidate, value);
                 self.fiber.env.bind_all(bindings);
                 let Some(entry) = self.fiber.control_stack.last_mut() else {
@@ -63,7 +67,9 @@ impl Engine {
                     arms: Arc::clone(&arms),
                     next_arm: index + 1,
                 });
-                self.fiber.pending_ops.push_front(FlowOp::ExitScope);
+                self.fiber
+                    .pending_ops
+                    .push_front(FlowOp::ExitScheduledScope { token });
                 for op in guard.ops.iter().rev() {
                     self.fiber.pending_ops.push_front(op.clone());
                 }

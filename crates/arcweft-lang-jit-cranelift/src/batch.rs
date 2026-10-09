@@ -1,14 +1,16 @@
-use super::lower::{
-    codegen_error, jit_module, lower_expr, lower_f32_expr, lower_f64_expr, lower_i32_expr,
-    lower_small_int_expr, lower_u32_expr, lower_u64_expr, small_int_bindings,
-    validate_input_locals,
+use super::body::{
+    lower_f32_body as lower_f32_expr, lower_f64_body as lower_f64_expr,
+    lower_i32_body as lower_i32_expr, lower_i64_body as lower_expr,
+    lower_small_int_body as lower_small_int_expr, lower_u32_body as lower_u32_expr,
+    lower_u64_body as lower_u64_expr,
 };
+use super::lower::{codegen_error, jit_module, small_int_bindings, validate_input_locals};
 use super::{
     AbiParam, BTreeMap, BlockArg, CraneliftCodegenError, DefinedPureSmallIntBatchInputs,
     DefinedPureSmallIntInputs, FuncId, FunctionBuilder, FunctionBuilderContext, InstBuilder, IntCC,
     Linkage, LoweredF32Binding, LoweredF64Binding, LoweredIntBinding, LoweredSmallIntBinding,
-    MemFlags, Module, PureFunctionRequest, PureFunctionStats, RuntimeExpr,
-    RuntimeLocalDeclarationId, SmallIntCompiledParts, SmallIntKind, UserFuncName, Value,
+    MemFlags, Module, PureFunctionRequest, PureFunctionStats, RuntimeLocalDeclarationId,
+    RuntimePureFunctionRef, SmallIntCompiledParts, SmallIntKind, UserFuncName, Value,
     WideIntBatchCompiledParts, request_helper, types,
 };
 
@@ -102,7 +104,10 @@ where
     signature
         .params
         .extend(input_locals.iter().map(|_| AbiParam::new(ty)));
-    signature.returns.push(AbiParam::new(ty));
+    super::native_abi::append_scalar_signature(
+        &mut signature,
+        module.target_config().pointer_type(),
+    );
 
     let entry_name = format!("{symbol_prefix}_entry");
     let entry = module
@@ -119,6 +124,11 @@ where
         let block = builder.create_block();
         builder.append_block_params_for_function_params(block);
         builder.switch_to_block(block);
+        let native_params = builder.block_params(block);
+        let output_ptr = native_params[native_params.len() - 2];
+        let progress_ptr = native_params[native_params.len() - 1];
+        let initial_progress = builder.ins().iconst(types::I64, 0);
+        super::native_abi::store_progress(&mut builder, progress_ptr, initial_progress);
         let params = builder.block_params(block);
         for (name, value) in input_locals.iter().zip(params.iter().copied()) {
             bindings.insert(*name, LoweredSmallIntBinding::Value(value));
@@ -126,11 +136,12 @@ where
         let value = lower_small_int_expr(
             &mut builder,
             &bindings,
-            request_helper(request)?.expr,
+            request_helper(request)?,
             &mut stats,
             kind,
         )?;
-        builder.ins().return_(&[value]);
+        let completed = builder.ins().iconst(types::I64, 1);
+        super::native_abi::return_result(&mut builder, output_ptr, progress_ptr, value, completed);
         builder.seal_all_blocks();
         builder.finalize();
     }
@@ -142,7 +153,7 @@ where
     let batch = define_small_int_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        request_helper(request)?.expr,
+        request_helper(request)?,
         &captured_bindings,
         &input_locals,
         kind,
@@ -150,7 +161,7 @@ where
     let batch_sum = define_small_int_rows_batch_sum_function(
         module,
         &format!("{symbol_prefix}_rows_batch_sum"),
-        request_helper(request)?.expr,
+        request_helper(request)?,
         &captured_bindings,
         &input_locals,
         kind,
@@ -192,7 +203,7 @@ where
     let batch = define_small_int_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        request_helper(request)?.expr,
+        request_helper(request)?,
         &captured_bindings,
         &input_locals,
         kind,
@@ -200,7 +211,7 @@ where
     let batch_sum = define_small_int_rows_batch_sum_function(
         module,
         &format!("{symbol_prefix}_rows_batch_sum"),
-        request_helper(request)?.expr,
+        request_helper(request)?,
         &captured_bindings,
         &input_locals,
         kind,
@@ -217,7 +228,7 @@ where
 pub(super) fn define_small_int_rows_batch_function<M>(
     module: &mut M,
     symbol_name: &str,
-    expr: &RuntimeExpr,
+    body: RuntimePureFunctionRef<'_>,
     captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredSmallIntBinding>,
     input_locals: &[RuntimeLocalDeclarationId],
     kind: SmallIntKind,
@@ -241,6 +252,7 @@ where
         AbiParam::new(types::I64),
         AbiParam::new(pointer_type),
     ]);
+    super::native_abi::append_rows_signature(&mut signature, pointer_type);
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
@@ -257,6 +269,9 @@ where
         let inputs_ptr = builder.block_params(entry)[0];
         let rows = builder.block_params(entry)[1];
         let out_ptr = builder.block_params(entry)[2];
+        let progress_ptr = builder.block_params(entry)[3];
+        let initial_progress = builder.ins().iconst(types::I64, 0);
+        super::native_abi::store_progress(&mut builder, progress_ptr, initial_progress);
 
         let loop_block = builder.create_block();
         let body_block = builder.create_block();
@@ -286,14 +301,15 @@ where
             );
             bindings.insert(*name, LoweredSmallIntBinding::Value(value));
         }
-        let value = lower_small_int_expr(&mut builder, &bindings, expr, &mut stats, kind)?;
+        let value = lower_small_int_expr(&mut builder, &bindings, body, &mut stats, kind)?;
         store_small_int_batch_output(&mut builder, out_ptr, row, value, kind);
         let one = builder.ins().iconst(types::I64, 1);
         let next_row = builder.ins().iadd(row, one);
+        super::native_abi::store_progress(&mut builder, progress_ptr, next_row);
         builder.ins().jump(loop_block, &[BlockArg::from(next_row)]);
 
         builder.switch_to_block(done_block);
-        builder.ins().return_(&[]);
+        super::native_abi::return_success(&mut builder);
         builder.seal_all_blocks();
         builder.finalize();
     }
@@ -308,7 +324,7 @@ where
 pub(super) fn define_small_int_rows_batch_sum_function<M>(
     module: &mut M,
     symbol_name: &str,
-    expr: &RuntimeExpr,
+    body: RuntimePureFunctionRef<'_>,
     captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredSmallIntBinding>,
     input_locals: &[RuntimeLocalDeclarationId],
     kind: SmallIntKind,
@@ -330,7 +346,7 @@ where
     signature
         .params
         .extend([AbiParam::new(pointer_type), AbiParam::new(types::I64)]);
-    signature.returns.push(AbiParam::new(types::I64));
+    super::native_abi::append_sum_signature(&mut signature, pointer_type);
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
@@ -346,6 +362,11 @@ where
         builder.switch_to_block(entry);
         let inputs_ptr = builder.block_params(entry)[0];
         let rows = builder.block_params(entry)[1];
+        let out_ptr = builder.block_params(entry)[2];
+        let progress_ptr = builder.block_params(entry)[3];
+        let rejected_ptr = builder.block_params(entry)[4];
+        let initial_progress = builder.ins().iconst(types::I64, 0);
+        super::native_abi::store_progress(&mut builder, progress_ptr, initial_progress);
 
         let loop_block = builder.create_block();
         let body_block = builder.create_block();
@@ -379,24 +400,20 @@ where
             );
             bindings.insert(*name, LoweredSmallIntBinding::Value(value));
         }
-        let value = lower_small_int_expr(&mut builder, &bindings, expr, &mut stats, kind)?;
-        let value = if kind.cranelift_type().bits() > 64 {
-            builder.ins().ireduce(types::I64, value)
-        } else if kind.signed() {
-            builder.ins().sextend(types::I64, value)
-        } else {
-            builder.ins().uextend(types::I64, value)
-        };
+        let value = lower_small_int_expr(&mut builder, &bindings, body, &mut stats, kind)?;
+        let value =
+            super::native_abi::sum_conversion(&mut builder, value, kind.signed(), rejected_ptr);
         let next_accumulator = builder.ins().iadd(accumulator, value);
         let one = builder.ins().iconst(types::I64, 1);
         let next_row = builder.ins().iadd(row, one);
+        super::native_abi::store_progress(&mut builder, progress_ptr, next_row);
         builder.ins().jump(
             loop_block,
             &[BlockArg::from(next_row), BlockArg::from(next_accumulator)],
         );
 
         builder.switch_to_block(done_block);
-        builder.ins().return_(&[accumulator]);
+        super::native_abi::return_result(&mut builder, out_ptr, progress_ptr, accumulator, row);
         builder.seal_all_blocks();
         builder.finalize();
     }
@@ -411,7 +428,7 @@ where
 pub(super) fn define_i64_rows_batch_function<M>(
     module: &mut M,
     symbol_name: &str,
-    expr: &RuntimeExpr,
+    body: RuntimePureFunctionRef<'_>,
     captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
     input_locals: &[RuntimeLocalDeclarationId],
 ) -> Result<FuncId, CraneliftCodegenError>
@@ -434,6 +451,7 @@ where
         AbiParam::new(types::I64),
         AbiParam::new(pointer_type),
     ]);
+    super::native_abi::append_rows_signature(&mut signature, pointer_type);
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
@@ -450,6 +468,9 @@ where
         let inputs_ptr = builder.block_params(entry)[0];
         let rows = builder.block_params(entry)[1];
         let out_ptr = builder.block_params(entry)[2];
+        let progress_ptr = builder.block_params(entry)[3];
+        let initial_progress = builder.ins().iconst(types::I64, 0);
+        super::native_abi::store_progress(&mut builder, progress_ptr, initial_progress);
 
         let loop_block = builder.create_block();
         let body_block = builder.create_block();
@@ -478,14 +499,15 @@ where
             );
             bindings.insert(*name, LoweredIntBinding::Value(value));
         }
-        let value = lower_expr(&mut builder, &bindings, expr, &mut stats)?;
+        let value = lower_expr(&mut builder, &bindings, body, &mut stats)?;
         store_batch_output(&mut builder, out_ptr, row, value);
         let one = builder.ins().iconst(types::I64, 1);
         let next_row = builder.ins().iadd(row, one);
+        super::native_abi::store_progress(&mut builder, progress_ptr, next_row);
         builder.ins().jump(loop_block, &[BlockArg::from(next_row)]);
 
         builder.switch_to_block(done_block);
-        builder.ins().return_(&[]);
+        super::native_abi::return_success(&mut builder);
         builder.seal_all_blocks();
         builder.finalize();
     }
@@ -500,7 +522,7 @@ where
 pub(super) fn define_i64_rows_batch_sum_function<M>(
     module: &mut M,
     symbol_name: &str,
-    expr: &RuntimeExpr,
+    body: RuntimePureFunctionRef<'_>,
     captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
     input_locals: &[RuntimeLocalDeclarationId],
 ) -> Result<FuncId, CraneliftCodegenError>
@@ -521,7 +543,7 @@ where
     signature
         .params
         .extend([AbiParam::new(pointer_type), AbiParam::new(types::I64)]);
-    signature.returns.push(AbiParam::new(types::I64));
+    super::native_abi::append_sum_signature(&mut signature, pointer_type);
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
@@ -537,6 +559,11 @@ where
         builder.switch_to_block(entry);
         let inputs_ptr = builder.block_params(entry)[0];
         let rows = builder.block_params(entry)[1];
+        let out_ptr = builder.block_params(entry)[2];
+        let progress_ptr = builder.block_params(entry)[3];
+        let _rejected_ptr = builder.block_params(entry)[4];
+        let initial_progress = builder.ins().iconst(types::I64, 0);
+        super::native_abi::store_progress(&mut builder, progress_ptr, initial_progress);
 
         let loop_block = builder.create_block();
         let body_block = builder.create_block();
@@ -569,17 +596,18 @@ where
             );
             bindings.insert(*name, LoweredIntBinding::Value(value));
         }
-        let value = lower_expr(&mut builder, &bindings, expr, &mut stats)?;
+        let value = lower_expr(&mut builder, &bindings, body, &mut stats)?;
         let next_accumulator = builder.ins().iadd(accumulator, value);
         let one = builder.ins().iconst(types::I64, 1);
         let next_row = builder.ins().iadd(row, one);
+        super::native_abi::store_progress(&mut builder, progress_ptr, next_row);
         builder.ins().jump(
             loop_block,
             &[BlockArg::from(next_row), BlockArg::from(next_accumulator)],
         );
 
         builder.switch_to_block(done_block);
-        builder.ins().return_(&[accumulator]);
+        super::native_abi::return_result(&mut builder, out_ptr, progress_ptr, accumulator, row);
         builder.seal_all_blocks();
         builder.finalize();
     }
@@ -594,7 +622,7 @@ where
 pub(super) fn define_i32_rows_batch_function<M>(
     module: &mut M,
     symbol_name: &str,
-    expr: &RuntimeExpr,
+    body: RuntimePureFunctionRef<'_>,
     captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
     input_locals: &[RuntimeLocalDeclarationId],
 ) -> Result<FuncId, CraneliftCodegenError>
@@ -617,6 +645,7 @@ where
         AbiParam::new(types::I64),
         AbiParam::new(pointer_type),
     ]);
+    super::native_abi::append_rows_signature(&mut signature, pointer_type);
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
@@ -633,6 +662,9 @@ where
         let inputs_ptr = builder.block_params(entry)[0];
         let rows = builder.block_params(entry)[1];
         let out_ptr = builder.block_params(entry)[2];
+        let progress_ptr = builder.block_params(entry)[3];
+        let initial_progress = builder.ins().iconst(types::I64, 0);
+        super::native_abi::store_progress(&mut builder, progress_ptr, initial_progress);
 
         let loop_block = builder.create_block();
         let body_block = builder.create_block();
@@ -661,14 +693,15 @@ where
             );
             bindings.insert(*name, LoweredIntBinding::Value(value));
         }
-        let value = lower_i32_expr(&mut builder, &bindings, expr, &mut stats)?;
+        let value = lower_i32_expr(&mut builder, &bindings, body, &mut stats)?;
         store_i32_batch_output(&mut builder, out_ptr, row, value);
         let one = builder.ins().iconst(types::I64, 1);
         let next_row = builder.ins().iadd(row, one);
+        super::native_abi::store_progress(&mut builder, progress_ptr, next_row);
         builder.ins().jump(loop_block, &[BlockArg::from(next_row)]);
 
         builder.switch_to_block(done_block);
-        builder.ins().return_(&[]);
+        super::native_abi::return_success(&mut builder);
         builder.seal_all_blocks();
         builder.finalize();
     }
@@ -683,7 +716,7 @@ where
 pub(super) fn define_i32_rows_batch_sum_function<M>(
     module: &mut M,
     symbol_name: &str,
-    expr: &RuntimeExpr,
+    body: RuntimePureFunctionRef<'_>,
     captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
     input_locals: &[RuntimeLocalDeclarationId],
 ) -> Result<FuncId, CraneliftCodegenError>
@@ -704,7 +737,7 @@ where
     signature
         .params
         .extend([AbiParam::new(pointer_type), AbiParam::new(types::I64)]);
-    signature.returns.push(AbiParam::new(types::I64));
+    super::native_abi::append_sum_signature(&mut signature, pointer_type);
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
@@ -720,6 +753,11 @@ where
         builder.switch_to_block(entry);
         let inputs_ptr = builder.block_params(entry)[0];
         let rows = builder.block_params(entry)[1];
+        let out_ptr = builder.block_params(entry)[2];
+        let progress_ptr = builder.block_params(entry)[3];
+        let _rejected_ptr = builder.block_params(entry)[4];
+        let initial_progress = builder.ins().iconst(types::I64, 0);
+        super::native_abi::store_progress(&mut builder, progress_ptr, initial_progress);
 
         let loop_block = builder.create_block();
         let body_block = builder.create_block();
@@ -752,18 +790,19 @@ where
             );
             bindings.insert(*name, LoweredIntBinding::Value(value));
         }
-        let value = lower_i32_expr(&mut builder, &bindings, expr, &mut stats)?;
+        let value = lower_i32_expr(&mut builder, &bindings, body, &mut stats)?;
         let value = builder.ins().sextend(types::I64, value);
         let next_accumulator = builder.ins().iadd(accumulator, value);
         let one = builder.ins().iconst(types::I64, 1);
         let next_row = builder.ins().iadd(row, one);
+        super::native_abi::store_progress(&mut builder, progress_ptr, next_row);
         builder.ins().jump(
             loop_block,
             &[BlockArg::from(next_row), BlockArg::from(next_accumulator)],
         );
 
         builder.switch_to_block(done_block);
-        builder.ins().return_(&[accumulator]);
+        super::native_abi::return_result(&mut builder, out_ptr, progress_ptr, accumulator, row);
         builder.seal_all_blocks();
         builder.finalize();
     }
@@ -778,7 +817,7 @@ where
 pub(super) fn define_u32_rows_batch_function<M>(
     module: &mut M,
     symbol_name: &str,
-    expr: &RuntimeExpr,
+    body: RuntimePureFunctionRef<'_>,
     captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
     input_locals: &[RuntimeLocalDeclarationId],
 ) -> Result<FuncId, CraneliftCodegenError>
@@ -801,6 +840,7 @@ where
         AbiParam::new(types::I64),
         AbiParam::new(pointer_type),
     ]);
+    super::native_abi::append_rows_signature(&mut signature, pointer_type);
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
@@ -817,6 +857,9 @@ where
         let inputs_ptr = builder.block_params(entry)[0];
         let rows = builder.block_params(entry)[1];
         let out_ptr = builder.block_params(entry)[2];
+        let progress_ptr = builder.block_params(entry)[3];
+        let initial_progress = builder.ins().iconst(types::I64, 0);
+        super::native_abi::store_progress(&mut builder, progress_ptr, initial_progress);
 
         let loop_block = builder.create_block();
         let body_block = builder.create_block();
@@ -845,14 +888,15 @@ where
             );
             bindings.insert(*name, LoweredIntBinding::Value(value));
         }
-        let value = lower_u32_expr(&mut builder, &bindings, expr, &mut stats)?;
+        let value = lower_u32_expr(&mut builder, &bindings, body, &mut stats)?;
         store_u32_batch_output(&mut builder, out_ptr, row, value);
         let one = builder.ins().iconst(types::I64, 1);
         let next_row = builder.ins().iadd(row, one);
+        super::native_abi::store_progress(&mut builder, progress_ptr, next_row);
         builder.ins().jump(loop_block, &[BlockArg::from(next_row)]);
 
         builder.switch_to_block(done_block);
-        builder.ins().return_(&[]);
+        super::native_abi::return_success(&mut builder);
         builder.seal_all_blocks();
         builder.finalize();
     }
@@ -867,7 +911,7 @@ where
 pub(super) fn define_u32_rows_batch_sum_function<M>(
     module: &mut M,
     symbol_name: &str,
-    expr: &RuntimeExpr,
+    body: RuntimePureFunctionRef<'_>,
     captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
     input_locals: &[RuntimeLocalDeclarationId],
 ) -> Result<FuncId, CraneliftCodegenError>
@@ -888,7 +932,7 @@ where
     signature
         .params
         .extend([AbiParam::new(pointer_type), AbiParam::new(types::I64)]);
-    signature.returns.push(AbiParam::new(types::I64));
+    super::native_abi::append_sum_signature(&mut signature, pointer_type);
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
@@ -904,6 +948,11 @@ where
         builder.switch_to_block(entry);
         let inputs_ptr = builder.block_params(entry)[0];
         let rows = builder.block_params(entry)[1];
+        let out_ptr = builder.block_params(entry)[2];
+        let progress_ptr = builder.block_params(entry)[3];
+        let _rejected_ptr = builder.block_params(entry)[4];
+        let initial_progress = builder.ins().iconst(types::I64, 0);
+        super::native_abi::store_progress(&mut builder, progress_ptr, initial_progress);
 
         let loop_block = builder.create_block();
         let body_block = builder.create_block();
@@ -936,18 +985,19 @@ where
             );
             bindings.insert(*name, LoweredIntBinding::Value(value));
         }
-        let value = lower_u32_expr(&mut builder, &bindings, expr, &mut stats)?;
+        let value = lower_u32_expr(&mut builder, &bindings, body, &mut stats)?;
         let value = builder.ins().uextend(types::I64, value);
         let next_accumulator = builder.ins().iadd(accumulator, value);
         let one = builder.ins().iconst(types::I64, 1);
         let next_row = builder.ins().iadd(row, one);
+        super::native_abi::store_progress(&mut builder, progress_ptr, next_row);
         builder.ins().jump(
             loop_block,
             &[BlockArg::from(next_row), BlockArg::from(next_accumulator)],
         );
 
         builder.switch_to_block(done_block);
-        builder.ins().return_(&[accumulator]);
+        super::native_abi::return_result(&mut builder, out_ptr, progress_ptr, accumulator, row);
         builder.seal_all_blocks();
         builder.finalize();
     }
@@ -962,7 +1012,7 @@ where
 pub(super) fn define_u64_rows_batch_function<M>(
     module: &mut M,
     symbol_name: &str,
-    expr: &RuntimeExpr,
+    body: RuntimePureFunctionRef<'_>,
     captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
     input_locals: &[RuntimeLocalDeclarationId],
 ) -> Result<FuncId, CraneliftCodegenError>
@@ -985,6 +1035,7 @@ where
         AbiParam::new(types::I64),
         AbiParam::new(pointer_type),
     ]);
+    super::native_abi::append_rows_signature(&mut signature, pointer_type);
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
@@ -1001,6 +1052,9 @@ where
         let inputs_ptr = builder.block_params(entry)[0];
         let rows = builder.block_params(entry)[1];
         let out_ptr = builder.block_params(entry)[2];
+        let progress_ptr = builder.block_params(entry)[3];
+        let initial_progress = builder.ins().iconst(types::I64, 0);
+        super::native_abi::store_progress(&mut builder, progress_ptr, initial_progress);
 
         let loop_block = builder.create_block();
         let body_block = builder.create_block();
@@ -1029,14 +1083,15 @@ where
             );
             bindings.insert(*name, LoweredIntBinding::Value(value));
         }
-        let value = lower_u64_expr(&mut builder, &bindings, expr, &mut stats)?;
+        let value = lower_u64_expr(&mut builder, &bindings, body, &mut stats)?;
         store_u64_batch_output(&mut builder, out_ptr, row, value);
         let one = builder.ins().iconst(types::I64, 1);
         let next_row = builder.ins().iadd(row, one);
+        super::native_abi::store_progress(&mut builder, progress_ptr, next_row);
         builder.ins().jump(loop_block, &[BlockArg::from(next_row)]);
 
         builder.switch_to_block(done_block);
-        builder.ins().return_(&[]);
+        super::native_abi::return_success(&mut builder);
         builder.seal_all_blocks();
         builder.finalize();
     }
@@ -1051,7 +1106,7 @@ where
 pub(super) fn define_u64_rows_batch_sum_function<M>(
     module: &mut M,
     symbol_name: &str,
-    expr: &RuntimeExpr,
+    body: RuntimePureFunctionRef<'_>,
     captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
     input_locals: &[RuntimeLocalDeclarationId],
 ) -> Result<FuncId, CraneliftCodegenError>
@@ -1072,7 +1127,7 @@ where
     signature
         .params
         .extend([AbiParam::new(pointer_type), AbiParam::new(types::I64)]);
-    signature.returns.push(AbiParam::new(types::I64));
+    super::native_abi::append_sum_signature(&mut signature, pointer_type);
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
@@ -1088,6 +1143,11 @@ where
         builder.switch_to_block(entry);
         let inputs_ptr = builder.block_params(entry)[0];
         let rows = builder.block_params(entry)[1];
+        let out_ptr = builder.block_params(entry)[2];
+        let progress_ptr = builder.block_params(entry)[3];
+        let rejected_ptr = builder.block_params(entry)[4];
+        let initial_progress = builder.ins().iconst(types::I64, 0);
+        super::native_abi::store_progress(&mut builder, progress_ptr, initial_progress);
 
         let loop_block = builder.create_block();
         let body_block = builder.create_block();
@@ -1120,17 +1180,19 @@ where
             );
             bindings.insert(*name, LoweredIntBinding::Value(value));
         }
-        let value = lower_u64_expr(&mut builder, &bindings, expr, &mut stats)?;
+        let value = lower_u64_expr(&mut builder, &bindings, body, &mut stats)?;
+        let value = super::native_abi::sum_conversion(&mut builder, value, false, rejected_ptr);
         let next_accumulator = builder.ins().iadd(accumulator, value);
         let one = builder.ins().iconst(types::I64, 1);
         let next_row = builder.ins().iadd(row, one);
+        super::native_abi::store_progress(&mut builder, progress_ptr, next_row);
         builder.ins().jump(
             loop_block,
             &[BlockArg::from(next_row), BlockArg::from(next_accumulator)],
         );
 
         builder.switch_to_block(done_block);
-        builder.ins().return_(&[accumulator]);
+        super::native_abi::return_result(&mut builder, out_ptr, progress_ptr, accumulator, row);
         builder.seal_all_blocks();
         builder.finalize();
     }
@@ -1145,7 +1207,7 @@ where
 pub(super) fn define_f32_rows_batch_function<M>(
     module: &mut M,
     symbol_name: &str,
-    expr: &RuntimeExpr,
+    body: RuntimePureFunctionRef<'_>,
     captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredF32Binding>,
     input_locals: &[RuntimeLocalDeclarationId],
 ) -> Result<FuncId, CraneliftCodegenError>
@@ -1168,6 +1230,7 @@ where
         AbiParam::new(types::I64),
         AbiParam::new(pointer_type),
     ]);
+    super::native_abi::append_rows_signature(&mut signature, pointer_type);
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
@@ -1184,6 +1247,9 @@ where
         let inputs_ptr = builder.block_params(entry)[0];
         let rows = builder.block_params(entry)[1];
         let out_ptr = builder.block_params(entry)[2];
+        let progress_ptr = builder.block_params(entry)[3];
+        let initial_progress = builder.ins().iconst(types::I64, 0);
+        super::native_abi::store_progress(&mut builder, progress_ptr, initial_progress);
 
         let loop_block = builder.create_block();
         let body_block = builder.create_block();
@@ -1212,14 +1278,15 @@ where
             );
             bindings.insert(*name, LoweredF32Binding::Value(value));
         }
-        let value = lower_f32_expr(&mut builder, &bindings, expr, &mut stats)?;
+        let value = lower_f32_expr(&mut builder, &bindings, body, &mut stats)?;
         store_f32_batch_output(&mut builder, out_ptr, row, value);
         let one = builder.ins().iconst(types::I64, 1);
         let next_row = builder.ins().iadd(row, one);
+        super::native_abi::store_progress(&mut builder, progress_ptr, next_row);
         builder.ins().jump(loop_block, &[BlockArg::from(next_row)]);
 
         builder.switch_to_block(done_block);
-        builder.ins().return_(&[]);
+        super::native_abi::return_success(&mut builder);
         builder.seal_all_blocks();
         builder.finalize();
     }
@@ -1234,7 +1301,7 @@ where
 pub(super) fn define_f64_rows_batch_function<M>(
     module: &mut M,
     symbol_name: &str,
-    expr: &RuntimeExpr,
+    body: RuntimePureFunctionRef<'_>,
     captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredF64Binding>,
     input_locals: &[RuntimeLocalDeclarationId],
 ) -> Result<FuncId, CraneliftCodegenError>
@@ -1257,6 +1324,7 @@ where
         AbiParam::new(types::I64),
         AbiParam::new(pointer_type),
     ]);
+    super::native_abi::append_rows_signature(&mut signature, pointer_type);
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
@@ -1273,6 +1341,9 @@ where
         let inputs_ptr = builder.block_params(entry)[0];
         let rows = builder.block_params(entry)[1];
         let out_ptr = builder.block_params(entry)[2];
+        let progress_ptr = builder.block_params(entry)[3];
+        let initial_progress = builder.ins().iconst(types::I64, 0);
+        super::native_abi::store_progress(&mut builder, progress_ptr, initial_progress);
 
         let loop_block = builder.create_block();
         let body_block = builder.create_block();
@@ -1301,14 +1372,15 @@ where
             );
             bindings.insert(*name, LoweredF64Binding::Value(value));
         }
-        let value = lower_f64_expr(&mut builder, &bindings, expr, &mut stats)?;
+        let value = lower_f64_expr(&mut builder, &bindings, body, &mut stats)?;
         store_f64_batch_output(&mut builder, out_ptr, row, value);
         let one = builder.ins().iconst(types::I64, 1);
         let next_row = builder.ins().iadd(row, one);
+        super::native_abi::store_progress(&mut builder, progress_ptr, next_row);
         builder.ins().jump(loop_block, &[BlockArg::from(next_row)]);
 
         builder.switch_to_block(done_block);
-        builder.ins().return_(&[]);
+        super::native_abi::return_success(&mut builder);
         builder.seal_all_blocks();
         builder.finalize();
     }

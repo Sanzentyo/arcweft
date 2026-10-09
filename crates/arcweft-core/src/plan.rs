@@ -294,6 +294,19 @@ impl RuntimePlan {
         self.inventory.function_sites()
     }
 
+    /// Exact admitted eager candidates, including ordinary executable source
+    /// sites. This is an inventory count; each physical backend still owns its
+    /// supported/declined operation set and retained-plan capability.
+    #[must_use]
+    pub fn pure_function_candidate_count(&self) -> usize {
+        self.pure_helpers().len()
+            + self
+                .function_sites()
+                .iter_with_ids()
+                .filter(|(_, function)| function.is_eager_pure_candidate())
+                .count()
+    }
+
     #[must_use]
     pub const fn format_attempts(&self) -> &RuntimeFormatAttemptTable {
         self.inventory.format_attempts()
@@ -1130,6 +1143,14 @@ pub enum FlowOp {
         identity: crate::scope::RuntimeScopeIdentity,
     },
     ExitScope,
+    /// Runtime-only scaffold markers. Native queue and frame share this exact token.
+    EnterScheduledScope {
+        identity: crate::scope::RuntimeScopeIdentity,
+        token: crate::scope::RuntimeScheduledScopeToken,
+    },
+    ExitScheduledScope {
+        token: crate::scope::RuntimeScheduledScopeToken,
+    },
     /// Engine-only fallthrough marker for one Pending observer body.
     CompleteAwaitObserver,
     ExitScopeBind {

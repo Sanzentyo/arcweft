@@ -1,7 +1,12 @@
 mod callable;
+mod control;
 use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
 use arcweft_interaction_model::dialogue::{
     CharacterDialogueOperation, CharacterDialoguePatchField,
+};
+pub use control::{
+    RuntimePureControlBindings, RuntimePureUnitDestination, RuntimePureUnitSource,
+    RuntimePureUnitValue,
 };
 
 #[cfg(test)]
@@ -45,8 +50,9 @@ mod function;
 mod program;
 mod runtime_backend;
 pub use function::{
-    RuntimePureFunctionId, RuntimePureFunctionInputIter, RuntimePureFunctionInputRef,
-    RuntimePureFunctionInputs, RuntimePureFunctionRef, RuntimePureFunctionView,
+    RuntimePureFunctionBodyRef, RuntimePureFunctionId, RuntimePureFunctionInputIter,
+    RuntimePureFunctionInputRef, RuntimePureFunctionInputs, RuntimePureFunctionRef,
+    RuntimePureFunctionView,
 };
 pub use program::evaluate_pure_program_with_backend;
 
@@ -330,6 +336,10 @@ pub struct RuntimeCompactPureHelper {
 
 /// Runtime-facing backend for deterministic pure helper calls.
 pub trait RuntimePureCallBackend {
+    /// Accounts for a scalar function actually entered by the owning Engine
+    /// after physical backends decline it. This grants no execution authority.
+    fn record_interpreted_function_call(&mut self, _function: RuntimePureFunctionRef<'_>) {}
+
     /// Records one accepted top-level compact-AWBC pure-program invocation.
     ///
     /// Backends may project this into their existing non-semantic statistics;
@@ -935,7 +945,7 @@ impl PureFunctionBackend for VmPureFunctionBackend {
         let mut evaluator = PureEvaluator::new_ref(&request.plan, &request.bindings)
             .with_format_context(request.format_context.clone());
         let value = match helper.id() {
-            RuntimePureFunctionId::Recipe(_) => evaluator.evaluate_expr(helper.expr)?,
+            RuntimePureFunctionId::Recipe(_) => evaluator.evaluate_expr(helper.expression()?)?,
             RuntimePureFunctionId::Function(site) => {
                 let (captures, arguments) = helper.split_function_arguments(
                     request.bindings.iter().map(|binding| binding.value.clone()),
@@ -952,6 +962,74 @@ impl PureFunctionBackend for VmPureFunctionBackend {
 }
 
 impl VmPureFunctionBackend {
+    /// Evaluates one standalone admitted function invocation with the caller's
+    /// explicit operation budget. This is a new owning Engine activation;
+    /// it is never used to resume a live Engine's synchronous expression.
+    ///
+    /// The complete request was preflighted as a transitively Copy packet.
+    /// Nested executable calls, scopes and returns share this one fiber and
+    /// budget. Resource-bearing inputs use Engine's owned invocation API.
+    pub fn evaluate_invocation(
+        &self,
+        request: &PureFunctionRequest,
+        budget: crate::step::RuntimeStepBudget,
+    ) -> Result<PureFunctionResult, RuntimeEvalError> {
+        let function = request.function_ref()?;
+        let RuntimePureFunctionId::Function(site) = function.id() else {
+            return <Self as PureFunctionBackend>::evaluate(self, request);
+        };
+        let values = request
+            .bindings
+            .iter()
+            .map(|binding| &binding.value)
+            .collect::<Vec<_>>();
+        for (input, value) in function.inputs.iter().zip(&values) {
+            if !value.ownership().permits_copy() {
+                return Err(RuntimeEvalError::AffineLocalCopy(input.input_local()));
+            }
+        }
+        let mut engine = crate::engine::Engine::for_function_invocation(
+            function,
+            values.into_iter().cloned().collect(),
+        )?;
+        engine.set_format_context(request.format_context.clone());
+        let output = engine.step(
+            Default::default(),
+            crate::step::RuntimeStepOptions {
+                mode: crate::step::RuntimeStepMode::Drain,
+                budget,
+                ..Default::default()
+            },
+        );
+        let value = engine.take_function_result(site)?.ok_or_else(|| {
+            RuntimeEvalError::UnsupportedPure {
+                name: function.name.to_owned(),
+                reason: match output.stop_reason {
+                    crate::step::RuntimeStepStopReason::BudgetExhausted => format!(
+                        "standalone VM invocation exhausted its explicit {}-operation budget",
+                        budget.max_ops
+                    ),
+                    crate::step::RuntimeStepStopReason::Failed => format!(
+                        "standalone VM invocation failed: {}",
+                        output
+                            .output
+                            .diagnostics
+                            .first()
+                            .map_or("no diagnostic was published", |diagnostic| diagnostic
+                                .message
+                                .as_str())
+                    ),
+                    _ => "standalone pure invocation requires its owning continuation".to_owned(),
+                },
+            }
+        })?;
+        Ok(PureFunctionResult {
+            backend: PureFunctionBackendKind::Vm,
+            value,
+            stats: engine.evaluation_stats().clone(),
+        })
+    }
+
     pub fn evaluate_i32_args(
         &self,
         plan: &Arc<RuntimePlan>,
@@ -1022,13 +1100,12 @@ impl VmPureFunctionScratch {
         &self.format_context
     }
 
-    /// Evaluates a capture-free structured function-site body for an Entry
-    /// root callable. Function-site input rows are the sole ABI authority:
-    /// each logical parameter is installed at its synthetic input local and
-    /// then passed through the same checked pattern binder used by ordinary
-    /// structured calls. Executable sites are rejected here because a root
-    /// callable evaluator is deliberately synchronous; they must enter the
-    /// flow runtime instead of being treated as pure helpers.
+    /// Synchronously evaluates a capture-free expression body for an Entry
+    /// root callable. The original whole input rows and checked patterns are
+    /// the sole ABI authority. Executable bodies decline at this boundary;
+    /// a live caller uses its Engine function continuation, and a standalone
+    /// request uses `VmPureFunctionBackend::evaluate_invocation` with an explicit
+    /// operation budget. This scratch evaluator creates no child Engine.
     pub fn evaluate_function_site(
         &mut self,
         plan: &Arc<RuntimePlan>,
@@ -1091,10 +1168,10 @@ impl VmPureFunctionScratch {
             .map(RuntimePureScalar::into_runtime_value)
             .collect::<Vec<_>>();
         validate_function_arguments(helper, &values)?;
-        if helper.scalar_eval_supported {
+        if helper.scalar_eval_supported && helper.body.expression().is_some() {
             let mut evaluator = PureScalarEvaluator::new_exact(helper.inputs, args);
             let result = evaluator
-                .evaluate(helper.expr)
+                .evaluate(helper.expression()?)
                 .map(RuntimePureScalar::into_runtime_value);
             if !matches!(result, Err(RuntimeEvalError::UnsupportedPure { .. })) {
                 return validate_helper_result(helper, result);
@@ -1174,12 +1251,12 @@ impl VmPureFunctionScratch {
             .with_format_context(self.format_context.clone());
         let result = validate_helper_result(
             helper,
-            if helper.scalar_eval_supported {
+            if helper.scalar_eval_supported && helper.body.expression().is_some() {
                 evaluator
-                    .evaluate_scalar_expr(helper.expr)
+                    .evaluate_scalar_expr(helper.expression()?)
                     .map(RuntimePureScalar::into_runtime_value)
             } else {
-                evaluator.evaluate_expr(helper.expr)
+                evaluator.evaluate_expr(helper.expression()?)
             },
         );
         self.env = evaluator.into_env();
@@ -1251,8 +1328,13 @@ fn validate_helper_result(
     result: Result<RuntimeValue, RuntimeEvalError>,
 ) -> Result<RuntimeValue, RuntimeEvalError> {
     let value = result?;
-    if !helper.plan().value_matches_type(helper.expr.ty(), &value)? {
-        return Err(RuntimeEvalError::InvalidExpressionType(helper.expr.ty()));
+    if !helper
+        .plan()
+        .value_matches_type(helper.result_type(), &value)?
+    {
+        return Err(RuntimeEvalError::InvalidExpressionType(
+            helper.result_type(),
+        ));
     }
     Ok(value)
 }
@@ -2506,8 +2588,9 @@ impl<'a> PureEvaluator<'a> {
         let values = self.evaluate_call_args(args)?;
         let plan = Arc::clone(self.plan);
         let helper = resolve_validated_pure_function(&plan, helper_id)?;
+        let expression = helper.expression()?;
         let bindings = prepare_helper_bindings(helper, values)?;
-        self.with_temp_bindings(bindings, |this| this.evaluate_expr(helper.expr))
+        self.with_temp_bindings(bindings, |this| this.evaluate_expr(expression))
     }
 
     fn evaluate_trait_call_expr(

@@ -5,7 +5,7 @@ use super::compile::{
     call_vm_batch_parallel, call_vm_flat_batch, call_vm_flat_batch_parallel,
     call_vm_flat_batch_sum, call_vm_flat_batch_sum_with_policy, compile_helper, compile_native_jit,
     compile_request, exact_i64_result, helper_cache_slots, helper_work_unit_slots,
-    record_aot_object_artifact_bundle, resolve_worker_count, runtime_expr_work_units,
+    record_aot_object_artifact_bundle, resolve_worker_count, runtime_function_work_units,
     validate_exact_int_slice_shape, validate_flat_batch_shape,
 };
 use super::{
@@ -14,7 +14,7 @@ use super::{
     RuntimePlan, RuntimePureAccelerator, RuntimePureAcceleratorConfig, RuntimePureBackendMode,
     RuntimePureCacheEntry, RuntimePureCallStats, RuntimePureCompileStats, RuntimePureFunctionId,
     RuntimePureFunctionRef, RuntimePureNativeKind, VmPureFunctionScratch, helper_native_kind,
-    helper_summary_from_helpers, math, native_jit_enabled,
+    helper_summary_from_helpers, math, native_jit, native_jit_enabled,
 };
 
 impl RuntimePureAccelerator {
@@ -55,7 +55,7 @@ impl RuntimePureAccelerator {
             let work_units = helper_work_units
                 .get(&helper.id)
                 .copied()
-                .unwrap_or_else(|| runtime_expr_work_units(helper.expr));
+                .unwrap_or_else(|| runtime_function_work_units(helper));
             cache.entries.insert(
                 helper.id,
                 compile_helper(config.backend, helper, work_units, &mut compile_stats),
@@ -108,6 +108,29 @@ impl RuntimePureAccelerator {
         self.math.stats()
     }
 
+    pub(super) fn native_execution_error(
+        &mut self,
+        error: native_jit::CraneliftCodegenError,
+        helper: &str,
+        requested: usize,
+        result_bytes: usize,
+    ) -> RuntimeEvalError {
+        if let Some(completed) = error.completed_rows() {
+            let unattempted = requested.saturating_sub(completed.saturating_add(1));
+            self.stats.jit_calls = self.stats.jit_calls.saturating_sub(unattempted);
+            self.stats.pure_calls = self.stats.pure_calls.saturating_sub(unattempted);
+            // The failed row is one attempted call, but it writes no result.
+            // Only the successfully completed prefix contributes output bytes.
+            let row_bytes = result_bytes.checked_div(requested).unwrap_or(0);
+            let unwritten = requested
+                .saturating_sub(completed)
+                .saturating_mul(row_bytes);
+            self.stats.result_bytes_copied =
+                self.stats.result_bytes_copied.saturating_sub(unwritten);
+        }
+        error.into_runtime_eval_error(helper)
+    }
+
     pub fn reset_runtime_counters(&mut self) {
         self.stats = RuntimePureCallStats::default();
         self.compile_stats.cache_hits = 0;
@@ -157,7 +180,14 @@ impl RuntimePureAccelerator {
                     .iter()
                     .map(|row| row.len() * std::mem::size_of::<i64>())
                     .sum::<usize>();
-                call_jit_batch(compiled, rows, out, helper, &mut self.flat_i64_inputs)
+                call_jit_batch(compiled, rows, out, &mut self.flat_i64_inputs).map_err(|error| {
+                    self.native_execution_error(
+                        error,
+                        helper.name,
+                        rows.len(),
+                        std::mem::size_of_val(out),
+                    )
+                })
             }
             Some(RuntimePureCacheEntry::Aot(compiled)) => {
                 self.compile_stats.cache_hits += 1;
@@ -179,7 +209,16 @@ impl RuntimePureAccelerator {
                         .iter()
                         .map(|row| row.len() * std::mem::size_of::<i64>())
                         .sum::<usize>();
-                    call_jit_batch(compiled, rows, out, helper, &mut self.flat_i64_inputs)
+                    call_jit_batch(compiled, rows, out, &mut self.flat_i64_inputs).map_err(
+                        |error| {
+                            self.native_execution_error(
+                                error,
+                                helper.name,
+                                rows.len(),
+                                std::mem::size_of_val(out),
+                            )
+                        },
+                    )
                 } else {
                     self.stats.aot_calls += rows.len();
                     let aot = aot.require_i64(helper)?;
@@ -237,10 +276,12 @@ impl RuntimePureAccelerator {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += out.len();
                 compiled.call_flat_batch(flat_inputs, out).map_err(|error| {
-                    RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.to_owned(),
-                        reason: error.to_string(),
-                    }
+                    self.native_execution_error(
+                        error,
+                        helper.name,
+                        out.len(),
+                        std::mem::size_of_val(out),
+                    )
                 })
             }
             Some(RuntimePureCacheEntry::Aot(compiled)) => {
@@ -265,10 +306,12 @@ impl RuntimePureAccelerator {
                 if let Some(compiled) = jit {
                     self.stats.jit_calls += out.len();
                     compiled.call_flat_batch(flat_inputs, out).map_err(|error| {
-                        RuntimeEvalError::UnsupportedPure {
-                            name: helper.name.to_owned(),
-                            reason: error.to_string(),
-                        }
+                        self.native_execution_error(
+                            error,
+                            helper.name,
+                            out.len(),
+                            std::mem::size_of_val(out),
+                        )
                     })
                 } else {
                     self.stats.aot_calls += out.len();
@@ -342,7 +385,8 @@ impl RuntimePureAccelerator {
             Some(RuntimePureCacheEntry::Jit(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += rows;
-                call_jit_flat_batch_sum(compiled, helper, flat_inputs, rows)
+                call_jit_flat_batch_sum(compiled, flat_inputs, rows)
+                    .map_err(|error| self.native_execution_error(error, helper.name, rows, 0))
             }
             Some(RuntimePureCacheEntry::Aot(compiled)) => {
                 self.compile_stats.cache_hits += 1;
@@ -360,7 +404,8 @@ impl RuntimePureAccelerator {
                 self.compile_stats.cache_hits += 1;
                 if let Some(compiled) = jit {
                     self.stats.jit_calls += rows;
-                    call_jit_flat_batch_sum(compiled, helper, flat_inputs, rows)
+                    call_jit_flat_batch_sum(compiled, flat_inputs, rows)
+                        .map_err(|error| self.native_execution_error(error, helper.name, rows, 0))
                 } else {
                     self.stats.aot_calls += rows;
                     let aot = aot.require_i64(helper)?;
@@ -440,12 +485,7 @@ impl RuntimePureAccelerator {
             reason: "pure repeated batch row count must fit i64".to_owned(),
         })?;
         let value = self.repeated_flat_batch_value(helper, row, rows)?;
-        value
-            .checked_mul(rows_i64)
-            .ok_or_else(|| RuntimeEvalError::UnsupportedPure {
-                name: helper.name.to_owned(),
-                reason: "pure repeated batch sum overflowed i64".to_owned(),
-            })
+        Ok(value.wrapping_mul(rows_i64))
     }
 
     fn repeated_flat_batch_value(
@@ -460,10 +500,7 @@ impl RuntimePureAccelerator {
                 self.stats.jit_calls += rows;
                 compiled
                     .call(row)
-                    .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.to_owned(),
-                        reason: error.to_string(),
-                    })?
+                    .map_err(|error| self.native_execution_error(error, helper.name, rows, 0))?
             }
             Some(RuntimePureCacheEntry::Aot(compiled)) => {
                 self.compile_stats.cache_hits += 1;
@@ -478,10 +515,7 @@ impl RuntimePureAccelerator {
                     self.stats.jit_calls += rows;
                     compiled
                         .call(row)
-                        .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                            name: helper.name.to_owned(),
-                            reason: error.to_string(),
-                        })?
+                        .map_err(|error| self.native_execution_error(error, helper.name, rows, 0))?
                 } else {
                     self.stats.aot_calls += rows;
                     let (value, _) =
@@ -711,7 +745,7 @@ impl RuntimePureAccelerator {
             .get(&helper.id)
             .copied()
             .filter(|weight| *weight > 0)
-            .unwrap_or_else(|| runtime_expr_work_units(helper.expr))
+            .unwrap_or_else(|| runtime_function_work_units(helper))
     }
 
     pub(super) fn ensure_thread_pool(&mut self) {
@@ -765,10 +799,7 @@ impl RuntimePureAccelerator {
                 compiled
                     .call(args)
                     .map(Some)
-                    .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.to_owned(),
-                        reason: error.to_string(),
-                    })
+                    .map_err(|error| self.native_execution_error(error, helper.name, 1, 0))
             }
             Some(
                 RuntimePureCacheEntry::Aot(compiled)

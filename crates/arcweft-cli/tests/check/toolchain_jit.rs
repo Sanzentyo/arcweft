@@ -1550,3 +1550,840 @@ flow @flow.for_pure for_pure {
     assert_eq!(json["executor_stats"]["pure_compile"]["jit_successes"], 1);
 }
 
+mod scalar_live_budget_owner_tests {
+    use arcweft_core::engine::{Engine, FlowFiberStatus};
+    use arcweft_core::plan::FlowOp;
+    use arcweft_core::pure::{RuntimePureCallBackend, VmRuntimePureCallBackend};
+    use arcweft_core::step::{
+        RuntimeStepBudget, RuntimeStepMode, RuntimeStepOptions, RuntimeStepStopReason,
+    };
+    use arcweft_core::value::RuntimeValue;
+    use arcweft_runtime_accelerator::{RuntimePureAccelerator, RuntimePureBackendMode};
+    use std::sync::Arc;
+
+    const SOURCE: &str = r#"
+fn score(base: i64, bonus: i64, unused: i64) -> i64 effects {} {
+    let boosted = bonus + 2i64
+    return base * boosted
+}
+pub fn root(value: i64, unused: i64) -> i64 effects {} {
+    let result = score(value, 4i64, unused)
+    return result
+}
+flow main() -> String { return "ok" }
+"#;
+
+    fn source_program(source: &str) -> arcweft_compiler::lower::CompiledDeterministicProgram {
+        use arcweft_lang_hir::project::HirDeclarationBodyRootRole;
+        use arcweft_lang_sema::final_analysis::{
+            CheckedExecutionBodyOwner, CheckedExecutionSource,
+        };
+        let compiled = arcweft_compiler::source::compile_source(source).unwrap();
+        let lease = &compiled.analysis;
+        let declaration = lease
+            .final_analysis()
+            .hir_topology()
+            .modules()
+            .iter()
+            .flat_map(|module| module.entries())
+            .filter_map(|entry| entry.body())
+            .find(|body| body.declaration().name() == "root")
+            .unwrap()
+            .declaration()
+            .clone();
+        lease
+            .compile_deterministic_program(
+                CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
+                    declaration,
+                    role: HirDeclarationBodyRootRole::FunctionBody,
+                }),
+                None,
+                &arcweft_compiler::lower::ProjectInstantiationControl::default(),
+            )
+            .unwrap()
+    }
+
+    fn native(
+        program: &arcweft_compiler::lower::CompiledDeterministicProgram,
+        value: i64,
+    ) -> Engine {
+        Engine::for_program_invocation(
+            Arc::clone(program.plan()),
+            program.program(),
+            vec![RuntimeValue::i64(value), RuntimeValue::i64(77)],
+        )
+        .unwrap()
+    }
+
+    fn until_call(engine: &mut Engine, backend: &mut impl arcweft_core::pure::RuntimeCallBackend) {
+        for _ in 0..64 {
+            if matches!(
+                engine.fiber().pending_ops.front(),
+                Some(FlowOp::ProjectCall { .. })
+            ) {
+                return;
+            }
+            let step = engine.step_with_pure_backend(
+                Default::default(),
+                RuntimeStepOptions {
+                    mode: RuntimeStepMode::OneOp,
+                    budget: RuntimeStepBudget { max_ops: 64 },
+                    ..Default::default()
+                },
+                backend,
+            );
+            assert!(step.output.diagnostics.is_empty(), "{step:?}");
+            assert_eq!(step.stats.executed_ops, 1);
+            assert!(engine.take_program_result().unwrap().is_none());
+        }
+        panic!("the authored root must reach its accepted project call");
+    }
+
+    fn finish(
+        engine: &mut Engine,
+        backend: &mut impl arcweft_core::pure::RuntimeCallBackend,
+        options: RuntimeStepOptions,
+    ) -> (RuntimeValue, usize) {
+        let mut executed = 0_usize;
+        for _ in 0..128 {
+            let step = engine.step_with_pure_backend(Default::default(), options, backend);
+            assert!(step.output.diagnostics.is_empty(), "{step:?}");
+            assert!(step.stats.executed_ops <= options.budget.max_ops);
+            if options.mode == RuntimeStepMode::OneOp {
+                assert!(step.stats.executed_ops <= 1);
+            }
+            executed += step.stats.executed_ops;
+            if let Some((_, value)) = engine.take_program_result().unwrap() {
+                assert!(engine.take_program_result().unwrap().is_none());
+                return (value, executed);
+            }
+            assert!(
+                matches!(step.fiber_status, FlowFiberStatus::Running),
+                "{step:?}"
+            );
+        }
+        panic!("the bounded source invocation must complete");
+    }
+
+    #[test]
+    fn physical_source_body_charges_the_same_native_driver_control_ops() {
+        let selected = source_program(SOURCE);
+        assert!(selected.plan().pure_helpers().is_empty());
+        let options = RuntimeStepOptions {
+            mode: RuntimeStepMode::Drain,
+            budget: RuntimeStepBudget { max_ops: 64 },
+            ..Default::default()
+        };
+        let (expected, expected_ops) = finish(
+            &mut native(&selected, 3),
+            &mut VmRuntimePureCallBackend::default(),
+            options,
+        );
+        assert_eq!(expected, RuntimeValue::i64(18));
+        for mode in [RuntimePureBackendMode::Aot, RuntimePureBackendMode::Jit] {
+            let mut pure = RuntimePureAccelerator::new(mode, selected.plan());
+            let (value, ops) = finish(&mut native(&selected, 3), &mut pure, options);
+            assert_eq!(value, expected);
+            assert_eq!(
+                ops, expected_ops,
+                "physical completion must charge the actual original control span"
+            );
+            assert_eq!(pure.stats().pure_calls, 1);
+            match mode {
+                RuntimePureBackendMode::Aot => assert_eq!(pure.stats().aot_calls, 1),
+                RuntimePureBackendMode::Jit => assert_eq!(pure.stats().jit_calls, 1),
+                _ => unreachable!(),
+            }
+            assert_eq!(pure.stats().arg_vec_allocations, 0);
+            assert_eq!(pure.stats().arg_bytes_copied, 0);
+            assert_eq!(
+                pure.stats().arg_bytes_borrowed,
+                24,
+                "the unused whole formal remains in the physical row"
+            );
+        }
+    }
+
+    #[test]
+    fn successful_scoped_branch_completion_charges_generated_scopes_and_discards_return_suffixes() {
+        let selected = source_program(
+            r#"
+fn score(base: i64, bonus: i64, unused: i64) -> i64 effects {} {
+    scope selected_branch {
+        if base > 0i64 {
+            let boosted = bonus + 2i64
+            return base * boosted
+        } else {
+            let boosted = bonus + 2i64
+            return -base * boosted
+        }
+    }
+    return 0i64
+}
+pub fn root(value: i64, unused: i64) -> i64 effects {} {
+    let result = score(value, 4i64, unused)
+    return result
+}
+flow main() -> String { return "ok" }
+"#,
+        );
+        // Inspect the original admitted rows, whose emitted lexical scope is
+        // distinct from the Engine's generated branch frame. Namespace text
+        // never selects a runtime exit.
+        assert!(
+            selected
+                .plan()
+                .function_sites()
+                .iter_with_ids()
+                .any(|(_, site)| {
+                    if site.role() != arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary
+                        || site.inputs().len() != 3
+                    {
+                        return false;
+                    }
+                    let Some(result) = selected.plan().type_table().get(site.result()) else {
+                        return false;
+                    };
+                    if !matches!(
+                        result.projection(),
+                        arcweft_core::plan::RuntimePlanTypeProjection::Signed(
+                            arcweft_core::value::RuntimeSignedIntWidth::I64
+                        )
+                    ) {
+                        return false;
+                    }
+                    let arcweft_core::plan::RuntimeFunctionSiteBody::Executable(body) = site.body()
+                    else {
+                        return false;
+                    };
+                    let [
+                        FlowOp::EnterScope { .. },
+                        FlowOp::If {
+                            then_ops, else_ops, ..
+                        },
+                        FlowOp::ExitScope,
+                    ] = body.ops()
+                    else {
+                        return false;
+                    };
+                    [then_ops, else_ops].into_iter().all(|ops| {
+                        matches!(ops.as_slice(), [FlowOp::Let { .. }, FlowOp::ReturnExpr(_)])
+                    })
+                }),
+            "the admitted three-formal numeric body retains emitted scope entry, both early-return arms, and its discarded lexical exit"
+        );
+        let options = RuntimeStepOptions {
+            mode: RuntimeStepMode::Drain,
+            budget: RuntimeStepBudget { max_ops: 64 },
+            ..Default::default()
+        };
+        for input in [3, -3] {
+            let (expected, expected_ops) = finish(
+                &mut native(&selected, input),
+                &mut VmRuntimePureCallBackend::default(),
+                options,
+            );
+            assert_eq!(
+                expected,
+                RuntimeValue::i64(18),
+                "the trailing return must be discarded"
+            );
+            for mode in [RuntimePureBackendMode::Aot, RuntimePureBackendMode::Jit] {
+                let mut backend = RuntimePureAccelerator::new(mode, selected.plan());
+                let (value, ops) = finish(&mut native(&selected, input), &mut backend, options);
+                assert_eq!(value, expected);
+                assert_eq!(
+                    ops, expected_ops,
+                    "generated scope entry/exit and early-return discard have the exact VM cost"
+                );
+                assert_eq!(backend.stats().pure_calls, 1);
+                assert_eq!(backend.stats().vm_calls, 0);
+                match mode {
+                    RuntimePureBackendMode::Aot => assert_eq!(backend.stats().aot_calls, 1),
+                    RuntimePureBackendMode::Jit => assert_eq!(backend.stats().jit_calls, 1),
+                    _ => unreachable!(),
+                }
+                assert_eq!(backend.stats().arg_vec_allocations, 0);
+                assert_eq!(backend.stats().arg_bytes_copied, 0);
+                assert_eq!(backend.stats().arg_bytes_borrowed, 24);
+            }
+        }
+    }
+    #[test]
+    fn successful_fallthrough_scopes_charge_generated_exit_operations() {
+        let selected = source_program(
+            r#"
+fn score(base: i64, bonus: i64, unused: i64) -> i64 effects {} {
+    scope numeric_prefix {
+        let boosted = bonus + 2i64
+        if base > 0i64 {
+            let branch_value = base + boosted
+        } else {
+            let branch_value = -base + boosted
+        }
+    }
+    return base * bonus
+}
+pub fn root(value: i64, unused: i64) -> i64 effects {} {
+    let result = score(value, 4i64, unused)
+    return result
+}
+flow main() -> String { return "ok" }
+"#,
+        );
+        fn unit_continuation(plan: &arcweft_core::plan::RuntimePlan, ops: &[FlowOp]) -> bool {
+            let [
+                FlowOp::Let { .. },
+                FlowOp::ExitScopeBind { pattern, expr },
+                FlowOp::Let {
+                    pattern: discard,
+                    expr: moved,
+                },
+                FlowOp::ReturnExpr(result),
+            ] = ops
+            else {
+                return false;
+            };
+            let Some(unit) = plan.type_table().get(expr.ty()) else {
+                return false;
+            };
+            if !matches!(
+                unit.projection(),
+                arcweft_core::plan::RuntimePlanTypeProjection::Unit
+            ) || !matches!(
+                expr.kind(),
+                arcweft_core::value::RuntimeExprKind::Value(RuntimeValue::Unit)
+            ) || pattern.ty() != expr.ty()
+                || discard.ty() != expr.ty()
+                || moved.ty() != expr.ty()
+                || result.ty() == expr.ty()
+            {
+                return false;
+            }
+            let arcweft_core::pattern::RuntimePatternKind::Bind { binding, .. } = pattern.kind()
+            else {
+                return false;
+            };
+            let arcweft_core::value::RuntimeExprKind::Local(read) = moved.kind() else {
+                return false;
+            };
+            matches!(
+                discard.kind(),
+                arcweft_core::pattern::RuntimePatternKind::Discard
+            ) && read.local() == binding.local()
+                && read.fields().is_empty()
+                && read.mode() == arcweft_core::value::RuntimeLocalReadMode::Move
+        }
+        assert!(
+            selected
+                .plan()
+                .function_sites()
+                .iter_with_ids()
+                .any(|(_, site)| {
+                    if site.role() != arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary
+                        || site.inputs().len() != 3
+                    {
+                        return false;
+                    }
+                    let Some(result) = selected.plan().type_table().get(site.result()) else {
+                        return false;
+                    };
+                    if !matches!(
+                        result.projection(),
+                        arcweft_core::plan::RuntimePlanTypeProjection::Signed(
+                            arcweft_core::value::RuntimeSignedIntWidth::I64
+                        )
+                    ) {
+                        return false;
+                    }
+                    let arcweft_core::plan::RuntimeFunctionSiteBody::Executable(body) = site.body()
+                    else {
+                        return false;
+                    };
+                    let [
+                        FlowOp::EnterScope { .. },
+                        FlowOp::Let { .. },
+                        FlowOp::If {
+                            then_ops, else_ops, ..
+                        },
+                    ] = body.ops()
+                    else {
+                        return false;
+                    };
+                    unit_continuation(selected.plan(), then_ops)
+                        && unit_continuation(selected.plan(), else_ops)
+                }),
+            "both admitted branches exit the emitted scope, transfer and consume its typed Unit result, then reach the outer numeric return"
+        );
+        let options = RuntimeStepOptions {
+            mode: RuntimeStepMode::Drain,
+            budget: RuntimeStepBudget { max_ops: 64 },
+            ..Default::default()
+        };
+        for input in [3, -3] {
+            let (expected, expected_ops) = finish(
+                &mut native(&selected, input),
+                &mut VmRuntimePureCallBackend::default(),
+                options,
+            );
+            assert_eq!(expected, RuntimeValue::i64(input * 4));
+            for mode in [RuntimePureBackendMode::Aot, RuntimePureBackendMode::Jit] {
+                let mut backend = RuntimePureAccelerator::new(mode, selected.plan());
+                let (value, ops) = finish(&mut native(&selected, input), &mut backend, options);
+                assert_eq!(value, expected);
+                assert_eq!(
+                    ops, expected_ops,
+                    "every generated branch and outer scope Exit is charged"
+                );
+                assert_eq!(backend.stats().pure_calls, 1);
+                assert_eq!(backend.stats().vm_calls, 0);
+                match mode {
+                    RuntimePureBackendMode::Aot => assert_eq!(backend.stats().aot_calls, 1),
+                    RuntimePureBackendMode::Jit => assert_eq!(backend.stats().jit_calls, 1),
+                    _ => unreachable!(),
+                }
+                assert_eq!(backend.stats().arg_vec_allocations, 0);
+                assert_eq!(backend.stats().arg_bytes_copied, 0);
+                assert_eq!(backend.stats().arg_bytes_borrowed, 24);
+            }
+        }
+    }
+    #[test]
+    fn physical_source_body_declines_when_its_exact_remaining_budget_does_not_fit() {
+        let selected = source_program(SOURCE);
+        let mut probe = native(&selected, 3);
+        let mut vm = VmRuntimePureCallBackend::default();
+        until_call(&mut probe, &mut vm);
+        let Some(FlowOp::ProjectCall { site }) = probe.fiber().pending_ops.front() else {
+            panic!("accepted caller dispatch")
+        };
+        let result_local = selected
+            .plan()
+            .project_call_sites()
+            .get(*site)
+            .unwrap()
+            .result()
+            .binding_declarations()
+            .next()
+            .unwrap()
+            .local();
+        assert!(probe.fiber().env.get(result_local).is_none());
+        let mut call_span = 0_usize;
+        for _ in 0..64 {
+            let step = probe.step_with_pure_backend(
+                Default::default(),
+                RuntimeStepOptions {
+                    mode: RuntimeStepMode::OneOp,
+                    budget: RuntimeStepBudget { max_ops: 64 },
+                    ..Default::default()
+                },
+                &mut vm,
+            );
+            assert!(step.output.diagnostics.is_empty(), "{step:?}");
+            call_span += step.stats.executed_ops;
+            if probe.fiber().env.get(result_local).is_some() {
+                break;
+            }
+        }
+        assert!(
+            probe.fiber().env.get(result_local).is_some(),
+            "the original call must publish its owned result before the probe stops"
+        );
+        assert!(
+            call_span > 1,
+            "the target is a real executable body, beyond its caller dispatch"
+        );
+        assert!(probe.take_program_result().unwrap().is_none());
+        for mode in [RuntimePureBackendMode::Aot, RuntimePureBackendMode::Jit] {
+            let mut engine = native(&selected, 3);
+            let mut pure = RuntimePureAccelerator::new(mode, selected.plan());
+            until_call(&mut engine, &mut pure);
+            let step = engine.step_with_pure_backend(
+                Default::default(),
+                RuntimeStepOptions {
+                    mode: RuntimeStepMode::Drain,
+                    budget: RuntimeStepBudget {
+                        max_ops: call_span - 1,
+                    },
+                    ..Default::default()
+                },
+                &mut pure,
+            );
+            assert_eq!(step.stats.executed_ops, call_span - 1);
+            assert_eq!(step.stop_reason, RuntimeStepStopReason::BudgetExhausted);
+            assert!(matches!(step.fiber_status, FlowFiberStatus::Running));
+            assert!(engine.take_program_result().unwrap().is_none());
+            assert_eq!(pure.stats().jit_calls + pure.stats().aot_calls, 0);
+            let (value, _) = finish(
+                &mut engine,
+                &mut pure,
+                RuntimeStepOptions {
+                    mode: RuntimeStepMode::Drain,
+                    budget: RuntimeStepBudget { max_ops: 64 },
+                    ..Default::default()
+                },
+            );
+            assert_eq!(value, RuntimeValue::i64(18));
+            assert_eq!(pure.stats().jit_calls + pure.stats().aot_calls, 0);
+        }
+    }
+
+    #[test]
+    fn one_op_with_a_large_budget_keeps_native_and_awbc_source_continuations() {
+        let selected = source_program(SOURCE);
+        for options in [
+            RuntimeStepOptions {
+                mode: RuntimeStepMode::OneOp,
+                budget: RuntimeStepBudget { max_ops: 64 },
+                ..Default::default()
+            },
+            RuntimeStepOptions {
+                mode: RuntimeStepMode::Drain,
+                budget: RuntimeStepBudget { max_ops: 1 },
+                ..Default::default()
+            },
+        ] {
+            for mode in [RuntimePureBackendMode::Aot, RuntimePureBackendMode::Jit] {
+                let mut pure = RuntimePureAccelerator::new(mode, selected.plan());
+                let (value, ops) = finish(&mut native(&selected, 3), &mut pure, options);
+                assert_eq!(value, RuntimeValue::i64(18));
+                assert!(ops > 1);
+                assert_eq!(pure.stats().aot_calls + pure.stats().jit_calls, 0);
+            }
+            let mut plan = selected.plan().as_ref().clone();
+            plan.bind_artifact(
+                arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([83; 32]).unwrap(),
+            )
+            .unwrap();
+            let product = Arc::new(
+                arcweft_runtime_plan::awbc_lower::AwbcLowerer::new(
+                    &plan,
+                    &selected.lowering_report().dialogue_content_catalog,
+                    "scalar-budget.arcw",
+                )
+                .lower()
+                .unwrap()
+                .program,
+            );
+            let mut executor =
+                arcweft_core::awbc::product_step::AwbcProductStepExecutor::for_program_invocation(
+                    product,
+                    selected.program(),
+                    vec![RuntimeValue::i64(3), RuntimeValue::i64(77)],
+                    arcweft_core::task::GenerationId::new(0),
+                    1,
+                )
+                .unwrap();
+            let mut backend = VmRuntimePureCallBackend::default();
+            let mut result = None;
+            for _ in 0..256 {
+                let step =
+                    executor.step_with_pure_backend(Default::default(), options, &mut backend);
+                assert!(step.output.diagnostics.is_empty(), "{step:?}");
+                assert!(
+                    step.stats.executed_ops <= 1,
+                    "the product must retain the owning one-operation boundary"
+                );
+                if let Some((id, value)) = executor.take_program_result().unwrap() {
+                    assert_eq!(id, selected.program());
+                    result = Some(value);
+                    break;
+                }
+            }
+            assert_eq!(result, Some(RuntimeValue::i64(18)));
+            assert!(executor.take_program_result().unwrap().is_none());
+        }
+    }
+
+    #[test]
+    fn unequal_early_return_costs_decline_physical_source_completion() {
+        let selected = source_program(
+            r#"
+fn score(value: i64, unused: i64) -> i64 effects {} {
+    if value > 0i64 { return value + 1i64 }
+    return unused
+}
+pub fn root(value: i64, unused: i64) -> i64 effects {} {
+    let result = score(value, unused)
+    return result
+}
+flow main() -> String { return "ok" }
+"#,
+        );
+        for (input, expected) in [(3, 4), (-1, 77)] {
+            for mode in [RuntimePureBackendMode::Aot, RuntimePureBackendMode::Jit] {
+                let mut pure = RuntimePureAccelerator::new(mode, selected.plan());
+                let (value, _) = finish(
+                    &mut native(&selected, input),
+                    &mut pure,
+                    RuntimeStepOptions {
+                        mode: RuntimeStepMode::Drain,
+                        budget: RuntimeStepBudget { max_ops: 64 },
+                        ..Default::default()
+                    },
+                );
+                assert_eq!(value, RuntimeValue::i64(expected));
+                assert_eq!(pure.stats().aot_calls + pure.stats().jit_calls, 0);
+                assert_eq!(
+                    pure.stats().vm_calls,
+                    1,
+                    "an ambiguous physical control cost retains its actual interpreted call"
+                );
+            }
+        }
+    }
+    #[test]
+    fn pending_joined_source_work_keeps_the_original_scalar_return_continuation() {
+        let path = super::temp_arcw(
+            "scalar-pending-joined-owner",
+            r#"
+fn score(base: i64, bonus: i64, unused: i64) -> i64 effects {} {
+    let boosted = bonus + 2i64
+    return base * boosted
+}
+entry cli @entry.cli.scalar_join { goto @flow.root }
+flow root() -> String effects { control.spawn } {
+    let linear_prefix = 1i64
+    thread first {
+        let value0 = 0i64
+        let value1 = value0 + 1i64
+        let value2 = value1 + 1i64
+        let value3 = value2 + 1i64
+        let value4 = value3 + 1i64
+        let value5 = value4 + 1i64
+        let value6 = value5 + 1i64
+        let value7 = value6 + 1i64
+        let value8 = value7 + 1i64
+        let value9 = value8 + 1i64
+        let value10 = value9 + 1i64
+        let value11 = value10 + 1i64
+    }
+    goto @flow.linear
+}
+flow linear() -> String effects {} {
+    let scored = score(3i64, 4i64, 77i64)
+    if scored != 18i64 { return "wrong" }
+    return "done"
+}
+"#,
+        );
+        for executor in ["bytecode-vm", "aot"] {
+            let probe = std::process::Command::new(env!("CARGO_BIN_EXE_arcw"))
+                .arg("run")
+                .arg(&path)
+                .args([
+                    "--entry",
+                    "entry.cli.scalar_join",
+                    "--mode",
+                    "one-op",
+                    "--max-ops",
+                    "64",
+                    "--steps",
+                    "128",
+                    "--executor",
+                    executor,
+                    "--json",
+                ])
+                .output()
+                .expect("bounded source probe observes the real joined child");
+            assert!(
+                probe.status.success(),
+                "{}",
+                String::from_utf8_lossy(&probe.stderr)
+            );
+            let observed: serde_json::Value = serde_json::from_slice(&probe.stdout).unwrap();
+            assert!(
+                observed["steps"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|step| step["stats"]["child_fibers"].as_u64().unwrap() > 0),
+                "the actual source must publish and schedule its joined child: {observed}"
+            );
+            let mut returned = false;
+            for step in observed["steps"].as_array().unwrap() {
+                if step["flow_events"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|event| event == "return done")
+                {
+                    assert_eq!(
+                        step["stats"]["child_fibers"], 0,
+                        "the actual parent Return event must wait for all joined children: {observed}"
+                    );
+                    returned = true;
+                }
+            }
+            assert!(
+                returned,
+                "the bounded OneOp probe must observe the actual parent return event: {observed}"
+            );
+            let output = std::process::Command::new(env!("CARGO_BIN_EXE_arcw"))
+                .arg("run")
+                .arg(&path)
+                .args([
+                    "--entry",
+                    "entry.cli.scalar_join",
+                    "--mode",
+                    "drain",
+                    "--max-ops",
+                    "64",
+                    "--steps",
+                    "8",
+                    "--pure-backend",
+                    "jit",
+                    "--executor",
+                    executor,
+                    "--json",
+                ])
+                .output()
+                .expect("the authored joined-work/goto fixture runs");
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(json["final_status"], "done Return(\"done\")");
+            if executor == "aot" {
+                assert_eq!(json["executor"], "aot");
+                assert!(
+                    json["executor_stats"]["aot_fast_path_ops"]
+                        .as_u64()
+                        .unwrap()
+                        > 0,
+                    "the linear prefix must actually enter the AOT owner before the scheduler fallback: {json}"
+                );
+            }
+            assert_eq!(super::sum_step_pure_counter(&json, "jit_calls"), 0);
+            assert_eq!(super::sum_step_pure_counter(&json, "aot_calls"), 0);
+            assert_eq!(super::sum_step_pure_counter(&json, "vm_calls"), 1);
+            assert_eq!(super::sum_step_pure_counter(&json, "pure_calls"), 1);
+        }
+    }
+
+    #[test]
+    fn source_goto_linear_return_drains_joined_children_before_native_or_aot_completion() {
+        let path = super::temp_arcw(
+            "scalar-linear-join-owner",
+            r#"
+entry cli @entry.cli.linear_join { goto @flow.root }
+flow root() -> String effects { control.spawn } {
+    let linear_prefix = 1i64
+    thread first {
+        let value0 = 0i64
+        let value1 = value0 + 1i64
+        let value2 = value1 + 1i64
+        let value3 = value2 + 1i64
+        let value4 = value3 + 1i64
+        let value5 = value4 + 1i64
+        let value6 = value5 + 1i64
+        let value7 = value6 + 1i64
+        let value8 = value7 + 1i64
+        let value9 = value8 + 1i64
+        let value10 = value9 + 1i64
+        let value11 = value10 + 1i64
+    }
+    goto @flow.linear
+}
+flow linear() -> String effects {} { return "done" }
+"#,
+        );
+        for executor in ["bytecode-vm", "aot"] {
+            let probe = std::process::Command::new(env!("CARGO_BIN_EXE_arcw"))
+                .arg("run")
+                .arg(&path)
+                .args([
+                    "--entry",
+                    "entry.cli.linear_join",
+                    "--mode",
+                    "one-op",
+                    "--max-ops",
+                    "64",
+                    "--steps",
+                    "128",
+                    "--executor",
+                    executor,
+                    "--json",
+                ])
+                .output()
+                .expect("bounded source probe observes the real joined child");
+            assert!(
+                probe.status.success(),
+                "{}",
+                String::from_utf8_lossy(&probe.stderr)
+            );
+            let observed: serde_json::Value = serde_json::from_slice(&probe.stdout).unwrap();
+            assert!(
+                observed["steps"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|step| step["stats"]["child_fibers"].as_u64().unwrap() > 0),
+                "the actual source must publish and schedule its joined child: {observed}"
+            );
+            let mut returned = false;
+            for step in observed["steps"].as_array().unwrap() {
+                if step["flow_events"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|event| event == "return done")
+                {
+                    assert_eq!(
+                        step["stats"]["child_fibers"], 0,
+                        "the actual parent Return event must wait for all joined children: {observed}"
+                    );
+                    returned = true;
+                }
+            }
+            assert!(
+                returned,
+                "the bounded OneOp probe must observe the actual parent return event: {observed}"
+            );
+            let output = std::process::Command::new(env!("CARGO_BIN_EXE_arcw"))
+                .arg("run")
+                .arg(&path)
+                .args([
+                    "--entry",
+                    "entry.cli.linear_join",
+                    "--mode",
+                    "drain",
+                    "--max-ops",
+                    "64",
+                    "--steps",
+                    "8",
+                    "--executor",
+                    executor,
+                    "--json",
+                ])
+                .output()
+                .expect("the authored linear return/join fixture runs");
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(json["final_status"], "done Return(\"done\")");
+            if executor == "aot" {
+                assert_eq!(json["executor"], "aot");
+                assert!(
+                    json["executor_stats"]["aot_fast_path_ops"]
+                        .as_u64()
+                        .unwrap()
+                        > 0,
+                    "the linear prefix must actually enter the AOT owner before the scheduler fallback: {json}"
+                );
+            }
+            let steps = json["steps"].as_array().unwrap();
+            assert!(!steps.is_empty());
+            assert_eq!(
+                steps.last().unwrap()["stats"]["child_fibers"],
+                0,
+                "parent completion must retain all joined child turns and closure: {json}"
+            );
+        }
+    }
+}

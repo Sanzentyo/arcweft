@@ -246,7 +246,7 @@ impl VmPureFunctionScratch {
         let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
             .with_format_context(self.format_context.clone());
         evaluator.external = Some(backend);
-        let result = validate_helper_result(helper, evaluator.evaluate_expr(helper.expr));
+        let result = validate_helper_result(helper, evaluator.evaluate_expr(helper.expression()?));
         self.env = evaluator.into_env();
         result
     }

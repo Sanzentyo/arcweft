@@ -699,6 +699,7 @@ fn scoped_nested_suspension_program() -> AwbcProgram {
     let mut program = direct_suspension_program();
     for layout in &mut program.frame_layouts {
         layout.scopes.push(AwbcScopeDefinition {
+            kind: arcweft_core::scope::RuntimeScopeFrameKind::EmittedLexical,
             parent: None,
             identity: RuntimeScopeIdentity::Anonymous,
         });

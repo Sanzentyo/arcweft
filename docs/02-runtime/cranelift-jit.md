@@ -45,7 +45,7 @@ pub enum ExecBackend {
 }
 ```
 
-The VM must remain available as fallback whenever JIT compilation is pending, rejected, or failed.
+The VM remains available when JIT compilation is pending, rejected, or fails before execution.
 
 `arcweft-core` exposes the stable pure-helper execution boundary without taking
 a Cranelift dependency:
@@ -114,6 +114,33 @@ paths use this split before native execution wrappers are attached. Cranelift
 lowering and artifact emission report `CraneliftCodegenError`; the error
 boundary is not named after JIT because the same codegen path serves JIT and
 object emission.
+
+Every native pure-call symbol uses ABI version `1`, including object emission.
+Scalar formals keep their original exact physical widths and order; trailing
+caller-owned output and completed-count pointers replace direct-return result
+readers. Row calls write only successful prefix outputs. Reduction calls use a
+separate exact-width rejected-value slot, initialized only for a checked
+conversion failure. All entrypoints return one closed `NativePureCallOutcome`
+byte. Callers reject unknown codes or inconsistent progress and read scalar or
+sum output only after success. The audited invocation boundary owns the code
+lifetime and borrows aligned, disjoint buffers for the call.
+
+Integer division admitted to native execution checks the divisor before issuing
+the machine instruction. A zero divisor, including one produced by wrapping
+unsigned arithmetic, returns Core's typed `DivisionByZero` expression failure.
+It is a terminal evaluation result for that invocation; it is never retried by
+AOT or VM. A failure counts the current invocation once, retains completed row
+outputs, and executes no unattempted suffix. Compilation rejection may still
+select another backend before execution.
+
+Direct integer batch reductions check every result against the existing
+`RuntimeExactInteger::try_sum_as_i64` authority before wrapping accumulation.
+A rejected wide result is transported at its original width and diagnosed by
+that authority without repeating scalar evaluation. General source execution
+still requires the owning totality and caller-budget admission before selecting
+a physical scalar or whole-span backend. Supporting a checked native fault does
+not prove totality, or authorize an early narrowing failure to suppress later
+source `Map` callbacks.
 
 Object-emission entrypoints exist for `i64`, `i32`, `u32`, `u64`, `i8`, `i16`,
 `u8`, `u16`, `f32`, and `f64` parameterized helpers. Scalar integer object

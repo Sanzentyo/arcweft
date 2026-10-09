@@ -1238,6 +1238,7 @@ pub struct AwbcFrameLayout {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcScopeDefinition {
     pub parent: Option<AwbcScopeId>,
+    pub kind: crate::scope::RuntimeScopeFrameKind,
     pub identity: crate::scope::RuntimeScopeIdentity,
 }
 

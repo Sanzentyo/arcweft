@@ -107,6 +107,21 @@ impl Engine {
         expr: &RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
+        self.evaluation_stats.evaluated_exprs =
+            self.evaluation_stats.evaluated_exprs.saturating_add(1);
+        if matches!(
+            expr.kind(),
+            RuntimeExprKind::Call { .. }
+                | RuntimeExprKind::ApplyGroup { .. }
+                | RuntimeExprKind::TraitCall { .. }
+        ) {
+            self.evaluation_stats.evaluated_calls =
+                self.evaluation_stats.evaluated_calls.saturating_add(1);
+        }
+        if matches!(expr.kind(), RuntimeExprKind::Binary { .. }) {
+            self.evaluation_stats.evaluated_binary_ops =
+                self.evaluation_stats.evaluated_binary_ops.saturating_add(1);
+        }
         match expr.kind() {
             RuntimeExprKind::Value(value) => value
                 .ownership()

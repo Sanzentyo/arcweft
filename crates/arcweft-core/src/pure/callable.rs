@@ -1,4 +1,6 @@
-//! Pure evaluation of the same sealed callable-state transitions as Engine.
+//! Synchronous expression evaluation of sealed callable-state transitions.
+//! Executable bodies require the owning Engine continuation and operation
+//! budget; this evaluator never creates an independent child Engine.
 
 use std::sync::Arc;
 
@@ -118,6 +120,8 @@ impl PureEvaluator<'_> {
         }
     }
 
+    /// Binds the complete original input packet for an expression body.
+    /// An Executable body declines before any scope or child activation begins.
     pub(super) fn evaluate_function_site(
         &mut self,
         site: RuntimeFunctionSiteId,

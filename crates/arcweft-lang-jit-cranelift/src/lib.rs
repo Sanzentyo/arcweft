@@ -5,8 +5,15 @@
 //! function-pointer call boundary stay in an adapter layer.
 
 mod batch;
+mod body;
+use body::{
+    lower_f32_body as lower_f32_expr, lower_f64_body as lower_f64_expr,
+    lower_i32_body as lower_i32_expr, lower_i64_body as lower_expr,
+    lower_u32_body as lower_u32_expr, lower_u64_body as lower_u64_expr,
+};
 mod compiled;
 mod lower;
+mod native_abi;
 mod native_call;
 use batch::{
     compile_small_int_with_inputs, compile_wide_int_batch_with_inputs,
@@ -19,10 +26,10 @@ use batch::{
 };
 use lower::{
     codegen_error, emit_object_bytes, f32_bindings, f64_bindings, i32_bindings, int_bindings,
-    jit_module, lower_expr, lower_f32_expr, lower_f64_expr, lower_i32_expr, lower_input_value,
-    lower_next_input_value, lower_u32_expr, lower_u64_expr, object_module,
+    jit_module, lower_input_value, lower_next_input_value, object_module,
     sanitize_symbol_component, u32_bindings, u64_bindings, validate_input_locals,
 };
+pub use native_abi::{NATIVE_PURE_CALL_ABI_VERSION, NativePureCallOutcome};
 
 use arcweft_core::pure::{
     PureFunctionBackend, PureFunctionBackendKind, PureFunctionRequest, PureFunctionResult,
@@ -59,7 +66,7 @@ pub(crate) fn request_helper(
 pub struct CraneliftPureFunctionBackend;
 
 /// Error produced while selecting, lowering, compiling, or invoking a helper.
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
+#[derive(Clone, Debug, Error, PartialEq)]
 pub enum CraneliftCodegenError {
     #[error("host is not supported by Cranelift: {0}")]
     UnsupportedHost(String),
@@ -67,6 +74,44 @@ pub enum CraneliftCodegenError {
     UnsupportedExpr(String),
     #[error("Cranelift backend error: {0}")]
     Backend(String),
+    #[error("native expression failed after {completed_rows} completed row(s): {error}")]
+    Execution {
+        error: RuntimeEvalError,
+        completed_rows: usize,
+    },
+    #[error("invalid native outcome code {code}, completed {completed}, requested {requested}")]
+    InvalidNativeOutcome {
+        code: u8,
+        completed: u64,
+        requested: u64,
+    },
+}
+
+impl CraneliftCodegenError {
+    /// Completed successful rows before a native runtime arithmetic failure.
+    pub const fn completed_rows(&self) -> Option<usize> {
+        match self {
+            Self::Execution { completed_rows, .. } => Some(*completed_rows),
+            _ => None,
+        }
+    }
+    /// Preserves a terminal language-expression failure across the adapter.
+    pub fn into_runtime_eval_error(self, helper: &str) -> RuntimeEvalError {
+        match self {
+            Self::Execution {
+                error: RuntimeEvalError::UnsupportedPure { reason, .. },
+                ..
+            } => RuntimeEvalError::UnsupportedPure {
+                name: helper.to_owned(),
+                reason,
+            },
+            Self::Execution { error, .. } => error,
+            error => RuntimeEvalError::UnsupportedPure {
+                name: helper.to_owned(),
+                reason: error.to_string(),
+            },
+        }
+    }
 }
 
 /// Compiled no-argument native helper returning an `i64`.
@@ -90,6 +135,16 @@ pub struct CompiledPureI64Inputs {
 }
 
 /// Relocatable object output for a parameterized pure helper.
+///
+/// All symbols use [`NATIVE_PURE_CALL_ABI_VERSION`]. Scalar entrypoints retain
+/// the ordered exact-width formals, then receive `*mut T` output and `*mut u64`
+/// completed-count pointers, and return the [`NativePureCallOutcome`] byte.
+/// Row entrypoints receive `(*const T, i64 rows, *mut T, *mut u64)`; reduction
+/// entrypoints receive `(*const T, i64 rows, *mut i64, *mut u64, *mut T rejected)`.
+/// Borrowed storage must stay live, aligned and disjoint for the entire call.
+/// Output initialization follows the checked outcome; unknown codes or invalid
+/// progress must be rejected before reading output. There is no direct-return
+/// scalar reader or implicit exception handler.
 pub struct ObjectPureInputs {
     pub object_bytes: Vec<u8>,
     pub entry_symbol: String,
@@ -100,6 +155,7 @@ pub struct ObjectPureInputs {
 }
 
 /// Relocatable object output for a batch-only pure helper.
+/// Uses the same checked native ABI as [`ObjectPureInputs`].
 pub struct ObjectPureBatchInputs {
     pub object_bytes: Vec<u8>,
     pub batch_symbol: String,
@@ -148,6 +204,7 @@ impl<'a> PureObjectBundleRequest<'a> {
 }
 
 /// Relocatable object output containing multiple pure helpers.
+/// Every helper uses the checked native ABI documented on [`ObjectPureInputs`].
 pub struct ObjectPureBundle {
     pub object_bytes: Vec<u8>,
     pub helpers: Vec<ObjectPureBundleHelper>,
@@ -163,6 +220,7 @@ pub struct ObjectPureBundleHelper {
 }
 
 /// Entrypoint shape exported for one pure helper object artifact.
+/// All symbol shapes follow [`ObjectPureInputs`] and [`NATIVE_PURE_CALL_ABI_VERSION`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ObjectPureEntrypoints {
     Entry {
@@ -408,7 +466,7 @@ pub struct CompiledPureI64Batch {
     stats: PureFunctionStats,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum LoweredIntBinding {
     /// Literal bits for integer codegen. The lowering site selects the
     /// Cranelift type, so this does not imply an `i64` runtime ABI.
@@ -416,13 +474,13 @@ enum LoweredIntBinding {
     Value(Value),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum LoweredSmallIntBinding {
     Const(SmallIntLiteral),
     Value(Value),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum SmallIntLiteral {
     Narrow(i64),
     I128(i128),
@@ -434,11 +492,29 @@ enum LoweredF32Binding {
     Const(f32),
     Value(Value),
 }
+impl PartialEq for LoweredF32Binding {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Const(left), Self::Const(right)) => left.to_bits() == right.to_bits(),
+            (Self::Value(left), Self::Value(right)) => left == right,
+            _ => false,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 enum LoweredF64Binding {
     Const(f64),
     Value(Value),
+}
+impl PartialEq for LoweredF64Binding {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Const(left), Self::Const(right)) => left.to_bits() == right.to_bits(),
+            (Self::Value(left), Self::Value(right)) => left == right,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -536,7 +612,7 @@ impl CraneliftPureFunctionBackend {
         request: &PureFunctionRequest,
     ) -> Result<PureFunctionResult, CraneliftCodegenError> {
         let compiled = self.compile_i64(request)?;
-        let value = compiled.call();
+        let value = compiled.call()?;
         Ok(PureFunctionResult {
             backend: self.kind(),
             value: RuntimeValue::i64(value),
@@ -1075,7 +1151,7 @@ where
     let mut ctx = module.make_context();
     let mut func_ctx = FunctionBuilderContext::new();
     let mut signature = module.make_signature();
-    signature.returns.push(AbiParam::new(types::I64));
+    native_abi::append_scalar_signature(&mut signature, module.target_config().pointer_type());
 
     let entry = module
         .declare_function(symbol_name, Linkage::Local, &signature)
@@ -1088,14 +1164,21 @@ where
     {
         let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
         let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
         builder.switch_to_block(block);
+        let native_params = builder.block_params(block);
+        let output_ptr = native_params[native_params.len() - 2];
+        let progress_ptr = native_params[native_params.len() - 1];
+        let initial_progress = builder.ins().iconst(types::I64, 0);
+        native_abi::store_progress(&mut builder, progress_ptr, initial_progress);
         let value = lower_expr(
             &mut builder,
             &bindings,
-            request_helper(request)?.expr,
+            request_helper(request)?,
             &mut stats,
         )?;
-        builder.ins().return_(&[value]);
+        let completed = builder.ins().iconst(types::I64, 1);
+        native_abi::return_result(&mut builder, output_ptr, progress_ptr, value, completed);
         builder.seal_all_blocks();
         builder.finalize();
     }
@@ -1136,7 +1219,7 @@ where
     signature
         .params
         .extend(input_locals.iter().map(|_| AbiParam::new(types::I64)));
-    signature.returns.push(AbiParam::new(types::I64));
+    native_abi::append_scalar_signature(&mut signature, module.target_config().pointer_type());
 
     let entry_name = format!("{symbol_prefix}_entry");
     let entry = module
@@ -1153,6 +1236,11 @@ where
         let block = builder.create_block();
         builder.append_block_params_for_function_params(block);
         builder.switch_to_block(block);
+        let native_params = builder.block_params(block);
+        let output_ptr = native_params[native_params.len() - 2];
+        let progress_ptr = native_params[native_params.len() - 1];
+        let initial_progress = builder.ins().iconst(types::I64, 0);
+        native_abi::store_progress(&mut builder, progress_ptr, initial_progress);
         let params = builder.block_params(block);
         for (name, value) in input_locals.iter().zip(params.iter().copied()) {
             bindings.insert(*name, LoweredIntBinding::Value(value));
@@ -1160,10 +1248,11 @@ where
         let value = lower_expr(
             &mut builder,
             &bindings,
-            request_helper(request)?.expr,
+            request_helper(request)?,
             &mut stats,
         )?;
-        builder.ins().return_(&[value]);
+        let completed = builder.ins().iconst(types::I64, 1);
+        native_abi::return_result(&mut builder, output_ptr, progress_ptr, value, completed);
         builder.seal_all_blocks();
         builder.finalize();
     }
@@ -1175,14 +1264,14 @@ where
     let batch = define_i64_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        request_helper(request)?.expr,
+        request_helper(request)?,
         &captured_bindings,
         &input_locals,
     )?;
     let batch_sum = define_i64_rows_batch_sum_function(
         module,
         &format!("{symbol_prefix}_rows_batch_sum"),
-        request_helper(request)?.expr,
+        request_helper(request)?,
         &captured_bindings,
         &input_locals,
     )?;
@@ -1229,7 +1318,7 @@ where
         AbiParam::new(types::I64),
         AbiParam::new(types::I64),
     ]);
-    signature.returns.push(AbiParam::new(types::I64));
+    native_abi::append_scalar_signature(&mut signature, module.target_config().pointer_type());
 
     let entry = module
         .declare_function(symbol_name, Linkage::Local, &signature)
@@ -1247,6 +1336,10 @@ where
         let seed = builder.block_params(entry_block)[0];
         let sample = builder.block_params(entry_block)[1];
         let iterations = builder.block_params(entry_block)[2];
+        let output_ptr = builder.block_params(entry_block)[3];
+        let progress_ptr = builder.block_params(entry_block)[4];
+        let initial_progress = builder.ins().iconst(types::I64, 0);
+        native_abi::store_progress(&mut builder, progress_ptr, initial_progress);
 
         let loop_block = builder.create_block();
         let body_block = builder.create_block();
@@ -1284,12 +1377,13 @@ where
         let value = lower_expr(
             &mut builder,
             &bindings,
-            request_helper(request)?.expr,
+            request_helper(request)?,
             &mut stats,
         )?;
         let next_accumulator = builder.ins().iadd(accumulator, value);
         let one = builder.ins().iconst(types::I64, 1);
         let next_index = builder.ins().iadd(index, one);
+        native_abi::store_progress(&mut builder, progress_ptr, next_index);
         let next_inputs = input_values
             .iter()
             .copied()
@@ -1301,7 +1395,7 @@ where
         builder.ins().jump(loop_block, &next_args);
 
         builder.switch_to_block(done_block);
-        builder.ins().return_(&[accumulator]);
+        native_abi::return_result(&mut builder, output_ptr, progress_ptr, accumulator, index);
         builder.seal_all_blocks();
         builder.finalize();
     }
@@ -1806,7 +1900,7 @@ where
     signature
         .params
         .extend(input_locals.iter().map(|_| AbiParam::new(types::I32)));
-    signature.returns.push(AbiParam::new(types::I32));
+    native_abi::append_scalar_signature(&mut signature, module.target_config().pointer_type());
 
     let entry_name = format!("{symbol_prefix}_entry");
     let entry = module
@@ -1823,6 +1917,11 @@ where
         let block = builder.create_block();
         builder.append_block_params_for_function_params(block);
         builder.switch_to_block(block);
+        let native_params = builder.block_params(block);
+        let output_ptr = native_params[native_params.len() - 2];
+        let progress_ptr = native_params[native_params.len() - 1];
+        let initial_progress = builder.ins().iconst(types::I64, 0);
+        native_abi::store_progress(&mut builder, progress_ptr, initial_progress);
         let params = builder.block_params(block);
         for (name, value) in input_locals.iter().zip(params.iter().copied()) {
             bindings.insert(*name, LoweredIntBinding::Value(value));
@@ -1830,10 +1929,11 @@ where
         let value = lower_i32_expr(
             &mut builder,
             &bindings,
-            request_helper(request)?.expr,
+            request_helper(request)?,
             &mut stats,
         )?;
-        builder.ins().return_(&[value]);
+        let completed = builder.ins().iconst(types::I64, 1);
+        native_abi::return_result(&mut builder, output_ptr, progress_ptr, value, completed);
         builder.seal_all_blocks();
         builder.finalize();
     }
@@ -1845,14 +1945,14 @@ where
     let batch = define_i32_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        request_helper(request)?.expr,
+        request_helper(request)?,
         &captured_bindings,
         &input_locals,
     )?;
     let batch_sum = define_i32_rows_batch_sum_function(
         module,
         &format!("{symbol_prefix}_rows_batch_sum"),
-        request_helper(request)?.expr,
+        request_helper(request)?,
         &captured_bindings,
         &input_locals,
     )?;
@@ -1894,7 +1994,7 @@ where
     signature
         .params
         .extend(input_locals.iter().map(|_| AbiParam::new(types::I32)));
-    signature.returns.push(AbiParam::new(types::I32));
+    native_abi::append_scalar_signature(&mut signature, module.target_config().pointer_type());
 
     let entry_name = format!("{symbol_prefix}_entry");
     let entry = module
@@ -1911,6 +2011,11 @@ where
         let block = builder.create_block();
         builder.append_block_params_for_function_params(block);
         builder.switch_to_block(block);
+        let native_params = builder.block_params(block);
+        let output_ptr = native_params[native_params.len() - 2];
+        let progress_ptr = native_params[native_params.len() - 1];
+        let initial_progress = builder.ins().iconst(types::I64, 0);
+        native_abi::store_progress(&mut builder, progress_ptr, initial_progress);
         let params = builder.block_params(block);
         for (name, value) in input_locals.iter().zip(params.iter().copied()) {
             bindings.insert(*name, LoweredIntBinding::Value(value));
@@ -1918,10 +2023,11 @@ where
         let value = lower_u32_expr(
             &mut builder,
             &bindings,
-            request_helper(request)?.expr,
+            request_helper(request)?,
             &mut stats,
         )?;
-        builder.ins().return_(&[value]);
+        let completed = builder.ins().iconst(types::I64, 1);
+        native_abi::return_result(&mut builder, output_ptr, progress_ptr, value, completed);
         builder.seal_all_blocks();
         builder.finalize();
     }
@@ -1933,14 +2039,14 @@ where
     let batch = define_u32_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        request_helper(request)?.expr,
+        request_helper(request)?,
         &captured_bindings,
         &input_locals,
     )?;
     let batch_sum = define_u32_rows_batch_sum_function(
         module,
         &format!("{symbol_prefix}_rows_batch_sum"),
-        request_helper(request)?.expr,
+        request_helper(request)?,
         &captured_bindings,
         &input_locals,
     )?;
@@ -1982,7 +2088,7 @@ where
     signature
         .params
         .extend(input_locals.iter().map(|_| AbiParam::new(types::I64)));
-    signature.returns.push(AbiParam::new(types::I64));
+    native_abi::append_scalar_signature(&mut signature, module.target_config().pointer_type());
 
     let entry_name = format!("{symbol_prefix}_entry");
     let entry = module
@@ -1999,6 +2105,11 @@ where
         let block = builder.create_block();
         builder.append_block_params_for_function_params(block);
         builder.switch_to_block(block);
+        let native_params = builder.block_params(block);
+        let output_ptr = native_params[native_params.len() - 2];
+        let progress_ptr = native_params[native_params.len() - 1];
+        let initial_progress = builder.ins().iconst(types::I64, 0);
+        native_abi::store_progress(&mut builder, progress_ptr, initial_progress);
         let params = builder.block_params(block);
         for (name, value) in input_locals.iter().zip(params.iter().copied()) {
             bindings.insert(*name, LoweredIntBinding::Value(value));
@@ -2006,10 +2117,11 @@ where
         let value = lower_u64_expr(
             &mut builder,
             &bindings,
-            request_helper(request)?.expr,
+            request_helper(request)?,
             &mut stats,
         )?;
-        builder.ins().return_(&[value]);
+        let completed = builder.ins().iconst(types::I64, 1);
+        native_abi::return_result(&mut builder, output_ptr, progress_ptr, value, completed);
         builder.seal_all_blocks();
         builder.finalize();
     }
@@ -2021,14 +2133,14 @@ where
     let batch = define_u64_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        request_helper(request)?.expr,
+        request_helper(request)?,
         &captured_bindings,
         &input_locals,
     )?;
     let batch_sum = define_u64_rows_batch_sum_function(
         module,
         &format!("{symbol_prefix}_rows_batch_sum"),
-        request_helper(request)?.expr,
+        request_helper(request)?,
         &captured_bindings,
         &input_locals,
     )?;
@@ -2070,7 +2182,7 @@ where
     signature
         .params
         .extend(input_locals.iter().map(|_| AbiParam::new(types::F32)));
-    signature.returns.push(AbiParam::new(types::F32));
+    native_abi::append_scalar_signature(&mut signature, module.target_config().pointer_type());
 
     let entry_name = format!("{symbol_prefix}_entry");
     let entry = module
@@ -2087,6 +2199,11 @@ where
         let block = builder.create_block();
         builder.append_block_params_for_function_params(block);
         builder.switch_to_block(block);
+        let native_params = builder.block_params(block);
+        let output_ptr = native_params[native_params.len() - 2];
+        let progress_ptr = native_params[native_params.len() - 1];
+        let initial_progress = builder.ins().iconst(types::I64, 0);
+        native_abi::store_progress(&mut builder, progress_ptr, initial_progress);
         let params = builder.block_params(block);
         for (name, value) in input_locals.iter().zip(params.iter().copied()) {
             bindings.insert(*name, LoweredF32Binding::Value(value));
@@ -2094,10 +2211,11 @@ where
         let value = lower_f32_expr(
             &mut builder,
             &bindings,
-            request_helper(request)?.expr,
+            request_helper(request)?,
             &mut stats,
         )?;
-        builder.ins().return_(&[value]);
+        let completed = builder.ins().iconst(types::I64, 1);
+        native_abi::return_result(&mut builder, output_ptr, progress_ptr, value, completed);
         builder.seal_all_blocks();
         builder.finalize();
     }
@@ -2109,7 +2227,7 @@ where
     let batch = define_f32_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        request_helper(request)?.expr,
+        request_helper(request)?,
         &captured_bindings,
         &input_locals,
     )?;
@@ -2150,7 +2268,7 @@ where
     signature
         .params
         .extend(input_locals.iter().map(|_| AbiParam::new(types::F64)));
-    signature.returns.push(AbiParam::new(types::F64));
+    native_abi::append_scalar_signature(&mut signature, module.target_config().pointer_type());
 
     let entry_name = format!("{symbol_prefix}_entry");
     let entry = module
@@ -2167,6 +2285,11 @@ where
         let block = builder.create_block();
         builder.append_block_params_for_function_params(block);
         builder.switch_to_block(block);
+        let native_params = builder.block_params(block);
+        let output_ptr = native_params[native_params.len() - 2];
+        let progress_ptr = native_params[native_params.len() - 1];
+        let initial_progress = builder.ins().iconst(types::I64, 0);
+        native_abi::store_progress(&mut builder, progress_ptr, initial_progress);
         let params = builder.block_params(block);
         for (name, value) in input_locals.iter().zip(params.iter().copied()) {
             bindings.insert(*name, LoweredF64Binding::Value(value));
@@ -2174,10 +2297,11 @@ where
         let value = lower_f64_expr(
             &mut builder,
             &bindings,
-            request_helper(request)?.expr,
+            request_helper(request)?,
             &mut stats,
         )?;
-        builder.ins().return_(&[value]);
+        let completed = builder.ins().iconst(types::I64, 1);
+        native_abi::return_result(&mut builder, output_ptr, progress_ptr, value, completed);
         builder.seal_all_blocks();
         builder.finalize();
     }
@@ -2189,7 +2313,7 @@ where
     let batch = define_f64_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        request_helper(request)?.expr,
+        request_helper(request)?,
         &captured_bindings,
         &input_locals,
     )?;
