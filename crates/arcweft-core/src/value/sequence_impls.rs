@@ -680,6 +680,112 @@ macro_rules! impl_runtime_exact_wide_unsigned_integer {
     };
 }
 
+impl PartialEq for RuntimeSeq {
+    fn eq(&self, other: &Self) -> bool {
+        if self.len() != other.len() {
+            return false;
+        }
+        // An empty sequence has no element rows. The checked plan type owns
+        // its language family and item type; a storage tag cannot replace it.
+        if self.is_empty() {
+            return true;
+        }
+        match (self, other) {
+            (Self::Values(left), Self::Values(right)) => left == right,
+            (Self::Dense(left), Self::Dense(right)) => match (left, right) {
+                (DenseSeq::U8(left), DenseSeq::Bytes(right))
+                | (DenseSeq::Bytes(left), DenseSeq::U8(right)) => left == right,
+                _ => left == right,
+            },
+            (Self::TupleColumns(left), Self::TupleColumns(right)) => left == right,
+            (Self::RecordColumns(left), Self::RecordColumns(right)) => left == right,
+            (Self::Values(values), sequence) | (sequence, Self::Values(values)) => values
+                .iter()
+                .enumerate()
+                .all(|(index, value)| sequence.value_eq_at(index, value)),
+            _ => false,
+        }
+    }
+}
+
+impl RuntimeSeq {
+    // Compares an existing row by borrowing it. Column recursion never builds
+    // a tuple/record row and never invokes Clone on an affine leaf.
+    fn value_eq_at(&self, index: usize, value: &RuntimeValue) -> bool {
+        if index >= self.len() {
+            return false;
+        }
+        match self {
+            Self::Values(values) => &values[index] == value,
+            Self::Dense(values) => values.value_eq_at(index, value),
+            Self::TupleColumns(columns) => {
+                let RuntimeValue::Tuple(values) = value else {
+                    return false;
+                };
+                columns.columns().len() == values.len()
+                    && columns
+                        .columns()
+                        .iter()
+                        .zip(values)
+                        .all(|(column, value)| column.value_eq_at(index, value))
+            }
+            Self::RecordColumns(columns) => {
+                let RuntimeValue::Record(record) = value else {
+                    return false;
+                };
+                columns.fields().len() == record.fields().len()
+                    && columns
+                        .fields()
+                        .iter()
+                        .zip(record.fields())
+                        .all(|(column, field)| {
+                            column.field() == field.field()
+                                && column.name() == field.name()
+                                && column.values().value_eq_at(index, field.value())
+                        })
+            }
+        }
+    }
+}
+
+impl DenseSeq {
+    fn value_eq_at(&self, index: usize, value: &RuntimeValue) -> bool {
+        if index >= self.len() {
+            return false;
+        }
+        match self {
+            Self::Units(_) => matches!(value, RuntimeValue::Unit),
+            Self::I8(values) => &RuntimeValue::i8(values.as_slice()[index]) == value,
+            Self::I16(values) => &RuntimeValue::i16(values.as_slice()[index]) == value,
+            Self::I32(values) => &RuntimeValue::i32(values.as_slice()[index]) == value,
+            Self::I64(values) => &RuntimeValue::i64(values.as_slice()[index]) == value,
+            Self::I128(values) => &RuntimeValue::i128(values.as_slice()[index]) == value,
+            Self::ISize(values) => &RuntimeValue::isize(values.as_slice()[index].get()) == value,
+            Self::U8(values) | Self::Bytes(values) => {
+                &RuntimeValue::u8(values.as_slice()[index]) == value
+            }
+            Self::U16(values) => &RuntimeValue::u16(values.as_slice()[index]) == value,
+            Self::U32(values) => &RuntimeValue::u32(values.as_slice()[index]) == value,
+            Self::U64(values) => &RuntimeValue::u64(values.as_slice()[index]) == value,
+            Self::U128(values) => &RuntimeValue::u128(values.as_slice()[index]) == value,
+            Self::USize(values) => &RuntimeValue::usize(values.as_slice()[index].get()) == value,
+            Self::F32(values) => &RuntimeValue::F32(values.as_slice()[index]) == value,
+            Self::F64(values) => &RuntimeValue::F64(values.as_slice()[index]) == value,
+            Self::Bool(values) => &RuntimeValue::Bool(values.as_slice()[index]) == value,
+            Self::Chars(values) => &RuntimeValue::Char(values.as_slice()[index]) == value,
+            Self::Durations(values) => &RuntimeValue::Duration(values.as_slice()[index]) == value,
+            Self::Strings(values) => match value {
+                RuntimeValue::String(value) => &values.as_slice()[index] == value,
+                _ => false,
+            },
+            Self::EntityRefs(values) => match value {
+                RuntimeValue::EntityRef(value) => &values.as_slice()[index] == value,
+                _ => false,
+            },
+        }
+    }
+}
+
 impl RuntimeSeq {
     pub fn values(values: Vec<RuntimeValue>) -> Self {
         Self::Values(values)

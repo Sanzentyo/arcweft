@@ -1151,7 +1151,7 @@ impl RuntimeValue {
 }
 
 /// Storage strategy for runtime sequence values.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum RuntimeSeq {
     Values(Vec<RuntimeValue>),
     Dense(DenseSeq),

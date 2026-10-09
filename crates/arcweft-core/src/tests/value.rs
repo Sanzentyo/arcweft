@@ -1419,3 +1419,236 @@ fn index_intrinsic_distinguishes_bounds_failure_from_invalid_operands() {
         Err(RuntimeEvalError::UnsupportedPure { .. })
     ));
 }
+
+#[test]
+fn sequence_equality_compares_dense_and_value_rows_without_numeric_widening() {
+    let alice = test_entity_ref("alice");
+    let duration = LogicalDuration::from_nanos(17);
+    for (dense, row) in [
+        (RuntimeSeq::dense_units(1), RuntimeValue::Unit),
+        (RuntimeSeq::dense_i8(vec![-7]), RuntimeValue::i8(-7)),
+        (RuntimeSeq::dense_i16(vec![-7]), RuntimeValue::i16(-7)),
+        (RuntimeSeq::dense_i32(vec![-7]), RuntimeValue::i32(-7)),
+        (RuntimeSeq::dense_i64(vec![-7]), RuntimeValue::i64(-7)),
+        (RuntimeSeq::dense_i128(vec![-7]), RuntimeValue::i128(-7)),
+        (RuntimeSeq::dense_isize(vec![-7]), RuntimeValue::isize(-7)),
+        (RuntimeSeq::dense_u8(vec![7]), RuntimeValue::u8(7)),
+        (RuntimeSeq::dense_u16(vec![7]), RuntimeValue::u16(7)),
+        (RuntimeSeq::dense_u32(vec![7]), RuntimeValue::u32(7)),
+        (RuntimeSeq::dense_u64(vec![7]), RuntimeValue::u64(7)),
+        (RuntimeSeq::dense_u128(vec![7]), RuntimeValue::u128(7)),
+        (RuntimeSeq::dense_usize(vec![7]), RuntimeValue::usize(7)),
+        (RuntimeSeq::dense_f32(vec![1.25]), RuntimeValue::F32(1.25)),
+        (RuntimeSeq::dense_f64(vec![1.25]), RuntimeValue::F64(1.25)),
+        (RuntimeSeq::dense_bool(vec![true]), RuntimeValue::Bool(true)),
+        (RuntimeSeq::dense_bytes(vec![7]), RuntimeValue::u8(7)),
+        (
+            RuntimeSeq::dense_chars(vec!['猫']),
+            RuntimeValue::Char('猫'),
+        ),
+        (
+            RuntimeSeq::dense_durations(vec![duration]),
+            RuntimeValue::Duration(duration),
+        ),
+        (
+            RuntimeSeq::dense_strings(vec!["retained".to_owned()]),
+            RuntimeValue::String("retained".to_owned()),
+        ),
+        (
+            RuntimeSeq::dense_entity_refs(vec![alice.clone()]),
+            RuntimeValue::EntityRef(alice),
+        ),
+    ] {
+        let values = RuntimeSeq::values(vec![row]);
+        assert_eq!(&dense, &values);
+        assert_eq!(&values, &dense);
+        assert_eq!(
+            evaluate_binary(
+                RuntimeValue::Seq(dense),
+                RuntimeBinaryOp::Eq,
+                RuntimeValue::Seq(values)
+            )
+            .unwrap(),
+            RuntimeValue::Bool(true)
+        );
+    }
+    assert_ne!(
+        RuntimeSeq::dense_i8(vec![7]),
+        RuntimeSeq::values(vec![RuntimeValue::i64(7)])
+    );
+    assert_ne!(
+        RuntimeSeq::dense_i64(vec![7]),
+        RuntimeSeq::values(vec![RuntimeValue::u64(7)])
+    );
+    assert_ne!(
+        RuntimeSeq::dense_i8(vec![7]),
+        RuntimeSeq::dense_i16(vec![7])
+    );
+    assert_ne!(
+        RuntimeSeq::dense_f32(vec![1.25]),
+        RuntimeSeq::values(vec![RuntimeValue::F64(1.25)])
+    );
+    assert_ne!(
+        RuntimeSeq::dense_i64(vec![7, 8]),
+        RuntimeSeq::values(vec![RuntimeValue::i64(7)])
+    );
+    assert_eq!(
+        RuntimeSeq::dense_bytes(vec![7]),
+        RuntimeSeq::dense_u8(vec![7])
+    );
+}
+
+#[test]
+fn sequence_equality_borrows_recursive_tuple_and_record_columns() {
+    let row = RuntimeValue::Tuple(vec![
+        RuntimeValue::String("retained".to_owned()),
+        RuntimeValue::Seq(RuntimeSeq::values(vec![RuntimeValue::i8(7)])),
+    ]);
+    let rows = RuntimeSeq::values(vec![row]);
+    let columns = RuntimeSeq::tuple_columns(
+        1,
+        vec![
+            RuntimeSeq::dense_strings(vec!["retained".to_owned()]),
+            RuntimeSeq::values(vec![RuntimeValue::Seq(RuntimeSeq::dense_i8(vec![7]))]),
+        ],
+    )
+    .unwrap();
+    assert_eq!(&rows, &columns);
+    assert_eq!(&columns, &rows);
+    assert_ne!(
+        columns,
+        RuntimeSeq::values(vec![RuntimeValue::Tuple(vec![RuntimeValue::String(
+            "retained".to_owned()
+        )])])
+    );
+
+    let record = crate::value::RuntimeRecordValue::try_new(vec![
+        (
+            "name".to_owned(),
+            RuntimeValue::String("retained".to_owned()),
+        ),
+        ("value".to_owned(), RuntimeValue::i32(7)),
+    ])
+    .unwrap();
+    let records = RuntimeSeq::values(vec![RuntimeValue::Record(record)]);
+    let columns = RuntimeSeq::record_columns(
+        1,
+        vec![
+            (
+                "name".to_owned(),
+                RuntimeSeq::dense_strings(vec!["retained".to_owned()]),
+            ),
+            ("value".to_owned(), RuntimeSeq::dense_i32(vec![7])),
+        ],
+    )
+    .unwrap();
+    assert_eq!(&records, &columns);
+    assert_eq!(&columns, &records);
+    let other_name = RuntimeSeq::record_columns(
+        1,
+        vec![
+            (
+                "other".to_owned(),
+                RuntimeSeq::dense_strings(vec!["retained".to_owned()]),
+            ),
+            ("value".to_owned(), RuntimeSeq::dense_i32(vec![7])),
+        ],
+    )
+    .unwrap();
+    assert_ne!(records, other_name);
+    assert_ne!(
+        columns,
+        RuntimeSeq::tuple_columns(1, vec![RuntimeSeq::dense_i32(vec![7])]).unwrap()
+    );
+}
+
+#[test]
+fn sequence_equality_retains_issued_affine_row_and_column_custody() {
+    fn payload_address(value: &RuntimeValue) -> *const RuntimeValue {
+        let RuntimeValue::Opaque(value) = value else {
+            panic!("issued handle remains opaque")
+        };
+        assert!(matches!(
+            value.value_class(),
+            crate::value::RuntimeOpaqueValueClass::AffineHandle(_)
+        ));
+        value.payload()
+    }
+    fn moved_tuple_leaf(sequence: RuntimeSeq) -> RuntimeValue {
+        let RuntimeValue::Tuple(mut values) = sequence.into_values().pop().unwrap() else {
+            panic!("one tuple row")
+        };
+        values.pop().unwrap()
+    }
+    let row_fixture = crate::tests::program_custody::issued_program_handle();
+    let column_fixture = crate::tests::program_custody::issued_program_handle();
+    let row_address = payload_address(&row_fixture.value);
+    let column_address = payload_address(&column_fixture.value);
+    let rows = RuntimeSeq::values(vec![RuntimeValue::Tuple(vec![row_fixture.value])]);
+    let columns =
+        RuntimeSeq::tuple_columns(1, vec![RuntimeSeq::values(vec![column_fixture.value])]).unwrap();
+    assert_eq!(&rows, &columns);
+    assert_eq!(&columns, &rows);
+    let row_leaf = moved_tuple_leaf(rows);
+    let column_leaf = moved_tuple_leaf(columns);
+    assert_eq!(payload_address(&row_leaf), row_address);
+    assert_eq!(payload_address(&column_leaf), column_address);
+    assert_eq!(
+        crate::line_task::RuntimeLineHandleLedger::token_from_value(&row_leaf).unwrap(),
+        row_fixture.token
+    );
+    assert_eq!(
+        crate::line_task::RuntimeLineHandleLedger::token_from_value(&column_leaf).unwrap(),
+        column_fixture.token
+    );
+    assert_eq!(
+        row_fixture
+            .ledger
+            .lease(&row_fixture.token)
+            .unwrap()
+            .state(),
+        crate::line_task::RuntimeHandleLeaseState::Active
+    );
+    assert_eq!(
+        column_fixture
+            .ledger
+            .lease(&column_fixture.token)
+            .unwrap()
+            .state(),
+        crate::line_task::RuntimeHandleLeaseState::Active
+    );
+}
+
+#[test]
+fn sequence_equality_preserves_float_rules_and_empty_element_content() {
+    assert_eq!(
+        RuntimeSeq::dense_f32(vec![-0.0]),
+        RuntimeSeq::values(vec![RuntimeValue::F32(0.0)])
+    );
+    assert_ne!(
+        RuntimeSeq::dense_f32(vec![f32::NAN]),
+        RuntimeSeq::values(vec![RuntimeValue::F32(f32::NAN)])
+    );
+    assert_ne!(
+        RuntimeSeq::dense_f64(vec![f64::NAN]),
+        RuntimeSeq::dense_f64(vec![f64::NAN])
+    );
+    let empty = [
+        RuntimeSeq::values(Vec::new()),
+        RuntimeSeq::dense_i8(Vec::new()),
+        RuntimeSeq::dense_f32(Vec::new()),
+        RuntimeSeq::tuple_columns(0, vec![RuntimeSeq::dense_i64(Vec::new())]).unwrap(),
+        RuntimeSeq::record_columns(
+            0,
+            vec![("value".to_owned(), RuntimeSeq::dense_i64(Vec::new()))],
+        )
+        .unwrap(),
+    ];
+    for left in &empty {
+        for right in &empty {
+            assert_eq!(left, right);
+        }
+    }
+    assert_eq!(empty[1].dense_kind(), Some(DenseSeqKind::I8));
+    assert_eq!(empty[2].dense_kind(), Some(DenseSeqKind::F32));
+}
