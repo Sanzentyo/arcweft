@@ -182,3 +182,117 @@ fn callable_metadata_counts_reach_expression_row_and_keep_sticky_error() {
     );
     assert_eq!(meter.totals(), (0, 0));
 }
+
+fn image_with_types(
+    seeds: impl IntoIterator<Item = crate::plan::RuntimePlanTypeSeed>,
+) -> UnsealedRuntimePlanImage {
+    let mut builder = crate::plan::RuntimePlanBuilder::new();
+    builder.admit_type_batch(seeds, []).unwrap();
+    let owner = builder.task_coordinate_owner(0);
+    let inventory = builder
+        .prepare_inventory(RuntimeTaskPlanSealLimits::default())
+        .unwrap();
+    UnsealedRuntimePlanImage::new(inventory, owner, Box::new([]), None).unwrap()
+}
+#[test]
+fn common_codec_width_limit_precedes_unbound_default_and_hash_budget() {
+    use crate::entry::schema::{RuntimeCodecUse as Codec, RuntimeFieldCodecUse};
+    use crate::plan::{
+        RuntimePlanRecordField, RuntimePlanTypeProjection as Type, RuntimePlanTypeSeed as Seed,
+    };
+    let identity = |tag| crate::pattern::RuntimeSemanticTypeId::from_bytes([tag; 32]);
+    let image = image_with_types([
+        Seed::new(
+            identity(1),
+            Type::Record(Box::new([RuntimePlanRecordField::new(
+                "value",
+                identity(2),
+            )])),
+        )
+        .with_data_codec(Codec::Record {
+            name: "Wire".into(),
+            deny_unknown_fields: false,
+            fields: Box::new([RuntimeFieldCodecUse {
+                wire_name: "value".into(),
+                has_default: true,
+                default_program: Some(
+                    arcweft_id::runtime_program::RuntimePureProgramId::from_checked_digest(
+                        [99; 32],
+                    ),
+                ),
+                skip: false,
+                bytes_format: None,
+                value: Codec::Tuple {
+                    items: Box::new([Codec::Plain, Codec::Plain, Codec::Plain]),
+                },
+            }]),
+        }),
+        Seed::new(identity(2), Type::Tuple(Box::new([identity(3); 3]))),
+        Seed::new(identity(3), Type::Bool),
+    ]);
+    let mut meter = TaskSemanticMeter::new(0, 0);
+    assert!(matches!(
+        image.preflight(
+            RuntimeTaskPlanSealLimits {
+                max_children_per_row: 2,
+                ..RuntimeTaskPlanSealLimits::default()
+            },
+            &mut meter
+        ),
+        Err(RuntimeTaskPlanImageError::Children {
+            table: 0,
+            ordinal: 0,
+            actual: 3,
+            maximum: 2
+        })
+    ));
+    assert_eq!(meter.totals(), (0, 0));
+    assert!(meter.status().is_err());
+}
+#[test]
+fn lexical_scope_and_function_effect_lists_enter_ordered_type_preflight() {
+    use crate::plan::{
+        RuntimeFunctionTypeContract, RuntimePlanTypeProjection as Type,
+        RuntimePlanTypeSeed as Seed, RuntimeTypeBinder, RuntimeTypeScope,
+    };
+    let identity = |tag| crate::pattern::RuntimeSemanticTypeId::from_bytes([tag; 32]);
+    let mut scope = RuntimeTypeScope::root();
+    for _ in 0..3 {
+        scope = scope.enter(RuntimeTypeBinder::new(1, 0, 0)).unwrap();
+    }
+    let scope_image = image_with_types([Seed::new(identity(1), Type::Bool).with_scope(scope)]);
+    let effect_image = image_with_types([
+        Seed::new(
+            identity(1),
+            Type::Function {
+                contract: RuntimeFunctionTypeContract::monomorphic(
+                    crate::effect_row::EffectSet::from_labels(["fs.read", "fs.write", "io.read"])
+                        .unwrap(),
+                ),
+                parameters: Box::new([]),
+                result: identity(2),
+            },
+        ),
+        Seed::new(identity(2), Type::Bool),
+    ]);
+    for image in [&scope_image, &effect_image] {
+        let mut meter = TaskSemanticMeter::new(0, 0);
+        assert!(matches!(
+            image.preflight(
+                RuntimeTaskPlanSealLimits {
+                    max_children_per_row: 2,
+                    ..RuntimeTaskPlanSealLimits::default()
+                },
+                &mut meter
+            ),
+            Err(RuntimeTaskPlanImageError::Children {
+                table: 0,
+                ordinal: 0,
+                actual: 3,
+                maximum: 2
+            })
+        ));
+        assert_eq!(meter.totals(), (0, 0));
+        assert!(meter.status().is_err());
+    }
+}

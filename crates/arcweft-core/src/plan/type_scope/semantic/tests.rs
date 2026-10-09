@@ -142,3 +142,42 @@ fn scope_order_and_array_length_roles_have_exact_distinct_transcripts() {
         )
     );
 }
+
+#[test]
+fn function_contract_child_counts_preserve_predicate_before_invocation() {
+    let first = contract(&["fs.read", "fs.write"], 0);
+    let mut widths = Vec::new();
+    first
+        .try_visit_semantic_child_counts(&mut |count| {
+            widths.push(count);
+            Ok::<(), ()>(())
+        })
+        .unwrap();
+    assert_eq!(widths, [0, 0, 1, 2, 0, 0]);
+    let mut visited = Vec::new();
+    assert_eq!(
+        first.try_visit_semantic_child_counts(&mut |count| {
+            visited.push(count);
+            if count > 1 { Err(count) } else { Ok(()) }
+        }),
+        Err(2)
+    );
+    assert_eq!(visited, [0, 0, 1, 2]);
+}
+
+#[test]
+fn nullable_builtin_case_slots_are_counted_even_without_type_children() {
+    let projection = crate::plan::RuntimePlanTypeProjection::<crate::runtime_id::RuntimePlanTypeId>::BuiltinVariant {
+        owner: crate::pattern::RuntimeBuiltinVariantIdentity::Option,
+        cases: Box::new([None, None]),
+    };
+    assert_eq!(projection.child_count(), Some(0));
+    assert_eq!(
+        projection.try_visit_semantic_metadata_child_counts(&mut |count| if count > 1 {
+            Err(count)
+        } else {
+            Ok(())
+        }),
+        Err(2)
+    );
+}

@@ -8,6 +8,7 @@
 //! their own executable body and exact signature.
 
 mod semantic;
+mod traversal;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -222,39 +223,18 @@ impl RuntimeCodecUse {
             Self::Plain | Self::Bytes { .. } | Self::NominalRef => {}
         }
     }
-    pub(crate) fn children(&self) -> Vec<&Self> {
-        match self {
-            Self::Unary { item } | Self::Newtype { inner: item } => vec![item],
-            Self::Tuple { items }
-            | Self::RecordFields { fields: items }
-            | Self::Builtin { payloads: items }
-            | Self::Choice {
-                alternatives: items,
-            }
-            | Self::Opaque { arguments: items } => items.iter().collect(),
-            Self::Map { key, value } => vec![key, value],
-            Self::Record { fields, .. } => fields.iter().map(|field| &field.value).collect(),
-            Self::Enum { cases, .. } => cases
-                .iter()
-                .filter_map(|case| case.payload.as_ref())
-                .collect(),
-            Self::Plain | Self::Bytes { .. } | Self::NominalRef => vec![],
-        }
+    pub(crate) fn children(&self) -> impl Iterator<Item = &Self> {
+        traversal::CodecChildren::new(self).filter_map(|child| child.node())
     }
 
     pub(crate) fn walk<E>(
         &self,
         mut visit: impl FnMut(&Self, usize) -> Result<(), E>,
     ) -> Result<(), E> {
-        let mut pending = vec![(self, 0_usize)];
-        while let Some((node, depth)) = pending.pop() {
-            visit(node, depth)?;
-            pending.extend(
-                node.children()
-                    .into_iter()
-                    .rev()
-                    .map(|child| (child, depth + 1)),
-            );
+        for event in traversal::CodecEvents::new(self) {
+            if let traversal::CodecEvent::Node { node, depth } = event {
+                visit(node, depth)?;
+            }
         }
         Ok(())
     }
@@ -574,73 +554,46 @@ pub(super) fn encode<S: super::CanonicalSink + ?Sized>(
     root: &RuntimeCodecUse,
     writer: &mut super::CanonicalWriter<'_, S>,
 ) -> Result<(), RuntimeSchemaError> {
-    enum Work<'a> {
-        Node(&'a RuntimeCodecUse),
-        Nodes(std::slice::Iter<'a, RuntimeCodecUse>),
-        Fields(std::slice::Iter<'a, RuntimeFieldCodecUse>),
-        Cases(std::slice::Iter<'a, RuntimeVariantCodecUse>),
-    }
-    let mut work = vec![Work::Node(root)];
-    while let Some(next) = work.pop() {
-        match next {
-            Work::Nodes(mut items) => {
-                if let Some(item) = items.next() {
-                    work.push(Work::Nodes(items));
-                    work.push(Work::Node(item));
-                }
+    for event in traversal::CodecEvents::new(root) {
+        match event {
+            traversal::CodecEvent::Item { .. } => {}
+            traversal::CodecEvent::Field { field, .. } => {
+                writer.string(&field.wire_name)?;
+                writer.u8(u8::from(field.has_default))?;
+                writer.option(field.default_program.as_ref(), |writer, program| {
+                    writer.extend(&program.as_bytes())
+                })?;
+                writer.u8(u8::from(field.skip))?;
+                writer.option(field.bytes_format.as_ref(), |writer, format| {
+                    writer.u8(format.tag())
+                })?;
             }
-            Work::Fields(mut fields) => {
-                if let Some(field) = fields.next() {
-                    writer.string(&field.wire_name)?;
-                    writer.u8(u8::from(field.has_default))?;
-                    writer.option(field.default_program.as_ref(), |writer, program| {
-                        writer.extend(&program.as_bytes())
-                    })?;
-                    writer.u8(u8::from(field.skip))?;
-                    writer.option(field.bytes_format.as_ref(), |writer, format| {
-                        writer.u8(format.tag())
-                    })?;
-                    work.push(Work::Fields(fields));
-                    work.push(Work::Node(&field.value));
-                }
+            traversal::CodecEvent::Case { case, .. } => {
+                writer.string(&case.wire_name)?;
+                writer.option(case.discriminant.as_ref(), |writer, value| {
+                    writer.i128(*value)
+                })?;
+                writer.u8(u8::from(case.payload.is_some()))?;
             }
-            Work::Cases(mut cases) => {
-                if let Some(case) = cases.next() {
-                    writer.string(&case.wire_name)?;
-                    writer.option(case.discriminant.as_ref(), |writer, value| {
-                        writer.i128(*value)
-                    })?;
-                    writer.u8(u8::from(case.payload.is_some()))?;
-                    work.push(Work::Cases(cases));
-                    if let Some(payload) = &case.payload {
-                        work.push(Work::Node(payload));
-                    }
-                }
-            }
-            Work::Node(node) => match node {
+            traversal::CodecEvent::Node { node, .. } => match node {
                 RuntimeCodecUse::Plain => writer.u8(0)?,
                 RuntimeCodecUse::Bytes { format } => {
                     writer.u8(1)?;
                     writer.u8(format.tag())?;
                 }
-                RuntimeCodecUse::Unary { item } => {
+                RuntimeCodecUse::Unary { .. } => {
                     writer.u8(2)?;
-                    work.push(Work::Node(item));
                 }
                 RuntimeCodecUse::Tuple { items } => {
                     writer.u8(3)?;
                     writer.len(items.len())?;
-                    work.push(Work::Nodes(items.iter()));
                 }
-                RuntimeCodecUse::Map { key, value } => {
+                RuntimeCodecUse::Map { .. } => {
                     writer.u8(4)?;
-                    work.push(Work::Node(value));
-                    work.push(Work::Node(key));
                 }
                 RuntimeCodecUse::RecordFields { fields } => {
                     writer.u8(5)?;
                     writer.len(fields.len())?;
-                    work.push(Work::Nodes(fields.iter()));
                 }
                 RuntimeCodecUse::Record {
                     name,
@@ -651,7 +604,6 @@ pub(super) fn encode<S: super::CanonicalSink + ?Sized>(
                     writer.string(name)?;
                     writer.u8(u8::from(*deny_unknown_fields))?;
                     writer.len(fields.len())?;
-                    work.push(Work::Fields(fields.iter()));
                 }
                 RuntimeCodecUse::Enum {
                     name,
@@ -675,27 +627,22 @@ pub(super) fn encode<S: super::CanonicalSink + ?Sized>(
                     }
                     writer.option(repr.as_ref(), |writer, repr| writer.u8(repr.tag()))?;
                     writer.len(cases.len())?;
-                    work.push(Work::Cases(cases.iter()));
                 }
                 RuntimeCodecUse::Builtin { payloads } => {
                     writer.u8(8)?;
                     writer.len(payloads.len())?;
-                    work.push(Work::Nodes(payloads.iter()));
                 }
                 RuntimeCodecUse::Choice { alternatives } => {
                     writer.u8(9)?;
                     writer.len(alternatives.len())?;
-                    work.push(Work::Nodes(alternatives.iter()));
                 }
                 RuntimeCodecUse::Opaque { arguments } => {
                     writer.u8(10)?;
                     writer.len(arguments.len())?;
-                    work.push(Work::Nodes(arguments.iter()));
                 }
                 RuntimeCodecUse::NominalRef => writer.u8(11)?,
-                RuntimeCodecUse::Newtype { inner } => {
+                RuntimeCodecUse::Newtype { .. } => {
                     writer.u8(12)?;
-                    work.push(Work::Node(inner));
                 }
             },
         }

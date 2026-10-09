@@ -472,3 +472,29 @@ fn equal_rows_from_another_inventory_cannot_supply_an_owner_digest() {
         );
     }
 }
+
+#[test]
+fn nominal_occurrence_codec_children_are_admitted_by_common_count_preflight() {
+    let inventory = record_inventory(Shape::Record, &[true], Some("wire"));
+    let domain = inventory.nominal_record_domains().domains().next().unwrap();
+    assert!(domain.data_codec().is_some());
+    let owner = RuntimePlanBuilder::new().task_coordinate_owner(0);
+    let image = super::super::task_image::UnsealedRuntimePlanImage::new(
+        inventory,
+        owner,
+        Box::new([]),
+        None,
+    )
+    .unwrap();
+    let mut meter = TaskSemanticMeter::new(0, 10_000);
+    image
+        .preflight(
+            RuntimeTaskPlanSealLimits {
+                max_children_per_row: 1,
+                ..RuntimeTaskPlanSealLimits::default()
+            },
+            &mut meter,
+        )
+        .unwrap();
+    assert_eq!(meter.totals(), (0, 0));
+}

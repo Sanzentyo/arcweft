@@ -6,6 +6,58 @@ use crate::runtime_id::RuntimePlanTypeId;
 use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticEncodingError};
 
 impl<R> RuntimePlanTypeProjection<R> {
+    pub(crate) fn try_visit_semantic_metadata_child_counts<E>(
+        &self,
+        visitor: &mut impl FnMut(usize) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match self {
+            Self::Function {
+                contract,
+                parameters,
+                ..
+            } => {
+                contract.try_visit_semantic_child_counts(visitor)?;
+                visitor(parameters.len())?;
+            }
+            Self::BuiltinVariant { cases, .. } => visitor(cases.len())?,
+            Self::BoundType(..)
+            | Self::Never
+            | Self::Unit
+            | Self::Bool
+            | Self::Signed(..)
+            | Self::Unsigned(..)
+            | Self::F32
+            | Self::F64
+            | Self::String
+            | Self::Color
+            | Self::Char
+            | Self::Bytes
+            | Self::Duration
+            | Self::Progress
+            | Self::EntityReference
+            | Self::AgentValue
+            | Self::Range(..)
+            | Self::Iterator(..)
+            | Self::Sequence { .. }
+            | Self::Array { .. }
+            | Self::Map { .. }
+            | Self::Need(..)
+            | Self::Stream { .. }
+            | Self::Result { .. }
+            | Self::Option { .. }
+            | Self::ThreadHandle(..)
+            | Self::Shared(..)
+            | Self::Reference(..)
+            | Self::Nominal { .. }
+            | Self::Tuple(..)
+            | Self::Record(..)
+            | Self::Choice(..)
+            | Self::Opaque { .. }
+            | Self::Agent(..) => {}
+        }
+        Ok(())
+    }
+
     pub(crate) const fn executable_semantic_kind(&self) -> u8 {
         match self {
             Self::BoundType(..) => 0,

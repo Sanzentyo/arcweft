@@ -334,6 +334,13 @@ impl<V: Clone + Ord> EffectFormula<V> {
 }
 
 impl<V: Clone + Ord> EffectPredicate<V> {
+    pub(crate) fn try_visit_semantic_child_counts<E>(
+        &self,
+        visitor: &mut impl FnMut(usize) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.0.try_visit_semantic_child_counts(visitor)
+    }
+
     /// Simultaneously substitutes each distinct row reference once. A caller
     /// can reject an unknown source row through its fallible formula conversion.
     pub fn try_substitute_variables<C: DecisionControl, R>(

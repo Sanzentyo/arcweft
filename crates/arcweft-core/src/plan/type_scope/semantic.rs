@@ -14,6 +14,13 @@ impl RuntimeTypeBinder {
 }
 
 impl RuntimeTypeScope {
+    pub(crate) fn try_visit_semantic_child_counts<E>(
+        &self,
+        visitor: &mut impl FnMut(usize) -> Result<(), E>,
+    ) -> Result<(), E> {
+        visitor(self.binders().len())
+    }
+
     pub(crate) fn encode_semantic_scope(
         &self,
         encoder: &mut TaskSemanticEncoder<'_>,
@@ -47,6 +54,14 @@ impl RuntimeArrayLength {
 }
 
 impl RuntimeFunctionTypeContract {
+    pub(crate) fn try_visit_semantic_child_counts<E>(
+        &self,
+        visitor: &mut impl FnMut(usize) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.predicate().try_visit_semantic_child_counts(visitor)?;
+        self.invocation().try_visit_semantic_child_counts(visitor)
+    }
+
     pub(crate) fn encode_semantic_contract(
         &self,
         encoder: &mut TaskSemanticEncoder<'_>,

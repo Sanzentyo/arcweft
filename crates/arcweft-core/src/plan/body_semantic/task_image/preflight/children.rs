@@ -190,11 +190,18 @@ impl UnsealedRuntimePlanImage {
                 maximum: limits.max_children_per_row,
                 meter,
             };
+            ty.scope()
+                .try_visit_semantic_child_counts(&mut |count| check.count(count))?;
+            ty.projection()
+                .try_visit_semantic_metadata_child_counts(&mut |count| check.count(count))?;
             let count = ty.projection().child_count().ok_or_else(|| {
                 check.meter.reject_owner();
                 crate::task::semantic::TaskSemanticEncodingError::ArithmeticOverflow
             })?;
             check.count(count)?;
+            if let Some(codec) = ty.data_codec() {
+                codec.try_visit_semantic_child_counts(&mut |count| check.count(count))?;
+            }
         }
         // E1 scalar source/storage/type roles do not descend into bodies.
         // A Stream owner contributes its canonical path list when present.
@@ -213,22 +220,28 @@ impl UnsealedRuntimePlanImage {
             }
         }
         for (ordinal, row) in plan.nominal_record_domains().domains().enumerate() {
-            Children {
+            let mut check = Children {
                 table: 2,
                 ordinal,
                 maximum: limits.max_children_per_row,
                 meter,
+            };
+            check.count(row.fields().len())?;
+            if let Some(codec) = row.data_codec() {
+                codec.try_visit_semantic_child_counts(&mut |count| check.count(count))?;
             }
-            .count(row.fields().len())?;
         }
         for (ordinal, row) in plan.variant_domains().domains().enumerate() {
-            Children {
+            let mut check = Children {
                 table: 3,
                 ordinal,
                 maximum: limits.max_children_per_row,
                 meter,
+            };
+            check.count(row.cases().len())?;
+            if let Some(codec) = row.data_codec() {
+                codec.try_visit_semantic_child_counts(&mut |count| check.count(count))?;
             }
-            .count(row.cases().len())?;
         }
         Ok(())
     }

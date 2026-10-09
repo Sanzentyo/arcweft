@@ -563,8 +563,7 @@ impl<'a> RuntimeProgramDataShapes<'a> {
                 Err(mismatch())
             };
         }
-        let policies = policy.children();
-        if children.len() != policies.len() {
+        if children.len() != policy.children().count() {
             return Err(mismatch());
         }
         let tuple_payload = matches!(policy, RuntimeCodecUse::Builtin { .. })
@@ -573,7 +572,7 @@ impl<'a> RuntimeProgramDataShapes<'a> {
                 .is_some_and(|owner| owner != RuntimeBuiltinVariantIdentity::Option);
         Ok(children
             .into_iter()
-            .zip(policies)
+            .zip(policy.children())
             .map(|(row, policy)| {
                 (
                     row,
