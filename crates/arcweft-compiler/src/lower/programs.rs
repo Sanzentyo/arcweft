@@ -1552,4 +1552,96 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn source_entity_reference_fields_execute_through_the_accepted_native_and_awbc_root() {
+        let compiled = crate::source::compile_source(concat!(
+            "pub character alice { display = \"Alice\" }\n",
+            "pub fn root() -> (String, String, String) effects {} {\n",
+            "    let reference = @character.alice\n",
+            "    (reference.id, reference.family, reference.name)\n",
+            "}\n",
+            "flow main() -> String { return \"ok\" }\n",
+        ))
+        .unwrap();
+        let lease = &compiled.analysis;
+        let declaration = lease
+            .final_analysis()
+            .hir_topology()
+            .modules()
+            .iter()
+            .flat_map(|module| module.entries())
+            .filter_map(|entry| entry.body())
+            .find(|body| body.declaration().name() == "root")
+            .unwrap()
+            .declaration()
+            .clone();
+        let selected = lease
+            .compile_deterministic_program(
+                CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
+                    declaration,
+                    role: arcweft_lang_hir::project::HirDeclarationBodyRootRole::FunctionBody,
+                }),
+                None,
+                &ProjectInstantiationControl::default(),
+            )
+            .unwrap();
+        let expected = RuntimeValue::Tuple(vec![
+            RuntimeValue::String("character.alice".into()),
+            RuntimeValue::String("character".into()),
+            RuntimeValue::String("alice".into()),
+        ]);
+        let mut native = arcweft_core::engine::Engine::for_program_invocation(
+            Arc::clone(selected.plan()),
+            selected.program(),
+            Vec::new(),
+        )
+        .unwrap();
+        let mut options = arcweft_core::step::RuntimeStepOptions::default();
+        options.budget.max_ops = 1;
+        for _ in 0..32 {
+            let step = native.step(arcweft_core::step::RuntimeStepInput::default(), options);
+            assert!(
+                step.output.diagnostics.is_empty(),
+                "{:?}",
+                step.output.diagnostics
+            );
+            if matches!(
+                native.fiber().status,
+                arcweft_core::engine::FlowFiberStatus::Done(_)
+            ) {
+                break;
+            }
+        }
+        assert_eq!(
+            native.take_program_result().unwrap(),
+            Some((selected.program(), expected.clone()))
+        );
+        let lowered = arcweft_runtime_plan::awbc_lower::AwbcLowerer::new(
+            selected.plan(),
+            &selected.lowering_report().dialogue_content_catalog,
+            "reference-fields.arcw",
+        )
+        .lower()
+        .unwrap();
+        assert!(lowered.diagnostics.is_empty());
+        let encoded = lowered.program.encode_canonical().unwrap();
+        let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+            &encoded,
+            arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+        )
+        .unwrap();
+        assert_eq!(decoded.encode_canonical().unwrap(), encoded);
+        let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
+        assert_eq!(
+            arcweft_core::awbc::product_step::evaluate_pure_program_with_backend(
+                &Arc::new(decoded),
+                selected.program(),
+                &[],
+                &mut backend,
+            )
+            .unwrap(),
+            expected
+        );
+    }
 }

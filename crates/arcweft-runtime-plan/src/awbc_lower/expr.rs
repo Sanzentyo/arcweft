@@ -519,17 +519,40 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
             }
             RuntimeExprKind::Field { target, field } => {
                 let target_ty = admitted_plan_type(self.inventory, self.plan, target.ty());
-                let target = self.lower(target);
+                let target = match target {
+                    arcweft_core::value::RuntimeFieldTarget::Value(value) => {
+                        arcweft_core::awbc::schema::AwbcFieldTarget::Value(self.lower(value))
+                    }
+                    arcweft_core::value::RuntimeFieldTarget::Inspect { place, .. } => {
+                        arcweft_core::awbc::schema::AwbcFieldTarget::Inspect(
+                            self.lower_mutable_place(place, "field inspection"),
+                        )
+                    }
+                };
                 let field_type = admitted_plan_type(self.inventory, self.plan, expr.ty());
                 let dst = self.frame.temp(field_type);
                 match field {
                     RuntimeFieldProjection::Nominal(field) => {
-                        self.inventory
-                            .push_instruction(AwbcInstruction::ProjectRecord {
-                                dst,
-                                target,
-                                ordinal: field.zero_based(),
-                            });
+                        let instruction = match target {
+                            arcweft_core::awbc::schema::AwbcFieldTarget::Value(target) => {
+                                AwbcInstruction::ProjectRecord {
+                                    dst,
+                                    target,
+                                    ordinal: field.zero_based(),
+                                }
+                            }
+                            arcweft_core::awbc::schema::AwbcFieldTarget::Inspect(place) => {
+                                let mut fields = place.fields().to_vec();
+                                fields.push(*field);
+                                AwbcInstruction::ReadPlace {
+                                    dst,
+                                    root: place.base(),
+                                    fields,
+                                    mode: arcweft_core::awbc::schema::AwbcPlaceReadMode::Copy,
+                                }
+                            }
+                        };
+                        self.inventory.push_instruction(instruction);
                     }
                     RuntimeFieldProjection::OpaqueRecord { field, .. } => {
                         self.inventory

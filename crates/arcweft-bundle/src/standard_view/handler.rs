@@ -115,7 +115,7 @@ fn install_dialogue_handler_rows(candidate: &mut AwbcProgram) -> Result<(), Stan
     let instruction_start = table_index(candidate.instructions.len(), "instructions")?;
     candidate.instructions.push(AwbcInstruction::ProjectField {
         dst: AwbcRegisterId(1),
-        target: AwbcRegisterId(0),
+        target: AwbcRegisterId(0).into(),
         field: AwbcFieldProjection::OpaqueRecord {
             owner: view_type,
             field: RuntimeDialogueViewField::PrimaryAction.ordinal(),

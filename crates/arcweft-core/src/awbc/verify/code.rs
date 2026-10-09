@@ -1388,13 +1388,30 @@ fn apply_instruction(
         AwbcInstruction::ProjectField { dst, target, field } => match field {
             crate::awbc::schema::AwbcFieldProjection::Named(field) => {
                 check_string(program, *field, &at)?;
-                let target_ty = read_register(verifier, function, block, *target, state)?;
+                let target_ty = match target {
+                    crate::awbc::schema::AwbcFieldTarget::Value(value) => {
+                        read_register(verifier, function, block, *value, state)?
+                    }
+                    crate::awbc::schema::AwbcFieldTarget::Inspect(place) => read_place_type(
+                        verifier,
+                        function,
+                        block,
+                        place.base(),
+                        place.fields(),
+                        state,
+                    )?,
+                };
                 let dst_ty = register_type(verifier, function, block, *dst)?;
+                if matches!(target, crate::awbc::schema::AwbcFieldTarget::Inspect(_))
+                    && (!runtime_type_permits_copy(program, dst_ty, 0) || target.base() == *dst)
+                {
+                    return invalid_type(
+                        &at,
+                        "field inspection requires a distinct Copy destination",
+                    );
+                }
                 match runtime_shape(program, target_ty) {
-                    Some(
-                        AwbcRuntimeTypeShape::Record { fields, .. }
-                        | AwbcRuntimeTypeShape::NominalRecord { fields, .. },
-                    ) => {
+                    Some(AwbcRuntimeTypeShape::Record { fields, .. }) => {
                         let Some(field_layout) = fields
                             .iter()
                             .find(|candidate| candidate.name == Some(*field))
@@ -1431,6 +1448,29 @@ fn apply_instruction(
                         };
                         if !destination_matches {
                             return invalid_type(&at, "Progress field projection destination");
+                        }
+                    }
+                    Some(AwbcRuntimeTypeShape::EntityRef) => {
+                        let label = program
+                            .strings
+                            .get(field.index())
+                            .map(String::as_str)
+                            .unwrap_or_default();
+                        if crate::value::RuntimeEntityReferenceField::from_label(label).is_none() {
+                            return Err(AwbcVerifyError::InvalidInvariant {
+                                at,
+                                message: "projected entity-reference field does not exist"
+                                    .to_owned(),
+                            });
+                        }
+                        if !matches!(
+                            runtime_shape(program, dst_ty),
+                            Some(AwbcRuntimeTypeShape::String)
+                        ) {
+                            return invalid_type(
+                                &at,
+                                "entity-reference field projection destination",
+                            );
                         }
                     }
                     Some(AwbcRuntimeTypeShape::Agent(agent)) => {
@@ -1488,7 +1528,19 @@ fn apply_instruction(
                     "runtime_types",
                     &at,
                 )?;
-                let target_ty = read_register(verifier, function, block, *target, state)?;
+                let target_ty = match target {
+                    crate::awbc::schema::AwbcFieldTarget::Value(value) => {
+                        read_register(verifier, function, block, *value, state)?
+                    }
+                    crate::awbc::schema::AwbcFieldTarget::Inspect(place) => read_place_type(
+                        verifier,
+                        function,
+                        block,
+                        place.base(),
+                        place.fields(),
+                        state,
+                    )?,
+                };
                 if target_ty != *owner {
                     return type_mismatch(&at, *owner, target_ty);
                 }
@@ -1506,6 +1558,14 @@ fn apply_instruction(
                 let dst_ty = register_type(verifier, function, block, *dst)?;
                 if dst_ty != *field_type {
                     return type_mismatch(&at, *field_type, dst_ty);
+                }
+                if matches!(target, crate::awbc::schema::AwbcFieldTarget::Inspect(_))
+                    && (!runtime_type_permits_copy(program, dst_ty, 0) || target.base() == *dst)
+                {
+                    return invalid_type(
+                        &at,
+                        "field inspection requires a distinct Copy destination",
+                    );
                 }
                 write_register(verifier, function, block, *dst, state)?;
             }
@@ -2475,29 +2535,39 @@ fn apply_instruction_copy_and_move_effects(
             output_proof = Some(proof);
         }
         AwbcInstruction::ProjectField { dst, target, field } => {
-            consumed.push(*target);
+            if let crate::awbc::schema::AwbcFieldTarget::Value(value) = target {
+                consumed.push(*value);
+            }
+            let target_register = target.base();
             outputs.push(*dst);
             let dst_ty = register_type(verifier, function, block, *dst)?;
-            output_proof = Some(match field {
-                crate::awbc::schema::AwbcFieldProjection::Named(field) => {
-                    let target_ty = register_type(verifier, function, block, *target)?;
-                    let named_index = match runtime_shape(program, target_ty) {
-                        Some(
-                            AwbcRuntimeTypeShape::Record { fields, .. }
-                            | AwbcRuntimeTypeShape::NominalRecord { fields, .. },
-                        ) => fields
-                            .iter()
-                            .position(|candidate| candidate.name == Some(*field)),
-                        _ => None,
-                    };
-                    named_index
-                        .and_then(|ordinal| state.copy_proofs[target.index()].element(ordinal))
-                        .unwrap_or_else(|| base_copy_proof(program, dst_ty))
-                }
-                crate::awbc::schema::AwbcFieldProjection::OpaqueRecord { field_type, .. } => {
-                    base_copy_proof(program, *field_type)
-                }
-            });
+            output_proof = Some(
+                if matches!(target, crate::awbc::schema::AwbcFieldTarget::Inspect(_)) {
+                    base_copy_proof(program, dst_ty)
+                } else {
+                    match field {
+                        crate::awbc::schema::AwbcFieldProjection::Named(field) => {
+                            let target_ty =
+                                register_type(verifier, function, block, target_register)?;
+                            let named_index = match runtime_shape(program, target_ty) {
+                                Some(AwbcRuntimeTypeShape::Record { fields, .. }) => fields
+                                    .iter()
+                                    .position(|candidate| candidate.name == Some(*field)),
+                                _ => None,
+                            };
+                            named_index
+                                .and_then(|ordinal| {
+                                    state.copy_proofs[target_register.index()].element(ordinal)
+                                })
+                                .unwrap_or_else(|| base_copy_proof(program, dst_ty))
+                        }
+                        crate::awbc::schema::AwbcFieldProjection::OpaqueRecord {
+                            field_type,
+                            ..
+                        } => base_copy_proof(program, *field_type),
+                    }
+                },
+            );
         }
         AwbcInstruction::Unary { dst, src, .. } => {
             consumed.push(*src);

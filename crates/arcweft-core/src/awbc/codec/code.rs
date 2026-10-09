@@ -30,6 +30,34 @@ use arcweft_interaction_model::dialogue::{
     CharacterDialoguePatchField, CharacterDialoguePatchOperation,
 };
 
+impl Wire for crate::awbc::schema::AwbcFieldTarget {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::Value(value) => {
+                writer.write_u8(0);
+                value.write_wire(writer)?;
+            }
+            Self::Inspect(place) => {
+                writer.write_u8(1);
+                place.write_wire(writer)?;
+            }
+        }
+        Ok(())
+    }
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => Ok(Self::Value(AwbcRegisterId::read_wire(reader)?)),
+            1 => Ok(Self::Inspect(AwbcMutablePlace::read_wire(reader)?)),
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "field target",
+                tag,
+                offset,
+            }),
+        }
+    }
+}
+
 impl Wire for AwbcMutablePlace {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         match self {
@@ -1243,7 +1271,7 @@ impl Wire for AwbcInstruction {
             },
             AwbcOpcode::ProjectField => Self::ProjectField {
                 dst: AwbcRegisterId::read_wire(reader)?,
-                target: AwbcRegisterId::read_wire(reader)?,
+                target: crate::awbc::schema::AwbcFieldTarget::read_wire(reader)?,
                 field: AwbcFieldProjection::read_wire(reader)?,
             },
             AwbcOpcode::ReadPlace => Self::ReadPlace {

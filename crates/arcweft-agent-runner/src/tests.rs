@@ -1410,7 +1410,8 @@ fn capture_binding_program_with_budget(budget: AgentBudget) -> AwbcProgram {
                                     shot,
                                     RuntimeLocalReadMode::Move,
                                 )),
-                            )),
+                            ))
+                            .into(),
                             field: RuntimeFieldProjectionSeed::Agent(
                                 RuntimeAgentField::CaptureReferenceUri,
                             ),
@@ -1500,7 +1501,8 @@ fn read_resource_binding_program() -> AwbcProgram {
                                     resource,
                                     RuntimeLocalReadMode::Move,
                                 )),
-                            )),
+                            ))
+                            .into(),
                             field: RuntimeFieldProjectionSeed::Agent(
                                 RuntimeAgentField::ResourceBody,
                             ),
@@ -1599,7 +1601,8 @@ fn single_response_field_program(request: SingleResponseFieldRequest) -> AwbcPro
                                     response,
                                     RuntimeLocalReadMode::Move,
                                 )),
-                            )),
+                            ))
+                            .into(),
                             field: RuntimeFieldProjectionSeed::Agent(field),
                         },
                     )),

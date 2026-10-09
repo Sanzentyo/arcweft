@@ -5177,7 +5177,7 @@ fn verifier_rejects_incorrect_agent_field_destination_type() {
     };
     program.instructions = vec![AwbcInstruction::ProjectField {
         dst: AwbcRegisterId(1),
-        target: AwbcRegisterId(0),
+        target: AwbcRegisterId(0).into(),
         field: AwbcFieldProjection::Named(AwbcStringId(1)),
     }];
     program.blocks[0].instructions = AwbcTableRange::new(0, 1);
@@ -5255,7 +5255,7 @@ fn optional_string_field_program(
     };
     program.instructions = vec![AwbcInstruction::ProjectField {
         dst: AwbcRegisterId(1),
-        target: AwbcRegisterId(0),
+        target: AwbcRegisterId(0).into(),
         field: AwbcFieldProjection::Named(AwbcStringId(1)),
     }];
     program.blocks[0].instructions = AwbcTableRange::new(0, 1);
@@ -8423,4 +8423,131 @@ fn manual_awbc_capture_origin(declaration: &str) -> crate::plan::RuntimeLocalOri
     hash.update(b"arcweft.manual-awbc-capture.v1\0");
     hash.update(declaration.as_bytes());
     crate::plan::RuntimeLocalOrigin::Binding(*hash.finalize().as_bytes())
+}
+
+#[test]
+fn awbc_field_inspection_preserves_owner_across_budget_snapshot_and_later_move() {
+    let mut program = optional_string_field_program(
+        AwbcRuntimeTypeShape::Progress,
+        "label",
+        crate::plan::RuntimeFunctionParameterPassing::Value,
+    );
+    let AwbcInstruction::ProjectField { target, .. } = &mut program.instructions[0] else {
+        unreachable!()
+    };
+    *target = super::schema::AwbcFieldTarget::Inspect(AwbcMutablePlace::Local(AwbcRegisterId(0)));
+    program.instructions.push(program.instructions[0].clone());
+    program.frame_layouts[0].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: AwbcTypeId(0),
+        role: AwbcFrameSlotRole::Temporary,
+        scope_depth: 0,
+    });
+    program.instructions.push(AwbcInstruction::Move {
+        dst: AwbcRegisterId(2),
+        src: AwbcRegisterId(0),
+    });
+    program.blocks[0].instructions = AwbcTableRange::new(0, 3);
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .unwrap();
+    let encoded = program.encode_canonical().unwrap();
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default()).unwrap();
+    assert_eq!(decoded.encode_canonical().unwrap(), encoded);
+
+    let value = RuntimeValue::Progress(
+        crate::value::Progress::new(0.5)
+            .unwrap()
+            .with_label("working"),
+    );
+    let mut hot = FiberState::for_entry(&decoded, AwbcEntryId(0), 1, 64).unwrap();
+    hot.bind_function_argument_values(&decoded, &[value.clone()])
+        .unwrap();
+    super::vm::step(
+        &decoded,
+        &mut hot,
+        super::vm::VmStepOptions {
+            max_instructions: 1,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        hot.active_frame()
+            .unwrap()
+            .register(AwbcRegisterId(0))
+            .unwrap(),
+        &value
+    );
+    let snapshot = AwbcFiberStateSnapshot::from_live(&hot).unwrap();
+    let mut cold = snapshot
+        .into_live_for_program(&RuntimeProgramOwner::Awbc(std::sync::Arc::new(
+            decoded.clone(),
+        )))
+        .unwrap();
+    for fiber in [&mut hot, &mut cold] {
+        super::vm::step(
+            &decoded,
+            fiber,
+            super::vm::VmStepOptions {
+                max_instructions: 1,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            fiber
+                .active_frame()
+                .unwrap()
+                .register(AwbcRegisterId(0))
+                .unwrap(),
+            &value
+        );
+        assert_eq!(
+            fiber
+                .active_frame()
+                .unwrap()
+                .register(AwbcRegisterId(1))
+                .unwrap(),
+            &RuntimeValue::option_some(RuntimeValue::String("working".into()))
+        );
+        super::vm::step(
+            &decoded,
+            fiber,
+            super::vm::VmStepOptions {
+                max_instructions: 1,
+            },
+        )
+        .unwrap();
+        assert!(
+            fiber
+                .active_frame()
+                .unwrap()
+                .register(AwbcRegisterId(0))
+                .is_err()
+        );
+        assert_eq!(
+            fiber
+                .active_frame()
+                .unwrap()
+                .register(AwbcRegisterId(2))
+                .unwrap(),
+            &value
+        );
+    }
+
+    let mut moved = program.clone();
+    moved.instructions.swap(0, 2);
+    assert!(matches!(
+        moved.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::UninitializedRegister { .. })
+    ));
+    let mut same_destination = program;
+    let AwbcInstruction::ProjectField { target, .. } = &mut same_destination.instructions[0] else {
+        unreachable!()
+    };
+    *target = super::schema::AwbcFieldTarget::Inspect(AwbcMutablePlace::Local(AwbcRegisterId(1)));
+    assert!(
+        same_destination
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .is_err()
+    );
 }

@@ -1240,6 +1240,21 @@ impl PreparedExpressionFact {
     /// A direct nominal field place reads its base through the selected field
     /// expression. The retained path child is source/type evidence, not a
     /// second transfer of that same local.
+    pub(crate) fn inspection_receiver(&self) -> Option<super::CheckedFieldReceiver> {
+        match self {
+            Self::Complete(value) => value.inspection_receiver(),
+            Self::CompileTimeScalar(value) => value.original().inspection_receiver(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn inspection_root(
+        &self,
+        source: impl Fn(ExprId) -> Option<super::CheckedFieldReceiver>,
+    ) -> Option<LocalId> {
+        self.inspection_receiver()?.local_root(source)
+    }
+
     pub(crate) fn local_place_source(&self) -> Option<super::CheckedFieldReceiver> {
         match self {
             Self::ProjectField(field) => Some(field.receiver()),

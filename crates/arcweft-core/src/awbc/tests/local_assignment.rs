@@ -888,3 +888,216 @@ fn manual_awbc_formal_identity(declaration: &str) -> crate::plan::RuntimeFunctio
         *hash.finalize().as_bytes(),
     )
 }
+
+#[test]
+fn nominal_copy_child_after_affine_sibling_move_uses_its_complete_awbc_place() {
+    let issued = crate::tests::program_custody::issued_program_handle();
+    let handle_program = crate::tests::program_custody::awbc_handle_program(issued.program);
+    let mut program = minimal_program();
+    program.strings = handle_program.strings.clone();
+    let main = AwbcStringId(u32::try_from(program.strings.len()).unwrap());
+    program.strings.push("main".into());
+    program.functions[0].public_id = Some(main);
+    program.entries[0].public_id = main;
+    let nominal = AwbcStringId(u32::try_from(program.strings.len()).unwrap());
+    program.strings.extend([
+        "fixture.AffineInspectedRecord".into(),
+        "uri".into(),
+        "body".into(),
+    ]);
+    let field =
+        |ordinal| crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).unwrap();
+    program.runtime_types = vec![
+        runtime_type(1, AwbcRuntimeTypeShape::String),
+        runtime_type(2, AwbcRuntimeTypeShape::Iterator(AwbcTypeId(3))),
+        runtime_type(
+            3,
+            AwbcRuntimeTypeShape::NominalRecord {
+                public_id: nominal,
+                layout: [3; 32],
+                arguments: Vec::new(),
+                shape: crate::entry::RuntimeNominalRecordShape::Record,
+                fields: vec![
+                    AwbcRecordField {
+                        field: field(0),
+                        name: Some(AwbcStringId(nominal.0 + 1)),
+                        ty: AwbcTypeId(0),
+                    },
+                    AwbcRecordField {
+                        field: field(1),
+                        name: Some(AwbcStringId(nominal.0 + 2)),
+                        ty: AwbcTypeId(1),
+                    },
+                ],
+            },
+        ),
+        handle_program.runtime_types[0].clone(),
+    ];
+    program.signatures[0].params = vec![AwbcTypeId(2)];
+    program.signatures[0].result = Some(AwbcTypeId(1));
+    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::parameter(
+        manual_awbc_formal_identity("arcweft-core.fixture.nominal_partial_inspection.owner"),
+        0,
+        crate::plan::RuntimeFunctionParameterPassing::Affine,
+    )];
+    program.frame_layouts[0].slots = [2, 1, 0, 0]
+        .into_iter()
+        .enumerate()
+        .map(|(index, ty)| AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(ty),
+            role: if index == 0 {
+                AwbcFrameSlotRole::Parameter
+            } else {
+                AwbcFrameSlotRole::Temporary
+            },
+            scope_depth: 0,
+        })
+        .collect();
+    program.instructions = vec![
+        AwbcInstruction::ReadPlace {
+            dst: AwbcRegisterId(1),
+            root: AwbcRegisterId(0),
+            fields: vec![field(1)],
+            mode: AwbcPlaceReadMode::Move,
+        },
+        AwbcInstruction::ReadPlace {
+            dst: AwbcRegisterId(2),
+            root: AwbcRegisterId(0),
+            fields: vec![field(0)],
+            mode: AwbcPlaceReadMode::Copy,
+        },
+        AwbcInstruction::ReadPlace {
+            dst: AwbcRegisterId(3),
+            root: AwbcRegisterId(0),
+            fields: vec![field(0)],
+            mode: AwbcPlaceReadMode::Copy,
+        },
+    ];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 3);
+    program.blocks[0].terminator = AwbcTerminator::Return {
+        value: Some(AwbcRegisterId(1)),
+    };
+    program.canonicalize_string_table();
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .unwrap();
+    let encoded = program.encode_canonical().unwrap();
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default()).unwrap();
+    assert_eq!(decoded.encode_canonical().unwrap(), encoded);
+    decoded
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .unwrap();
+
+    let iterator =
+        RuntimeValue::Iterator(crate::value::RuntimeIterator::values(vec![issued.value]));
+    assert!(
+        !iterator.ownership().permits_copy(),
+        "the iterator retains a genuinely issued affine StageActor"
+    );
+    decoded
+        .validate_live_value(
+            AwbcTypeId(1),
+            &iterator,
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
+    let expected_body = iterator.clone();
+    let owner = RuntimeValue::NominalRecord(crate::value::RuntimeNominalRecordValue::new(
+        crate::entry::RuntimeNominalTypeId::try_new("fixture.AffineInspectedRecord").unwrap(),
+        RuntimeSemanticTypeId::from_bytes([3; 32]),
+        crate::entry::TypeLayoutHash::from_bytes([3; 32]),
+        vec![RuntimeValue::String("resource://one".into()), iterator],
+    ));
+    assert!(!owner.ownership().permits_copy());
+    decoded
+        .validate_live_value(
+            AwbcTypeId(2),
+            &owner,
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
+    let mut fiber = FiberState::for_entry(&decoded, AwbcEntryId(0), 1, 64).unwrap();
+    fiber
+        .bind_function_argument_values_owned(&decoded, vec![owner])
+        .unwrap();
+    for index in 1..=3 {
+        super::super::vm::step(
+            &decoded,
+            &mut fiber,
+            super::super::vm::VmStepOptions {
+                max_instructions: 1,
+            },
+        )
+        .unwrap();
+        assert_eq!(fiber.frames[0].registers[1].as_ref(), Some(&expected_body));
+        assert!(
+            fiber.frames[0].registers[0].as_ref().is_none(),
+            "the whole partial owner remains unreadable"
+        );
+        assert!(
+            fiber.frames[0].registers[0].field(&[field(1)]).is_none(),
+            "the affine sibling was consumed"
+        );
+        assert_eq!(
+            fiber.frames[0].registers[0].field(&[field(0)]),
+            Some(&RuntimeValue::String("resource://one".into()))
+        );
+        if index > 1 {
+            assert_eq!(
+                fiber.frames[0].registers[index].as_ref(),
+                Some(&RuntimeValue::String("resource://one".into()))
+            );
+        }
+    }
+    let returned = super::super::vm::step(
+        &decoded,
+        &mut fiber,
+        super::super::vm::VmStepOptions {
+            max_instructions: 1,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        returned.exit,
+        super::super::vm::VmExit::Returned(Some(expected_body))
+    );
+    assert_eq!(
+        issued.ledger.lease(&issued.token).unwrap().state(),
+        crate::line_task::RuntimeHandleLeaseState::Active
+    );
+
+    for whole_owner in [false, true] {
+        let mut rejected = decoded.clone();
+        rejected.frame_layouts[0].slots.push(AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(2),
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        });
+        rejected.instructions[1] = if whole_owner {
+            AwbcInstruction::Move {
+                dst: AwbcRegisterId(4),
+                src: AwbcRegisterId(0),
+            }
+        } else {
+            AwbcInstruction::ReadPlace {
+                dst: AwbcRegisterId(2),
+                root: AwbcRegisterId(0),
+                fields: vec![field(1)],
+                mode: AwbcPlaceReadMode::Copy,
+            }
+        };
+        assert!(
+            matches!(
+                rejected.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+                Err(AwbcVerifyError::UninitializedRegister {
+                    function: 0,
+                    block: 0,
+                    register: 0
+                })
+            ),
+            "whole_owner = {whole_owner}"
+        );
+    }
+}

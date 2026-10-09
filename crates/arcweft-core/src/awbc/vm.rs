@@ -1249,7 +1249,22 @@ fn execute_instruction(
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
         AwbcInstruction::ProjectField { dst, target, field } => {
-            let target = fiber.active_frame_mut()?.take_register(*target)?;
+            let target = match target {
+                super::schema::AwbcFieldTarget::Value(value) => {
+                    fiber.active_frame_mut()?.take_register(*value)?
+                }
+                super::schema::AwbcFieldTarget::Inspect(place) => {
+                    let frame = fiber.active_frame()?;
+                    let value = frame
+                        .registers
+                        .get(place.base().index())
+                        .and_then(|storage| storage.field(place.fields()))
+                        .ok_or(FiberStateError::InvalidFrame)?;
+                    let value = inspect_field_copy(program, value, field)?;
+                    fiber.active_frame_mut()?.set_register(*dst, value)?;
+                    return Ok(InstructionControl::Continue);
+                }
+            };
             let value = match field {
                 AwbcFieldProjection::Named(field) => {
                     let field = string(program, *field)?;
@@ -1258,6 +1273,10 @@ fn execute_instruction(
                             .into_iter()
                             .find(|item| item.name() == field)
                             .map(RuntimeFieldValue::into_value),
+                        RuntimeValue::EntityRef(reference) => {
+                            crate::value::RuntimeEntityReferenceField::from_label(field)
+                                .map(|field| RuntimeValue::String(reference.field_value(field)))
+                        }
                         RuntimeValue::Agent(value) => value.project_field_label(field),
                         RuntimeValue::Progress(progress) => match field {
                             "ratio" => Some(RuntimeValue::F32(progress.ratio())),
@@ -3741,6 +3760,83 @@ fn mutable_sequence<'a>(
             "{operation} expected a Vec value"
         ))),
     }
+}
+
+fn inspect_field_copy(
+    program: &AwbcProgram,
+    value: &RuntimeValue,
+    field: &AwbcFieldProjection,
+) -> Result<RuntimeValue, VmError> {
+    let selected = match field {
+        AwbcFieldProjection::Named(label) => {
+            let label = string(program, *label)?;
+            match value {
+                RuntimeValue::Record(fields) => {
+                    let selected = fields
+                        .iter()
+                        .find(|field| field.name() == label)
+                        .map(RuntimeFieldValue::value)
+                        .ok_or_else(|| VmError::Runtime(format!("missing field {label}")))?;
+                    if !selected.ownership().permits_copy() {
+                        return Err(VmError::Runtime(
+                            "affine field cannot be inspected by copying".into(),
+                        ));
+                    }
+                    selected.clone()
+                }
+                RuntimeValue::EntityRef(reference) => {
+                    let field = crate::value::RuntimeEntityReferenceField::from_label(label)
+                        .ok_or_else(|| {
+                            VmError::Runtime(format!("missing entity-reference field {label}"))
+                        })?;
+                    RuntimeValue::String(reference.field_value(field))
+                }
+                RuntimeValue::Agent(value) => value
+                    .project_field_label(label)
+                    .ok_or_else(|| VmError::Runtime(format!("missing field {label}")))?,
+                RuntimeValue::Progress(progress) => match label {
+                    "ratio" => RuntimeValue::F32(progress.ratio()),
+                    "label" => progress
+                        .label()
+                        .map_or_else(RuntimeValue::option_none, |label| {
+                            RuntimeValue::option_some(RuntimeValue::String(label.to_owned()))
+                        }),
+                    _ => return Err(VmError::Runtime(format!("missing Progress field {label}"))),
+                },
+                _ => return Err(VmError::Runtime("invalid field inspection owner".into())),
+            }
+        }
+        AwbcFieldProjection::OpaqueRecord {
+            owner,
+            field,
+            field_type,
+        } => {
+            let owner = program
+                .opaque_owner(*owner)
+                .map_err(|error| VmError::Runtime(error.to_string()))?
+                .ok_or_else(|| {
+                    VmError::Runtime("field inspection requires an opaque owner".into())
+                })?;
+            let projection = crate::value::RuntimeFieldProjection::OpaqueRecord {
+                owner,
+                field: RuntimeRecordFieldId::try_from_zero_based_ordinal(*field as usize)
+                    .map_err(|error| VmError::Runtime(error.to_string()))?,
+            };
+            let selected = projection.inspect(value).map_err(VmError::Evaluation)?;
+            if !runtime_value_matches_type(program, &selected, *field_type, 0) {
+                return Err(VmError::Runtime(
+                    "field inspection rejected the selected value type".into(),
+                ));
+            }
+            selected
+        }
+    };
+    if !selected.ownership().permits_copy() {
+        return Err(VmError::Runtime(
+            "affine field cannot be inspected by copying".into(),
+        ));
+    }
+    Ok(selected)
 }
 
 fn register(fiber: &FiberState, register: AwbcRegisterId) -> Result<&RuntimeValue, VmError> {

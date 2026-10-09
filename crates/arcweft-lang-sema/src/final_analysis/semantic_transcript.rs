@@ -2657,7 +2657,11 @@ fn write_resolution_payload(
                     transcript_update!(hasher, &selection.declaration_ordinal().to_le_bytes());
                     transcript_update!(hasher, selection.field_type().as_bytes());
                 }
-                CheckedSelectResolution::ProgressField { field } => {
+                CheckedSelectResolution::ProgressField { field, receiver } => {
+                    write_bytes(
+                        hasher,
+                        &coordinates.expression(*receiver)?.canonical_bytes()?,
+                    )?;
                     transcript_update!(hasher, &[field.semantic_tag()]);
                 }
                 CheckedSelectResolution::Method(method) => {
@@ -2698,7 +2702,11 @@ fn write_resolution_payload(
                     transcript_update!(hasher, &[projection.semantic_tag()]);
                     write_field_selection(hasher, field)?;
                 }
-                CheckedSelectResolution::AgentField { field } => {
+                CheckedSelectResolution::AgentField { field, receiver } => {
+                    write_bytes(
+                        hasher,
+                        &coordinates.expression(*receiver)?.canonical_bytes()?,
+                    )?;
                     write_agent_field(hasher, *field)?;
                 }
             }
@@ -3803,6 +3811,7 @@ fn observe(need: Need<i64>) -> i64 {
             .filter_map(|(owner, expression)| {
                 let CheckedExpressionResolution::Select(CheckedSelectResolution::ProgressField {
                     field,
+                    ..
                 }) = expression.resolution()
                 else {
                     return None;

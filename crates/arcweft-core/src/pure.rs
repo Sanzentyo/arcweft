@@ -3062,10 +3062,15 @@ impl<'a> PureEvaluator<'a> {
 
     fn evaluate_field_expr(
         &mut self,
-        target: &RuntimeExpr,
+        target: &crate::value::RuntimeFieldTarget,
         field: &RuntimeFieldProjection,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let value = self.evaluate_expr(target)?;
+        let value = match target {
+            crate::value::RuntimeFieldTarget::Value(value) => self.evaluate_expr(value)?,
+            crate::value::RuntimeFieldTarget::Inspect { place, .. } => {
+                return self.env.inspect_field(place, field);
+            }
+        };
         match (field, value) {
             (RuntimeFieldProjection::Nominal(field), RuntimeValue::NominalRecord(record)) => record
                 .field(*field)
@@ -3306,7 +3311,7 @@ mod opaque_record_projection_tests {
         RuntimeExpr::from_admitted_parts(
             field_ty,
             RuntimeExprKind::Field {
-                target: Box::new(target),
+                target: Box::new(target).into(),
                 field: RuntimeFieldProjection::OpaqueRecord {
                     owner: expected.clone(),
                     field: RuntimeRecordFieldId::try_from_zero_based_ordinal(0)

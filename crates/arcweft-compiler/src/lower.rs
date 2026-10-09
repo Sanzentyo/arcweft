@@ -5911,19 +5911,21 @@ fn runtime_select_under(
             )?
         }
         CheckedSelectResolution::Method(_) => RuntimeResolvedSelect::Method,
-        CheckedSelectResolution::AgentField { field } => {
+        CheckedSelectResolution::AgentField { field, .. } => {
             RuntimeResolvedSelect::AgentField { field: *field }
         }
-        CheckedSelectResolution::ProgressField { field } => RuntimeResolvedSelect::ProgressField {
-            field: match field {
-                arcweft_lang_sema::types::ProgressField::Ratio => {
-                    arcweft_core::value::RuntimeProgressField::Ratio
-                }
-                arcweft_lang_sema::types::ProgressField::Label => {
-                    arcweft_core::value::RuntimeProgressField::Label
-                }
-            },
-        },
+        CheckedSelectResolution::ProgressField { field, .. } => {
+            RuntimeResolvedSelect::ProgressField {
+                field: match field {
+                    arcweft_lang_sema::types::ProgressField::Ratio => {
+                        arcweft_core::value::RuntimeProgressField::Ratio
+                    }
+                    arcweft_lang_sema::types::ProgressField::Label => {
+                        arcweft_core::value::RuntimeProgressField::Label
+                    }
+                },
+            }
+        }
         CheckedSelectResolution::Field(selection) => {
             let selection = selection.selection();
             if let (Some(owner), Some(field)) = (closed_owner, selection.runtime_field()) {

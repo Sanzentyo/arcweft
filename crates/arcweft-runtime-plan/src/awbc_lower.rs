@@ -7,6 +7,8 @@
 
 mod audio;
 mod expr;
+#[cfg(test)]
+mod field_tests;
 mod flow;
 mod frame;
 mod inventory;

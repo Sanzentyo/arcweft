@@ -415,8 +415,11 @@ impl<'a> Iterator for RuntimeExpressionChildren<'a> {
                         None
                     }
                 }
-                RuntimeExprKind::Field { target, .. }
-                | RuntimeExprKind::ProjectTuple { target, .. }
+                RuntimeExprKind::Field { target, .. } => (index == 0)
+                    .then(|| target.value())
+                    .flatten()
+                    .map(|target| (R::Target, N::Expression(target))),
+                RuntimeExprKind::ProjectTuple { target, .. }
                 | RuntimeExprKind::ProjectRecord { target, .. } => {
                     (index == 0).then_some((R::Target, N::Expression(target)))
                 }

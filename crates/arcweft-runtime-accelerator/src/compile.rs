@@ -881,8 +881,10 @@ pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
         RuntimeExprKind::Variant { payload, .. } => {
             1 + payload.as_deref().map_or(0, runtime_expr_work_units)
         }
-        RuntimeExprKind::Field { target, .. }
-        | RuntimeExprKind::ProjectTuple { target, .. }
+        RuntimeExprKind::Field { target, .. } => {
+            1 + target.value().map_or(0, runtime_expr_work_units)
+        }
+        RuntimeExprKind::ProjectTuple { target, .. }
         | RuntimeExprKind::ProjectRecord { target, .. } => 1 + runtime_expr_work_units(target),
         RuntimeExprKind::Call { args, .. } | RuntimeExprKind::PureCall { args, .. } => {
             8 + args

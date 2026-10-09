@@ -1467,7 +1467,7 @@ fn progress_field_facts(
         .select_facts
         .iter()
         .filter_map(|(selection, ty)| match selection {
-            CheckedSelectResolution::ProgressField { field } => Some((field, ty)),
+            CheckedSelectResolution::ProgressField { field, .. } => Some((field, ty)),
             _ => None,
         })
         .collect()

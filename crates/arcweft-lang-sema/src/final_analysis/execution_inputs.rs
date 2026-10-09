@@ -898,10 +898,11 @@ impl super::CheckedClosedExecutionContext<'_> {
                     .iter()
                     .filter(|input| {
                         input.role() == &CheckedExecutionInputRole::Free
-                            && input
-                                .uses()
-                                .iter()
-                                .any(|usage| usage.access().place_access().is_some())
+                            && input.uses().iter().any(|usage| {
+                                usage.access().place_access().is_some_and(|access| {
+                                    access.mode() != super::CheckedLocalPlaceMode::Inspect
+                                })
+                            })
                     })
                     .map(|input| input.binding().clone()),
             );

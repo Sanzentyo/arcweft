@@ -142,7 +142,6 @@ impl RuntimeExpr {
                 collect_slice_free_locals(plan, items, bound, locals)?;
             }
             RuntimeExprKind::RepeatSeq { value, .. }
-            | RuntimeExprKind::Field { target: value, .. }
             | RuntimeExprKind::ProjectTuple { target: value, .. }
             | RuntimeExprKind::ProjectRecord { target: value, .. }
             | RuntimeExprKind::Sum { source: value }
@@ -150,6 +149,14 @@ impl RuntimeExpr {
             | RuntimeExprKind::ReductionUnchanged { state: value } => {
                 value.collect_evaluation_free_locals(plan, bound, locals)?;
             }
+            RuntimeExprKind::Field { target, .. } => match target {
+                super::RuntimeFieldTarget::Value(value) => {
+                    value.collect_evaluation_free_locals(plan, bound, locals)?
+                }
+                super::RuntimeFieldTarget::Inspect { place, .. } => {
+                    push_free_local(place.local(), bound, locals)
+                }
+            },
             RuntimeExprKind::Range { start, end, .. } => {
                 for value in start.iter().chain(end.iter()) {
                     value.collect_evaluation_free_locals(plan, bound, locals)?;

@@ -1776,6 +1776,70 @@ fn let_else_never_prefix_is_not_revived_by_unreachable_loop_statements() {
     );
     analyze(&fixture).expect("unreachable statements after return preserve Never");
 }
+
+#[test]
+fn agent_scalar_fields_inspect_an_immutable_owner_without_moving_it() {
+    let fixture = fixture(
+        r#"
+fn inspect_resource() -> Result<Unit, AgentError>
+effects { agent.resource.read }
+{
+    let resource = try read_resource("resource://one")
+    let uri = resource.uri
+    let kind = resource.kind
+    let mime = resource.mime_type
+    let hash = resource.hash
+    expect(uri == "resource://one")
+    return Ok(())
+}
+entry agent @entry.agent.main { controller = inspect_resource }
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("Copy field inspection preserves the immutable resource");
+    let inspections = report
+        .checked_local_uses()
+        .rows()
+        .filter_map(|(_, access)| access.place_access())
+        .filter(|access| access.mode() == crate::final_analysis::CheckedLocalPlaceMode::Inspect)
+        .collect::<Vec<_>>();
+    assert_eq!(inspections.len(), 4);
+    assert!(
+        inspections
+            .iter()
+            .all(|access| access.place().local() == inspections[0].place().local())
+    );
+    assert!(
+        report
+            .checked_local_uses()
+            .value_transfers()
+            .all(|(_, transfer)| transfer.local() != inspections[0].place().local())
+    );
+}
+
+#[test]
+fn agent_field_inspection_rejects_a_moved_owner_on_every_reachable_path() {
+    for body in [
+        "let moved = resource; let uri = resource.uri",
+        "if take { let moved = resource; }; let uri = resource.uri",
+    ] {
+        let source = format!(
+            "fn inspect_resource() -> Result<Unit, AgentError>\neffects {{ agent.resource.read }}\n{{\nlet resource = try read_resource(\"resource://one\")\nlet take = resource.uri == \"resource://move\"\n{body}\nreturn Ok(())\n}}\nentry agent @entry.agent.main {{ controller = inspect_resource }}"
+        );
+        let fixture = fixture(&source, None);
+        let result = analyze(&fixture);
+        assert!(
+            matches!(
+                result,
+                Err(FinalSemanticAnalysisError::LocalUse(
+                    CheckedLocalUseError::Unavailable { .. }
+                ))
+            ),
+            "moved resource inspection must be rejected: {source}; {result:?}"
+        );
+    }
+}
+
 #[test]
 fn spawned_thread_statement_reads_receive_exact_local_use_rows() {
     let world = fixture(

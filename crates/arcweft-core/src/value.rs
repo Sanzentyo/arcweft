@@ -1528,6 +1528,16 @@ pub enum RuntimeEntityReferenceField {
 }
 
 impl RuntimeEntityReferenceField {
+    pub const ALL: [Self; 3] = [Self::Id, Self::Family, Self::Name];
+
+    /// Resolves an exact source/wire field label through the closed vocabulary.
+    #[must_use]
+    pub fn from_label(label: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|field| field.as_label() == label)
+    }
+
     #[must_use]
     pub const fn as_label(self) -> &'static str {
         match self {
@@ -1555,6 +1565,38 @@ impl RuntimeProgressField {
     }
 }
 
+/// A field evaluates an owned value or inspects an initialized stored owner.
+/// Inspection is synchronous and may return only an unrestricted value.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RuntimeFieldTarget {
+    Value(Box<RuntimeExpr>),
+    Inspect {
+        place: RuntimeMutablePlace,
+        ty: RuntimePlanTypeId,
+    },
+}
+
+impl From<Box<RuntimeExpr>> for RuntimeFieldTarget {
+    fn from(value: Box<RuntimeExpr>) -> Self {
+        Self::Value(value)
+    }
+}
+
+impl RuntimeFieldTarget {
+    pub fn value(&self) -> Option<&RuntimeExpr> {
+        match self {
+            Self::Value(value) => Some(value),
+            Self::Inspect { .. } => None,
+        }
+    }
+    pub fn ty(&self) -> RuntimePlanTypeId {
+        match self {
+            Self::Value(value) => value.ty(),
+            Self::Inspect { ty, .. } => *ty,
+        }
+    }
+}
+
 /// Checked field projection retained by a runtime expression.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeFieldProjection {
@@ -1569,6 +1611,59 @@ pub enum RuntimeFieldProjection {
 }
 
 impl RuntimeFieldProjection {
+    /// Copies only the selected unrestricted child, never the complete owner.
+    pub(crate) fn inspect(&self, value: &RuntimeValue) -> Result<RuntimeValue, RuntimeEvalError> {
+        let selected = match (self, value) {
+            (Self::Nominal(field), value) => value.record_field(*field),
+            (Self::OpaqueRecord { owner, field }, RuntimeValue::Opaque(value))
+                if owner.accepts_opaque_value(value) =>
+            {
+                match value.payload() {
+                    RuntimeValue::Tuple(fields) => fields.get(field.zero_based() as usize),
+                    _ => None,
+                }
+            }
+            (Self::Agent(field), RuntimeValue::Record(fields))
+                if field.permits_protocol_record() =>
+            {
+                fields
+                    .iter()
+                    .find(|entry| entry.name() == field.as_label())
+                    .map(RuntimeFieldValue::value)
+            }
+            _ => None,
+        };
+        if let Some(selected) = selected {
+            if !selected.ownership().permits_copy() {
+                return Err(RuntimeEvalError::AffineFieldCopy);
+            }
+            return Ok(selected.clone());
+        }
+        let projected = match (self, value) {
+            (Self::EntityReference(field), RuntimeValue::EntityRef(id)) => {
+                Some(RuntimeValue::String(id.field_value(*field)))
+            }
+            (Self::Agent(field), RuntimeValue::Agent(value)) => value.project_typed_field(*field),
+            (Self::Progress(field), RuntimeValue::Progress(progress)) => Some(match field {
+                RuntimeProgressField::Ratio => RuntimeValue::F32(progress.ratio()),
+                RuntimeProgressField::Label => progress
+                    .label()
+                    .map_or_else(RuntimeValue::option_none, |label| {
+                        RuntimeValue::option_some(RuntimeValue::String(label.to_owned()))
+                    }),
+            }),
+            _ => None,
+        }
+        .ok_or_else(|| RuntimeEvalError::MissingField {
+            field: self.label(),
+            value: runtime_value_label(value),
+        })?;
+        if !projected.ownership().permits_copy() {
+            return Err(RuntimeEvalError::AffineFieldCopy);
+        }
+        Ok(projected)
+    }
+
     #[must_use]
     pub fn label(&self) -> String {
         match self {
@@ -1763,7 +1858,7 @@ pub enum RuntimeExprKind {
         payload: Option<Box<RuntimeExpr>>,
     },
     Field {
-        target: Box<RuntimeExpr>,
+        target: RuntimeFieldTarget,
         field: RuntimeFieldProjection,
     },
     ProjectTuple {
@@ -2331,6 +2426,8 @@ pub enum RuntimeEvalError {
     MissingGuardCopyRequirement { local: RuntimeLocalDeclarationId },
     #[error("a runtime expression literal contains an affine value and cannot be copied")]
     AffineLiteralCopy,
+    #[error("an affine field cannot be copied by inspection")]
+    AffineFieldCopy,
     #[error(
         "runtime flow `{flow}` cannot accept binding `{binding}` without selected flow metadata"
     )]

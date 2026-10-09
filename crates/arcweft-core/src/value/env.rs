@@ -383,6 +383,40 @@ impl RuntimeEnv {
             .find_map(|scope| scope.slot_mut(local))
     }
 
+    /// Copies one selected unrestricted field from its complete stored address.
+    /// A disjoint moved sibling does not require reconstructing the receiver.
+    pub(crate) fn inspect_field(
+        &self,
+        place: &RuntimeMutablePlace,
+        field: &super::RuntimeFieldProjection,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let super::RuntimeFieldProjection::Nominal(field) = field else {
+            return field.inspect(self.inspect_place(place)?);
+        };
+        let mut fields = Vec::with_capacity(place.fields().len() + 1);
+        fields.extend_from_slice(place.fields());
+        fields.push(*field);
+        let selected = self
+            .slot(place.local())
+            .and_then(|slot| slot.value.field(&fields))
+            .ok_or(RuntimeEvalError::UninitializedLocal(place.local()))?;
+        if !selected.ownership().permits_copy() {
+            return Err(RuntimeEvalError::AffineFieldCopy);
+        }
+        Ok(selected.clone())
+    }
+
+    /// Borrows one initialized place for a synchronous inspection. No value or
+    /// declaration lifetime is transferred across this boundary.
+    pub(crate) fn inspect_place(
+        &self,
+        place: &RuntimeMutablePlace,
+    ) -> Result<&RuntimeValue, RuntimeEvalError> {
+        self.slot(place.local())
+            .and_then(|slot| slot.value.field(place.fields()))
+            .ok_or(RuntimeEvalError::UninitializedLocal(place.local()))
+    }
+
     /// Executes the already-selected local-use transfer and checks live value
     /// ownership before any copy. A moved binding is absent for later reads.
     pub(crate) fn read(
@@ -969,6 +1003,46 @@ mod tests {
                 .is_empty()
         );
         assert_eq!(env.get(source), Some(&RuntimeValue::Bool(false)));
+    }
+
+    #[test]
+    fn field_inspection_copies_only_the_child_and_preserves_affine_owner_custody() {
+        use crate::value::{RuntimeAgentField, RuntimeFieldProjection};
+        let owner = local(1);
+        let body = RuntimeValue::NeedHandle(crate::tests::reusable_need("need.resource-body"));
+        let value = RuntimeValue::try_record(vec![
+            ("uri".into(), RuntimeValue::String("resource://one".into())),
+            ("body".into(), body.clone()),
+        ])
+        .unwrap();
+        let mut env = RuntimeEnv::default();
+        env.set(owner, value.clone());
+        let place = RuntimeMutablePlace::Local(owner);
+        let uri = RuntimeFieldProjection::Agent(RuntimeAgentField::ResourceUri);
+        for _ in 0..2 {
+            assert_eq!(
+                uri.inspect(env.inspect_place(&place).unwrap()),
+                Ok(RuntimeValue::String("resource://one".into()))
+            );
+        }
+        assert_eq!(env.get(owner), Some(&value));
+        let body_projection = RuntimeFieldProjection::Agent(RuntimeAgentField::ResourceBody);
+        assert_eq!(
+            body_projection.inspect(env.inspect_place(&place).unwrap()),
+            Err(RuntimeEvalError::AffineFieldCopy)
+        );
+        assert_eq!(env.get(owner), Some(&value));
+        let moved = env
+            .read(&RuntimeLocalRead::from_admitted_parts(
+                owner,
+                RuntimeLocalReadMode::Move,
+            ))
+            .unwrap();
+        assert_eq!(moved, value);
+        assert_eq!(
+            env.inspect_place(&place),
+            Err(RuntimeEvalError::UninitializedLocal(owner))
+        );
     }
 
     fn local(ordinal: u32) -> RuntimeLocalDeclarationId {

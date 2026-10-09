@@ -3049,7 +3049,38 @@ impl<'hir> FinalExprLowerer<'hir> {
      */
 
     fn lower_select(&self, id: ExprId, target_id: ExprId) -> Result<RuntimeExprSeedKind, String> {
-        let target = Box::new(self.lower(target_id)?);
+        let target = if let Some(access) = self.semantic_facts.checked_local_place_access(id)
+            && access.mode() == CheckedLocalPlaceMode::Inspect
+        {
+            let place = access.place();
+            let local = self.local(place.local())?;
+            let place = if place.fields().is_empty() {
+                RuntimeMutablePlaceSeed::Local(local)
+            } else {
+                RuntimeMutablePlaceSeed::Fields {
+                    base: local,
+                    fields: place
+                        .fields()
+                        .iter()
+                        .map(|field| {
+                            field
+                                .runtime_field()
+                                .map(|field| {
+                                    RuntimeRecordFieldSeedId::from_zero_based(field.zero_based())
+                                })
+                                .ok_or_else(|| {
+                                    "field inspection lacks an admitted storage coordinate"
+                                        .to_owned()
+                                })
+                        })
+                        .collect::<Result<Vec<_>, _>>()?
+                        .into_boxed_slice(),
+                }
+            };
+            arcweft_core::plan::RuntimeFieldTargetSeed::Inspect(place)
+        } else {
+            Box::new(self.lower(target_id)?).into()
+        };
         match self
             .select(id)
             .ok_or_else(|| format!("checked member fact is missing for expression {id:?}"))?

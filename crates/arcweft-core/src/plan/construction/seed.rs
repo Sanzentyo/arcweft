@@ -2081,6 +2081,19 @@ impl RuntimeMutablePlaceSeed {
     }
 }
 
+/// One owned field receiver or checked synchronous address inspection.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RuntimeFieldTargetSeed {
+    Value(Box<RuntimeExprSeed>),
+    Inspect(RuntimeMutablePlaceSeed),
+}
+
+impl From<Box<RuntimeExprSeed>> for RuntimeFieldTargetSeed {
+    fn from(value: Box<RuntimeExprSeed>) -> Self {
+        Self::Value(value)
+    }
+}
+
 /// Checked field coordinate before plan-local owner/type rewriting.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeFieldProjectionSeed {
@@ -2369,7 +2382,7 @@ pub enum RuntimeExprSeedKind {
         payload: Option<Box<RuntimeExprSeed>>,
     },
     Field {
-        target: Box<RuntimeExprSeed>,
+        target: RuntimeFieldTargetSeed,
         field: RuntimeFieldProjectionSeed,
     },
     ProjectTuple {
@@ -2797,8 +2810,13 @@ impl RuntimeExprSeed {
                     payload.collect_free_locals(bound, locals);
                 }
             }
-            RuntimeExprSeedKind::Field { target, .. }
-            | RuntimeExprSeedKind::ProjectTuple { target, .. }
+            RuntimeExprSeedKind::Field { target, .. } => match target {
+                RuntimeFieldTargetSeed::Value(value) => value.collect_free_locals(bound, locals),
+                RuntimeFieldTargetSeed::Inspect(place) => {
+                    push_free_local(place.local(), bound, locals)
+                }
+            },
+            RuntimeExprSeedKind::ProjectTuple { target, .. }
             | RuntimeExprSeedKind::ProjectRecord { target, .. } => {
                 target.collect_free_locals(bound, locals);
             }

@@ -1665,6 +1665,26 @@ impl AwbcMutablePlace {
     }
 }
 
+/// A consumed register or an address inspected without consuming its owner.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum AwbcFieldTarget {
+    Value(AwbcRegisterId),
+    Inspect(AwbcMutablePlace),
+}
+impl From<AwbcRegisterId> for AwbcFieldTarget {
+    fn from(value: AwbcRegisterId) -> Self {
+        Self::Value(value)
+    }
+}
+impl AwbcFieldTarget {
+    pub const fn base(&self) -> AwbcRegisterId {
+        match self {
+            Self::Value(value) => *value,
+            Self::Inspect(place) => place.base(),
+        }
+    }
+}
+
 /// Top-level execution class of one AWBC opcode.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum AwbcOpcodeClass {
@@ -2088,7 +2108,7 @@ pub enum AwbcInstruction {
     },
     ProjectField {
         dst: AwbcRegisterId,
-        target: AwbcRegisterId,
+        target: AwbcFieldTarget,
         field: AwbcFieldProjection,
     },
     /// Reads an initialized record child while retaining its sibling owners.

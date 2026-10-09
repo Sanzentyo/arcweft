@@ -809,7 +809,14 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                     .get(&child)
                     .and_then(|fact| fact.local_place_source())
             })
-            .is_some();
+            .is_some()
+            || fact
+                .inspection_root(|child| {
+                    self.expression_facts
+                        .get(&child)
+                        .and_then(|fact| fact.local_place_source())
+                })
+                .is_some();
         let accepted_closure = matches!(fact, PreparedExpressionFact::Complete(expression)
             if matches!(expression.resolution(), super::CheckedExpressionResolution::Closure(_)));
         let independent_computation = matches!(
@@ -1404,7 +1411,15 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
                     .or_else(|| self.pending_expressions.get(&child))
                     .and_then(CheckedExpression::local_place_source)
             })
-            .is_some();
+            .is_some()
+            || checked
+                .inspection_root(|child| {
+                    self.expressions
+                        .get(&child)
+                        .or_else(|| self.pending_expressions.get(&child))
+                        .and_then(CheckedExpression::local_place_source)
+                })
+                .is_some();
         let independent_computation = matches!(
             kind,
             HirExprKind::ComputationBlock(expression)

@@ -295,6 +295,17 @@ impl CheckedCaptureExpression {
             )?;
             value.descends = false;
         }
+        if let Some(local) = checked.inspection_root(&source) {
+            let ty = local_type(local)
+                .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local })?;
+            value.push_typed(
+                CheckedLocalUseSite::Place(owner),
+                local,
+                Some(&ty),
+                CaptureAccess::Read,
+            )?;
+            value.descends = false;
+        }
         for field in record_fields {
             if let CheckedRecordValueSource::Binding(source) = field.source() {
                 value.sources.push(CheckedLocalInputSource {

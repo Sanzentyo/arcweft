@@ -1057,7 +1057,7 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
         RuntimeExprSeed::new(
             u32_ty,
             RuntimeExprSeedKind::Field {
-                target: Box::new(local_state(local)),
+                target: Box::new(local_state(local)).into(),
                 field: RuntimeFieldProjectionSeed::Nominal {
                     owner: state_ty,
                     field,

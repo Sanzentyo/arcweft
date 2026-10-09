@@ -5,6 +5,8 @@ mod pattern;
 #[cfg(test)]
 mod agent_tests;
 #[cfg(test)]
+mod field_tests;
+#[cfg(test)]
 mod value_tests;
 
 use std::collections::BTreeSet;
@@ -1002,12 +1004,28 @@ impl RuntimePlanBodyConstruction<'_> {
                 }
             }
             RuntimeExprSeedKind::Field { target, field } => {
-                let target = self.lower_expression(*target)?;
+                let target = match target {
+                    super::RuntimeFieldTargetSeed::Value(value) => {
+                        crate::value::RuntimeFieldTarget::Value(Box::new(
+                            self.lower_expression(*value)?,
+                        ))
+                    }
+                    super::RuntimeFieldTargetSeed::Inspect(place) => {
+                        let (place, ty) = self.lower_mutable_place(place, "field inspection")?;
+                        crate::value::RuntimeFieldTarget::Inspect { place, ty }
+                    }
+                };
                 let field = self.lower_field_projection(ty, target.ty(), &field)?;
-                RuntimeExprKind::Field {
-                    target: Box::new(target),
-                    field,
+                if matches!(target, crate::value::RuntimeFieldTarget::Inspect { .. })
+                    && !self.field_inspection_result_is_copy(
+                        ty,
+                        0,
+                        &mut std::collections::BTreeMap::new(),
+                    )?
+                {
+                    return invalid_projection("Copy field inspection result", ty);
                 }
+                RuntimeExprKind::Field { target, field }
             }
             RuntimeExprSeedKind::ProjectTuple { target, ordinal } => {
                 let target = self.lower_expression(*target)?;
@@ -1684,6 +1702,91 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
         Ok((admitted, field_ty))
     }
 
+    /// Proves unrestricted results from this builder's admitted type and nominal
+    /// domains. Value-dependent carriers require evidence this operation does
+    /// not publish and therefore cannot be inspected by copying.
+    fn field_inspection_result_is_copy(
+        &self,
+        ty: RuntimePlanTypeId,
+        depth: usize,
+        memo: &mut std::collections::BTreeMap<RuntimePlanTypeId, Option<bool>>,
+    ) -> Result<bool, RuntimePlanBuildError> {
+        if depth > 64 {
+            return Ok(false);
+        }
+        if let Some(proof) = memo.get(&ty) {
+            return Ok(*proof == Some(true));
+        }
+        if memo.len() >= 65_536 {
+            return Ok(false);
+        }
+        memo.insert(ty, None);
+        let projection = self.projection(ty)?;
+        let children: Option<Vec<RuntimePlanTypeId>> = match projection {
+            RuntimePlanTypeProjection::Never
+            | RuntimePlanTypeProjection::Unit
+            | RuntimePlanTypeProjection::Bool
+            | RuntimePlanTypeProjection::Signed(_)
+            | RuntimePlanTypeProjection::Unsigned(_)
+            | RuntimePlanTypeProjection::F32
+            | RuntimePlanTypeProjection::F64
+            | RuntimePlanTypeProjection::String
+            | RuntimePlanTypeProjection::Color
+            | RuntimePlanTypeProjection::Char
+            | RuntimePlanTypeProjection::Bytes
+            | RuntimePlanTypeProjection::Duration
+            | RuntimePlanTypeProjection::Progress
+            | RuntimePlanTypeProjection::EntityReference => Some(Vec::new()),
+            RuntimePlanTypeProjection::Range(_)
+            | RuntimePlanTypeProjection::Sequence { .. }
+            | RuntimePlanTypeProjection::Array { .. }
+            | RuntimePlanTypeProjection::Map { .. }
+            | RuntimePlanTypeProjection::Result { .. }
+            | RuntimePlanTypeProjection::Option { .. }
+            | RuntimePlanTypeProjection::BuiltinVariant { .. }
+            | RuntimePlanTypeProjection::Tuple(_)
+            | RuntimePlanTypeProjection::Record(_)
+            | RuntimePlanTypeProjection::Choice(_) => {
+                Some(projection.children().iter().map(|child| **child).collect())
+            }
+            RuntimePlanTypeProjection::Nominal { .. } => {
+                if let Some(domain) = self.nominal_record_domains.get(ty) {
+                    Some(domain.fields().iter().map(|field| field.ty()).collect())
+                } else {
+                    self.variant_domains.get(ty).map(|domain| {
+                        domain
+                            .cases()
+                            .iter()
+                            .filter_map(|case| case.payload())
+                            .collect()
+                    })
+                }
+            }
+            RuntimePlanTypeProjection::BoundType(_)
+            | RuntimePlanTypeProjection::AgentValue
+            | RuntimePlanTypeProjection::Iterator(_)
+            | RuntimePlanTypeProjection::Need(_)
+            | RuntimePlanTypeProjection::Stream { .. }
+            | RuntimePlanTypeProjection::ThreadHandle(_)
+            | RuntimePlanTypeProjection::Shared(_)
+            | RuntimePlanTypeProjection::Reference(_)
+            | RuntimePlanTypeProjection::Function { .. }
+            | RuntimePlanTypeProjection::Opaque { .. }
+            | RuntimePlanTypeProjection::Agent(_) => None,
+        };
+        let mut copy = children.is_some();
+        if let Some(children) = children {
+            for child in children {
+                if !self.field_inspection_result_is_copy(child, depth + 1, memo)? {
+                    copy = false;
+                    break;
+                }
+            }
+        }
+        memo.insert(ty, Some(copy));
+        Ok(copy)
+    }
+
     fn lower_field_projection(
         &self,
         result_ty: RuntimePlanTypeId,
@@ -1746,6 +1849,14 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
                 }
                 if !self.agent_field_result_matches(result_ty, field.result())? {
                     return invalid_projection("Agent field result", result_ty);
+                }
+                if field.owner() == RuntimeAgentFieldOwner::Reference {
+                    return match crate::value::RuntimeEntityReferenceField::try_from(*field) {
+                        Ok(reference) => Ok(RuntimeFieldProjection::EntityReference(reference)),
+                        Err(_) => {
+                            invalid_projection("entity-reference field coordinate", target_ty)
+                        }
+                    };
                 }
                 Ok(RuntimeFieldProjection::Agent(*field))
             }
@@ -2442,7 +2553,7 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
             (RuntimeAgentFieldOwner::Agent(owner), RuntimePlanTypeProjection::Agent(target)) => {
                 target.operational_type() == owner
             }
-            (RuntimeAgentFieldOwner::Reference, RuntimePlanTypeProjection::Reference(_)) => true,
+            (RuntimeAgentFieldOwner::Reference, RuntimePlanTypeProjection::EntityReference) => true,
             _ => false,
         })
     }
@@ -2828,7 +2939,6 @@ impl RuntimePlanBodyConstruction<'_> {
             }
             RuntimeExprKind::RepeatSeq { value, .. }
             | RuntimeExprKind::SpecializeCallable { value, .. }
-            | RuntimeExprKind::Field { target: value, .. }
             | RuntimeExprKind::ProjectTuple { target: value, .. }
             | RuntimeExprKind::ProjectRecord { target: value, .. }
             | RuntimeExprKind::Sum { source: value }
@@ -2836,6 +2946,16 @@ impl RuntimePlanBodyConstruction<'_> {
             | RuntimeExprKind::ReductionUnchanged { state: value } => {
                 self.validate_expression_locals(value, scope, used)
             }
+            RuntimeExprKind::Field { target, .. } => match target {
+                crate::value::RuntimeFieldTarget::Value(value) => {
+                    self.validate_expression_locals(value, scope, used)
+                }
+                crate::value::RuntimeFieldTarget::Inspect { place, .. } => {
+                    require_local_in_scope(place.local(), scope)?;
+                    used.insert(place.local());
+                    Ok(())
+                }
+            },
             RuntimeExprKind::Range { start, end, .. } => {
                 for bound in start.iter().chain(end.iter()) {
                     self.validate_expression_locals(bound, scope, used)?;
@@ -5722,7 +5842,8 @@ mod tests {
                             admission.local_ids()[0].clone(),
                             crate::value::RuntimeLocalReadMode::Move,
                         )),
-                    )),
+                    ))
+                    .into(),
                     field: RuntimeFieldProjectionSeed::OpaqueRecord {
                         owner: semantic_owner,
                         producer: producer.clone(),

@@ -3598,8 +3598,10 @@ fn observe(need: Need<i64>) -> i64 {
     );
     let report = analyze(&fixture).expect("Pending Progress field analysis");
     let mut fields = report.expressions().filter_map(|(_, expression)| {
-        let CheckedExpressionResolution::Select(CheckedSelectResolution::ProgressField { field }) =
-            expression.resolution()
+        let CheckedExpressionResolution::Select(CheckedSelectResolution::ProgressField {
+            field,
+            ..
+        }) = expression.resolution()
         else {
             return None;
         };

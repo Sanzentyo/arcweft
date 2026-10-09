@@ -103,7 +103,17 @@ impl RuntimeExpr {
                 }
                 context.write_call_arguments(encoder, args)?;
             }
-            RuntimeExprKind::Field { field, .. } => field.encode_body_metadata(encoder),
+            RuntimeExprKind::Field { target, field } => {
+                match target {
+                    super::RuntimeFieldTarget::Value(_) => encoder.tag(0),
+                    super::RuntimeFieldTarget::Inspect { place, ty } => {
+                        encoder.tag(1);
+                        context.write_place(encoder, place)?;
+                        context.write_type(encoder, *ty)?;
+                    }
+                }
+                field.encode_body_metadata(encoder);
+            }
             RuntimeExprKind::Local(read) => {
                 context.write_local(encoder, read.local())?;
                 encoder.tag(read.mode().semantic_tag());

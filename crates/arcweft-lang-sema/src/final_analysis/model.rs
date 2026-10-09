@@ -726,10 +726,12 @@ pub enum CheckedSelectResolution {
     /// Closed Agent protocol record coordinate selected during type checking.
     AgentField {
         field: RuntimeAgentField,
+        receiver: ExprId,
     },
     /// Field owned by the standard `Progress` value family.
     ProgressField {
         field: crate::types::ProgressField,
+        receiver: ExprId,
     },
     Field(CheckedFieldAccess),
 }
@@ -2629,6 +2631,30 @@ impl CheckedExpression {
             }
             _ => self.data.mutable_place.clone(),
         }
+    }
+
+    /// The selected schema owns whether a builtin field can inspect its receiver.
+    pub(crate) fn inspection_receiver(&self) -> Option<CheckedFieldReceiver> {
+        match self.resolution() {
+            CheckedExpressionResolution::Select(CheckedSelectResolution::AgentField {
+                field,
+                receiver,
+            }) if field.permits_copy_inspection() => {
+                Some(CheckedFieldReceiver::Expression(*receiver))
+            }
+            CheckedExpressionResolution::Select(CheckedSelectResolution::ProgressField {
+                receiver,
+                ..
+            }) => Some(CheckedFieldReceiver::Expression(*receiver)),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn inspection_root(
+        &self,
+        source: impl Fn(ExprId) -> Option<CheckedFieldReceiver>,
+    ) -> Option<LocalId> {
+        self.inspection_receiver()?.local_root(source)
     }
 
     pub(crate) fn local_place_source(&self) -> Option<CheckedFieldReceiver> {

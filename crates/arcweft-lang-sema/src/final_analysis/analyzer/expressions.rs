@@ -3727,9 +3727,21 @@ impl Analyzer<'_, '_, '_> {
         let (ty, resolution) = if let Some((field, ty)) =
             target_type.agent_field_type(name.as_str())
         {
-            (ty, super::CheckedSelectResolution::AgentField { field })
+            (
+                ty,
+                super::CheckedSelectResolution::AgentField {
+                    field,
+                    receiver: select.target(),
+                },
+            )
         } else if let Some((field, ty)) = target_type.progress_field(name.as_str()) {
-            (ty, super::CheckedSelectResolution::ProgressField { field })
+            (
+                ty,
+                super::CheckedSelectResolution::ProgressField {
+                    field,
+                    receiver: select.target(),
+                },
+            )
         } else {
             match target_type {
                 TypeKind::ProjectNominal(_) => {

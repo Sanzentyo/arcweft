@@ -1186,8 +1186,20 @@ fn validate_expression_resolution(
                 .has_valid_receiver_identity()
                 .then_some(())
                 .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog),
-            CheckedSelectResolution::AgentField { .. }
-            | CheckedSelectResolution::ProgressField { .. } => Ok(()),
+            CheckedSelectResolution::AgentField { field, receiver } => {
+                let target =
+                    validate_builtin_field_receiver(modules, expressions, owner, *receiver)?;
+                (target.agent_field_type(field.as_label()) == Some((*field, ty.clone())))
+                    .then_some(())
+                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
+            }
+            CheckedSelectResolution::ProgressField { field, receiver } => {
+                let target =
+                    validate_builtin_field_receiver(modules, expressions, owner, *receiver)?;
+                (target == &TypeKind::Progress && field.ty() == *ty)
+                    .then_some(())
+                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
+            }
             CheckedSelectResolution::Field(selection) => validate_field_selection(
                 semantic_shapes,
                 modules,
@@ -1559,6 +1571,24 @@ fn try_boundary_authority_failure(
             boundary: boundary.cloned().map(Box::new),
         },
     }
+}
+
+fn validate_builtin_field_receiver<'a>(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    expressions: &'a BTreeMap<ExprId, CheckedExpression>,
+    owner: ExprId,
+    receiver: ExprId,
+) -> Result<&'a TypeKind, FinalSemanticAnalysisError> {
+    let source = resolve_module(modules, owner.module())?
+        .resolve_expr(owner)
+        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+    if !matches!(source.kind(), HirExprKind::Select(select) if select.target() == receiver) {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    }
+    expressions
+        .get(&receiver)
+        .and_then(CheckedExpression::value_type)
+        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: receiver })
 }
 
 fn validate_field_selection(

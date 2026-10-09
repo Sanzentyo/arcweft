@@ -1158,7 +1158,11 @@ impl<'a> LocalUseChecker<'a> {
     ) -> Result<(), CheckedLocalUseError> {
         let site = CheckedLocalUseSite::Place(expression);
         let local = place.local_id();
+        if state.reachable && mode == CheckedLocalPlaceMode::Inspect {
+            self.require_guard_copy(site, local)?;
+        }
         if state.reachable
+            && mode != CheckedLocalPlaceMode::Inspect
             && let Some((_, receiver)) = self
                 .active_receiver_loans
                 .iter()
@@ -1174,7 +1178,9 @@ impl<'a> LocalUseChecker<'a> {
         if let Some(callback) = self.callback_local_uses.last_mut() {
             callback.insert(local);
         }
-        if let Some(guard) = self.guard_for_local(local) {
+        if mode != CheckedLocalPlaceMode::Inspect
+            && let Some(guard) = self.guard_for_local(local)
+        {
             return Err(CheckedLocalUseError::GuardBoundMutation { guard, local, site });
         }
         if self
@@ -2010,6 +2016,25 @@ impl<'a> LocalUseChecker<'a> {
             .module
             .resolve_expr(owner)
             .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
+        if let Some(receiver) = self
+            .analysis
+            .expression(owner)
+            .and_then(super::CheckedExpression::inspection_receiver)
+            && let Some(local) = receiver.local_root(|child| {
+                self.analysis
+                    .expression(child)
+                    .and_then(super::CheckedExpression::local_place_source)
+            })
+        {
+            let place = match receiver {
+                super::CheckedFieldReceiver::Binding(_) => CheckedPlace::from_local(local),
+                super::CheckedFieldReceiver::Expression(target) => {
+                    CheckedPlace::from_field(target, |child| self.analysis.expression(child))
+                        .unwrap_or_else(|| CheckedPlace::from_local(local))
+                }
+            };
+            return self.access_place(owner, place, CheckedLocalPlaceMode::Inspect, state);
+        }
         match expression.kind() {
             HirExprKind::Index(_) => {
                 let Ok(edges) = self.analysis.checked_expression_edge_fact(owner) else {

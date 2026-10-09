@@ -184,12 +184,7 @@ fn project_graph_edge_field(field: &str) -> Option<RuntimeAgentField> {
 }
 
 fn reference_field(field: &str) -> Option<RuntimeAgentField> {
-    Some(match field {
-        "id" => RuntimeAgentField::ReferenceId,
-        "family" => RuntimeAgentField::ReferenceFamily,
-        "name" => RuntimeAgentField::ReferenceName,
-        _ => return None,
-    })
+    arcweft_core::value::RuntimeEntityReferenceField::from_label(field).map(RuntimeAgentField::from)
 }
 
 fn project_graph_symbol_field(field: &str) -> Option<RuntimeAgentField> {

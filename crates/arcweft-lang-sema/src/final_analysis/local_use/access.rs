@@ -8,6 +8,8 @@ use crate::final_analysis::CheckedPlace;
 pub enum CheckedLocalPlaceMode {
     Assign,
     Mutate,
+    /// Synchronous field inspection produces a proven Copy value without transferring its owner.
+    Inspect,
 }
 
 /// Initialization at the write boundary, after the RHS has executed.

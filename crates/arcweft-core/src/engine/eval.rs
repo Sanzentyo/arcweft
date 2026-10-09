@@ -993,11 +993,18 @@ impl Engine {
 
     fn evaluate_field_expr(
         &mut self,
-        target: &RuntimeExpr,
+        target: &crate::value::RuntimeFieldTarget,
         field: &RuntimeFieldProjection,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let value = self.evaluate_expr_with_backend(target, pure_backend)?;
+        let value = match target {
+            crate::value::RuntimeFieldTarget::Value(value) => {
+                self.evaluate_expr_with_backend(value, pure_backend)?
+            }
+            crate::value::RuntimeFieldTarget::Inspect { place, .. } => {
+                return self.fiber.env.inspect_field(place, field);
+            }
+        };
         match (field, value) {
             (RuntimeFieldProjection::Nominal(field), RuntimeValue::NominalRecord(record)) => record
                 .field(*field)
@@ -1562,7 +1569,7 @@ mod opaque_record_projection_tests {
         RuntimeExpr::from_admitted_parts(
             field_ty,
             RuntimeExprKind::Field {
-                target: Box::new(target),
+                target: Box::new(target).into(),
                 field: RuntimeFieldProjection::OpaqueRecord {
                     owner: expected.clone(),
                     field: RuntimeRecordFieldId::try_from_zero_based_ordinal(0)

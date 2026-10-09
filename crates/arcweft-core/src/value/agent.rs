@@ -6,7 +6,7 @@
 //! authority.
 
 use super::ownership::RuntimeValueOwnership;
-use super::{RuntimeExpr, RuntimeValue};
+use super::{RuntimeEntityReferenceField, RuntimeExpr, RuntimeValue};
 use crate::entry::RuntimeCommandTargetId;
 use crate::pattern::RuntimeBuiltinVariantIdentity;
 use crate::plan::RuntimeAgentOperationalType;
@@ -189,6 +189,29 @@ pub enum RuntimeAgentField {
     ViewportY,
 }
 
+impl From<RuntimeEntityReferenceField> for RuntimeAgentField {
+    fn from(field: RuntimeEntityReferenceField) -> Self {
+        match field {
+            RuntimeEntityReferenceField::Id => Self::ReferenceId,
+            RuntimeEntityReferenceField::Family => Self::ReferenceFamily,
+            RuntimeEntityReferenceField::Name => Self::ReferenceName,
+        }
+    }
+}
+
+impl TryFrom<RuntimeAgentField> for RuntimeEntityReferenceField {
+    type Error = RuntimeAgentField;
+
+    fn try_from(field: RuntimeAgentField) -> Result<Self, Self::Error> {
+        match field {
+            RuntimeAgentField::ReferenceId => Ok(Self::Id),
+            RuntimeAgentField::ReferenceFamily => Ok(Self::Family),
+            RuntimeAgentField::ReferenceName => Ok(Self::Name),
+            other => Err(other),
+        }
+    }
+}
+
 /// Closed owner family for one Agent protocol field coordinate.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeAgentFieldOwner {
@@ -221,6 +244,21 @@ pub enum RuntimeAgentFieldResult {
     Optional(RuntimeAgentFieldValue),
 }
 
+impl RuntimeAgentFieldResult {
+    /// Fixed scalar fields return owned Copy values from a synchronous inspection.
+    pub const fn permits_copy_inspection(self) -> bool {
+        match self {
+            Self::Required(value) | Self::Optional(value) => matches!(
+                value,
+                RuntimeAgentFieldValue::Bool
+                    | RuntimeAgentFieldValue::String
+                    | RuntimeAgentFieldValue::U32
+                    | RuntimeAgentFieldValue::U64
+            ),
+        }
+    }
+}
+
 const fn required(value: RuntimeAgentFieldValue) -> RuntimeAgentFieldResult {
     RuntimeAgentFieldResult::Required(value)
 }
@@ -230,6 +268,12 @@ const fn optional(value: RuntimeAgentFieldValue) -> RuntimeAgentFieldResult {
 }
 
 impl RuntimeAgentField {
+    /// Stored Agent owners expose fixed Copy fields through synchronous inspection.
+    pub const fn permits_copy_inspection(self) -> bool {
+        matches!(self.owner(), RuntimeAgentFieldOwner::Agent(_))
+            && self.result().permits_copy_inspection()
+    }
+
     /// Resolves a wire-level field label against one closed Agent owner.
     ///
     /// AWBC stores record labels in its canonical string table. This method is
