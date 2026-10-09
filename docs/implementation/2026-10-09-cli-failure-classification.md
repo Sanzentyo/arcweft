@@ -131,7 +131,7 @@ production API changes, the full affected reverse-dependency closure, required
 check/Clippy/fmt evidence, and distinct reporting of failures or unavailable
 checks. No completion or green result is claimed here.
 
-## Current central evidence and repair ownership
+## Historical central evidence and repair ownership
 
 The latest complete CLI run is `f30a6772-270d-4280-b4d6-0f3fe826a961`:605 executed,399 passed,206 failed,23 skipped in283.648s. Selected IDs have no missing, extra or duplicates, and all frozen Rust inputs were unchanged. Of the original277 failures,71 passed under the same ID,1 obsolete motion fixture migrated to a maintained compile-rejection contract and passed, and205 still failed. Every original ID is accounted for. The additional MCP stdio tail-publication failure belongs to the original605 suite but is outside the original277 failures. Its readiness/collector repair is applied and awaits an actual CLI rerun.
 
@@ -148,3 +148,23 @@ Delivered components include Never let-else, named argument paths, code-only AWB
 | Latest complete run |399|206|205|
 
 The next acceptance is the actual compiled CLI suite after the complete range/capture checkpoint freezes. Executable body, source acceleration, Include/Choice, dense/traversal and labeled-loop boundaries remain in progress. After major CLI integration converges, work returns to remaining Generic Match acceptance, retained View and the protected atomic publication of all14 task-plan tables. The original goal is incomplete.
+
+## Latest range and policy integration execution
+
+Full central run `ef8ff299-969f-4589-9584-4d788bf7aea6` executed657 cases in409.732s: CLI608 had407 passes/201 failures, policy14 and protocol35 all passed. All selected IDs were executed exactly once and all3,568 frozen source/fixture/asset inputs were unchanged. The latest complete CLI result is now407/201; targeted repair runs must not replace it.
+
+Of the original277 failures,75 passed under the same ID,1 maintained motion-contract migration passed,200 still failed, and1 obsolete await? contract test was retired. Retirement is not a passing test. Two older content-owner unit tests were replaced when the implementation stopped global speaker/content lookup; direct permutation and duplicate-owner admission replacements are required and await actual execution. Six new CLI IDs are retained explicitly in the JSON.
+
+Actual remaining failures distinguish adapter behavior from execution coverage: SystemInfo completes2 requests within its8 one-operation frames before reaching the third; its thread fixture separately lacks sealed child statement local-use evidence. Resource metadata now reaches strict builtin variant admission, whose compiler producer omitted the required tuple payload wrapper. The MCP diagnostic correctly retains tail-end but the cmd fixture exits on fragmented JSON writes. Clear trims the prepared content while remaining on logical page0; the migrated page1 target was a fixture mistake. These precise repairs are underway with their original semantic, pixel, counter and rejection assertions preserved.
+
+Targeted final correction run `8b821922-25d8-4674-a2c8-2b87c708a751`:80 executed,77 passed,3 failed;3,568 input hashes unchanged. All MCP, Thread borrowing/affine, SystemInfo, timed Clear/page1/Ruby and owner-replacement cases pass. Remaining failures are named AgentResourceBody type annotation resolution and two trace-measured expect host-call counts; this does not update the fullCLI407/201 result.
+
+Focused integration `31e1627e-250e-4e85-924c-3d5ebfbe8d40`:9 run,8 passed/1 failed; resource3, all4 ignored MCP stdio E2E and depth-sorted hit pass. The remaining animation fixture later passes `1806296a-453e-4cd7-9c20-0a6202583ab4` with original bounds and raw-pixel separation assertions. Protocol/MCP complete owner run `4af4ec51-7910-44fb-9197-30f6c7808f82` passes62/62 after the exact issued document/layout/catalog fixture repair. Each has3,568 unchanged input hashes. FullCLI remains407/201 until an actual full rerun.
+
+## Verified owning source deliveries
+
+The named AgentResourceBody native/AWBC argument regression passes with its owning compiler cases (3/3). Sema/compiler transitive reverse dependencies pass across all22 selected packages:2,483/2,483 in sequential Windows/default-feature library runs. Current full Core passes1,114/1,114. Exact run IDs, package counts, log hashes and unchanged3,568-input inventories are retained in the JSON owning history. These results do not replace the latest fullCLI407/201.
+
+Published source cuts are MCP bounded stderr retirement `8ecb4b803d384707bca5ad7cf5b6c57d34e93b9c`, accepted builtin case/payload projection `e6dff79c83bfe6eb112f8af186896b8a0a66ca51`, and spawned Thread body/free capture checking `8ebde5e0bfc3b22ffc8c9c665e06c4f96643179c`. Exact remaining Field/range and CLI fixture changes are still separate WIP. Portable source names, labeled loops, scalar executable bodies and batch/fusion candidates remain unvalidated.
+
+Independent static review found a remaining Field WIP parity gap: native/pure whole-owner lookup refuses a Copy child after a disjoint affine sibling was moved, while AWBC ordinal ReadPlace accepts the initialized child. Existing green suites do not exercise this edge. An owning storage-path correction and native/pure/AWBC regression are pending before the Field source cut can be delivered.
