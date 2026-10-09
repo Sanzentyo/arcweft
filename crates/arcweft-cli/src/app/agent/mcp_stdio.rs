@@ -3,7 +3,7 @@ use std::{
     fmt::{self, Display, Formatter},
     io::{BufRead as _, BufReader, Read as _, Write as _},
     process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio},
-    sync::{Arc, Mutex, mpsc},
+    sync::{Arc, Condvar, Mutex, mpsc},
     thread,
     time::{Duration, Instant},
 };
@@ -25,7 +25,7 @@ pub(in crate::app::agent) struct StdioMcpTransport {
     child: Child,
     stdin: ChildStdin,
     stdout_rx: mpsc::Receiver<Result<String, String>>,
-    stderr_tail: Arc<Mutex<BoundedStderrTail>>,
+    stderr_tail: Arc<StderrCollector>,
     policy: StdioMcpTransportPolicy,
     next_id: u64,
     shutdown_started: bool,
@@ -54,6 +54,138 @@ impl Default for StdioMcpTransportPolicy {
 struct BoundedStderrTail {
     bytes: VecDeque<u8>,
     capacity: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum StderrReadState {
+    Reading,
+    Eof,
+    Failed(String),
+}
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub(in crate::app::agent) enum StderrCollectionError {
+    #[error("stderr closed before the expected publication")]
+    ClosedBeforePublication,
+    #[error("stderr read failed: {0}")]
+    Read(String),
+    #[error("stderr publication deadline expired")]
+    DeadlineExpired,
+    #[error("stderr collector state is poisoned")]
+    Poisoned,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub(in crate::app::agent) enum StderrCaptureOutcome {
+    Complete,
+    ShutdownContinues,
+    ChildStatus(String),
+    ChildTermination(String),
+    ChildExitDeadline,
+    Collection(StderrCollectionError),
+}
+
+impl Display for StderrCaptureOutcome {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Complete => formatter.write_str("complete"),
+            Self::ShutdownContinues => formatter.write_str("owned shutdown is continuing"),
+            Self::ChildStatus(message) => write!(formatter, "child status read failed: {message}"),
+            Self::ChildTermination(message) => {
+                write!(formatter, "child termination failed: {message}")
+            }
+            Self::ChildExitDeadline => formatter.write_str("child termination deadline expired"),
+            Self::Collection(error) => Display::fmt(error, formatter),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct StderrCollection {
+    tail: BoundedStderrTail,
+    state: StderrReadState,
+}
+
+#[derive(Debug)]
+struct StderrCollector {
+    collection: Mutex<StderrCollection>,
+    changed: Condvar,
+}
+
+impl StderrCollector {
+    fn new(capacity: usize) -> Self {
+        Self {
+            collection: Mutex::new(StderrCollection {
+                tail: BoundedStderrTail::new(capacity),
+                state: StderrReadState::Reading,
+            }),
+            changed: Condvar::new(),
+        }
+    }
+
+    fn text(&self) -> String {
+        self.collection
+            .lock()
+            .map(|collection| collection.tail.text())
+            .unwrap_or_default()
+    }
+
+    fn push(&self, bytes: &[u8]) {
+        if let Ok(mut collection) = self.collection.lock() {
+            collection.tail.push(bytes);
+        }
+        self.changed.notify_all();
+    }
+
+    fn finish(&self, state: StderrReadState) {
+        if let Ok(mut collection) = self.collection.lock() {
+            collection.state = state;
+        }
+        self.changed.notify_all();
+    }
+
+    /// Publishes only a completed stream or an explicit deadline/read failure.
+    /// The buffer remains bounded even while a descendant still holds a pipe.
+    fn wait_until(
+        &self,
+        deadline: Instant,
+        ready: impl Fn(&StderrCollection) -> bool,
+    ) -> Result<String, StderrCollectionError> {
+        let mut collection = self
+            .collection
+            .lock()
+            .map_err(|_| StderrCollectionError::Poisoned)?;
+        loop {
+            if let StderrReadState::Failed(message) = &collection.state {
+                return Err(StderrCollectionError::Read(message.clone()));
+            }
+            if ready(&collection) {
+                return Ok(collection.tail.text());
+            }
+            match &collection.state {
+                StderrReadState::Eof => return Err(StderrCollectionError::ClosedBeforePublication),
+                StderrReadState::Failed(message) => {
+                    return Err(StderrCollectionError::Read(message.clone()));
+                }
+                StderrReadState::Reading => {}
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(StderrCollectionError::DeadlineExpired);
+            }
+            collection = self
+                .changed
+                .wait_timeout(collection, remaining)
+                .map_err(|_| StderrCollectionError::Poisoned)?
+                .0;
+        }
+    }
+
+    fn finish_capture(&self, deadline: Instant) -> Result<String, StderrCollectionError> {
+        self.wait_until(deadline, |collection| {
+            collection.state == StderrReadState::Eof
+        })
+    }
 }
 
 impl BoundedStderrTail {
@@ -125,7 +257,7 @@ impl StdioMcpTransport {
         policy: StdioMcpTransportPolicy,
     ) -> Self {
         let stdout_rx = spawn_stdout_reader(stdout);
-        let stderr_tail = Arc::new(Mutex::new(BoundedStderrTail::new(policy.stderr_tail_bytes)));
+        let stderr_tail = Arc::new(StderrCollector::new(policy.stderr_tail_bytes));
         spawn_stderr_reader(stderr, Arc::clone(&stderr_tail));
         Self {
             child,
@@ -192,10 +324,18 @@ impl StdioMcpTransport {
                 });
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
+                let stderr_completion = if self.shutdown_started {
+                    // The shutdown owner must still send its exit notification
+                    // after an unanswered shutdown request before killing.
+                    StderrCaptureOutcome::ShutdownContinues
+                } else {
+                    self.abort_timed_out_request()
+                };
                 return Err(StdioMcpTransportError::Timeout {
                     operation: method,
                     timeout_millis: timeout.as_millis(),
                     stderr_tail: self.stderr_tail_text(),
+                    stderr_completion,
                 });
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -270,10 +410,28 @@ impl StdioMcpTransport {
     }
 
     fn stderr_tail_text(&self) -> String {
-        self.stderr_tail
-            .lock()
-            .map(|tail| tail.text())
-            .unwrap_or_default()
+        self.stderr_tail.text()
+    }
+
+    fn abort_timed_out_request(&mut self) -> StderrCaptureOutcome {
+        self.shutdown_started = true;
+        let deadline = Instant::now() + self.policy.shutdown_grace_timeout;
+        match self.child.try_wait() {
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                if let Err(error) = self.child.kill() {
+                    return StderrCaptureOutcome::ChildTermination(error.to_string());
+                }
+                if !self.wait_for_exit(deadline.saturating_duration_since(Instant::now())) {
+                    return StderrCaptureOutcome::ChildExitDeadline;
+                }
+            }
+            Err(error) => return StderrCaptureOutcome::ChildStatus(error.to_string()),
+        }
+        match self.stderr_tail.finish_capture(deadline) {
+            Ok(_) => StderrCaptureOutcome::Complete,
+            Err(error) => StderrCaptureOutcome::Collection(error),
+        }
     }
 
     #[cfg(test)]
@@ -416,21 +574,28 @@ fn spawn_stdout_reader(stdout: ChildStdout) -> mpsc::Receiver<Result<String, Str
     rx
 }
 
-fn spawn_stderr_reader(stderr: ChildStderr, tail: Arc<Mutex<BoundedStderrTail>>) {
-    thread::spawn(move || {
-        let mut reader = BufReader::new(stderr);
-        let mut chunk = [0_u8; 1024];
-        loop {
-            match reader.read(&mut chunk) {
-                Ok(0) | Err(_) => break,
-                Ok(read) => {
-                    if let Ok(mut tail) = tail.lock() {
-                        tail.push(&chunk[..read]);
-                    }
-                }
+fn spawn_stderr_reader(stderr: ChildStderr, tail: Arc<StderrCollector>) {
+    thread::spawn(move || collect_stderr(stderr, &tail));
+}
+
+fn collect_stderr(stderr: impl std::io::Read, tail: &StderrCollector) {
+    let mut reader = BufReader::new(stderr);
+    let mut chunk = [0_u8; 1024];
+    loop {
+        match reader.read(&mut chunk) {
+            Ok(0) => {
+                tail.finish(StderrReadState::Eof);
+                break;
+            }
+            Err(error) => {
+                tail.finish(StderrReadState::Failed(error.to_string()));
+                break;
+            }
+            Ok(read) => {
+                tail.push(&chunk[..read]);
             }
         }
-    });
+    }
 }
 
 impl StdioMcpEndpoint {
@@ -462,12 +627,13 @@ pub(in crate::app::agent) enum StdioMcpTransportError {
         stderr_tail: String,
     },
     #[error(
-        "MCP stdio endpoint timed out during {operation} after {timeout_millis}ms; stderr tail: {stderr_tail}"
+        "MCP stdio endpoint timed out during {operation} after {timeout_millis}ms; stderr tail: {stderr_tail}; stderr capture: {stderr_completion}"
     )]
     Timeout {
         operation: &'static str,
         timeout_millis: u128,
         stderr_tail: String,
+        stderr_completion: StderrCaptureOutcome,
     },
     #[error("MCP stdio endpoint closed during {operation}; stderr tail: {stderr_tail}")]
     Closed {
@@ -539,7 +705,7 @@ mod tests {
         collections::BTreeMap,
         fs,
         path::PathBuf,
-        process, thread,
+        process,
         time::{SystemTime, UNIX_EPOCH},
     };
 
@@ -639,6 +805,38 @@ mod tests {
     }
 
     #[test]
+    fn stderr_publication_preserves_bounded_data_and_reports_eof_or_read_failure() {
+        let collector = StderrCollector::new(4);
+        collect_stderr(std::io::Cursor::new(b"prefix-tail"), &collector);
+        assert_eq!(collector.finish_capture(Instant::now()).unwrap(), "tail");
+        assert_eq!(
+            collector.wait_until(Instant::now(), |collection| collection
+                .tail
+                .text()
+                .contains("missing")),
+            Err(StderrCollectionError::ClosedBeforePublication)
+        );
+
+        struct FailedReader;
+        impl std::io::Read for FailedReader {
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("reader failed"))
+            }
+        }
+        let failed = StderrCollector::new(4);
+        collect_stderr(FailedReader, &failed);
+        assert_eq!(
+            failed.finish_capture(Instant::now()),
+            Err(StderrCollectionError::Read("reader failed".to_owned()))
+        );
+        let waiting = StderrCollector::new(4);
+        assert_eq!(
+            waiting.finish_capture(Instant::now()),
+            Err(StderrCollectionError::DeadlineExpired)
+        );
+    }
+
+    #[test]
     fn stdio_transport_times_out_and_retains_bounded_stderr_tail() {
         let stderr = format!("prefix-start:{}:tail-end", "x".repeat(128));
         let policy = StdioMcpTransportPolicy {
@@ -652,9 +850,27 @@ mod tests {
                 .expect("fake child spawns");
 
         let deadline = Instant::now() + Duration::from_secs(2);
-        while !transport.stderr_tail_text().contains("tail-end") && Instant::now() < deadline {
-            thread::sleep(Duration::from_millis(10));
-        }
+        let ready = transport
+            .stdout_rx
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()));
+        assert!(
+            matches!(&ready, Ok(Ok(line)) if line.trim() == "READY"),
+            "child must publish readiness before the request; ready={ready:?}, child={:?}, stderr={}",
+            transport.child.try_wait(),
+            transport.stderr_tail_text()
+        );
+        transport
+            .stderr_tail
+            .wait_until(deadline, |collection| {
+                collection.tail.text().contains("tail-end")
+            })
+            .unwrap_or_else(|error| {
+                panic!(
+                    "child stderr setup failed: {error}; child={:?}; stderr={}",
+                    transport.child.try_wait(),
+                    transport.stderr_tail_text()
+                )
+            });
         let error = transport
             .request::<serde_json::Value>("initialize", &json!({}))
             .expect_err("request should time out");
@@ -662,6 +878,7 @@ mod tests {
         let StdioMcpTransportError::Timeout {
             operation,
             stderr_tail,
+            stderr_completion,
             ..
         } = error
         else {
@@ -671,6 +888,7 @@ mod tests {
         assert!(stderr_tail.contains("tail-end"));
         assert!(!stderr_tail.contains("prefix-start"));
         assert!(stderr_tail.len() <= policy.stderr_tail_bytes);
+        assert_eq!(stderr_completion, StderrCaptureOutcome::Complete);
     }
 
     #[test]
@@ -771,8 +989,8 @@ mod tests {
     #[cfg(windows)]
     fn hanging_child_endpoint(stderr: &str) -> StdioMcpEndpoint {
         powershell_endpoint(format!(
-            "[Console]::Error.Write('{}'); [Console]::Error.Flush(); while (($line=[Console]::In.ReadLine()) -ne $null) {{ Start-Sleep -Milliseconds 200 }}",
-            ps_single_quote(stderr)
+            "[Console]::Error.Write('{}'); [Console]::Error.Flush(); [Console]::Out.WriteLine('READY'); [Console]::Out.Flush(); while ([Console]::In.ReadLine() -ne $null) {{ }}",
+            ps_single_quote(stderr),
         ))
     }
 
@@ -832,7 +1050,7 @@ mod tests {
             args: vec![
                 "-c".to_owned(),
                 format!(
-                    "printf '%s' '{}' >&2; while IFS= read -r line; do sleep 1; done",
+                    "printf '%s' '{}' >&2; printf 'READY\\n'; while IFS= read -r line; do :; done",
                     sh_quote(stderr)
                 ),
             ],
