@@ -1803,30 +1803,7 @@ impl<'a> LocalUseChecker<'a> {
                     self.statement(statement, state)?;
                 }
             }
-            HirContextualStmtBody::Thread(body) => {
-                for item in body.items() {
-                    match item {
-                        arcweft_lang_hir::expr::HirThreadFlowItem::DialogueApplication(
-                            expression,
-                        ) => self.expression(*expression, state)?,
-                        arcweft_lang_hir::expr::HirThreadFlowItem::Statement(statement)
-                        | arcweft_lang_hir::expr::HirThreadFlowItem::Choice(statement)
-                        | arcweft_lang_hir::expr::HirThreadFlowItem::If(statement)
-                        | arcweft_lang_hir::expr::HirThreadFlowItem::IfLet(statement)
-                        | arcweft_lang_hir::expr::HirThreadFlowItem::Match(statement)
-                        | arcweft_lang_hir::expr::HirThreadFlowItem::While(statement)
-                        | arcweft_lang_hir::expr::HirThreadFlowItem::WhileLet(statement)
-                        | arcweft_lang_hir::expr::HirThreadFlowItem::For(statement)
-                        | arcweft_lang_hir::expr::HirThreadFlowItem::Select(statement)
-                        | arcweft_lang_hir::expr::HirThreadFlowItem::SourceLocale(statement)
-                        | arcweft_lang_hir::expr::HirThreadFlowItem::Scope(statement)
-                        | arcweft_lang_hir::expr::HirThreadFlowItem::Include(statement)
-                        | arcweft_lang_hir::expr::HirThreadFlowItem::Error(statement) => {
-                            self.statement(*statement, state)?
-                        }
-                    }
-                }
-            }
+            HirContextualStmtBody::Thread(body) => self.thread_body(body, state)?,
         }
         Ok(())
     }
@@ -1855,6 +1832,36 @@ impl<'a> LocalUseChecker<'a> {
         body(self, &mut iteration)?;
         self.flow.connect(&iteration, header);
         *state = Availability::at(header);
+        Ok(())
+    }
+
+    fn thread_body(
+        &mut self,
+        body: &arcweft_lang_hir::expr::HirThreadBody,
+        state: &mut Availability,
+    ) -> Result<(), CheckedLocalUseError> {
+        for item in body.items() {
+            match item {
+                arcweft_lang_hir::expr::HirThreadFlowItem::DialogueApplication(application) => {
+                    self.expression(*application, state)?
+                }
+                arcweft_lang_hir::expr::HirThreadFlowItem::Statement(statement)
+                | arcweft_lang_hir::expr::HirThreadFlowItem::Choice(statement)
+                | arcweft_lang_hir::expr::HirThreadFlowItem::If(statement)
+                | arcweft_lang_hir::expr::HirThreadFlowItem::IfLet(statement)
+                | arcweft_lang_hir::expr::HirThreadFlowItem::Match(statement)
+                | arcweft_lang_hir::expr::HirThreadFlowItem::While(statement)
+                | arcweft_lang_hir::expr::HirThreadFlowItem::WhileLet(statement)
+                | arcweft_lang_hir::expr::HirThreadFlowItem::For(statement)
+                | arcweft_lang_hir::expr::HirThreadFlowItem::Select(statement)
+                | arcweft_lang_hir::expr::HirThreadFlowItem::SourceLocale(statement)
+                | arcweft_lang_hir::expr::HirThreadFlowItem::Scope(statement)
+                | arcweft_lang_hir::expr::HirThreadFlowItem::Include(statement)
+                | arcweft_lang_hir::expr::HirThreadFlowItem::Error(statement) => {
+                    self.statement(*statement, state)?
+                }
+            }
+        }
         Ok(())
     }
 
@@ -2210,6 +2217,22 @@ impl<'a> LocalUseChecker<'a> {
                 }
                 self.expression(value.tail(), state)?;
                 self.end_loop(state)?;
+            }
+            HirExprKind::Thread(value) => {
+                // A spawned body owns independent availability, loans and control
+                // scopes. Collect its inputs from those same admitted body reads,
+                // then transfer only external bindings in the parent frame.
+                self.callback_local_uses.push(BTreeSet::new());
+                let result =
+                    self.callable_body(|this, child| this.thread_body(value.body(), child));
+                let locals = self
+                    .callback_local_uses
+                    .pop()
+                    .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                result?;
+                for local in scheduled_free_locals(self.analysis, owner, locals)? {
+                    self.use_local(CheckedLocalUseSite::Capture { owner, local }, local, state)?;
+                }
             }
             HirExprKind::Closure(value) => {
                 let Some(CheckedExpressionResolution::Closure(_)) = self

@@ -1776,3 +1776,159 @@ fn let_else_never_prefix_is_not_revived_by_unreachable_loop_statements() {
     );
     analyze(&fixture).expect("unreachable statements after return preserve Never");
 }
+#[test]
+fn spawned_thread_statement_reads_receive_exact_local_use_rows() {
+    let world = fixture(
+        r#"
+flow root() -> String effects { control.spawn, log.write } {
+    thread first {
+        let value = "first"
+        log.info(value)
+    }
+    thread second {
+        let value = "second"
+        log.info(value)
+    }
+    return "done"
+}
+"#,
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let mut reads = 0;
+    for (owner, expression) in report.expressions() {
+        let Some(local) = expression.execution_local_use() else {
+            continue;
+        };
+        let row = report
+            .checked_local_uses()
+            .value_transfer_at(CheckedLocalUseSite::Expression(owner))
+            .expect("an admitted child-local read has its own sealed row");
+        assert_eq!(row.local(), local);
+        assert_eq!(row.mode(), CheckedLocalReadMode::Copy);
+        reads += 1;
+    }
+    assert_eq!(reads, 2);
+    assert_eq!(
+        report
+            .checked_local_uses()
+            .value_transfers()
+            .filter(|(site, _)| matches!(site, CheckedLocalUseSite::Capture { .. }))
+            .count(),
+        0,
+        "child declarations are excluded from the parent capture packet"
+    );
+}
+
+#[test]
+fn spawned_thread_captures_move_affine_inputs_once_and_copy_unrestricted_inputs() {
+    let world = fixture(
+        r"
+fn root(input: Vec<Need<i64>>, marker: String) effects { control.spawn, log.write } {
+    thread {
+        let taken = input
+        log.info(marker)
+    }
+    log.info(marker)
+    ()
+}
+",
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let executable = world.project.analysis_view().unwrap();
+    let (_, module) = executable.modules().next().unwrap();
+    let owner = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Thread(_)).then_some(owner)
+        })
+        .unwrap();
+    let captures = report
+        .checked_local_uses()
+        .value_transfers()
+        .filter_map(|(site, row)| match site {
+            CheckedLocalUseSite::Capture {
+                owner: captured_owner,
+                local,
+            } if captured_owner == owner => {
+                Some((local, row.mode(), report.local(local).unwrap().ty().clone()))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(captures.len(), 2);
+    assert!(
+        captures
+            .iter()
+            .any(|(_, mode, ty)| *mode == CheckedLocalReadMode::Move
+                && matches!(ty, TypeKind::Vec(_)))
+    );
+    assert!(
+        captures
+            .iter()
+            .any(|(_, mode, ty)| *mode == CheckedLocalReadMode::Copy && *ty == TypeKind::String)
+    );
+    let affine = captures
+        .iter()
+        .find(|(_, _, ty)| matches!(ty, TypeKind::Vec(_)))
+        .unwrap()
+        .0;
+    assert_eq!(
+        report
+            .checked_local_uses()
+            .value_transfers()
+            .filter(
+                |(site, row)| matches!(site, CheckedLocalUseSite::Expression(_))
+                    && row.local() == affine
+                    && row.mode() == CheckedLocalReadMode::Move
+            )
+            .count(),
+        1,
+        "the child owns its transferred input independently of the parent capture"
+    );
+}
+
+#[test]
+fn spawned_thread_parent_and_child_reject_repeated_affine_moves() {
+    for source in [
+        "fn root(input: Vec<Need<i64>>) effects { control.spawn } {\n thread { let taken = input }\n let reused = input\n ()\n}\n",
+        "fn root(input: Vec<Need<i64>>) effects { control.spawn } {\n thread {\n let first = input\n let second = input\n }\n ()\n}\n",
+    ] {
+        assert!(
+            matches!(
+                analyze(&fixture(source, None)),
+                Err(FinalSemanticAnalysisError::LocalUse(
+                    CheckedLocalUseError::Unavailable { .. }
+                ))
+            ),
+            "a spawned frame preserves affine availability: {source}"
+        );
+    }
+}
+
+#[test]
+fn spawned_thread_capture_cannot_escape_an_active_mutable_receiver_loan() {
+    let source = r"
+fn root(input: Vec<Need<i64>>, item: Need<i64>) effects { control.spawn } {
+    let mut items = input
+    items.push(value = {
+        thread { let stolen = items }
+        item
+    })
+    ()
+}
+";
+    assert!(
+        matches!(
+            analyze(&fixture(source, None)),
+            Err(FinalSemanticAnalysisError::LocalUse(
+                CheckedLocalUseError::BorrowedReceiverInvalidation {
+                    site: CheckedLocalUseSite::Capture { .. },
+                    ..
+                }
+            ))
+        ),
+        "capture transfer retains the exact parent receiver loan"
+    );
+}
