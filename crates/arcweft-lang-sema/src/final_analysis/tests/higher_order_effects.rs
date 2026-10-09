@@ -417,13 +417,98 @@ fn contextual_effect_rows_survive_value_expression_boundaries() {
 
 #[test]
 fn contextual_effect_rows_do_not_hide_array_length_mismatches() {
+    use crate::callable::{
+        CallAnalysisOutcome, CallableDiagnosticCode, CallableDiagnosticSeverity,
+    };
+    use arcweft_lang_hir::{
+        expr::HirExprKind,
+        source_index::{HirExprSourceRole, HirSourceQuery},
+    };
+    use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+
     let fixture = fixture(
         "fn writer(value: i64) -> i64 effects { fs.write } { value }\n\
          fn ignore(unused: Array<i64 -> i64, 2>, value: i64) -> i64 { value }\n\
          flow main() -> i64 { return ignore([|value| writer(value)], 42i64) }",
         None,
     );
-    assert!(analyze(&fixture).is_err());
+    let analysis = analyze(&fixture).expect("the rejected array argument retains tooling evidence");
+    let rejected = analysis
+        .calls()
+        .filter_map(|(owner, call)| match call.outcome() {
+            CallAnalysisOutcome::Rejected(evidence) => Some((owner, call, evidence)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let [(owner, call, evidence)] = rejected.as_slice() else {
+        panic!("only the ignore application is rejected: {rejected:?}");
+    };
+    let [candidate] = evidence.candidates() else {
+        panic!("one ignore candidate is retained");
+    };
+    assert!(matches!(
+        candidate.id(),
+        CallableCandidateId::Project(CallableDeclarationKey::Existing(declaration))
+            if declaration.name() == "ignore"
+    ));
+    let [group] = candidate.schema().groups() else {
+        panic!("one ignore parameter group");
+    };
+    let [array_parameter, value_parameter] = group.parameters() else {
+        panic!("both ignore parameters remain in the rejected candidate");
+    };
+    let Some(TypeKind::Array { item, len }) = array_parameter.declared_type() else {
+        panic!("the callback array contract is retained");
+    };
+    assert_eq!(len, &crate::types::ArrayLength::Const(2));
+    let TypeKind::Function {
+        params,
+        return_type,
+        ..
+    } = item.as_ref()
+    else {
+        panic!("the array element is a callback");
+    };
+    assert_eq!(params.as_slice(), [TypeKind::I64]);
+    assert_eq!(return_type.as_ref(), &TypeKind::I64);
+    assert_eq!(value_parameter.declared_type(), Some(&TypeKind::I64));
+
+    let module = fixture
+        .project
+        .analysis_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root module");
+    let HirExprKind::Call(authored_call) = module.resolve_expr(*owner).unwrap().kind() else {
+        panic!("the rejection retains its authored call owner");
+    };
+    let [array_argument, _] = authored_call.arguments() else {
+        panic!("the authored ignore call has both arguments");
+    };
+    let HirExprKind::BracketSequence(array) =
+        module.resolve_expr(array_argument.value()).unwrap().kind()
+    else {
+        panic!("the actual array is the authored bracket sequence");
+    };
+    assert_eq!(array.elements().len(), 1);
+    let source_query = HirSourceQuery::Expr {
+        owner: *owner,
+        role: HirExprSourceRole::Whole,
+    };
+    assert_eq!(call.source_query(), source_query);
+    let expected_span = module.source_anchor(source_query).unwrap().unwrap();
+    let [diagnostic] = call.diagnostics() else {
+        panic!("one array-length rejection diagnostic");
+    };
+    assert_eq!(diagnostic.code(), CallableDiagnosticCode::NoViableSignature);
+    assert_eq!(diagnostic.severity(), CallableDiagnosticSeverity::Error);
+    assert_eq!(diagnostic.span(), Some(&expected_span));
+    assert_eq!(
+        analysis.call_diagnostics().collect::<Vec<_>>(),
+        [diagnostic]
+    );
+    assert!(call.selected_application().is_none());
+    super::callable_values::assert_unselected_call_has_no_execution(&analysis, *owner);
 }
 
 #[test]

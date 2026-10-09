@@ -5688,3 +5688,117 @@ fn topology_binding_origins_retain_declaration_mutability_storage_and_shadow_ide
     assert_ne!(values[0].0, values[1].0);
     assert_ne!(values[0].1, values[1].1);
 }
+
+#[test]
+fn unselected_call_inventory_validates_source_without_admitting_callback_operands() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/unselected-callback",
+        "unselected-callback.arcw",
+        "fn invoke(handler: i32 -> i32) -> i32 { 1i32 }\nfn caller() -> i32 { invoke(|value| value) }\n",
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    assert!(module.is_analysis_ready(), "{:?}", module.diagnostics());
+    let (call, callback, callback_body) = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            let HirExprKind::Call(invocation) = expression.kind() else {
+                return None;
+            };
+            let [argument] = invocation.arguments() else {
+                return None;
+            };
+            let HirExprKind::Closure(closure) = module.resolve_expr(argument.value()).ok()?.kind()
+            else {
+                return None;
+            };
+            Some((owner, argument.value(), closure.body()))
+        })
+        .expect("one authored callback application");
+    let HirExprKind::Closure(closure) = module.resolve_expr(callback).unwrap().kind() else {
+        panic!("callback source");
+    };
+    let callback_pattern = closure.parameters()[0].pattern();
+    let callback_scope = closure.scope();
+    let callback_local = module
+        .locals()
+        .find_map(|(owner, local)| (local.name().as_str() == "value").then_some(owner))
+        .expect("callback parameter");
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, module)],
+    )
+    .unwrap();
+    let symbols = symbols_for_project(&project, parsed.document(), "unselected-callback");
+    let view = project.analysis_view().unwrap();
+    let topology = view
+        .accept_symbol_generation(&symbols)
+        .unwrap()
+        .into_evaluation_topology()
+        .unwrap();
+    let Some(HirSelectedCallExpressionDisposition::Callable(inventory)) =
+        test_selected_call_inventory(view, &topology, call)
+    else {
+        panic!("the exact call has an owning source inventory");
+    };
+    let graph = view
+        .selected_expression_graph(
+            &topology,
+            |_| None,
+            |owner| {
+                (owner == call)
+                    .then(|| HirSelectedCallExpressionDisposition::Unselected(inventory.clone()))
+            },
+        )
+        .expect("unselected source inventory remains inspectable");
+    assert!(graph.contains_expression(call));
+    assert!(!graph.contains_expression(callback));
+    assert!(!graph.contains_expression(callback_body));
+    assert!(!graph.contains_owner(SyntheticOwner::Local(callback_local)));
+    assert!(!graph.contains_owner(SyntheticOwner::Pattern(callback_pattern)));
+    assert!(!graph.contains_owner(SyntheticOwner::Scope(callback_scope)));
+    assert!(graph.expression_edges(call).is_empty());
+
+    let accepted = view
+        .selected_expression_graph(
+            &topology,
+            |_| None,
+            |owner| {
+                (owner == call)
+                    .then(|| HirSelectedCallExpressionDisposition::Callable(inventory.clone()))
+            },
+        )
+        .expect("an admitted callback retains its exact owners");
+    assert!(accepted.contains_expression(callback));
+    assert!(accepted.contains_owner(SyntheticOwner::Local(callback_local)));
+    assert!(accepted.contains_owner(SyntheticOwner::Pattern(callback_pattern)));
+    let location = topology.semantic_path(call.into()).unwrap().unwrap();
+    let super::HirSemanticPathRoot::Declaration(declaration) = location.root() else {
+        panic!("callback call belongs to its declaration");
+    };
+    let accepted_declaration = view
+        .selected_declaration_expression_graph(
+            &topology,
+            declaration,
+            |_| None,
+            |owner| {
+                (owner == call)
+                    .then(|| HirSelectedCallExpressionDisposition::Callable(inventory.clone()))
+            },
+        )
+        .expect("declaration authority retains its admitted locals");
+    assert!(accepted_declaration.contains_local(callback_local));
+
+    let forged = HirSelectedCallExpressionInventory::new(Box::new([]), inventory.callee());
+    assert!(matches!(
+        view.selected_expression_graph(&topology, |_| None, |owner| {
+            (owner == call).then(|| HirSelectedCallExpressionDisposition::Unselected(forged.clone()))
+        }),
+        Err(HirSelectedExpressionInventoryError::InvalidSelectedCallArguments { expression }) if expression == call
+    ));
+}

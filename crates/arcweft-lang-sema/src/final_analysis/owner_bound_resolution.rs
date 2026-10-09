@@ -30,7 +30,7 @@ use super::{
     PreparedImplicitCallableBody, PreparedOwnerBoundResolution, TypeKind,
 };
 
-/// Seals every prepared owner-bound row in one transaction-local batch.
+/// Seals every selected prepared owner-bound row in one transaction-local batch.
 ///
 /// The returned map contains replacements for the owner-bound entries only.
 /// Callers must install all replacements after this function succeeds so a
@@ -50,7 +50,7 @@ pub(super) fn seal(
             matches!(fact, PreparedExpressionFact::OwnerBound(_)).then_some(*owner)
         })
         .collect::<Vec<_>>();
-    let callable_owners = owners
+    let staged_callable_owners = owners
         .iter()
         .copied()
         .filter(|owner| {
@@ -63,6 +63,23 @@ pub(super) fn seal(
                     )
             )
         })
+        .collect::<BTreeSet<_>>();
+    // Capture uses belong to prepared implicit-callable owners even when the
+    // enclosing contextual application was not selected. Validate the complete
+    // drained ledger before issuing identities only for canonical graph members.
+    if pending_capture_uses
+        .keys()
+        .any(|owner| !staged_callable_owners.contains(owner))
+    {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    }
+    let owners = owners
+        .into_iter()
+        .filter(|owner| structural_edges.contains_expression(*owner))
+        .collect::<Vec<_>>();
+    let callable_owners = staged_callable_owners
+        .into_iter()
+        .filter(|owner| structural_edges.contains_expression(*owner))
         .collect::<BTreeSet<_>>();
     let pipe_owners = owners
         .iter()
@@ -92,13 +109,6 @@ pub(super) fn seal(
             )
         })
         .collect::<BTreeSet<_>>();
-    if pending_capture_uses
-        .keys()
-        .any(|owner| !callable_owners.contains(owner))
-    {
-        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-    }
-
     let mut replacements = BTreeMap::new();
     // Pipe identities have no callable dependency, so issue their complete
     // rows first.  Callable body closure can then join Pipe/PipeLeft owner

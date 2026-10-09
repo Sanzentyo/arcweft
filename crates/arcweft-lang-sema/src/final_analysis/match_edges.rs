@@ -144,7 +144,7 @@ impl CheckedSelectedExpressionGraph {
         {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
-        let mut call_inventories = BTreeMap::<ExprId, HirSelectedCallExpressionInventory>::new();
+        let mut call_inventories = BTreeMap::<ExprId, HirSelectedCallExpressionDisposition>::new();
         for site in prepared_calls.sites() {
             // HIR's selected-expression graph inventories only ordinary
             // `HirExprKind::Call` children. Attached content applications
@@ -170,8 +170,12 @@ impl CheckedSelectedExpressionGraph {
             let inventory = prepared_calls
                 .project_site_payload(
                     site,
-                    |prefix| prefix.selected_expression_inventory(),
-                    |unselected| Ok(unselected.selected_expression_inventory()),
+                    |prefix| {
+                        prefix
+                            .selected_expression_inventory()
+                            .map(HirSelectedCallExpressionDisposition::Callable)
+                    },
+                    |unselected| Ok(unselected.source_expression_disposition()),
                 )
                 .ok_or_else(|| {
                     FinalSemanticAnalysisError::CallSeal(FinalCallSealFailure::new(
@@ -204,12 +208,7 @@ impl CheckedSelectedExpressionGraph {
                 fx_body_obligations
                     .contains(owner)
                     .then_some(HirSelectedCallExpressionDisposition::Structural)
-                    .or_else(|| {
-                        call_inventories
-                            .get(&owner)
-                            .cloned()
-                            .map(HirSelectedCallExpressionDisposition::Callable)
-                    })
+                    .or_else(|| call_inventories.get(&owner).cloned())
                     .or_else(|| {
                         expressions
                             .get(&owner)
@@ -222,6 +221,14 @@ impl CheckedSelectedExpressionGraph {
             .into_iter()
             .filter(|(owner, _)| {
                 selected.graph.contains_expression(*owner) && !fx_body_obligations.contains(*owner)
+            })
+            .filter_map(|(owner, disposition)| match disposition {
+                HirSelectedCallExpressionDisposition::Callable(inventory)
+                | HirSelectedCallExpressionDisposition::NonCallable(inventory)
+                | HirSelectedCallExpressionDisposition::Unselected(inventory) => {
+                    Some((owner, inventory))
+                }
+                HirSelectedCallExpressionDisposition::Structural => None,
             })
             .collect();
         Ok(selected)
@@ -548,6 +555,12 @@ impl CheckedExpressionEdgeAuthority for CheckedStructuralEdgeDraft {
 }
 
 impl CheckedStructuralEdgeDraft {
+    /// Membership is inherited from the canonical selected HIR graph used to
+    /// seal this draft. A prepared query fact alone cannot grant membership.
+    pub(super) fn contains_expression(&self, owner: ExprId) -> bool {
+        self.facts.contains_key(&owner)
+    }
+
     fn checked_expression_children(
         &self,
         owner: ExprId,
@@ -1140,7 +1153,9 @@ pub(super) fn prepare_checked_method_selections(
     let prepared = expressions
         .iter()
         .filter_map(|(owner, checked)| {
-            matches!(checked, super::PreparedExpressionFact::Method(_)).then_some(*owner)
+            (structural_edges.contains_expression(*owner)
+                && matches!(checked, super::PreparedExpressionFact::Method(_)))
+            .then_some(*owner)
         })
         .collect::<Vec<_>>();
     if prepared.len() != methods.len() || prepared.iter().any(|owner| !methods.contains_key(owner))

@@ -246,6 +246,10 @@ pub enum CandidateFactTransactionViolation {
     PhysicalCallAttemptOrder,
     #[error("physical candidate evaluation does not belong to the active call attempt")]
     PhysicalCallAttemptMismatch,
+    #[error("physical candidate type observation has no admitted evaluation at {owner:?}")]
+    PhysicalCandidateEvaluationMissing { owner: ExprId },
+    #[error("physical candidate type observations conflict at {owner:?}")]
+    PhysicalCandidateTypeObservationConflict { owner: ExprId },
     #[error("prepared call graph transaction violation: {0}")]
     PreparedCallGraph(crate::callable::PreparedCallGraphInvariant),
 }

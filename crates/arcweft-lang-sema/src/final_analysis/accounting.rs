@@ -176,7 +176,9 @@ impl PhysicalCandidateArgument {
 }
 
 /// One bounded, typed observation emitted immediately before a real slot
-/// evaluation. Rolled-back candidate semantics never erase this record.
+/// evaluation and completed with the type observed by a direct source probe.
+/// Rolled-back candidate semantics never erase this query evidence, and the
+/// observed type does not issue expression or callable execution authority.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PhysicalCandidateArgumentEvaluation {
     attempt: PhysicalCallAttemptId,
@@ -187,6 +189,7 @@ pub(crate) struct PhysicalCandidateArgumentEvaluation {
     source: CheckedCallArgumentSlotSource,
     kind: PhysicalArgumentEvaluationKind,
     expected: CandidateExpectedType,
+    observed_type: Option<TypeKind>,
 }
 
 impl PhysicalCandidateArgumentEvaluation {
@@ -205,6 +208,7 @@ impl PhysicalCandidateArgumentEvaluation {
             source: argument.source,
             kind: argument.kind,
             expected: argument.expected,
+            observed_type: None,
         }
     }
 
@@ -247,6 +251,29 @@ impl PhysicalCandidateArgumentEvaluation {
     #[cfg(test)]
     pub(crate) const fn expected(&self) -> &CandidateExpectedType {
         &self.expected
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn observed_type(&self) -> Option<&TypeKind> {
+        self.observed_type.as_ref()
+    }
+
+    pub(in crate::final_analysis) fn retain_observed_type(
+        &mut self,
+        actual: &TypeKind,
+    ) -> Result<(), super::CandidateFactTransactionViolation> {
+        match &self.observed_type {
+            Some(existing) if existing != actual => {
+                Err(super::CandidateFactTransactionViolation::PhysicalCandidateTypeObservationConflict {
+                    owner: self.call_expression(),
+                })
+            }
+            Some(_) => Ok(()),
+            None => {
+                self.observed_type = Some(actual.clone());
+                Ok(())
+            }
+        }
     }
 
     pub(crate) fn same_candidate_slot(&self, other: &Self) -> bool {

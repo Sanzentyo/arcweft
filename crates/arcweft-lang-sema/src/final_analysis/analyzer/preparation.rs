@@ -21,10 +21,10 @@ use super::expressions::AnalyzerExpressionExpectation;
 use super::state::SemanticFactState;
 use super::{
     Analyzer, BTreeMap, BTreeSet, ExprId, FinalSemanticAnalysisError, GenericTypeScope,
-    HirCallArgument, HirExprKind, HirFunctionBody, HirImplMember, HirItemKind, HirModule,
-    HirPatternKind, HirPredicateBody, HirProofBody, HirStmtKind, NominalResolutionLimits,
-    PatternId, ProjectNominalType, Rc, ResolvedTypeRefOutcome, ScopeId, SelfTypeScope, StmtId,
-    TypeId, TypeKind, TypeResolutionInput,
+    HirExprKind, HirFunctionBody, HirImplMember, HirItemKind, HirModule, HirPatternKind,
+    HirPredicateBody, HirProofBody, HirStmtKind, NominalResolutionLimits, PatternId,
+    ProjectNominalType, Rc, ResolvedTypeRefOutcome, ScopeId, SelfTypeScope, StmtId, TypeId,
+    TypeKind, TypeResolutionInput,
     expression_types::literal_type,
     patterns::{PatternSeedContext, seed_item_parameter_types, seed_pattern_locals},
     resolve_type_ref,
@@ -676,19 +676,6 @@ impl Analyzer<'_, '_, '_> {
         // them again as context-free roots would perform one extra physical
         // evaluation outside the candidate transaction and could publish a
         // fact selected under the wrong expected type.
-        let contextual_call_arguments = self
-            .modules
-            .values()
-            .flat_map(|module| module.expressions())
-            .filter_map(|(owner, expression)| inventory.contains(&owner).then_some(expression))
-            .filter_map(|expression| match expression.kind() {
-                HirExprKind::Call(call) => Some(call.arguments()),
-                _ => None,
-            })
-            .flatten()
-            .map(HirCallArgument::value)
-            .filter(|owner| inventory.contains(owner))
-            .collect::<BTreeSet<_>>();
         let expression_children = self
             .modules
             .values()
@@ -710,12 +697,61 @@ impl Analyzer<'_, '_, '_> {
         // itself.  Materialize only such still-missing argument owners after
         // the owning Call has committed; this publishes the required
         // expression fact without inventing another candidate-slot visit.
-        for owner in contextual_call_arguments {
+        for owner in self.admitted_call_argument_roots(inventory.iter().copied())? {
             if !self.facts.expressions().contains_key(&owner) {
                 self.check_expression_published(owner, None)?;
             }
         }
         Ok(())
+    }
+
+    /// An admitted application or a non-callable target with independently
+    /// checked operands may require its physically expanded compact argument
+    /// container to be completed outside a candidate pass.
+    /// Failed contextual arguments remain owned by their unselected Call;
+    /// retrying them without that context would fabricate a new root check.
+    pub(super) fn admitted_call_argument_roots(
+        &self,
+        owners: impl IntoIterator<Item = ExprId>,
+    ) -> Result<BTreeSet<ExprId>, FinalSemanticAnalysisError> {
+        let graph = self
+            .facts
+            .prepared_calls()
+            .map_err(FinalSemanticAnalysisError::from)?;
+        let mut arguments = BTreeSet::new();
+        for owner in owners {
+            let site = crate::callable::CheckedCallSite::HirCall(owner);
+            let inventory = graph
+                .project_site_payload(
+                    site,
+                    |prefix| prefix.selected_expression_inventory().map(Some),
+                    |unselected| {
+                        Ok(match unselected.source_expression_disposition() {
+                            arcweft_lang_hir::project::HirSelectedCallExpressionDisposition::NonCallable(inventory) => Some(inventory),
+                            _ => None,
+                        })
+                    },
+                )
+                .transpose()
+                .map_err(|failure| {
+                    FinalSemanticAnalysisError::CallSeal(
+                        crate::final_analysis::FinalCallSealFailure::new(
+                            crate::final_analysis::FinalCallSealLocation::Site(site),
+                            failure,
+                        ),
+                    )
+                })?
+                .flatten();
+            if let Some(inventory) = inventory {
+                arguments.extend(
+                    inventory
+                        .arguments()
+                        .iter()
+                        .map(|argument| argument.expression()),
+                );
+            }
+        }
+        Ok(arguments)
     }
 
     #[cfg(test)]

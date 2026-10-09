@@ -423,6 +423,17 @@ impl PhysicalCandidateEvaluationTranscript {
             .find(|existing| existing.same_candidate_slot(proposed))
     }
 
+    fn matching_row_mut(
+        &mut self,
+        root: ExprId,
+        proposed: &PhysicalCandidateArgumentEvaluation,
+    ) -> Option<&mut PhysicalCandidateArgumentEvaluation> {
+        self.rows
+            .get_mut(&root)?
+            .iter_mut()
+            .find(|existing| existing.same_candidate_slot(proposed))
+    }
+
     fn merge(&mut self, other: Self) {
         for (root, rows) in other.rows {
             let target = self.rows.entry(root).or_default();
@@ -1363,6 +1374,45 @@ impl SemanticFactState {
             .or_default()
             .push(evaluation);
         Ok(PhysicalCandidateEvaluationAdmission::Recorded)
+    }
+
+    pub(super) fn retain_physical_candidate_observed_type(
+        &mut self,
+        identity: PhysicalCandidateArgumentEvaluation,
+        actual: &TypeKind,
+    ) -> Result<(), CandidateFactTransactionViolation> {
+        self.ensure_healthy()?;
+        let active = self
+            .active_physical_call_attempts
+            .last()
+            .ok_or(CandidateFactTransactionViolation::PhysicalCallAttemptRootMismatch)?;
+        if !active.attempt.same_issued_attempt(identity.attempt()) {
+            return Err(CandidateFactTransactionViolation::PhysicalCallAttemptMismatch);
+        }
+        let root = identity.attempt().root();
+        if let Some(row) = self
+            .physical_candidate_argument_evaluations
+            .matching_row_mut(root, &identity)
+        {
+            return row.retain_observed_type(actual);
+        }
+        if let Some(row) = self
+            .active_physical_candidate_argument_evaluations
+            .as_mut()
+            .and_then(|candidate| candidate.matching_row_mut(root, &identity))
+        {
+            return row.retain_observed_type(actual);
+        }
+        for attempt in &mut self.active_physical_call_attempts {
+            if let Some(row) = attempt.transcript.matching_row_mut(root, &identity) {
+                return row.retain_observed_type(actual);
+            }
+        }
+        Err(
+            CandidateFactTransactionViolation::PhysicalCandidateEvaluationMissing {
+                owner: identity.call_expression(),
+            },
+        )
     }
 
     pub(super) fn begin_expression(

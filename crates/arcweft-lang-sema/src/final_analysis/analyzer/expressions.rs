@@ -2031,6 +2031,17 @@ impl Analyzer<'_, '_, '_> {
                         expectation.clone()
                     },
                 )?;
+                if context.is_candidate()
+                    && tail.value_type().is_none()
+                    && self
+                        .has_unselected_call_diagnostic(context, block.tail())
+                        .map_err(AnalyzerExpressionError::fact)?
+                {
+                    // The enclosing candidate owns this contextual rejection.
+                    // Preserve its call diagnostic instead of turning a known
+                    // rejected tail into a missing expression-type invariant.
+                    return Err(AnalyzerExpressionError::rejected(owner));
+                }
                 let tail_type = tail.value_type().cloned().ok_or_else(|| {
                     AnalyzerExpressionError::fatal(
                         FinalSemanticAnalysisError::ExpressionTypeUnavailable {

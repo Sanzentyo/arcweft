@@ -82,6 +82,10 @@ impl HirSelectedDeclarationExpressionGraph {
         self.graph.contains_owner(SyntheticOwner::Stmt(owner))
     }
 
+    pub fn contains_local(&self, owner: crate::identity::LocalId) -> bool {
+        self.graph.contains_owner(SyntheticOwner::Local(owner))
+    }
+
     pub fn expression_edges(&self, owner: ExprId) -> &[HirExpressionEvaluationEdge] {
         self.graph.expression_edges(owner)
     }
@@ -132,10 +136,16 @@ impl HirSelectedCallArgument {
 /// Call-shaped expression (for example a scoped effect operand) follows its
 /// ordinary HIR edges and is not required to own a callable graph node.
 /// Callable applications must provide their closed mapper/callee inventory.
+/// Non-callable targets retain operands checked independently of a candidate;
+/// this source inventory does not admit the application for runtime execution.
+/// Unselected applications retain their validated source inventory without
+/// selecting operands that the failed contextual application did not admit.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirSelectedCallExpressionDisposition {
     Structural,
     Callable(HirSelectedCallExpressionInventory),
+    NonCallable(HirSelectedCallExpressionInventory),
+    Unselected(HirSelectedCallExpressionInventory),
 }
 
 /// Accepted HIR Select whose target is a static nominal-variant qualifier.
@@ -177,6 +187,130 @@ impl HirSelectedCallExpressionInventory {
 }
 
 impl HirSelectedExpressionGraph {
+    fn selects_owner_path(
+        &self,
+        owner: HirSemanticPathOwnerId,
+    ) -> Result<bool, HirSelectedExpressionInventoryError> {
+        let location = self
+            .topology
+            .semantic_path(owner)
+            .map_err(|_| HirSelectedExpressionInventoryError::InvalidSelectedGraph)?;
+        Ok(location.is_none_or(|location| {
+            location.path().hops().iter().all(|hop| {
+                self.expression_edges(hop.parent()).iter().any(|edge| {
+                    matches!(
+                        edge,
+                        HirExpressionEvaluationEdge::Expression { role, child, .. }
+                            if role == hop.role() && *child == hop.child()
+                    )
+                })
+            })
+        }))
+    }
+
+    fn selects_scope_owner(
+        &self,
+        module: &HirModule,
+        scope: crate::identity::ScopeId,
+    ) -> Result<bool, HirSelectedExpressionInventoryError> {
+        let mut current = Some(scope);
+        let mut visited = BTreeSet::new();
+        while let Some(owner) = current {
+            if !visited.insert(owner) {
+                return Err(HirSelectedExpressionInventoryError::InvalidSelectedGraph);
+            }
+            let value = module
+                .resolve_scope(owner)
+                .map_err(|_| HirSelectedExpressionInventoryError::InvalidSelectedGraph)?;
+            match *value.owner() {
+                HirScopeOwner::Expr(expression) if !self.contains_expression(expression) => {
+                    return Ok(false);
+                }
+                HirScopeOwner::Stmt(statement) if !self.selects_owner_path(statement.into())? => {
+                    return Ok(false);
+                }
+                HirScopeOwner::Expr(_)
+                | HirScopeOwner::Stmt(_)
+                | HirScopeOwner::Item(_)
+                | HirScopeOwner::Module(_) => {}
+            }
+            current = value.parent();
+        }
+        Ok(true)
+    }
+
+    /// Non-expression owners follow the same admitted expression edges and
+    /// lexical scope owners as their expression. A source-only rejected Call
+    /// cannot republish its callback patterns, locals, or annotation types.
+    fn selects_owner(
+        &self,
+        module: &HirModule,
+        owner: SyntheticOwner,
+    ) -> Result<bool, HirSelectedExpressionInventoryError> {
+        if !self.selects_owner_region(owner) {
+            return Ok(false);
+        }
+        let scope = match owner {
+            SyntheticOwner::Expr(expression) => return Ok(self.contains_expression(expression)),
+            SyntheticOwner::Item(_) => return Ok(true),
+            SyntheticOwner::Stmt(statement) => {
+                if !self.selects_owner_path(statement.into())? {
+                    return Ok(false);
+                }
+                module
+                    .resolve_stmt(statement)
+                    .map_err(|_| HirSelectedExpressionInventoryError::InvalidSelectedGraph)?
+                    .scope()
+            }
+            SyntheticOwner::Pattern(pattern) => {
+                if !self.selects_owner_path(pattern.into())? {
+                    return Ok(false);
+                }
+                module
+                    .resolve_pattern(pattern)
+                    .map_err(|_| HirSelectedExpressionInventoryError::InvalidSelectedGraph)?
+                    .scope()
+            }
+            SyntheticOwner::Local(local) => {
+                if !self.selects_owner_path(local.into())? {
+                    return Ok(false);
+                }
+                module
+                    .resolve_local(local)
+                    .map_err(|_| HirSelectedExpressionInventoryError::InvalidSelectedGraph)?
+                    .scope()
+            }
+            SyntheticOwner::Scope(scope) => scope,
+            SyntheticOwner::Type(ty) => {
+                let mut expression_owned = false;
+                for (expression, value) in module.expressions() {
+                    for root in value.kind().direct_type_roots() {
+                        if type_subtree_contains(module, root.type_id(), ty)? {
+                            expression_owned = true;
+                            if self.contains_expression(expression) {
+                                return Ok(true);
+                            }
+                        }
+                    }
+                }
+                if expression_owned {
+                    return Ok(false);
+                }
+                module
+                    .resolve_type(ty)
+                    .map_err(|_| HirSelectedExpressionInventoryError::InvalidSelectedGraph)?
+                    .scope()
+            }
+            SyntheticOwner::Capture(capture) => {
+                let capture = module
+                    .resolve_capture(capture)
+                    .map_err(|_| HirSelectedExpressionInventoryError::InvalidSelectedGraph)?;
+                return Ok(self.contains_expression(capture.closure()));
+            }
+        };
+        self.selects_scope_owner(module, scope)
+    }
+
     /// Whether an arena owner belongs to the selected interpretations in this
     /// graph. Expression membership also observes the accepted call inventory.
     pub fn contains_owner(&self, owner: SyntheticOwner) -> bool {
@@ -590,12 +724,39 @@ impl HirAnalysisProjectView<'_> {
             let statements = module
                 .statements()
                 .filter_map(|(owner, _)| {
-                    (paths.statement(owner).is_some()
-                        && graph.selects_owner_region(SyntheticOwner::Stmt(owner)))
-                    .then_some(SyntheticOwner::Stmt(owner))
+                    paths
+                        .statement(owner)
+                        .is_some()
+                        .then_some(SyntheticOwner::Stmt(owner))
                 })
+                .map(|owner| {
+                    graph
+                        .selects_owner(module, owner)
+                        .map(|selected| selected.then_some(owner))
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .flatten()
                 .collect::<Vec<_>>();
             graph.owners.extend(statements);
+            let locals = module
+                .locals()
+                .filter_map(|(owner, _)| {
+                    paths
+                        .local(owner)
+                        .is_some()
+                        .then_some(SyntheticOwner::Local(owner))
+                })
+                .map(|owner| {
+                    graph
+                        .selects_owner(module, owner)
+                        .map(|selected| selected.then_some(owner))
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
+            graph.owners.extend(locals);
             if let Some(owner) = module
                 .slots()
                 .poisoned_live_owners()
@@ -697,7 +858,7 @@ impl HirAnalysisProjectView<'_> {
         };
         for (_, module) in self.modules() {
             for owner in module.slots().poisoned_live_owners() {
-                if graph.selects_owner_region(owner)
+                if graph.selects_owner(module, owner)?
                     && self.selected_expression_owner_in_partition(
                         topology,
                         owner,
@@ -709,7 +870,7 @@ impl HirAnalysisProjectView<'_> {
             }
             for (owner, statement) in module.statements() {
                 if super::HirControlTransferKind::from_statement(statement.kind()).is_some()
-                    && graph.selects_owner_region(SyntheticOwner::Stmt(owner))
+                    && graph.selects_owner(module, SyntheticOwner::Stmt(owner))?
                     && self.selected_expression_owner_in_partition(
                         topology,
                         SyntheticOwner::Stmt(owner),
@@ -746,8 +907,10 @@ impl HirAnalysisProjectView<'_> {
                         .scopes()
                         .map(|(owner, _)| SyntheticOwner::Scope(owner)),
                 )
-                .filter(|owner| graph.selects_owner_region(*owner))
                 .map(|owner| {
+                    if !graph.selects_owner(module, owner)? {
+                        return Ok(None);
+                    }
                     self.selected_expression_owner_in_partition(topology, owner, root_partition)
                         .map(|selected| selected.then_some(owner))
                 })
@@ -760,10 +923,10 @@ impl HirAnalysisProjectView<'_> {
                 .captures()
                 .filter(|(_, capture)| {
                     graph.contains_expression(capture.closure())
-                        && capture.uses().iter().any(|use_site| {
-                            graph
-                                .selects_owner_region(SyntheticOwner::Expr(use_site.site().owner()))
-                        })
+                        && capture
+                            .uses()
+                            .iter()
+                            .any(|use_site| graph.contains_expression(use_site.site().owner()))
                 })
                 .map(|(owner, _)| SyntheticOwner::Capture(owner))
                 .map(|owner| {
@@ -1163,8 +1326,11 @@ fn apply_selected_semantic_call(
     selected_edges: &mut BTreeMap<ExprId, Box<[HirExpressionEvaluationEdge]>>,
     required_semantic_owners: &mut BTreeSet<ExprId>,
 ) -> Result<bool, HirSelectedExpressionInventoryError> {
-    let HirSelectedCallExpressionDisposition::Callable(call) = disposition else {
-        return Ok(false);
+    let (call, admitted) = match disposition {
+        HirSelectedCallExpressionDisposition::Structural => return Ok(false),
+        HirSelectedCallExpressionDisposition::Callable(call)
+        | HirSelectedCallExpressionDisposition::NonCallable(call) => (call, true),
+        HirSelectedCallExpressionDisposition::Unselected(call) => (call, false),
     };
     let HirExprKind::Call(invocation) = kind else {
         return Err(
@@ -1175,16 +1341,26 @@ fn apply_selected_semantic_call(
     };
     selected.insert(owner);
     let mut followed_edges = Vec::new();
+    let mut operands = VecDeque::new();
+    let mut semantic_owners = BTreeSet::new();
     append_selected_call_expression_edges(
         topology,
         owner,
         invocation,
         call.arguments(),
         call.callee(),
-        pending,
+        &mut operands,
         &mut followed_edges,
-        required_semantic_owners,
+        &mut semantic_owners,
     )?;
+    if admitted {
+        pending.extend(operands);
+        required_semantic_owners.extend(semantic_owners);
+    } else {
+        // The same ownership/arity validation applies to tooling evidence,
+        // but rejection grants no evaluated operand or callback body.
+        followed_edges.clear();
+    }
     selected_edges.insert(owner, followed_edges.into_boxed_slice());
     Ok(true)
 }

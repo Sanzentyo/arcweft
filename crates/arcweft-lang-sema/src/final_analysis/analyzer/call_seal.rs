@@ -1610,7 +1610,6 @@ fn seal_unselected_call(
         enclosing_callable,
         outcome: prepared_outcome,
         accounting,
-        selected_expression_inventory,
     } = value;
     if !matches!(site, CheckedCallSite::HirCall(_)) {
         return Err(final_call_seal_error(
@@ -1618,18 +1617,10 @@ fn seal_unselected_call(
             CallConstraintInvariant::PreparedCallSiteMismatch,
         ));
     }
-    for source in selected_expression_inventory
-        .arguments()
-        .iter()
-        .copied()
-        .filter(|argument| argument.semantic_owner().is_none())
-        .map(arcweft_lang_hir::project::HirSelectedCallArgument::expression)
-        .chain(selected_expression_inventory.callee())
-    {
-        coordinates.expression_evidence(source).map_err(|_| {
-            final_call_seal_error(location, CallConstraintInvariant::PreparedCallSiteMismatch)
-        })?;
-    }
+    // The selected HIR graph already validated this unselected Call's authored
+    // inventory against the exact owning edges. Its operands have no admitted
+    // execution coordinates; issuing those here would turn failed contextual
+    // arguments into independently accepted expressions.
     let outcome = match prepared_outcome {
         AnalyzerDetachedUnselectedOutcome::Ambiguous {
             callee,

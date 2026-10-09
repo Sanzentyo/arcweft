@@ -182,33 +182,7 @@ impl Analyzer<'_, '_, '_> {
             .prepared_calls()
             .map_err(FinalSemanticAnalysisError::from)?;
         let call_effects = prepared_call_execution_rows(graph, self.control)?;
-        let selected = self
-            .executable
-            .selected_declaration_expression_graph_with_select_target_disposition(
-            &self.topology,
-            declaration,
-            |owner| self.facts.expressions().get(&owner)?.selected_postfix_candidate(),
-            |owner| {
-                let fact = self.facts.expressions().get(&owner)?;
-                let Some(site) = fact.checked_call_site(owner) else {
-                    return Some(arcweft_lang_hir::project::HirSelectedCallExpressionDisposition::Structural);
-                };
-                graph.project_site_payload(site,
-                    super::calls::AnalyzerPreparedCallPrefix::selected_expression_inventory,
-                    |unselected| Ok(unselected.selected_expression_inventory()))?
-                    .ok().map(arcweft_lang_hir::project::HirSelectedCallExpressionDisposition::Callable)
-            },
-            |owner| {
-                self.facts
-                    .expressions()
-                    .get(&owner)
-                    .is_some_and(super::PreparedExpressionFact::is_variant_expression)
-                    .then_some(
-                        arcweft_lang_hir::project::HirSelectedSelectTargetDisposition::StaticVariantQualifier,
-                    )
-            },
-        )
-            .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+        let selected = self.prepared_declaration_expression_graph(declaration)?;
         let expressions = selected
             .expression_owners()
             .map(|owner| {

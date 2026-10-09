@@ -24,7 +24,7 @@ use crate::{
 #[cfg(test)]
 use crate::types::SemanticTypeDigest;
 
-use super::{Analyzer, FinalSemanticAnalysisError, HirCallArgument, HirExprKind, HirModule};
+use super::{Analyzer, FinalSemanticAnalysisError, HirModule};
 
 #[path = "executable_ingress/inventory.rs"]
 mod inventory;
@@ -274,10 +274,16 @@ impl Analyzer<'_, '_, '_> {
         };
         // Complete declaration-owned statements first. Expression-owned
         // statements require their parent's contextual transaction to finish.
-        self.complete_declaration_statements(declaration, &expression_ancestors, false)?;
+        self.complete_declaration_statements(declaration, &expression_ancestors, false, None)?;
         self.validate_declaration_body_result(&declaration.declaration)?;
         self.complete_declaration_expression_roots(declaration, &expression_ancestors)?;
-        self.complete_declaration_statements(declaration, &expression_ancestors, true)?;
+        let selected = self.prepared_declaration_expression_graph(&declaration.declaration)?;
+        self.complete_declaration_statements(
+            declaration,
+            &expression_ancestors,
+            true,
+            Some(&selected),
+        )?;
         super::statement_scrutinee::validate_choice_event_scrutinees(
             &self.modules,
             &self.types,
@@ -300,7 +306,7 @@ impl Analyzer<'_, '_, '_> {
             &declaration.statements,
             &self.facts,
         )?;
-        self.finalize_declaration_locals(declaration)
+        self.finalize_declaration_locals(declaration, &selected)
     }
 
     fn has_expression_ancestor_in_body(
@@ -328,6 +334,7 @@ impl Analyzer<'_, '_, '_> {
         declaration: &PreparedExecutableDeclaration,
         expression_ancestors: &BTreeSet<Vec<arcweft_lang_hir::project::HirSemanticPathStep>>,
         expression_owned: bool,
+        selected: Option<&arcweft_lang_hir::project::HirSelectedDeclarationExpressionGraph>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let statements = {
             let module = self.module(declaration.module)?;
@@ -343,6 +350,9 @@ impl Analyzer<'_, '_, '_> {
                 .collect::<Result<Vec<_>, _>>()?
         };
         for (owner, statement) in statements {
+            if selected.is_some_and(|graph| !graph.contains_statement(owner)) {
+                continue;
+            }
             // Candidate statements are prepared by their owning expression
             // transaction, after its syntax and local type inputs are admitted.
             if self
@@ -400,7 +410,6 @@ impl Analyzer<'_, '_, '_> {
         declaration: &PreparedExecutableDeclaration,
         expression_ancestors: &BTreeSet<Vec<arcweft_lang_hir::project::HirSemanticPathStep>>,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        let mut contextual_arguments = BTreeSet::new();
         let module = self.module(declaration.module)?;
         let expressions = declaration
             .expressions
@@ -412,15 +421,6 @@ impl Analyzer<'_, '_, '_> {
                     .contains(SyntheticOwner::Expr(*owner))
             })
             .collect::<Vec<_>>();
-        for owner in &expressions {
-            let expression = self
-                .module(owner.module())?
-                .resolve_expr(*owner)
-                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-            if let HirExprKind::Call(call) = expression.kind() {
-                contextual_arguments.extend(call.arguments().iter().map(HirCallArgument::value));
-            }
-        }
         let paths = self
             .topology
             .declaration(&declaration.declaration)
@@ -437,7 +437,7 @@ impl Analyzer<'_, '_, '_> {
         for owner in roots {
             self.check_expression_published(owner, None)?;
         }
-        for owner in contextual_arguments {
+        for owner in self.admitted_call_argument_roots(expressions)? {
             if !self.facts.expressions().contains_key(&owner) {
                 self.check_expression_published(owner, None)?;
             }
@@ -445,9 +445,46 @@ impl Analyzer<'_, '_, '_> {
         Ok(())
     }
 
+    /// Projects declaration ownership from the same prepared Call outcome
+    /// used for candidate recovery and final semantic publication.
+    pub(super) fn prepared_declaration_expression_graph(
+        &self,
+        declaration: &CallableDeclarationKey,
+    ) -> Result<
+        arcweft_lang_hir::project::HirSelectedDeclarationExpressionGraph,
+        FinalSemanticAnalysisError,
+    > {
+        use arcweft_lang_hir::project::HirSelectedCallExpressionDisposition;
+
+        let graph = self
+            .facts
+            .prepared_calls()
+            .map_err(FinalSemanticAnalysisError::from)?;
+        self.executable.selected_declaration_expression_graph_with_select_target_disposition(
+            &self.topology,
+            declaration,
+            |owner| self.facts.expressions().get(&owner)?.selected_postfix_candidate(),
+            |owner| {
+                let fact = self.facts.expressions().get(&owner)?;
+                let Some(site) = fact.checked_call_site(owner) else {
+                    return Some(HirSelectedCallExpressionDisposition::Structural);
+                };
+                graph.project_site_payload(
+                    site,
+                    |prefix| prefix.selected_expression_inventory().map(HirSelectedCallExpressionDisposition::Callable),
+                    |unselected| Ok(unselected.source_expression_disposition()),
+                )?.ok()
+            },
+            |owner| self.facts.expressions().get(&owner)
+                .is_some_and(super::PreparedExpressionFact::is_variant_expression)
+                .then_some(arcweft_lang_hir::project::HirSelectedSelectTargetDisposition::StaticVariantQualifier),
+        ).map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)
+    }
+
     fn finalize_declaration_locals(
         &mut self,
         declaration: &PreparedExecutableDeclaration,
+        selected: &arcweft_lang_hir::project::HirSelectedDeclarationExpressionGraph,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let module = self.module(declaration.module)?;
         let view = self
@@ -463,6 +500,9 @@ impl Analyzer<'_, '_, '_> {
             })
             .collect::<Vec<_>>();
         for (owner, local) in locals {
+            if !selected.contains_local(owner) {
+                continue;
+            }
             if !module
                 .candidate_provenance()
                 .selects_region(SyntheticOwner::Local(owner), |selector| {

@@ -251,6 +251,16 @@ fn final_call_diagnostics_retain_unselected_argument_sources() {
         1
     );
     assert_eq!(analysis.call_diagnostics().count(), 1);
+    super::callable_values::assert_unselected_call_has_no_execution(&analysis, call.expression());
+
+    let nested = analysis
+        .calls()
+        .find_map(|(owner, facts)| facts.selected_application().is_some().then_some(owner))
+        .expect("the independently checked nested identity call remains admitted");
+    assert_eq!(
+        analysis.expression(nested).unwrap().value_type(),
+        Some(&crate::types::TypeKind::I64),
+    );
 
     let invalid = super::fixture("fn caller(value: i64) { value(unknown()); }\n", None);
     assert!(matches!(

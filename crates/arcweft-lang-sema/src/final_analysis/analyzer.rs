@@ -686,7 +686,9 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
         mutation.apply_prepared_input(&mut input)?;
         self.analyze_items(&mut input)?;
         for (owner, fact) in self.facts.expressions() {
-            input.push_prepared_expression(*owner, fact.clone());
+            if selected_expressions.contains_owner(SyntheticOwner::Expr(*owner)) {
+                input.push_prepared_expression(*owner, fact.clone());
+            }
         }
         let staged = self
             .staged_callables
@@ -838,12 +840,17 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
         input.set_callable_joins(callable_joins);
         self.type_reports
             .retain(|owner, _| selected_expressions.contains_owner(SyntheticOwner::Type(*owner)));
-        input.set_selected_expressions(selected_expressions)?;
         input.set_structural_edges(structural_edges)?;
         input.expressions.clear();
         for (owner, fact) in self.facts.expressions() {
-            input.push_prepared_expression(*owner, fact.clone());
+            // Candidate queries may retain a well-typed receiver or callee
+            // after their application is rejected. Only the canonical graph
+            // admits expression facts to the final semantic product.
+            if selected_expressions.contains_owner(SyntheticOwner::Expr(*owner)) {
+                input.push_prepared_expression(*owner, fact.clone());
+            }
         }
+        input.set_selected_expressions(selected_expressions)?;
         for call in self.facts.calls().values() {
             input.push_call(call.clone());
         }

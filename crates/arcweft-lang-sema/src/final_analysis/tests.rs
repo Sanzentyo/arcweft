@@ -5871,15 +5871,56 @@ fn character_nominal_show_checker_signature_primary_and_schema_equal() {
 
 #[test]
 fn character_stage_look_rejects_names_absent_from_the_exact_registered_manifest() {
-    let fixture = character_nominal_fixture(concat!(
+    const SOURCE: &str = concat!(
         "pub character akane {}\n",
         "fn caller() { show(@character.akane, look = .missing); }\n",
-    ));
-
-    assert!(matches!(
-        analyze(&fixture),
-        Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { .. })
-    ));
+    );
+    let fixture = character_nominal_fixture(SOURCE);
+    let report = analyze(&fixture).expect("absent manifest look retains rejected source evidence");
+    let calls = report.calls().collect::<Vec<_>>();
+    let [(owner, call)] = calls.as_slice() else {
+        panic!("one rejected Show call: {calls:?}");
+    };
+    assert!(matches!(call.outcome(), CallAnalysisOutcome::Rejected(_)));
+    assert!(call.selected_application().is_none());
+    let [diagnostic] = call.diagnostics() else {
+        panic!("one source-backed missing-look rejection: {call:?}");
+    };
+    assert_eq!(
+        diagnostic.code(),
+        crate::callable::CallableDiagnosticCode::NoViableSignature
+    );
+    assert_eq!(
+        diagnostic.severity(),
+        crate::callable::CallableDiagnosticSeverity::Error
+    );
+    let span = diagnostic
+        .span()
+        .expect("missing-look rejection retains source");
+    assert_eq!(
+        &SOURCE[span.range().as_range()],
+        "show(@character.akane, look = .missing)"
+    );
+    let project = fixture.project.analysis_view().unwrap();
+    let module = project
+        .module(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
+        .unwrap();
+    assert_eq!(
+        Some(span),
+        module.source_anchor(call.source_query()).unwrap().as_ref()
+    );
+    assert_eq!(
+        report
+            .expression(*owner)
+            .expect("rejected Show expression")
+            .result(),
+        &super::CheckedExpressionResult::Unavailable
+    );
+    callable_values::assert_unselected_call_has_no_execution(&report, *owner);
+    assert!(report.expressions().all(|(_, expression)| !matches!(
+        expression.resolution(),
+        CheckedExpressionResolution::StageLook(_)
+    )));
 }
 
 #[test]
@@ -5905,18 +5946,53 @@ fn character_any_show_rejects_reserved_look_instead_of_open_named_supply() {
 
 #[test]
 fn character_any_show_rejects_reserved_look_clear() {
-    let fixture = fixture(
-        "fn clear(speaker: Ref<Character>) { show(speaker, look = None); }\n",
-        None,
+    const SOURCE: &str = "fn clear(speaker: Ref<Character>) { show(speaker, look = None); }\n";
+    let fixture = fixture(SOURCE, None);
+    let report = analyze(&fixture).expect("reserved look keeps rejected source evidence");
+    let calls = report.calls().collect::<Vec<_>>();
+    let [(owner, call)] = calls.as_slice() else {
+        panic!("one rejected Show call: {calls:?}");
+    };
+    assert!(matches!(call.outcome(), CallAnalysisOutcome::Rejected(_)));
+    assert!(call.selected_application().is_none());
+    let [diagnostic] = call.diagnostics() else {
+        panic!("one source-backed reserved-look rejection: {call:?}");
+    };
+    assert_eq!(
+        diagnostic.code(),
+        crate::callable::CallableDiagnosticCode::NoViableSignature
     );
-    let result = analyze(&fixture);
-    assert!(
-        matches!(
-            result,
-            Err(FinalSemanticAnalysisError::ValueResolutionFailed { .. })
-        ),
-        "unexpected result: {result:?}"
+    assert_eq!(
+        diagnostic.severity(),
+        crate::callable::CallableDiagnosticSeverity::Error
     );
+    let span = diagnostic
+        .span()
+        .expect("reserved-look rejection retains source");
+    assert_eq!(
+        &SOURCE[span.range().as_range()],
+        "show(speaker, look = None)"
+    );
+    let project = fixture.project.analysis_view().unwrap();
+    let module = project
+        .module(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
+        .unwrap();
+    assert_eq!(
+        Some(span),
+        module.source_anchor(call.source_query()).unwrap().as_ref()
+    );
+    assert_eq!(
+        report
+            .expression(*owner)
+            .expect("rejected Show expression")
+            .result(),
+        &super::CheckedExpressionResult::Unavailable
+    );
+    callable_values::assert_unselected_call_has_no_execution(&report, *owner);
+    assert!(report.expressions().all(|(_, expression)| !matches!(
+        expression.resolution(),
+        CheckedExpressionResolution::StageLook(_)
+    )));
 }
 
 #[test]
@@ -6577,8 +6653,14 @@ fn enum_shorthand_and_partial_placeholder_are_candidate_contextual() {
             .filter(|evaluation| evaluation.call_expression() == call.expression())
             .collect::<Vec<_>>();
         assert_eq!(physical.len(), 2);
+        assert_ne!(physical[0].candidate(), physical[1].candidate());
         for (evaluation, expected) in physical.iter().zip(&expected) {
             assert_eq!(evaluation.pass(), CandidateEvaluationPass::Probe);
+            assert!(
+                call.outcome()
+                    .candidate_ids()
+                    .any(|candidate| candidate == evaluation.candidate())
+            );
             let CandidateExpectedType::Exact(actual) = evaluation.expected() else {
                 panic!("contextual candidate owns an exact expected type");
             };
@@ -6617,53 +6699,52 @@ fn enum_shorthand_and_partial_placeholder_are_candidate_contextual() {
                 }
                 _ => assert_eq!(actual, expected),
             }
-        }
-        let primary_source = physical[0].source();
-        let CandidateExpectedType::Exact(primary_expected) = physical[0].expected() else {
-            panic!("primary candidate owns an exact expected type");
-        };
-        let CheckedCallArgumentSlotSource::Expression(primary_owner) = primary_source else {
-            panic!("contextual shorthand/placeholder is expression-backed");
-        };
-        let published = report
-            .expression(primary_owner)
-            .expect("primary contextual projection is published")
-            .value_type()
-            .expect("primary contextual projection value");
-        match (published, primary_expected) {
-            (
-                TypeKind::Function {
-                    binder: published_binder,
-                    predicate: published_predicate,
-                    params: published_params,
-                    return_type: published_return,
-                    effects: published_effects,
-                },
-                TypeKind::Function {
-                    binder: expected_binder,
-                    predicate: expected_predicate,
-                    params: expected_params,
-                    return_type: expected_return,
-                    effects: expected_effects,
-                },
-            ) => {
-                assert_eq!(published_binder, expected_binder);
-                assert_eq!(published_predicate, expected_predicate);
-                assert_eq!(published_params, expected_params);
-                assert_eq!(published_return, expected_return);
-                assert_eq!(
-                    published_effects
-                        .constant_effects()
-                        .expect("known effect row"),
-                    expected_effects
-                        .constant_effects()
-                        .expect("known effect row")
-                );
-                assert!(published_effects.is_closed());
-                assert!(expected_effects.is_known() && !expected_effects.is_closed());
+            let CheckedCallArgumentSlotSource::Expression(owner) = evaluation.source() else {
+                panic!("contextual shorthand/placeholder is expression-backed");
+            };
+            assert!(
+                report.expression(owner).is_none(),
+                "an unresolved tie does not publish a candidate's expression authority"
+            );
+            let observed = evaluation
+                .observed_type()
+                .expect("the actual source type is retained for this candidate probe");
+            match (observed, actual) {
+                (
+                    TypeKind::Function {
+                        binder: observed_binder,
+                        predicate: observed_predicate,
+                        params: observed_params,
+                        return_type: observed_return,
+                        effects: observed_effects,
+                    },
+                    TypeKind::Function {
+                        binder: expected_binder,
+                        predicate: expected_predicate,
+                        params: expected_params,
+                        return_type: expected_return,
+                        effects: expected_effects,
+                    },
+                ) => {
+                    assert_eq!(observed_binder, expected_binder);
+                    assert_eq!(observed_predicate, expected_predicate);
+                    assert_eq!(observed_params, expected_params);
+                    assert_eq!(observed_return, expected_return);
+                    assert_eq!(
+                        observed_effects
+                            .constant_effects()
+                            .expect("known effect row"),
+                        expected_effects
+                            .constant_effects()
+                            .expect("known effect row")
+                    );
+                    assert!(observed_effects.is_closed());
+                    assert!(expected_effects.is_known() && !expected_effects.is_closed());
+                }
+                _ => assert_eq!(observed, actual),
             }
-            _ => assert_eq!(published, primary_expected),
         }
+        callable_values::assert_unselected_call_has_no_execution(&report, call.expression());
     }
 }
 
@@ -10181,8 +10262,7 @@ fn registered_on_click_rejects_a_non_action_handler() {
 
 #[test]
 fn registered_on_click_rejects_an_effectful_action_producer_at_the_call_owner() {
-    let fixture = fixture(
-        r#"
+    const SOURCE: &str = r#"
 extern capability fs {
     fn read_text(path: String) -> String effects { fs.read }
 }
@@ -10194,9 +10274,8 @@ fn impure(value: DialogueAction) -> DialogueAction effects { fs.read } {
 view Main(dialogue: DialogueView) {
     Button().on_click { impure(dialogue.primary_action) }
 }
-"#,
-        None,
-    );
+"#;
+    let fixture = fixture(SOURCE, None);
     let module = fixture
         .project
         .analysis_view()
@@ -10218,13 +10297,63 @@ view Main(dialogue: DialogueView) {
         })
         .expect("outer selected-member View call");
 
-    let result = analyze(&fixture);
-    assert!(
-        matches!(
-            &result,
-            Err(FinalSemanticAnalysisError::CallResolutionFailed { owner: rejected })
-                if rejected == &owner
-        ),
-        "{result:?}"
+    let analysis =
+        analyze(&fixture).expect("the rejected on_click handler retains source evidence");
+    let call = analysis
+        .call(owner)
+        .expect("the outer on_click application owns the rejection");
+    let CallAnalysisOutcome::Rejected(evidence) = call.outcome() else {
+        panic!("the effectful handler must reject the on_click application: {call:?}");
+    };
+    let [candidate] = evidence.candidates() else {
+        panic!("one registered on_click modifier candidate");
+    };
+    assert_eq!(
+        candidate.schema().validator(),
+        &CallableValidator::ViewModifier(ViewModifierId::OnActivate)
     );
+    let [group] = candidate.schema().groups() else {
+        panic!("one registered handler parameter group");
+    };
+    let [handler] = group.parameters() else {
+        panic!("the on_click handler contract");
+    };
+    let Some(TypeKind::Function {
+        params, effects, ..
+    }) = handler.declared_type()
+    else {
+        panic!("the handler is a typed callback");
+    };
+    assert!(params.is_empty());
+    assert!(effects.is_closed());
+    assert!(
+        effects
+            .constant_effects()
+            .expect("closed handler effects")
+            .is_empty()
+    );
+    let [diagnostic] = call.diagnostics() else {
+        panic!("one effectful-handler rejection diagnostic");
+    };
+    assert_eq!(diagnostic.code(), CallableDiagnosticCode::NoViableSignature);
+    assert_eq!(
+        diagnostic.severity(),
+        crate::callable::CallableDiagnosticSeverity::Error
+    );
+    let expected_query = HirSourceQuery::Expr {
+        owner,
+        role: HirExprSourceRole::Whole,
+    };
+    assert_eq!(call.source_query(), expected_query);
+    let expected_span = module.source_anchor(expected_query).unwrap().unwrap();
+    assert_eq!(diagnostic.span(), Some(&expected_span));
+    assert_eq!(
+        &SOURCE[expected_span.range().as_range()],
+        "Button().on_click { impure(dialogue.primary_action) }"
+    );
+    assert_eq!(
+        analysis.call_diagnostics().collect::<Vec<_>>(),
+        [diagnostic]
+    );
+    callable_values::assert_unselected_call_has_no_execution(&analysis, owner);
 }

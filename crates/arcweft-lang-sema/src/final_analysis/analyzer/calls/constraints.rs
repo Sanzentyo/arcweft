@@ -1234,6 +1234,42 @@ impl<'a, 'project, 'catalog, 'control>
         )
     }
 
+    fn retain_physical_observed_type(
+        &mut self,
+        source_id: AnalyzerCallConstraintSourceId,
+        actual: &TypeKind,
+    ) -> Result<(), crate::callable::SourceCallbackFailure<AnalyzerCallConstraintDomain>> {
+        let source = source_id.local();
+        let Some(physical) = source.physical_argument() else {
+            return Ok(());
+        };
+        let Some(candidate) = self.candidate.as_ref() else {
+            return Ok(());
+        };
+        let attempt = self.attempt.clone().ok_or_else(|| {
+            crate::callable::SourceCallbackFailure::invariant(
+                AnalyzerCallClientInvariant::fact_transaction(
+                    source,
+                    crate::final_analysis::CandidateFactTransactionViolation::PhysicalCallAttemptRootMismatch,
+                ),
+            )
+        })?;
+        let identity = PhysicalCandidateArgumentEvaluation::new(
+            attempt,
+            candidate.id().clone(),
+            self.pass,
+            physical,
+        );
+        self.analyzer
+            .facts
+            .retain_physical_candidate_observed_type(identity, actual)
+            .map_err(|violation| {
+                crate::callable::SourceCallbackFailure::invariant(
+                    AnalyzerCallClientInvariant::fact_transaction(source, violation),
+                )
+            })
+    }
+
     fn admit_physical_source(
         &mut self,
         source_id: AnalyzerCallConstraintSourceId,
@@ -2007,13 +2043,16 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                         self.prepared_child_calls
                             .extend(checked.prepared_children.iter().cloned());
                         match (checked.actual, checked.pending_child) {
-                        (Some(actual), None) => probe.observe(SourceProbeResult::unchecked(
-                            actual,
-                            AnalyzerCallProbeSemanticBranch {
-                                source,
-                                child_choice: None,
-                            },
-                        )),
+                        (Some(actual), None) => {
+                            self.retain_physical_observed_type(source_id, &actual)?;
+                            probe.observe(SourceProbeResult::unchecked(
+                                actual,
+                                AnalyzerCallProbeSemanticBranch {
+                                    source,
+                                    child_choice: None,
+                                },
+                            ))
+                        },
                         (None, Some(pending)) => probe.observe_child(
                             pending,
                             AnalyzerCallProbeSemanticBranch {
@@ -2090,15 +2129,18 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                                 .extend(checked.prepared_children.iter().cloned());
                             if alternative.evidence().accepts(&checked.evidence) {
                                 return match (checked.actual, checked.pending_child) {
-                                    (Some(actual), None) => probe.observe(SourceProbeResult::checked(
-                                        actual,
-                                        AnalyzerCallProbeSemanticBranch {
-                                            source,
-                                            child_choice: None,
-                                        },
-                                        alternative.alternative(),
-                                        checked.evidence,
-                                    )),
+                                    (Some(actual), None) => {
+                                        self.retain_physical_observed_type(source_id, &actual)?;
+                                        probe.observe(SourceProbeResult::checked(
+                                            actual,
+                                            AnalyzerCallProbeSemanticBranch {
+                                                source,
+                                                child_choice: None,
+                                            },
+                                            alternative.alternative(),
+                                            checked.evidence,
+                                        ))
+                                    },
                                     (None, Some(pending)) => {
                                         probe.observe_child(
                                         pending,
@@ -3768,6 +3810,27 @@ impl AnalyzerPreparedUnselectedCall {
         self.selected_expression_inventory.clone()
     }
 
+    pub(crate) fn source_expression_disposition(
+        &self,
+    ) -> arcweft_lang_hir::project::HirSelectedCallExpressionDisposition {
+        use arcweft_lang_hir::project::HirSelectedCallExpressionDisposition;
+
+        match &self.outcome {
+            AnalyzerPreparedUnselectedOutcome::NonCallable { .. } => {
+                HirSelectedCallExpressionDisposition::NonCallable(
+                    self.selected_expression_inventory(),
+                )
+            }
+            AnalyzerPreparedUnselectedOutcome::Ambiguous { .. }
+            | AnalyzerPreparedUnselectedOutcome::Rejected { .. }
+            | AnalyzerPreparedUnselectedOutcome::Missing { .. } => {
+                HirSelectedCallExpressionDisposition::Unselected(
+                    self.selected_expression_inventory(),
+                )
+            }
+        }
+    }
+
     pub(crate) fn dependencies(&self) -> Box<[crate::callable::PreparedCallContinuationRef]> {
         let candidates: &[Arc<PreparedResolvedCallable>] = match &self.outcome {
             AnalyzerPreparedUnselectedOutcome::Ambiguous { considered, .. } => considered,
@@ -3821,7 +3884,6 @@ impl AnalyzerPreparedUnselectedCall {
             enclosing_callable: self.enclosing_callable,
             outcome,
             accounting: self.accounting,
-            selected_expression_inventory: self.selected_expression_inventory,
         })
     }
 }
@@ -3830,7 +3892,6 @@ pub(crate) struct AnalyzerDetachedUnselectedCall {
     pub(crate) enclosing_callable: Option<arcweft_lang_hir::symbol::CallableDeclarationKey>,
     pub(crate) outcome: AnalyzerDetachedUnselectedOutcome,
     pub(crate) accounting: crate::callable::CallResolverAccountingReport,
-    pub(crate) selected_expression_inventory: HirSelectedCallExpressionInventory,
 }
 
 pub(crate) enum AnalyzerDetachedUnselectedOutcome {
