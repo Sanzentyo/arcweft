@@ -28,11 +28,13 @@ enum Scalar {
     I32,
     I64,
     I128,
+    ISize,
     U8,
     U16,
     U32,
     U64,
     U128,
+    USize,
     F32,
     F64,
     String,
@@ -46,11 +48,13 @@ impl Scalar {
             Self::I32 => 4,
             Self::I64 => 5,
             Self::I128 => 6,
+            Self::ISize => 15,
             Self::U8 => 7,
             Self::U16 => 8,
             Self::U32 => 9,
             Self::U64 => 10,
             Self::U128 => 11,
+            Self::USize => 16,
             Self::F32 => 12,
             Self::F64 => 13,
             Self::String => 14,
@@ -66,11 +70,13 @@ impl Scalar {
             Self::I32 => RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::I32),
             Self::I64 => RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::I64),
             Self::I128 => RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::I128),
+            Self::ISize => RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::ISize),
             Self::U8 => RuntimePlanTypeProjection::Unsigned(RuntimeUnsignedIntWidth::U8),
             Self::U16 => RuntimePlanTypeProjection::Unsigned(RuntimeUnsignedIntWidth::U16),
             Self::U32 => RuntimePlanTypeProjection::Unsigned(RuntimeUnsignedIntWidth::U32),
             Self::U64 => RuntimePlanTypeProjection::Unsigned(RuntimeUnsignedIntWidth::U64),
             Self::U128 => RuntimePlanTypeProjection::Unsigned(RuntimeUnsignedIntWidth::U128),
+            Self::USize => RuntimePlanTypeProjection::Unsigned(RuntimeUnsignedIntWidth::USize),
             Self::F32 => RuntimePlanTypeProjection::F32,
             Self::F64 => RuntimePlanTypeProjection::F64,
             Self::String => RuntimePlanTypeProjection::String,
@@ -83,11 +89,13 @@ impl Scalar {
             Self::I32 => RuntimePureInputType::I32,
             Self::I64 => RuntimePureInputType::I64,
             Self::I128 => RuntimePureInputType::I128,
+            Self::ISize => RuntimePureInputType::ISize,
             Self::U8 => RuntimePureInputType::U8,
             Self::U16 => RuntimePureInputType::U16,
             Self::U32 => RuntimePureInputType::U32,
             Self::U64 => RuntimePureInputType::U64,
             Self::U128 => RuntimePureInputType::U128,
+            Self::USize => RuntimePureInputType::USize,
             Self::F32 => RuntimePureInputType::F32,
             Self::F64 => RuntimePureInputType::F64,
             Self::String => RuntimePureInputType::Value,
@@ -100,11 +108,13 @@ impl Scalar {
             Self::I32 => RuntimePureOutputType::I32,
             Self::I64 => RuntimePureOutputType::I64,
             Self::I128 => RuntimePureOutputType::I128,
+            Self::ISize => RuntimePureOutputType::ISize,
             Self::U8 => RuntimePureOutputType::U8,
             Self::U16 => RuntimePureOutputType::U16,
             Self::U32 => RuntimePureOutputType::U32,
             Self::U64 => RuntimePureOutputType::U64,
             Self::U128 => RuntimePureOutputType::U128,
+            Self::USize => RuntimePureOutputType::USize,
             Self::F32 => RuntimePureOutputType::F32,
             Self::F64 => RuntimePureOutputType::F64,
             Self::String => RuntimePureOutputType::Value,
@@ -286,11 +296,13 @@ fn two_input_product(scalar: Scalar, name: &str) -> AdmittedHelper {
                         Scalar::I32 => RuntimeValue::i32(2),
                         Scalar::I64 => RuntimeValue::i64(2),
                         Scalar::I128 => RuntimeValue::i128(2),
+                        Scalar::ISize => RuntimeValue::isize(2),
                         Scalar::U8 => RuntimeValue::u8(2),
                         Scalar::U16 => RuntimeValue::u16(2),
                         Scalar::U32 => RuntimeValue::u32(2),
                         Scalar::U64 => RuntimeValue::u64(2),
                         Scalar::U128 => RuntimeValue::u128(2),
+                        Scalar::USize => RuntimeValue::usize(2),
                         Scalar::F32 => RuntimeValue::F32(0.5),
                         Scalar::F64 => RuntimeValue::F64(0.5),
                         Scalar::String => unreachable!("not arithmetic"),
@@ -855,4 +867,349 @@ fn manual_local_source(declaration: &str) -> arcweft_core::plan::RuntimeLocalDec
             arcweft_core::plan::RuntimeLocalBindingStorage::Derived,
         ),
     }
+}
+
+fn scoped(ty: RuntimeSemanticTypeId, name: &str, body: RuntimeExprSeed) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        ty,
+        RuntimeExprSeedKind::Scope {
+            identity: arcweft_core::scope::RuntimeScopeIdentity::Named(
+                name.parse().expect("declared lexical scope name"),
+            ),
+            body: Box::new(body),
+        },
+    )
+}
+
+fn scalar_number(scalar: Scalar, number: u8) -> RuntimeValue {
+    match scalar {
+        Scalar::I8 => RuntimeValue::i8(i8::try_from(number).unwrap()),
+        Scalar::I16 => RuntimeValue::i16(i16::from(number)),
+        Scalar::I32 => RuntimeValue::i32(i32::from(number)),
+        Scalar::I64 => RuntimeValue::i64(i64::from(number)),
+        Scalar::I128 => RuntimeValue::i128(i128::from(number)),
+        Scalar::ISize => RuntimeValue::isize(i64::from(number)),
+        Scalar::U8 => RuntimeValue::u8(number),
+        Scalar::U16 => RuntimeValue::u16(u16::from(number)),
+        Scalar::U32 => RuntimeValue::u32(u32::from(number)),
+        Scalar::U64 => RuntimeValue::u64(u64::from(number)),
+        Scalar::U128 => RuntimeValue::u128(u128::from(number)),
+        Scalar::USize => RuntimeValue::usize(u64::from(number)),
+        Scalar::F32 => RuntimeValue::F32(f32::from(number)),
+        Scalar::F64 => RuntimeValue::F64(f64::from(number)),
+        Scalar::String => unreachable!("numeric scope fixture"),
+    }
+}
+
+fn ordinary_scope_request(
+    scalar: Scalar,
+    body: impl FnOnce(&[RuntimeLocalSeedId]) -> RuntimeExprSeed,
+) -> PureFunctionRequest {
+    use arcweft_core::plan::{
+        RuntimeEffectSet, RuntimeFunctionDefinitionIdentity, RuntimeFunctionInputBindingSeed,
+        RuntimeFunctionInputOrigin, RuntimeFunctionInputSource, RuntimeFunctionInputTransfer,
+        RuntimeFunctionParameterIdentity, RuntimeFunctionParameterPassing,
+        RuntimeFunctionSemanticRole, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteBodySeed,
+        RuntimeFunctionSiteDeclarationSeed, RuntimeLocalDeclarationSource, RuntimePatternSeed,
+        RuntimePatternSeedKind,
+    };
+    let parameters = [0x81, 0x82, 0x83]
+        .map(|marker| RuntimeFunctionParameterIdentity::from_accepted_identity([marker; 32]));
+    let mut builder = RuntimePlanBuilder::new();
+    let sources = parameters
+        .map(RuntimeLocalDeclarationSource::Parameter)
+        .into_iter()
+        .chain([manual_local_source("ordinary_scope.temp")]);
+    let admission = builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(bool_ty(), RuntimePlanTypeProjection::Bool),
+                RuntimePlanTypeSeed::new(scalar.ty(), scalar.projection()),
+            ],
+            sources.map(|source| RuntimeLocalDeclarationSeed::new(source, scalar.ty())),
+        )
+        .unwrap();
+    let inputs = parameters
+        .into_iter()
+        .zip(admission.local_ids().iter().take(3).cloned())
+        .enumerate()
+        .map(
+            |(position, (parameter, local))| RuntimeFunctionInputBindingSeed {
+                transfer: RuntimeFunctionInputTransfer::Formal,
+                origin: RuntimeFunctionInputOrigin::Parameter(parameter),
+                source: RuntimeFunctionInputSource::Parameter {
+                    position: u32::try_from(position).unwrap(),
+                    passing: RuntimeFunctionParameterPassing::Value,
+                },
+                input_local: local.clone(),
+                pattern: RuntimePatternSeed::new(
+                    scalar.ty(),
+                    RuntimePatternSeedKind::Bind {
+                        mutable: false,
+                        local,
+                    },
+                ),
+                ownership: Default::default(),
+                unrestricted_bindings: Box::new([]),
+            },
+        )
+        .collect::<Vec<_>>()
+        .into_boxed_slice();
+    let site = builder
+        .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([0x91; 32]),
+            role: RuntimeFunctionSemanticRole::Ordinary,
+            function_type: None,
+            inputs,
+            result: scalar.ty(),
+            body_kind: RuntimeFunctionSiteBodyKind::Expression,
+            effects: RuntimeEffectSet::empty(),
+        })
+        .unwrap();
+    builder
+        .define_function_site_seed(
+            &site,
+            RuntimeFunctionSiteBodySeed::Expression(body(admission.local_ids())),
+        )
+        .unwrap();
+    let plan = Arc::new(builder.finish().unwrap());
+    assert!(
+        plan.pure_helpers().is_empty(),
+        "ordinary body is not copied into a recipe"
+    );
+    let site = plan.function_sites().iter_with_ids().next().unwrap().0;
+    PureFunctionRequest::try_new(plan, site, (0..3).map(|_| scalar_number(scalar, 0))).unwrap()
+}
+
+fn numeric_scope_request(scalar: Scalar) -> PureFunctionRequest {
+    ordinary_scope_request(scalar, |ids| {
+        scoped(
+            scalar.ty(),
+            "outer",
+            expr(
+                scalar,
+                RuntimeExprSeedKind::Let {
+                    binding: ids[3].clone(),
+                    expr: Box::new(binary(
+                        scalar,
+                        local(scalar, ids[0].clone()),
+                        RuntimeBinaryOp::Add,
+                        local(scalar, ids[1].clone()),
+                    )),
+                    body: Box::new(scoped(
+                        scalar.ty(),
+                        "inner",
+                        if_expr(
+                            scalar,
+                            scoped(
+                                bool_ty(),
+                                "condition",
+                                compare(
+                                    local(scalar, ids[3].clone()),
+                                    RuntimeBinaryOp::Lt,
+                                    value(scalar, scalar_number(scalar, 10)),
+                                ),
+                            ),
+                            scoped(
+                                scalar.ty(),
+                                "then_value",
+                                binary(
+                                    scalar,
+                                    local(scalar, ids[3].clone()),
+                                    RuntimeBinaryOp::Mul,
+                                    value(scalar, scalar_number(scalar, 2)),
+                                ),
+                            ),
+                            scoped(
+                                scalar.ty(),
+                                "else_value",
+                                binary(
+                                    scalar,
+                                    local(scalar, ids[3].clone()),
+                                    RuntimeBinaryOp::Add,
+                                    value(scalar, scalar_number(scalar, 1)),
+                                ),
+                            ),
+                        ),
+                    )),
+                },
+            ),
+        )
+    })
+}
+
+#[test]
+fn cranelift_ordinary_scopes_preserve_numeric_abis_and_full_formals() {
+    macro_rules! check {
+        ($scalar:ident, $compile:ident, $rows:expr, $wrap:expr) => {{
+            let request = numeric_scope_request(Scalar::$scalar);
+            let function = request.function_ref().unwrap();
+            let locals = function
+                .inputs
+                .iter()
+                .map(arcweft_core::pure::RuntimePureFunctionInputRef::local)
+                .collect::<Vec<_>>();
+            assert_eq!(locals.len(), 3, "unused formal remains in the admitted ABI");
+            assert!(
+                PureFunctionRequest::try_new(
+                    Arc::clone(request.plan()),
+                    function.id(),
+                    (0..2).map(|_| scalar_number(Scalar::$scalar, 0))
+                )
+                .is_err()
+            );
+            let compiled = CraneliftPureFunctionBackend
+                .$compile(&request, locals.iter().copied())
+                .unwrap();
+            let mut vm = arcweft_core::pure::VmPureFunctionScratch::default();
+            for (arguments, expected) in $rows {
+                assert!(
+                    compiled.call(&arguments[..2]).is_err(),
+                    "compiled full formal arity is enforced"
+                );
+                assert_eq!(compiled.call(&arguments).unwrap(), expected);
+                let expected = $wrap(expected);
+                let actual = vm
+                    .evaluate_values(
+                        request.plan(),
+                        function.id(),
+                        arguments.into_iter().map($wrap).collect(),
+                    )
+                    .unwrap();
+                assert_eq!(actual, expected);
+            }
+        }};
+    }
+    check!(
+        I8,
+        compile_i8_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::i8
+    );
+    check!(
+        I16,
+        compile_i16_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::i16
+    );
+    check!(
+        I32,
+        compile_i32_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::i32
+    );
+    check!(
+        I64,
+        compile_i64_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::i64
+    );
+    check!(
+        I128,
+        compile_i128_batch_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::i128
+    );
+    check!(
+        ISize,
+        compile_i64_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::isize
+    );
+    check!(
+        U8,
+        compile_u8_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::u8
+    );
+    check!(
+        U16,
+        compile_u16_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::u16
+    );
+    check!(
+        U32,
+        compile_u32_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::u32
+    );
+    check!(
+        U64,
+        compile_u64_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::u64
+    );
+    check!(
+        U128,
+        compile_u128_batch_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::u128
+    );
+    check!(
+        USize,
+        compile_u64_with_inputs,
+        [([3, 4, 99], 14), ([11, 0, 77], 12)],
+        RuntimeValue::usize
+    );
+    check!(
+        F32,
+        compile_f32_with_inputs,
+        [([3.0, 4.0, 99.0], 14.0), ([11.0, 0.0, 77.0], 12.0)],
+        RuntimeValue::F32
+    );
+    check!(
+        F64,
+        compile_f64_with_inputs,
+        [([3.0, 4.0, 99.0], 14.0), ([11.0, 0.0, 77.0], 12.0)],
+        RuntimeValue::F64
+    );
+}
+
+#[test]
+fn cranelift_scope_keeps_unsupported_child_decline() {
+    let request = ordinary_scope_request(Scalar::I64, |ids| {
+        scoped(
+            Scalar::I64.ty(),
+            "outer",
+            expr(
+                Scalar::I64,
+                RuntimeExprSeedKind::IfLet {
+                    pattern: arcweft_core::plan::RuntimePatternSeed::new(
+                        Scalar::I64.ty(),
+                        arcweft_core::plan::RuntimePatternSeedKind::Literal(RuntimeValue::i64(0)),
+                    ),
+                    expr: Box::new(local(Scalar::I64, ids[0].clone())),
+                    guard: None,
+                    then_expr: Box::new(value(Scalar::I64, RuntimeValue::i64(7))),
+                    else_expr: Box::new(value(Scalar::I64, RuntimeValue::i64(9))),
+                },
+            ),
+        )
+    });
+    assert_eq!(
+        arcweft_core::pure::VmPureFunctionScratch::default()
+            .evaluate_values(
+                request.plan(),
+                request.function_ref().unwrap().id(),
+                vec![
+                    RuntimeValue::i64(0),
+                    RuntimeValue::i64(0),
+                    RuntimeValue::i64(99)
+                ]
+            )
+            .unwrap(),
+        RuntimeValue::i64(7)
+    );
+    let locals = request
+        .function_ref()
+        .unwrap()
+        .inputs
+        .iter()
+        .map(arcweft_core::pure::RuntimePureFunctionInputRef::local)
+        .collect::<Vec<_>>();
+    assert!(matches!(
+        CraneliftPureFunctionBackend.compile_i64_with_inputs(&request, locals),
+        Err(CraneliftCodegenError::UnsupportedExpr(_))
+    ));
 }

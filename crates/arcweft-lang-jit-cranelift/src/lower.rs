@@ -289,6 +289,7 @@ pub(super) fn lower_expr(
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr.kind() {
+        RuntimeExprKind::Scope { body, .. } => lower_expr(builder, bindings, body, stats),
         RuntimeExprKind::Value(RuntimeValue::Int(value)) => value
             .exact_i64()
             .or(match *value {
@@ -383,6 +384,7 @@ pub(super) fn lower_i32_expr(
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr.kind() {
+        RuntimeExprKind::Scope { body, .. } => lower_i32_expr(builder, bindings, body, stats),
         RuntimeExprKind::Value(RuntimeValue::Int(value)) => value
             .exact_i32()
             .map(|value| builder.ins().iconst(types::I32, i64::from(value)))
@@ -482,6 +484,9 @@ pub(super) fn lower_small_int_expr(
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr.kind() {
+        RuntimeExprKind::Scope { body, .. } => {
+            lower_small_int_expr(builder, bindings, body, stats, kind)
+        }
         RuntimeExprKind::Value(value) => kind
             .literal(value)
             .map(|value| small_int_const(builder, kind, value))
@@ -623,6 +628,7 @@ pub(super) fn lower_u32_expr(
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr.kind() {
+        RuntimeExprKind::Scope { body, .. } => lower_u32_expr(builder, bindings, body, stats),
         RuntimeExprKind::Value(RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::U32(
             value,
         ))) => Ok(builder.ins().iconst(types::I32, u32_iconst_value(*value))),
@@ -708,6 +714,7 @@ pub(super) fn lower_u64_expr(
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr.kind() {
+        RuntimeExprKind::Scope { body, .. } => lower_u64_expr(builder, bindings, body, stats),
         RuntimeExprKind::Value(RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::U64(
             value,
         ))) => Ok(builder.ins().iconst(types::I64, u64_iconst_value(*value))),
@@ -796,6 +803,7 @@ pub(super) fn lower_f32_expr(
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr.kind() {
+        RuntimeExprKind::Scope { body, .. } => lower_f32_expr(builder, bindings, body, stats),
         RuntimeExprKind::Value(RuntimeValue::F32(value)) => Ok(builder.ins().f32const(*value)),
         RuntimeExprKind::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "literal {value:?} is not an f32 value"
@@ -881,6 +889,7 @@ pub(super) fn lower_f64_expr(
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr.kind() {
+        RuntimeExprKind::Scope { body, .. } => lower_f64_expr(builder, bindings, body, stats),
         RuntimeExprKind::Value(RuntimeValue::F64(value)) => Ok(builder.ins().f64const(*value)),
         RuntimeExprKind::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "literal {value:?} is not an f64 value"
@@ -1264,6 +1273,7 @@ pub(super) fn lower_condition(
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr.kind() {
+        RuntimeExprKind::Scope { body, .. } => lower_condition(builder, bindings, body, stats),
         RuntimeExprKind::Value(RuntimeValue::Bool(value)) => {
             Ok(builder.ins().iconst(types::I8, i64::from(*value)))
         }
@@ -1292,6 +1302,7 @@ pub(super) fn lower_i32_condition(
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr.kind() {
+        RuntimeExprKind::Scope { body, .. } => lower_i32_condition(builder, bindings, body, stats),
         RuntimeExprKind::Value(RuntimeValue::Bool(value)) => {
             Ok(builder.ins().iconst(types::I8, i64::from(*value)))
         }
@@ -1321,6 +1332,9 @@ pub(super) fn lower_small_int_condition(
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr.kind() {
+        RuntimeExprKind::Scope { body, .. } => {
+            lower_small_int_condition(builder, bindings, body, stats, kind)
+        }
         RuntimeExprKind::Value(RuntimeValue::Bool(value)) => {
             Ok(builder.ins().iconst(types::I8, i64::from(*value)))
         }
@@ -1356,6 +1370,7 @@ pub(super) fn lower_u32_condition(
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr.kind() {
+        RuntimeExprKind::Scope { body, .. } => lower_u32_condition(builder, bindings, body, stats),
         RuntimeExprKind::Value(RuntimeValue::Bool(value)) => {
             Ok(builder.ins().iconst(types::I8, i64::from(*value)))
         }
@@ -1384,6 +1399,7 @@ pub(super) fn lower_u64_condition(
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr.kind() {
+        RuntimeExprKind::Scope { body, .. } => lower_u64_condition(builder, bindings, body, stats),
         RuntimeExprKind::Value(RuntimeValue::Bool(value)) => {
             Ok(builder.ins().iconst(types::I8, i64::from(*value)))
         }
@@ -1412,6 +1428,7 @@ pub(super) fn lower_f32_condition(
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr.kind() {
+        RuntimeExprKind::Scope { body, .. } => lower_f32_condition(builder, bindings, body, stats),
         RuntimeExprKind::Value(RuntimeValue::Bool(value)) => {
             Ok(builder.ins().iconst(types::I8, i64::from(*value)))
         }
@@ -1440,6 +1457,7 @@ pub(super) fn lower_f64_condition(
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr.kind() {
+        RuntimeExprKind::Scope { body, .. } => lower_f64_condition(builder, bindings, body, stats),
         RuntimeExprKind::Value(RuntimeValue::Bool(value)) => {
             Ok(builder.ins().iconst(types::I8, i64::from(*value)))
         }
