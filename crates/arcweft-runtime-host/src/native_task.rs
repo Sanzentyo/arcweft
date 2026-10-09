@@ -921,7 +921,7 @@ impl NativeTaskBridge {
             self.stats.parallel_system_info_tasks += dispatch
                 .tasks
                 .iter()
-                .filter(|task| is_system_info_task(&task.spec().request))
+                .filter(|task| NativeSystemInfoAdapter::request_kind(&task.spec().request).is_some())
                 .count();
             self.stats.parallel_marker_tasks += dispatch
                 .tasks
@@ -1669,19 +1669,46 @@ fn failed_host_task(message: impl Into<String>) -> HostTaskOutcome {
     }
 }
 
+impl NativeSystemInfoAdapter {
+    /// Projects a runtime request through this adapter's closed operation family.
+    /// The registry owns selected contract, result, modality and policy admission.
+    fn request_kind(request: &HostTaskRequest) -> Option<arcweft_core::task::SystemInfoKind> {
+        use arcweft_core::task::{SystemInfoKind, SystemInfoRequest};
+        match request {
+            HostTaskRequest::SystemInfo(request) => Some(request.kind),
+            HostTaskRequest::Custom {
+                args, named_args, ..
+            } if args.is_empty() && named_args.is_empty() => {
+                let identity = request.host_call_id();
+                [
+                    SystemInfoKind::CoreCount,
+                    SystemInfoKind::ThreadCount,
+                    SystemInfoKind::AvailableParallelism,
+                ]
+                .into_iter()
+                .find(|kind| {
+                    HostTaskRequest::SystemInfo(SystemInfoRequest { kind: *kind }).host_call_id()
+                        == identity
+                })
+            }
+            _ => None,
+        }
+    }
+}
+
 impl HostAdapter for NativeSystemInfoAdapter {
     fn manifest(&self) -> &AdapterManifest {
         &self.manifest
     }
 
     fn complete(&self, task: &TaskSpec, bound: &BoundTaskOutcome) -> Option<HostTaskOutcome> {
-        let HostTaskRequest::SystemInfo(request) = &task.request else {
+        let Some(kind) = Self::request_kind(&task.request) else {
             return None;
         };
         Some(HostTaskOutcome {
             completion: bound
                 .try_result_ok(RuntimeValue::String(
-                    system_info_value(self.host_system, request.kind).to_string(),
+                    system_info_value(self.host_system, kind).to_string(),
                 ))
                 .map_or_else(
                     |error| HostTaskCompletion::Failed(error.to_string()),
@@ -1695,7 +1722,7 @@ impl HostAdapter for NativeSystemInfoAdapter {
     }
 
     fn can_complete_in_parallel(&self, request: &HostTaskRequest) -> bool {
-        matches!(request, HostTaskRequest::SystemInfo(_))
+        Self::request_kind(request).is_some()
     }
 }
 
@@ -1945,12 +1972,8 @@ fn is_file_read_request(request: &HostTaskRequest) -> bool {
     )
 }
 
-fn is_system_info_task(request: &HostTaskRequest) -> bool {
-    matches!(request, HostTaskRequest::SystemInfo(_))
-}
-
 fn is_parallel_host_work(request: &HostTaskRequest) -> bool {
-    is_io_task(request) || is_system_info_task(request)
+    is_io_task(request) || NativeSystemInfoAdapter::request_kind(request).is_some()
 }
 
 fn is_scheduler_marker_task(request: &HostTaskRequest) -> bool {
@@ -3703,6 +3726,120 @@ mod tests {
             .expect("CLI result graph");
         RuntimeProgramOwner::Plan(std::sync::Arc::new(builder.finish().expect("CLI program")))
     }
+    #[test]
+    fn native_system_info_adapter_completes_all_typed_and_manifest_selected_requests() {
+        use arcweft_core::pattern::{RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId};
+
+        let adapter = NativeSystemInfoAdapter {
+            manifest: standard::system_info_manifest(),
+            host_system: HostSystemInfo {
+                physical_cores: 4,
+                logical_threads: 8,
+                available_parallelism: 6,
+            },
+        };
+        let [declaration] = adapter.manifest.nominal_declarations() else {
+            panic!("the SystemInfo manifest has one exact SystemError declaration");
+        };
+        let outcome = TaskOutcomeContract::new(RuntimeCheckedType::Result {
+            ok: Box::new(RuntimeCheckedType::String),
+            error: Box::new(RuntimeCheckedType::Opaque {
+                owner: RuntimeOpaqueTypeOwner::exact(
+                    RuntimeOpaqueTypeProducerId::try_new(declaration.opaque_producer().as_str())
+                        .unwrap(),
+                    RuntimeSemanticTypeId::from_bytes([0x50; 32]),
+                ),
+            }),
+        });
+        let bound = outcome.bind_standalone().unwrap();
+        for (kind, expected) in [
+            (SystemInfoKind::CoreCount, "4"),
+            (SystemInfoKind::ThreadCount, "8"),
+            (SystemInfoKind::AvailableParallelism, "6"),
+        ] {
+            let typed = HostTaskRequest::SystemInfo(SystemInfoRequest { kind });
+            let identity = typed.host_call_id();
+            let contract = adapter
+                .manifest
+                .host_calls()
+                .iter()
+                .find(|call| call.id() == identity)
+                .expect("the exact typed SystemInfo operation is registered")
+                .contract_digest();
+            let selected = HostTaskRequest::custom_with_named_args_and_manifest_contract(
+                "system",
+                kind.as_str(),
+                [],
+                [],
+                contract,
+            );
+            for request in [typed, selected] {
+                assert_eq!(NativeSystemInfoAdapter::request_kind(&request), Some(kind));
+                assert!(is_parallel_host_work(&request));
+                assert!(adapter.can_complete_in_parallel(&request));
+                let task = fixture_spec(
+                    request,
+                    TaskClass::Background,
+                    TaskPriority(0),
+                    CancelScopeId("system-info-projection-test".to_owned()),
+                    TaskPolicy::AlwaysStart,
+                    outcome.clone(),
+                );
+                let result = adapter
+                    .complete(&task, &bound)
+                    .expect("registered request completes");
+                assert_eq!(
+                    result.completion,
+                    HostTaskCompletion::Ready(RuntimePayload::new(RuntimeValue::result_ok(
+                        RuntimeValue::String(expected.to_owned())
+                    )))
+                );
+                assert_eq!(result.metrics.system_info_ops, 1);
+                assert_eq!(result.metrics.read_ops, 0);
+                assert_eq!(result.metrics.write_ops, 0);
+            }
+        }
+    }
+
+    #[test]
+    fn native_system_info_projection_rejects_foreign_or_malformed_requests() {
+        let adapter = NativeSystemInfoAdapter {
+            manifest: standard::system_info_manifest(),
+            host_system: HostSystemInfo {
+                physical_cores: 4,
+                logical_threads: 8,
+                available_parallelism: 6,
+            },
+        };
+        let bound = TaskOutcomeContract::new(RuntimeCheckedType::String)
+            .bind_standalone()
+            .unwrap();
+        for request in [
+            HostTaskRequest::custom("other", SystemInfoKind::CoreCount.as_str(), []),
+            HostTaskRequest::custom("system", "unknown", []),
+            HostTaskRequest::custom(
+                "system",
+                SystemInfoKind::CoreCount.as_str(),
+                [RuntimePayload::from("unexpected")],
+            ),
+            HostTaskRequest::custom_with_named_args(
+                "system",
+                SystemInfoKind::CoreCount.as_str(),
+                [],
+                [("unexpected".to_owned(), RuntimePayload::from("value"))],
+            ),
+        ] {
+            assert_eq!(NativeSystemInfoAdapter::request_kind(&request), None);
+            assert!(!is_parallel_host_work(&request));
+            assert!(!adapter.can_complete_in_parallel(&request));
+            assert!(
+                adapter
+                    .complete(&task("invalid-system", request), &bound)
+                    .is_none()
+            );
+        }
+    }
+
     fn fixture_spec(
         request: HostTaskRequest,
         class: TaskClass,
