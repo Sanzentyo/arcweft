@@ -1548,9 +1548,9 @@ extern capability fs {
 }
 extern capability path { fn save(path: String) -> VirtualPath }
 entry cli @entry.main { goto @flow.main }
-flow main effects { fs.read(save), fs.write(save) } {
+flow main() -> String effects { fs.read(save), fs.write(save) } {
     let text = match (await fs.read_text(path.save("input.txt"))) { .Ok(text) => text, .Err(_) => "read_failed" }
-    let output = match (await fs.write_text(path.save("output.txt"), text)) { .Ok(_) => text, .Err(_) => "write_failed" }
+    let output = match (await fs.write_text(path.save("output.txt"), text.to_string())) { .Ok(_) => text, .Err(_) => "write_failed" }
     return output
 }
 "#,
@@ -1560,10 +1560,11 @@ flow main effects { fs.read(save), fs.write(save) } {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&source_path)
+        .args(["--entry", "entry.main"])
         .arg("--mode")
         .arg("drain")
         .arg("--steps")
-        .arg("8")
+        .arg("256")
         .arg("--json")
         .output()
         .expect("arcw run executes native file tasks");
@@ -1576,11 +1577,11 @@ flow main effects { fs.read(save), fs.write(save) } {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("\"executor\": \"bytecode_vm\"")
-            && stdout.contains("file.read_text save:input.txt")
-            && stdout.contains("file.write_text save:output.txt")
+            && stdout.contains("request=fs.read_text")
+            && stdout.contains("request=fs.write_text")
             && stdout.contains("task_events_in\": 1")
             && stdout.contains("\"native_io\"")
-            && stdout.contains("\"completed_tasks\": 2")
+            && stdout.contains("\"completed_tasks\": 4")
             && stdout.contains("\"scheduler\"")
             && stdout.contains("\"submitted\": 2")
             && stdout.contains("\"dispatched\": 2")
@@ -1614,27 +1615,54 @@ fn bundle_json_packages_save_files_and_run_bundle_executes_native_file_tasks() {
 fn run_bundle_rejects_image_asset_metadata_mismatch_before_execution() {
     let fixture = bundle_native_file_fixture();
     let _bundle_stdout = run_bundle_package_command(&fixture);
-    let mut bundle_json: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(&fixture.bundle_path).expect("bundle JSON is written"),
+    let mut bundle = arcweft_bundle::ArcweftBundle::from_format_slice(
+        arcweft_bundle::BundleFormat::Awfb,
+        &fs::read(&fixture.bundle_path).expect("bundle AWFB is written"),
     )
-    .expect("bundle artifact is JSON");
-    let image_assets = bundle_json["image_assets"]
-        .as_array_mut()
-        .expect("image assets are an array");
-    let logo = image_assets
+    .expect("the original bundle decodes through its owning AWFB codec");
+    let logo_bytes = bundle
+        .image_asset_bytes("asset.view.logo")
+        .expect("the logo has a valid packaged virtual file reference")
+        .expect("the logo bytes are included")
+        .to_vec();
+    let logo = bundle
+        .image_assets
         .iter_mut()
-        .find(|asset| asset["id"] == "asset.view.logo")
+        .find(|asset| asset.id == "asset.view.logo")
         .expect("static webp image asset is present");
-    logo["animation"] = serde_json::Value::String("animated".to_owned());
-    fs::write(
-        &fixture.bundle_path,
-        serde_json::to_vec_pretty(&bundle_json).expect("mutated bundle serializes"),
+    assert_eq!(logo.animation, arcweft_bundle::BundleImageAnimation::Static);
+    assert_eq!(logo.format, arcweft_bundle::BundleImageFormat::WebP);
+    logo.animation = arcweft_bundle::BundleImageAnimation::Animated;
+    let mutated = bundle
+        .to_format_bytes(arcweft_bundle::BundleFormat::Awfb)
+        .expect("the contradictory declared image metadata canonically encodes");
+    let decoded = arcweft_bundle::ArcweftBundle::from_format_slice(
+        arcweft_bundle::BundleFormat::Awfb,
+        &mutated,
     )
-    .expect("mutated bundle is written");
+    .expect("the canonical artifact retains the declared metadata before runtime validation");
+    assert_eq!(
+        decoded.image_asset("asset.view.logo").unwrap().animation,
+        arcweft_bundle::BundleImageAnimation::Animated,
+    );
+    assert_eq!(
+        decoded
+            .image_asset_bytes("asset.view.logo")
+            .unwrap()
+            .unwrap(),
+        logo_bytes.as_slice(),
+        "only the declared animation changes; the actual static image bytes remain intact",
+    );
+    assert_eq!(
+        decoded.product_awbc_program(),
+        bundle.product_awbc_program()
+    );
+    fs::write(&fixture.bundle_path, mutated).expect("mutated canonical AWFB is written");
 
     let run_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run-bundle")
         .arg(&fixture.bundle_path)
+        .args(["--entry", "entry.main"])
         .arg("--steps")
         .arg("1")
         .output()
@@ -1646,7 +1674,9 @@ fn run_bundle_rejects_image_asset_metadata_mismatch_before_execution() {
     );
     let stderr = String::from_utf8_lossy(&run_output.stderr);
     assert!(
-        stderr.contains("metadata mismatch for animation") && stderr.contains("asset.view.logo"),
+        stderr.contains("metadata mismatch for animation")
+            && stderr.contains("asset.view.logo")
+            && stderr.contains("expected Animated, actual Static"),
         "run-bundle error should report the image metadata mismatch: {stderr}"
     );
 }
@@ -1846,9 +1876,9 @@ extern capability fs {
 }
 extern capability path { fn save(path: String) -> VirtualPath }
 entry cli @entry.main { goto @flow.main }
-flow main effects { fs.read(save), fs.write(save) } {
+flow main() -> String effects { fs.read(save), fs.write(save) } {
     let text = match (await fs.read_text(path.save("input.txt"))) { .Ok(text) => text, .Err(_) => "read_failed" }
-    let output = match (await fs.write_text(path.save("output.txt"), text)) { .Ok(_) => text, .Err(_) => "write_failed" }
+    let output = match (await fs.write_text(path.save("output.txt"), text.to_string())) { .Ok(_) => text, .Err(_) => "write_failed" }
     return output
 }
 "#,
@@ -1881,6 +1911,12 @@ fn run_bundle_package_command(fixture: &BundleNativeFileFixture) -> String {
 }
 
 fn assert_bundle_package_output(fixture: &BundleNativeFileFixture, bundle_stdout: &str) {
+    let summary: serde_json::Value =
+        serde_json::from_str(bundle_stdout).expect("bundle summary is structured JSON");
+    assert_eq!(
+        summary["required_host_calls"],
+        serde_json::json!(["fs.read_text", "fs.write_text", "path.save",])
+    );
     assert!(
         bundle_stdout.contains("\"source\": \"main.arcw\"")
             && bundle_stdout.contains("\"required_host_calls\"")
@@ -1888,7 +1924,7 @@ fn assert_bundle_package_output(fixture: &BundleNativeFileFixture, bundle_stdout
             && bundle_stdout.contains("fs.write_text")
             && bundle_stdout.contains("\"adapter_manifests\": 2")
             && bundle_stdout.contains("\"bytecode_instructions\"")
-            && bundle_stdout.contains("\"name\": \"bytecode_lower\"")
+            && bundle_stdout.contains("\"name\": \"product_awbc_lower\"")
             && bundle_stdout.contains("\"name\": \"encode_bundle\"")
             && bundle_stdout.contains("\"virtual_files\": 3")
             && bundle_stdout.contains("\"image_assets\": 2"),
@@ -1903,12 +1939,25 @@ fn assert_bundle_package_output(fixture: &BundleNativeFileFixture, bundle_stdout
         &fs::read(&fixture.bundle_path).expect("bundle AWFB is written"),
     )
     .expect("bundle AWFB decodes");
+    assert_eq!(bundle.source_display_name(), "main.arcw");
+    assert_eq!(
+        bundle
+            .source_map
+            .primary_document()
+            .expect("the decoded source map retains its primary document")
+            .text(),
+        fs::read_to_string(&fixture.source_path).expect("exact authored source remains packaged")
+    );
+    assert!(
+        !bundle.product_awbc_program().instructions.is_empty(),
+        "the decoded owning AWBC program contains executable instructions"
+    );
     let bundle_json =
         serde_json::to_string_pretty(&bundle).expect("decoded bundle serializes for assertions");
     assert!(
         bundle_json.contains("\"adapter_manifest_ids\"")
             && bundle_json.contains("\"adapter_manifests\"")
-            && bundle_json.contains("\"bytecode\"")
+            && bundle_json.contains("\"product_awbc\"")
             && bundle_json.contains("\"program\"")
             && bundle_json.contains("native-file")
             && bundle_json.contains("save")
@@ -1941,10 +1990,11 @@ fn run_bundle_fixture_command(fixture: &BundleNativeFileFixture) -> String {
     let run_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run-bundle")
         .arg(&fixture.bundle_path)
+        .args(["--entry", "entry.main"])
         .arg("--mode")
         .arg("drain")
         .arg("--steps")
-        .arg("8")
+        .arg("256")
         .arg("--json")
         .output()
         .expect("arcw run-bundle executes packaged source");
@@ -1962,13 +2012,13 @@ fn assert_run_bundle_output(fixture: &BundleNativeFileFixture, run_stdout: &str)
         serde_json::from_str(run_stdout).expect("run-bundle output is structured JSON");
     assert!(
         run_stdout.contains("\"source\": \"main.arcw\"")
-            && run_stdout.contains("\"executor\": \"bytecode_vm\"")
+            && run_stdout.contains("\"executor\": \"awbc_product\"")
             && run_stdout.contains("\"bytecode_instructions\"")
             && run_stdout.contains("\"adapter_manifests\": 2")
             && run_stdout.contains("\"name\": \"decode_bundle\"")
-            && run_stdout.contains("\"name\": \"bytecode_decode\"")
+            && run_stdout.contains("\"name\": \"runtime_decode\"")
             && run_stdout.contains("\"name\": \"run\"")
-            && run_stdout.contains("\"completed_tasks\": 2")
+            && run_stdout.contains("\"completed_tasks\": 4")
             && run_stdout.contains("\"failed_tasks\": 0")
             && run_stdout.contains("\"read_ops\": 1")
             && run_stdout.contains("\"write_ops\": 1")
@@ -5966,6 +6016,8 @@ fn bench_json_measures_native_file_tasks() {
     fs::write(
         &source_path,
         r#"
+entry bench @entry.bench_io { goto @flow.bench_io }
+
 extern capability fs {
     type FsError
     fn read_text(path: VirtualPath) -> Need<Result<String, FsError>> effects { fs.read }
@@ -5978,9 +6030,9 @@ bench @bench.native_io {
     assert { expect.file(path.save("output.txt"), equals="bench-native-ok") }
 }
 
-flow bench_io effects { fs.read(save), fs.write(save) } {
+flow bench_io() -> String effects { fs.read(save), fs.write(save) } {
     let text = match (await fs.read_text(path.save("input.txt"))) { .Ok(text) => text, .Err(_) => "read_failed" }
-    let output = match (await fs.write_text(path.save("output.txt"), text)) { .Ok(_) => text, .Err(_) => "write_failed" }
+    let output = match (await fs.write_text(path.save("output.txt"), text.to_string())) { .Ok(_) => text, .Err(_) => "write_failed" }
     return output
 }
 "#,
@@ -6011,7 +6063,7 @@ flow bench_io effects { fs.read(save), fs.write(save) } {
             && stdout.contains("\"task_requests_median\": 2")
             && stdout.contains("\"task_events_in_median\": 2")
             && stdout.contains("\"native_io\"")
-            && stdout.contains("\"completed_tasks\": 2")
+            && stdout.contains("\"completed_tasks\": 4")
             && stdout.contains("\"failed_tasks\": 0")
             && stdout.contains("\"scheduler\"")
             && stdout.contains("\"submitted\": 2")
