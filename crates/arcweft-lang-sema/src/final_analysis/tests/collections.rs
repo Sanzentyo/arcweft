@@ -141,3 +141,109 @@ fn array_repeats_reject_length_mismatches_and_runtime_lengths() {
         );
     }
 }
+
+#[test]
+fn contextual_map_callbacks_infer_nested_ordinary_call_results() {
+    let fixture = fixture(
+        r"
+fn score(value: i32) -> i32 effects {} { value * 4i32 }
+fn scaled(value: i32) -> f64 effects {} { 1.5f64 }
+fn inferred(values: Vec<i32>) -> Vec<i32> effects {} {
+    let mapped = values.map(|item| score(item))
+    mapped
+}
+fn annotated(values: Vec<i32>) -> Vec<f64> effects {} {
+    let mapped: Vec<f64> = values.map(|item: i32| scaled(item))
+    mapped
+}
+fn fixed(values: Array<i32, 3>) -> Array<i32, 3> effects {} {
+    values.map(|item| score(item))
+}
+",
+        None,
+    );
+    let analysis =
+        analyze(&fixture).expect("parent callback inference owns the nested call result");
+    for expected in [
+        TypeKind::Vec(Box::new(TypeKind::I32)),
+        TypeKind::Vec(Box::new(TypeKind::F64)),
+        array_type(TypeKind::I32, 3),
+    ] {
+        assert!(
+            analysis.calls().any(|(_, call)| {
+                call.selected_application()
+                    .is_some_and(|application| application.result().value_type() == Some(&expected))
+            }),
+            "the selected map must retain its exact result: {expected:?}"
+        );
+    }
+}
+
+#[test]
+fn contextual_map_callbacks_reject_a_concrete_result_mismatch() {
+    for callback in [
+        "|item| score(item)",
+        "|item| { score(item) }",
+        "|item: i32| -> String { score(item) }",
+    ] {
+        let rejected_call = format!("values.map({callback})");
+        let source = format!(
+            "fn score(value: i32) -> i32 effects {{}} {{ value * 4i32 }}\n\
+             fn rejected(values: Vec<i32>) -> Vec<String> effects {{}} {{\n\
+                 {rejected_call}\n\
+             }}\n"
+        );
+        let fixture = fixture(&source, None);
+        let analysis = analyze(&fixture).unwrap_or_else(|error| {
+            let unavailable = match &error {
+                FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner } => {
+                    let view = fixture.project.analysis_view().expect("executable HIR");
+                    let module = view
+                        .module(&CanonicalModulePath::crate_root())
+                        .expect("root HIR module");
+                    let expression = module.resolve_expr(*owner).expect("failed expression owner");
+                    let site = module
+                        .source_site(
+                            module.provenance().source_identity(),
+                            HirSourceQuery::Expr {
+                                owner: *owner,
+                                role: HirExprSourceRole::Whole,
+                            },
+                        )
+                        .expect("failed expression source query");
+                    let text = match site.presence() {
+                        HirSourcePresence::Present(HirSourceSite::Span(span)) => {
+                            &source[span.range().as_range()]
+                        }
+                        _ => "<no authored span>",
+                    };
+                    format!("source={text:?}, expression={:?}", expression.kind())
+                }
+                _ => String::new(),
+            };
+            panic!("{callback}: contextual mismatch must retain final call rejection: {error:?}; {unavailable}");
+        });
+        let rejected = analysis
+            .calls()
+            .filter_map(|(_, call)| {
+                matches!(call.outcome(), CallAnalysisOutcome::Rejected(_)).then_some(call)
+            })
+            .collect::<Vec<_>>();
+        let [call] = rejected.as_slice() else {
+            panic!("the exact enclosing Map call must retain one rejection: {rejected:?}");
+        };
+        assert!(call.selected_application().is_none());
+        super::callable_values::assert_unselected_call_has_no_execution(
+            &analysis,
+            call.outcome().site().expression(),
+        );
+        let [diagnostic] = call.diagnostics() else {
+            panic!("the rejected Map retains its single source-backed diagnostic");
+        };
+        assert_eq!(diagnostic.code(), CallableDiagnosticCode::NoViableSignature);
+        let span = diagnostic
+            .span()
+            .expect("the rejected Map has its authored source span");
+        assert_eq!(&source[span.range().as_range()], rejected_call);
+    }
+}

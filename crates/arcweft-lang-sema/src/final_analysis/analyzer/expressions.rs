@@ -210,11 +210,21 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
     /// Result equation available to a nested call. Unlike `complete_type`, this
     /// preserves a parent-owned parametric expectation; the corresponding
     /// unbound parameters must accompany it as rigid enclosing parameters.
-    pub(super) const fn nested_call_type(&self) -> Option<&'a TypeKind> {
+    pub(super) fn nested_call_type(&self) -> Option<&'a TypeKind> {
         match self {
             Self::Complete(expected)
             | Self::CompileTimePublicId(expected)
             | Self::EnumConstructorHead(expected) => Some(expected),
+            Self::Parametric {
+                expected, unbound, ..
+            } if matches!(expected, TypeKind::GenericParam(parameter) if unbound.iter().any(|candidate| matches!(candidate, crate::types::constraints::ConstraintGenericParameterId::Type(candidate) if candidate == parameter))) =>
+            {
+                // A parent-owned unknown result is an inference output, not
+                // a rigid result requirement on an independently checked
+                // nested expression. The parent callback equation still
+                // constrains the concrete result returned by that expression.
+                None
+            }
             Self::Parametric {
                 expected,
                 scope_lease: Some(_),
