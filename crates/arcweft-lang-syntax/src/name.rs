@@ -1,5 +1,9 @@
 //! Validated source-level identifier names shared by typed syntax families.
 
+mod call_argument;
+
+pub use call_argument::CallArgumentName;
+
 /// One validated identifier spelling.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SyntaxName(Box<str>);

@@ -170,7 +170,9 @@ fn call_operands_retain_source_order_and_derive_abi_order() {
         operand(
             0,
             1,
-            RuntimeResolvedCallOperandBinding::Named("second".to_owned()),
+            RuntimeResolvedCallOperandBinding::Named(
+                arcweft_lang_syntax::name::CallArgumentName::try_new("second").unwrap(),
+            ),
             RuntimeResolvedCallOperandProjection::Scalar,
         ),
         operand(

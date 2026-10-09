@@ -75,6 +75,26 @@ mod tests {
         }
     }
 
+    #[test]
+    fn explicit_attached_bodies_admit_numerals_and_ascii_punctuation() {
+        for text in ["2026", "123", "...", "!?", "2026/10/09"] {
+            let source =
+                format!("flow opening {{\n    alice: #layout(.vertical_rl)[{text}][p]\n}}\n");
+            let built =
+                parse_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
+            assert!(
+                built.diagnostics().is_empty(),
+                "{text}: {:?}",
+                built.diagnostics()
+            );
+            assert_eq!(built.green().to_string(), source);
+            assert!(applications(&built).iter().any(|application| matches!(application.content(),
+                SyntaxDialogueContentProjection::Present(content)
+                    if matches!(content.nodes(), [SyntaxDialogueNodeProjection::Text(actual)] if actual.as_ref() == text)
+            )), "explicit body must retain its exact text: {text}");
+        }
+    }
+
     fn callback_call_projections(
         built: &crate::grammar::build::GrammarBuild,
     ) -> Vec<&PendingExpressionProjection> {

@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use arcweft_lang_syntax::name::CallArgumentName;
 use thiserror::Error;
 
 use super::{
@@ -329,7 +330,7 @@ impl HirCallInvocation {
                         equals,
                         value,
                     } => {
-                        !matches!(name, HirRecoveredName::Valid(_))
+                        !matches!(name, HirRecoveredArgumentName::Valid(_))
                             || *equals != HirRequiredTokenState::Present
                             || matches!(value, HirCallValue::Missing { .. })
                     }
@@ -371,7 +372,7 @@ fn append_argument_issues(
     issues: &mut Vec<HirCallIssue>,
 ) {
     let mut first_named = None;
-    let mut names = BTreeMap::<&HirName, HirCallArgumentOrdinal>::new();
+    let mut names = BTreeMap::<&CallArgumentName, HirCallArgumentOrdinal>::new();
     for (position, (argument, child_state)) in arguments.iter().zip(child_states).enumerate() {
         let ordinal = HirCallArgumentOrdinal::try_new(position)
             .expect("constructor preflight keeps every argument ordinal valid");
@@ -384,7 +385,7 @@ fn append_argument_issues(
             HirCallArgument::Named { name, equals, .. } => {
                 first_named.get_or_insert(ordinal);
                 match name {
-                    HirRecoveredName::Valid(name) => {
+                    HirRecoveredArgumentName::Valid(name) => {
                         if let Some(first) = names.insert(name, ordinal) {
                             issues.push(HirCallIssue::DuplicateNamedArgument {
                                 first,
@@ -392,10 +393,10 @@ fn append_argument_issues(
                             });
                         }
                     }
-                    HirRecoveredName::Missing => {
+                    HirRecoveredArgumentName::Missing => {
                         issues.push(HirCallIssue::MissingArgumentName { argument: ordinal });
                     }
-                    HirRecoveredName::InvalidPresent => {
+                    HirRecoveredArgumentName::InvalidPresent => {
                         issues.push(HirCallIssue::InvalidArgumentName { argument: ordinal });
                     }
                 }
@@ -782,6 +783,23 @@ pub enum HirCallArgumentListTerminator {
     RecoveredMissing,
 }
 
+/// Recovery state of one canonical named argument path.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirRecoveredArgumentName {
+    Valid(CallArgumentName),
+    Missing,
+    InvalidPresent,
+}
+
+impl HirRecoveredArgumentName {
+    pub const fn resolved(&self) -> Option<&CallArgumentName> {
+        match self {
+            Self::Valid(name) => Some(name),
+            Self::Missing | Self::InvalidPresent => None,
+        }
+    }
+}
+
 /// One source-ordered Call argument, including recoverable punctuation.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirCallArgument {
@@ -789,7 +807,7 @@ pub enum HirCallArgument {
         value: HirCallValue,
     },
     Named {
-        name: HirRecoveredName,
+        name: HirRecoveredArgumentName,
         equals: HirRequiredTokenState,
         value: HirCallValue,
     },
@@ -808,9 +826,9 @@ impl HirCallArgument {
     }
 
     #[cfg(test)]
-    pub(crate) const fn named(name: HirName, value: ExprId) -> Self {
+    pub(crate) const fn named(name: CallArgumentName, value: ExprId) -> Self {
         Self::Named {
-            name: HirRecoveredName::Valid(name),
+            name: HirRecoveredArgumentName::Valid(name),
             equals: HirRequiredTokenState::Present,
             value: HirCallValue::Present { value },
         }
@@ -843,7 +861,7 @@ impl HirCallArgument {
         }
     }
 
-    pub const fn resolved_name(&self) -> Option<&HirName> {
+    pub const fn resolved_name(&self) -> Option<&CallArgumentName> {
         match self {
             Self::Named { name, .. } => name.resolved(),
             Self::Positional { .. } | Self::Spread { .. } => None,

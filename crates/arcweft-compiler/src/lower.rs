@@ -7005,7 +7005,7 @@ fn runtime_call(
             .map(|operand| match operand.binding() {
                 arcweft_runtime_plan::semantic_facts::RuntimeResolvedCallOperandBinding::Positional => None,
                 arcweft_runtime_plan::semantic_facts::RuntimeResolvedCallOperandBinding::Named(name) => {
-                    Some(name.clone())
+                    Some(name.as_str().to_owned())
                 }
             })
             .collect::<Vec<_>>()
@@ -9039,12 +9039,15 @@ fn runtime_call_operand_binding(
                             reason: "named operand maps to an unnamed callable parameter"
                                 .to_owned(),
                         })?;
-                Ok(RuntimeResolvedCallOperandBinding::Named(
-                    name.as_str().to_owned(),
-                ))
+                let binding = arcweft_lang_syntax::name::CallArgumentName::try_new(name.as_str())
+                    .map_err(|_| RuntimeSemanticProjectionError::Call {
+                    owner,
+                    reason: "selected callable parameter has no admitted argument name".to_owned(),
+                })?;
+                Ok(RuntimeResolvedCallOperandBinding::Named(binding))
             }
             CheckedCallOperandDestination::Open(open) => Ok(
-                RuntimeResolvedCallOperandBinding::Named(open.binding().as_str().to_owned()),
+                RuntimeResolvedCallOperandBinding::Named(open.binding().clone()),
             ),
         },
     }

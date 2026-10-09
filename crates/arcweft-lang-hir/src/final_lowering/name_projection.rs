@@ -1,8 +1,8 @@
 //! Shared typed name projection into final HIR.
 
-use arcweft_lang_syntax::name::{SyntaxName, SyntaxNameIssue};
+use arcweft_lang_syntax::name::{CallArgumentName, SyntaxName, SyntaxNameIssue};
 
-use crate::expr::HirRecoveredName;
+use crate::expr::{HirRecoveredArgumentName, HirRecoveredName};
 use crate::identity::HirLimit;
 use crate::leaf::{HirName, HirNameInvariantError};
 use crate::lowering::{HirInvariantFailure, HirLowerFailure};
@@ -28,6 +28,22 @@ pub(super) fn recovered_name(
         Err(issue) => {
             require_attempted_name_limit(issue)?;
             Ok(HirRecoveredName::InvalidPresent)
+        }
+    }
+}
+
+pub(super) fn recovered_argument_name(
+    source: &Result<CallArgumentName, SyntaxNameIssue>,
+) -> Result<HirRecoveredArgumentName, HirLowerFailure> {
+    match source {
+        Ok(source) => {
+            require_limit(HirLimit::NameBytes, source.as_str().len())?;
+            Ok(HirRecoveredArgumentName::Valid(source.clone()))
+        }
+        Err(SyntaxNameIssue::Missing) => Ok(HirRecoveredArgumentName::Missing),
+        Err(issue) => {
+            require_attempted_name_limit(issue)?;
+            Ok(HirRecoveredArgumentName::InvalidPresent)
         }
     }
 }

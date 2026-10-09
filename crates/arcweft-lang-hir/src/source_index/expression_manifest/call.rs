@@ -18,8 +18,8 @@ use crate::expr::{
     HirAssociatedCallSyntax, HirAssociatedReceiver, HirAssociatedSeparator, HirCallArgument,
     HirCallArgumentListTerminator, HirCallCallee, HirCallChildPoison, HirCallChildStates,
     HirCallInvocationForm, HirCallTypeApplication, HirCallTypeApplicationSpelling,
-    HirCallTypeApplicationTerminator, HirCallTypeArgument, HirCallValue, HirExpr, HirRecoveredName,
-    HirRecoveryIssue, HirRequiredTokenState,
+    HirCallTypeApplicationTerminator, HirCallTypeArgument, HirCallValue, HirExpr,
+    HirRecoveredArgumentName, HirRecoveredName, HirRecoveryIssue, HirRequiredTokenState,
 };
 use crate::identity::{ExprId, TypeId};
 use crate::slot::{HirOrigin, SlotSnapshot};
@@ -135,7 +135,7 @@ pub(super) fn call_projection_matches(
                     value: expected_value,
                 },
             ) => {
-                recovered_call_name_matches(actual_name, expected_name)
+                recovered_argument_name_matches(actual_name, expected_name)
                     && required_call_token_matches(*actual_equals, *expected_equals)
                     && call_value_projection_matches(actual_value, *expected_value)
             }
@@ -257,6 +257,21 @@ fn recovered_call_name_matches(
         (HirRecoveredName::Missing, Err(SyntaxNameIssue::Missing)) => true,
         (
             HirRecoveredName::InvalidPresent,
+            Err(SyntaxNameIssue::InvalidStart { .. } | SyntaxNameIssue::InvalidContinuation { .. }),
+        ) => true,
+        _ => false,
+    }
+}
+
+fn recovered_argument_name_matches(
+    actual: &HirRecoveredArgumentName,
+    expected: &Result<arcweft_lang_syntax::name::CallArgumentName, SyntaxNameIssue>,
+) -> bool {
+    match (actual, expected) {
+        (HirRecoveredArgumentName::Valid(actual), Ok(expected)) => actual == expected,
+        (HirRecoveredArgumentName::Missing, Err(SyntaxNameIssue::Missing))
+        | (
+            HirRecoveredArgumentName::InvalidPresent,
             Err(SyntaxNameIssue::InvalidStart { .. } | SyntaxNameIssue::InvalidContinuation { .. }),
         ) => true,
         _ => false,

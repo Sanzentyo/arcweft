@@ -9,6 +9,7 @@ use std::{
 
 use arcweft_core::task::{AssetLoadKind, HostRestartPolicy, NeedProducerOperation, TaskPolicy};
 use arcweft_lang_hir::symbol::{CallableDeclarationKey, CallableDeclarationOwner};
+use arcweft_lang_syntax::name::CallArgumentName;
 use arcweft_presentation::rich_text::{
     PresentationContentAttachedBodyPolicy, PresentationContentCallableDefinition,
     PresentationContentCallableDefinitionId,
@@ -891,7 +892,7 @@ impl CallableGenericConstUse {
 
 /// Call-site identity for one deliberately open named argument. The schema
 /// digest prevents two open slots from different signatures from colliding;
-/// the authored name is canonicalized through `CallableName` before issuance.
+/// the authored argument path is already admitted through `CallArgumentName`.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct OpenArgumentSemanticDigest([u8; 32]);
 
@@ -904,11 +905,14 @@ impl OpenArgumentSemanticDigest {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct OpenArgumentId {
     schema: super::CallableSignatureSchemaDigest,
-    binding: CallableName,
+    binding: CallArgumentName,
 }
 
 impl OpenArgumentId {
-    pub(crate) fn new(schema: super::CallableSignatureSchemaDigest, binding: CallableName) -> Self {
+    pub(crate) fn new(
+        schema: super::CallableSignatureSchemaDigest,
+        binding: CallArgumentName,
+    ) -> Self {
         Self { schema, binding }
     }
 
@@ -916,7 +920,7 @@ impl OpenArgumentId {
         self.schema
     }
 
-    pub const fn binding(&self) -> &CallableName {
+    pub const fn binding(&self) -> &CallArgumentName {
         &self.binding
     }
 
@@ -2695,9 +2699,13 @@ impl CallableSignatureSchema {
     pub fn reserved_open_names(&self) -> &[CallableName] {
         &self.core.reserved_open_names
     }
-    pub(crate) fn allows_open_name(&self, name: &CallableName) -> bool {
+    pub(crate) fn allows_open_name(&self, name: &CallArgumentName) -> bool {
         self.core.argument_policy.unknown_named() == UnknownNamedArgumentPolicy::OpenSupply
-            && self.core.reserved_open_names.binary_search(name).is_err()
+            && self
+                .core
+                .reserved_open_names
+                .binary_search_by(|reserved| reserved.as_str().cmp(name.as_str()))
+                .is_err()
     }
     pub const fn validator(&self) -> &CallableValidator {
         &self.core.validator

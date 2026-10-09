@@ -9,10 +9,11 @@ use arcweft_lang_hir::{
     identity::ExprId,
     module::HirModule,
 };
+use arcweft_lang_syntax::name::CallArgumentName;
 
 use super::{
-    CallableArgumentSlotIndex, CallableCandidateId, CallableGroupIndex, CallableName,
-    CallableParameter, CallableParameterConsumer, CallableParameterIndex, CallableParameterPassing,
+    CallableArgumentSlotIndex, CallableCandidateId, CallableGroupIndex, CallableParameter,
+    CallableParameterConsumer, CallableParameterIndex, CallableParameterPassing,
     CallableParameterPresence, CallableSignatureSchema, CallableValidator,
     CheckedCallArgumentSlotSource, DialogueApplicationMetadataCoordinate, FmtParameterId,
     OpenArgumentId, SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
@@ -523,9 +524,8 @@ pub(crate) fn map_call_arguments(
                         &mut unchecked_or_open_slots,
                     )?;
                 } else {
-                    let name = CallableName::try_new(name.as_str()).ok()?;
                     let policy = schema.argument_policy();
-                    if !schema.allows_open_name(&name) {
+                    if !schema.allows_open_name(name) {
                         return None;
                     }
                     match policy.unknown_named() {
@@ -536,7 +536,10 @@ pub(crate) fn map_call_arguments(
                                 slot: CallableArgumentSlotIndex::try_from_usize(0).ok()?,
                                 source: CheckedCallArgumentSlotSource::Expression(argument.value()),
                                 coordinate: None,
-                                open: Some(OpenArgumentId::new(schema.semantic_digest(), name)),
+                                open: Some(OpenArgumentId::new(
+                                    schema.semantic_digest(),
+                                    name.clone(),
+                                )),
                                 source_projection: PreparedArgumentSourceProjection::Scalar,
                                 expected: None,
                             });
@@ -749,14 +752,14 @@ fn next_positional_parameter<'a>(
 
 fn named_parameter<'a>(
     parameters: &'a [CallableParameter],
-    name: &arcweft_lang_hir::leaf::HirName,
+    name: &CallArgumentName,
 ) -> Option<&'a CallableParameter> {
     parameters
         .iter()
         .find(|parameter| {
             parameter
                 .name()
-                .is_some_and(|candidate| candidate.as_str() == name.as_str())
+                .is_some_and(|candidate| Some(candidate.as_str()) == name.single())
                 && matches!(
                     parameter.passing(),
                     CallableParameterPassing::PositionalOrNamed

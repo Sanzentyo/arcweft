@@ -25,7 +25,8 @@ pub use self::call::{
     HirAssociatedSeparator, HirCallArgument, HirCallArgumentListTerminator, HirCallArgumentOrdinal,
     HirCallCallee, HirCallInvocation, HirCallInvocationForm, HirCallIssue, HirCallTypeApplication,
     HirCallTypeApplicationSpelling, HirCallTypeApplicationTerminator, HirCallTypeArgument,
-    HirCallTypeArgumentOrdinal, HirCallValue, HirRecoveredName, HirRequiredTokenState,
+    HirCallTypeArgumentOrdinal, HirCallValue, HirRecoveredArgumentName, HirRecoveredName,
+    HirRequiredTokenState,
 };
 pub(crate) use self::call::{
     HirCallArgumentOrdinalError, HirCallBuildError, HirCallChildPoison, HirCallChildStates,

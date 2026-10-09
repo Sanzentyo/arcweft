@@ -249,19 +249,11 @@ fn emit_plain_dialogue_content(
         .source()
         .get(range.as_range())
         .expect("plain dialogue text remains inside its source");
-    if is_real_dialogue_text(source) {
-        emit_text_node(parser, range, source.into(), nodes, components);
-        true
-    } else {
-        emit_error_node(
-            parser,
-            range,
-            SyntaxDialogueContentIssue::UnclassifiedToken,
-            nodes,
-            components,
-        );
-        false
-    }
+    let distinguishes_dialogue_candidate = is_real_dialogue_text(source);
+    emit_text_node(parser, range, source.into(), nodes, components);
+    // The generic postfix bracket candidate still needs an ambiguity hint.
+    // Explicit colon/hash bodies admit all ordinary text, including numerals.
+    distinguishes_dialogue_candidate
 }
 
 fn emit_point_action_or_error(

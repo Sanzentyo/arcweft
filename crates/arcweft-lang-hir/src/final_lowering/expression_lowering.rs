@@ -45,8 +45,8 @@ use crate::expr::{
     HirIfLetExpr, HirIndexExpr, HirLoopExpr, HirMatchArm, HirMatchExpr, HirMatchRecoveryIssue,
     HirNamedBlockExpr, HirNamedBlockName, HirPipeExpr, HirPlaceholderKind, HirPoisonState,
     HirRangeExpr, HirRecordExpr, HirRecordField, HirRecordFieldIssue, HirRecordLiteralExpr,
-    HirRecoveredName, HirRecoveryIssue, HirRequiredTokenState, HirSelectExpr, HirSelectedMember,
-    HirThreadIssue, HirTryExpr, HirTupleExpr, HirUnaryExpr, HirUnaryOp, literal_recovery_issue,
+    HirRecoveryIssue, HirRequiredTokenState, HirSelectExpr, HirSelectedMember, HirThreadIssue,
+    HirTryExpr, HirTupleExpr, HirUnaryExpr, HirUnaryOp, literal_recovery_issue,
 };
 use crate::identity::{
     ExprId, HirLimit, LocalId, ScopeId, SyntheticKey, SyntheticOwner, SyntheticRole,
@@ -68,7 +68,8 @@ use crate::type_ref::HirTypeResolver;
 use super::id_ref_projection::id_ref;
 use super::literal_projection::{integer_issue, integer_literal, integer_suffix, literal};
 use super::name_projection::{
-    attempted_name_bytes, name, name_issue, recovered_name, require_attempted_name_limit,
+    attempted_name_bytes, name, name_issue, recovered_argument_name, recovered_name,
+    require_attempted_name_limit,
 };
 use super::path_projection::{
     TypedPathProjection, project_attached_path, project_expression_path, project_type_path,
@@ -1125,14 +1126,7 @@ impl StagedHirModuleTransaction<'_> {
                     equals,
                     ..
                 } => {
-                    let call_name = match source_name {
-                        Ok(source_name) => HirRecoveredName::Valid(name(source_name)?),
-                        Err(SyntaxNameIssue::Missing) => HirRecoveredName::Missing,
-                        Err(issue) => {
-                            require_attempted_name_limit(issue)?;
-                            HirRecoveredName::InvalidPresent
-                        }
-                    };
+                    let call_name = recovered_argument_name(source_name)?;
                     HirCallArgument::Named {
                         name: call_name,
                         equals: match equals {

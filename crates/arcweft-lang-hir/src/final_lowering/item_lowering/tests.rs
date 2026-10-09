@@ -12,7 +12,7 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceEdit, SourceName, S
 
 use crate::database::HirDatabase;
 use crate::diagnostic::{HirDiagnostic, HirRecoveryPrimary};
-use crate::expr::{HirCallArgument, HirCallValue, HirRecoveredName};
+use crate::expr::{HirCallArgument, HirCallValue, HirRecoveredArgumentName};
 use crate::identity::{
     ExprId, HirLimit, HirTypedId, LocalGeneration, ScopeId, SyntheticKey, SyntheticOwner,
     SyntheticRole,
@@ -683,7 +683,7 @@ fn clean_nominal_attribute_retains_typed_path_arguments_and_source_owned_childre
             value: HirCallValue::Present { .. },
         },
         HirCallArgument::Named {
-            name: HirRecoveredName::Valid(name),
+            name: HirRecoveredArgumentName::Valid(name),
             value: HirCallValue::Present { .. },
             ..
         },

@@ -426,7 +426,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             ) => Ok(RuntimeHostArgumentSeed::Named(
                 identity,
                 NamedHostArg {
-                    name: name.clone(),
+                    name: name.as_str().to_owned(),
                     value,
                 },
             )),

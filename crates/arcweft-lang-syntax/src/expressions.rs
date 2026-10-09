@@ -661,7 +661,7 @@ pub enum SyntaxCallArgumentProjection {
         value: SyntaxExpressionSlot,
     },
     Named {
-        name: Result<SyntaxName, SyntaxNameIssue>,
+        name: Result<crate::name::CallArgumentName, SyntaxNameIssue>,
         equals: SyntaxRequiredTokenState,
         value: SyntaxExpressionSlot,
     },

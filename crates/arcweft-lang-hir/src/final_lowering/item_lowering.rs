@@ -32,7 +32,7 @@ use crate::lowering::{HirInvariantFailure, HirLowerFailure, HirLoweringCheckpoin
 use crate::scope::{HirScope, HirScopeKind, HirScopeOwner};
 use crate::source_index::HirSourceSite;
 
-use super::name_projection::recovered_name;
+use super::name_projection::recovered_argument_name;
 use super::path_projection::{TypedPathProjection, TypedPathSegment, project_attached_path};
 use super::{StagedHirModuleTransaction, require_limit};
 
@@ -531,7 +531,7 @@ impl StagedHirModuleTransaction<'_> {
                 }
                 SyntaxCallArgumentProjection::Named { name, equals, .. } => {
                     HirCallArgument::Named {
-                        name: recovered_name(name)?,
+                        name: recovered_argument_name(name)?,
                         equals: required_token_state(*equals),
                         value,
                     }

@@ -311,7 +311,7 @@ impl StagedHirModuleTransaction<'_> {
             let HirCallArgument::Named { name, .. } = argument else {
                 continue;
             };
-            let crate::expr::HirRecoveredName::Valid(name) = name else {
+            let crate::expr::HirRecoveredArgumentName::Valid(name) = name else {
                 continue;
             };
             if name.as_str() != "type" {

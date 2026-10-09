@@ -431,7 +431,10 @@ impl HirDialogueCoordinate {
             .iter()
             .enumerate()
             .filter_map(|(ordinal, argument)| {
-                let kind = match argument.resolved_name().map(HirName::as_str) {
+                let kind = match argument
+                    .resolved_name()
+                    .map(arcweft_lang_syntax::name::CallArgumentName::as_str)
+                {
                     Some("id") => HirDialogueCoordinateKind::Id,
                     Some("text_key") => HirDialogueCoordinateKind::TextKey,
                     _ => return None,

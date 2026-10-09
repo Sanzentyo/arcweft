@@ -12,14 +12,13 @@ use arcweft_lang_syntax::expressions::{
     SyntaxCallTypeApplicationTerminator, SyntaxCallTypeArgumentProjection, SyntaxCallTypeChildRole,
     SyntaxRequiredTokenState,
 };
-use arcweft_lang_syntax::name::SyntaxNameIssue;
 
 use crate::expr::{
     HirAssociatedReceiver, HirCallArgument, HirCallArgumentListTerminator, HirCallArgumentOrdinal,
     HirCallBuildError, HirCallCallee, HirCallChildPoison, HirCallChildStates, HirCallInvocation,
     HirCallTypeApplication, HirCallTypeApplicationSpelling, HirCallTypeApplicationTerminator,
     HirCallTypeArgument, HirCallTypeArgumentOrdinal, HirCallValue, HirPoisonState,
-    HirRecoveredName, HirRecoveryIssue, HirRequiredTokenState,
+    HirRecoveryIssue, HirRequiredTokenState,
 };
 use crate::identity::{ExprId, ScopeId, TypeId};
 use crate::lowering::{HirInvariantFailure, HirLimitError, HirLowerFailure};
@@ -28,7 +27,7 @@ use crate::source_index::expression_component_role;
 use super::super::super::lower_associated_separator;
 use super::CandidateCursor;
 use crate::final_lowering::StagedHirModuleTransaction;
-use crate::final_lowering::name_projection::{name, recovered_name, require_attempted_name_limit};
+use crate::final_lowering::name_projection::{recovered_argument_name, recovered_name};
 
 #[derive(Clone, Copy)]
 struct LoweredCandidateCallChild {
@@ -258,14 +257,7 @@ impl StagedHirModuleTransaction<'_> {
                     equals,
                     ..
                 } => {
-                    let call_name = match source_name {
-                        Ok(source_name) => HirRecoveredName::Valid(name(source_name)?),
-                        Err(SyntaxNameIssue::Missing) => HirRecoveredName::Missing,
-                        Err(issue) => {
-                            require_attempted_name_limit(issue)?;
-                            HirRecoveredName::InvalidPresent
-                        }
-                    };
+                    let call_name = recovered_argument_name(source_name)?;
                     HirCallArgument::Named {
                         name: call_name,
                         equals: required_token_state(*equals),

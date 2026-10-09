@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, rc::Rc};
 
 use arcweft_lang_hir::{
-    expr::{HirCallArgument, HirCallValue, HirRecoveredName, HirRequiredTokenState},
+    expr::{HirCallArgument, HirCallValue, HirRecoveredArgumentName, HirRequiredTokenState},
     leaf::{HirLiteral, HirStringLiteral},
     module::HirModule,
 };
@@ -142,7 +142,7 @@ impl Analyzer<'_, '_, '_> {
                             .transpose()?;
                         let Some((name, expression)) = (match &argument {
                             HirCallArgument::Named {
-                                name: HirRecoveredName::Valid(name),
+                                name: HirRecoveredArgumentName::Valid(name),
                                 equals: HirRequiredTokenState::Present,
                                 value: HirCallValue::Present { value },
                             } => Some((name, *value)),

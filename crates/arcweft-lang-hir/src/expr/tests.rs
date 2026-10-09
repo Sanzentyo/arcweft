@@ -64,6 +64,10 @@ fn name(value: &str) -> HirName {
     HirName::try_new(value.into()).expect("valid HIR name")
 }
 
+fn argument_name(value: &str) -> arcweft_lang_syntax::name::CallArgumentName {
+    arcweft_lang_syntax::name::CallArgumentName::try_new(value).expect("valid argument path")
+}
+
 fn clean_call(callee: HirCallCallee, arguments: Box<[HirCallArgument]>) -> HirCallInvocation {
     let argument_states = vec![HirCallChildPoison::Clean; arguments.len()];
     let (call, state) = HirCallInvocation::try_new(
@@ -282,7 +286,7 @@ fn call_constructor_enforces_ordering_while_expression_owner_enforces_module_ide
     let first = id::<ExprId>(owner_module, 2);
     let second = id::<ExprId>(owner_module, 3);
     let foreign = id::<ExprId>(foreign_module, 2);
-    let label = name("limit");
+    let label = argument_name("limit");
 
     let clean_states = [HirCallChildPoison::Clean, HirCallChildPoison::Clean];
     let (positional_after_named, positional_state) = HirCallInvocation::try_new(
@@ -1022,7 +1026,7 @@ fn expression_source_roles_cover_the_closed_thirty_six_family_matrix() {
     );
     let call = clean_call(
         HirCallCallee::value(first),
-        Box::new([HirCallArgument::named(name("value"), second)]),
+        Box::new([HirCallArgument::named(argument_name("value"), second)]),
     );
     let closure_parameter =
         HirClosureParameter::try_new(pattern, None, scope).expect("test closure parameter");
@@ -1309,7 +1313,7 @@ fn expression_source_roles_reject_wrong_parts_and_exact_one_over_ordinals() {
 
     let arguments = vec![
         HirCallArgument::positional(first),
-        HirCallArgument::named(name("id"), second),
+        HirCallArgument::named(argument_name("id"), second),
     ]
     .into_boxed_slice();
     let coordinates = HirDialogueCoordinate::from_immediate_arguments(&arguments)

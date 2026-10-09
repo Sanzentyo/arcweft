@@ -78,6 +78,7 @@ use arcweft_lang_hir::symbol::ImplMethodDeclarationId;
 use arcweft_lang_hir::symbol::{
     CallableDeclarationKey, CallableDeclarationOwner, nominal::ProjectNominalDeclarationId,
 };
+use arcweft_lang_syntax::name::CallArgumentName;
 use arcweft_text_model::DialogueContentSpec;
 use thiserror::Error;
 
@@ -4056,14 +4057,16 @@ impl RuntimeResolvedCall {
                 NeedProducerRequestProjection::AssetLoad { argument_name, .. } => {
                     match operand.binding() {
                         RuntimeResolvedCallOperandBinding::Positional => true,
-                        RuntimeResolvedCallOperandBinding::Named(name) => name == argument_name,
+                        RuntimeResolvedCallOperandBinding::Named(name) => {
+                            name.as_str() == argument_name
+                        }
                     }
                 }
                 NeedProducerRequestProjection::ExternCapability { argument_names, .. } => {
                     match (operand.binding(), argument_names.get(ordinal as usize)) {
                         (RuntimeResolvedCallOperandBinding::Positional, Some(None)) => true,
                         (RuntimeResolvedCallOperandBinding::Named(name), Some(Some(expected))) => {
-                            name == expected
+                            name.as_str() == expected
                         }
                         _ => false,
                     }
@@ -4546,7 +4549,7 @@ pub enum RuntimeResolvedCallOperandSource {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeResolvedCallOperandBinding {
     Positional,
-    Named(String),
+    Named(CallArgumentName),
 }
 
 /// Accepted scalar or spread-container runtime projection.
@@ -11894,7 +11897,7 @@ fn validate_call(
                     HirCallArgument::Named { .. } => matches!(
                         operand.binding(),
                         RuntimeResolvedCallOperandBinding::Named(name)
-                            if authored.resolved_name().is_some_and(|resolved| resolved.as_str() == name)
+                            if authored.resolved_name() == Some(name)
                     ),
                     HirCallArgument::Spread { .. } => matches!(
                         operand.binding(),

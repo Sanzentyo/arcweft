@@ -2271,14 +2271,17 @@ mod tests {
             ]
         );
         let look = CallableName::try_new("look").expect("look name");
-        let custom = CallableName::try_new("custom").expect("custom name");
+        let look_argument =
+            arcweft_lang_syntax::name::CallArgumentName::try_new("look").expect("look argument");
+        let custom =
+            arcweft_lang_syntax::name::CallArgumentName::try_new("custom").expect("custom name");
         assert_eq!(show.reserved_open_names(), std::slice::from_ref(&look));
-        assert!(!show.allows_open_name(&look));
+        assert!(!show.allows_open_name(&look_argument));
         assert!(show.allows_open_name(&custom));
 
         let hide = presentation_schema(PresentationCallableId::Hide, None, None)
             .expect("Character-Any Hide schema");
-        assert!(!hide.allows_open_name(&look));
+        assert!(!hide.allows_open_name(&look_argument));
     }
 
     #[test]

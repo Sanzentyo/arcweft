@@ -157,6 +157,56 @@ fn parenthesized_call_projection_retains_argument_forms_and_termination() {
 }
 
 #[test]
+fn named_argument_paths_keep_canonical_segments_and_exact_lossless_ranges() {
+    let source = "callee(playback /* gap */ . local_time = value, proxy.param.channel = other)";
+    let events = expression_events(source);
+    let pending = projection(&events, SyntaxKind::CallExpression);
+    let ExpressionProjection::Call(SyntaxCallProjection::Parenthesized(call)) =
+        pending.projection()
+    else {
+        panic!("parenthesized call");
+    };
+    for (ordinal, expected) in ["playback.local_time", "proxy.param.channel"]
+        .into_iter()
+        .enumerate()
+    {
+        let SyntaxCallArgumentProjection::Named { name: Ok(name), .. } = &call.arguments()[ordinal]
+        else {
+            panic!("admitted argument path");
+        };
+        assert_eq!(name.as_str(), expected);
+        assert!(name.single().is_none());
+    }
+    let first = pending
+        .components()
+        .iter()
+        .find(|component| {
+            component.role()
+                == ExpressionComponentRole::CallArgument {
+                    argument: 0,
+                    part: SyntaxCallArgumentPart::Name,
+                }
+        })
+        .unwrap();
+    assert_eq!(
+        &source[first.range().as_range()],
+        "playback /* gap */ . local_time"
+    );
+    assert!(!pending.has_recovery());
+
+    let malformed = expression_events("callee(proxy..channel = value)");
+    let ExpressionProjection::Call(SyntaxCallProjection::Parenthesized(call)) =
+        projection(&malformed, SyntaxKind::CallExpression).projection()
+    else {
+        panic!("recovered call");
+    };
+    assert!(matches!(
+        &call.arguments()[0],
+        SyntaxCallArgumentProjection::Named { name: Err(_), .. }
+    ));
+}
+
+#[test]
 fn empty_call_after_rejected_statement_owner_does_not_fabricate_a_callee_range() {
     let source = "callee()";
     let tokens = DocumentLexer::new(source).lex();
@@ -655,6 +705,14 @@ fn postfix_bracket_candidates_classify_without_source_name_heuristics() {
     assert!(matches!(
         projection(
             &expression_events("items[0]"),
+            SyntaxKind::PostfixBracketExpression
+        )
+        .projection(),
+        ExpressionProjection::Index(_)
+    ));
+    assert!(matches!(
+        projection(
+            &expression_events("items[2026]"),
             SyntaxKind::PostfixBracketExpression
         )
         .projection(),

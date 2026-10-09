@@ -67,13 +67,6 @@ impl CallableName {
     pub fn as_str(&self) -> &str {
         &self.0
     }
-
-    /// Returns the owner-issued bytes of this validated callable identity.
-    /// The projection is crate-visible so semantic products can consume the
-    /// typed name without reparsing its display spelling.
-    pub(crate) fn canonical_identity_bytes(&self) -> &[u8] {
-        self.0.as_bytes()
-    }
 }
 
 impl AdapterPackageId {

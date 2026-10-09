@@ -31,7 +31,7 @@ use super::{HirSourceIndex, HirSourceSite};
 use crate::arena::ArenaSnapshot;
 use crate::expr::{
     HirCallArgument, HirCallChildPoison, HirCallInvocation, HirCallValue, HirExpr,
-    HirRecoveredName, HirRequiredTokenState,
+    HirRequiredTokenState,
 };
 use crate::identity::{
     ExprId, HirTypedId, ItemId, LocalId, PatternId, ScopeId, StmtId, SyntheticOwner, TypeId,
@@ -43,7 +43,6 @@ use crate::item::{
     HirEnumItem, HirEnumVariantPayload, HirGenericParameter, HirItem, HirItemIssue, HirItemKind,
     HirItemPoisonState, HirRequiredName, HirStructItem, HirTypeAliasItem, HirWherePredicate,
 };
-use crate::leaf::HirName;
 use crate::pattern::HirPattern;
 use crate::scope::{
     HirLocal, HirLocalKind, HirPatternBindingPolicy, HirScope, HirScopeKind, HirScopeOwner,
@@ -597,9 +596,7 @@ fn retained_attribute_projection<'a>(
                     return Ok(None);
                 };
                 HirCallArgument::Named {
-                    name: HirRecoveredName::Valid(
-                        HirName::try_new(name.as_str().into()).map_err(|_| ())?,
-                    ),
+                    name: crate::expr::HirRecoveredArgumentName::Valid(name.clone()),
                     equals: attribute_token_state(*equals),
                     value,
                 }

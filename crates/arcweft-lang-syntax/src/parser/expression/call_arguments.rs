@@ -1,5 +1,8 @@
 //! Parenthesized Call argument ownership on the shared expression cursor.
 
+use crate::name::{CallArgumentName, SyntaxNameIssue};
+use crate::parser::cursor::is_trivia_kind;
+
 use super::{
     DocumentParser, ExpressionComponentRole, PendingExpressionComponent, SourceRange,
     SyntaxCallArgumentListTerminator, SyntaxCallArgumentPart, SyntaxCallArgumentProjection,
@@ -174,7 +177,7 @@ fn emit_named_call_argument(
         .offset_at_token_boundary(name_end_index)
         .expect("Call name end remains at a token boundary");
     let name_range = SourceRange::new(name_start, name_end);
-    let source_name = SyntaxName::try_new(&parser.source()[name_range.as_range()]);
+    let source_name = call_argument_name(parser, name_end_index, name_range);
     parser.start(SyntaxKind::NameReference, SyntaxRole::Name);
     bump_until(parser, name_end_index);
     parser.finish();
@@ -200,6 +203,53 @@ fn emit_named_call_argument(
             call_argument_component(ordinal, SyntaxCallArgumentPart::Value, value_range),
         ],
     )
+}
+
+fn call_argument_name(
+    parser: &DocumentParser<'_, '_>,
+    end: usize,
+    attempted: SourceRange,
+) -> Result<CallArgumentName, SyntaxNameIssue> {
+    let mut segments = Vec::new();
+    let mut expects_segment = true;
+    for index in parser.cursor()..end {
+        let token = parser
+            .token_at(index)
+            .expect("argument name remains in the shared token interval");
+        if is_trivia_kind(token.kind()) {
+            continue;
+        }
+        if expects_segment
+            && matches!(
+                token.kind(),
+                SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken
+            )
+        {
+            segments.push(
+                SyntaxName::try_new(parser.text_of(token))
+                    .expect("lexer identifier tokens retain the admitted segment grammar"),
+            );
+            expects_segment = false;
+        } else if !expects_segment && parser.text_of(token) == "." {
+            expects_segment = true;
+        } else {
+            let spelling = parser.source()[attempted.as_range()].into();
+            return Err(if segments.is_empty() {
+                SyntaxNameIssue::InvalidStart { spelling }
+            } else {
+                SyntaxNameIssue::InvalidContinuation { spelling }
+            });
+        }
+    }
+    if segments.is_empty() {
+        return Err(SyntaxNameIssue::Missing);
+    }
+    if expects_segment {
+        return Err(SyntaxNameIssue::InvalidContinuation {
+            spelling: parser.source()[attempted.as_range()].into(),
+        });
+    }
+    CallArgumentName::try_from_segments(segments)
 }
 
 fn emit_unnamed_call_argument(

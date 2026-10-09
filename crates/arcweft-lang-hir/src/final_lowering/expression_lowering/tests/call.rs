@@ -5,7 +5,7 @@ use crate::expr::{
     HirAssociatedCallSyntax, HirAssociatedReceiver, HirCallArgument, HirCallArgumentListTerminator,
     HirCallCallee, HirCallIssue, HirCallTypeApplication, HirCallTypeApplicationSpelling,
     HirCallTypeApplicationTerminator, HirCallTypeArgument, HirCallTypeArgumentOrdinal,
-    HirCallValue, HirRecoveredName, HirRecoveryIssue,
+    HirCallValue, HirRecoveredArgumentName, HirRecoveredName, HirRecoveryIssue,
 };
 use crate::source_index::{
     HirCallArgumentSourcePart, HirCallTypeApplicationSourceRole, HirCallTypeArgumentSourcePart,
@@ -506,6 +506,51 @@ fn callback_missing_body_uses_the_required_tail_owner_and_poisons_the_argument()
 }
 
 #[test]
+fn attached_call_argument_paths_preserve_identity_and_reject_canonical_duplicates() {
+    let source = "callee(playback.local_time = first, proxy /* gap */ . param.channel = second)";
+    let parsed = parsed_source("call-argument-paths", &[source.into()]);
+    let (module, owners, _) = lower_and_publish(&parsed);
+    assert_eq!(module.status(), HirModuleStatus::Clean);
+    let owner = owners[0];
+    let HirExprKind::Call(call) = expression(&module, owner).kind() else {
+        panic!("Call payload")
+    };
+    assert_eq!(
+        call.arguments()[0].resolved_name().unwrap().as_str(),
+        "playback.local_time"
+    );
+    assert_eq!(
+        call.arguments()[1].resolved_name().unwrap().as_str(),
+        "proxy.param.channel"
+    );
+    let site = call_source_site(
+        &module,
+        &parsed,
+        owner,
+        HirExprSourceRole::CallArgument {
+            argument: HirCallArgumentOrdinal::try_new(1).unwrap(),
+            part: HirCallArgumentSourcePart::Name,
+        },
+    );
+    assert_eq!(
+        &parsed.document().text()[call_site_start(&site)..call_site_end(&site)],
+        "proxy /* gap */ . param.channel"
+    );
+
+    let parsed = parsed_source(
+        "call-path-duplicate",
+        &["callee(proxy.param.channel = first, proxy . param . channel = second)".into()],
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    assert!(matches!(
+        expression(&module, owners[0]).state(),
+        HirPoisonState::Poisoned(HirRecoveryIssue::InvalidCall(
+            HirCallIssue::DuplicateNamedArgument { .. }
+        ))
+    ));
+}
+
+#[test]
 fn attached_e12_call_publishes_one_typed_argument_inventory_and_exact_sources() {
     let parsed = parsed_source(
         "call-ordinary-matrix",
@@ -538,7 +583,7 @@ fn attached_e12_call_publishes_one_typed_argument_inventory_and_exact_sources() 
     assert!(matches!(
         &call.arguments()[1],
         HirCallArgument::Named {
-            name: HirRecoveredName::Valid(name),
+            name: HirRecoveredArgumentName::Valid(name),
             value: HirCallValue::Present { .. },
             ..
         } if name.as_str() == "limit"

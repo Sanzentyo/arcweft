@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use arcweft_id::PublicId;
 use arcweft_lang_hir::{
     expr::{
-        HirCallArgument, HirCallArgumentOrdinal, HirCallInvocation, HirCallValue, HirRecoveredName,
-        HirRequiredTokenState,
+        HirCallArgument, HirCallArgumentOrdinal, HirCallInvocation, HirCallValue,
+        HirRecoveredArgumentName, HirRequiredTokenState,
     },
     identity::ExprId,
     leaf::{HirPathRoot, HirPathSegment},
@@ -641,7 +641,7 @@ fn reconstruct_final_definition(
     let mut seen = BTreeSet::new();
     for argument in definition.arguments() {
         let HirCallArgument::Named {
-            name: HirRecoveredName::Valid(name),
+            name: HirRecoveredArgumentName::Valid(name),
             equals: HirRequiredTokenState::Present,
             value: HirCallValue::Present { value: expression },
         } = argument
@@ -932,7 +932,7 @@ impl PreparedCheckedTextProxyDefinition {
         let mut named = BTreeMap::new();
         for (index, argument) in invocation.arguments().iter().enumerate() {
             let HirCallArgument::Named {
-                name: HirRecoveredName::Valid(name),
+                name: HirRecoveredArgumentName::Valid(name),
                 equals: HirRequiredTokenState::Present,
                 value: HirCallValue::Present { value },
             } = argument
